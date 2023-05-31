@@ -9,7 +9,7 @@ from requests import HTTPError
 from tenacity import RetryError
 
 from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.schemas import RunTree
+from langchainplus_sdk.schemas import RunTree, flush_all_runs
 
 
 @pytest.fixture
@@ -114,7 +114,11 @@ def test_datasets(langchain_client: LangChainPlusClient) -> None:
     assert deleted.id == dataset_id
 
 
-def test_run_tree(langchain_client: LangChainPlusClient) -> None:
+def test_run_tree(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
+) -> None:
+    """ "Test persisting runs and adding feedback."""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     session_name = "__test_run_tree"
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:
         langchain_client.delete_session(session_name=session_name)
@@ -142,7 +146,8 @@ def test_run_tree(langchain_client: LangChainPlusClient) -> None:
     child_tool_run.end(outputs={"output": ["Hi"]})
     child_llm_run.end(outputs={"prompts": ["hello world"]})
     parent_run.end(outputs={"output": ["Hi"]})
-    langchain_client.persist_run_tree(parent_run)
+    parent_run.post(exclude_child_runs=False)
+    flush_all_runs()
 
     runs = list(langchain_client.list_runs(session_name=session_name))
     assert len(runs) == 5

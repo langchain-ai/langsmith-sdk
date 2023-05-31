@@ -155,7 +155,9 @@ class RunTree(RunBase):
     name: str
     id: Optional[UUID] = Field(default_factory=uuid4)
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    child_runs: List[RunTree] = Field(default_factory=list)
+    child_runs: List[RunTree] = Field(
+        default_factory=list, exclude={"__all__": {"parent_run_id"}}
+    )
     session_name: str = Field(default="default")
     session_id: Optional[UUID] = Field(default=None)
     execution_order: int = 1
@@ -255,7 +257,7 @@ class RunTree(RunBase):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["x-api-key"] = self.api_key
-        exclude = {"child_runs"} if exclude_child_runs else set()
+        exclude = {"child_runs"} if exclude_child_runs else None
         response = requests.post(
             self.api_url + "/runs",
             data=self.json(exclude=exclude, exclude_none=True),
