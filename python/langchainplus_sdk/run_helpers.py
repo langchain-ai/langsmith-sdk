@@ -32,7 +32,6 @@ def run_tree(
             session_name: Optional[str] = None,
             session_id: Optional[UUID] = None,
             reference_example_id: Optional[UUID] = None,
-            run_id: Optional[UUID] = None,
             extra: Optional[Dict] = None,
             **kwargs: Any,
         ) -> Any:
