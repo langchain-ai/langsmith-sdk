@@ -2,14 +2,40 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
 import requests
-from langchainplus_sdk.utils import raise_for_status_with_text
 from pydantic import BaseModel, Field, root_validator
+
+from langchainplus_sdk.utils import raise_for_status_with_text
+
+_THREAD_POOL_EXECUTOR: ContextVar[
+    Optional[ThreadPoolExecutor]
+] = ContextVar(  # noqa: E501
+    "thread_pool", default=None
+)
+
+
+def _ensure_thread_pool() -> ThreadPoolExecutor:
+    """Ensure a thread pool exists in the current context."""
+    executor = _THREAD_POOL_EXECUTOR.get()
+    if executor is None:
+        executor = ThreadPoolExecutor(max_workers=1)
+        _THREAD_POOL_EXECUTOR.set(executor)
+    return executor
+
+
+def flush_all_runs() -> None:
+    """Flush the thread pool."""
+    executor = _THREAD_POOL_EXECUTOR.get()
+    if executor is not None:
+        executor.shutdown(wait=True)
+        _THREAD_POOL_EXECUTOR.set(None)
 
 
 class ExampleBase(BaseModel):
@@ -115,6 +141,14 @@ class Run(RunBase):
         return values
 
 
+class RunUpdate(BaseModel):
+    end_time: Optional[datetime]
+    error: Optional[str]
+    outputs: Optional[dict]
+    parent_run_id: Optional[UUID]
+    reference_example_id: Optional[UUID]
+
+
 class RunTree(RunBase):
     """Run Schema with back-references for posting runs."""
 
@@ -122,16 +156,16 @@ class RunTree(RunBase):
     id: Optional[UUID] = Field(default_factory=uuid4)
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
     child_runs: List[RunTree] = Field(default_factory=list)
-    session_name: str = Field(default=os.environ.get("LANGCHAIN_SESSION", "default"))
+    session_name: str = Field(default="default")
     session_id: Optional[UUID] = Field(default=None)
     execution_order: int = 1
     child_execution_order: int = 1
     api_url: str = Field(
-        default=os.environ.get("LANGCHAIN_API_URL", "http://localhost:1984"),
+        default=os.environ.get("LANGCHAIN_ENDPOINT", "http://localhost:1984"),
         exclude=True,
     )
     api_key: Optional[str] = Field(
-        default=os.environ.get("LANGCHAIN_API_TOKEN"), exclude=True
+        default=os.environ.get("LANGCHAIN_API_KEY"), exclude=True
     )
 
     @root_validator(pre=True)
@@ -151,6 +185,10 @@ class RunTree(RunBase):
             values["execution_order"] = 1
         if "child_execution_order" not in values:
             values["child_execution_order"] = values["execution_order"]
+        if values.get("session_name") is None:
+            values["session_name"] = os.environ.get("LANGCHAIN_SESSION", "default")
+        if values.get("parent_run") is not None:
+            values["parent_run_id"] = values["parent_run"].id
         return values
 
     def end(
@@ -168,7 +206,8 @@ class RunTree(RunBase):
             self.error = error
         if self.parent_run:
             self.parent_run.child_execution_order = max(
-                self.parent_run.child_execution_order, self.child_execution_order
+                self.parent_run.child_execution_order,
+                self.child_execution_order,
             )
 
     def create_child(
@@ -211,31 +250,41 @@ class RunTree(RunBase):
         self.child_runs.append(run)
         return run
 
-    def post(self) -> Dict:
+    def _post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API."""
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["x-api-key"] = self.api_key
+        exclude = {"child_runs"} if exclude_child_runs else set()
         response = requests.post(
             self.api_url + "/runs",
-            data=self.json(exclude={"parent_run_id"}, exclude_none=True),
+            data=self.json(exclude=exclude, exclude_none=True),
             headers=headers,
         )
         raise_for_status_with_text(response)
-        return response.json()
 
-    def patch(self) -> Dict:
+    def post(self, exclude_child_runs: bool = True) -> Future:
+        """Post the run tree to the API asynchronously."""
+        executor = _ensure_thread_pool()
+        return executor.submit(self._post, exclude_child_runs=exclude_child_runs)
+
+    def _patch(self) -> None:
         """Patch the run tree to the API."""
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["x-api-key"] = self.api_key
+        run_update = RunUpdate(**self.dict())
         response = requests.patch(
-            self.api_url + "/runs",
-            data=self.json(exclude={"parent_run_id"}, exclude_none=True),
+            self.api_url + f"/runs/{self.id}",
+            data=run_update.json(exclude_none=True),
             headers=headers,
         )
         raise_for_status_with_text(response)
-        return response.json()
+
+    def patch(self) -> Future:
+        """Patch the run tree to the API in a background thread."""
+        executor = _ensure_thread_pool()
+        return executor.submit(self._patch)
 
 
 class ListRunsQueryParams(BaseModel):
