@@ -14,7 +14,7 @@ from langchainplus_sdk.schemas import RunTree, flush_all_runs
 
 @pytest.fixture
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> LangChainPlusClient:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:8000")
     return LangChainPlusClient()
 
 

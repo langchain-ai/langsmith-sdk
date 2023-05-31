@@ -3,8 +3,7 @@
 import inspect
 from functools import wraps
 from typing import Any, Callable, Dict, Optional, Union
-
-from click import UUID
+from uuid import UUID
 
 from langchainplus_sdk.schemas import RunTree, RunTypeEnum
 
