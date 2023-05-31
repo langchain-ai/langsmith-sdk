@@ -38,7 +38,6 @@ from langchainplus_sdk.schemas import (
     ListRunsQueryParams,
     ModelFeedbackSource,
     Run,
-    RunTree,
     TracerSession,
 )
 from langchainplus_sdk.utils import raise_for_status_with_text, xor_args
@@ -152,16 +151,6 @@ class LangChainPlusClient(BaseSettings):
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
         return Dataset(**result)
-
-    def persist_run_tree(self, run_tree: RunTree) -> None:
-        """Persist a run tree to the LangChain+ API."""
-        response = requests.post(
-            self.api_url + "/runs",
-            data=run_tree.json(exclude={"parent_run_id"}, exclude_none=True),
-            headers={**self._headers, "Content-Type": "application/json"},
-        )
-        raise_for_status_with_text(response)
-        return
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def read_run(self, run_id: ID_TYPE) -> Run:
