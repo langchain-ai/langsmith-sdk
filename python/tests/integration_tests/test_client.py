@@ -83,7 +83,9 @@ def test_datasets(langchain_client: LangChainPlusClient) -> None:
     assert example_value.outputs is not None
     assert example_value.outputs["col2"] == "addedExampleCol2"
 
-    examples = list(langchain_client.list_examples(dataset_id=new_dataset.id))  # type: ignore
+    examples = list(
+        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+    )
     assert len(examples) == 2
     assert example.id in [example.id for example in examples]
 
@@ -96,11 +98,14 @@ def test_datasets(langchain_client: LangChainPlusClient) -> None:
     assert updated_example.id == example.id
     updated_example_value = langchain_client.read_example(updated_example.id)
     assert updated_example_value.inputs["col1"] == "updatedExampleCol1"
+    assert updated_example_value.outputs is not None
     assert updated_example_value.outputs["col2"] == "updatedExampleCol2"
 
     deleted_example = langchain_client.delete_example(example.id)
     assert deleted_example.id == example.id
-    examples2 = list(langchain_client.list_examples(dataset_id=new_dataset.id))  # type: ignore
+    examples2 = list(
+        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+    )
     assert len(examples2) == 1
 
     deleted = langchain_client.delete_dataset(dataset_id=dataset_id)

@@ -58,6 +58,9 @@ def _is_localhost(url: str) -> bool:
         return False
 
 
+ID_TYPE = Union[UUID, str]
+
+
 class LangChainPlusClient(BaseSettings):
     """Client for interacting with the LangChain+ API."""
 
@@ -150,7 +153,7 @@ class LangChainPlusClient(BaseSettings):
         return Dataset(**result)
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
-    def read_run(self, run_id: Union[str, UUID]) -> Run:
+    def read_run(self, run_id: ID_TYPE) -> Run:
         """Read a run from the LangChain+ API."""
         response = self._get(f"/runs/{run_id}")
         raise_for_status_with_text(response)
@@ -160,7 +163,7 @@ class LangChainPlusClient(BaseSettings):
     def list_runs(
         self,
         *,
-        session_id: Optional[str] = None,
+        session_id: Optional[ID_TYPE] = None,
         session_name: Optional[str] = None,
         run_type: Optional[str] = None,
         **kwargs: Any,
@@ -176,6 +179,15 @@ class LangChainPlusClient(BaseSettings):
         response = self._get("/runs", params=query_params.dict(exclude_none=True))
         raise_for_status_with_text(response)
         yield from [Run(**run) for run in response.json()]
+
+    def delete_run(self, run_id: ID_TYPE) -> None:
+        """Delete a run from the LangChain+ API."""
+        response = requests.delete(
+            f"{self.api_url}/runs/{run_id}",
+            headers=self._headers,
+        )
+        raise_for_status_with_text(response)
+        return
 
     def create_session(
         self, session_name: str, session_extra: Optional[dict] = None
@@ -207,7 +219,7 @@ class LangChainPlusClient(BaseSettings):
         elif session_name is not None:
             params["name"] = session_name
         else:
-            raise ValueError("Must provide dataset_name or dataset_id")
+            raise ValueError("Must provide session_name or session_id")
         response = self._get(
             path,
             params=params,
@@ -221,7 +233,7 @@ class LangChainPlusClient(BaseSettings):
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ValueError(f"Dataset {session_name} not found")
+                raise ValueError(f"Session {session_name} not found")
             return TracerSession(**result[0])
         return TracerSession(**response.json())
 
@@ -267,7 +279,10 @@ class LangChainPlusClient(BaseSettings):
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     @xor_args(("dataset_name", "dataset_id"))
     def read_dataset(
-        self, *, dataset_name: Optional[str] = None, dataset_id: Optional[str] = None
+        self,
+        *,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
     ) -> Dataset:
         path = "/datasets"
         params: Dict[str, Any] = {"limit": 1}
@@ -298,7 +313,10 @@ class LangChainPlusClient(BaseSettings):
 
     @xor_args(("dataset_id", "dataset_name"))
     def delete_dataset(
-        self, *, dataset_id: Optional[str] = None, dataset_name: Optional[str] = None
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
     ) -> Dataset:
         """Delete a dataset by ID or name."""
         if dataset_name is not None:
@@ -316,7 +334,7 @@ class LangChainPlusClient(BaseSettings):
     def create_example(
         self,
         inputs: Mapping[str, Any],
-        dataset_id: Optional[UUID] = None,
+        dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime] = None,
         outputs: Mapping[str, Any] | None = None,
@@ -341,7 +359,7 @@ class LangChainPlusClient(BaseSettings):
         return Example(**result)
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
-    def read_example(self, example_id: Union[str, UUID]) -> Example:
+    def read_example(self, example_id: ID_TYPE) -> Example:
         """Read an example from the LangChain+ API."""
         response = self._get(f"/examples/{example_id}")
         raise_for_status_with_text(response)
@@ -349,7 +367,7 @@ class LangChainPlusClient(BaseSettings):
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def list_examples(
-        self, dataset_id: Optional[str] = None, dataset_name: Optional[str] = None
+        self, dataset_id: Optional[ID_TYPE] = None, dataset_name: Optional[str] = None
     ) -> Iterator[Example]:
         """List the datasets on the LangChain+ API."""
         params = {}
@@ -370,7 +388,7 @@ class LangChainPlusClient(BaseSettings):
         *,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
-        dataset_id: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example."""
         example = ExampleUpdate(
@@ -386,7 +404,7 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return response.json()
 
-    def delete_example(self, example_id: str) -> Example:
+    def delete_example(self, example_id: ID_TYPE) -> Example:
         """Delete an example by ID."""
         response = requests.delete(
             f"{self.api_url}/examples/{example_id}",
@@ -397,7 +415,7 @@ class LangChainPlusClient(BaseSettings):
 
     def create_feedback(
         self,
-        run_id: str,
+        run_id: ID_TYPE,
         key: str,
         *,
         score: Union[float, int, bool, None] = None,
@@ -405,7 +423,7 @@ class LangChainPlusClient(BaseSettings):
         correction: Union[str, dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,
-        feedback_source_type: FeedbackSourceType = FeedbackSourceType.API,
+        feedback_source_type: Union[FeedbackSourceType, str] = FeedbackSourceType.API,
     ) -> Feedback:
         """Create a feedback in the LangChain+ API.
 
@@ -440,14 +458,14 @@ class LangChainPlusClient(BaseSettings):
         )
         response = requests.post(
             self.api_url + "/feedback",
-            headers=self._headers,
+            headers={**self._headers, "Content-Type": "application/json"},
             data=feedback.json(),
         )
         raise_for_status_with_text(response)
         return Feedback(**feedback.dict())
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
-    def read_feedback(self, feedback_id: str) -> Feedback:
+    def read_feedback(self, feedback_id: ID_TYPE) -> Feedback:
         """Read a feedback from the LangChain+ API."""
         response = self._get(f"/feedback/{feedback_id}")
         raise_for_status_with_text(response)
@@ -457,7 +475,7 @@ class LangChainPlusClient(BaseSettings):
     def list_feedback(
         self,
         *,
-        run_ids: Optional[Sequence[Union[str, UUID]]] = None,
+        run_ids: Optional[Sequence[ID_TYPE]] = None,
         **kwargs: Any,
     ) -> Iterator[Feedback]:
         """List the feedback objects on the LangChain+ API."""
@@ -469,7 +487,7 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         yield from [Feedback(**feedback) for feedback in response.json()]
 
-    def delete_feedback(self, feedback_id: str) -> None:
+    def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID."""
         response = requests.delete(
             f"{self.api_url}/feedback/{feedback_id}",

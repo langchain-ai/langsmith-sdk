@@ -1,11 +1,10 @@
 /* eslint-disable no-process-env */
-import { test } from "@jest/globals";
 import { LangChainPlusClient } from "../client.js";
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
 test("Test LangChainPlus Client Dataset CRD", async () => {
-  const client: LangChainPlusClient = await new LangChainPlusClient({
+  const client = await new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
 
@@ -77,7 +76,7 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
 
 // Test Session Creation, List, Read, Delete
 test("Test LangChainPlus Client Session CRD", async () => {
-  const client: LangChainPlusClient = await new LangChainPlusClient({
+  const client = await new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
 
