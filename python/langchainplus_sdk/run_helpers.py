@@ -32,15 +32,14 @@ def run_tree(
             session_name: Optional[str] = None,
             session_id: Optional[UUID] = None,
             reference_example_id: Optional[UUID] = None,
-            run_id: Optional[UUID] = None,
-            extra: Optional[Dict] = None,
+            run_extra: Optional[Dict] = None,
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
             signature = inspect.signature(func)
             name_ = name or func.__name__
-            if extra:
-                extra_inner = {**extra_outer, **extra}
+            if run_extra:
+                extra_inner = {**extra_outer, **run_extra}
             else:
                 extra_inner = extra_outer
             if "run" in kwargs:
@@ -51,7 +50,6 @@ def run_tree(
                 new_run = run.create_child(
                     name=name_,
                     run_type=run_type,
-                    run_id=run_id,
                     serialized=serialized,
                     inputs=inputs,
                     extra=extra_inner,
