@@ -2,21 +2,14 @@
 from __future__ import annotations
 
 import os
-<<<<<<< HEAD
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextvars import ContextVar
-=======
->>>>>>> d42a4dd (Add Decorator and post/patch)
 from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
 import requests
-<<<<<<< HEAD
-=======
-from langchainplus_sdk.utils import raise_for_status_with_text
->>>>>>> d42a4dd (Add Decorator and post/patch)
 from pydantic import BaseModel, Field, root_validator
 
 from langchainplus_sdk.utils import raise_for_status_with_text
@@ -168,10 +161,7 @@ class RunTree(RunBase):
     session_name: str = Field(default="default")
     session_id: Optional[UUID] = Field(default=None)
     execution_order: int = 1
-<<<<<<< HEAD
     child_execution_order: int = 1
-=======
->>>>>>> d42a4dd (Add Decorator and post/patch)
     api_url: str = Field(
         default=os.environ.get("LANGCHAIN_ENDPOINT", "http://localhost:1984"),
         exclude=True,
