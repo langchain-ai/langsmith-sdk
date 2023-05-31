@@ -2,7 +2,7 @@ import pytest
 
 from langchainplus_sdk.client import LangChainPlusClient
 from langchainplus_sdk.run_helpers import run_tree
-from langchainplus_sdk.schemas import flush_all_runs
+from langchainplus_sdk.schemas import RunTree, flush_all_runs
 
 
 @pytest.fixture
@@ -17,16 +17,17 @@ def test_nested_runs(langchain_client: LangChainPlusClient):
         langchain_client.delete_session(session_name=session_name)
 
     @run_tree(run_type="chain")
-    def my_run(text: str):
-        my_llm_run(text)
+    def my_run(text: str, run: RunTree):
+        my_llm_run(text, run=run)
         return text
 
     @run_tree(run_type="llm")
     def my_llm_run(text: str):
-        return f"Completed: text"
+        # The function needn't accept a run
+        return f"Completed: {text}"
 
     @run_tree(run_type="chain")
-    def my_chain_run(text: str, run):
+    def my_chain_run(text: str, run: RunTree):
         return my_run(text, run=run)
 
     my_chain_run("foo", session_name=session_name)
