@@ -90,15 +90,15 @@ test("Test LangChainPlus Client Session CRD", async () => {
   expect(sessionNames).not.toContain(newSession);
 
   await client.createSession({ sessionName: newSession });
-  let session = await client.readSession({ sessionName: newSession });
+  const session = await client.readSession({ sessionName: newSession });
   expect(session.name).toBe(newSession);
 
   sessions = await client.listSessions();
   sessionNames = sessions.map((session) => session.name);
   expect(sessionNames).toContain(newSession);
 
-  let runs = await client.listRuns({ sessionName: newSession });
-  let session_id_runs = await client.listRuns({ sessionId: session.id });
+  const runs = await client.listRuns({ sessionName: newSession });
+  const session_id_runs = await client.listRuns({ sessionId: session.id });
   expect(runs.length).toBe(0);
   expect(session_id_runs.length).toBe(0);
 
