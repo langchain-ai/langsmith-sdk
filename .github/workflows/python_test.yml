@@ -1,4 +1,4 @@
-name: test
+name: Python CI
 
 on:
   push:
@@ -19,19 +19,58 @@ jobs:
           - "3.9"
           - "3.10"
           - "3.11"
-    name: Python ${{ matrix.python-version }} Unit Tests
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python ${{ matrix.python-version }}
-        uses: "./.github/actions/poetry_setup"
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-          poetry-version: "1.4.2"
-          install-command: |
-            poetry install
+          cache: "pip"
+      - name: Install poetry
+        run: pipx install poetry==$POETRY_VERSION
+      - name: Install dependencies
+        run: poetry install
+
+  lint:
+    needs: build
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
         working-directory: python
-      - name: Run ${{matrix.test_type}} tests
-        run: |
-          make test
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ needs.build.outputs.python-version }}
+          cache: "pip"
+      - name: Install poetry
+        run: pipx install poetry==$POETRY_VERSION
+      - name: Install dependencies
+        run: poetry install
+      - name: Analysing the code with our lint
+        run: make lint
+
+  test:
+    needs: build
+    runs-on: ubuntu-20.04
+    defaults:
+      run:
         working-directory: python
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ needs.build.outputs.python-version }}
+          cache: "pip"
+      - name: Install poetry
+        run: pipx install poetry==$POETRY_VERSION
+      - name: Install dependencies
+        run: poetry install
+      - name: Run tests
+        run: make tests
         shell: bash
