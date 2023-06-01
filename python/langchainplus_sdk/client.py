@@ -376,7 +376,7 @@ class LangChainPlusClient(BaseSettings):
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime] = None,
-        outputs: Mapping[str, Any] | None = None,
+        outputs: Optional[Mapping[str, Any]] = None,
     ) -> Example:
         """Create a dataset example in the LangChain+ API."""
         if dataset_id is None:
