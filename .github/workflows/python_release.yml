@@ -1,11 +1,11 @@
-name: release
+name: Python Release
 
 on:
   pull_request:
     types:
       - closed
     branches:
-      - master
+      - main
     paths:
       - "python/pyproject.toml"
   workflow_dispatch:
@@ -23,6 +23,9 @@ jobs:
       ${{ github.event.pull_request.merged == true }}
       && ${{ contains(github.event.pull_request.labels.*.name, 'release') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v3
       - name: Install poetry
@@ -41,14 +44,14 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "dist/*"
+          artifacts: "python/dist/*"
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           generateReleaseNotes: true
           tag: v${{ steps.check-version.outputs.version }}
-          commit: master
-      - name: Publish to PyPI
-        env:
-          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          poetry publish
+          commit: main
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://pypi.org/project/langchainplus-sdk/
+          packages-dir: "python/dist/*"
