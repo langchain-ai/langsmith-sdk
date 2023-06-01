@@ -1,7 +1,7 @@
 # This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
 
-name: CI
+name: JS Client CI
 
 on:
   push:
@@ -12,6 +12,9 @@ jobs:
   format:
     name: Check formatting
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -19,6 +22,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
       - name: Check formatting
@@ -27,6 +31,9 @@ jobs:
   lint:
     name: Check linting
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -34,6 +41,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
       - name: Check linting
@@ -42,6 +50,9 @@ jobs:
   build:
     name: Build and check types
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -49,6 +60,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable
       - name: Build and check types
@@ -67,6 +79,9 @@ jobs:
           - os: macos-latest
             node-version: 20.x
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js ${{ matrix.node-version }}
@@ -74,9 +89,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable
       - name: Build
-        run: yarn run build --filter="!docs"
+        run: yarn run build
       - name: Test
         run: yarn run test
