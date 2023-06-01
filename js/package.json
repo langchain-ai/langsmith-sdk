@@ -13,6 +13,7 @@
     "test": "jest",
     "lint": "eslint 'src/**/*.{ts,tsx}' --quiet --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "format:check": "prettier --check 'src/**/*.{ts,tsx}'",
     "precommit": "lint-staged"
   },
   "repository": {

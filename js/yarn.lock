@@ -2167,7 +2167,7 @@ eslint-module-utils@^2.7.4:
 
 eslint-plugin-import@^2.27.5:
   version "2.27.5"
-  resolved "https://registry.npmjs.org/eslint-plugin-import/-/eslint-plugin-import-2.27.5.tgz"
+  resolved "https://registry.yarnpkg.com/eslint-plugin-import/-/eslint-plugin-import-2.27.5.tgz#876a6d03f52608a3e5bb439c2550588e51dd6c65"
   integrity sha512-LmEt3GVofgiGuiE+ORpnvP+kAm3h6MLZJ4Q5HCyHADofsb4VzXFsRiWj3c0OFiV+3DWFh0qg3v9gcPlfc3zRow==
   dependencies:
     array-includes "^3.1.6"
@@ -2188,7 +2188,7 @@ eslint-plugin-import@^2.27.5:
 
 eslint-plugin-no-instanceof@^1.0.1:
   version "1.0.1"
-  resolved "https://registry.npmjs.org/eslint-plugin-no-instanceof/-/eslint-plugin-no-instanceof-1.0.1.tgz"
+  resolved "https://registry.yarnpkg.com/eslint-plugin-no-instanceof/-/eslint-plugin-no-instanceof-1.0.1.tgz#5d9fc86d160df6991b654b294a62390207f1bb97"
   integrity sha512-zlqQ7EsfzbRO68uI+p8FIE7zYB4njs+nNbkNjSb5QmLi2et67zQLqSeaao5U9SpnlZTTJC87nS2oyHo2ACtajw==
 
 eslint-plugin-prettier@^4.2.1:
