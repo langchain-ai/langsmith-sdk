@@ -67,5 +67,22 @@
       "prettier --write --ignore-unknown",
       "eslint --cache --fix"
     ]
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.cjs"
+    },
+    "./client": {
+      "types": "./client.d.ts",
+      "import": "./client.js",
+      "require": "./client.cjs"
+    },
+    "./run_trees": {
+      "types": "./run_trees.d.ts",
+      "import": "./run_trees.js",
+      "require": "./run_trees.cjs"
+    }
   }
 }
