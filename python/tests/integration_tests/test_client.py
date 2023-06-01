@@ -37,12 +37,12 @@ def test_sessions(
     assert len(runs) == len(session_id_runs) == 0  # TODO: Add create_run method
     langchain_client.delete_session(session_name=new_session)
 
-    with pytest.raises(RetryError):
+    with pytest.raises(ValueError):
         langchain_client.read_session(session_name=new_session)
     assert new_session not in set(
         [sess.name for sess in langchain_client.list_sessions()]
     )
-    with pytest.raises(RetryError):
+    with pytest.raises(ValueError):
         langchain_client.delete_session(session_name=new_session)
 
 
