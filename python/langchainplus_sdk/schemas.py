@@ -86,7 +86,7 @@ class RunBase(BaseModel):
     id: Optional[UUID]
     start_time: datetime = Field(default_factory=datetime.utcnow)
     end_time: datetime = Field(default_factory=datetime.utcnow)
-    extra: dict
+    extra: dict = Field(default_factory=dict)
     error: Optional[str]
     execution_order: int
     child_execution_order: Optional[int]
@@ -110,6 +110,14 @@ class Run(RunBase):
         if "name" not in values:
             values["name"] = values["serialized"]["name"]
         return values
+
+
+class RunUpdate(BaseModel):
+    end_time: Optional[datetime]
+    error: Optional[str]
+    outputs: Optional[dict]
+    parent_run_id: Optional[UUID]
+    reference_example_id: Optional[UUID]
 
 
 class ListRunsQueryParams(BaseModel):
@@ -160,7 +168,7 @@ class ListRunsQueryParams(BaseModel):
 
 class FeedbackSourceBase(BaseModel):
     type: ClassVar[str]
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Dict[str, Any] | None = None
 
     class Config:
         frozen = True

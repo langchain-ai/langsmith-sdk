@@ -20,9 +20,8 @@ from uuid import UUID
 
 import requests
 from pydantic import BaseSettings, Field, root_validator
-from requests import HTTPError, Response
+from requests import Response
 from tenacity import (
-    Retrying,
     before_sleep_log,
     retry_if_exception_type,
     stop_after_attempt,
@@ -46,7 +45,12 @@ from langchainplus_sdk.schemas import (
     Run,
     TracerSession,
 )
-from langchainplus_sdk.utils import raise_for_status_with_text, xor_args
+from langchainplus_sdk.utils import (
+    LangChainPlusAPIError,
+    raise_for_status_with_text,
+    request_with_retries,
+    xor_args,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -65,18 +69,6 @@ def _is_localhost(url: str) -> bool:
 
 
 ID_TYPE = Union[UUID, str]
-
-
-class LangChainPlusAPIError(Exception):
-    """An error occurred while communicating with the LangChain API."""
-
-
-class LangChainPlusUserError(Exception):
-    """An error occurred while communicating with the LangChain API."""
-
-
-class LangChainPlusError(Exception):
-    """An error occurred while communicating with the LangChain API."""
 
 
 def _default_retry_config() -> Dict[str, Any]:
@@ -131,31 +123,15 @@ class LangChainPlusClient(BaseSettings):
             headers["x-api-key"] = self.api_key
         return headers
 
-    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Response:
-        """Make a GET request."""
-        return requests.get(
-            f"{self.api_url}{path}", headers=self._headers, params=params
+    def _get_with_retries(
+        self, path: str, params: Optional[Dict[str, Any]] = None
+    ) -> Response:
+        return request_with_retries(
+            "get",
+            f"{self.api_url}{path}",
+            request_kwargs={"params": params, "headers": self._headers},
+            retry_config=self.retry_config,
         )
-
-    def _get_with_retries(self, path: str, params: Optional[Dict[str, Any]] = None):
-        for attempt in Retrying(**self.retry_config):
-            with attempt:
-                try:
-                    response = self._get(path, params=params)
-                    return response
-                except HTTPError as e:
-                    if response is not None and response.status_code == 500:
-                        raise LangChainPlusAPIError(
-                            f"Failed to get {path} from LangChain+ API. {e}"
-                        )
-                    else:
-                        raise LangChainPlusUserError(
-                            f"Failed to get {path} from LangChain+ API. {e}"
-                        )
-                except Exception as e:
-                    raise LangChainPlusError(
-                        f"Failed to get {path} from LangChain+ API. {e}"
-                    ) from e
 
     def upload_dataframe(
         self,
