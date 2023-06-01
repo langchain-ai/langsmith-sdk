@@ -1,6 +1,6 @@
 {
   "name": "langchainplus-sdk",
-  "version": "0.0.1-rc.2",
+  "version": "0.0.1-rc.3",
   "description": "Client library to connect to the LangChainPlus LLM Tracing and Evaluation Platform.",
   "files": [
     "dist"
@@ -70,19 +70,19 @@
   },
   "exports": {
     ".": {
-      "types": "./index.d.ts",
-      "import": "./index.js",
-      "require": "./index.cjs"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./client": {
-      "types": "./client.d.ts",
-      "import": "./client.js",
-      "require": "./client.cjs"
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs"
     },
     "./run_trees": {
-      "types": "./run_trees.d.ts",
-      "import": "./run_trees.js",
-      "require": "./run_trees.cjs"
+      "types": "./dist/run_trees.d.ts",
+      "import": "./dist/run_trees.js",
+      "require": "./dist/run_trees.cjs"
     }
   }
 }
