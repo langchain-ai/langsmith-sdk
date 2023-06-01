@@ -53,5 +53,4 @@ jobs:
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://pypi.org/project/langchainplus-sdk/
-          packages-dir: "python/dist/*"
+          packages-dir: "python/dist"
