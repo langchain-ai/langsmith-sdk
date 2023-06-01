@@ -3,11 +3,6 @@ import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import { BaseRun, KVMap, RunCreate, RunType, RunUpdate } from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 
-interface EnvironmentDefaultConfig {
-  apiUrl: string;
-  apiKey?: string;
-}
-
 export interface RunTreeConfig {
   name: string;
   run_type: RunType;
@@ -53,39 +48,31 @@ export class RunTree implements BaseRun {
   reference_example_id?: string;
 
   constructor(config: RunTreeConfig) {
-    const defaultConfig = RunTree.getDefaultEnvironmentConfig();
-    this.name = config.name;
-    this.run_type = config.run_type;
-    this.id = config.id ?? uuid.v4();
-    this.session_name = config.session_name ?? "default";
-    this.parentRun = config.parentRun;
-    this.child_runs = config.child_runs ?? [];
-    this.execution_order = config.execution_order ?? 1;
-    this.child_execution_order =
-      config.child_execution_order ?? this.execution_order;
-    this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
-    this.apiKey = config.apiKey ?? defaultConfig.apiKey;
-    this.callerOptions = config.callerOptions ?? {};
-    this.caller = new AsyncCaller(config.callerOptions ?? {});
-    this.start_time = config.start_time ?? Date.now();
-    this.end_time = config.end_time ?? Date.now();
-    this.extra = config.extra;
-    this.error = config.error;
-    this.serialized = config.serialized ?? {};
-    this.inputs = config.inputs ?? {};
-    this.outputs = config.outputs;
-    this.reference_example_id = config.reference_example_id;
+    const defaultConfig = RunTree.getDefaultConfig();
+    Object.assign(this, { ...defaultConfig, ...config });
+    this.caller = new AsyncCaller(this.callerOptions);
   }
-  private static getDefaultEnvironmentConfig(): EnvironmentDefaultConfig {
-    const apiUrl =
-      getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984";
-    const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
-
-    return { apiUrl, apiKey };
+  private static getDefaultConfig(): object {
+    return {
+      id: uuid.v4(),
+      session_name: "default",
+      child_runs: [],
+      execution_order: 1,
+      child_execution_order: 1,
+      apiUrl:
+        getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
+      apiKey: getEnvironmentVariable("LANGCHAIN_API_KEY"),
+      callerOptions: {},
+      start_time: Date.now(),
+      end_time: Date.now(),
+      serialized: {},
+      inputs: {},
+    };
   }
 
   public async createChild(config: RunTreeConfig): Promise<RunTree> {
     const child = new RunTree({
+      ...config,
       parentRun: this,
       session_name: this.session_name,
       apiUrl: this.apiUrl,
@@ -93,7 +80,6 @@ export class RunTree implements BaseRun {
       callerOptions: this.callerOptions,
       execution_order: this.child_execution_order + 1,
       child_execution_order: this.child_execution_order + 1,
-      ...config,
     });
 
     this.child_runs.push(child);

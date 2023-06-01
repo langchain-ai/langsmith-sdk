@@ -193,4 +193,5 @@ test("Test post and patch run", async () => {
     runMap.get("parent_run")?.id
   );
   expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
+  await langchainClient.deleteSession({ session_name });
 });
