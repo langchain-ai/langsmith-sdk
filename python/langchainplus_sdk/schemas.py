@@ -101,6 +101,7 @@ class RunBase(BaseModel):
 class Run(RunBase):
     """Run schema when loading from the DB."""
 
+    id: UUID
     name: str
     child_runs: List[Run] = Field(default_factory=list)
 
