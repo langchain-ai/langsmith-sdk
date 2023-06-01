@@ -1,0 +1,37 @@
+name: test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  POETRY_VERSION: "1.4.2"
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        python-version:
+          - "3.8"
+          - "3.9"
+          - "3.10"
+          - "3.11"
+    name: Python ${{ matrix.python-version }} Unit Tests
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: "./.github/actions/poetry_setup"
+        with:
+          python-version: ${{ matrix.python-version }}
+          poetry-version: "1.4.2"
+          install-command: |
+            poetry install
+        working-directory: python
+      - name: Run ${{matrix.test_type}} tests
+        run: |
+          make test
+        working-directory: python
+        shell: bash
