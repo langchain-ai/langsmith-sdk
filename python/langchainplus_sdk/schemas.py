@@ -1,41 +1,12 @@
 """Schemas for the langchainplus API."""
 from __future__ import annotations
 
-import os
-from concurrent.futures import Future, ThreadPoolExecutor
-from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
-import requests
 from pydantic import BaseModel, Field, root_validator
-
-from langchainplus_sdk.utils import raise_for_status_with_text
-
-_THREAD_POOL_EXECUTOR: ContextVar[
-    Optional[ThreadPoolExecutor]
-] = ContextVar(  # noqa: E501
-    "thread_pool", default=None
-)
-
-
-def _ensure_thread_pool() -> ThreadPoolExecutor:
-    """Ensure a thread pool exists in the current context."""
-    executor = _THREAD_POOL_EXECUTOR.get()
-    if executor is None:
-        executor = ThreadPoolExecutor(max_workers=1)
-        _THREAD_POOL_EXECUTOR.set(executor)
-    return executor
-
-
-def flush_all_runs() -> None:
-    """Flush the thread pool."""
-    executor = _THREAD_POOL_EXECUTOR.get()
-    if executor is not None:
-        executor.shutdown(wait=True)
-        _THREAD_POOL_EXECUTOR.set(None)
 
 
 class ExampleBase(BaseModel):
@@ -147,146 +118,6 @@ class RunUpdate(BaseModel):
     outputs: Optional[dict]
     parent_run_id: Optional[UUID]
     reference_example_id: Optional[UUID]
-
-
-class RunTree(RunBase):
-    """Run Schema with back-references for posting runs."""
-
-    name: str
-    id: Optional[UUID] = Field(default_factory=uuid4)
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    child_runs: List[RunTree] = Field(
-        default_factory=list, exclude={"__all__": {"parent_run_id"}}
-    )
-    session_name: str = Field(default="default")
-    session_id: Optional[UUID] = Field(default=None)
-    execution_order: int = 1
-    child_execution_order: int = 1
-    api_url: str = Field(
-        default=os.environ.get("LANGCHAIN_ENDPOINT", "http://localhost:1984"),
-        exclude=True,
-    )
-    api_key: Optional[str] = Field(
-        default=os.environ.get("LANGCHAIN_API_KEY"), exclude=True
-    )
-
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if "name" not in values:
-            if "serialized" not in values:
-                raise ValueError("Must provide either name or serialized.")
-            if "name" not in values["serialized"]:
-                raise ValueError(
-                    "Must provide either name or serialized with a name attribute."
-                )
-            values["name"] = values["serialized"]["name"]
-        elif "serialized" not in values:
-            values["serialized"] = {"name": values["name"]}
-        if "execution_order" not in values:
-            values["execution_order"] = 1
-        if "child_execution_order" not in values:
-            values["child_execution_order"] = values["execution_order"]
-        if values.get("session_name") is None:
-            values["session_name"] = os.environ.get("LANGCHAIN_SESSION", "default")
-        if values.get("parent_run") is not None:
-            values["parent_run_id"] = values["parent_run"].id
-        return values
-
-    def end(
-        self,
-        *,
-        outputs: Optional[Dict] = None,
-        error: Optional[str] = None,
-        end_time: Optional[datetime] = None,
-    ) -> None:
-        """Set the end time of the run and all child runs."""
-        self.end_time = end_time or datetime.utcnow()
-        if outputs is not None:
-            self.outputs = outputs
-        if error is not None:
-            self.error = error
-        if self.parent_run:
-            self.parent_run.child_execution_order = max(
-                self.parent_run.child_execution_order,
-                self.child_execution_order,
-            )
-
-    def create_child(
-        self,
-        name: str,
-        run_type: Union[str, RunTypeEnum],
-        *,
-        run_id: Optional[UUID] = None,
-        serialized: Optional[Dict] = None,
-        inputs: Optional[Dict] = None,
-        outputs: Optional[Dict] = None,
-        error: Optional[str] = None,
-        reference_example_id: Optional[UUID] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        extra: Optional[Dict] = None,
-    ) -> RunTree:
-        """Add a child run to the run tree."""
-        execution_order = self.child_execution_order + 1
-        serialized_ = serialized or {"name": name}
-        run = RunTree(
-            name=name,
-            id=run_id or uuid4(),
-            serialized=serialized_,
-            inputs=inputs or {},
-            outputs=outputs or {},
-            error=error,
-            run_type=run_type,
-            reference_example_id=reference_example_id,
-            start_time=start_time or datetime.utcnow(),
-            end_time=end_time or datetime.utcnow(),
-            execution_order=execution_order,
-            child_execution_order=execution_order,
-            extra=extra or {},
-            parent_run=self,
-            session_name=self.session_name,
-            api_url=self.api_url,
-            api_key=self.api_key,
-        )
-        self.child_runs.append(run)
-        return run
-
-    def _post(self, exclude_child_runs: bool = True) -> None:
-        """Post the run tree to the API."""
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["x-api-key"] = self.api_key
-        exclude = {"child_runs"} if exclude_child_runs else None
-        response = requests.post(
-            self.api_url + "/runs",
-            data=self.json(exclude=exclude, exclude_none=True),
-            headers=headers,
-        )
-        raise_for_status_with_text(response)
-
-    def post(self, exclude_child_runs: bool = True) -> Future:
-        """Post the run tree to the API asynchronously."""
-        executor = _ensure_thread_pool()
-        return executor.submit(self._post, exclude_child_runs=exclude_child_runs)
-
-    def _patch(self) -> None:
-        """Patch the run tree to the API."""
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["x-api-key"] = self.api_key
-        run_update = RunUpdate(**self.dict())
-        response = requests.patch(
-            self.api_url + f"/runs/{self.id}",
-            data=run_update.json(exclude_none=True),
-            headers=headers,
-        )
-        raise_for_status_with_text(response)
-
-    def patch(self) -> Future:
-        """Patch the run tree to the API in a background thread."""
-        executor = _ensure_thread_pool()
-        return executor.submit(self._patch)
 
 
 class ListRunsQueryParams(BaseModel):

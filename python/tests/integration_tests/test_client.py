@@ -1,15 +1,15 @@
 """LangChain+ langchain_client Integration Tests."""
 import io
+import os
 import random
 import string
 from uuid import uuid4
 
 import pytest
-from requests import HTTPError
-from tenacity import RetryError
 
 from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.schemas import RunTree, flush_all_runs
+from langchainplus_sdk.run_trees import RunTree, flush_all_runs
+from langchainplus_sdk.utils import LangChainPlusError
 
 
 @pytest.fixture
@@ -118,8 +118,8 @@ def test_run_tree(
     monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
 ) -> None:
     """ "Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    session_name = "__test_run_tree"
+    # monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    session_name = f"__test_run_tree + {uuid4()}"
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:
         langchain_client.delete_session(session_name=session_name)
     parent_run = RunTree(
@@ -128,6 +128,7 @@ def test_run_tree(
         inputs={"text": "hello world"},
         session_name=session_name,
         serialized={},
+        api_url=os.getenv("LANGCHAIN_ENDPOINT"),
     )
     child_llm_run = parent_run.create_child(
         name="child_run", run_type="llm", inputs={"text": "hello world"}
@@ -182,10 +183,10 @@ def test_run_tree(
     feedback = langchain_client.read_feedback(feedbacks[0].id)
     assert feedback.id == feedbacks[0].id
     langchain_client.delete_feedback(feedback.id)
-    with pytest.raises((RetryError, HTTPError)):
+    with pytest.raises(LangChainPlusError):
         langchain_client.read_feedback(feedback.id)
     assert len(list(langchain_client.list_feedback(run_ids=[runs[0].id]))) == 1
 
     langchain_client.delete_session(session_name=session_name)
-    with pytest.raises((RetryError, HTTPError)):
+    with pytest.raises(LangChainPlusError):
         langchain_client.read_session(session_name=session_name)
