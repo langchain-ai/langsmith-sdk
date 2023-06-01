@@ -1,4 +1,3 @@
-/* eslint-disable no-process-env */
 import { LangChainPlusClient } from "../client.js";
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
@@ -17,7 +16,7 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
   const fileName = "__some_file.int.csv";
   const existingDatasets = await client.listDatasets({});
   if (existingDatasets.map((d) => d.name).includes(fileName)) {
-    await client.deleteDataset({ datasetName: fileName });
+    await client.deleteDataset({ dataset_name: fileName });
   }
 
   const newDataset = await client.uploadCsv({
@@ -30,25 +29,25 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
   expect(newDataset).toHaveProperty("id");
   expect(newDataset.description).toBe(description);
 
-  const dataset = await client.readDataset({ datasetId: newDataset.id });
-  const datasetId = dataset.id;
-  const dataset2 = await client.readDataset({ datasetId });
+  const dataset = await client.readDataset({ dataset_id: newDataset.id });
+  const dataset_id = dataset.id;
+  const dataset2 = await client.readDataset({ dataset_id });
   expect(dataset.id).toBe(dataset2.id);
 
   const datasets = await client.listDatasets({});
   expect(datasets.length).toBeGreaterThan(0);
-  expect(datasets.map((d) => d.id)).toContain(datasetId);
+  expect(datasets.map((d) => d.id)).toContain(dataset_id);
 
   const example = await client.createExample(
     { col1: "addedExampleCol1" },
     { col2: "addedExampleCol2" },
-    { datasetId: newDataset.id }
+    { dataset_id: newDataset.id }
   );
   const exampleValue = await client.readExample(example.id);
   expect(exampleValue.inputs.col1).toBe("addedExampleCol1");
   expect(exampleValue.outputs.col2).toBe("addedExampleCol2");
 
-  const examples = await client.listExamples({ datasetId: newDataset.id });
+  const examples = await client.listExamples({ dataset_id: newDataset.id });
   expect(examples.length).toBe(2);
   expect(examples.map((e) => e.id)).toContain(example.id);
 
@@ -62,15 +61,15 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
   const deletedExample = await client.deleteExample(example.id);
   expect(deletedExample.id).toBe(example.id);
-  const examples2 = await client.listExamples({ datasetId: newDataset.id });
+  const examples2 = await client.listExamples({ dataset_id: newDataset.id });
   expect(examples2.length).toBe(1);
 
-  const deleted = await client.deleteDataset({ datasetId });
-  expect(deleted.id).toBe(datasetId);
+  const deleted = await client.deleteDataset({ dataset_id });
+  expect(deleted.id).toBe(dataset_id);
   const rawDataset = await client.createDataset(fileName, {
     description: "Test Dataset",
   });
-  const rawDeleted = await client.deleteDataset({ datasetId: rawDataset.id });
+  const rawDeleted = await client.deleteDataset({ dataset_id: rawDataset.id });
   expect(rawDeleted.id).toBe(rawDataset.id);
 });
 
@@ -82,36 +81,36 @@ test("Test LangChainPlus Client Session CRD", async () => {
 
   const newSession = `__some_session.int.`;
   if ((await client.listSessions()).map((s) => s.name).includes(newSession)) {
-    await client.deleteSession({ sessionName: newSession });
+    await client.deleteSession({ session_name: newSession });
   }
 
   let sessions = await client.listSessions();
   let sessionNames = sessions.map((session) => session.name);
   expect(sessionNames).not.toContain(newSession);
 
-  await client.createSession({ sessionName: newSession });
-  const session = await client.readSession({ sessionName: newSession });
+  await client.createSession({ session_name: newSession });
+  const session = await client.readSession({ session_name: newSession });
   expect(session.name).toBe(newSession);
 
   sessions = await client.listSessions();
   sessionNames = sessions.map((session) => session.name);
   expect(sessionNames).toContain(newSession);
 
-  const runs = await client.listRuns({ sessionName: newSession });
-  const session_id_runs = await client.listRuns({ sessionId: session.id });
+  const runs = await client.listRuns({ session_name: newSession });
+  const sessionId_runs = await client.listRuns({ session_id: session.id });
   expect(runs.length).toBe(0);
-  expect(session_id_runs.length).toBe(0);
+  expect(sessionId_runs.length).toBe(0);
 
-  await client.deleteSession({ sessionName: newSession });
+  await client.deleteSession({ session_name: newSession });
 
   sessions = await client.listSessions();
   sessionNames = sessions.map((session) => session.name);
   expect(sessionNames).not.toContain(newSession);
 
   await expect(
-    client.readSession({ sessionName: newSession })
+    client.readSession({ session_name: newSession })
   ).rejects.toThrow();
   await expect(
-    client.deleteSession({ sessionName: newSession })
+    client.deleteSession({ session_name: newSession })
   ).rejects.toThrow();
 });

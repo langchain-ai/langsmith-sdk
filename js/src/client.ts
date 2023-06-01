@@ -1,3 +1,4 @@
+import * as uuid from "uuid";
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   Dataset,
@@ -9,6 +10,7 @@ import {
   RunType,
   TracerSession,
 } from "./schemas.js";
+import { getEnvironmentVariable } from "./utils/env.js";
 
 interface LangChainPlusClientConfig {
   apiUrl: string;
@@ -17,10 +19,10 @@ interface LangChainPlusClientConfig {
 }
 
 interface ListRunsParams {
-  sessionId?: string;
-  sessionName?: string;
-  executionOrder?: number;
-  runType?: RunType;
+  session_id?: string;
+  session_name?: string;
+  execution_order?: number;
+  run_type?: RunType;
   error?: boolean;
 }
 interface UploadCSVParams {
@@ -29,6 +31,22 @@ interface UploadCSVParams {
   inputKeys: string[];
   outputKeys: string[];
   description?: string;
+}
+
+interface feedback_source {
+  type: string;
+  metadata?: KVMap;
+}
+
+interface FeedbackCreate {
+  id: string;
+  run_id: string;
+  key: string;
+  score?: number | boolean | undefined;
+  value?: number | boolean | string | object | null;
+  correction?: string | object | null;
+  comment?: string | null;
+  feedback_source?: feedback_source | KVMap | null;
 }
 
 // utility functions
@@ -56,28 +74,11 @@ export class LangChainPlusClient {
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
-  public static async create(
-    config: LangChainPlusClientConfig
-  ): Promise<LangChainPlusClient> {
-    const clientConfig = {
-      ...LangChainPlusClient.getDefaultClientConfig(),
-      ...config,
-    };
-    return new LangChainPlusClient(clientConfig);
-  }
-
   public static getDefaultClientConfig(): LangChainPlusClientConfig {
-    if (typeof process !== "undefined") {
-      return {
-        // eslint-disable-next-line no-process-env
-        apiUrl: process.env?.LANGCHAIN_ENDPOINT ?? "http://localhost:1984",
-        // eslint-disable-next-line no-process-env
-        apiKey: process.env?.LANGCHAIN_API_KEY,
-      };
-    }
     return {
-      apiUrl: "http://localhost:1984",
-      apiKey: undefined,
+      apiUrl:
+        getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
+      apiKey: getEnvironmentVariable("LANGCHAIN_API_KEY"),
     };
   }
 
@@ -116,33 +117,33 @@ export class LangChainPlusClient {
     return response.json() as T;
   }
 
-  public async readRun(runId: string): Promise<Run> {
-    return await this._get<Run>(`/runs/${runId}`);
+  public async readRun(run_id: string): Promise<Run> {
+    return await this._get<Run>(`/runs/${run_id}`);
   }
 
   public async listRuns({
-    sessionId,
-    sessionName,
-    executionOrder = 1,
-    runType,
+    session_id,
+    session_name,
+    execution_order,
+    run_type,
     error,
   }: ListRunsParams): Promise<Run[]> {
     const queryParams = new URLSearchParams();
-    let sessionId_ = sessionId;
-    if (sessionName) {
-      if (sessionId) {
+    let sessionId_ = session_id;
+    if (session_name) {
+      if (session_id) {
         throw new Error("Only one of session_id or session_name may be given");
       }
-      sessionId_ = (await this.readSession({ sessionName })).id;
+      sessionId_ = (await this.readSession({ session_name })).id;
     }
     if (sessionId_) {
       queryParams.append("session", sessionId_);
     }
-    if (executionOrder) {
-      queryParams.append("execution_order", executionOrder.toString());
+    if (execution_order) {
+      queryParams.append("execution_order", execution_order.toString());
     }
-    if (runType) {
-      queryParams.append("run_type", runType);
+    if (run_type) {
+      queryParams.append("run_type", run_type);
     }
     if (error !== undefined) {
       queryParams.append("error", error.toString());
@@ -152,16 +153,16 @@ export class LangChainPlusClient {
   }
 
   public async createSession({
-    sessionName,
-    sessionExtra,
+    session_name,
+    session_extra,
   }: {
-    sessionName: string;
-    sessionExtra?: object;
+    session_name: string;
+    session_extra?: object;
   }): Promise<TracerSession> {
     const endpoint = `${this.apiUrl}/sessions?upsert=true`;
     const body = {
-      name: sessionName,
-      extra: sessionExtra,
+      name: session_name,
+      extra: session_extra,
     };
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",
@@ -171,29 +172,31 @@ export class LangChainPlusClient {
     const result = await response.json();
     if (!response.ok) {
       throw new Error(
-        `Failed to create session ${sessionName}: ${response.status} ${response.statusText}`
+        `Failed to create session ${session_name}: ${response.status} ${response.statusText}`
       );
     }
     return result as TracerSession;
   }
 
   public async readSession({
-    sessionId,
-    sessionName,
+    session_id,
+    session_name,
   }: {
-    sessionId?: string;
-    sessionName?: string;
+    session_id?: string;
+    session_name?: string;
   }): Promise<TracerSession> {
     let path = "/sessions";
     const params = new URLSearchParams();
-    if (sessionId !== undefined && sessionName !== undefined) {
-      throw new Error("Must provide either sessionName or sessionId, not both");
-    } else if (sessionId !== undefined) {
-      path += `/${sessionId}`;
-    } else if (sessionName !== undefined) {
-      params.append("name", sessionName);
+    if (session_id !== undefined && session_name !== undefined) {
+      throw new Error(
+        "Must provide either session_name or session_id, not both"
+      );
+    } else if (session_id !== undefined) {
+      path += `/${session_id}`;
+    } else if (session_name !== undefined) {
+      params.append("name", session_name);
     } else {
-      throw new Error("Must provide sessionName or sessionId");
+      throw new Error("Must provide session_name or session_id");
     }
 
     const response = await this._get<TracerSession | TracerSession[]>(
@@ -204,7 +207,7 @@ export class LangChainPlusClient {
     if (Array.isArray(response)) {
       if (response.length === 0) {
         throw new Error(
-          `Session[id=${sessionId}, name=${sessionName}] not found`
+          `Session[id=${session_id}, name=${session_name}] not found`
         );
       }
       result = response[0] as TracerSession;
@@ -219,21 +222,23 @@ export class LangChainPlusClient {
   }
 
   public async deleteSession({
-    sessionId,
-    sessionName,
+    session_id,
+    session_name,
   }: {
-    sessionId?: string;
-    sessionName?: string;
+    session_id?: string;
+    session_name?: string;
   }): Promise<void> {
     let sessionId_: string | undefined;
-    if (sessionId === undefined && sessionName === undefined) {
-      throw new Error("Must provide sessionName or sessionId");
-    } else if (sessionId !== undefined && sessionName !== undefined) {
-      throw new Error("Must provide either sessionName or sessionId, not both");
-    } else if (sessionId === undefined) {
-      sessionId_ = (await this.readSession({ sessionName })).id;
+    if (session_id === undefined && session_name === undefined) {
+      throw new Error("Must provide session_name or session_id");
+    } else if (session_id !== undefined && session_name !== undefined) {
+      throw new Error(
+        "Must provide either session_name or session_id, not both"
+      );
+    } else if (session_id === undefined) {
+      sessionId_ = (await this.readSession({ session_name })).id;
     } else {
-      sessionId_ = sessionId;
+      sessionId_ = session_id;
     }
     const response = await this.caller.call(
       fetch,
@@ -314,30 +319,32 @@ export class LangChainPlusClient {
   }
 
   public async readDataset({
-    datasetId,
-    datasetName,
+    dataset_id,
+    dataset_name,
   }: {
-    datasetId?: string;
-    datasetName?: string;
+    dataset_id?: string;
+    dataset_name?: string;
   }): Promise<Dataset> {
     let path = "/datasets";
     // limit to 1 result
     const params = new URLSearchParams({ limit: "1" });
-    if (datasetId !== undefined && datasetName !== undefined) {
-      throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (datasetId !== undefined) {
-      path += `/${datasetId}`;
-    } else if (datasetName !== undefined) {
-      params.append("name", datasetName);
+    if (dataset_id !== undefined && dataset_name !== undefined) {
+      throw new Error(
+        "Must provide either dataset_name or dataset_id, not both"
+      );
+    } else if (dataset_id !== undefined) {
+      path += `/${dataset_id}`;
+    } else if (dataset_name !== undefined) {
+      params.append("name", dataset_name);
     } else {
-      throw new Error("Must provide datasetName or datasetId");
+      throw new Error("Must provide dataset_name or dataset_id");
     }
     const response = await this._get<Dataset | Dataset[]>(path, params);
     let result: Dataset;
     if (Array.isArray(response)) {
       if (response.length === 0) {
         throw new Error(
-          `Dataset[id=${datasetId}, name=${datasetName}] not found`
+          `Dataset[id=${dataset_id}, name=${dataset_name}] not found`
         );
       }
       result = response[0] as Dataset;
@@ -364,24 +371,26 @@ export class LangChainPlusClient {
   }
 
   public async deleteDataset({
-    datasetId,
-    datasetName,
+    dataset_id,
+    dataset_name,
   }: {
-    datasetId?: string;
-    datasetName?: string;
+    dataset_id?: string;
+    dataset_name?: string;
   }): Promise<Dataset> {
     let path = "/datasets";
-    let datasetId_ = datasetId;
-    if (datasetId !== undefined && datasetName !== undefined) {
-      throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (datasetName !== undefined) {
-      const dataset = await this.readDataset({ datasetName });
+    let datasetId_ = dataset_id;
+    if (dataset_id !== undefined && dataset_name !== undefined) {
+      throw new Error(
+        "Must provide either dataset_name or dataset_id, not both"
+      );
+    } else if (dataset_name !== undefined) {
+      const dataset = await this.readDataset({ dataset_name });
       datasetId_ = dataset.id;
     }
     if (datasetId_ !== undefined) {
       path += `/${datasetId_}`;
     } else {
-      throw new Error("Must provide datasetName or datasetId");
+      throw new Error("Must provide dataset_name or dataset_id");
     }
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
@@ -400,26 +409,28 @@ export class LangChainPlusClient {
     inputs: KVMap,
     outputs: KVMap,
     {
-      datasetId,
-      datasetName,
-      createdAt,
+      dataset_id,
+      dataset_name,
+      created_at,
     }: {
-      datasetId?: string;
-      datasetName?: string;
-      createdAt?: Date;
+      dataset_id?: string;
+      dataset_name?: string;
+      created_at?: Date;
     }
   ): Promise<Example> {
-    let datasetId_ = datasetId;
-    if (datasetId_ === undefined && datasetName === undefined) {
-      throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ !== undefined && datasetName !== undefined) {
-      throw new Error("Must provide either datasetName or datasetId, not both");
+    let datasetId_ = dataset_id;
+    if (datasetId_ === undefined && dataset_name === undefined) {
+      throw new Error("Must provide either dataset_name or dataset_id");
+    } else if (datasetId_ !== undefined && dataset_name !== undefined) {
+      throw new Error(
+        "Must provide either dataset_name or dataset_id, not both"
+      );
     } else if (datasetId_ === undefined) {
-      const dataset = await this.readDataset({ datasetName });
+      const dataset = await this.readDataset({ dataset_name });
       datasetId_ = dataset.id;
     }
 
-    const createdAt_ = createdAt || new Date();
+    const createdAt_ = created_at || new Date();
     const data: ExampleCreate = {
       dataset_id: datasetId_,
       inputs,
@@ -443,28 +454,30 @@ export class LangChainPlusClient {
     return result as Example;
   }
 
-  public async readExample(exampleId: string): Promise<Example> {
-    const path = `/examples/${exampleId}`;
+  public async readExample(example_id: string): Promise<Example> {
+    const path = `/examples/${example_id}`;
     return await this._get<Example>(path);
   }
 
   public async listExamples({
-    datasetId,
-    datasetName,
+    dataset_id,
+    dataset_name,
   }: {
-    datasetId?: string;
-    datasetName?: string;
+    dataset_id?: string;
+    dataset_name?: string;
   } = {}): Promise<Example[]> {
     let datasetId_;
-    if (datasetId !== undefined && datasetName !== undefined) {
-      throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (datasetId !== undefined) {
-      datasetId_ = datasetId;
-    } else if (datasetName !== undefined) {
-      const dataset = await this.readDataset({ datasetName });
+    if (dataset_id !== undefined && dataset_name !== undefined) {
+      throw new Error(
+        "Must provide either dataset_name or dataset_id, not both"
+      );
+    } else if (dataset_id !== undefined) {
+      datasetId_ = dataset_id;
+    } else if (dataset_name !== undefined) {
+      const dataset = await this.readDataset({ dataset_name });
       datasetId_ = dataset.id;
     } else {
-      throw new Error("Must provide a datasetName or datasetId");
+      throw new Error("Must provide a dataset_name or dataset_id");
     }
     const response = await this._get<Example[]>(
       "/examples",
@@ -478,8 +491,8 @@ export class LangChainPlusClient {
     return response as Example[];
   }
 
-  public async deleteExample(exampleId: string): Promise<Example> {
-    const path = `/examples/${exampleId}`;
+  public async deleteExample(example_id: string): Promise<Example> {
+    const path = `/examples/${example_id}`;
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
       headers: this.headers,
@@ -494,25 +507,25 @@ export class LangChainPlusClient {
   }
 
   public async updateExample(
-    exampleId: string,
+    example_id: string,
     {
       inputs,
       outputs,
-      datasetId,
+      dataset_id,
     }: {
       inputs?: object;
       outputs?: object;
-      datasetId?: string;
+      dataset_id?: string;
     }
   ): Promise<object> {
     const example: any = {
       inputs,
       outputs,
-      dataset_id: datasetId,
+      dataset_id: dataset_id,
     };
     const response = await this.caller.call(
       fetch,
-      `${this.apiUrl}/examples/${exampleId}`,
+      `${this.apiUrl}/examples/${example_id}`,
       {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
@@ -521,7 +534,7 @@ export class LangChainPlusClient {
     );
     if (!response.ok) {
       throw new Error(
-        `Failed to update example ${exampleId}: ${response.status} ${response.statusText}`
+        `Failed to update example ${example_id}: ${response.status} ${response.statusText}`
       );
     }
     const result = await response.json();
@@ -529,7 +542,7 @@ export class LangChainPlusClient {
   }
 
   public async createFeedback(
-    runId: string,
+    run_id: string,
     key: string,
     {
       score,
@@ -547,53 +560,69 @@ export class LangChainPlusClient {
       feedbackSourceType?: "API" | "MODEL";
     }
   ): Promise<Feedback> {
-    let feedbackSource: any;
+    let feedback_source: feedback_source;
     if (feedbackSourceType === "API") {
-      feedbackSource = { metadata: sourceInfo };
+      feedback_source = { type: "api", metadata: sourceInfo ?? {} };
     } else if (feedbackSourceType === "MODEL") {
-      feedbackSource = { metadata: sourceInfo };
+      feedback_source = { type: "model", metadata: sourceInfo ?? {} };
     } else {
       throw new Error(`Unknown feedback source type ${feedbackSourceType}`);
     }
-    const feedback: any = {
-      run_id: runId,
+    const feedback: FeedbackCreate = {
+      id: uuid.v4(),
+      run_id: run_id,
       key,
       score,
       value,
       correction,
       comment,
-      feedback_source: feedbackSource,
+      feedback_source: feedback_source,
     };
     const response = await this.caller.call(fetch, `${this.apiUrl}/feedback`, {
       method: "POST",
-      headers: this.headers,
+      headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(feedback),
     });
     if (!response.ok) {
       throw new Error(
-        `Failed to create feedback for run ${runId}: ${response.status} ${response.statusText}`
+        `Failed to create feedback for run ${run_id}: ${response.status} ${response.statusText}`
       );
     }
     const result = await response.json();
     return result as Feedback;
   }
 
-  public async readFeedback(feedbackId: string): Promise<Feedback> {
-    const path = `/feedback/${feedbackId}`;
+  public async readFeedback(feedback_id: string): Promise<Feedback> {
+    const path = `/feedback/${feedback_id}`;
     const response = await this._get<Feedback>(path);
     return response;
   }
 
-  public async listFeedback({
-    runIds,
-  }: {
-    runIds?: string[];
-  } = {}): Promise<Feedback[]> {
-    const params: any = {};
-    if (runIds) {
-      params.run = runIds;
+  public async deleteFeedback(feedback_id: string): Promise<Feedback> {
+    const path = `/feedback/${feedback_id}`;
+    const response = await this.caller.call(fetch, this.apiUrl + path, {
+      method: "DELETE",
+      headers: this.headers,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to delete ${path}: ${response.status} ${response.statusText}`
+      );
     }
-    const response = await this._get<Feedback[]>("/feedback", params);
+    const result = await response.json();
+    return result as Feedback;
+  }
+
+  public async listFeedback({
+    run_ids,
+  }: {
+    run_ids?: string[];
+  } = {}): Promise<Feedback[]> {
+    const queryParams = new URLSearchParams();
+    if (run_ids) {
+      queryParams.append("run", run_ids.join(","));
+    }
+    const response = await this._get<Feedback[]>("/feedback", queryParams);
     return response;
   }
 }
