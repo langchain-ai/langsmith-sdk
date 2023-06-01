@@ -169,7 +169,7 @@ class ListRunsQueryParams(BaseModel):
 
 class FeedbackSourceBase(BaseModel):
     type: str
-    metadata: Dict[str, Any] | None = None
+    metadata: Optional[Dict[str, Any]] = None
 
     class Config:
         frozen = True
