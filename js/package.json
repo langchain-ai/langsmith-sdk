@@ -1,9 +1,9 @@
 {
   "name": "langchainplus-sdk",
-  "version": "0.0.1-rc.1",
+  "version": "0.0.1-rc.2",
   "description": "Client library to connect to the LangChainPlus LLM Tracing and Evaluation Platform.",
   "files": [
-    "/dist"
+    "dist"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -16,7 +16,8 @@
     "lint": "eslint 'src/**/*.{ts,tsx}' --quiet --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
     "format:check": "prettier --check 'src/**/*.{ts,tsx}'",
-    "precommit": "lint-staged"
+    "precommit": "lint-staged",
+    "prepublish": "yarn run build"
   },
   "repository": {
     "type": "git",
