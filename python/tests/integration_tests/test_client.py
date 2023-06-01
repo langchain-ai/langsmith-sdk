@@ -117,8 +117,8 @@ def test_datasets(langchain_client: LangChainPlusClient) -> None:
 def test_run_tree(
     monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
 ) -> None:
-    """ "Test persisting runs and adding feedback."""
-    # monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    """Test persisting runs and adding feedback."""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     session_name = f"__test_run_tree + {uuid4()}"
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:
         langchain_client.delete_session(session_name=session_name)

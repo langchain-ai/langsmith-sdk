@@ -7,10 +7,15 @@ on:
     branches:
       - master
     paths:
-      - "pyproject.toml"
+      - "python/pyproject.toml"
+  workflow_dispatch:
 
 env:
   POETRY_VERSION: "1.4.2"
+
+defaults:
+  run:
+    working-directory: python
 
 jobs:
   if_release:
@@ -29,10 +34,8 @@ jobs:
           cache: "poetry"
       - name: Build project for distribution
         run: poetry build
-        working-directory: python
       - name: Check Version
         id: check-version
-        working-directory: python
         run: |
           echo version=$(poetry version --short) >> $GITHUB_OUTPUT
       - name: Create Release
@@ -44,10 +47,8 @@ jobs:
           generateReleaseNotes: true
           tag: v${{ steps.check-version.outputs.version }}
           commit: master
-        working-directory: python
       - name: Publish to PyPI
         env:
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
-        working-directory: python
         run: |
           poetry publish
