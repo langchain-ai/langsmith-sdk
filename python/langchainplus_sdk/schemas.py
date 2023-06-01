@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, root_validator
+from typing_extensions import Literal
 
 
 class ExampleBase(BaseModel):
@@ -167,7 +168,7 @@ class ListRunsQueryParams(BaseModel):
 
 
 class FeedbackSourceBase(BaseModel):
-    type: ClassVar[str]
+    type: str
     metadata: Dict[str, Any] | None = None
 
     class Config:
@@ -177,13 +178,13 @@ class FeedbackSourceBase(BaseModel):
 class APIFeedbackSource(FeedbackSourceBase):
     """API feedback source."""
 
-    type: ClassVar[str] = "api"
+    type: Literal["api"] = "api"
 
 
 class ModelFeedbackSource(FeedbackSourceBase):
     """Model feedback source."""
 
-    type: ClassVar[str] = "model"
+    type: Literal["model"] = "model"
 
 
 class FeedbackSourceType(Enum):
