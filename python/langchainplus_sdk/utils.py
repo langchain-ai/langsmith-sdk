@@ -1,7 +1,46 @@
 """Generic utility functions."""
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Mapping, Tuple
 
+import requests
 from requests import HTTPError, Response
+from tenacity import Retrying
+
+
+class LangChainPlusAPIError(Exception):
+    """An error occurred while communicating with the LangChain API."""
+
+
+class LangChainPlusUserError(Exception):
+    """An error occurred while communicating with the LangChain API."""
+
+
+class LangChainPlusError(Exception):
+    """An error occurred while communicating with the LangChain API."""
+
+
+def request_with_retries(
+    request_method: str, url: str, request_kwargs: Mapping, retry_config: Mapping
+) -> Response:
+    for attempt in Retrying(**retry_config):
+        with attempt:
+            try:
+                response = requests.request(request_method, url, **request_kwargs)
+                raise_for_status_with_text(response)
+                return response
+            except HTTPError as e:
+                if response is not None and response.status_code == 500:
+                    raise LangChainPlusAPIError(
+                        f"Failed to {request_method} {url} from LangChain+ API. {e}"
+                    )
+                else:
+                    raise LangChainPlusUserError(
+                        f"Failed to {request_method} {url} from LangChain+ API. {e}"
+                    )
+            except Exception as e:
+                raise LangChainPlusError(
+                    f"Failed to {request_method} {url} from LangChain+ API. {e}"
+                ) from e
+    raise LangChainPlusError(f"Failed to {request_method}  {url} from LangChain+ API.")
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
