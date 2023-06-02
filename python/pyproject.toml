@@ -9,9 +9,9 @@ packages = [{include = "langchainplus_sdk"}]
 
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4.0"
-pydantic = "^1.10.8"
-requests = "^2.31.0"
-tenacity = "^8.2.2"
+pydantic = "^1"
+requests = "^2"
+tenacity = "^8.1.0"
 
 
 [tool.poetry.group.dev.dependencies]

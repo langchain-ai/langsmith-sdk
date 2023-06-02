@@ -17,7 +17,11 @@ from tenacity import (
 )
 
 from langchainplus_sdk.schemas import RunBase, RunTypeEnum, RunUpdate
-from langchainplus_sdk.utils import LangChainPlusAPIError, request_with_retries
+from langchainplus_sdk.utils import (
+    LangChainPlusAPIError,
+    get_runtime_environment,
+    request_with_retries,
+)
 
 logger = logging.getLogger(__name__)
 _THREAD_POOL_EXECUTOR: Optional[ThreadPoolExecutor] = None
@@ -93,6 +97,9 @@ class RunTree(RunBase):
             values["session_name"] = os.environ.get("LANGCHAIN_SESSION", "default")
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
+        extra = values.get("extra", {})
+        extra["runtime"] = get_runtime_environment()
+        values["extra"] = extra
         return values
 
     @property
