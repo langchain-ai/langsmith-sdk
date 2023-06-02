@@ -209,6 +209,58 @@ for (const run of runs) {
 }
 ```
 
+# Evaluating Runs
+
+You can run evaluations directly using the LangChainPlus client.
+
+```ts
+import { StringEvaluator } from "../evaluation/string_evaluator.js";
+
+function jaccardChars(output: string, answer: string): number {
+  const predictionChars = new Set(output.trim().toLowerCase());
+  const answerChars = new Set(answer.trim().toLowerCase());
+  const intersection = [...predictionChars].filter((x) => answerChars.has(x));
+  const union = new Set([...predictionChars, ...answerChars]);
+  return intersection.length / union.size;
+}
+
+async function grader(config: {
+  input: string;
+  prediction: string;
+  answer?: string;
+}): Promise<{ score: number; value: string }> {
+  let value: string;
+  let score: number;
+  if (config.answer === null || config.answer === undefined) {
+    value = "AMBIGUOUS";
+    score = 0.5;
+  } else {
+    score = jaccardChars(config.prediction, config.answer);
+    value = score > 0.9 ? "CORRECT" : "INCORRECT";
+  }
+  return { score: score, value: value };
+}
+
+const evaluator = new StringEvaluator({
+  evaluationName: "Jaccard",
+  gradingFunction: grader,
+});
+
+const runs = await client.listRuns({
+  sessionName: "my_session",
+  executionOrder: 1,
+  error: false,
+});
+
+for (const run of runs) {
+  client.evaluateRun(run, evaluator);
+}
+```
+
 ## Additional Documentation
 
 To learn more about the LangChainPlus platform, check out the [docs](https://docs.langchain.plus/docs/).
+
+```
+
+```
