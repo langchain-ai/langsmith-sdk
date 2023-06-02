@@ -32,7 +32,7 @@ Note: Save the API Key in a secure location. It will not be shown again.
 
 You can log traces natively in your LangChain application or using a LangChainPlus RunTree.
 
-#### Logging Traces with LangChain
+### Logging Traces with LangChain
 
 LangChainPlus seamlessly integrates with the Python LangChain library to record traces from your LLM applications.
 
@@ -64,7 +64,7 @@ response = chat.predict(
 print(response)
 ```
 
-## Logging Traces Outside LangChain
+### Logging Traces Outside LangChain
 
 _Note: this API is experimental and may change in the future_
 
@@ -179,6 +179,45 @@ for run in runs:
         outputs=run.outputs,
         dataset_id=dataset.id,
     )
+```
+
+## Evaluating Runs
+
+You can run evaluations directly using the LangChainPlus client.
+
+```python
+from typing import Optional
+from langchainplus_sdk.evaluation import StringEvaluator
+
+
+def jaccard_chars(output: str, answer: str) -> float:
+    """Naive Jaccard similarity between two strings."""
+    prediction_chars = set(output.strip().lower())
+    answer_chars = set(answer.strip().lower())
+    intersection = prediction_chars.intersection(answer_chars)
+    union = prediction_chars.union(answer_chars)
+    return len(intersection) / len(union)
+
+
+def grader(run_input: str, run_output: str, answer: Optional[str]) -> dict:
+    """Compute the score and/or label for this run."""
+    if answer is None:
+        value = "AMBIGUOUS"
+        score = 0.5
+    else:
+        score = jaccard_chars(run_output, answer)
+        value = "CORRECT" if score > 0.9 else "INCORRECT"
+    return dict(score=score, value=value)
+
+evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
+
+runs = client.list_runs(
+    session_name="my_session",
+    execution_order=1,
+    error=False,
+)
+for run in runs:
+    client.evaluate_run(run, evaluator)
 ```
 
 ## Additional Documentation

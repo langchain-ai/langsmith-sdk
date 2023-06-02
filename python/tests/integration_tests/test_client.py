@@ -3,12 +3,14 @@ import io
 import os
 import random
 import string
-from uuid import uuid4
+from typing import List, Optional
 
 import pytest
 
 from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.run_trees import RunTree, flush_all_runs
+from langchainplus_sdk.evaluation import StringEvaluator
+from langchainplus_sdk.run_trees import RunTree, await_all_runs
+from langchainplus_sdk.schemas import Feedback
 from langchainplus_sdk.utils import LangChainPlusError
 
 
@@ -23,7 +25,7 @@ def test_sessions(
 ) -> None:
     """Test sessions."""
     session_names = set([session.name for session in langchain_client.list_sessions()])
-    new_session = f"Session {uuid4()}"
+    new_session = "__Test Session"
     assert new_session not in session_names
 
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
@@ -37,12 +39,12 @@ def test_sessions(
     assert len(runs) == len(session_id_runs) == 0  # TODO: Add create_run method
     langchain_client.delete_session(session_name=new_session)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(LangChainPlusError):
         langchain_client.read_session(session_name=new_session)
     assert new_session not in set(
         [sess.name for sess in langchain_client.list_sessions()]
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(LangChainPlusError):
         langchain_client.delete_session(session_name=new_session)
 
 
@@ -119,7 +121,7 @@ def test_run_tree(
 ) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    session_name = f"__test_run_tree + {uuid4()}"
+    session_name = "__test_run_tree"
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:
         langchain_client.delete_session(session_name=session_name)
     parent_run = RunTree(
@@ -148,7 +150,7 @@ def test_run_tree(
     child_llm_run.end(outputs={"prompts": ["hello world"]})
     parent_run.end(outputs={"output": ["Hi"]})
     parent_run.post(exclude_child_runs=False)
-    flush_all_runs()
+    await_all_runs()
 
     runs = list(langchain_client.list_runs(session_name=session_name))
     assert len(runs) == 5
@@ -190,3 +192,76 @@ def test_run_tree(
     langchain_client.delete_session(session_name=session_name)
     with pytest.raises(LangChainPlusError):
         langchain_client.read_session(session_name=session_name)
+
+
+def test_evaluate_run(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
+) -> None:
+    """Test persisting runs and adding feedback."""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    session_name = "__test_evaluate_run"
+    dataset_name = "__test_evaluate_run_dataset"
+    if session_name in [sess.name for sess in langchain_client.list_sessions()]:
+        langchain_client.delete_session(session_name=session_name)
+    if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    dataset = langchain_client.create_dataset(dataset_name)
+    predicted = "abcd"
+    ground_truth = "bcde"
+    example = langchain_client.create_example(
+        inputs={"input": "hello world"},
+        outputs={"output": ground_truth},
+        dataset_id=dataset.id,
+    )
+    parent_run = RunTree(
+        name="parent_run",
+        run_type="chain",
+        inputs={"input": "hello world"},
+        session_name=session_name,
+        serialized={},
+        api_url=os.getenv("LANGCHAIN_ENDPOINT"),
+        reference_example_id=example.id,
+    )
+    parent_run.post()
+    parent_run.end(outputs={"output": predicted})
+    parent_run.patch()
+    await_all_runs()
+    run = langchain_client.read_run(str(parent_run.id))
+    assert run.outputs == {"output": predicted}
+
+    def jaccard_chars(output: str, answer: str) -> float:
+        """Naive Jaccard similarity between two strings."""
+        prediction_chars = set(output.strip().lower())
+        answer_chars = set(answer.strip().lower())
+        intersection = prediction_chars.intersection(answer_chars)
+        union = prediction_chars.union(answer_chars)
+        return len(intersection) / len(union)
+
+    def grader(run_input: str, run_output: str, answer: Optional[str]) -> dict:
+        """Compute the score and/or label for this run."""
+        if answer is None:
+            value = "AMBIGUOUS"
+            score = 0.5
+        else:
+            score = jaccard_chars(run_output, answer)
+            value = "CORRECT" if score > 0.9 else "INCORRECT"
+        return dict(score=score, value=value)
+
+    evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
+
+    runs = langchain_client.list_runs(
+        session_name=session_name,
+        execution_order=1,
+        error=False,
+    )
+    all_feedback: List[Feedback] = []
+    for run in runs:
+        all_feedback.append(langchain_client.evaluate_run(run, evaluator))
+    assert len(all_feedback) == 1
+    fetched_feedback = list(langchain_client.list_feedback(run_ids=[run.id]))
+    assert fetched_feedback[0].id == all_feedback[0].id
+    assert fetched_feedback[0].score == jaccard_chars(predicted, ground_truth)
+    assert fetched_feedback[0].value == "INCORRECT"
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+    langchain_client.delete_session(session_name=session_name)

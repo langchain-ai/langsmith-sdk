@@ -1,6 +1,6 @@
 {
   "name": "langchainplus-sdk",
-  "version": "0.0.1-rc.5",
+  "version": "0.0.2",
   "description": "Client library to connect to the LangChainPlus LLM Tracing and Evaluation Platform.",
   "files": [
     "dist/",
@@ -10,6 +10,15 @@
     "run_trees.cjs",
     "run_trees.js",
     "run_trees.d.ts",
+    "evaluation.cjs",
+    "evaluation.js",
+    "evaluation.d.ts",
+    "evaluation/evaluator.cjs",
+    "evaluation/evaluator.js",
+    "evaluation/evaluator.d.ts",
+    "evaluation/string_evaluator.cjs",
+    "evaluation/string_evaluator.js",
+    "evaluation/string_evaluator.d.ts",
     "index.cjs",
     "index.js",
     "index.d.ts"
@@ -95,6 +104,21 @@
       "types": "./run_trees.d.ts",
       "import": "./run_trees.js",
       "require": "./run_trees.cjs"
+    },
+    "./evaluation": {
+      "types": "./evaluation.d.ts",
+      "import": "./evaluation.js",
+      "require": "./evaluation.cjs"
+    },
+    "./evaluation/evaluator": {
+      "types": "./evaluation/evaluator.d.ts",
+      "import": "./evaluation/evaluator.js",
+      "require": "./evaluation/evaluator.cjs"
+    },
+    "./evaluation/string_evaluator": {
+      "types": "./evaluation/string_evaluator.d.ts",
+      "import": "./evaluation/string_evaluator.js",
+      "require": "./evaluation/string_evaluator.cjs"
     },
     "./package.json": "./package.json"
   }

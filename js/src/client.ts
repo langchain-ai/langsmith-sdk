@@ -9,9 +9,12 @@ import {
   KVMap,
   Run,
   RunType,
+  ScoreType,
   TracerSession,
+  ValueType,
 } from "./schemas.js";
 import { getEnvironmentVariable } from "./utils/env.js";
+import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface LangChainPlusClientConfig {
   apiUrl: string;
@@ -43,8 +46,8 @@ interface FeedbackCreate {
   id: string;
   run_id: string;
   key: string;
-  score?: number | boolean | undefined;
-  value?: number | boolean | string | object | null;
+  score?: ScoreType;
+  value?: ValueType;
   correction?: string | object | null;
   comment?: string | null;
   feedback_source?: feedback_source | KVMap | null;
@@ -290,7 +293,7 @@ export class LangChainPlusClient {
 
   public async createDataset(
     name: string,
-    { description }: { description?: string }
+    { description }: { description?: string } = {}
   ): Promise<Dataset> {
     const response = await this.caller.call(fetch, `${this.apiUrl}/datasets`, {
       method: "POST",
@@ -517,6 +520,35 @@ export class LangChainPlusClient {
     return result;
   }
 
+  public async evaluateRun(
+    run: Run | string,
+    evaluator: RunEvaluator
+  ): Promise<Feedback> {
+    let run_: Run;
+    if (typeof run === "string") {
+      run_ = await this.readRun(run);
+    } else if (typeof run === "object" && "id" in run) {
+      run_ = run as Run;
+    } else {
+      throw new Error(`Invalid run type: ${typeof run}`);
+    }
+    let referenceExample: Example | undefined = undefined;
+    if (
+      run_.reference_example_id !== null &&
+      run_.reference_example_id !== undefined
+    ) {
+      referenceExample = await this.readExample(run_.reference_example_id);
+    }
+    const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
+    return await this.createFeedback(run_.id, feedbackResult.key, {
+      score: feedbackResult.score,
+      value: feedbackResult.value,
+      comment: feedbackResult.comment,
+      correction: feedbackResult.correction,
+      feedbackSourceType: "MODEL",
+    });
+  }
+
   public async createFeedback(
     runId: string,
     key: string,
@@ -528,8 +560,8 @@ export class LangChainPlusClient {
       sourceInfo,
       feedbackSourceType = "API",
     }: {
-      score?: number | boolean;
-      value?: number | boolean | string | object;
+      score?: ScoreType;
+      value?: ValueType;
       correction?: string | object;
       comment?: string;
       sourceInfo?: object;

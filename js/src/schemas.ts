@@ -8,6 +8,8 @@ export interface TracerSession {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type KVMap = Record<string, any>;
 export type RunType = "llm" | "chain" | "tool";
+export type ScoreType = number | boolean | null;
+export type ValueType = number | boolean | string | object | null;
 
 export interface BaseExample {
   dataset_id: string;
@@ -101,8 +103,8 @@ export interface FeedbackBase {
   modified_at: string;
   run_id: string;
   key: string;
-  score: number | boolean | null;
-  value: number | boolean | string | object | null;
+  score: ScoreType;
+  value: ValueType;
   comment: string | null;
   correction: string | object | null;
   feedback_source: APIFeedbackSource | ModelFeedbackSource | KVMap | null;
