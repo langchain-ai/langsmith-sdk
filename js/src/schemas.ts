@@ -36,12 +36,24 @@ export interface Run extends BaseRun {
   parent_run_id?: string; // uuid
 }
 
+export interface RunCreate extends BaseRun {
+  child_runs: this[];
+  session_name?: string;
+  parent_run_id?: string;
+}
+
 export interface RunResult extends BaseRun {
   name: string;
   session_id: string;
   parent_run_id?: string;
 }
-
+export interface RunUpdate {
+  end_time?: number;
+  error?: string;
+  outputs?: KVMap;
+  parent_run_id?: string;
+  reference_example_id?: string;
+}
 export interface ExampleCreate extends BaseExample {
   id?: string;
   created_at: string;
@@ -54,6 +66,11 @@ export interface Example extends BaseExample {
   runs: RunResult[];
 }
 
+export interface ExampleUpdate {
+  dataset_id?: string;
+  inputs?: KVMap;
+  outputs?: KVMap;
+}
 export interface BaseDataset {
   name: string;
   description: string;

@@ -1,3 +1,4 @@
+.vscode
 node_modules/
 dist/
 dist-cjs/
@@ -28,3 +29,15 @@ Chinook_Sqlite.sql
 *.swo
 
 .node-version
+
+## GENERATED create-entrypoints.js
+/client.cjs
+/client.js
+/client.d.ts
+/run_trees.cjs
+/run_trees.js
+/run_trees.d.ts
+/index.cjs
+/index.js
+/index.d.ts
+## END GENERATED create-entrypoints.js

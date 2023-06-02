@@ -1,10 +1,9 @@
-/* eslint-disable no-process-env */
 import { LangChainPlusClient } from "../client.js";
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
 test("Test LangChainPlus Client Dataset CRD", async () => {
-  const client = await new LangChainPlusClient({
+  const client = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
 
@@ -98,9 +97,9 @@ test("Test LangChainPlus Client Session CRD", async () => {
   expect(sessionNames).toContain(newSession);
 
   const runs = await client.listRuns({ sessionName: newSession });
-  const session_id_runs = await client.listRuns({ sessionId: session.id });
+  const sessionId_runs = await client.listRuns({ sessionId: session.id });
   expect(runs.length).toBe(0);
-  expect(session_id_runs.length).toBe(0);
+  expect(sessionId_runs.length).toBe(0);
 
   await client.deleteSession({ sessionName: newSession });
 
