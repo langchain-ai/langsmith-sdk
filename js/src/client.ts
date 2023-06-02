@@ -1,14 +1,17 @@
+import * as uuid from "uuid";
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   Dataset,
   Example,
   ExampleCreate,
+  ExampleUpdate,
   Feedback,
   KVMap,
   Run,
   RunType,
   TracerSession,
 } from "./schemas.js";
+import { getEnvironmentVariable } from "./utils/env.js";
 
 interface LangChainPlusClientConfig {
   apiUrl: string;
@@ -29,6 +32,22 @@ interface UploadCSVParams {
   inputKeys: string[];
   outputKeys: string[];
   description?: string;
+}
+
+interface feedback_source {
+  type: string;
+  metadata?: KVMap;
+}
+
+interface FeedbackCreate {
+  id: string;
+  run_id: string;
+  key: string;
+  score?: number | boolean | undefined;
+  value?: number | boolean | string | object | null;
+  correction?: string | object | null;
+  comment?: string | null;
+  feedback_source?: feedback_source | KVMap | null;
 }
 
 // utility functions
@@ -56,28 +75,11 @@ export class LangChainPlusClient {
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
-  public static async create(
-    config: LangChainPlusClientConfig
-  ): Promise<LangChainPlusClient> {
-    const clientConfig = {
-      ...LangChainPlusClient.getDefaultClientConfig(),
-      ...config,
-    };
-    return new LangChainPlusClient(clientConfig);
-  }
-
   public static getDefaultClientConfig(): LangChainPlusClientConfig {
-    if (typeof process !== "undefined") {
-      return {
-        // eslint-disable-next-line no-process-env
-        apiUrl: process.env?.LANGCHAIN_ENDPOINT ?? "http://localhost:1984",
-        // eslint-disable-next-line no-process-env
-        apiKey: process.env?.LANGCHAIN_API_KEY,
-      };
-    }
     return {
-      apiUrl: "http://localhost:1984",
-      apiKey: undefined,
+      apiUrl:
+        getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
+      apiKey: getEnvironmentVariable("LANGCHAIN_API_KEY"),
     };
   }
 
@@ -116,14 +118,14 @@ export class LangChainPlusClient {
     return response.json() as T;
   }
 
-  public async readRun(runId: string): Promise<Run> {
-    return await this._get<Run>(`/runs/${runId}`);
+  public async readRun(run_id: string): Promise<Run> {
+    return await this._get<Run>(`/runs/${run_id}`);
   }
 
   public async listRuns({
     sessionId,
     sessionName,
-    executionOrder = 1,
+    executionOrder,
     runType,
     error,
   }: ListRunsParams): Promise<Run[]> {
@@ -131,7 +133,7 @@ export class LangChainPlusClient {
     let sessionId_ = sessionId;
     if (sessionName) {
       if (sessionId) {
-        throw new Error("Only one of session_id or session_name may be given");
+        throw new Error("Only one of sessionId or sessionName may be given");
       }
       sessionId_ = (await this.readSession({ sessionName })).id;
     }
@@ -153,15 +155,15 @@ export class LangChainPlusClient {
 
   public async createSession({
     sessionName,
-    sessionExtra,
+    session_extra,
   }: {
     sessionName: string;
-    sessionExtra?: object;
+    session_extra?: object;
   }): Promise<TracerSession> {
     const endpoint = `${this.apiUrl}/sessions?upsert=true`;
     const body = {
       name: sessionName,
-      extra: sessionExtra,
+      extra: session_extra,
     };
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",
@@ -495,28 +497,15 @@ export class LangChainPlusClient {
 
   public async updateExample(
     exampleId: string,
-    {
-      inputs,
-      outputs,
-      datasetId,
-    }: {
-      inputs?: object;
-      outputs?: object;
-      datasetId?: string;
-    }
+    update: ExampleUpdate
   ): Promise<object> {
-    const example: any = {
-      inputs,
-      outputs,
-      dataset_id: datasetId,
-    };
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/examples/${exampleId}`,
       {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(example),
+        body: JSON.stringify(update),
       }
     );
     if (!response.ok) {
@@ -547,26 +536,27 @@ export class LangChainPlusClient {
       feedbackSourceType?: "API" | "MODEL";
     }
   ): Promise<Feedback> {
-    let feedbackSource: any;
+    let feedback_source: feedback_source;
     if (feedbackSourceType === "API") {
-      feedbackSource = { metadata: sourceInfo };
+      feedback_source = { type: "api", metadata: sourceInfo ?? {} };
     } else if (feedbackSourceType === "MODEL") {
-      feedbackSource = { metadata: sourceInfo };
+      feedback_source = { type: "model", metadata: sourceInfo ?? {} };
     } else {
       throw new Error(`Unknown feedback source type ${feedbackSourceType}`);
     }
-    const feedback: any = {
+    const feedback: FeedbackCreate = {
+      id: uuid.v4(),
       run_id: runId,
       key,
       score,
       value,
       correction,
       comment,
-      feedback_source: feedbackSource,
+      feedback_source: feedback_source,
     };
     const response = await this.caller.call(fetch, `${this.apiUrl}/feedback`, {
       method: "POST",
-      headers: this.headers,
+      headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(feedback),
     });
     if (!response.ok) {
@@ -584,16 +574,31 @@ export class LangChainPlusClient {
     return response;
   }
 
+  public async deleteFeedback(feedbackId: string): Promise<Feedback> {
+    const path = `/feedback/${feedbackId}`;
+    const response = await this.caller.call(fetch, this.apiUrl + path, {
+      method: "DELETE",
+      headers: this.headers,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to delete ${path}: ${response.status} ${response.statusText}`
+      );
+    }
+    const result = await response.json();
+    return result as Feedback;
+  }
+
   public async listFeedback({
     runIds,
   }: {
     runIds?: string[];
   } = {}): Promise<Feedback[]> {
-    const params: any = {};
+    const queryParams = new URLSearchParams();
     if (runIds) {
-      params.run = runIds;
+      queryParams.append("run", runIds.join(","));
     }
-    const response = await this._get<Feedback[]>("/feedback", params);
+    const response = await this._get<Feedback[]>("/feedback", queryParams);
     return response;
   }
 }
