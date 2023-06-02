@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, root_validator
@@ -215,9 +215,7 @@ class FeedbackBase(BaseModel):
     """Comment or explanation for the feedback."""
     correction: Union[str, dict, None] = None
     """Correction for the run."""
-    feedback_source: Optional[
-        Union[APIFeedbackSource, ModelFeedbackSource, Mapping[str, Any]]
-    ] = None
+    feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback."""
 
     class Config:
@@ -229,7 +227,7 @@ class FeedbackCreate(FeedbackBase):
 
     id: UUID = Field(default_factory=uuid4)
 
-    feedback_source: APIFeedbackSource
+    feedback_source: FeedbackSourceBase
     """The source of the feedback."""
 
 
@@ -237,7 +235,7 @@ class Feedback(FeedbackBase):
     """Schema for getting feedback."""
 
     id: UUID
-    feedback_source: Optional[Dict] = None
+    feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback. In this case"""
 
 
@@ -259,7 +257,6 @@ class TracerSession(BaseModel):
     """TracerSession schema for the V2 API."""
 
     id: UUID
-
     start_time: datetime = Field(default_factory=datetime.utcnow)
     name: Optional[str] = None
     extra: Optional[Dict[str, Any]] = None

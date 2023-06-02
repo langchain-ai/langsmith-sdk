@@ -1,4 +1,6 @@
 """Generic utility functions."""
+import platform
+from functools import lru_cache
 from typing import Any, Callable, Mapping, Tuple
 
 import requests
@@ -74,3 +76,17 @@ def raise_for_status_with_text(response: Response) -> None:
         response.raise_for_status()
     except HTTPError as e:
         raise ValueError(response.text) from e
+
+
+@lru_cache(maxsize=1)
+def get_runtime_environment() -> dict:
+    """Get information about the environment."""
+    # Lazy import to avoid circular imports
+    from langchainplus_sdk import __version__
+
+    return {
+        "library_version": __version__,
+        "platform": platform.platform(),
+        "runtime": "python",
+        "runtime_version": platform.python_version(),
+    }
