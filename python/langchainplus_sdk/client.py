@@ -105,7 +105,7 @@ class LangChainPlusClient(BaseSettings):
         """Return an HTML representation of the instance with a link to the URL."""
         if _is_localhost(self.api_url):
             link = "http://localhost"
-        elif "dev" in self.api_url.split("."):
+        elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
             link = "https://dev.langchain.plus"
         else:
             link = "https://www.langchain.plus"
