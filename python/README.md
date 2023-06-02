@@ -32,7 +32,7 @@ Note: Save the API Key in a secure location. It will not be shown again.
 
 You can log traces natively in your LangChain application or using a LangChainPlus RunTree.
 
-#### Logging Traces with LangChain
+### Logging Traces with LangChain
 
 LangChainPlus seamlessly integrates with the Python LangChain library to record traces from your LLM applications.
 
@@ -64,7 +64,7 @@ response = chat.predict(
 print(response)
 ```
 
-## Logging Traces Outside LangChain
+### Logging Traces Outside LangChain
 
 _Note: this API is experimental and may change in the future_
 
