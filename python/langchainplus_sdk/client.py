@@ -28,6 +28,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from langchainplus_sdk.evaluation.evaluator import RunEvaluator
 from langchainplus_sdk.schemas import (
     APIFeedbackSource,
     Dataset,
@@ -47,6 +48,8 @@ from langchainplus_sdk.schemas import (
 )
 from langchainplus_sdk.utils import (
     LangChainPlusAPIError,
+    LangChainPlusError,
+    LangChainPlusUserError,
     raise_for_status_with_text,
     request_with_retries,
     xor_args,
@@ -96,7 +99,7 @@ class LangChainPlusClient(BaseSettings):
         api_key: Optional[str] = values.get("api_key")
         if not _is_localhost(api_url):
             if not api_key:
-                raise ValueError(
+                raise LangChainPlusUserError(
                     "API key must be provided when using hosted LangChain+ API"
                 )
         return values
@@ -243,18 +246,11 @@ class LangChainPlusClient(BaseSettings):
             params["name"] = session_name
         else:
             raise ValueError("Must provide session_name or session_id")
-        response = self._get_with_retries(
-            path,
-            params=params,
-        )
-        response = self._get_with_retries(
-            path,
-            params=params,
-        )
+        response = self._get_with_retries(path, params=params)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ValueError(f"Session {session_name} not found")
+                raise LangChainPlusError(f"Session {session_name} not found")
             return TracerSession(**result[0])
         return TracerSession(**response.json())
 
@@ -317,7 +313,7 @@ class LangChainPlusClient(BaseSettings):
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ValueError(f"Dataset {dataset_name} not found")
+                raise LangChainPlusError(f"Dataset {dataset_name} not found")
             return Dataset(**result[0])
         return Dataset(**result)
 
@@ -423,6 +419,36 @@ class LangChainPlusClient(BaseSettings):
         )
         raise_for_status_with_text(response)
         return Example(**response.json())
+
+    def evaluate_run(
+        self,
+        run: Union[Run, str, UUID],
+        evaluator: RunEvaluator,
+    ) -> Feedback:
+        """Evaluate a run."""
+        if isinstance(run, (str, UUID)):
+            run_ = self.read_run(run)
+        elif isinstance(run, Run):
+            run_ = run
+        else:
+            raise TypeError(f"Invalid run type: {type(run)}")
+        if run_.reference_example_id is not None:
+            reference_example = self.read_example(run_.reference_example_id)
+        else:
+            reference_example = None
+        feedback_result = evaluator.evaluate_run(
+            run_,
+            example=reference_example,
+        )
+        return self.create_feedback(
+            run_.id,
+            feedback_result.key,
+            score=feedback_result.score,
+            value=feedback_result.value,
+            comment=feedback_result.comment,
+            correction=feedback_result.correction,
+            feedback_source_type=FeedbackSourceType.MODEL,
+        )
 
     def create_feedback(
         self,

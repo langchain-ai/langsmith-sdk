@@ -9,6 +9,9 @@ import * as path from "path";
 const entrypoints = {
   client: "client",
   run_trees: "run_trees",
+  evaluation: "evaluation",
+  "evaluation/evaluator": "evaluation/evaluator",
+  "evaluation/string_evaluator": "evaluation/string_evaluator",
 };
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
@@ -42,8 +45,9 @@ const updateConfig = () => {
     ...json,
     typedocOptions: {
       ...json.typedocOptions,
-      entryPoints: [...Object.keys(entrypoints)]
-        .map((key) => `src/${entrypoints[key]}.ts`),
+      entryPoints: [...Object.keys(entrypoints)].map(
+        (key) => `src/${entrypoints[key]}.ts`
+      ),
     },
   }));
 
@@ -64,8 +68,9 @@ const updateConfig = () => {
 
           return [key === "index" ? "." : `./${key}`, entryPoint];
         })
-      ), {
-        "./package.json": "./package.json"
+      ),
+      {
+        "./package.json": "./package.json",
       }
     ),
     files: ["dist/", ...filenames],
@@ -74,7 +79,7 @@ const updateConfig = () => {
   // Write generated files
   Object.entries(generatedFiles).forEach(([filename, content]) => {
     fs.mkdirSync(path.dirname(filename), {
-      recursive: true
+      recursive: true,
     });
     fs.writeFileSync(filename, content);
   });

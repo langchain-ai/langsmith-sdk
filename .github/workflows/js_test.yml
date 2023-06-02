@@ -6,7 +6,12 @@ name: JS Client CI
 on:
   push:
     branches: ["main"]
+    paths:
+      - "js/**"
   pull_request:
+    paths:
+      - "js/**"
+  workflow_dispatch:
 
 jobs:
   format:

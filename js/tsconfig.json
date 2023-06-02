@@ -33,7 +33,10 @@
   "typedocOptions": {
     "entryPoints": [
       "src/client.ts",
-      "src/run_trees.ts"
+      "src/run_trees.ts",
+      "src/evaluation.ts",
+      "src/evaluation/evaluator.ts",
+      "src/evaluation/string_evaluator.ts"
     ]
   }
 }

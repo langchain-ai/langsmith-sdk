@@ -35,7 +35,7 @@ def _ensure_thread_pool() -> ThreadPoolExecutor:
     return _THREAD_POOL_EXECUTOR
 
 
-def flush_all_runs() -> None:
+def await_all_runs() -> None:
     """Flush the thread pool."""
     global _THREAD_POOL_EXECUTOR
     if _THREAD_POOL_EXECUTOR is not None:
@@ -202,6 +202,6 @@ class RunTree(RunBase):
     def patch(self) -> Future:
         """Patch the run tree to the API in a background thread."""
         executor = _ensure_thread_pool()
-        run_update = RunUpdate(**self.dict())
+        run_update = RunUpdate(**self.dict(exclude_none=True))
         data = run_update.json(exclude_none=True)
         return executor.submit(self._patch, data=data)
