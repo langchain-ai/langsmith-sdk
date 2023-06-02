@@ -260,7 +260,3 @@ for (const run of runs) {
 ## Additional Documentation
 
 To learn more about the LangChainPlus platform, check out the [docs](https://docs.langchain.plus/docs/).
-
-```
-
-```
