@@ -3,7 +3,7 @@ import { LangChainPlusClient } from "../client.js";
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
 test("Test LangChainPlus Client Dataset CRD", async () => {
-  const client = await new LangChainPlusClient({
+  const client = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
 

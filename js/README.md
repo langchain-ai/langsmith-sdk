@@ -36,6 +36,10 @@ You can log traces natively in your LangChain application or using a LangChainPl
 
 LangChainPlus seamlessly integrates with the JavaScript LangChain library to record traces from your LLM applications.
 
+```bash
+yarn add langchain
+```
+
 1. **Copy the environment variables from the Settings Page and add them to your application.**
 
 Tracing can be activated by setting the following environment variables or by manually specifying the LangChainTracer.
@@ -89,65 +93,86 @@ A RunTree tracks your application. Each RunTree object is required to have a nam
 - `error`: `Optional<string>` - Any error messages that may have arisen during the call
 
 ```typescript
-import { RunTree, RunTreeConfig } from 'langchainplus-sdk';
+import {
+    RunTree,
+    RunTreeConfig
+} from 'langchainplus-sdk';
 
 const parentRunConfig: RunTreeConfig = {
-  name: "My Chat Bot",
-  run_type: "chain",
-  inputs: { text: "Summarize this morning's meetings." },
-  serialized: {}, // Serialized representation of this chain
-  // session_name: "Defaults to the LANGCHAIN_SESSION env var"
-  // apiUrl: "Defaults to the LANGCHAIN_ENDPOINT env var"
-  // apiKey: "Defaults to the LANGCHAIN_API_KEY env var"
+    name: "My Chat Bot",
+    run_type: "chain",
+    inputs: {
+        text: "Summarize this morning's meetings."
+    },
+    serialized: {}, // Serialized representation of this chain
+    // session_name: "Defaults to the LANGCHAIN_SESSION env var"
+    // apiUrl: "Defaults to the LANGCHAIN_ENDPOINT env var"
+    // apiKey: "Defaults to the LANGCHAIN_API_KEY env var"
 };
 
-const parent_run = new RunTree(parentRunConfig);
+const parentRun = new RunTree(parentRunConfig);
 
-const child_llm_run = await parent_run.createChild({
-  name: "My Proprietary LLM",
-  run_type: "llm",
-  inputs: {
-    "prompts": [
-      "You are an AI Assistant. The time is XYZ."
-      " Summarize this morning's meetings."
-    ]
-  },
+const childLlmRun = await parentRun.createChild({
+    name: "My Proprietary LLM",
+    run_type: "llm",
+    inputs: {
+        "prompts": [
+            "You are an AI Assistant. The time is XYZ." +
+            " Summarize this morning's meetings."
+        ]
+    },
 });
 
-await child_llm_run.end({
-  outputs: {
-    "generations": [
-      "I should use the transcript_loader tool"
-      " to fetch meeting_transcripts from XYZ"
-    ]
-  }
+await childLlmRun.end({
+    outputs: {
+        "generations": [
+            "I should use the transcript_loader tool" +
+            " to fetch meeting_transcripts from XYZ"
+        ]
+    }
 });
 
-const child_tool_run = await parent_run.createChild({
-  name: "transcript_loader",
-  run_type: "tool",
-  inputs: { date: "XYZ", content_type: "meeting_transcripts" },
+const childToolRun = await parentRun.createChild({
+    name: "transcript_loader",
+    run_type: "tool",
+    inputs: {
+        date: "XYZ",
+        content_type: "meeting_transcripts"
+    },
 });
 
-await child_tool_run.end({outputs: { meetings: ["Meeting1 notes.."] }});
+await childToolRun.end({
+    outputs: {
+        meetings: ["Meeting1 notes.."]
+    }
+});
 
-const child_chain_run = await parent_run.createChild({
-  name: "Unreliable Component",
-  run_type: "tool",
-  inputs: { input: "Summarize these notes..." },
+const childChainRun = await parentRun.createChild({
+    name: "Unreliable Component",
+    run_type: "tool",
+    inputs: {
+        input: "Summarize these notes..."
+    },
 });
 
 try {
-  // .... the component does work
-  throw new Error("Something went wrong");
+    // .... the component does work
+    throw new Error("Something went wrong");
 } catch (e) {
-  await child_chain_run.end({error: `I errored again ${e.message}`});
+    await childChainRun.end({
+        error: `I errored again ${e.message}`
+    });
 }
 
-await parent_run.end({ outputs: { output: ["The meeting notes are as follows:..."] } });
+await parentRun.end({
+    outputs: {
+        output: ["The meeting notes are as follows:..."]
+    }
+});
 
-const res = await parent_run.post({ exclude_child_runs: false });
-await res.result();
+await parentRun.postRun({
+    exclude_child_runs: false
+});
 ```
 
 ### Create a Dataset from Existing Runs
@@ -158,7 +183,15 @@ the web interface, as explained in the [LangChainPlus docs](https://docs.langcha
 
 ```typescript
 import { LangChainPlusClient } from 'langchainplus-sdk/client';
-
+const client = new LangChainPlusClient({
+    // apiUrl: "https://api.langchain.com", // Defaults to the LANGCHAIN_ENDPOINT env var
+    // apiKey: "my_api_key", // Defaults to the LANGCHAIN_API_KEY env var
+    /* callerOptions: {
+         maxConcurrency?: Infinity; // Maximum number of concurrent requests to make
+         maxRetries?: 6; // Maximum number of retries to make
+    */
+    }, 
+);
 const datasetName = "Example Dataset";
 // We will only use examples from the top level AgentExecutor run here,
 // and exclude runs that errored.

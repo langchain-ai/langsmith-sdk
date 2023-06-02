@@ -93,22 +93,14 @@ test("Test persisting runs and adding feedback", async () => {
   const feedback = await langchainClient.readFeedback(feedbacks[0].id);
   expect(feedback.id).toEqual(feedbacks[0].id);
   await langchainClient.deleteFeedback(feedback.id);
-  try {
-    await langchainClient.readFeedback(feedback.id);
-  } catch (error) {
-    // expect(error).toBeInstanceOf(LangChainPlusError);
-  }
+  await expect(langchainClient.readFeedback(feedback.id)).rejects.toThrow();
   expect(
     Array.from(await langchainClient.listFeedback({ runIds: [runs[0].id] }))
       .length
   ).toEqual(1);
 
   await langchainClient.deleteSession({ sessionName });
-  try {
-    await langchainClient.readSession({ sessionName });
-  } catch (error) {
-    // expect(error).toBeInstanceOf(LangChainPlusError);
-  }
+  await expect(langchainClient.readSession({ sessionName })).rejects.toThrow();
 });
 
 test("Test post and patch run", async () => {
