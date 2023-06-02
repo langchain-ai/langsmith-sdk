@@ -450,6 +450,8 @@ class LangChainPlusClient(BaseSettings):
             feedback_result.key,
             score=feedback_result.score,
             value=feedback_result.value,
+            comment=feedback_result.comment,
+            correction=feedback_result.correction,
             feedback_source_type=FeedbackSourceType.MODEL,
         )
 

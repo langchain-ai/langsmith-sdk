@@ -6,8 +6,18 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    root_validator,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+)
 from typing_extensions import Literal
+
+SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
+VALUE_TYPE = Union[Dict, StrictBool, StrictInt, StrictFloat, str, None]
 
 
 class ExampleBase(BaseModel):
@@ -208,9 +218,9 @@ class FeedbackBase(BaseModel):
     """The associated run ID this feedback is logged for."""
     key: str
     """The metric name, tag, or aspect to provide feedback on."""
-    score: Union[float, int, bool, None] = None
+    score: SCORE_TYPE = None
     """Value or score to assign the run."""
-    value: Union[float, int, bool, str, dict, None] = None
+    value: VALUE_TYPE = None
     """The display value, tag or other value for the feedback if not a metric."""
     comment: Optional[str] = None
     """Comment or explanation for the feedback."""
