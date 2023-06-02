@@ -19,8 +19,21 @@
     "strictPropertyInitialization": false,
     "allowJs": true,
     "strict": true,
+    "outDir": "dist"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"],
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage"
+  ],
   "includeVersion": true,
+  "typedocOptions": {
+    "entryPoints": [
+      "src/client.ts",
+      "src/run_trees.ts"
+    ]
+  }
 }
