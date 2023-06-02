@@ -1,6 +1,6 @@
 {
   "name": "langchainplus-sdk",
-  "version": "0.0.1-rc.5",
+  "version": "0.0.2",
   "description": "Client library to connect to the LangChainPlus LLM Tracing and Evaluation Platform.",
   "files": [
     "dist/",
