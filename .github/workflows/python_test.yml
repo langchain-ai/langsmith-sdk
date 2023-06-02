@@ -2,8 +2,12 @@ name: Python CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
+    paths:
+      - "python/**"
   pull_request:
+    paths:
+      - "python/**"
   workflow_dispatch:
 
 env:
