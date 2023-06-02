@@ -2,12 +2,11 @@
 
 This package contains the Python client for interacting with the [LangChainPlus platform](https://www.langchain.plus/).
 
-LangChainPlus helps you and your team develop and evaluate language models and intelligent agents. It works
-with any LLM Application, including a seamless integration with [LangChain](https://github.com/hwchase17/langchain), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
+LangChainPlus helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchain), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
 
 LangChainPlus is developed and maintained by [LangChain](https://langchain.com/), the company behind the LangChain framework.
 
-> **Note**: You can enjoy the benefits of LangChainPlus without using the LangChain open source packages! To get started with your own proprietary framework, set up your account then skip to [Logging Traces Outside LangChain](#logging-traces-outside-langchain)
+> **Note**: You can enjoy the benefits of LangChainPlus without using the LangChain open-source packages! To get started with your own proprietary framework, set up your account and then skip to [Logging Traces Outside LangChain](#logging-traces-outside-langchain).
 
 ## Logging Traces with LangChain
 
@@ -15,11 +14,11 @@ LangChainPlus seamlessly integrates with the Python LangChain libraries to recor
 
 #### 1. Sign Up
 
-Sign up for [LangChainPlus](https://www.langchain.plus/) using your GitHub, Discord accounts, or an email address and password. If you use email, verify your email address before logging in.
+Sign up for [LangChainPlus](https://www.langchain.plus/) using your GitHub, Discord accounts, or an email address and password. If you sign up with an email, make sure to verify your email address before logging in.
 
 #### 2. Generate an API Key
 
-Create a unique API key on the Settings Page. It's in the menu at the top right corner of the page.
+Create a unique API key on the Settings Page, which is found in the menu at the top right corner of the page.
 
 Note: Save the API Key in a secure location. It will not be shown again.
 
@@ -70,11 +69,10 @@ os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
 
 #### 3. Generate traces using a RunTree
 
-A RunTree tracks your application. Each RunTree object is required to have a `name` and `run_type`. These
-and other important attributes are as follows:
+A RunTree tracks your application. Each RunTree object is required to have a `name` and `run_type`. These and other important attributes are as follows:
 
-- `name`: str - used to communicate the components purpose
-- `run_type`: str - Currently one of "llm", "chain" or "tool"; we will add more in the future.
+- `name`: str - used to identify the component's purpose
+- `run_type`: str - Currently one of "llm", "chain" or "tool"; more options will be added in the future
 - `inputs`: dict - the inputs to the component
 - `outputs`: Optional[dict] - the (optional) returned values from the component
 - `error`: Optional[str] - Any error messages that may have arisen during the call
@@ -111,7 +109,7 @@ child_llm_run.end(
     }
 )
 # ..  My Chat Bot takes the LLM output and calls
-# a tool / function for fetching trancripts ..
+# a tool / function for fetching transcripts ..
 child_tool_run = parent_run.create_child(
     name="transcript_loader",
     run_type="tool",
