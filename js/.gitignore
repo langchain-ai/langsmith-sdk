@@ -37,6 +37,15 @@ Chinook_Sqlite.sql
 /run_trees.cjs
 /run_trees.js
 /run_trees.d.ts
+/evaluation.cjs
+/evaluation.js
+/evaluation.d.ts
+/evaluation/evaluator.cjs
+/evaluation/evaluator.js
+/evaluation/evaluator.d.ts
+/evaluation/string_evaluator.cjs
+/evaluation/string_evaluator.js
+/evaluation/string_evaluator.d.ts
 /index.cjs
 /index.js
 /index.d.ts

@@ -1,4 +1,6 @@
 import { LangChainPlusClient } from "../client.js";
+import { RunTree, RunTreeConfig } from "../run_trees.js";
+import { StringEvaluator } from "../evaluation/string_evaluator.js";
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
@@ -113,4 +115,107 @@ test("Test LangChainPlus Client Session CRD", async () => {
   await expect(
     client.deleteSession({ sessionName: newSession })
   ).rejects.toThrow();
+});
+
+test("Test evaluate run", async () => {
+  const langchainClient = new LangChainPlusClient({
+    apiUrl: "http://localhost:1984",
+  });
+
+  const sessionName = "__test_evaluate_run";
+  const datasetName = "__test_evaluate_run_dataset";
+  const sessions = await langchainClient.listSessions();
+  const datasets = await langchainClient.listDatasets();
+
+  if (sessions.map((session) => session.name).includes(sessionName)) {
+    await langchainClient.deleteSession({ sessionName });
+  }
+
+  if (datasets.map((dataset) => dataset.name).includes(datasetName)) {
+    await langchainClient.deleteDataset({ datasetName });
+  }
+
+  const dataset = await langchainClient.createDataset(datasetName);
+  const predicted = "abcd";
+  const groundTruth = "bcde";
+  const example = await langchainClient.createExample(
+    { input: "hello world" },
+    { output: groundTruth },
+    {
+      datasetId: dataset.id,
+    }
+  );
+
+  const parentRunConfig: RunTreeConfig = {
+    name: "parent_run",
+    run_type: "chain",
+    inputs: { input: "hello world" },
+    session_name: sessionName,
+    serialized: {},
+    api_url: "http://localhost:1984",
+    reference_example_id: example.id,
+  };
+
+  const parentRun = new RunTree(parentRunConfig);
+  await parentRun.postRun();
+  await parentRun.end({ output: predicted });
+  await parentRun.patchRun();
+
+  const run = await langchainClient.readRun(parentRun.id);
+  expect(run.outputs).toEqual({ output: predicted });
+
+  function jaccardChars(output: string, answer: string): number {
+    const predictionChars = new Set(output.trim().toLowerCase());
+    const answerChars = new Set(answer.trim().toLowerCase());
+    const intersection = [...predictionChars].filter((x) => answerChars.has(x));
+    const union = new Set([...predictionChars, ...answerChars]);
+    return intersection.length / union.size;
+  }
+
+  async function grader(config: {
+    input: string;
+    prediction: string;
+    answer?: string;
+  }): Promise<{ score: number; value: string }> {
+    let value: string;
+    let score: number;
+    if (config.answer === null || config.answer === undefined) {
+      value = "AMBIGUOUS";
+      score = -0.5;
+    } else {
+      score = jaccardChars(config.prediction, config.answer);
+      value = score > 0.9 ? "CORRECT" : "INCORRECT";
+    }
+    return { score: score, value: value };
+  }
+
+  const evaluator = new StringEvaluator({
+    evaluationName: "Jaccard",
+    gradingFunction: grader,
+  });
+
+  const runs = await langchainClient.listRuns({
+    sessionName: sessionName,
+    executionOrder: 1,
+    error: false,
+  });
+
+  const allFeedback = [];
+  for (const run of runs) {
+    allFeedback.push(await langchainClient.evaluateRun(run, evaluator));
+  }
+
+  expect(allFeedback.length).toEqual(1);
+
+  const fetchedFeedback = await langchainClient.listFeedback({
+    runIds: [run.id],
+  });
+  expect(fetchedFeedback[0].id).toEqual(allFeedback[0].id);
+  expect(fetchedFeedback[0].score).toEqual(
+    jaccardChars(predicted, groundTruth)
+  );
+  expect(fetchedFeedback[0].value).toEqual("INCORRECT");
+
+  await langchainClient.deleteDataset({ datasetId: dataset.id });
+  await langchainClient.deleteSession({ sessionName });
 });

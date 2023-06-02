@@ -82,6 +82,7 @@ process.env["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"; // or your own
 process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>";
 // process.env["LANGCHAIN_SESSION"] = "My Session Name"; // Optional: "default" is used if not set
 ```
+
 2. **Log traces using a RunTree.**
 
 A RunTree tracks your application. Each RunTree object is required to have a name and run_type. These and other important attributes are as follows:
@@ -93,85 +94,82 @@ A RunTree tracks your application. Each RunTree object is required to have a nam
 - `error`: `Optional<string>` - Any error messages that may have arisen during the call
 
 ```typescript
-import {
-    RunTree,
-    RunTreeConfig
-} from 'langchainplus-sdk';
+import { RunTree, RunTreeConfig } from "langchainplus-sdk";
 
 const parentRunConfig: RunTreeConfig = {
-    name: "My Chat Bot",
-    run_type: "chain",
-    inputs: {
-        text: "Summarize this morning's meetings."
-    },
-    serialized: {}, // Serialized representation of this chain
-    // session_name: "Defaults to the LANGCHAIN_SESSION env var"
-    // apiUrl: "Defaults to the LANGCHAIN_ENDPOINT env var"
-    // apiKey: "Defaults to the LANGCHAIN_API_KEY env var"
+  name: "My Chat Bot",
+  run_type: "chain",
+  inputs: {
+    text: "Summarize this morning's meetings.",
+  },
+  serialized: {}, // Serialized representation of this chain
+  // session_name: "Defaults to the LANGCHAIN_SESSION env var"
+  // apiUrl: "Defaults to the LANGCHAIN_ENDPOINT env var"
+  // apiKey: "Defaults to the LANGCHAIN_API_KEY env var"
 };
 
 const parentRun = new RunTree(parentRunConfig);
 
 const childLlmRun = await parentRun.createChild({
-    name: "My Proprietary LLM",
-    run_type: "llm",
-    inputs: {
-        "prompts": [
-            "You are an AI Assistant. The time is XYZ." +
-            " Summarize this morning's meetings."
-        ]
-    },
+  name: "My Proprietary LLM",
+  run_type: "llm",
+  inputs: {
+    prompts: [
+      "You are an AI Assistant. The time is XYZ." +
+        " Summarize this morning's meetings.",
+    ],
+  },
 });
 
 await childLlmRun.end({
-    outputs: {
-        "generations": [
-            "I should use the transcript_loader tool" +
-            " to fetch meeting_transcripts from XYZ"
-        ]
-    }
+  outputs: {
+    generations: [
+      "I should use the transcript_loader tool" +
+        " to fetch meeting_transcripts from XYZ",
+    ],
+  },
 });
 
 const childToolRun = await parentRun.createChild({
-    name: "transcript_loader",
-    run_type: "tool",
-    inputs: {
-        date: "XYZ",
-        content_type: "meeting_transcripts"
-    },
+  name: "transcript_loader",
+  run_type: "tool",
+  inputs: {
+    date: "XYZ",
+    content_type: "meeting_transcripts",
+  },
 });
 
 await childToolRun.end({
-    outputs: {
-        meetings: ["Meeting1 notes.."]
-    }
+  outputs: {
+    meetings: ["Meeting1 notes.."],
+  },
 });
 
 const childChainRun = await parentRun.createChild({
-    name: "Unreliable Component",
-    run_type: "tool",
-    inputs: {
-        input: "Summarize these notes..."
-    },
+  name: "Unreliable Component",
+  run_type: "tool",
+  inputs: {
+    input: "Summarize these notes...",
+  },
 });
 
 try {
-    // .... the component does work
-    throw new Error("Something went wrong");
+  // .... the component does work
+  throw new Error("Something went wrong");
 } catch (e) {
-    await childChainRun.end({
-        error: `I errored again ${e.message}`
-    });
+  await childChainRun.end({
+    error: `I errored again ${e.message}`,
+  });
 }
 
 await parentRun.end({
-    outputs: {
-        output: ["The meeting notes are as follows:..."]
-    }
+  outputs: {
+    output: ["The meeting notes are as follows:..."],
+  },
 });
 
 await parentRun.postRun({
-    exclude_child_runs: false
+  exclude_child_runs: false,
 });
 ```
 
@@ -182,16 +180,15 @@ For this example, we will do so using the Client, but you can also do this using
 the web interface, as explained in the [LangChainPlus docs](https://docs.langchain.plus/docs/).
 
 ```typescript
-import { LangChainPlusClient } from 'langchainplus-sdk/client';
+import { LangChainPlusClient } from "langchainplus-sdk/client";
 const client = new LangChainPlusClient({
-    // apiUrl: "https://api.langchain.com", // Defaults to the LANGCHAIN_ENDPOINT env var
-    // apiKey: "my_api_key", // Defaults to the LANGCHAIN_API_KEY env var
-    /* callerOptions: {
+  // apiUrl: "https://api.langchain.com", // Defaults to the LANGCHAIN_ENDPOINT env var
+  // apiKey: "my_api_key", // Defaults to the LANGCHAIN_API_KEY env var
+  /* callerOptions: {
          maxConcurrency?: Infinity; // Maximum number of concurrent requests to make
          maxRetries?: 6; // Maximum number of retries to make
     */
-    }, 
-);
+});
 const datasetName = "Example Dataset";
 // We will only use examples from the top level AgentExecutor run here,
 // and exclude runs that errored.
