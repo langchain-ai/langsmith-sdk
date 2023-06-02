@@ -7,13 +7,13 @@ export interface RunTreeConfig {
   name: string;
   run_type: RunType;
   id?: string;
-  callerOptions?: AsyncCallerParams;
-  apiUrl?: string;
-  apiKey?: string;
+  caller_options?: AsyncCallerParams;
+  api_url?: string;
+  api_key?: string;
   session_name?: string;
   execution_order?: number;
   child_execution_order?: number;
-  parentRun?: RunTree;
+  parent_run?: RunTree;
   child_runs?: RunTree[];
   start_time?: number;
   end_time?: number;
@@ -30,13 +30,13 @@ export class RunTree implements BaseRun {
   name: RunTreeConfig["name"];
   run_type: RunTreeConfig["run_type"];
   session_name: string;
-  parentRun?: RunTree;
+  parent_run?: RunTree;
+  api_url: string;
+  api_key?: string;
   child_runs: RunTree[];
   execution_order: number;
   child_execution_order: number;
-  apiUrl: string;
-  apiKey?: string;
-  callerOptions: AsyncCallerParams;
+  caller_options: AsyncCallerParams;
   caller: AsyncCaller;
   start_time: number;
   end_time: number;
@@ -50,7 +50,7 @@ export class RunTree implements BaseRun {
   constructor(config: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
     Object.assign(this, { ...defaultConfig, ...config });
-    this.caller = new AsyncCaller(this.callerOptions);
+    this.caller = new AsyncCaller(this.caller_options);
   }
   private static getDefaultConfig(): object {
     return {
@@ -59,10 +59,10 @@ export class RunTree implements BaseRun {
       child_runs: [],
       execution_order: 1,
       child_execution_order: 1,
-      apiUrl:
+      api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
-      apiKey: getEnvironmentVariable("LANGCHAIN_API_KEY"),
-      callerOptions: {},
+      api_key: getEnvironmentVariable("LANGCHAIN_API_KEY"),
+      caller_options: {},
       start_time: Date.now(),
       end_time: Date.now(),
       serialized: {},
@@ -73,11 +73,11 @@ export class RunTree implements BaseRun {
   public async createChild(config: RunTreeConfig): Promise<RunTree> {
     const child = new RunTree({
       ...config,
-      parentRun: this,
+      parent_run: this,
       session_name: this.session_name,
-      apiUrl: this.apiUrl,
-      apiKey: this.apiKey,
-      callerOptions: this.callerOptions,
+      api_url: this.api_url,
+      api_key: this.api_key,
+      caller_options: this.caller_options,
       execution_order: this.child_execution_order + 1,
       child_execution_order: this.child_execution_order + 1,
     });
@@ -89,15 +89,15 @@ export class RunTree implements BaseRun {
   async end(
     outputs?: KVMap,
     error?: string,
-    end_time = Date.now()
+    endTime = Date.now()
   ): Promise<void> {
     this.outputs = outputs;
     this.error = error;
-    this.end_time = end_time;
+    this.end_time = endTime;
 
-    if (this.parentRun) {
-      this.parentRun.child_execution_order = Math.max(
-        this.parentRun.child_execution_order,
+    if (this.parent_run) {
+      this.parent_run.child_execution_order = Math.max(
+        this.parent_run.child_execution_order,
         this.child_execution_order
       );
     }
@@ -105,14 +105,14 @@ export class RunTree implements BaseRun {
 
   private get headers(): Headers {
     const headers = new Headers({ "Content-Type": "application/json" });
-    if (this.apiKey) {
-      headers.append("x-api-key", this.apiKey);
+    if (this.api_key) {
+      headers.append("x-api-key", this.api_key);
     }
     return headers;
   }
 
   private async post(data: string): Promise<void> {
-    const url = `${this.apiUrl}/runs`;
+    const url = `${this.api_url}/runs`;
     await this.caller.call(fetch, url, {
       method: "POST",
       body: data,
@@ -136,7 +136,7 @@ export class RunTree implements BaseRun {
       );
       parent_run_id = undefined;
     } else {
-      parent_run_id = run.parentRun?.id;
+      parent_run_id = run.parent_run?.id;
       child_runs = [];
     }
     const persistedRun: RunCreate = {
@@ -166,7 +166,7 @@ export class RunTree implements BaseRun {
   }
 
   private async patch(data: string): Promise<void> {
-    const url = `${this.apiUrl}/runs/${this.id}`;
+    const url = `${this.api_url}/runs/${this.id}`;
     await this.caller.call(fetch, url, {
       method: "PATCH",
       body: data,
@@ -179,7 +179,7 @@ export class RunTree implements BaseRun {
       end_time: this.end_time,
       error: this.error,
       outputs: this.outputs,
-      parent_run_id: this.parentRun?.id,
+      parent_run_id: this.parent_run?.id,
       reference_example_id: this.reference_example_id,
     };
 

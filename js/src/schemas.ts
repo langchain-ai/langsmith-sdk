@@ -66,6 +66,11 @@ export interface Example extends BaseExample {
   runs: RunResult[];
 }
 
+export interface ExampleUpdate {
+  dataset_id?: string;
+  inputs?: KVMap;
+  outputs?: KVMap;
+}
 export interface BaseDataset {
   name: string;
   description: string;

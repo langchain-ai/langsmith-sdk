@@ -1,24 +1,23 @@
-import * as uuid from "uuid";
 import { LangChainPlusClient } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 
 test("Test persisting runs and adding feedback", async () => {
-  const session_name = `__test_run_tree + ${uuid.v4()}`;
+  const sessionName = `__test_run_tree`;
   const langchainClient = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
   const sessions = await langchainClient.listSessions();
-  if (sessions.map((session) => session.name).includes(session_name)) {
-    await langchainClient.deleteSession({ session_name });
+  if (sessions.map((session) => session.name).includes(sessionName)) {
+    await langchainClient.deleteSession({ sessionName });
   }
 
   const parentRunConfig: RunTreeConfig = {
     name: "parent_run",
     run_type: "chain",
     inputs: { text: "hello world" },
-    session_name: session_name,
+    session_name: sessionName,
     serialized: {},
-    apiUrl: "http://localhost:1984",
+    api_url: "http://localhost:1984",
   };
 
   const parent_run = new RunTree(parentRunConfig);
@@ -53,7 +52,7 @@ test("Test persisting runs and adding feedback", async () => {
   await parent_run.end({ output: ["Hi"] });
   await parent_run.postRun(false);
 
-  const runs = await langchainClient.listRuns({ session_name });
+  const runs = await langchainClient.listRuns({ sessionName });
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
   expect(runMap.get("parent_run")?.execution_order).toEqual(1);
@@ -87,7 +86,7 @@ test("Test persisting runs and adding feedback", async () => {
   });
   await langchainClient.createFeedback(runs[0].id, "a tag", {});
   const feedbacks = Array.from(
-    await langchainClient.listFeedback({ run_ids: [runs[0].id] })
+    await langchainClient.listFeedback({ runIds: [runs[0].id] })
   );
   expect(feedbacks.length).toEqual(2);
   expect(feedbacks[0].run_id).toEqual(runs[0].id);
@@ -100,35 +99,35 @@ test("Test persisting runs and adding feedback", async () => {
     // expect(error).toBeInstanceOf(LangChainPlusError);
   }
   expect(
-    Array.from(await langchainClient.listFeedback({ run_ids: [runs[0].id] }))
+    Array.from(await langchainClient.listFeedback({ runIds: [runs[0].id] }))
       .length
   ).toEqual(1);
 
-  await langchainClient.deleteSession({ session_name });
+  await langchainClient.deleteSession({ sessionName });
   try {
-    await langchainClient.readSession({ session_name });
+    await langchainClient.readSession({ sessionName });
   } catch (error) {
     // expect(error).toBeInstanceOf(LangChainPlusError);
   }
 });
 
 test("Test post and patch run", async () => {
-  const session_name = `__test_run_tree + ${uuid.v4()}`;
+  const sessionName = `__test_run_tree`;
   const langchainClient = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
   const sessions = await langchainClient.listSessions();
-  if (sessions.map((session) => session.name).includes(session_name)) {
-    await langchainClient.deleteSession({ session_name });
+  if (sessions.map((session) => session.name).includes(sessionName)) {
+    await langchainClient.deleteSession({ sessionName });
   }
 
   const parentRunConfig: RunTreeConfig = {
     name: "parent_run",
     run_type: "chain",
     inputs: { text: "hello world" },
-    session_name: session_name,
+    session_name: sessionName,
     serialized: {},
-    apiUrl: "http://localhost:1984",
+    api_url: "http://localhost:1984",
   };
 
   const parent_run = new RunTree(parentRunConfig);
@@ -171,7 +170,7 @@ test("Test post and patch run", async () => {
   await parent_run.end({ output: ["Hi"] });
   await parent_run.patchRun();
 
-  const runs = await langchainClient.listRuns({ session_name });
+  const runs = await langchainClient.listRuns({ sessionName });
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
   expect(runMap.get("parent_run")?.execution_order).toEqual(1);
@@ -193,5 +192,5 @@ test("Test post and patch run", async () => {
     runMap.get("parent_run")?.id
   );
   expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
-  await langchainClient.deleteSession({ session_name });
+  await langchainClient.deleteSession({ sessionName });
 });

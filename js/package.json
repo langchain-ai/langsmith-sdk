@@ -3,13 +3,25 @@
   "version": "0.0.1-rc.3",
   "description": "Client library to connect to the LangChainPlus LLM Tracing and Evaluation Platform.",
   "files": [
-    "dist"
+    "dist/",
+    "client.cjs",
+    "client.js",
+    "client.d.ts",
+    "run_trees.cjs",
+    "run_trees.js",
+    "run_trees.d.ts",
+    "index.cjs",
+    "index.js",
+    "index.d.ts"
   ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js",
+    "clean": "rm -rf dist/ && node scripts/create-entrypoints.js clean",
+    "build:esm": "tsc --outDir dist/ && rm -rf dist/tests dist/**/tests",
+    "build:cjs": "tsc --outDir dist-cjs/ -p tsconfig.cjs.json && node scripts/move-cjs-to-dist.js && rm -r dist-cjs",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests --testPathIgnorePatterns='\\.int\\.test.[tj]s' --testTimeout 30000",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=\\.int\\.test.ts --testTimeout 100000",
     "test:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --config jest.config.cjs --testTimeout 100000",
@@ -70,19 +82,20 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.cjs"
     },
     "./client": {
-      "types": "./dist/client.d.ts",
-      "import": "./dist/client.js",
-      "require": "./dist/client.cjs"
+      "types": "./client.d.ts",
+      "import": "./client.js",
+      "require": "./client.cjs"
     },
     "./run_trees": {
-      "types": "./dist/run_trees.d.ts",
-      "import": "./dist/run_trees.js",
-      "require": "./dist/run_trees.cjs"
-    }
+      "types": "./run_trees.d.ts",
+      "import": "./run_trees.js",
+      "require": "./run_trees.cjs"
+    },
+    "./package.json": "./package.json"
   }
 }
