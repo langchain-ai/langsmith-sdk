@@ -12,6 +12,8 @@ class EvaluationResult(BaseModel):
     key: str
     score: Optional[float] = None
     value: Optional[Any] = None
+    comment: Optional[str] = None
+    correction: Optional[str] = None
 
 
 class RunEvaluator:
