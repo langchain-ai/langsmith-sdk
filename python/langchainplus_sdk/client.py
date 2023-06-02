@@ -48,6 +48,8 @@ from langchainplus_sdk.schemas import (
 )
 from langchainplus_sdk.utils import (
     LangChainPlusAPIError,
+    LangChainPlusError,
+    LangChainPlusUserError,
     raise_for_status_with_text,
     request_with_retries,
     xor_args,
@@ -97,7 +99,7 @@ class LangChainPlusClient(BaseSettings):
         api_key: Optional[str] = values.get("api_key")
         if not _is_localhost(api_url):
             if not api_key:
-                raise ValueError(
+                raise LangChainPlusUserError(
                     "API key must be provided when using hosted LangChain+ API"
                 )
         return values
@@ -244,18 +246,11 @@ class LangChainPlusClient(BaseSettings):
             params["name"] = session_name
         else:
             raise ValueError("Must provide session_name or session_id")
-        response = self._get_with_retries(
-            path,
-            params=params,
-        )
-        response = self._get_with_retries(
-            path,
-            params=params,
-        )
+        response = self._get_with_retries(path, params=params)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ValueError(f"Session {session_name} not found")
+                raise LangChainPlusError(f"Session {session_name} not found")
             return TracerSession(**result[0])
         return TracerSession(**response.json())
 
@@ -318,7 +313,7 @@ class LangChainPlusClient(BaseSettings):
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ValueError(f"Dataset {dataset_name} not found")
+                raise LangChainPlusError(f"Dataset {dataset_name} not found")
             return Dataset(**result[0])
         return Dataset(**result)
 
