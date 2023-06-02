@@ -21,7 +21,12 @@ from uuid import UUID
 import requests
 from pydantic import BaseSettings, Field, root_validator
 from requests import Response
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import (
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from langchainplus_sdk.evaluation.evaluator import RunEvaluator
 from langchainplus_sdk.schemas import (
@@ -41,7 +46,12 @@ from langchainplus_sdk.schemas import (
     Run,
     TracerSession,
 )
-from langchainplus_sdk.utils import raise_for_status_with_text, xor_args
+from langchainplus_sdk.utils import (
+    LangChainPlusAPIError,
+    raise_for_status_with_text,
+    request_with_retries,
+    xor_args,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -62,11 +72,23 @@ def _is_localhost(url: str) -> bool:
 ID_TYPE = Union[UUID, str]
 
 
+def _default_retry_config() -> Dict[str, Any]:
+    return dict(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type(LangChainPlusAPIError),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
+
+
 class LangChainPlusClient(BaseSettings):
     """Client for interacting with the LangChain+ API."""
 
     api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
     api_url: str = Field(default="http://localhost:1984", env="LANGCHAIN_ENDPOINT")
+    retry_config: Mapping[str, Any] = Field(
+        default_factory=_default_retry_config, exclude=True
+    )
 
     @root_validator(pre=True)
     def validate_api_key_if_hosted(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -102,10 +124,14 @@ class LangChainPlusClient(BaseSettings):
             headers["x-api-key"] = self.api_key
         return headers
 
-    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Response:
-        """Make a GET request."""
-        return requests.get(
-            f"{self.api_url}{path}", headers=self._headers, params=params
+    def _get_with_retries(
+        self, path: str, params: Optional[Dict[str, Any]] = None
+    ) -> Response:
+        return request_with_retries(
+            "get",
+            f"{self.api_url}{path}",
+            request_kwargs={"params": params, "headers": self._headers},
+            retry_config=self.retry_config,
         )
 
     def upload_dataframe(
@@ -153,14 +179,11 @@ class LangChainPlusClient(BaseSettings):
             raise ValueError(f"Dataset {file_name} already exists")
         return Dataset(**result)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def read_run(self, run_id: ID_TYPE) -> Run:
         """Read a run from the LangChain+ API."""
-        response = self._get(f"/runs/{run_id}")
-        raise_for_status_with_text(response)
+        response = self._get_with_retries(f"/runs/{run_id}")
         return Run(**response.json())
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def list_runs(
         self,
         *,
@@ -177,8 +200,9 @@ class LangChainPlusClient(BaseSettings):
         query_params = ListRunsQueryParams(
             session_id=session_id, run_type=run_type, **kwargs
         )
-        response = self._get("/runs", params=query_params.dict(exclude_none=True))
-        raise_for_status_with_text(response)
+        response = self._get_with_retries(
+            "/runs", params=query_params.dict(exclude_none=True)
+        )
         yield from [Run(**run) for run in response.json()]
 
     def delete_run(self, run_id: ID_TYPE) -> None:
@@ -207,7 +231,6 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return TracerSession(**response.json())
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     @xor_args(("session_id", "session_name"))
     def read_session(
         self, *, session_id: Optional[str] = None, session_name: Optional[str] = None
@@ -221,16 +244,14 @@ class LangChainPlusClient(BaseSettings):
             params["name"] = session_name
         else:
             raise ValueError("Must provide session_name or session_id")
-        response = self._get(
+        response = self._get_with_retries(
             path,
             params=params,
         )
-        raise_for_status_with_text(response)
-        response = self._get(
+        response = self._get_with_retries(
             path,
             params=params,
         )
-        raise_for_status_with_text(response)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
@@ -238,11 +259,9 @@ class LangChainPlusClient(BaseSettings):
             return TracerSession(**result[0])
         return TracerSession(**response.json())
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def list_sessions(self) -> Iterator[TracerSession]:
         """List sessions from the LangChain+ API."""
-        response = self._get("/sessions")
-        raise_for_status_with_text(response)
+        response = self._get_with_retries("/sessions")
         yield from [TracerSession(**session) for session in response.json()]
 
     @xor_args(("session_name", "session_id"))
@@ -277,7 +296,6 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return Dataset(**response.json())
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     @xor_args(("dataset_name", "dataset_id"))
     def read_dataset(
         self,
@@ -293,11 +311,10 @@ class LangChainPlusClient(BaseSettings):
             params["name"] = dataset_name
         else:
             raise ValueError("Must provide dataset_name or dataset_id")
-        response = self._get(
+        response = self._get_with_retries(
             path,
             params=params,
         )
-        raise_for_status_with_text(response)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
@@ -305,11 +322,9 @@ class LangChainPlusClient(BaseSettings):
             return Dataset(**result[0])
         return Dataset(**result)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def list_datasets(self, limit: int = 100) -> Iterator[Dataset]:
         """List the datasets on the LangChain+ API."""
-        response = self._get("/datasets", params={"limit": limit})
-        raise_for_status_with_text(response)
+        response = self._get_with_retries("/datasets", params={"limit": limit})
         yield from [Dataset(**dataset) for dataset in response.json()]
 
     @xor_args(("dataset_id", "dataset_name"))
@@ -338,7 +353,7 @@ class LangChainPlusClient(BaseSettings):
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime] = None,
-        outputs: Mapping[str, Any] | None = None,
+        outputs: Optional[Mapping[str, Any]] = None,
     ) -> Example:
         """Create a dataset example in the LangChain+ API."""
         if dataset_id is None:
@@ -359,14 +374,11 @@ class LangChainPlusClient(BaseSettings):
         result = response.json()
         return Example(**result)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def read_example(self, example_id: ID_TYPE) -> Example:
         """Read an example from the LangChain+ API."""
-        response = self._get(f"/examples/{example_id}")
-        raise_for_status_with_text(response)
+        response = self._get_with_retries(f"/examples/{example_id}")
         return Example(**response.json())
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def list_examples(
         self, dataset_id: Optional[ID_TYPE] = None, dataset_name: Optional[str] = None
     ) -> Iterator[Example]:
@@ -379,8 +391,7 @@ class LangChainPlusClient(BaseSettings):
             params["dataset"] = dataset_id
         else:
             pass
-        response = self._get("/examples", params=params)
-        raise_for_status_with_text(response)
+        response = self._get_with_retries("/examples", params=params)
         yield from [Example(**dataset) for dataset in response.json()]
 
     def update_example(
@@ -493,14 +504,11 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return Feedback(**feedback.dict())
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def read_feedback(self, feedback_id: ID_TYPE) -> Feedback:
         """Read a feedback from the LangChain+ API."""
-        response = self._get(f"/feedback/{feedback_id}")
-        raise_for_status_with_text(response)
+        response = self._get_with_retries(f"/feedback/{feedback_id}")
         return Feedback(**response.json())
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(0.5))
     def list_feedback(
         self,
         *,
@@ -512,8 +520,9 @@ class LangChainPlusClient(BaseSettings):
             run=run_ids,
             **kwargs,
         )
-        response = self._get("/feedback", params=params.dict(exclude_none=True))
-        raise_for_status_with_text(response)
+        response = self._get_with_retries(
+            "/feedback", params=params.dict(exclude_none=True)
+        )
         yield from [Feedback(**feedback) for feedback in response.json()]
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:

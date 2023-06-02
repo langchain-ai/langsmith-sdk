@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, ClassVar, Dict, List, Mapping, Optional, Sequence, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, root_validator
+from typing_extensions import Literal
 
 
 class ExampleBase(BaseModel):
@@ -86,7 +87,7 @@ class RunBase(BaseModel):
     id: Optional[UUID]
     start_time: datetime = Field(default_factory=datetime.utcnow)
     end_time: datetime = Field(default_factory=datetime.utcnow)
-    extra: dict
+    extra: dict = Field(default_factory=dict)
     error: Optional[str]
     execution_order: int
     child_execution_order: Optional[int]
@@ -111,6 +112,14 @@ class Run(RunBase):
         if "name" not in values:
             values["name"] = values["serialized"]["name"]
         return values
+
+
+class RunUpdate(BaseModel):
+    end_time: Optional[datetime]
+    error: Optional[str]
+    outputs: Optional[dict]
+    parent_run_id: Optional[UUID]
+    reference_example_id: Optional[UUID]
 
 
 class ListRunsQueryParams(BaseModel):
@@ -160,8 +169,8 @@ class ListRunsQueryParams(BaseModel):
 
 
 class FeedbackSourceBase(BaseModel):
-    type: ClassVar[str]
-    metadata: Dict[str, Any] | None = None
+    type: str
+    metadata: Optional[Dict[str, Any]] = None
 
     class Config:
         frozen = True
@@ -170,13 +179,13 @@ class FeedbackSourceBase(BaseModel):
 class APIFeedbackSource(FeedbackSourceBase):
     """API feedback source."""
 
-    type: ClassVar[str] = "api"
+    type: Literal["api"] = "api"
 
 
 class ModelFeedbackSource(FeedbackSourceBase):
     """Model feedback source."""
 
-    type: ClassVar[str] = "model"
+    type: Literal["model"] = "model"
 
 
 class FeedbackSourceType(Enum):
