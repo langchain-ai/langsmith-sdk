@@ -159,11 +159,6 @@ Once your runs are stored in LangChainPlus, you can convert them into a dataset.
 For this example, we will do so using the Client, but you can also do this using
 the web interface, as explained in the [LangChainPlus docs](https://docs.langchain.plus/docs/).
 
-
-## Additional Documentation
-
-To learn more about the LangChainPlus platform, check out the [docs](https://docs.langchain.plus/docs/).
-
 ```python
 from langchainplus_sdk import LangChainPlusClient
 
@@ -184,5 +179,8 @@ for run in runs:
         outputs=run.outputs,
         dataset_id=dataset.id,
     )
-
 ```
+
+## Additional Documentation
+
+To learn more about the LangChainPlus platform, check out the [docs](https://docs.langchain.plus/docs/).
