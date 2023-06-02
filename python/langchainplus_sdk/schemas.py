@@ -9,10 +9,10 @@ from uuid import UUID, uuid4
 from pydantic import (
     BaseModel,
     Field,
-    root_validator,
     StrictBool,
     StrictFloat,
     StrictInt,
+    root_validator,
 )
 from typing_extensions import Literal
 

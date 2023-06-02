@@ -1,8 +1,9 @@
 from abc import abstractmethod
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union
+
+from pydantic import BaseModel
 
 from langchainplus_sdk.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
-from pydantic import BaseModel
 
 
 class EvaluationResult(BaseModel):

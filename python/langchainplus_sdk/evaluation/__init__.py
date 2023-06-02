@@ -6,4 +6,4 @@ from langchainplus_sdk.evaluation.evaluator import (
     StringEvaluator,
 )
 
-__all__ = ["EvaluationResult", "RunEvaluator", StringEvaluator]
+__all__ = ["EvaluationResult", "RunEvaluator", "StringEvaluator"]
