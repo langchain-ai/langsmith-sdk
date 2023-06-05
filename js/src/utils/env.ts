@@ -2,10 +2,10 @@
 declare global {
   const Deno:
     | {
-        version: {
-          deno: string;
-        };
-      }
+      version: {
+        deno: string;
+      };
+    }
     | undefined;
 }
 
@@ -80,9 +80,16 @@ export function getEnvironmentVariable(name: string): string | undefined {
   try {
     return typeof process !== "undefined"
       ? // eslint-disable-next-line no-process-env
-        process.env?.[name]
+      process.env?.[name]
       : undefined;
   } catch (e) {
     return undefined;
+  }
+}
+
+export function setEnvironmentVariable(name: string, value: string): void {
+  if (typeof process !== "undefined") {
+    // eslint-disable-next-line no-process-env
+    process.env[name] = value;
   }
 }

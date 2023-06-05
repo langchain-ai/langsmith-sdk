@@ -25,6 +25,9 @@
   ],
   "type": "module",
   "main": "./dist/index.js",
+  "bin": {
+    "langchainplus": "./dist/cli/main.js"
+  },
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js",
@@ -78,7 +81,10 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
+    "@types/js-yaml": "^4.0.5",
     "@types/uuid": "^9.0.1",
+    "commander": "^10.0.1",
+    "js-yaml": "^4.1.0",
     "p-queue": "^6.6.2",
     "p-retry": "^5.1.2",
     "uuid": "^9.0.0"
