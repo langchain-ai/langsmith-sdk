@@ -17,7 +17,7 @@ import { getEnvironmentVariable } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface LangChainPlusClientConfig {
-  apiUrl: string;
+  apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
 }
@@ -78,7 +78,7 @@ export class LangChainPlusClient {
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
-  public static getDefaultClientConfig(): LangChainPlusClientConfig {
+  public static getDefaultClientConfig(): { apiUrl: string; apiKey?: string } {
     return {
       apiUrl:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
