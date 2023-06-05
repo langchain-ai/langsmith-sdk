@@ -508,6 +508,18 @@ files = [
 ]
 
 [[package]]
+name = "types-pyyaml"
+version = "6.0.12.10"
+description = "Typing stubs for PyYAML"
+category = "dev"
+optional = false
+python-versions = "*"
+files = [
+    {file = "types-PyYAML-6.0.12.10.tar.gz", hash = "sha256:ebab3d0700b946553724ae6ca636ea932c1b0868701d4af121630e78d695fc97"},
+    {file = "types_PyYAML-6.0.12.10-py3-none-any.whl", hash = "sha256:662fa444963eff9b68120d70cda1af5a5f2aa57900003c2006d7626450eaae5f"},
+]
+
+[[package]]
 name = "types-requests"
 version = "2.31.0.1"
 description = "Typing stubs for requests"
@@ -567,4 +579,4 @@ zstd = ["zstandard (>=0.18.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0"
-content-hash = "7072d2ed50a05a896961a1f768fe8b652b9c96acfa9a27c7c9e143586ebed8d2"
+content-hash = "3c82b57a11703d30723a094b43460401b14e3325f97c7c20723aa0b5e0a221c3"
