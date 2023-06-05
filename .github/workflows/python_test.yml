@@ -85,6 +85,6 @@ jobs:
     if: ${{ github.event.inputs.run_integration_tests == 'true' }}
     steps:
       - name: Run integration tests
-        uses: ./.github/actions/integration-tests
+        uses: ./.github/actions/python-integration-tests
         with:
           python-version: ${{ needs.build.outputs.python-version }}

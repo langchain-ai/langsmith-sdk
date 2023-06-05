@@ -101,3 +101,13 @@ jobs:
         run: yarn run build
       - name: Test
         run: yarn run test
+
+  integration_test:
+    needs: build
+    runs-on: ubuntu-20.04
+    if: ${{ github.event.inputs.run_integration_tests == 'true' }}
+    steps:
+      - name: Run JS integration tests
+        uses: ./.github/actions/js-integration-tests
+        with:
+          node-version: 18.x
