@@ -69,7 +69,7 @@ export class LangChainPlusClient {
 
   private caller: AsyncCaller;
 
-  constructor(config: LangChainPlusClientConfig) {
+  constructor(config: LangChainPlusClientConfig = {}) {
     const defaultConfig = LangChainPlusClient.getDefaultClientConfig();
 
     this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
