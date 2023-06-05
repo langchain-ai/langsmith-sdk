@@ -31,8 +31,7 @@ async function getDockerComposeCommand(): Promise<string[]> {
 async function pprintServices(servicesStatus: any[]) {
   const services = [];
   for (const service of servicesStatus) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const serviceStatus: Record<string, any> = {
+    const serviceStatus: Record<string, string> = {
       Service: String(service["Service"]),
       Status: String(service["Status"]),
     };
@@ -78,7 +77,7 @@ async function pprintServices(servicesStatus: any[]) {
       "\nLANGCHAIN_TRACING_V2=true" +
       `\nLANGCHAIN_ENDPOINT=${langchainEndpoint}`
   );
-  console.log(serviceMessage.join("\n"));
+  console.info(serviceMessage.join("\n"));
 }
 
 async function getNgrokUrl(): Promise<string> {
@@ -228,7 +227,7 @@ class PlusCommand {
     const servicesStatus = JSON.parse(result.stdout);
     if (servicesStatus) {
       console.info("The LangChainPlus server is currently running.");
-      console.info(pprintServices(servicesStatus));
+      await pprintServices(servicesStatus);
     } else {
       console.info("The LangChainPlus server is not running.");
     }
