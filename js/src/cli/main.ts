@@ -7,7 +7,7 @@ import * as yaml from "js-yaml";
 import { setEnvironmentVariable } from "../utils/env.js";
 
 const currentFileName = __filename;
-const currentDirName = path.dirname(currentFileName);
+const currentDirName = __dirname;
 
 const exec = util.promisify(child_process.exec);
 
@@ -88,18 +88,24 @@ async function getNgrokUrl(): Promise<string> {
     // const response = await axios.get(ngrokUrl);
     const response = await fetch(ngrokUrl);
     if (response.status !== 200) {
-      throw new Error("Could not connect to ngrok console.");
+      throw new Error(`Could not connect to ngrok console. ${response.status}, ${response.statusText}`);
     }
     const result = await response.json();
-    const exposedUrl = result.data["tunnels"][0]["public_url"];
+    const exposedUrl = result["tunnels"][0]["public_url"];
     return exposedUrl;
   } catch (error) {
-    throw new Error("Could not connect to ngrok console.");
+    throw new Error(`Could not connect to ngrok console. ${error}`);
   }
 }
 
 async function createNgrokConfig(authToken: string | null): Promise<string> {
   const configPath = path.join(currentDirName, "ngrok_config.yaml");
+  // Check if is a directory
+  if (fs.existsSync(configPath) && fs.lstatSync(configPath).isDirectory()) {
+    fs.rmdirSync(configPath, { recursive: true });
+  } else if (fs.existsSync(configPath)) {
+    fs.unlinkSync(configPath);
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ngrokConfig: Record<string, any> = {
     tunnels: {
@@ -115,7 +121,6 @@ async function createNgrokConfig(authToken: string | null): Promise<string> {
   if (authToken !== null) {
     ngrokConfig["authtoken"] = authToken;
   }
-
   fs.writeFileSync(configPath, yaml.dump(ngrokConfig));
   return configPath;
 }
@@ -181,7 +186,7 @@ class PlusCommand {
       "-f",
       this.dockerComposeFile,
       "-f",
-      configPath,
+      this.ngrokPath,
       "up",
       "--pull=always",
       "--quiet-pull",
