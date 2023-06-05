@@ -3,7 +3,6 @@ import * as path from "path";
 import * as util from "util";
 import { Command } from "commander";
 import * as child_process from "child_process";
-import * as yaml from "js-yaml";
 import { setEnvironmentVariable } from "../utils/env.js";
 
 const currentFileName = __filename;
@@ -54,9 +53,9 @@ async function pprintServices(servicesStatus: any[]) {
   );
   const serviceMessage = [
     "\n" +
-    "Service".padEnd(maxServiceLen + 2) +
-    "Status".padEnd(maxStateLen + 2) +
-    "Published Ports",
+      "Service".padEnd(maxServiceLen + 2) +
+      "Status".padEnd(maxStateLen + 2) +
+      "Published Ports",
   ];
   for (const service of services) {
     const serviceStr = service["Service"].padEnd(maxServiceLen + 2);
@@ -75,9 +74,9 @@ async function pprintServices(servicesStatus: any[]) {
 
   serviceMessage.push(
     "\nTo connect, set the following environment variables" +
-    " in your LangChain application:" +
-    "\nLANGCHAIN_TRACING_V2=true" +
-    `\nLANGCHAIN_ENDPOINT=${langchainEndpoint}`
+      " in your LangChain application:" +
+      "\nLANGCHAIN_TRACING_V2=true" +
+      `\nLANGCHAIN_ENDPOINT=${langchainEndpoint}`
   );
   console.log(serviceMessage.join("\n"));
 }
@@ -88,7 +87,9 @@ async function getNgrokUrl(): Promise<string> {
     // const response = await axios.get(ngrokUrl);
     const response = await fetch(ngrokUrl);
     if (response.status !== 200) {
-      throw new Error(`Could not connect to ngrok console. ${response.status}, ${response.statusText}`);
+      throw new Error(
+        `Could not connect to ngrok console. ${response.status}, ${response.statusText}`
+      );
     }
     const result = await response.json();
     const exposedUrl = result["tunnels"][0]["public_url"];
@@ -106,22 +107,19 @@ async function createNgrokConfig(authToken: string | null): Promise<string> {
   } else if (fs.existsSync(configPath)) {
     fs.unlinkSync(configPath);
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ngrokConfig: Record<string, any> = {
-    tunnels: {
-      langchain: {
-        proto: "http",
-        addr: "langchain-backend:8000",
-      },
-    },
-    version: "2",
-    region: "us",
-  };
+  let ngrokConfig = `
+region: us
+tunnels:
+  langchain:
+    addr: langchain-backend:8000
+    proto: http
+version: '2'
+`;
 
   if (authToken !== null) {
-    ngrokConfig["authtoken"] = authToken;
+    ngrokConfig += `authtoken: ${authToken}`;
   }
-  fs.writeFileSync(configPath, yaml.dump(ngrokConfig));
+  fs.writeFileSync(configPath, ngrokConfig);
   return configPath;
 }
 

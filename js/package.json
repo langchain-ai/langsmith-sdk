@@ -81,10 +81,8 @@
     "typescript": "^5.0.4"
   },
   "dependencies": {
-    "@types/js-yaml": "^4.0.5",
     "@types/uuid": "^9.0.1",
     "commander": "^10.0.1",
-    "js-yaml": "^4.1.0",
     "p-queue": "^6.6.2",
     "p-retry": "^5.1.2",
     "uuid": "^9.0.0"
