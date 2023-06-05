@@ -9,9 +9,7 @@ import * as path from "path";
 const entrypoints = {
   client: "client",
   run_trees: "run_trees",
-  evaluation: "evaluation",
-  "evaluation/evaluator": "evaluation/evaluator",
-  "evaluation/string_evaluator": "evaluation/string_evaluator",
+  evaluation: "evaluation/index",
 };
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
