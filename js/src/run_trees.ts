@@ -1,6 +1,13 @@
 import * as uuid from "uuid";
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
-import { BaseRun, KVMap, RunCreate, RunType, RunUpdate } from "./schemas.js";
+import {
+  BaseRun,
+  KVMap,
+  RunCreate,
+  RunEvent,
+  RunType,
+  RunUpdate,
+} from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 
 export interface RunTreeConfig {
@@ -23,6 +30,7 @@ export interface RunTreeConfig {
   inputs?: KVMap;
   outputs?: KVMap;
   reference_example_id?: string;
+  events?: RunEvent[];
 }
 
 export class RunTree implements BaseRun {
@@ -46,6 +54,7 @@ export class RunTree implements BaseRun {
   inputs: KVMap;
   outputs?: KVMap;
   reference_example_id?: string;
+  events: RunEvent[];
 
   constructor(config: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
@@ -53,6 +62,7 @@ export class RunTree implements BaseRun {
     this.caller = new AsyncCaller(this.caller_options);
   }
   private static getDefaultConfig(): object {
+    const startTime = Date.now();
     return {
       id: uuid.v4(),
       session_name: getEnvironmentVariable("LANGCHAIN_SESSION") ?? "default",
@@ -63,10 +73,16 @@ export class RunTree implements BaseRun {
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
       api_key: getEnvironmentVariable("LANGCHAIN_API_KEY"),
       caller_options: {},
-      start_time: Date.now(),
-      end_time: Date.now(),
+      start_time: startTime,
+      end_time: null,
       serialized: {},
       inputs: {},
+      events: [
+        {
+          name: "start",
+          time: startTime,
+        },
+      ],
     };
   }
 
@@ -86,14 +102,10 @@ export class RunTree implements BaseRun {
     return child;
   }
 
-  async end(
-    outputs?: KVMap,
-    error?: string,
-    endTime = Date.now()
-  ): Promise<void> {
+  async end(outputs?: KVMap, error?: string): Promise<void> {
     this.outputs = outputs;
     this.error = error;
-    this.end_time = endTime;
+    this.end_time = Date.now();
 
     if (this.parent_run) {
       this.parent_run.child_execution_order = Math.max(
@@ -101,6 +113,23 @@ export class RunTree implements BaseRun {
         this.child_execution_order
       );
     }
+    let endEvent = {};
+    if (error) {
+      endEvent = { error: error };
+    }
+    if (outputs) {
+      endEvent = { outputs: outputs };
+    }
+    this.addEvent("end", endEvent);
+  }
+
+  async addEvent(name: string, kwargs?: KVMap): Promise<void> {
+    const event: RunEvent = {
+      name: name,
+      time: Date.now(),
+      kwargs: kwargs ?? {},
+    };
+    this.events.push(event);
   }
 
   private get headers(): Headers {
@@ -155,6 +184,7 @@ export class RunTree implements BaseRun {
       session_name: run.session_name,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
+      events: run.events,
     };
     return persistedRun;
   }
@@ -181,6 +211,7 @@ export class RunTree implements BaseRun {
       outputs: this.outputs,
       parent_run_id: this.parent_run?.id,
       reference_example_id: this.reference_example_id,
+      events: this.events,
     };
 
     const data = JSON.stringify(runUpdate);

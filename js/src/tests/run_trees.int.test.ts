@@ -131,7 +131,8 @@ test("Test post and patch run", async () => {
     inputs: { text: "hello world" },
   });
   await child_llm_run.postRun();
-
+  parent_run.addEvent("test-event", { test: "test" });
+  await parent_run.patchRun();
   const child_chain_run = await parent_run.createChild({
     name: "child_chain_run",
     run_type: "chain",
@@ -184,5 +185,6 @@ test("Test post and patch run", async () => {
     runMap.get("parent_run")?.id
   );
   expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
+  expect(runMap.get("parent_run")?.events.length).toEqual(3);
   await langchainClient.deleteSession({ sessionName });
 });

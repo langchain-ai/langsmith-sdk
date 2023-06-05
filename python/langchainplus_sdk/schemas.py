@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import (
@@ -91,12 +91,20 @@ class RunTypeEnum(str, Enum):
     llm = "llm"
 
 
+class RunEvent(BaseModel):
+    """An event that occurs within a run."""
+
+    name: str
+    time: datetime = Field(default_factory=datetime.utcnow)
+    kwargs: Dict[str, Any] = Field(default_factory=dict)
+
+
 class RunBase(BaseModel):
     """Base Run schema."""
 
     id: Optional[UUID]
     start_time: datetime = Field(default_factory=datetime.utcnow)
-    end_time: datetime = Field(default_factory=datetime.utcnow)
+    end_time: Optional[datetime] = None
     extra: dict = Field(default_factory=dict)
     error: Optional[str]
     execution_order: int
@@ -107,6 +115,7 @@ class RunBase(BaseModel):
     reference_example_id: Optional[UUID]
     run_type: RunTypeEnum
     parent_run_id: Optional[UUID]
+    events: List[RunEvent] = Field(default_factory=list)
 
 
 class Run(RunBase):
@@ -130,6 +139,7 @@ class RunUpdate(BaseModel):
     outputs: Optional[dict]
     parent_run_id: Optional[UUID]
     reference_example_id: Optional[UUID]
+    events: Optional[List[RunEvent]] = Field(default_factory=list)
 
 
 class ListRunsQueryParams(BaseModel):
@@ -253,7 +263,7 @@ class Feedback(FeedbackBase):
 class ListFeedbackQueryParams(BaseModel):
     """Query Params for listing feedbacks."""
 
-    run: Optional[Sequence[UUID]] = None
+    run: Optional[List[UUID]] = None
     limit: int = 100
     offset: int = 0
 
