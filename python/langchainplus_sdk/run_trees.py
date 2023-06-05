@@ -16,7 +16,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from langchainplus_sdk.schemas import RunBase, RunTypeEnum, RunUpdate
+from langchainplus_sdk.schemas import RunBase, RunEvent, RunTypeEnum, RunUpdate
 from langchainplus_sdk.utils import (
     LangChainPlusAPIError,
     get_runtime_environment,
@@ -100,6 +100,10 @@ class RunTree(RunBase):
         extra = values.get("extra", {})
         extra["runtime"] = get_runtime_environment()
         values["extra"] = extra
+        events = values.get("events", [])
+        if not events:
+            events = [RunEvent(name="start")]
+        values["events"] = events
         return values
 
     @property
@@ -114,10 +118,9 @@ class RunTree(RunBase):
         *,
         outputs: Optional[Dict] = None,
         error: Optional[str] = None,
-        end_time: Optional[datetime] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
-        self.end_time = end_time or datetime.utcnow()
+        self.end_time = datetime.utcnow()
         if outputs is not None:
             self.outputs = outputs
         if error is not None:
@@ -127,6 +130,12 @@ class RunTree(RunBase):
                 self.parent_run.child_execution_order,
                 self.child_execution_order,
             )
+        kwargs: Dict[str, Any] = {}
+        if error:
+            kwargs["error"] = error
+        if outputs:
+            kwargs["outputs"] = outputs
+        self.add_event("end", **kwargs)
 
     def create_child(
         self,
@@ -156,7 +165,7 @@ class RunTree(RunBase):
             run_type=run_type,
             reference_example_id=reference_example_id,
             start_time=start_time or datetime.utcnow(),
-            end_time=end_time or datetime.utcnow(),
+            end_time=end_time,
             execution_order=execution_order,
             child_execution_order=execution_order,
             extra=extra or {},
@@ -186,6 +195,11 @@ class RunTree(RunBase):
         exclude = {"child_runs"} if exclude_child_runs else None
         data = self.json(exclude=exclude, exclude_none=True)
         return executor.submit(self._post, data=data)
+
+    def add_event(self, name: str, **kwargs: Any) -> None:
+        """Add an event to the run tree."""
+        event = RunEvent(name=name, kwargs=kwargs)
+        self.events.append(event)
 
     def _patch(self, data: str) -> None:
         """Patch the run tree to the API."""

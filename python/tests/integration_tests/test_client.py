@@ -224,11 +224,14 @@ def test_evaluate_run(
         reference_example_id=example.id,
     )
     parent_run.post()
+    parent_run.add_event("test-event", test_key="test_value")
+    parent_run.patch()
     parent_run.end(outputs={"output": predicted})
     parent_run.patch()
     await_all_runs()
     run = langchain_client.read_run(str(parent_run.id))
     assert run.outputs == {"output": predicted}
+    assert len(run.events) == 3
 
     def jaccard_chars(output: str, answer: str) -> float:
         """Naive Jaccard similarity between two strings."""

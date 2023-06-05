@@ -16,6 +16,11 @@ export interface BaseExample {
   inputs: KVMap;
   outputs: KVMap;
 }
+export interface RunEvent {
+  name: string;
+  time: number;
+  kwargs: KVMap;
+}
 
 export interface BaseRun {
   id: string;
@@ -30,6 +35,7 @@ export interface BaseRun {
   outputs?: KVMap;
   reference_example_id?: string; // uuid
   run_type: RunType;
+  events: RunEvent[];
 }
 
 export interface Run extends BaseRun {
@@ -55,6 +61,7 @@ export interface RunUpdate {
   outputs?: KVMap;
   parent_run_id?: string;
   reference_example_id?: string;
+  events?: RunEvent[];
 }
 export interface ExampleCreate extends BaseExample {
   id?: string;
