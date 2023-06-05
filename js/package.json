@@ -19,9 +19,12 @@
   ],
   "type": "module",
   "main": "./dist/index.js",
+  "bin": {
+    "langchain": "./dist/cli/main.cjs"
+  },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js",
+    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js && node scripts/create-cli.js",
     "clean": "rm -rf dist/ && node scripts/create-entrypoints.js clean",
     "build:esm": "tsc --outDir dist/ && rm -rf dist/tests dist/**/tests",
     "build:cjs": "tsc --outDir dist-cjs/ -p tsconfig.cjs.json && node scripts/move-cjs-to-dist.js && rm -r dist-cjs",
@@ -73,6 +76,7 @@
   },
   "dependencies": {
     "@types/uuid": "^9.0.1",
+    "commander": "^10.0.1",
     "p-queue": "^6.6.2",
     "p-retry": "^5.1.2",
     "uuid": "^9.0.0"

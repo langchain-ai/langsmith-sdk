@@ -86,3 +86,10 @@ export function getEnvironmentVariable(name: string): string | undefined {
     return undefined;
   }
 }
+
+export function setEnvironmentVariable(name: string, value: string): void {
+  if (typeof process !== "undefined") {
+    // eslint-disable-next-line no-process-env
+    process.env[name] = value;
+  }
+}
