@@ -6,11 +6,8 @@ import * as child_process from "child_process";
 import * as yaml from "js-yaml";
 import { setEnvironmentVariable } from "../utils/env.js";
 
-import { fileURLToPath } from "url";
-import { dirname } from "path";
-
-const currentFileName = fileURLToPath(import.meta.url);
-const currentDirName = dirname(currentFileName);
+const currentFileName = __filename;
+const currentDirName = path.dirname(currentFileName);
 
 const exec = util.promisify(child_process.exec);
 
@@ -30,6 +27,59 @@ async function getDockerComposeCommand(): Promise<string[]> {
       );
     }
   }
+}
+
+async function pprintServices(servicesStatus: any[]) {
+  const services = [];
+  for (const service of servicesStatus) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const serviceStatus: Record<string, any> = {
+      Service: String(service["Service"]),
+      Status: String(service["Status"]),
+    };
+    const publishers = service["Publishers"] || [];
+    if (publishers) {
+      serviceStatus["PublishedPorts"] = publishers
+        .map((publisher: any) => String(publisher["PublishedPort"]))
+        .join(", ");
+    }
+    services.push(serviceStatus);
+  }
+
+  const maxServiceLen = Math.max(
+    ...services.map((service) => service["Service"].length)
+  );
+  const maxStateLen = Math.max(
+    ...services.map((service) => service["Status"].length)
+  );
+  const serviceMessage = [
+    "\n" +
+    "Service".padEnd(maxServiceLen + 2) +
+    "Status".padEnd(maxStateLen + 2) +
+    "Published Ports",
+  ];
+  for (const service of services) {
+    const serviceStr = service["Service"].padEnd(maxServiceLen + 2);
+    const stateStr = service["Status"].padEnd(maxStateLen + 2);
+    const portsStr = service["PublishedPorts"] || "";
+    serviceMessage.push(serviceStr + stateStr + portsStr);
+  }
+
+  let langchainEndpoint = "http://localhost:1984";
+  const usedNgrok = services.some((service) =>
+    service["Service"].includes("ngrok")
+  );
+  if (usedNgrok) {
+    langchainEndpoint = await getNgrokUrl();
+  }
+
+  serviceMessage.push(
+    "\nTo connect, set the following environment variables" +
+    " in your LangChain application:" +
+    "\nLANGCHAIN_TRACING_V2=true" +
+    `\nLANGCHAIN_ENDPOINT=${langchainEndpoint}`
+  );
+  console.log(serviceMessage.join("\n"));
 }
 
 async function getNgrokUrl(): Promise<string> {
@@ -119,7 +169,7 @@ class PlusCommand {
     ];
     await exec(command.join(" "));
     console.info(
-      "langchain plus server is running at http://localhost.  To connect locally, set the following environment variable when running your LangChain application."
+      "LangChainPlus server is running at http://localhost.  To connect locally, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
   }
@@ -143,7 +193,7 @@ class PlusCommand {
     );
     const ngrokUrl = await getNgrokUrl();
     console.info(
-      "langchain plus server is running at http://localhost. To connect remotely, set the following environment variable when running your LangChain application."
+      "LangChainPlus server is running at http://localhost. To connect remotely, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
     console.info(`\tLANGCHAIN_ENDPOINT=${ngrokUrl}`);
@@ -162,10 +212,28 @@ class PlusCommand {
     ];
     await exec(command.join(" "));
   }
+  async status() {
+    const command = [
+      ...this.dockerComposeCommand,
+      "-f",
+      this.dockerComposeFile,
+      "ps",
+      "--format",
+      "json",
+    ];
+    const result = await exec(command.join(" "));
+    const servicesStatus = JSON.parse(result.stdout);
+    if (servicesStatus) {
+      console.info("The LangChainPlus server is currently running.");
+      console.info(pprintServices(servicesStatus));
+    } else {
+      console.info("The LangChainPlus server is not running.");
+    }
+  }
 }
 
 const startCommand = new Command("start")
-  .description("Start the langchain plus server")
+  .description("Start the LangChainPlus server")
   .option(
     "--expose",
     "Expose the server to the internet via ngrok (requires ngrok to be installed)"
@@ -174,7 +242,7 @@ const startCommand = new Command("start")
     "--ngrok-authtoken <ngrokAuthtoken>",
     "Your ngrok auth token. If this is set, --expose is implied."
   )
-  .option("--dev", "Run the development version of the langchain plus server")
+  .option("--dev", "Run the development version of the LangChainPlus server")
   .option(
     "--openai-api-key <openaiApiKey>",
     "Your OpenAI API key. If this is set, the server will be able to process text and return enhanced plus results."
@@ -183,13 +251,19 @@ const startCommand = new Command("start")
 
 const stopCommand = new Command("stop")
   .command("stop")
-  .description("Stop the langchain plus server")
+  .description("Stop the LangChainPlus server")
   .action(async () => (await PlusCommand.create()).stop());
+
+const statusCommand = new Command("status")
+  .command("status")
+  .description("Get the status of the LangChainPlus server")
+  .action(async () => (await PlusCommand.create()).status());
 
 program
   .command("plus")
-  .description("Manage the langchain plus server")
+  .description("Manage the LangChainPlus server")
   .addCommand(startCommand)
-  .addCommand(stopCommand);
+  .addCommand(stopCommand)
+  .addCommand(statusCommand);
 
 program.parse(process.argv);
