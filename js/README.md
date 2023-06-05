@@ -214,7 +214,7 @@ for (const run of runs) {
 You can run evaluations directly using the LangChainPlus client.
 
 ```ts
-import { StringEvaluator } from "langchainplus-sdk/evaluation/string_evaluator.js";
+import { StringEvaluator } from "langchainplus-sdk/evaluation";
 
 function jaccardChars(output: string, answer: string): number {
   const predictionChars = new Set(output.trim().toLowerCase());
