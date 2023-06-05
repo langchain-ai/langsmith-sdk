@@ -12,7 +12,7 @@ from typing import Dict, Generator, List, Mapping, Optional, Union, cast
 import requests
 import yaml
 
-from langchain.env import get_runtime_environment
+from langchainplus_sdk.utils import get_runtime_environment
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
