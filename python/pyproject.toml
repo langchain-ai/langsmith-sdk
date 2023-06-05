@@ -7,6 +7,9 @@ license = "MIT"
 readme = "README.md"
 packages = [{include = "langchainplus_sdk"}]
 
+[tool.poetry.scripts]
+langchain = "langchainplus_sdk.cli.main:main"
+
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4.0"
 pydantic = "^1"
@@ -21,6 +24,7 @@ mypy = "^1.3.0"
 ruff = "^0.0.270"
 types-requests = "^2.31.0.1"
 pandas-stubs = "^2.0.1.230501"
+types-pyyaml = "^6.0.12.10"
 
 [build-system]
 requires = ["poetry-core"]
