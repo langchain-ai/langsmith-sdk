@@ -26,11 +26,11 @@
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "langchainplus": "./dist/cli/main.js"
+    "langchain": "./dist/cli/main.js"
   },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js",
+    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js && node scripts/create-cli.js",
     "clean": "rm -rf dist/ && node scripts/create-entrypoints.js clean",
     "build:esm": "tsc --outDir dist/ && rm -rf dist/tests dist/**/tests",
     "build:cjs": "tsc --outDir dist-cjs/ -p tsconfig.cjs.json && node scripts/move-cjs-to-dist.js && rm -r dist-cjs",

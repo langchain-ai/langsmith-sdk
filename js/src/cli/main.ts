@@ -6,6 +6,12 @@ import * as child_process from "child_process";
 import * as yaml from "js-yaml";
 import { setEnvironmentVariable } from "../utils/env.js";
 
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+const currentFileName = fileURLToPath(import.meta.url);
+const currentDirName = dirname(currentFileName);
+
 const exec = util.promisify(child_process.exec);
 
 const program = new Command();
@@ -43,7 +49,7 @@ async function getNgrokUrl(): Promise<string> {
 }
 
 async function createNgrokConfig(authToken: string | null): Promise<string> {
-  const configPath = path.join(__dirname, "ngrok_config.yaml");
+  const configPath = path.join(currentDirName, "ngrok_config.yaml");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ngrokConfig: Record<string, any> = {
     tunnels: {
@@ -72,11 +78,11 @@ class PlusCommand {
   constructor({ dockerComposeCommand }: { dockerComposeCommand: string[] }) {
     this.dockerComposeCommand = dockerComposeCommand;
     this.dockerComposeFile = path.join(
-      path.dirname(__filename),
+      path.dirname(currentFileName),
       "docker-compose.yaml"
     );
     this.ngrokPath = path.join(
-      path.dirname(__filename),
+      path.dirname(currentFileName),
       "docker-compose.ngrok.yaml"
     );
   }
@@ -158,8 +164,7 @@ class PlusCommand {
   }
 }
 
-program
-  .command("start")
+const startCommand = new Command("start")
   .description("Start the langchain plus server")
   .option(
     "--expose",
@@ -176,9 +181,15 @@ program
   )
   .action(async (args: string[]) => (await PlusCommand.create()).start(args));
 
-program
+const stopCommand = new Command("stop")
   .command("stop")
   .description("Stop the langchain plus server")
   .action(async () => (await PlusCommand.create()).stop());
+
+program
+  .command("plus")
+  .description("Manage the langchain plus server")
+  .addCommand(startCommand)
+  .addCommand(stopCommand);
 
 program.parse(process.argv);
