@@ -16,6 +16,8 @@ from pydantic import (
 )
 from typing_extensions import Literal
 
+from langchainplus_sdk.utils import get_runtime_environment
+
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, StrictBool, StrictInt, StrictFloat, str, None]
 
@@ -121,6 +123,19 @@ class Run(RunBase):
         """Assign name to the run."""
         if "name" not in values:
             values["name"] = values["serialized"]["name"]
+        return values
+
+
+class RunCreate(RunBase):
+    name: str
+    session_name: Optional[str] = None
+
+    @root_validator(pre=True)
+    def add_runtime_env(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """Add env info to the run."""
+        extra = values.get("extra", {})
+        extra["runtime"] = get_runtime_environment()
+        values["extra"] = extra
         return values
 
 

@@ -44,6 +44,8 @@ from langchainplus_sdk.schemas import (
     ListRunsQueryParams,
     ModelFeedbackSource,
     Run,
+    RunCreate,
+    RunUpdate,
     TracerSession,
 )
 from langchainplus_sdk.utils import (
@@ -180,6 +182,28 @@ class LangChainPlusClient(BaseSettings):
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
         return Dataset(**result)
+
+    def create_run(self, *, session_name: Optional[str] = None, **kwargs: Any) -> None:
+        """Persist a run to the LangChain+ API."""
+        run_create = RunCreate(**kwargs, session_name=session_name)
+        headers = {**self._headers, "Accept": "application/json"}
+        request_with_retries(
+            "post",
+            f"{self.api_url}/runs",
+            request_kwargs={"data": run_create.json(), "headers": headers},
+            retry_config=self.retry_config,
+        )
+
+    def update_run(self, run_id: ID_TYPE, **kwargs: Any) -> None:
+        """Update a run to the LangChain+ API."""
+        run_update = RunUpdate(**kwargs)
+        headers = {**self._headers, "Accept": "application/json"}
+        request_with_retries(
+            "patch",
+            f"{self.api_url}/runs/{run_id}",
+            request_kwargs={"data": run_update.json(), "headers": headers},
+            retry_config=self.retry_config,
+        )
 
     def read_run(self, run_id: ID_TYPE) -> Run:
         """Read a run from the LangChain+ API."""

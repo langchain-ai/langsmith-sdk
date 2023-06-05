@@ -4,13 +4,14 @@ import os
 import random
 import string
 from typing import List, Optional
+from uuid import uuid4
 
 import pytest
 
 from langchainplus_sdk.client import LangChainPlusClient
 from langchainplus_sdk.evaluation import StringEvaluator
 from langchainplus_sdk.run_trees import RunTree, await_all_runs
-from langchainplus_sdk.schemas import Feedback
+from langchainplus_sdk.schemas import Feedback, Run
 from langchainplus_sdk.utils import LangChainPlusError
 
 
@@ -192,6 +193,33 @@ def test_run_tree(
     langchain_client.delete_session(session_name=session_name)
     with pytest.raises(LangChainPlusError):
         langchain_client.read_session(session_name=session_name)
+
+
+def test_persist_update_run(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
+) -> None:
+    """Test the persist and update methods work as expected."""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    session_name = "__test_persist_update_run"
+    if session_name in [sess.name for sess in langchain_client.list_sessions()]:
+        langchain_client.delete_session(session_name=session_name)
+    run = Run(
+        id=uuid4(),
+        execution_order=1,
+        name="test_run",
+        run_type="llm",
+        inputs={"text": "hello world"},
+        session_name=session_name,
+        serialized={},
+        api_url=os.getenv("LANGCHAIN_ENDPOINT"),
+    )
+    langchain_client.create_run(**run.dict(), session_name=session_name)
+    run.outputs = {"output": ["Hi"]}
+    langchain_client.update_run(run.id, **run.dict())
+    stored_run = langchain_client.read_run(run.id)
+    assert stored_run.id == run.id
+    assert stored_run.outputs == run.outputs
+    langchain_client.delete_session(session_name=session_name)
 
 
 def test_evaluate_run(

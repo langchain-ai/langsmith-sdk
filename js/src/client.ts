@@ -8,7 +8,9 @@ import {
   Feedback,
   KVMap,
   Run,
+  RunCreate,
   RunType,
+  RunUpdate,
   ScoreType,
   TracerSession,
   ValueType,
@@ -120,9 +122,41 @@ export class LangChainPlusClient {
     }
     return response.json() as T;
   }
+  public async createRun(run: RunCreate): Promise<void> {
+    const headers = { ...this.headers, Accept: "application/json" };
+    console.log(JSON.stringify(run));
+    const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(run),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to persist run: ${response.status} ${response.statusText}`
+      );
+    }
+  }
 
-  public async readRun(run_id: string): Promise<Run> {
-    return await this._get<Run>(`/runs/${run_id}`);
+  public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+    const headers = { ...this.headers, Accept: "application/json" };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/${runId}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(run),
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update run: ${response.status} ${response.statusText}`
+      );
+    }
+  }
+
+  public async readRun(runId: string): Promise<Run> {
+    return await this._get<Run>(`/runs/${runId}`);
   }
 
   public async listRuns({
@@ -158,15 +192,15 @@ export class LangChainPlusClient {
 
   public async createSession({
     sessionName,
-    session_extra,
+    sessionExtra,
   }: {
     sessionName: string;
-    session_extra?: object;
+    sessionExtra?: object;
   }): Promise<TracerSession> {
     const endpoint = `${this.apiUrl}/sessions?upsert=true`;
     const body = {
       name: sessionName,
-      extra: session_extra,
+      extra: sessionExtra,
     };
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",

@@ -219,3 +219,37 @@ test("Test evaluate run", async () => {
   await langchainClient.deleteDataset({ datasetId: dataset.id });
   await langchainClient.deleteSession({ sessionName });
 });
+
+test("Test persist update run", async () => {
+  const langchainClient = new LangChainPlusClient({
+    apiUrl: "http://localhost:1984",
+  });
+
+  const sessionName = "__test_persist_update_run";
+  const sessions = await langchainClient.listSessions();
+
+  if (sessions.map((session) => session.name).includes(sessionName)) {
+    await langchainClient.deleteSession({ sessionName });
+  }
+  const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
+  await langchainClient.persistRun({
+    id: runId,
+    session_name: sessionName,
+    execution_order: 1,
+    name: "test_run",
+    run_type: "llm",
+    inputs: { text: "hello world" },
+    serialized: {},
+    child_runs: [],
+    start_time: 10_000,
+    end_time: 10_0001,
+  });
+
+  await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
+
+  const storedRun = await langchainClient.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
+  expect(storedRun.outputs).toEqual({ output: ["Hi"] });
+
+  await langchainClient.deleteSession({ sessionName });
+});
