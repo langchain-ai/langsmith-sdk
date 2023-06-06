@@ -424,6 +424,8 @@ class LangChainPlusClient(BaseSettings):
         self,
         run: Union[Run, str, UUID],
         evaluator: RunEvaluator,
+        *,
+        source_info: Optional[Dict[str, Any]] = None,
     ) -> Feedback:
         """Evaluate a run."""
         if isinstance(run, (str, UUID)):
@@ -440,6 +442,9 @@ class LangChainPlusClient(BaseSettings):
             run_,
             example=reference_example,
         )
+        source_info = source_info or {}
+        if feedback_result.evaluator_info:
+            source_info = {**feedback_result.evaluator_info, **source_info}
         return self.create_feedback(
             run_.id,
             feedback_result.key,
@@ -447,6 +452,43 @@ class LangChainPlusClient(BaseSettings):
             value=feedback_result.value,
             comment=feedback_result.comment,
             correction=feedback_result.correction,
+            source_info=source_info,
+            feedback_source_type=FeedbackSourceType.MODEL,
+        )
+
+    async def aevaluate_run(
+        self,
+        run: Union[Run, str, UUID],
+        evaluator: RunEvaluator,
+        *,
+        source_info: Optional[Dict[str, Any]] = None,
+    ) -> Feedback:
+        """Evaluate a run."""
+        if isinstance(run, (str, UUID)):
+            run_ = self.read_run(run)
+        elif isinstance(run, Run):
+            run_ = run
+        else:
+            raise TypeError(f"Invalid run type: {type(run)}")
+        if run_.reference_example_id is not None:
+            reference_example = self.read_example(run_.reference_example_id)
+        else:
+            reference_example = None
+        feedback_result = await evaluator.aevaluate_run(
+            run_,
+            example=reference_example,
+        )
+        source_info = source_info or {}
+        if feedback_result.evaluator_info:
+            source_info = {**feedback_result.evaluator_info, **source_info}
+        return self.create_feedback(
+            run_.id,
+            feedback_result.key,
+            score=feedback_result.score,
+            value=feedback_result.value,
+            comment=feedback_result.comment,
+            correction=feedback_result.correction,
+            source_info=source_info,
             feedback_source_type=FeedbackSourceType.MODEL,
         )
 

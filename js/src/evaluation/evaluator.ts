@@ -1,4 +1,4 @@
-import { Example, Run, ScoreType, ValueType } from "../schemas.js";
+import { Example, KVMap, Run, ScoreType, ValueType } from "../schemas.js";
 
 export interface EvaluationResult {
   key: string;
@@ -6,6 +6,7 @@ export interface EvaluationResult {
   value?: ValueType;
   comment?: string;
   correction?: string | object;
+  evaluatorInfo?: KVMap;
 }
 
 export interface RunEvaluator {
