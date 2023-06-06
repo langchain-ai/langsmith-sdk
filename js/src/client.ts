@@ -522,7 +522,8 @@ export class LangChainPlusClient {
 
   public async evaluateRun(
     run: Run | string,
-    evaluator: RunEvaluator
+    evaluator: RunEvaluator,
+    { sourceInfo }: { sourceInfo?: KVMap } = {}
   ): Promise<Feedback> {
     let run_: Run;
     if (typeof run === "string") {
@@ -540,11 +541,16 @@ export class LangChainPlusClient {
       referenceExample = await this.readExample(run_.reference_example_id);
     }
     const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
+    let sourceInfo_ = sourceInfo ?? {};
+    if (feedbackResult.evaluatorInfo) {
+      sourceInfo_ = { ...sourceInfo_, ...feedbackResult.evaluatorInfo };
+    }
     return await this.createFeedback(run_.id, feedbackResult.key, {
       score: feedbackResult.score,
       value: feedbackResult.value,
       comment: feedbackResult.comment,
       correction: feedbackResult.correction,
+      sourceInfo: sourceInfo_,
       feedbackSourceType: "MODEL",
     });
   }

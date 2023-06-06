@@ -14,6 +14,7 @@ class EvaluationResult(BaseModel):
     value: VALUE_TYPE = None
     comment: Optional[str] = None
     correction: Optional[Union[Dict, str]] = None
+    evaluator_info: Optional[Dict] = None
 
     class Config:
         """Pydantic model configuration."""
@@ -30,3 +31,11 @@ class RunEvaluator:
         self, run: Run, example: Optional[Example] = None
     ) -> EvaluationResult:
         """Evaluate an example."""
+
+    async def aevaluate_run(
+        self, run: Run, example: Optional[Example] = None
+    ) -> EvaluationResult:
+        """Evaluate an example asynchronously."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement aevaluate_run"
+        )
