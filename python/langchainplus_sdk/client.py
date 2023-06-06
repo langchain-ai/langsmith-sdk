@@ -45,6 +45,7 @@ from langchainplus_sdk.schemas import (
     ModelFeedbackSource,
     Run,
     RunCreate,
+    RunTypeEnum,
     RunUpdate,
     TracerSession,
 )
@@ -183,20 +184,41 @@ class LangChainPlusClient(BaseSettings):
             raise ValueError(f"Dataset {file_name} already exists")
         return Dataset(**result)
 
-    def create_run(self, *, session_name: Optional[str] = None, **kwargs: Any) -> None:
+    def create_run(
+        self,
+        name: str,
+        inputs: Dict[str, Any],
+        run_type: Union[str, RunTypeEnum],
+        **kwargs: Any,
+    ) -> Run:
         """Persist a run to the LangChain+ API."""
-        run_create = RunCreate(**kwargs, session_name=session_name)
+        run_create = RunCreate(
+            **kwargs,
+            name=name,
+            inputs=inputs,
+            run_type=run_type,
+        )
         headers = {**self._headers, "Accept": "application/json"}
         request_with_retries(
             "post",
             f"{self.api_url}/runs",
-            request_kwargs={"data": run_create.json(), "headers": headers},
+            request_kwargs={
+                "data": run_create.json(exclude_none=True),
+                "headers": headers,
+            },
             retry_config=self.retry_config,
         )
+        return Run(**run_create.dict(exclude_none=True))
 
-    def update_run(self, run_id: ID_TYPE, **kwargs: Any) -> None:
+    def update_run(
+        self,
+        run_id: ID_TYPE,
+        **kwargs: Any,
+    ) -> None:
         """Update a run to the LangChain+ API."""
-        run_update = RunUpdate(**kwargs)
+        run_update = RunUpdate(
+            **kwargs,
+        )
         headers = {**self._headers, "Accept": "application/json"}
         request_with_retries(
             "patch",

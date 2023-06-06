@@ -55,6 +55,23 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
 }
 
+interface CreateRunParams {
+  name: string;
+  inputs: KVMap;
+  runType: RunType;
+  id?: string;
+  startTime?: number;
+  endTime?: number;
+  extra?: KVMap;
+  error?: string;
+  executionOrder?: number;
+  serialized?: object;
+  outputs?: KVMap;
+  referenceExampleId?: string;
+  childRuns?: RunCreate[];
+  childExecutionOrder?: number;
+  parentRunId?: string;
+}
 // utility functions
 const isLocalhost = (url: string): boolean => {
   const strippedUrl = url.replace("http://", "").replace("https://", "");
@@ -122,9 +139,20 @@ export class LangChainPlusClient {
     }
     return response.json() as T;
   }
-  public async createRun(run: RunCreate): Promise<void> {
+  public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, Accept: "application/json" };
     console.log(JSON.stringify(run));
+    const runCreate: RunCreate = {
+      name: run.name,
+      inputs: run.inputs,
+      run_type: run.runType,
+      id: run.id ?? uuid.v4(),
+      start_time: run.startTime ?? Date.now(),
+      end_time: run.endTime,
+      extra: run.extra,
+      
+
+    }
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,

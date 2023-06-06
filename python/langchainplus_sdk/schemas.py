@@ -1,6 +1,7 @@
 """Schemas for the langchainplus API."""
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Union
@@ -102,7 +103,6 @@ class RunBase(BaseModel):
     extra: dict = Field(default_factory=dict)
     error: Optional[str]
     execution_order: int
-    child_execution_order: Optional[int]
     serialized: dict
     inputs: dict
     outputs: Optional[dict]
@@ -126,17 +126,43 @@ class Run(RunBase):
         return values
 
 
+def infer_default_run_values(values: Dict[str, Any]) -> Dict[str, Any]:
+    if "name" not in values:
+        if "serialized" not in values:
+            raise ValueError("Must provide either name or serialized.")
+        if "name" not in values["serialized"]:
+            raise ValueError(
+                "Must provide either name or serialized with a name attribute."
+            )
+        values["name"] = values["serialized"]["name"]
+    elif "serialized" not in values:
+        values["serialized"] = {"name": values["name"]}
+    if "execution_order" not in values:
+        values["execution_order"] = 1
+    if "child_execution_order" not in values:
+        values["child_execution_order"] = values["execution_order"]
+    if values.get("session_name") is None:
+        values["session_name"] = os.environ.get("LANGCHAIN_SESSION", "default")
+    if values.get("parent_run") is not None:
+        values["parent_run_id"] = values["parent_run"].id
+    extra = values.get("extra", {})
+    extra["runtime"] = get_runtime_environment()
+    values["extra"] = extra
+    return values
+
+
 class RunCreate(RunBase):
+    """Run create schema."""
+
+    id: UUID = Field(default_factory=uuid4)
     name: str
     session_name: Optional[str] = None
+    child_runs: Optional[List[RunCreate]] = None
 
     @root_validator(pre=True)
     def add_runtime_env(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Add env info to the run."""
-        extra = values.get("extra", {})
-        extra["runtime"] = get_runtime_environment()
-        values["extra"] = extra
-        return values
+        return infer_default_run_values(values)
 
 
 class RunUpdate(BaseModel):

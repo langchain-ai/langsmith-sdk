@@ -232,7 +232,7 @@ test("Test persist update run", async () => {
     await langchainClient.deleteSession({ sessionName });
   }
   const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
-  await langchainClient.persistRun({
+  await langchainClient.createRun({
     id: runId,
     session_name: sessionName,
     execution_order: 1,
