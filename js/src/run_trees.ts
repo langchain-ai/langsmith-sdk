@@ -1,15 +1,12 @@
 import * as uuid from "uuid";
-import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import { BaseRun, KVMap, RunCreate, RunType, RunUpdate } from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
+import { LangChainPlusClient } from "./client.js";
 
 export interface RunTreeConfig {
   name: string;
   run_type: RunType;
   id?: string;
-  caller_options?: AsyncCallerParams;
-  api_url?: string;
-  api_key?: string;
   session_name?: string;
   execution_order?: number;
   child_execution_order?: number;
@@ -23,6 +20,7 @@ export interface RunTreeConfig {
   inputs?: KVMap;
   outputs?: KVMap;
   reference_example_id?: string;
+  client?: LangChainPlusClient;
 }
 
 export class RunTree implements BaseRun {
@@ -31,26 +29,22 @@ export class RunTree implements BaseRun {
   run_type: RunTreeConfig["run_type"];
   session_name: string;
   parent_run?: RunTree;
-  api_url: string;
-  api_key?: string;
   child_runs: RunTree[];
   execution_order: number;
   child_execution_order: number;
-  caller_options: AsyncCallerParams;
-  caller: AsyncCaller;
   start_time: number;
   end_time: number;
-  extra?: KVMap;
+  extra: KVMap;
   error?: string;
   serialized: object;
   inputs: KVMap;
   outputs?: KVMap;
   reference_example_id?: string;
+  client: LangChainPlusClient;
 
   constructor(config: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
     Object.assign(this, { ...defaultConfig, ...config });
-    this.caller = new AsyncCaller(this.caller_options);
   }
   private static getDefaultConfig(): object {
     return {
@@ -67,6 +61,8 @@ export class RunTree implements BaseRun {
       end_time: Date.now(),
       serialized: {},
       inputs: {},
+      extra: {},
+      client: new LangChainPlusClient({}),
     };
   }
 
@@ -75,9 +71,7 @@ export class RunTree implements BaseRun {
       ...config,
       parent_run: this,
       session_name: this.session_name,
-      api_url: this.api_url,
-      api_key: this.api_key,
-      caller_options: this.caller_options,
+      client: this.client,
       execution_order: this.child_execution_order + 1,
       child_execution_order: this.child_execution_order + 1,
     });
@@ -101,23 +95,6 @@ export class RunTree implements BaseRun {
         this.child_execution_order
       );
     }
-  }
-
-  private get headers(): Headers {
-    const headers = new Headers({ "Content-Type": "application/json" });
-    if (this.api_key) {
-      headers.append("x-api-key", this.api_key);
-    }
-    return headers;
-  }
-
-  private async post(data: string): Promise<void> {
-    const url = `${this.api_url}/runs`;
-    await this.caller.call(fetch, url, {
-      method: "POST",
-      body: data,
-      headers: this.headers,
-    });
   }
 
   private async _convertToCreate(
@@ -161,17 +138,7 @@ export class RunTree implements BaseRun {
 
   async postRun(excludeChildRuns = true): Promise<void> {
     const runCreate = await this._convertToCreate(this, excludeChildRuns);
-    const data = JSON.stringify(runCreate);
-    await this.post(data);
-  }
-
-  private async patch(data: string): Promise<void> {
-    const url = `${this.api_url}/runs/${this.id}`;
-    await this.caller.call(fetch, url, {
-      method: "PATCH",
-      body: data,
-      headers: this.headers,
-    });
+    await this.client.createRun(runCreate);
   }
 
   async patchRun(): Promise<void> {
@@ -183,7 +150,6 @@ export class RunTree implements BaseRun {
       reference_example_id: this.reference_example_id,
     };
 
-    const data = JSON.stringify(runUpdate);
-    await this.patch(data);
+    await this.client.updateRun(this.id, runUpdate);
   }
 }

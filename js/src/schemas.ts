@@ -14,7 +14,7 @@ export type ValueType = number | boolean | string | object | null;
 export interface BaseExample {
   dataset_id: string;
   inputs: KVMap;
-  outputs: KVMap;
+  outputs?: KVMap;
 }
 
 export interface BaseRun {
@@ -22,32 +22,30 @@ export interface BaseRun {
   name: string;
   start_time: number;
   end_time?: number;
-  extra?: KVMap;
+  extra: KVMap;
   error?: string;
   execution_order: number;
   serialized: object;
   inputs: KVMap;
   outputs?: KVMap;
   reference_example_id?: string; // uuid
+  parent_run_id?: string; // uuid
   run_type: RunType;
 }
 
 export interface Run extends BaseRun {
   child_runs: this[];
   child_execution_order: number;
-  parent_run_id?: string; // uuid
 }
 
 export interface RunCreate extends BaseRun {
   child_runs: this[];
   session_name?: string;
-  parent_run_id?: string;
 }
 
 export interface RunResult extends BaseRun {
   name: string;
   session_id: string;
-  parent_run_id?: string;
 }
 export interface RunUpdate {
   end_time?: number;

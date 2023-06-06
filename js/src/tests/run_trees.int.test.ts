@@ -17,7 +17,7 @@ test("Test persisting runs and adding feedback", async () => {
     inputs: { text: "hello world" },
     session_name: sessionName,
     serialized: {},
-    api_url: "http://localhost:1984",
+    client: langchainClient,
   };
 
   const parent_run = new RunTree(parentRunConfig);
@@ -119,7 +119,7 @@ test("Test post and patch run", async () => {
     inputs: { text: "hello world" },
     session_name: sessionName,
     serialized: {},
-    api_url: "http://localhost:1984",
+    client: langchainClient,
   };
 
   const parent_run = new RunTree(parentRunConfig);

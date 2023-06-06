@@ -58,19 +58,19 @@ interface FeedbackCreate {
 interface CreateRunParams {
   name: string;
   inputs: KVMap;
-  runType: RunType;
+  run_type: RunType;
   id?: string;
-  startTime?: number;
-  endTime?: number;
+  start_time?: number;
+  end_time?: number;
   extra?: KVMap;
   error?: string;
-  executionOrder?: number;
+  execution_order?: number;
   serialized?: object;
   outputs?: KVMap;
-  referenceExampleId?: string;
-  childRuns?: RunCreate[];
-  childExecutionOrder?: number;
-  parentRunId?: string;
+  reference_example_id?: string;
+  child_runs?: RunCreate[];
+  parent_run_id?: string;
+  session_name?: string;
 }
 // utility functions
 const isLocalhost = (url: string): boolean => {
@@ -140,23 +140,28 @@ export class LangChainPlusClient {
     return response.json() as T;
   }
   public async createRun(run: CreateRunParams): Promise<void> {
-    const headers = { ...this.headers, Accept: "application/json" };
-    console.log(JSON.stringify(run));
+    const headers = { ...this.headers, "Content-Type": "application/json" };
     const runCreate: RunCreate = {
+      id: run.id ?? uuid.v4(),
       name: run.name,
       inputs: run.inputs,
-      run_type: run.runType,
-      id: run.id ?? uuid.v4(),
-      start_time: run.startTime ?? Date.now(),
-      end_time: run.endTime,
-      extra: run.extra,
-      
-
-    }
+      run_type: run.run_type,
+      start_time: run.start_time ?? Date.now(),
+      end_time: run.end_time ?? Date.now(),
+      extra: run.extra ?? {},
+      error: run.error,
+      execution_order: run.execution_order ?? 1,
+      serialized: run.serialized ?? { name: run.name },
+      outputs: run.outputs,
+      reference_example_id: run.reference_example_id,
+      child_runs: run.child_runs ?? [],
+      parent_run_id: run.parent_run_id,
+      session_name: run.session_name,
+    };
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,
-      body: JSON.stringify(run),
+      body: JSON.stringify(runCreate),
     });
     if (!response.ok) {
       throw new Error(
@@ -166,7 +171,7 @@ export class LangChainPlusClient {
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
-    const headers = { ...this.headers, Accept: "application/json" };
+    const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/runs/${runId}`,

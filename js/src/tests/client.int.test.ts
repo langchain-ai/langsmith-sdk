@@ -47,7 +47,7 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
   );
   const exampleValue = await client.readExample(example.id);
   expect(exampleValue.inputs.col1).toBe("addedExampleCol1");
-  expect(exampleValue.outputs.col2).toBe("addedExampleCol2");
+  expect(exampleValue.outputs?.col2).toBe("addedExampleCol2");
 
   const examples = await client.listExamples({ datasetId: newDataset.id });
   expect(examples.length).toBe(2);
@@ -152,7 +152,7 @@ test("Test evaluate run", async () => {
     inputs: { input: "hello world" },
     session_name: sessionName,
     serialized: {},
-    api_url: "http://localhost:1984",
+    client: langchainClient,
     reference_example_id: example.id,
   };
 
@@ -224,7 +224,6 @@ test("Test persist update run", async () => {
   const langchainClient = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
-
   const sessionName = "__test_persist_update_run";
   const sessions = await langchainClient.listSessions();
 
@@ -235,14 +234,9 @@ test("Test persist update run", async () => {
   await langchainClient.createRun({
     id: runId,
     session_name: sessionName,
-    execution_order: 1,
     name: "test_run",
     run_type: "llm",
     inputs: { text: "hello world" },
-    serialized: {},
-    child_runs: [],
-    start_time: 10_000,
-    end_time: 10_0001,
   });
 
   await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
