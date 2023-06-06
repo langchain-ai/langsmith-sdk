@@ -15,7 +15,7 @@ import {
   TracerSession,
   ValueType,
 } from "./schemas.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface LangChainPlusClientConfig {
@@ -141,6 +141,17 @@ export class LangChainPlusClient {
   }
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
+    const extra = run.extra ?? {};
+    if (!extra.runtime) {
+      extra.runtime = {};
+    }
+    const runtimeEnv = await getRuntimeEnvironment();
+    for (const [k, v] of Object.entries(runtimeEnv)) {
+      if (!extra.runtime[k]) {
+        extra.runtime[k] = v;
+      }
+    }
+
     const runCreate: RunCreate = {
       id: run.id ?? uuid.v4(),
       name: run.name,

@@ -146,7 +146,12 @@ def infer_default_run_values(values: Dict[str, Any]) -> Dict[str, Any]:
     if values.get("parent_run") is not None:
         values["parent_run_id"] = values["parent_run"].id
     extra = values.get("extra", {})
-    extra["runtime"] = get_runtime_environment()
+    if "runtime" not in extra:
+        extra["runtime"] = {}
+    runtime_env = get_runtime_environment()
+    for k, v in runtime_env.items():
+        if k not in extra["runtime"]:
+            extra["runtime"][k] = v
     values["extra"] = extra
     return values
 

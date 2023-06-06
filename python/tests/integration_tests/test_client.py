@@ -9,7 +9,7 @@ import pytest
 
 from langchainplus_sdk.client import LangChainPlusClient
 from langchainplus_sdk.evaluation import StringEvaluator
-from langchainplus_sdk.run_trees import RunTree, await_all_runs
+from langchainplus_sdk.run_trees import RunTree
 from langchainplus_sdk.schemas import Feedback
 from langchainplus_sdk.utils import LangChainPlusError
 
@@ -150,7 +150,7 @@ def test_run_tree(
     child_llm_run.end(outputs={"prompts": ["hello world"]})
     parent_run.end(outputs={"output": ["Hi"]})
     parent_run.post(exclude_child_runs=False)
-    await_all_runs()
+    parent_run.executor.shutdown(wait=True)
 
     runs = list(langchain_client.list_runs(session_name=session_name))
     assert len(runs) == 5
@@ -250,7 +250,7 @@ def test_evaluate_run(
     parent_run.post()
     parent_run.end(outputs={"output": predicted})
     parent_run.patch()
-    await_all_runs()
+    parent_run.executor.shutdown(wait=True)
     run = langchain_client.read_run(str(parent_run.id))
     assert run.outputs == {"output": predicted}
 

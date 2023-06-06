@@ -102,7 +102,15 @@ export class RunTree implements BaseRun {
     excludeChildRuns = true
   ): Promise<RunCreate> {
     const runExtra = run.extra ?? {};
-    runExtra.runtime = await getRuntimeEnvironment();
+    if (!runExtra.runtime) {
+      runExtra.runtime = {};
+    }
+    const runtimeEnv = await getRuntimeEnvironment();
+    for (const [k, v] of Object.entries(runtimeEnv)) {
+      if (!runExtra.runtime[k]) {
+        runExtra.runtime[k] = v;
+      }
+    }
     let child_runs: RunCreate[];
     let parent_run_id: string | undefined;
     if (!excludeChildRuns) {

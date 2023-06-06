@@ -7,29 +7,17 @@ from datetime import datetime
 from typing import Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
-from pydantic import Field, root_validator
+from pydantic import Field, root_validator, validator
 
 from langchainplus_sdk.client import LangChainPlusClient
 from langchainplus_sdk.schemas import RunBase, RunTypeEnum, infer_default_run_values
 
 logger = logging.getLogger(__name__)
-_THREAD_POOL_EXECUTOR: Optional[ThreadPoolExecutor] = None
 
 
-def _ensure_thread_pool() -> ThreadPoolExecutor:
+def _make_thread_pool() -> ThreadPoolExecutor:
     """Ensure a thread pool exists in the current context."""
-    global _THREAD_POOL_EXECUTOR
-    if _THREAD_POOL_EXECUTOR is None:
-        _THREAD_POOL_EXECUTOR = ThreadPoolExecutor(max_workers=1)
-    return _THREAD_POOL_EXECUTOR
-
-
-def await_all_runs() -> None:
-    """Flush the thread pool."""
-    global _THREAD_POOL_EXECUTOR
-    if _THREAD_POOL_EXECUTOR is not None:
-        _THREAD_POOL_EXECUTOR.shutdown(wait=True)
-        _THREAD_POOL_EXECUTOR = None
+    return ThreadPoolExecutor(max_workers=1)
 
 
 class RunTree(RunBase):
@@ -49,6 +37,19 @@ class RunTree(RunBase):
     client: LangChainPlusClient = Field(
         default_factory=LangChainPlusClient, exclude=True
     )
+    executor: ThreadPoolExecutor = Field(
+        default_factory=_make_thread_pool, exclude=True
+    )
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    @validator("executor", pre=True)
+    def validate_executor(cls, v: ThreadPoolExecutor) -> ThreadPoolExecutor:
+        """Ensure the executor is running."""
+        if v._shutdown:
+            raise ValueError("Executor has been shutdown.")
+        return v
 
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
@@ -112,24 +113,23 @@ class RunTree(RunBase):
             parent_run=self,
             session_name=self.session_name,
             client=self.client,
+            executor=self.executor,
         )
         self.child_runs.append(run)
         return run
 
     def post(self, exclude_child_runs: bool = True) -> Future:
         """Post the run tree to the API asynchronously."""
-        executor = _ensure_thread_pool()
         exclude = {"child_runs"} if exclude_child_runs else None
         kwargs = self.dict(exclude=exclude, exclude_none=True)
-        return executor.submit(
+        return self.executor.submit(
             self.client.create_run,
             **kwargs,
         )
 
     def patch(self) -> Future:
         """Patch the run tree to the API in a background thread."""
-        executor = _ensure_thread_pool()
-        return executor.submit(
+        return self.executor.submit(
             self.client.update_run,
             run_id=self.id,
             outputs=self.outputs.copy() if self.outputs else None,
