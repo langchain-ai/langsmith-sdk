@@ -78,7 +78,7 @@
     "@types/uuid": "^9.0.1",
     "commander": "^10.0.1",
     "p-queue": "^6.6.2",
-    "p-retry": "^5.1.2",
+    "p-retry": "4",
     "uuid": "^9.0.0"
   },
   "lint-staged": {
