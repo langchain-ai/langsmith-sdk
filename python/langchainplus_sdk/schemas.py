@@ -141,8 +141,6 @@ def infer_default_run_values(values: Dict[str, Any]) -> Dict[str, Any]:
         values["execution_order"] = 1
     if "child_execution_order" not in values:
         values["child_execution_order"] = values["execution_order"]
-    if values.get("session_name") is None:
-        values["session_name"] = os.environ.get("LANGCHAIN_SESSION", "default")
     if values.get("parent_run") is not None:
         values["parent_run_id"] = values["parent_run"].id
     extra = values.get("extra", {})
@@ -161,7 +159,9 @@ class RunCreate(RunBase):
 
     id: UUID = Field(default_factory=uuid4)
     name: str
-    session_name: Optional[str] = None
+    session_name: str = Field(
+        default_factory=lambda: os.environ.get("LANGCHAIN_SESSION", "default")
+    )
     child_runs: Optional[List[RunCreate]] = None
 
     @root_validator(pre=True)
