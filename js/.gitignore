@@ -40,6 +40,9 @@ Chinook_Sqlite.sql
 /evaluation.cjs
 /evaluation.js
 /evaluation.d.ts
+/schemas.cjs
+/schemas.js
+/schemas.d.ts
 /index.cjs
 /index.js
 /index.d.ts
