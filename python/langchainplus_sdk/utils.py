@@ -85,7 +85,8 @@ def get_runtime_environment() -> dict:
     from langchainplus_sdk import __version__
 
     return {
-        "library_version": __version__,
+        "sdk_version": __version__,
+        "library": "langchainplus_sdk",
         "platform": platform.platform(),
         "runtime": "python",
         "runtime_version": platform.python_version(),

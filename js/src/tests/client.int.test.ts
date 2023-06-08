@@ -47,7 +47,7 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
   );
   const exampleValue = await client.readExample(example.id);
   expect(exampleValue.inputs.col1).toBe("addedExampleCol1");
-  expect(exampleValue.outputs.col2).toBe("addedExampleCol2");
+  expect(exampleValue.outputs?.col2).toBe("addedExampleCol2");
 
   const examples = await client.listExamples({ datasetId: newDataset.id });
   expect(examples.length).toBe(2);
@@ -152,7 +152,7 @@ test("Test evaluate run", async () => {
     inputs: { input: "hello world" },
     session_name: sessionName,
     serialized: {},
-    api_url: "http://localhost:1984",
+    client: langchainClient,
     reference_example_id: example.id,
   };
 
@@ -217,5 +217,33 @@ test("Test evaluate run", async () => {
   expect(fetchedFeedback[0].value).toEqual("INCORRECT");
 
   await langchainClient.deleteDataset({ datasetId: dataset.id });
+  await langchainClient.deleteSession({ sessionName });
+});
+
+test("Test persist update run", async () => {
+  const langchainClient = new LangChainPlusClient({
+    apiUrl: "http://localhost:1984",
+  });
+  const sessionName = "__test_persist_update_run";
+  const sessions = await langchainClient.listSessions();
+
+  if (sessions.map((session) => session.name).includes(sessionName)) {
+    await langchainClient.deleteSession({ sessionName });
+  }
+  const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
+  await langchainClient.createRun({
+    id: runId,
+    session_name: sessionName,
+    name: "test_run",
+    run_type: "llm",
+    inputs: { text: "hello world" },
+  });
+
+  await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
+
+  const storedRun = await langchainClient.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
+  expect(storedRun.outputs).toEqual({ output: ["Hi"] });
+
   await langchainClient.deleteSession({ sessionName });
 });

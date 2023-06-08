@@ -67,7 +67,7 @@ export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
     const env = getEnv();
 
     runtimeEnvironment = {
-      library: "langchain-js-sdk",
+      library: "langchainplus-sdk",
       runtime: env,
     };
   }
