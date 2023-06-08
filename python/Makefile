@@ -21,3 +21,7 @@ build:
 
 publish:
 	poetry publish --dry-run
+
+update_data_model:
+	poetry run python scripts/update_data_models.py
+	$(MAKE) format

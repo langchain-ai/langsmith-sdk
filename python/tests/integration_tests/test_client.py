@@ -26,8 +26,8 @@ def test_sessions(
     """Test sessions."""
     session_names = set([session.name for session in langchain_client.list_sessions()])
     new_session = "__Test Session"
-    assert new_session not in session_names
-
+    if new_session in session_names:
+        langchain_client.delete_session(session_name=new_session)
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     langchain_client.create_session(session_name=new_session)
     session = langchain_client.read_session(session_name=new_session)

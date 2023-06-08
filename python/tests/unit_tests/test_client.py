@@ -47,6 +47,7 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
         inputs={"input": "1"},
         outputs={"output": "2"},
         dataset_id=dataset_id,
+        run_count=1,
     )
     example_2 = Example(
         id=str(uuid.uuid4()),
@@ -54,6 +55,7 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
         inputs={"input": "3"},
         outputs={"output": "4"},
         dataset_id=dataset_id,
+        run_count=1,
     )
     mock_response = mock.Mock()
     mock_response.json.return_value = {
@@ -63,6 +65,8 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
         "owner_id": "the owner",
         "created_at": _CREATED_AT,
         "examples": [example_1, example_2],
+        "tenant_id": uuid.uuid4(),
+        "example_count": 2,
     }
     mock_post.return_value = mock_response
 

@@ -16,7 +16,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from langchainplus_sdk.schemas import RunBase, RunTypeEnum, RunUpdate
+from langchainplus_sdk.schemas import RunCreate, RunTypeEnum, RunUpdate
 from langchainplus_sdk.utils import (
     LangChainPlusAPIError,
     get_runtime_environment,
@@ -52,13 +52,13 @@ def _default_retry_config() -> Dict[str, Any]:
     )
 
 
-class RunTree(RunBase):
+class RunTree(RunCreate):
     """Run Schema with back-references for posting runs."""
 
     name: str
-    id: Optional[UUID] = Field(default_factory=uuid4)
+    id: UUID = Field(default_factory=uuid4)
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    child_runs: List[RunTree] = Field(
+    child_runs: List[RunTree] = Field(  # type: ignore[assignment]
         default_factory=list, exclude={"__all__": {"parent_run_id"}}
     )
     session_name: str = Field(default="default")
@@ -75,6 +75,7 @@ class RunTree(RunBase):
     retry_config: Dict[str, Any] = Field(
         default_factory=_default_retry_config, exclude=True
     )
+    extra: Dict[str, Any] = Field(default_factory=dict)
 
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:

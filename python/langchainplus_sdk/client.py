@@ -38,8 +38,6 @@ from langchainplus_sdk.schemas import (
     ExampleUpdate,
     Feedback,
     FeedbackCreate,
-    FeedbackSourceBase,
-    FeedbackSourceType,
     ListFeedbackQueryParams,
     ListRunsQueryParams,
     ModelFeedbackSource,
@@ -453,7 +451,7 @@ class LangChainPlusClient(BaseSettings):
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
-            feedback_source_type=FeedbackSourceType.MODEL,
+            feedback_source_type="model",
         )
 
     async def aevaluate_run(
@@ -489,7 +487,7 @@ class LangChainPlusClient(BaseSettings):
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
-            feedback_source_type=FeedbackSourceType.MODEL,
+            feedback_source_type="model",
         )
 
     def create_feedback(
@@ -502,7 +500,7 @@ class LangChainPlusClient(BaseSettings):
         correction: Union[str, dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,
-        feedback_source_type: Union[FeedbackSourceType, str] = FeedbackSourceType.API,
+        feedback_source_type: str = "api",
     ) -> Feedback:
         """Create a feedback in the LangChain+ API.
 
@@ -516,13 +514,14 @@ class LangChainPlusClient(BaseSettings):
             correction: The proper ground truth for this run.
             comment: A comment about this feedback.
             source_info: Information about the source of this feedback.
-            feedback_source_type: The type of feedback source.
+            feedback_source_type: The type of feedback source. Valid options
+                are "api" and "model".
         """
-        if feedback_source_type == FeedbackSourceType.API:
-            feedback_source: FeedbackSourceBase = APIFeedbackSource(
-                metadata=source_info
-            )
-        elif feedback_source_type == FeedbackSourceType.MODEL:
+        if feedback_source_type == "api":
+            feedback_source: Union[
+                APIFeedbackSource, ModelFeedbackSource
+            ] = APIFeedbackSource(metadata=source_info)
+        elif feedback_source_type == "model":
             feedback_source = ModelFeedbackSource(metadata=source_info)
         else:
             raise ValueError(f"Unknown feedback source type {feedback_source_type}")

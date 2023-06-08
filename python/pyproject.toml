@@ -25,6 +25,7 @@ ruff = "^0.0.270"
 types-requests = "^2.31.0.1"
 pandas-stubs = "^2.0.1.230501"
 types-pyyaml = "^6.0.12.10"
+datamodel-code-generator = {extras = ["http"], version = "^0.20.0"}
 
 [build-system]
 requires = ["poetry-core"]
