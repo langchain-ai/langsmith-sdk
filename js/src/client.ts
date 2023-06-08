@@ -8,12 +8,14 @@ import {
   Feedback,
   KVMap,
   Run,
+  RunCreate,
   RunType,
+  RunUpdate,
   ScoreType,
   TracerSession,
   ValueType,
 } from "./schemas.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface LangChainPlusClientConfig {
@@ -53,6 +55,23 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
 }
 
+interface CreateRunParams {
+  name: string;
+  inputs: KVMap;
+  run_type: RunType;
+  id?: string;
+  start_time?: number;
+  end_time?: number;
+  extra?: KVMap;
+  error?: string;
+  execution_order?: number;
+  serialized?: object;
+  outputs?: KVMap;
+  reference_example_id?: string;
+  child_runs?: RunCreate[];
+  parent_run_id?: string;
+  session_name?: string;
+}
 // utility functions
 const isLocalhost = (url: string): boolean => {
   const strippedUrl = url.replace("http://", "").replace("https://", "");
@@ -120,9 +139,68 @@ export class LangChainPlusClient {
     }
     return response.json() as T;
   }
+  public async createRun(run: CreateRunParams): Promise<void> {
+    const headers = { ...this.headers, "Content-Type": "application/json" };
+    const extra = run.extra ?? {};
+    if (!extra.runtime) {
+      extra.runtime = {};
+    }
+    const runtimeEnv = await getRuntimeEnvironment();
+    for (const [k, v] of Object.entries(runtimeEnv)) {
+      if (!extra.runtime[k]) {
+        extra.runtime[k] = v;
+      }
+    }
 
-  public async readRun(run_id: string): Promise<Run> {
-    return await this._get<Run>(`/runs/${run_id}`);
+    const runCreate: RunCreate = {
+      id: run.id ?? uuid.v4(),
+      name: run.name,
+      inputs: run.inputs,
+      run_type: run.run_type,
+      start_time: run.start_time ?? Date.now(),
+      end_time: run.end_time ?? Date.now(),
+      extra: run.extra ?? {},
+      error: run.error,
+      execution_order: run.execution_order ?? 1,
+      serialized: run.serialized ?? { name: run.name },
+      outputs: run.outputs,
+      reference_example_id: run.reference_example_id,
+      child_runs: run.child_runs ?? [],
+      parent_run_id: run.parent_run_id,
+      session_name: run.session_name,
+    };
+    const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(runCreate),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to persist run: ${response.status} ${response.statusText}`
+      );
+    }
+  }
+
+  public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+    const headers = { ...this.headers, "Content-Type": "application/json" };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/${runId}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(run),
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update run: ${response.status} ${response.statusText}`
+      );
+    }
+  }
+
+  public async readRun(runId: string): Promise<Run> {
+    return await this._get<Run>(`/runs/${runId}`);
   }
 
   public async listRuns({
@@ -158,15 +236,15 @@ export class LangChainPlusClient {
 
   public async createSession({
     sessionName,
-    session_extra,
+    sessionExtra,
   }: {
     sessionName: string;
-    session_extra?: object;
+    sessionExtra?: object;
   }): Promise<TracerSession> {
     const endpoint = `${this.apiUrl}/sessions?upsert=true`;
     const body = {
       name: sessionName,
-      extra: session_extra,
+      extra: sessionExtra,
     };
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",
