@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from typing import Dict, List, Optional, Union
@@ -30,7 +31,9 @@ class RunTree(RunBase):
         default_factory=list,
         exclude={"__all__": {"parent_run_id"}},
     )
-    session_name: str = Field(default="default")
+    session_name: str = Field(
+        default_factory=lambda: os.environ.get("LANGCHAIN_SESSION", "default")
+    )
     session_id: Optional[UUID] = Field(default=None)
     execution_order: int = 1
     child_execution_order: int = Field(default=1, exclude=True)
