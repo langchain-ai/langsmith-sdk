@@ -10,6 +10,7 @@ const entrypoints = {
   client: "client",
   run_trees: "run_trees",
   evaluation: "evaluation/index",
+  schemas: "schemas",
 };
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();

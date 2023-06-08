@@ -81,6 +81,17 @@ const isLocalhost = (url: string): boolean => {
   );
 };
 
+const raiseForStatus = async (response: Response, operation: string) => {
+  // consume the response body to release the connection
+  // https://undici.nodejs.org/#/?id=garbage-collection
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Failed to ${operation}: ${response.status} ${response.statusText} ${body}`
+    );
+  }
+};
+
 export class LangChainPlusClient {
   private apiKey?: string;
 
@@ -174,11 +185,7 @@ export class LangChainPlusClient {
       headers,
       body: JSON.stringify(runCreate),
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to persist run: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "create run");
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
@@ -192,11 +199,7 @@ export class LangChainPlusClient {
         body: JSON.stringify(run),
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update run: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "update run");
   }
 
   public async readRun(runId: string): Promise<Run> {

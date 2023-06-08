@@ -1,6 +1,6 @@
 {
   "name": "langchainplus-sdk",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Client library to connect to the LangChainPlus LLM Tracing and Evaluation Platform.",
   "files": [
     "dist/",
@@ -13,6 +13,9 @@
     "evaluation.cjs",
     "evaluation.js",
     "evaluation.d.ts",
+    "schemas.cjs",
+    "schemas.js",
+    "schemas.d.ts",
     "index.cjs",
     "index.js",
     "index.d.ts"
@@ -107,6 +110,11 @@
       "types": "./evaluation.d.ts",
       "import": "./evaluation.js",
       "require": "./evaluation.cjs"
+    },
+    "./schemas": {
+      "types": "./schemas.d.ts",
+      "import": "./schemas.js",
+      "require": "./schemas.cjs"
     },
     "./package.json": "./package.json"
   }
