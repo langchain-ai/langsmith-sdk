@@ -131,7 +131,7 @@ test("Test post and patch run", async () => {
     inputs: { text: "hello world" },
   });
   await child_llm_run.postRun();
-  parent_run.addEvent("test-event", { test: "test" });
+  await parent_run.addEvent("test-event", { test: "test" });
   await parent_run.patchRun();
   const child_chain_run = await parent_run.createChild({
     name: "child_chain_run",
