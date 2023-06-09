@@ -31,6 +31,7 @@ export interface BaseRun {
   reference_example_id?: string; // uuid
   parent_run_id?: string; // uuid
   run_type: RunType;
+  tags?: string[];
 }
 
 export interface Run extends BaseRun {
