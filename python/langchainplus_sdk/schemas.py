@@ -109,6 +109,7 @@ class RunBase(BaseModel):
     reference_example_id: Optional[UUID]
     run_type: RunTypeEnum
     parent_run_id: Optional[UUID]
+    tags: Optional[List[str]]
 
 
 class Run(RunBase):
