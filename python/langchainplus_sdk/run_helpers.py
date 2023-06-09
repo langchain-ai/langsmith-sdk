@@ -1,41 +1,17 @@
 """Decorator for creating a run tree from functions."""
-
 import contextvars
 import inspect
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Optional, Union
 from uuid import UUID
 
 from langchainplus_sdk.run_trees import RunTree
 from langchainplus_sdk.schemas import RunTypeEnum
 
-import asyncio
-import threading
-import contextvars
-
-
-T = TypeVar("T")
-
-
-class HybridContext(Generic[T]):
-    def __init__(self):
-        self.async_context = contextvars.ContextVar[T]("async_context", default=None)
-        self.thread_context = threading.local()
-
-    def set(self, value):
-        if asyncio.get_event_loop().is_running():
-            self.async_context.set(value)
-            self.thread_context.value = value
-
-    def get(self):
-        if asyncio.get_event_loop().is_running():
-            return self.async_context.get()
-        else:
-            return (
-                self.thread_context.value
-                if hasattr(self.thread_context, "value")
-                else None
-            )
+parent_run_tree = contextvars.ContextVar[Optional[RunTree]](
+    "parent_run_tree", default=None
+)
 
 
 def _get_inputs(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -45,14 +21,12 @@ def _get_inputs(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     return {"args": args, "kwargs": kwargs}
 
 
-parent_run_tree = HybridContext[RunTree]()
-
-
-def run_tree(
+def traceable(
     run_type: Union[RunTypeEnum, str],
     *,
     name: Optional[str] = None,
     extra: Optional[Dict] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
 ) -> Callable:
     """Decorator for creating or adding a run to a run tree."""
     extra_outer = extra or {}
@@ -62,13 +36,16 @@ def run_tree(
         async def async_wrapper(
             *args: Any,
             session_name: Optional[str] = None,
-            session_id: Optional[UUID] = None,
             reference_example_id: Optional[UUID] = None,
             run_extra: Optional[Dict] = None,
+            run_tree: Optional[RunTree] = None,
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function"""
-            parent_run = parent_run_tree.get()
+            if run_tree is None:
+                parent_run_ = parent_run_tree.get()
+            else:
+                parent_run_ = run_tree
             signature = inspect.signature(func)
             name_ = name or func.__name__
             if run_extra:
@@ -76,8 +53,8 @@ def run_tree(
             else:
                 extra_inner = extra_outer
             inputs = _get_inputs(*args, **kwargs)
-            if parent_run is not None:
-                new_run = parent_run.create_child(
+            if parent_run_ is not None:
+                new_run = parent_run_.create_child(
                     name=name_,
                     run_type=run_type,
                     serialized={"name": name, "signature": str(signature)},
@@ -91,22 +68,25 @@ def run_tree(
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
-                    session_id=session_id,
                     session_name=session_name,
                     extra=extra_inner,
+                    executor=executor,
                 )
             new_run.post()
             parent_run_tree.set(new_run)
+            func_accepts_parent_run = (
+                inspect.signature(func).parameters.get("run_tree", None) is not None
+            )
             try:
-                if not kwargs:
-                    function_result = await func(*args)
+                if func_accepts_parent_run:
+                    function_result = await func(*args, run_tree=new_run, **kwargs)
                 else:
                     function_result = await func(*args, **kwargs)
             except Exception as e:
                 new_run.end(error=str(e))
                 new_run.patch()
                 raise e
-            parent_run_tree.set(parent_run)
+            parent_run_tree.set(parent_run_)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
@@ -115,13 +95,16 @@ def run_tree(
         def wrapper(
             *args: Any,
             session_name: Optional[str] = None,
-            session_id: Optional[UUID] = None,
             reference_example_id: Optional[UUID] = None,
             run_extra: Optional[Dict] = None,
+            run_tree: Optional[RunTree] = None,
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
-            parent_run = parent_run_tree.get()
+            if run_tree is None:
+                parent_run_ = parent_run_tree.get()
+            else:
+                parent_run_ = run_tree
             signature = inspect.signature(func)
             name_ = name or func.__name__
             if run_extra:
@@ -129,8 +112,8 @@ def run_tree(
             else:
                 extra_inner = extra_outer
             inputs = _get_inputs(*args, **kwargs)
-            if parent_run is not None:
-                new_run = parent_run.create_child(
+            if parent_run_ is not None:
+                new_run = parent_run_.create_child(
                     name=name_,
                     run_type=run_type,
                     serialized={"name": name, "signature": str(signature)},
@@ -144,22 +127,25 @@ def run_tree(
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
-                    session_id=session_id,
                     session_name=session_name,
                     extra=extra_inner,
+                    executor=executor,
                 )
             new_run.post()
             parent_run_tree.set(new_run)
+            func_accepts_parent_run = (
+                inspect.signature(func).parameters.get("run_tree", None) is not None
+            )
             try:
-                if not kwargs:
-                    function_result = func(*args)
+                if func_accepts_parent_run:
+                    function_result = func(*args, run_tree=new_run, **kwargs)
                 else:
                     function_result = func(*args, **kwargs)
             except Exception as e:
                 new_run.end(error=str(e))
                 new_run.patch()
                 raise e
-            parent_run_tree.set(parent_run)
+            parent_run_tree.set(parent_run_)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
