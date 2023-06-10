@@ -169,7 +169,7 @@ export class LangChainPlusClient {
       inputs: run.inputs,
       run_type: run.run_type,
       start_time: run.start_time ?? Date.now(),
-      end_time: run.end_time ?? Date.now(),
+      end_time: run.end_time,
       extra: run.extra ?? {},
       error: run.error,
       execution_order: run.execution_order ?? 1,
