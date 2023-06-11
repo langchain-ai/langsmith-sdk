@@ -3,6 +3,7 @@ import io
 import os
 import random
 import string
+from datetime import datetime
 from typing import List, Optional
 
 import pytest
@@ -128,6 +129,7 @@ def test_run_tree(
         name="parent_run",
         run_type="chain",
         inputs={"text": "hello world"},
+        start_time=datetime.now(),
         session_name=session_name,
         serialized={},
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
@@ -244,6 +246,7 @@ def test_evaluate_run(
         inputs={"input": "hello world"},
         session_name=session_name,
         serialized={},
+        start_time=datetime.now(),
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
         reference_example_id=example.id,
     )

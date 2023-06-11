@@ -11,7 +11,8 @@ from uuid import UUID, uuid4
 from pydantic import Field, root_validator, validator
 
 from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.schemas import RunBase, RunTypeEnum, infer_default_run_values
+from langchainplus_sdk.schemas import RunBase, RunTypeEnum
+from langchainplus_sdk.utils import get_runtime_environment
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +58,14 @@ class RunTree(RunBase):
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
-        values = infer_default_run_values(values)
-        if values.get("child_runs") is None:
-            values["child_runs"] = []
+        if values.get("parent_run") is not None:
+            values["parent_run_id"] = values["parent_run"].id
+        extra: dict = values.setdefault("extra", {})
+        runtime = extra.setdefault("runtime", {})
+        runtime_env = get_runtime_environment()
+        for k, v in runtime_env.items():
+            if k not in runtime:
+                runtime[k] = v
         return values
 
     def end(
