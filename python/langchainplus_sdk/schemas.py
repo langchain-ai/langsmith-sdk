@@ -98,7 +98,7 @@ class RunBase(BaseModel):
     """Base Run schema."""
 
     id: Optional[UUID]
-    start_time: datetime = Field(default_factory=datetime.utcnow)
+    start_time: datetime = Field(...)
     end_time: Optional[datetime]
     extra: dict = Field(default_factory=dict)
     error: Optional[str]
@@ -119,25 +119,8 @@ class Run(RunBase):
     name: str
     child_runs: List[Run] = Field(default_factory=list)
 
-    @root_validator(pre=True)
-    def assign_name(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if "name" not in values:
-            values["name"] = values["serialized"]["name"]
-        return values
-
 
 def infer_default_run_values(values: Dict[str, Any]) -> Dict[str, Any]:
-    if "name" not in values:
-        if "serialized" not in values:
-            raise ValueError("Must provide either name or serialized.")
-        if "name" not in values["serialized"]:
-            raise ValueError(
-                "Must provide either name or serialized with a name attribute."
-            )
-        values["name"] = values["serialized"]["name"]
-    elif "serialized" not in values:
-        values["serialized"] = {"name": values["name"]}
     if "execution_order" not in values:
         values["execution_order"] = 1
     if "child_execution_order" not in values:
@@ -168,7 +151,13 @@ class RunCreate(RunBase):
     @root_validator(pre=True)
     def add_runtime_env(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Add env info to the run."""
-        return infer_default_run_values(values)
+        extra: dict = values.setdefault("extra", {})
+        runtime = extra.setdefault("runtime", {})
+        runtime_env = get_runtime_environment()
+        for k, v in runtime_env.items():
+            if k not in runtime:
+                runtime[k] = v
+        return values
 
 
 class RunUpdate(BaseModel):
@@ -257,9 +246,9 @@ class FeedbackSourceType(Enum):
 class FeedbackBase(BaseModel):
     """Feedback schema."""
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = None
     """The time the feedback was created."""
-    modified_at: datetime = Field(default_factory=datetime.utcnow)
+    modified_at: Optional[datetime] = None
     """The time the feedback was last modified."""
     run_id: UUID
     """The associated run ID this feedback is logged for."""
@@ -283,7 +272,7 @@ class FeedbackBase(BaseModel):
 class FeedbackCreate(FeedbackBase):
     """Schema used for creating feedback."""
 
-    id: UUID = Field(default_factory=uuid4)
+    id: Optional[UUID] = None
 
     feedback_source: FeedbackSourceBase
     """The source of the feedback."""
@@ -312,7 +301,7 @@ class ListFeedbackQueryParams(BaseModel):
 
 
 class TracerSession(BaseModel):
-    """TracerSession schema for the V2 API."""
+    """TracerSession schema for the API."""
 
     id: UUID
     start_time: datetime = Field(default_factory=datetime.utcnow)
