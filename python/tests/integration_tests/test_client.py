@@ -13,7 +13,7 @@ from langchainplus_sdk.client import LangChainPlusClient
 from langchainplus_sdk.evaluation import StringEvaluator
 from langchainplus_sdk.run_trees import RunTree
 from langchainplus_sdk.schemas import Feedback
-from langchainplus_sdk.utils import LangChainPlusError
+from langchainplus_sdk.utils import LangChainPlusConnectionError, LangChainPlusError
 
 
 @pytest.fixture
@@ -295,3 +295,12 @@ def test_evaluate_run(
     assert fetched_feedback[0].value == "INCORRECT"
     langchain_client.delete_dataset(dataset_id=dataset.id)
     langchain_client.delete_session(session_name=session_name)
+
+
+@pytest.mark.parametrize("uri", ["http://localhost:1981", "http://api.langchain.minus"])
+def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -> None:
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", uri)
+    client = LangChainPlusClient()
+    # expect connect error
+    with pytest.raises(LangChainPlusConnectionError):
+        client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
