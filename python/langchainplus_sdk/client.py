@@ -238,6 +238,9 @@ class LangChainPlusClient(BaseSettings):
         session_id: Optional[ID_TYPE] = None,
         session_name: Optional[str] = None,
         run_type: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> Iterator[Run]:
         """List runs from the LangChain+ API."""
@@ -245,8 +248,16 @@ class LangChainPlusClient(BaseSettings):
             if session_id is not None:
                 raise ValueError("Only one of session_id or session_name may be given")
             session_id = self.read_session(session_name=session_name).id
+        if dataset_name is not None:
+            if dataset_id is not None:
+                raise ValueError("Only one of dataset_id or dataset_name may be given")
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
         query_params = ListRunsQueryParams(
-            session_id=session_id, run_type=run_type, **kwargs
+            session_id=session_id,
+            run_type=run_type,
+            **kwargs,
+            dataset_id=dataset_id,
+            reference_example_id=reference_example_id,
         )
         response = self._get_with_retries(
             "/runs", params=query_params.dict(exclude_none=True)
