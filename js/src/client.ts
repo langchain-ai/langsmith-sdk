@@ -153,15 +153,7 @@ export class LangChainPlusClient {
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const extra = run.extra ?? {};
-    if (!extra.runtime) {
-      extra.runtime = {};
-    }
     const runtimeEnv = await getRuntimeEnvironment();
-    for (const [k, v] of Object.entries(runtimeEnv)) {
-      if (!extra.runtime[k]) {
-        extra.runtime[k] = v;
-      }
-    }
     const runCreate: RunCreate = {
       ...run,
       extra: {
