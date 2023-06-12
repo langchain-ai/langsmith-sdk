@@ -22,7 +22,11 @@ interface LangChainPlusClientConfig {
   apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
+<<<<<<< HEAD
   timeout_ms?: number;
+=======
+  timeout?: number;
+>>>>>>> 3128623 (Add timeouts)
 }
 
 interface ListRunsParams {
@@ -108,7 +112,7 @@ export class LangChainPlusClient {
     this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
     this.apiKey = config.apiKey ?? defaultConfig.apiKey;
     this.validateApiKeyIfHosted();
-    this.timeout_ms = config.timeout_ms ?? 3000;
+    this.timeout_ms = config.timeout_ms ?? 4000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
