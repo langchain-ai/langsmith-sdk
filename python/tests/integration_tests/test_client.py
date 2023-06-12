@@ -210,6 +210,7 @@ def test_persist_update_run(
         inputs={"text": "hello world"},
         session_name=session_name,
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
+        execution_order=1,
     )
     langchain_client.create_run(**run)
     run["outputs"] = {"output": ["Hi"]}

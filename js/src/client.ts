@@ -59,12 +59,12 @@ interface CreateRunParams {
   name: string;
   inputs: KVMap;
   run_type: RunType;
+  execution_order: number;
   id?: string;
   start_time?: number;
   end_time?: number;
   extra?: KVMap;
   error?: string;
-  execution_order?: number;
   serialized?: object;
   outputs?: KVMap;
   reference_example_id?: string;
@@ -152,6 +152,16 @@ export class LangChainPlusClient {
   }
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
+    const extra = run.extra ?? {};
+    if (!extra.runtime) {
+      extra.runtime = {};
+    }
+    const runtimeEnv = await getRuntimeEnvironment();
+    for (const [k, v] of Object.entries(runtimeEnv)) {
+      if (!extra.runtime[k]) {
+        extra.runtime[k] = v;
+      }
+    }
     const runCreate: RunCreate = {
       ...run,
       extra: {

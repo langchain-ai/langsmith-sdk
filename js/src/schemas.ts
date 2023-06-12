@@ -18,29 +18,35 @@ export interface BaseExample {
 }
 
 export interface BaseRun {
-  id: string;
+  id?: string;
   name: string;
-  start_time: number;
-  end_time?: number;
-  extra: KVMap;
-  error?: string;
-  execution_order: number;
-  serialized: object;
+  serialized?: object;
   inputs: KVMap;
+  run_type: RunType;
+  start_time?: number;
+  end_time?: number;
+  extra?: KVMap;
+  error?: string;
+  execution_order?: number;
   outputs?: KVMap;
   reference_example_id?: string; // uuid
   parent_run_id?: string; // uuid
-  run_type: RunType;
   tags?: string[];
 }
 
 export interface Run extends BaseRun {
+  id: string,
+  execution_order: number;
   child_runs: this[];
+  extra: KVMap;
+  serialized: object;
+  start_time: number;
   child_execution_order: number;
 }
 
 export interface RunCreate extends BaseRun {
-  child_runs: this[];
+  serialized?: object;
+  child_runs?: this[];
   session_name?: string;
 }
 

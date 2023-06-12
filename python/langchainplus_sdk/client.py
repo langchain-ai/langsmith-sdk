@@ -198,15 +198,20 @@ class LangChainPlusClient(BaseSettings):
         name: str,
         inputs: Dict[str, Any],
         run_type: Union[str, RunTypeEnum],
+        execution_order: int,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangChain+ API."""
+        session_name = kwargs.pop(
+            "session_name", os.environ.get("LANGCHAIN_SESSION", "default")
+        )
         run_create = {
-            "session_name": os.environ.get("LANGCHAIN_SESSION", "default"),
+            "session_name": session_name,
             **kwargs,
             "name": name,
             "inputs": inputs,
             "run_type": run_type,
+            "execution_order": execution_order,
         }
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
