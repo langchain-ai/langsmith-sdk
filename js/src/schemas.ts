@@ -52,7 +52,7 @@ export interface RunCreate extends BaseRun {
 }
 
 export interface RunResult extends BaseRun {
-  name: string;
+  id: string;
   session_id: string;
 }
 export interface RunUpdate {
