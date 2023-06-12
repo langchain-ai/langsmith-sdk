@@ -14,27 +14,27 @@ _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
 
 def test_is_localhost() -> None:
-    assert _is_localhost("http://localhost:8000")
-    assert _is_localhost("http://127.0.0.1:8000")
-    assert _is_localhost("http://0.0.0.0:8000")
-    assert not _is_localhost("http://example.com:8000")
+    assert _is_localhost("http://localhost:1984")
+    assert _is_localhost("http://127.0.0.1:1984")
+    assert _is_localhost("http://0.0.0.0:1984")
+    assert not _is_localhost("http://example.com:1984")
 
 
 def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
     with pytest.raises(LangChainPlusUserError, match="API key must be provided"):
         LangChainPlusClient(api_url="http://www.example.com")
-    client = LangChainPlusClient(api_url="http://localhost:8000")
-    assert client.api_url == "http://localhost:8000"
+    client = LangChainPlusClient(api_url="http://localhost:1984")
+    assert client.api_url == "http://localhost:1984"
     assert client.api_key is None
 
 
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    client = LangChainPlusClient(api_url="http://localhost:8000", api_key="123")
+    client = LangChainPlusClient(api_url="http://localhost:1984", api_key="123")
     assert client._headers == {"x-api-key": "123"}
 
-    client_no_key = LangChainPlusClient(api_url="http://localhost:8000")
+    client_no_key = LangChainPlusClient(api_url="http://localhost:1984")
     assert client_no_key._headers == {}
 
 
@@ -67,7 +67,7 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
     mock_post.return_value = mock_response
 
     client = LangChainPlusClient(
-        api_url="http://localhost:8000",
+        api_url="http://localhost:1984",
         api_key="123",
     )
     csv_file = ("test.csv", BytesIO(b"input,output\n1,2\n3,4\n"))

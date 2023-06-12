@@ -22,6 +22,7 @@ interface LangChainPlusClientConfig {
   apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
+  timeout_ms?: number;
 }
 
 interface ListRunsParams {
@@ -99,12 +100,15 @@ export class LangChainPlusClient {
 
   private caller: AsyncCaller;
 
+  private timeout_ms: number;
+
   constructor(config: LangChainPlusClientConfig = {}) {
     const defaultConfig = LangChainPlusClient.getDefaultClientConfig();
 
     this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
     this.apiKey = config.apiKey ?? defaultConfig.apiKey;
     this.validateApiKeyIfHosted();
+    this.timeout_ms = config.timeout_ms ?? 3000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
@@ -142,6 +146,7 @@ export class LangChainPlusClient {
     const response = await this.caller.call(fetch, url, {
       method: "GET",
       headers: this.headers,
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
     if (!response.ok) {
       throw new Error(
@@ -168,6 +173,7 @@ export class LangChainPlusClient {
       method: "POST",
       headers,
       body: JSON.stringify(runCreate),
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
     await raiseForStatus(response, "create run");
   }
@@ -181,6 +187,7 @@ export class LangChainPlusClient {
         method: "PATCH",
         headers,
         body: JSON.stringify(run),
+        signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
     await raiseForStatus(response, "update run");
@@ -237,6 +244,7 @@ export class LangChainPlusClient {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
     const result = await response.json();
     if (!response.ok) {
@@ -311,6 +319,7 @@ export class LangChainPlusClient {
       {
         method: "DELETE",
         headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
     if (!response.ok) {
@@ -340,6 +349,7 @@ export class LangChainPlusClient {
       method: "POST",
       headers: this.headers,
       body: formData,
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
 
     if (!response.ok) {
@@ -367,6 +377,7 @@ export class LangChainPlusClient {
         name,
         description,
       }),
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
 
     if (!response.ok) {
@@ -456,6 +467,7 @@ export class LangChainPlusClient {
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
       headers: this.headers,
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
     if (!response.ok) {
       throw new Error(
@@ -501,6 +513,7 @@ export class LangChainPlusClient {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(data),
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
 
     if (!response.ok) {
@@ -553,6 +566,7 @@ export class LangChainPlusClient {
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
       headers: this.headers,
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
     if (!response.ok) {
       throw new Error(
@@ -574,6 +588,7 @@ export class LangChainPlusClient {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(update),
+        signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
     if (!response.ok) {
@@ -661,6 +676,7 @@ export class LangChainPlusClient {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(feedback),
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
     if (!response.ok) {
       throw new Error(
@@ -682,6 +698,7 @@ export class LangChainPlusClient {
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
       headers: this.headers,
+      signal: AbortSignal.timeout(this.timeout_ms),
     });
     if (!response.ok) {
       throw new Error(

@@ -103,6 +103,7 @@ class LangChainPlusClient(BaseSettings):
     retry_config: Mapping[str, Any] = Field(
         default_factory=_default_retry_config, exclude=True
     )
+    timeout_ms: int = Field(default=3000)
 
     @root_validator(pre=True)
     def validate_api_key_if_hosted(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -144,7 +145,11 @@ class LangChainPlusClient(BaseSettings):
         return request_with_retries(
             "get",
             f"{self.api_url}{path}",
-            request_kwargs={"params": params, "headers": self._headers},
+            request_kwargs={
+                "params": params,
+                "headers": self._headers,
+                "timeout": self.timeout_ms / 1000,
+            },
             retry_config=self.retry_config,
         )
 
@@ -217,9 +222,7 @@ class LangChainPlusClient(BaseSettings):
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
         runtime_env = get_runtime_environment()
-        for k, v in runtime_env.items():
-            if k not in runtime:
-                runtime[k] = v
+        run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {**self._headers, "Accept": "application/json"}
         request_with_retries(
             "post",
@@ -227,6 +230,7 @@ class LangChainPlusClient(BaseSettings):
             request_kwargs={
                 "data": json.dumps(run_create, default=_serialize_json),
                 "headers": headers,
+                "timeout": self.timeout_ms / 1000,
             },
             retry_config=self.retry_config,
         )
@@ -244,7 +248,11 @@ class LangChainPlusClient(BaseSettings):
         request_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
-            request_kwargs={"data": run_update.json(), "headers": headers},
+            request_kwargs={
+                "data": run_update.json(),
+                "headers": headers,
+                "timeout": self.timeout_ms / 1000,
+            },
             retry_config=self.retry_config,
         )
 
