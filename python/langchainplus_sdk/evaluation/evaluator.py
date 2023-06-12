@@ -3,7 +3,7 @@ from typing import Dict, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from langchainplus_sdk.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
+from langchainplus_sdk.schemas import SCORE_TYPE, VALUE_TYPE, Example, RunResult
 
 
 class EvaluationResult(BaseModel):
@@ -34,12 +34,12 @@ class RunEvaluator:
 
     @abstractmethod
     def evaluate_run(
-        self, run: Run, example: Optional[Example] = None
+        self, run: RunResult, example: Optional[Example] = None
     ) -> EvaluationResult:
         """Evaluate an example."""
 
     async def aevaluate_run(
-        self, run: Run, example: Optional[Example] = None
+        self, run: RunResult, example: Optional[Example] = None
     ) -> EvaluationResult:
         """Evaluate an example asynchronously."""
         raise NotImplementedError(

@@ -220,6 +220,7 @@ def test_persist_update_run(
     stored_run = langchain_client.read_run(run["id"])
     assert stored_run.id == run["id"]
     assert stored_run.outputs == run["outputs"]
+    assert stored_run.session_id is not None
     langchain_client.delete_session(session_name=session_name)
 
 

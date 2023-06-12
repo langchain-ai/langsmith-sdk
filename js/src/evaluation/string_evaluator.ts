@@ -1,4 +1,4 @@
-import { Example, Run, ScoreType, ValueType } from "../schemas.js";
+import { Example, RunResult, ScoreType, ValueType } from "../schemas.js";
 import { EvaluationResult, RunEvaluator } from "./evaluator.js";
 
 export interface GradingFunctionResult {
@@ -43,7 +43,10 @@ export class StringEvaluator implements RunEvaluator {
     this.gradingFunction = params.gradingFunction;
   }
 
-  async evaluateRun(run: Run, example?: Example): Promise<EvaluationResult> {
+  async evaluateRun(
+    run: RunResult,
+    example?: Example
+  ): Promise<EvaluationResult> {
     if (!run.outputs) {
       throw new Error("Run outputs cannot be undefined.");
     }

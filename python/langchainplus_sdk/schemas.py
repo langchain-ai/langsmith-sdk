@@ -6,13 +6,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from pydantic import (
-    BaseModel,
-    Field,
-    StrictBool,
-    StrictFloat,
-    StrictInt,
-)
+from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
@@ -43,7 +37,7 @@ class Example(ExampleBase):
     id: UUID
     created_at: datetime
     modified_at: Optional[datetime] = Field(default=None)
-    runs: List[Run] = Field(default_factory=list)
+    runs: List[RunResult] = Field(default_factory=list)
 
 
 class ExampleUpdate(BaseModel):
@@ -93,28 +87,34 @@ class RunTypeEnum(str, Enum):
 class RunBase(BaseModel):
     """Base Run schema."""
 
-    id: Optional[UUID]
+    id: UUID
+    name: str
+    run_type: Union[RunTypeEnum, str]
     start_time: datetime
-    run_type: RunTypeEnum
-    end_time: Optional[datetime]
-    extra: Optional[dict]
-    error: Optional[str]
-    execution_order: int
-    serialized: Optional[dict]
-    events: Optional[List[Dict]]
     inputs: dict
-    outputs: Optional[dict]
-    reference_example_id: Optional[UUID]
-    parent_run_id: Optional[UUID]
-    tags: Optional[List[str]]
+    execution_order: int
+    end_time: Optional[datetime] = None
+    extra: Optional[dict] = None
+    error: Optional[str] = None
+    serialized: Optional[dict] = None
+    events: Optional[List[Dict]] = None
+    outputs: Optional[dict] = None
+    reference_example_id: Optional[UUID] = None
+    parent_run_id: Optional[UUID] = None
+    tags: Optional[List[str]] = None
 
 
 class Run(RunBase):
-    """Run schema when loading from the DB."""
+    """Run schema tracking in the tracer."""
 
-    id: UUID
-    name: str
     child_runs: List[Run] = Field(default_factory=list)
+    child_execution_order: Optional[int] = None
+
+
+class RunResult(RunBase):
+    """The loaded run."""
+
+    session_id: Optional[UUID] = None
 
 
 class RunUpdate(BaseModel):
