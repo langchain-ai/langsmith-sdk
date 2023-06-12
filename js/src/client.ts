@@ -59,12 +59,12 @@ interface CreateRunParams {
   name: string;
   inputs: KVMap;
   run_type: RunType;
+  execution_order?: number;
   id?: string;
   start_time?: number;
   end_time?: number;
   extra?: KVMap;
   error?: string;
-  execution_order?: number;
   serialized?: object;
   outputs?: KVMap;
   reference_example_id?: string;
@@ -153,32 +153,16 @@ export class LangChainPlusClient {
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const extra = run.extra ?? {};
-    if (!extra.runtime) {
-      extra.runtime = {};
-    }
     const runtimeEnv = await getRuntimeEnvironment();
-    for (const [k, v] of Object.entries(runtimeEnv)) {
-      if (!extra.runtime[k]) {
-        extra.runtime[k] = v;
-      }
-    }
-
     const runCreate: RunCreate = {
-      id: run.id ?? uuid.v4(),
-      name: run.name,
-      inputs: run.inputs,
-      run_type: run.run_type,
-      start_time: run.start_time ?? Date.now(),
-      end_time: run.end_time,
-      extra: run.extra ?? {},
-      error: run.error,
-      execution_order: run.execution_order ?? 1,
-      serialized: run.serialized ?? { name: run.name },
-      outputs: run.outputs,
-      reference_example_id: run.reference_example_id,
-      child_runs: run.child_runs ?? [],
-      parent_run_id: run.parent_run_id,
-      session_name: run.session_name,
+      ...run,
+      extra: {
+        ...run.extra,
+        runtime: {
+          ...runtimeEnv,
+          ...extra.runtime,
+        },
+      },
     };
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
