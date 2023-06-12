@@ -31,11 +31,12 @@ export interface BaseRun {
   outputs?: KVMap;
   reference_example_id?: string; // uuid
   parent_run_id?: string; // uuid
+  events?: KVMap[];
   tags?: string[];
 }
 
 export interface Run extends BaseRun {
-  id: string,
+  id: string;
   execution_order: number;
   child_runs: this[];
   extra: KVMap;

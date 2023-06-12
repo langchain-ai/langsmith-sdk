@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -12,7 +12,6 @@ from pydantic import (
     StrictBool,
     StrictFloat,
     StrictInt,
-    root_validator,
 )
 from typing_extensions import Literal
 
@@ -98,10 +97,11 @@ class RunBase(BaseModel):
     start_time: datetime
     run_type: RunTypeEnum
     end_time: Optional[datetime]
-    extra: dict
+    extra: Optional[dict]
     error: Optional[str]
     execution_order: int
-    serialized: dict
+    serialized: Optional[dict]
+    events: Optional[List[Dict]]
     inputs: dict
     outputs: Optional[dict]
     reference_example_id: Optional[UUID]
@@ -115,13 +115,6 @@ class Run(RunBase):
     id: UUID
     name: str
     child_runs: List[Run] = Field(default_factory=list)
-
-    @root_validator(pre=True)
-    def assign_name(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if "name" not in values:
-            values["name"] = values["serialized"]["name"]
-        return values
 
 
 class RunUpdate(BaseModel):
@@ -164,9 +157,10 @@ class FeedbackSourceType(Enum):
 class FeedbackBase(BaseModel):
     """Feedback schema."""
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
     """The time the feedback was created."""
-    modified_at: datetime = Field(default_factory=datetime.utcnow)
+    modified_at: Optional[datetime] = None
     """The time the feedback was last modified."""
     run_id: UUID
     """The associated run ID this feedback is logged for."""
@@ -190,8 +184,6 @@ class FeedbackBase(BaseModel):
 class FeedbackCreate(FeedbackBase):
     """Schema used for creating feedback."""
 
-    id: UUID = Field(default_factory=uuid4)
-
     feedback_source: FeedbackSourceBase
     """The source of the feedback."""
 
@@ -200,12 +192,16 @@ class Feedback(FeedbackBase):
     """Schema for getting feedback."""
 
     id: UUID
+    created_at: datetime
+    """The time the feedback was created."""
+    modified_at: datetime
+    """The time the feedback was last modified."""
     feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback. In this case"""
 
 
 class TracerSession(BaseModel):
-    """TracerSession schema for the V2 API."""
+    """TracerSession schema for the API."""
 
     id: UUID
     start_time: datetime = Field(default_factory=datetime.utcnow)

@@ -198,7 +198,8 @@ class LangChainPlusClient(BaseSettings):
         name: str,
         inputs: Dict[str, Any],
         run_type: Union[str, RunTypeEnum],
-        execution_order: int,
+        *,
+        execution_order: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangChain+ API."""
@@ -615,10 +616,10 @@ class LangChainPlusClient(BaseSettings):
         response = requests.post(
             self.api_url + "/feedback",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=feedback.json(),
+            data=feedback.json(exclude_none=True),
         )
         raise_for_status_with_text(response)
-        return Feedback(**feedback.dict())
+        return Feedback(**response.json())
 
     def read_feedback(self, feedback_id: ID_TYPE) -> Feedback:
         """Read a feedback from the LangChain+ API."""
