@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Any, Callable, Mapping, Tuple
 
 import requests
-from requests import HTTPError, Response
+from requests import ConnectionError, HTTPError, Response
 from tenacity import Retrying
 
 
@@ -20,6 +20,10 @@ class LangChainPlusError(Exception):
     """An error occurred while communicating with the LangChain API."""
 
 
+class LangChainPlusConnectionError(Exception):
+    """Couldn't connect to the LC+ API."""
+
+
 def request_with_retries(
     request_method: str, url: str, request_kwargs: Mapping, retry_config: Mapping
 ) -> Response:
@@ -32,17 +36,23 @@ def request_with_retries(
             except HTTPError as e:
                 if response is not None and response.status_code == 500:
                     raise LangChainPlusAPIError(
-                        f"Failed to {request_method} {url} from LangChain+ API. {e}"
+                        f"Server error caused failure to {request_method} {url} in"
+                        f" LangChain+ API. {e}"
                     )
                 else:
                     raise LangChainPlusUserError(
-                        f"Failed to {request_method} {url} from LangChain+ API. {e}"
+                        f"Failed to {request_method} {url} in LangChain+ API. {e}"
                     )
+            except ConnectionError as e:
+                raise LangChainPlusConnectionError(
+                    f"Connection error caused failure to {request_method} {url}"
+                    "  in LangChain+ API. Please confirm your LANGCHAIN_ENDPOINT."
+                ) from e
             except Exception as e:
                 raise LangChainPlusError(
-                    f"Failed to {request_method} {url} from LangChain+ API. {e}"
+                    f"Failed to {request_method} {url} in LangChain+ API. {e}"
                 ) from e
-    raise LangChainPlusError(f"Failed to {request_method}  {url} from LangChain+ API.")
+    raise LangChainPlusError(f"Failed to {request_method}  {url} in LangChain+ API. ")
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
