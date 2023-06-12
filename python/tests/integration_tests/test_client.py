@@ -4,6 +4,7 @@ import os
 import random
 import string
 from typing import List, Optional
+from uuid import uuid4
 
 import pytest
 
@@ -203,17 +204,18 @@ def test_persist_update_run(
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:
         langchain_client.delete_session(session_name=session_name)
     run: dict = dict(
+        id=uuid4(),
         name="test_run",
         run_type="llm",
         inputs={"text": "hello world"},
         session_name=session_name,
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
     )
-    generated_run = langchain_client.create_run(**run)
+    langchain_client.create_run(**run)
     run["outputs"] = {"output": ["Hi"]}
-    langchain_client.update_run(generated_run.id, **run)
-    stored_run = langchain_client.read_run(generated_run.id)
-    assert stored_run.id == generated_run.id
+    langchain_client.update_run(run["id"], **run)
+    stored_run = langchain_client.read_run(run["id"])
+    assert stored_run.id == run["id"]
     assert stored_run.outputs == run["outputs"]
     langchain_client.delete_session(session_name=session_name)
 

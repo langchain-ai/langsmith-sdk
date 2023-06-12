@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import (
@@ -179,52 +179,6 @@ class RunUpdate(BaseModel):
     reference_example_id: Optional[UUID]
 
 
-class ListRunsQueryParams(BaseModel):
-    """Query params for GET /runs endpoint."""
-
-    id: Optional[List[UUID]]
-    """Filter runs by id."""
-    parent_run: Optional[UUID]
-    """Filter runs by parent run."""
-    run_type: Optional[RunTypeEnum]
-    """Filter runs by type."""
-    session: Optional[UUID] = Field(default=None, alias="session_id")
-    """Only return runs within a session."""
-    reference_example: Optional[UUID]
-    """Only return runs that reference the specified dataset example."""
-    execution_order: Optional[int]
-    """Filter runs by execution order."""
-    error: Optional[bool]
-    """Whether to return only runs that errored."""
-    offset: Optional[int]
-    """The offset of the first run to return."""
-    limit: Optional[int]
-    """The maximum number of runs to return."""
-    start_time: Optional[datetime] = Field(
-        default=None,
-        alias="start_before",
-        description="Query Runs that started <= this time",
-    )
-    end_time: Optional[datetime] = Field(
-        default=None,
-        alias="end_after",
-        description="Query Runs that ended >= this time",
-    )
-
-    class Config:
-        extra = "forbid"
-        frozen = True
-
-    @root_validator
-    def validate_time_range(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate that start_time <= end_time."""
-        start_time = values.get("start_time")
-        end_time = values.get("end_time")
-        if start_time and end_time and start_time > end_time:
-            raise ValueError("start_time must be <= end_time")
-        return values
-
-
 class FeedbackSourceBase(BaseModel):
     type: str
     metadata: Optional[Dict[str, Any]] = None
@@ -295,20 +249,6 @@ class Feedback(FeedbackBase):
     id: UUID
     feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback. In this case"""
-
-
-class ListFeedbackQueryParams(BaseModel):
-    """Query Params for listing feedbacks."""
-
-    run: Optional[Sequence[UUID]] = None
-    limit: int = 100
-    offset: int = 0
-
-    class Config:
-        """Config for query params."""
-
-        extra = "forbid"
-        frozen = True
 
 
 class TracerSession(BaseModel):

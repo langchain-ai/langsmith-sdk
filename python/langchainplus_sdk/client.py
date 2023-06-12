@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
 import socket
 from datetime import datetime
 from io import BytesIO
@@ -14,6 +16,7 @@ from typing import (
     Sequence,
     Tuple,
     Union,
+    cast,
 )
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -40,11 +43,8 @@ from langchainplus_sdk.schemas import (
     FeedbackCreate,
     FeedbackSourceBase,
     FeedbackSourceType,
-    ListFeedbackQueryParams,
-    ListRunsQueryParams,
     ModelFeedbackSource,
     Run,
-    RunCreate,
     RunTypeEnum,
     RunUpdate,
     TracerSession,
@@ -53,6 +53,7 @@ from langchainplus_sdk.utils import (
     LangChainPlusAPIError,
     LangChainPlusError,
     LangChainPlusUserError,
+    get_runtime_environment,
     raise_for_status_with_text,
     request_with_retries,
     xor_args,
@@ -84,6 +85,14 @@ def _default_retry_config() -> Dict[str, Any]:
         retry=retry_if_exception_type(LangChainPlusAPIError),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
+
+
+def _serialize_json(obj: Any) -> str:
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, UUID):
+        return str(obj)
+    raise TypeError("Type %s not serializable" % type(obj))
 
 
 class LangChainPlusClient(BaseSettings):
@@ -190,25 +199,31 @@ class LangChainPlusClient(BaseSettings):
         inputs: Dict[str, Any],
         run_type: Union[str, RunTypeEnum],
         **kwargs: Any,
-    ) -> Run:
+    ) -> None:
         """Persist a run to the LangChain+ API."""
-        run_create = RunCreate(
+        run_create = {
+            "session_name": os.environ.get("LANGCHAIN_SESSION", "default"),
             **kwargs,
-            name=name,
-            inputs=inputs,
-            run_type=run_type,
-        )
+            "name": name,
+            "inputs": inputs,
+            "run_type": run_type,
+        }
+        run_extra = cast(dict, run_create.setdefault("extra", {}))
+        runtime = run_extra.setdefault("runtime", {})
+        runtime_env = get_runtime_environment()
+        for k, v in runtime_env.items():
+            if k not in runtime:
+                runtime[k] = v
         headers = {**self._headers, "Accept": "application/json"}
         request_with_retries(
             "post",
             f"{self.api_url}/runs",
             request_kwargs={
-                "data": run_create.json(exclude_none=True),
+                "data": json.dumps(run_create, default=_serialize_json),
                 "headers": headers,
             },
             retry_config=self.retry_config,
         )
-        return Run(**run_create.dict(exclude_none=True))
 
     def update_run(
         self,
@@ -238,6 +253,9 @@ class LangChainPlusClient(BaseSettings):
         session_id: Optional[ID_TYPE] = None,
         session_name: Optional[str] = None,
         run_type: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> Iterator[Run]:
         """List runs from the LangChain+ API."""
@@ -245,12 +263,20 @@ class LangChainPlusClient(BaseSettings):
             if session_id is not None:
                 raise ValueError("Only one of session_id or session_name may be given")
             session_id = self.read_session(session_name=session_name).id
-        query_params = ListRunsQueryParams(
-            session_id=session_id, run_type=run_type, **kwargs
-        )
-        response = self._get_with_retries(
-            "/runs", params=query_params.dict(exclude_none=True)
-        )
+        if dataset_name is not None:
+            if dataset_id is not None:
+                raise ValueError("Only one of dataset_id or dataset_name may be given")
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        query_params = {
+            "session": session_id,
+            "run_type": run_type,
+            **kwargs,
+        }
+        if reference_example_id is not None:
+            query_params["reference_example"] = reference_example_id
+        if dataset_id is not None:
+            query_params["dataset"] = dataset_id
+        response = self._get_with_retries("/runs", params=query_params)
         yield from [Run(**run) for run in response.json()]
 
     def delete_run(self, run_id: ID_TYPE) -> None:
@@ -601,13 +627,12 @@ class LangChainPlusClient(BaseSettings):
         **kwargs: Any,
     ) -> Iterator[Feedback]:
         """List the feedback objects on the LangChain+ API."""
-        params = ListFeedbackQueryParams(
-            run=run_ids,
+        params = {
+            "run": run_ids,
             **kwargs,
-        )
-        response = self._get_with_retries(
-            "/feedback", params=params.dict(exclude_none=True)
-        )
+        }
+
+        response = self._get_with_retries("/feedback", params=params)
         yield from [Feedback(**feedback) for feedback in response.json()]
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:
