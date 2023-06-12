@@ -5,7 +5,7 @@ description = "Client library to connect to the LangChainPlus LLM Tracing and Ev
 authors = ["LangChain"]
 license = "MIT"
 readme = "README.md"
-packages = [{include = "langchainplus_sdk"}]
+packages = [{ include = "langchainplus_sdk" }]
 
 [tool.poetry.scripts]
 langchain = "langchainplus_sdk.cli.main:main"
@@ -15,7 +15,7 @@ python = ">=3.8.1,<4.0"
 pydantic = "^1"
 requests = "^2"
 tenacity = "^8.1.0"
-
+evaluate = { version = "^0.4.0", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -26,15 +26,22 @@ types-requests = "^2.31.0.1"
 pandas-stubs = "^2.0.1.230501"
 types-pyyaml = "^6.0.12.10"
 
+
+[tool.poetry.group.huggingface.dependencies]
+evaluate = "^0.4.0"
+
+[tool.poetry.extras]
+huggingface = ["evaluate"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
 select = [
-  "E",  # pycodestyle
-  "F",  # pyflakes
-  "I",  # isort
+  "E", # pycodestyle
+  "F", # pyflakes
+  "I", # isort
 ]
 
 [tool.mypy]

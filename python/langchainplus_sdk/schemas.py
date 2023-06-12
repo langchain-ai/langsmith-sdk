@@ -190,7 +190,9 @@ class ListRunsQueryParams(BaseModel):
     """Filter runs by type."""
     session: Optional[UUID] = Field(default=None, alias="session_id")
     """Only return runs within a session."""
-    reference_example: Optional[UUID]
+    reference_example: Optional[UUID] = Field(
+        default=None, alias="reference_example_id"
+    )
     """Only return runs that reference the specified dataset example."""
     execution_order: Optional[int]
     """Filter runs by execution order."""
@@ -210,9 +212,11 @@ class ListRunsQueryParams(BaseModel):
         alias="end_after",
         description="Query Runs that ended >= this time",
     )
+    dataset: Optional[UUID] = Field(
+        default=None, description="Filter runs by dataset", alias="dataset_id"
+    )
 
     class Config:
-        extra = "forbid"
         frozen = True
 
     @root_validator
