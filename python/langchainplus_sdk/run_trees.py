@@ -5,13 +5,14 @@ import logging
 import os
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 from uuid import UUID, uuid4
 
 from pydantic import Field, root_validator, validator
 
 from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.schemas import RunBase, RunTypeEnum, infer_default_run_values
+from langchainplus_sdk.schemas import RunBase, RunTypeEnum
+from langchainplus_sdk.utils import get_runtime_environment
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class RunTree(RunBase):
 
     name: str
     id: UUID = Field(default_factory=uuid4)
+    start_time: datetime = Field(default_factory=datetime.utcnow)
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
     child_runs: List[RunTree] = Field(
         default_factory=list,
@@ -37,6 +39,7 @@ class RunTree(RunBase):
     session_id: Optional[UUID] = Field(default=None)
     execution_order: int = 1
     child_execution_order: int = Field(default=1, exclude=True)
+    extra: Dict = Field(default_factory=dict)
     client: LangChainPlusClient = Field(
         default_factory=LangChainPlusClient, exclude=True
     )
@@ -57,9 +60,17 @@ class RunTree(RunBase):
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
-        values = infer_default_run_values(values)
-        if values.get("child_runs") is None:
-            values["child_runs"] = []
+        if "serialized" not in values:
+            values["serialized"] = {"name": values["name"]}
+        if "execution_order" not in values:
+            values["execution_order"] = 1
+        if "child_execution_order" not in values:
+            values["child_execution_order"] = values["execution_order"]
+        if values.get("parent_run") is not None:
+            values["parent_run_id"] = values["parent_run"].id
+        extra = cast(dict, values.setdefault("extra", {}))
+        runtime = cast(dict, extra.setdefault("runtime", {}))
+        runtime.update(get_runtime_environment())
         return values
 
     def end(
@@ -109,7 +120,7 @@ class RunTree(RunBase):
             run_type=run_type,
             reference_example_id=reference_example_id,
             start_time=start_time or datetime.utcnow(),
-            end_time=end_time or datetime.utcnow(),
+            end_time=end_time,
             execution_order=execution_order,
             child_execution_order=execution_order,
             extra=extra or {},
