@@ -103,7 +103,7 @@ class LangChainPlusClient(BaseSettings):
     retry_config: Mapping[str, Any] = Field(
         default_factory=_default_retry_config, exclude=True
     )
-    timeout: int = Field(default=5)
+    timeout_ms: int = Field(default=3000)
 
     @root_validator(pre=True)
     def validate_api_key_if_hosted(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -148,7 +148,7 @@ class LangChainPlusClient(BaseSettings):
             request_kwargs={
                 "params": params,
                 "headers": self._headers,
-                "timeout": self.timeout,
+                "timeout": self.timeout_ms / 1000,
             },
             retry_config=self.retry_config,
         )
@@ -230,7 +230,7 @@ class LangChainPlusClient(BaseSettings):
             request_kwargs={
                 "data": json.dumps(run_create, default=_serialize_json),
                 "headers": headers,
-                "timeout": self.timeout,
+                "timeout": self.timeout_ms / 1000,
             },
             retry_config=self.retry_config,
         )
@@ -251,7 +251,7 @@ class LangChainPlusClient(BaseSettings):
             request_kwargs={
                 "data": run_update.json(),
                 "headers": headers,
-                "timeout": self.timeout,
+                "timeout": self.timeout_ms / 1000,
             },
             retry_config=self.retry_config,
         )
