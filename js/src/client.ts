@@ -22,11 +22,7 @@ interface LangChainPlusClientConfig {
   apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
-<<<<<<< HEAD
   timeout_ms?: number;
-=======
-  timeout?: number;
->>>>>>> 3128623 (Add timeouts)
 }
 
 interface ListRunsParams {
