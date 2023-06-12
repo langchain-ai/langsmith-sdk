@@ -103,7 +103,7 @@ class LangChainPlusClient(BaseSettings):
     retry_config: Mapping[str, Any] = Field(
         default_factory=_default_retry_config, exclude=True
     )
-    timeout_ms: int = Field(default=3000)
+    timeout_ms: int = Field(default=4000)
 
     @root_validator(pre=True)
     def validate_api_key_if_hosted(cls, values: Dict[str, Any]) -> Dict[str, Any]:

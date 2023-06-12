@@ -108,7 +108,7 @@ export class LangChainPlusClient {
     this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
     this.apiKey = config.apiKey ?? defaultConfig.apiKey;
     this.validateApiKeyIfHosted();
-    this.timeout_ms = config.timeout_ms ?? 3000;
+    this.timeout_ms = config.timeout_ms ?? 4000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
@@ -155,6 +155,7 @@ export class LangChainPlusClient {
     }
     return response.json() as T;
   }
+
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const extra = run.extra ?? {};
@@ -322,11 +323,10 @@ export class LangChainPlusClient {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete session ${sessionId_}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(
+      response,
+      `delete session ${sessionId_} (${sessionName})`
+    );
   }
 
   public async uploadCsv({
