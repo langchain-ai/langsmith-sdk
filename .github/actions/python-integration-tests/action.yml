@@ -1,5 +1,3 @@
-# .github/actions/integration-tests/action.yml
-
 name: "Integration Tests"
 description: "Run integration tests"
 inputs:
