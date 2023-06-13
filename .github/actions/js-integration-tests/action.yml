@@ -1,0 +1,29 @@
+name: "JS Integration Tests"
+description: "Run JS integration tests"
+inputs:
+  node-version:
+    description: "Node version"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "yarn"
+
+    - name: Install Yarn dependencies
+      run: yarn --cwd ./js install
+      shell: bash
+
+    - name: Start Local Server
+      run: ./js/node_modules/.bin/langchain plus start
+      shell: bash
+
+    - name: Run JS integration tests
+      run: yarn --cwd ./js test:integration
+      shell: bash

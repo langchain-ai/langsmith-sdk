@@ -9,6 +9,11 @@ on:
     paths:
       - "python/**"
   workflow_dispatch:
+    inputs:
+      run_integration_tests:
+        description: "Run integration tests"
+        default: "false"
+        options: ["true", "false"]
 
 env:
   POETRY_VERSION: "1.4.2"
@@ -78,3 +83,13 @@ jobs:
       - name: Run tests
         run: make tests
         shell: bash
+
+  integration_test:
+    needs: build
+    runs-on: ubuntu-20.04
+    if: ${{ github.event.inputs.run_integration_tests == 'true' }}
+    steps:
+      - name: Run integration tests
+        uses: ./.github/actions/python-integration-tests
+        with:
+          python-version: ${{ needs.build.outputs.python-version }}
