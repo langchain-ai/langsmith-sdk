@@ -40,7 +40,7 @@ runs:
         counter=0
         max_tries=20
         while true; do
-          response=$(curl --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:1984/tenants)
+          response=$(curl -f --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:1984/tenants || true)
           if [ "$response" -eq 200 ]; then
             echo "Service is up!"
             break

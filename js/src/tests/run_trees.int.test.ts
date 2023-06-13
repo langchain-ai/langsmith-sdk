@@ -4,7 +4,7 @@ import { RunTree, RunTreeConfig } from "../run_trees.js";
 test("Test persisting runs and adding feedback", async () => {
   const sessionName = `__test_run_tree`;
   const langchainClient = new LangChainPlusClient({
-    apiUrl: "http://127.0.0.1:1984",
+    apiUrl: "http://localhost:1984",
   });
   const sessions = await langchainClient.listSessions();
   if (sessions.map((session) => session.name).includes(sessionName)) {
@@ -106,7 +106,7 @@ test("Test persisting runs and adding feedback", async () => {
 test("Test post and patch run", async () => {
   const sessionName = `__test_run_tree`;
   const langchainClient = new LangChainPlusClient({
-    apiUrl: "http://127.0.0.1:1984",
+    apiUrl: "http://localhost:1984",
   });
   const sessions = await langchainClient.listSessions();
   if (sessions.map((session) => session.name).includes(sessionName)) {

@@ -110,7 +110,9 @@ jobs:
   integration_test:
     needs: build
     runs-on: ubuntu-20.04
-    if: ${{ github.event.inputs.run_integration_tests == 'true' }}
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_integration_tests == 'true')
     steps:
       - name: Checkout
         uses: actions/checkout@v3

@@ -6,7 +6,7 @@ import { StringEvaluator } from "../evaluation/string_evaluator.js";
 // Test Example Creation, List, Read, Update, Delete
 test("Test LangChainPlus Client Dataset CRD", async () => {
   const client = new LangChainPlusClient({
-    apiUrl: "http://127.0.0.1:1984",
+    apiUrl: "http://localhost:1984",
   });
 
   const csvContent = `col1,col2\nval1,val2`;
@@ -78,7 +78,7 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
 // Test Session Creation, List, Read, Delete
 test("Test LangChainPlus Client Session CRD", async () => {
   const client = await new LangChainPlusClient({
-    apiUrl: "http://127.0.0.1:1984",
+    apiUrl: "http://localhost:1984",
   });
 
   const newSession = `__some_session.int.`;
@@ -119,7 +119,7 @@ test("Test LangChainPlus Client Session CRD", async () => {
 
 test("Test evaluate run", async () => {
   const langchainClient = new LangChainPlusClient({
-    apiUrl: "http://127.0.0.1:1984",
+    apiUrl: "http://localhost:1984",
   });
 
   const sessionName = "__test_evaluate_run";
@@ -222,7 +222,7 @@ test("Test evaluate run", async () => {
 
 test("Test persist update run", async () => {
   const langchainClient = new LangChainPlusClient({
-    apiUrl: "http://127.0.0.1:1984",
+    apiUrl: "http://localhost:1984",
   });
   const sessionName = "__test_persist_update_run";
   const sessions = await langchainClient.listSessions();
