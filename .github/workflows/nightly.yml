@@ -1,0 +1,19 @@
+name: Nightly Integration Tests
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  integration_test:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Run Python integration tests
+        uses: ./.github/actions/python-integration-tests
+        with:
+          python-version: "3.11"
+
+      - name: Run JS integration tests
+        uses: ./.github/actions/js-integration-tests
+        with:
+          node-version: 18.x
