@@ -244,7 +244,10 @@ const startCommand = new Command("start")
     "--ngrok-authtoken <ngrokAuthtoken>",
     "Your ngrok auth token. If this is set, --expose is implied."
   )
-  .option("--dev", "Run the development version of the LangChainPlus server")
+  .option(
+    "--dev",
+    "TracerRun the development version of the LangChainPlus server"
+  )
   .option(
     "--openai-api-key <openaiApiKey>",
     "Your OpenAI API key. If this is set, the server will be able to process text and return enhanced plus results."

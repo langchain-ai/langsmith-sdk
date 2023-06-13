@@ -4,8 +4,8 @@ export {
   Dataset,
   Example,
   TracerSession,
+  TracerRun,
   Run,
-  RunResult,
   Feedback,
 } from "./schemas.js";
 

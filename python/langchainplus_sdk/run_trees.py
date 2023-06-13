@@ -23,7 +23,7 @@ def _make_thread_pool() -> ThreadPoolExecutor:
 
 
 class RunTree(RunBase):
-    """Run Schema with back-references for posting runs."""
+    """TracerRun Schema with back-references for posting runs."""
 
     name: str
     id: UUID = Field(default_factory=uuid4)

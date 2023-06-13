@@ -44,7 +44,7 @@ from langchainplus_sdk.schemas import (
     FeedbackSourceBase,
     FeedbackSourceType,
     ModelFeedbackSource,
-    RunResult,
+    Run,
     RunTypeEnum,
     RunUpdate,
     TracerSession,
@@ -256,10 +256,10 @@ class LangChainPlusClient(BaseSettings):
             retry_config=self.retry_config,
         )
 
-    def read_run(self, run_id: ID_TYPE) -> RunResult:
+    def read_run(self, run_id: ID_TYPE) -> Run:
         """Read a run from the LangChain+ API."""
         response = self._get_with_retries(f"/runs/{run_id}")
-        return RunResult(**response.json())
+        return Run(**response.json())
 
     def list_runs(
         self,
@@ -271,7 +271,7 @@ class LangChainPlusClient(BaseSettings):
         dataset_id: Optional[ID_TYPE] = None,
         reference_example_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
-    ) -> Iterator[RunResult]:
+    ) -> Iterator[Run]:
         """List runs from the LangChain+ API."""
         if session_name is not None:
             if session_id is not None:
@@ -291,7 +291,7 @@ class LangChainPlusClient(BaseSettings):
         if dataset_id is not None:
             query_params["dataset"] = dataset_id
         response = self._get_with_retries("/runs", params=query_params)
-        yield from [RunResult(**run) for run in response.json()]
+        yield from [Run(**run) for run in response.json()]
 
     def delete_run(self, run_id: ID_TYPE) -> None:
         """Delete a run from the LangChain+ API."""
@@ -508,7 +508,7 @@ class LangChainPlusClient(BaseSettings):
 
     def evaluate_run(
         self,
-        run: Union[RunResult, str, UUID],
+        run: Union[Run, str, UUID],
         evaluator: RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
@@ -516,7 +516,7 @@ class LangChainPlusClient(BaseSettings):
         """Evaluate a run."""
         if isinstance(run, (str, UUID)):
             run_ = self.read_run(run)
-        elif isinstance(run, RunResult):
+        elif isinstance(run, Run):
             run_ = run
         else:
             raise TypeError(f"Invalid run type: {type(run)}")
@@ -544,7 +544,7 @@ class LangChainPlusClient(BaseSettings):
 
     async def aevaluate_run(
         self,
-        run: Union[RunResult, str, UUID],
+        run: Union[Run, str, UUID],
         evaluator: RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
@@ -552,7 +552,7 @@ class LangChainPlusClient(BaseSettings):
         """Evaluate a run."""
         if isinstance(run, (str, UUID)):
             run_ = self.read_run(run)
-        elif isinstance(run, RunResult):
+        elif isinstance(run, Run):
             run_ = run
         else:
             raise TypeError(f"Invalid run type: {type(run)}")

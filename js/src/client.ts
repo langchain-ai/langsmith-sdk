@@ -8,7 +8,7 @@ import {
   Feedback,
   KVMap,
   RunCreate,
-  RunResult,
+  Run,
   RunType,
   RunUpdate,
   ScoreType,
@@ -194,8 +194,8 @@ export class LangChainPlusClient {
     await raiseForStatus(response, "update run");
   }
 
-  public async readRun(runId: string): Promise<RunResult> {
-    return await this._get<RunResult>(`/runs/${runId}`);
+  public async readRun(runId: string): Promise<Run> {
+    return await this._get<Run>(`/runs/${runId}`);
   }
 
   public async listRuns({
@@ -204,7 +204,7 @@ export class LangChainPlusClient {
     executionOrder,
     runType,
     error,
-  }: ListRunsParams): Promise<RunResult[]> {
+  }: ListRunsParams): Promise<Run[]> {
     const queryParams = new URLSearchParams();
     let sessionId_ = sessionId;
     if (sessionName) {
@@ -226,7 +226,7 @@ export class LangChainPlusClient {
       queryParams.append("error", error.toString());
     }
 
-    return this._get<RunResult[]>("/runs", queryParams);
+    return this._get<Run[]>("/runs", queryParams);
   }
 
   public async createSession({
@@ -601,15 +601,15 @@ export class LangChainPlusClient {
   }
 
   public async evaluateRun(
-    run: RunResult | string,
+    run: Run | string,
     evaluator: RunEvaluator,
     { sourceInfo }: { sourceInfo?: KVMap } = {}
   ): Promise<Feedback> {
-    let run_: RunResult;
+    let run_: Run;
     if (typeof run === "string") {
       run_ = await this.readRun(run);
     } else if (typeof run === "object" && "id" in run) {
-      run_ = run as RunResult;
+      run_ = run as Run;
     } else {
       throw new Error(`Invalid run type: ${typeof run}`);
     }

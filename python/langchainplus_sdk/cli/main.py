@@ -220,7 +220,7 @@ class PlusCommand:
         dev: bool = False,
         openai_api_key: Optional[str] = None,
     ) -> None:
-        """Run the LangChainPlus server locally.
+        """TracerRun the LangChainPlus server locally.
 
         Args:
             expose: If True, expose the server to the internet using ngrok.
