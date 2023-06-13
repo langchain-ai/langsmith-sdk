@@ -93,29 +93,27 @@ class RunTypeEnum(str, Enum):
 class RunBase(BaseModel):
     """Base Run schema."""
 
-    id: Optional[UUID]
+    id: UUID
+    name: str
     start_time: datetime
     run_type: RunTypeEnum
-    end_time: Optional[datetime]
-    extra: Optional[dict]
-    error: Optional[str]
-    execution_order: int
+    end_time: Optional[datetime] = None
+    extra: Optional[dict] = None
+    error: Optional[str] = None
     serialized: Optional[dict]
-    events: Optional[List[Dict]]
+    events: Optional[List[Dict]] = None
     inputs: dict
-    outputs: Optional[dict]
-    reference_example_id: Optional[UUID]
-    parent_run_id: Optional[UUID]
-    tags: Optional[List[str]]
+    outputs: Optional[dict] = None
+    reference_example_id: Optional[UUID] = None
+    parent_run_id: Optional[UUID] = None
+    tags: Optional[List[str]] = None
 
 
 class Run(RunBase):
     """Run schema when loading from the DB."""
 
-    id: UUID
-    name: str
-    child_runs: List[Run] = Field(default_factory=list)
-    child_execution_order: Optional[int] = None
+    execution_order: int
+    session_id: UUID
 
 
 class RunUpdate(BaseModel):

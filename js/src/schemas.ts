@@ -37,24 +37,16 @@ export interface BaseRun {
 
 export interface Run extends BaseRun {
   id: string;
+  session_id: string;
   execution_order: number;
-  child_runs: this[];
-  extra: KVMap;
-  serialized: object;
   start_time: number;
-  child_execution_order: number;
 }
 
 export interface RunCreate extends BaseRun {
-  serialized?: object;
   child_runs?: this[];
   session_name?: string;
 }
 
-export interface RunResult extends BaseRun {
-  name: string;
-  session_id: string;
-}
 export interface RunUpdate {
   end_time?: number;
   error?: string;
@@ -71,7 +63,7 @@ export interface Example extends BaseExample {
   id: string;
   created_at: string;
   modified_at: string;
-  runs: RunResult[];
+  runs: Run[];
 }
 
 export interface ExampleUpdate {
