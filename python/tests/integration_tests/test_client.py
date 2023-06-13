@@ -304,4 +304,6 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
     client = LangChainPlusClient()
     # expect connect error
     with pytest.raises(LangChainPlusConnectionError):
-        client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
+        client.create_run(
+            "My TracerRun", inputs={"text": "hello world"}, run_type="llm"
+        )

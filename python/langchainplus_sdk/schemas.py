@@ -37,7 +37,7 @@ class Example(ExampleBase):
     id: UUID
     created_at: datetime
     modified_at: Optional[datetime] = Field(default=None)
-    runs: List[RunResult] = Field(default_factory=list)
+    runs: List[Run] = Field(default_factory=list)
 
 
 class ExampleUpdate(BaseModel):
@@ -85,7 +85,7 @@ class RunTypeEnum(str, Enum):
 
 
 class RunBase(BaseModel):
-    """Base Run schema."""
+    """Base TracerRun schema."""
 
     id: UUID
     name: str
@@ -104,14 +104,14 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
 
 
+class TracerRun(RunBase):
+    """TracerRun schema tracking in the tracer."""
+
+    child_runs: List[TracerRun] = Field(default_factory=list)
+    child_execution_order: int
+
+
 class Run(RunBase):
-    """Run schema tracking in the tracer."""
-
-    child_runs: List[Run] = Field(default_factory=list)
-    child_execution_order: Optional[int] = None
-
-
-class RunResult(RunBase):
     """The loaded run."""
 
     session_id: Optional[UUID] = None
