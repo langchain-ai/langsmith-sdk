@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 services:
   langchain-frontend:
     image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-frontend:latest
@@ -10,9 +10,6 @@ services:
       - langchain-backend
     volumes:
       - ./conf/nginx.conf:/etc/nginx/default.conf:ro
-    build:
-      context: frontend-react/.
-      dockerfile: Dockerfile
   langchain-backend:
     image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-backend:latest
     environment:
@@ -24,9 +21,6 @@ services:
       - 1984:1984
     depends_on:
       - langchain-db
-    build:
-      context: backend/.
-      dockerfile: Dockerfile
   langchain-db:
     image: postgres:14.1
     command:
@@ -35,7 +29,7 @@ services:
         "-c",
         "log_min_messages=WARNING",
         "-c",
-        "client_min_messages=WARNING"
+        "client_min_messages=WARNING",
       ]
     environment:
       - POSTGRES_PASSWORD=postgres
