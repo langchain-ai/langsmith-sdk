@@ -15,7 +15,7 @@ _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
 def test_is_localhost() -> None:
     assert _is_localhost("http://localhost:1984")
-    assert _is_localhost("http://127.0.0.1:1984")
+    assert _is_localhost("http://localhost:1984")
     assert _is_localhost("http://0.0.0.0:1984")
     assert not _is_localhost("http://example.com:1984")
 

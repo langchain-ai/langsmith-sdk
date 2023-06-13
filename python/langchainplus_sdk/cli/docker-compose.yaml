@@ -10,9 +10,6 @@ services:
       - langchain-backend
     volumes:
       - ./conf/nginx.conf:/etc/nginx/default.conf:ro
-    build:
-      context: frontend-react/.
-      dockerfile: Dockerfile
   langchain-backend:
     image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-backend:latest
     environment:
@@ -24,9 +21,6 @@ services:
       - 1984:1984
     depends_on:
       - langchain-db
-    build:
-      context: backend/.
-      dockerfile: Dockerfile
   langchain-db:
     image: postgres:14.1
     command:

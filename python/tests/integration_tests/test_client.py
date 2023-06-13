@@ -300,6 +300,7 @@ def test_evaluate_run(
 @pytest.mark.parametrize("uri", ["http://localhost:1981", "http://api.langchain.minus"])
 def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", uri)
+    monkeypatch.setenv("LANGCHAIN_API_KEY", "test")
     client = LangChainPlusClient()
     # expect connect error
     with pytest.raises(LangChainPlusConnectionError):

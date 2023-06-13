@@ -110,7 +110,7 @@ async function createNgrokConfig(authToken: string | null): Promise<string> {
 region: us
 tunnels:
   langchain:
-    addr: langchain-backend:8000
+    addr: langchain-backend:1984
     proto: http
 version: '2'
 `;
@@ -171,7 +171,7 @@ class PlusCommand {
     ];
     await exec(command.join(" "));
     console.info(
-      "LangChainPlus server is running at http://localhost.  To connect locally, set the following environment variable when running your LangChain application."
+      "LangChainPlus server is running at http://localhost:1984.  To connect locally, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
   }
@@ -195,7 +195,7 @@ class PlusCommand {
     );
     const ngrokUrl = await getNgrokUrl();
     console.info(
-      "LangChainPlus server is running at http://localhost. To connect remotely, set the following environment variable when running your LangChain application."
+      "LangChainPlus server is running at http://localhost:1984. To connect remotely, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
     console.info(`\tLANGCHAIN_ENDPOINT=${ngrokUrl}`);
