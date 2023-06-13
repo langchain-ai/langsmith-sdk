@@ -115,6 +115,7 @@ class Run(RunBase):
     id: UUID
     name: str
     child_runs: List[Run] = Field(default_factory=list)
+    child_execution_order: Optional[int] = None
 
 
 class RunUpdate(BaseModel):
