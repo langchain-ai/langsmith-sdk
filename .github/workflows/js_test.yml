@@ -118,3 +118,5 @@ jobs:
         uses: ./.github/actions/js-integration-tests
         with:
           node-version: 18.x
+          docker_username: ${{ secrets.DOCKER_USERNAME }}
+          docker_password: ${{ secrets.DOCKER_PASSWORD }}

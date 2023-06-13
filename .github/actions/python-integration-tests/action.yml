@@ -42,6 +42,22 @@ runs:
       run: |
         poetry run langchain plus start --dev
         poetry run langchain plus status
+        sleep 5
+        counter=0
+        max_tries=20
+        while true; do
+          response=$(curl --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:1984/tenants)
+          if [ "$response" -eq 200 ]; then
+            echo "Service is up!"
+            break
+          fi
+          ((counter++))
+          if [ $counter -ge $max_tries ]; then
+            echo "Service did not start within the expected time."
+            exit 1
+          fi
+          sleep 3
+        done
         make integration_tests
       shell: bash
       working-directory: python
