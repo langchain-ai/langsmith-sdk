@@ -10,7 +10,6 @@ from subprocess import CalledProcessError
 from typing import Dict, Generator, List, Mapping, Optional, Union, cast
 
 import requests
-import yaml
 
 from langchainplus_sdk.utils import get_runtime_environment
 
@@ -107,6 +106,22 @@ def get_ngrok_url(auth_token: Optional[str]) -> str:
     return exposed_url
 
 
+def _dumps_yaml(config: dict, depth: int = 0) -> str:
+    """Dump a dictionary to a YAML string without using any imports.
+
+    We can assume it's all strings, ints, or dictionaries, up to 3 layers deep
+    """
+    lines = []
+    prefix = "  " * depth
+    for key, value in config.items():
+        if isinstance(value, dict):
+            lines.append(f"{prefix}{key}:")
+            lines.append(_dumps_yaml(value, depth + 1))
+        else:
+            lines.append(f"{prefix}{key}: {value}")
+    return "\n".join(lines)
+
+
 @contextmanager
 def create_ngrok_config(
     auth_token: Optional[str] = None,
@@ -124,7 +139,7 @@ def create_ngrok_config(
         "tunnels": {
             "langchain": {
                 "proto": "http",
-                "addr": "langchain-backend:8000",
+                "addr": "langchain-backend:1984",
             }
         },
         "version": "2",
@@ -134,7 +149,8 @@ def create_ngrok_config(
         ngrok_config["authtoken"] = auth_token
     config_path = _DIR / "ngrok_config.yaml"
     with config_path.open("w") as f:
-        yaml.dump(ngrok_config, f)
+        s = _dumps_yaml(ngrok_config)
+        f.write(s)
     yield config_path
     # Delete the config file after use
     config_path.unlink(missing_ok=True)
@@ -172,7 +188,7 @@ class PlusCommand:
             ]
         )
         logger.info(
-            "langchain plus server is running at http://localhost.  To connect"
+            "langchain plus server is running at http://localhost:1984.  To connect"
             " locally, set the following environment variable"
             " when running your LangChain application."
         )
@@ -203,7 +219,7 @@ class PlusCommand:
         )
         ngrok_url = get_ngrok_url(auth_token)
         logger.info(
-            "langchain plus server is running at http://localhost."
+            "langchain plus server is running at http://localhost:1984."
             " To connect remotely, set the following environment"
             " variable when running your LangChain application."
         )

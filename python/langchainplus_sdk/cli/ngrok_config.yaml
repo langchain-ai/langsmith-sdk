@@ -1,6 +1,0 @@
-region: us
-tunnels:
-  langchain:
-    addr: langchain-backend:8000
-    proto: http
-version: '2'

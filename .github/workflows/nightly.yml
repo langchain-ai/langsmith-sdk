@@ -12,8 +12,12 @@ jobs:
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: "3.11"
+          docker_username: ${{ secrets.DOCKER_USERNAME }}
+          docker_password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Run JS integration tests
         uses: ./.github/actions/js-integration-tests
         with:
           node-version: 18.x
+          docker_username: ${{ secrets.DOCKER_USERNAME }}
+          docker_password: ${{ secrets.DOCKER_PASSWORD }}
