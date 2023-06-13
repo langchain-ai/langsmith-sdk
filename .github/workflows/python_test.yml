@@ -87,8 +87,9 @@ jobs:
   integration_test:
     needs: build
     runs-on: ubuntu-20.04
-     if: >
+    if: >
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'release')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run_integration_tests == 'true')
     steps:
       - name: Checkout
