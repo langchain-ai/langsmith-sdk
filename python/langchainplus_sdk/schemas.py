@@ -113,7 +113,7 @@ class Run(RunBase):
     """Run schema when loading from the DB."""
 
     execution_order: int
-    session_id: UUID
+    session_id: Optional[UUID] = None
 
 
 class RunUpdate(BaseModel):

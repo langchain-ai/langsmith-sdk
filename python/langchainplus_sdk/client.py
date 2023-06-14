@@ -45,6 +45,7 @@ from langchainplus_sdk.schemas import (
     FeedbackSourceType,
     ModelFeedbackSource,
     Run,
+    RunBase,
     RunTypeEnum,
     RunUpdate,
     TracerSession,
@@ -508,25 +509,34 @@ class LangChainPlusClient(BaseSettings):
 
     def evaluate_run(
         self,
-        run: Union[Run, str, UUID],
+        run: Union[Run, RunBase, str, UUID],
         evaluator: RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
+        reference_example: Optional[Union[Example, str, dict, UUID]] = None,
     ) -> Feedback:
         """Evaluate a run."""
         if isinstance(run, (str, UUID)):
             run_ = self.read_run(run)
         elif isinstance(run, Run):
             run_ = run
+        elif isinstance(run, RunBase):
+            run_ = Run(**run.dict())
         else:
             raise TypeError(f"Invalid run type: {type(run)}")
-        if run_.reference_example_id is not None:
-            reference_example = self.read_example(run_.reference_example_id)
+        if isinstance(reference_example, (str, UUID)):
+            reference_example_ = self.read_example(reference_example)
+        elif isinstance(reference_example, Example):
+            reference_example_ = reference_example
+        elif isinstance(reference_example, dict):
+            reference_example_ = Example(**reference_example)
+        elif run_.reference_example_id is not None:
+            reference_example_ = self.read_example(run_.reference_example_id)
         else:
-            reference_example = None
+            reference_example_ = None
         feedback_result = evaluator.evaluate_run(
             run_,
-            example=reference_example,
+            example=reference_example_,
         )
         source_info = source_info or {}
         if feedback_result.evaluator_info:
