@@ -37,7 +37,7 @@ export interface BaseRun {
 
 export interface Run extends BaseRun {
   id: string;
-  session_id: string;
+  session_id?: string;
   execution_order: number;
   start_time: number;
 }
