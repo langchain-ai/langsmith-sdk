@@ -2,23 +2,30 @@
 import contextvars
 import inspect
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Generator, Optional, Union
 from uuid import UUID
 
 from langchainplus_sdk.run_trees import RunTree
 from langchainplus_sdk.schemas import RunTypeEnum
 
-parent_run_tree = contextvars.ContextVar[Optional[RunTree]](
-    "parent_run_tree", default=None
+_PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
+    "_PARENT_RUN_TREE", default=None
 )
+_SESSION_NAME = contextvars.ContextVar[str]("_SESSION_NAME", default="default")
 
 
-def _get_inputs(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+def _get_inputs(
+    signature: inspect.Signature, *args: Any, **kwargs: Any
+) -> Dict[str, Any]:
     """Return a dictionary of inputs from the function signature."""
-    # TODO: Could inspect and map names...
+    bound = signature.bind_partial(*args, **kwargs)
+    bound.apply_defaults()
+    inputs = dict(bound.arguments)
+
     # TODO: Handle non-json-serializable inputs
-    return {"args": args, "kwargs": kwargs}
+    return inputs
 
 
 def traceable(
@@ -35,17 +42,19 @@ def traceable(
         @wraps(func)
         async def async_wrapper(
             *args: Any,
-            session_name: Optional[str] = None,
             reference_example_id: Optional[UUID] = None,
             run_extra: Optional[Dict] = None,
             run_tree: Optional[RunTree] = None,
+            session_name: Optional[str] = None,
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function"""
             if run_tree is None:
-                parent_run_ = parent_run_tree.get()
+                parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
+            outer_session = _SESSION_NAME.get()
+            session_name_ = session_name or outer_session
             signature = inspect.signature(func)
             name_ = name or func.__name__
             docstring = func.__doc__
@@ -53,7 +62,7 @@ def traceable(
                 extra_inner = {**extra_outer, **run_extra}
             else:
                 extra_inner = extra_outer
-            inputs = _get_inputs(*args, **kwargs)
+            inputs = _get_inputs(signature, *args, **kwargs)
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
                     name=name_,
@@ -77,12 +86,13 @@ def traceable(
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
-                    session_name=session_name,
+                    session_name=session_name_,
                     extra=extra_inner,
                     executor=executor,
                 )
             new_run.post()
-            parent_run_tree.set(new_run)
+            _SESSION_NAME.set(session_name_)
+            _PARENT_RUN_TREE.set(new_run)
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -94,8 +104,11 @@ def traceable(
             except Exception as e:
                 new_run.end(error=str(e))
                 new_run.patch()
+                _PARENT_RUN_TREE.set(parent_run_)
+                _SESSION_NAME.set(outer_session)
                 raise e
-            parent_run_tree.set(parent_run_)
+            _PARENT_RUN_TREE.set(parent_run_)
+            _SESSION_NAME.set(outer_session)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
@@ -103,17 +116,19 @@ def traceable(
         @wraps(func)
         def wrapper(
             *args: Any,
-            session_name: Optional[str] = None,
             reference_example_id: Optional[UUID] = None,
             run_extra: Optional[Dict] = None,
             run_tree: Optional[RunTree] = None,
+            session_name: Optional[str] = None,
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
             if run_tree is None:
-                parent_run_ = parent_run_tree.get()
+                parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
+            outer_session = _SESSION_NAME.get()
+            session_name_ = session_name or outer_session
             signature = inspect.signature(func)
             name_ = name or func.__name__
             docstring = func.__doc__
@@ -121,7 +136,7 @@ def traceable(
                 extra_inner = {**extra_outer, **run_extra}
             else:
                 extra_inner = extra_outer
-            inputs = _get_inputs(*args, **kwargs)
+            inputs = _get_inputs(signature, *args, **kwargs)
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
                     name=name_,
@@ -150,7 +165,8 @@ def traceable(
                     executor=executor,
                 )
             new_run.post()
-            parent_run_tree.set(new_run)
+            _PARENT_RUN_TREE.set(new_run)
+            _SESSION_NAME.set(session_name_)
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -162,8 +178,11 @@ def traceable(
             except Exception as e:
                 new_run.end(error=str(e))
                 new_run.patch()
+                _PARENT_RUN_TREE.set(parent_run_)
+                _SESSION_NAME.set(outer_session)
                 raise e
-            parent_run_tree.set(parent_run_)
+            _PARENT_RUN_TREE.set(parent_run_)
+            _SESSION_NAME.set(outer_session)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
@@ -174,3 +193,54 @@ def traceable(
             return wrapper
 
     return decorator
+
+
+@contextmanager
+def trace(
+    name: str,
+    run_type: Union[RunTypeEnum, str],
+    *,
+    inputs: Optional[Dict] = None,
+    extra: Optional[Dict] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+    session_name: Optional[str] = None,
+    run_tree: Optional[RunTree] = None,
+) -> Generator[RunTree, None, None]:
+    """Context manager for creating a run tree."""
+    extra_outer = extra or {}
+    parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
+    outer_session = _SESSION_NAME.get()
+    session_name_ = session_name or outer_session
+    if parent_run_ is not None:
+        new_run = parent_run_.create_child(
+            name=name,
+            run_type=run_type,
+            extra=extra_outer,
+            inputs=inputs,
+        )
+    else:
+        new_run = RunTree(
+            name=name,
+            run_type=run_type,
+            extra=extra_outer,
+            executor=executor,
+            session_name=session_name_,
+            inputs=inputs or {},
+        )
+    new_run.post()
+    _PARENT_RUN_TREE.set(new_run)
+    _SESSION_NAME.set(session_name_)
+    try:
+        yield new_run
+    except Exception as e:
+        new_run.end(error=str(e))
+        new_run.patch()
+        _PARENT_RUN_TREE.set(parent_run_)
+        _SESSION_NAME.set(outer_session)
+        raise e
+    _PARENT_RUN_TREE.set(parent_run_)
+    _SESSION_NAME.set(outer_session)
+    if new_run.end_time is None:
+        # User didn't call end() on the run, so we'll do it for them
+        new_run.end()
+    new_run.patch()

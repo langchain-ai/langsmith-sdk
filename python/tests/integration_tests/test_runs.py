@@ -1,12 +1,13 @@
 import asyncio
 import os
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Generator, Optional
 
 import pytest
 
 from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.run_helpers import traceable
+from langchainplus_sdk.run_helpers import trace, traceable
 from langchainplus_sdk.run_trees import RunTree
 from langchainplus_sdk.schemas import RunTypeEnum
 
@@ -56,7 +57,7 @@ def test_nested_runs(
     assert runs_dict["my_run"].run_type == "chain"
     assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
     assert runs_dict["my_llm_run"].run_type == "llm"
-    assert runs_dict["my_llm_run"].inputs == {"args": ["foo"], "kwargs": {}}
+    assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
     langchain_client.delete_session(session_name=session_name)
 
 
@@ -77,7 +78,7 @@ async def test_nested_async_runs(langchain_client: LangChainPlusClient):
     @traceable(run_type="llm")
     async def my_llm_run(text: str):
         # The function needn't accept a run
-        asyncio.sleep(0.2)
+        await asyncio.sleep(0.2)
         return f"Completed: {text}"
 
     @traceable(run_type="tool")
@@ -101,13 +102,13 @@ async def test_nested_async_runs(langchain_client: LangChainPlusClient):
     assert runs_dict["my_run"].execution_order == 2
     assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
     assert runs_dict["my_llm_run"].run_type == "llm"
-    assert runs_dict["my_llm_run"].inputs == {"args": ["foo"], "kwargs": {}}
+    assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
     assert runs_dict["my_llm_run"].execution_order == 3
     assert runs_dict["my_sync_tool"].parent_run_id == runs_dict["my_run"].id
     assert runs_dict["my_sync_tool"].run_type == "tool"
     assert runs_dict["my_sync_tool"].inputs == {
-        "args": ["foo"],
-        "kwargs": {"my_arg": 20},
+        "text": "foo",
+        "my_arg": 20,
     }
     assert runs_dict["my_sync_tool"].execution_order == 4
     langchain_client.delete_session(session_name=session_name)
@@ -162,4 +163,49 @@ async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlus
     assert sum([run.name == "my_llm_run" for run in runs]) == 2
     assert sum([run.run_type == RunTypeEnum.tool for run in runs]) == 6
     assert sum([run.run_type == RunTypeEnum.chain for run in runs]) == 3
+    # Check that all instances of async_llm have a parent with
+    # the same name (my_tool_run)
+    name_to_ids_map = defaultdict(list)
+    for run in runs:
+        name_to_ids_map[run.name].append(run.id)
+    for run in runs:
+        if run.name == "async_llm":
+            assert run.parent_run_id in name_to_ids_map["my_tool_run"]
+        if run.name == "my_tool_run":
+            assert run.parent_run_id in name_to_ids_map["my_run"]
+        if run.name == "my_llm_run":
+            assert run.parent_run_id in name_to_ids_map["my_run"]
+        if run.name == "my_run":
+            assert run.parent_run_id in name_to_ids_map["my_chain_run"]
+        if run.name == "my_chain_run":
+            assert run.parent_run_id is None
+    langchain_client.delete_session(session_name=session_name)
+
+
+@pytest.mark.asyncio
+async def test_context_manager(langchain_client: LangChainPlusClient) -> None:
+    session_name = "__My Tracer Session - test_context_manager"
+    if session_name in [session.name for session in langchain_client.list_sessions()]:
+        langchain_client.delete_session(session_name=session_name)
+
+    @traceable(run_type="llm")
+    async def my_llm(prompt: str) -> str:
+        return f"LLM {prompt}"
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    with trace(
+        "my_context", RunTypeEnum.chain, session_name=session_name, executor=executor
+    ) as run_tree:
+        await my_llm("foo")
+        with trace("my_context2", RunTypeEnum.chain, run_tree=run_tree) as run_tree2:
+            runs = [my_llm("baz"), my_llm("qux")]
+            with trace("my_context3", RunTypeEnum.chain, run_tree=run_tree2):
+                await my_llm("quux")
+                await my_llm("corge")
+            await asyncio.gather(*runs)
+        run_tree.end(outputs={"End val": "my_context2"})
+    executor.shutdown(wait=True)
+    runs = list(langchain_client.list_runs(session_name=session_name))
+    assert len(runs) == 8
+    # Assert quuux adn corge are both children of my_context3
     langchain_client.delete_session(session_name=session_name)
