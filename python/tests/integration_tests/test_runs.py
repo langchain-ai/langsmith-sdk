@@ -77,6 +77,7 @@ async def test_nested_async_runs(langchain_client: LangChainPlusClient):
     @traceable(run_type="llm")
     async def my_llm_run(text: str):
         # The function needn't accept a run
+        asyncio.sleep(0.2)
         return f"Completed: {text}"
 
     @traceable(run_type="tool")

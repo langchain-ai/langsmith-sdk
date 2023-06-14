@@ -48,6 +48,7 @@ def traceable(
                 parent_run_ = run_tree
             signature = inspect.signature(func)
             name_ = name or func.__name__
+            docstring = func.__doc__
             if run_extra:
                 extra_inner = {**extra_outer, **run_extra}
             else:
@@ -57,14 +58,22 @@ def traceable(
                 new_run = parent_run_.create_child(
                     name=name_,
                     run_type=run_type,
-                    serialized={"name": name, "signature": str(signature)},
+                    serialized={
+                        "name": name,
+                        "signature": str(signature),
+                        "doc": docstring,
+                    },
                     inputs=inputs,
                     extra=extra_inner,
                 )
             else:
                 new_run = RunTree(
                     name=name_,
-                    serialized={"name": name, "signature": str(signature)},
+                    serialized={
+                        "name": name,
+                        "signature": str(signature),
+                        "doc": docstring,
+                    },
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
@@ -107,6 +116,7 @@ def traceable(
                 parent_run_ = run_tree
             signature = inspect.signature(func)
             name_ = name or func.__name__
+            docstring = func.__doc__
             if run_extra:
                 extra_inner = {**extra_outer, **run_extra}
             else:
@@ -116,14 +126,22 @@ def traceable(
                 new_run = parent_run_.create_child(
                     name=name_,
                     run_type=run_type,
-                    serialized={"name": name, "signature": str(signature)},
+                    serialized={
+                        "name": name,
+                        "signature": str(signature),
+                        "doc": docstring,
+                    },
                     inputs=inputs,
                     extra=extra_inner,
                 )
             else:
                 new_run = RunTree(
                     name=name_,
-                    serialized={"name": name, "signature": str(signature)},
+                    serialized={
+                        "name": name,
+                        "signature": str(signature),
+                        "doc": docstring,
+                    },
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
