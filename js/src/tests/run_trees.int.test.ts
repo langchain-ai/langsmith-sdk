@@ -2,20 +2,20 @@ import { LangChainPlusClient } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 
 test("Test persisting runs and adding feedback", async () => {
-  const sessionName = `__test_run_tree`;
+  const projectName = `__test_run_tree`;
   const langchainClient = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
-  const sessions = await langchainClient.listSessions();
-  if (sessions.map((session) => session.name).includes(sessionName)) {
-    await langchainClient.deleteSession({ sessionName });
+  const projects = await langchainClient.listProjects();
+  if (projects.map((project) => project.name).includes(projectName)) {
+    await langchainClient.deleteProject({ projectName });
   }
 
   const parentRunConfig: RunTreeConfig = {
     name: "parent_run",
     run_type: "chain",
     inputs: { text: "hello world" },
-    session_name: sessionName,
+    project_name: projectName,
     serialized: {},
     client: langchainClient,
   };
@@ -52,7 +52,7 @@ test("Test persisting runs and adding feedback", async () => {
   await parent_run.end({ output: ["Hi"] });
   await parent_run.postRun(false);
 
-  const runs = await langchainClient.listRuns({ sessionName });
+  const runs = await langchainClient.listRuns({ projectName });
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
   expect(runMap.get("parent_run")?.execution_order).toEqual(1);
@@ -99,25 +99,25 @@ test("Test persisting runs and adding feedback", async () => {
       .length
   ).toEqual(1);
 
-  await langchainClient.deleteSession({ sessionName });
-  await expect(langchainClient.readSession({ sessionName })).rejects.toThrow();
+  await langchainClient.deleteProject({ projectName });
+  await expect(langchainClient.readProject({ projectName })).rejects.toThrow();
 });
 
 test("Test post and patch run", async () => {
-  const sessionName = `__test_run_tree`;
+  const projectName = `__test_run_tree`;
   const langchainClient = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
-  const sessions = await langchainClient.listSessions();
-  if (sessions.map((session) => session.name).includes(sessionName)) {
-    await langchainClient.deleteSession({ sessionName });
+  const projects = await langchainClient.listProjects();
+  if (projects.map((project) => project.name).includes(projectName)) {
+    await langchainClient.deleteProject({ projectName });
   }
 
   const parentRunConfig: RunTreeConfig = {
     name: "parent_run",
     run_type: "chain",
     inputs: { text: "hello world" },
-    session_name: sessionName,
+    project_name: projectName,
     serialized: {},
     client: langchainClient,
   };
@@ -162,7 +162,7 @@ test("Test post and patch run", async () => {
   await parent_run.end({ output: ["Hi"] });
   await parent_run.patchRun();
 
-  const runs = await langchainClient.listRuns({ sessionName });
+  const runs = await langchainClient.listRuns({ projectName });
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
   expect(runMap.get("parent_run")?.execution_order).toEqual(1);
@@ -184,5 +184,5 @@ test("Test post and patch run", async () => {
     runMap.get("parent_run")?.id
   );
   expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
-  await langchainClient.deleteSession({ sessionName });
+  await langchainClient.deleteProject({ projectName });
 });

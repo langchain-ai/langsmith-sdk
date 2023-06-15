@@ -48,7 +48,7 @@ from langchainplus_sdk.schemas import (
     RunBase,
     RunTypeEnum,
     RunUpdate,
-    TracerSession,
+    TracerProject,
 )
 from langchainplus_sdk.utils import (
     LangChainPlusAPIError,
@@ -209,11 +209,11 @@ class LangChainPlusClient(BaseSettings):
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangChain+ API."""
-        session_name = kwargs.pop(
-            "session_name", os.environ.get("LANGCHAIN_SESSION", "default")
+        project_name = kwargs.pop(
+            "project_name", os.environ.get("LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default"))
         )
         run_create = {
-            "session_name": session_name,
+            "project_name": project_name,
             **kwargs,
             "name": name,
             "inputs": inputs,
@@ -265,8 +265,8 @@ class LangChainPlusClient(BaseSettings):
     def list_runs(
         self,
         *,
-        session_id: Optional[ID_TYPE] = None,
-        session_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
         run_type: Optional[str] = None,
         dataset_name: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
@@ -274,16 +274,16 @@ class LangChainPlusClient(BaseSettings):
         **kwargs: Any,
     ) -> Iterator[Run]:
         """List runs from the LangChain+ API."""
-        if session_name is not None:
-            if session_id is not None:
-                raise ValueError("Only one of session_id or session_name may be given")
-            session_id = self.read_session(session_name=session_name).id
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = self.read_project(project_name=project_name).id
         if dataset_name is not None:
             if dataset_id is not None:
                 raise ValueError("Only one of dataset_id or dataset_name may be given")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         query_params = {
-            "session": session_id,
+            "project": project_id,
             "run_type": run_type,
             **kwargs,
         }
@@ -303,14 +303,14 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return
 
-    def create_session(
-        self, session_name: str, session_extra: Optional[dict] = None
-    ) -> TracerSession:
-        """Create a session on the LangChain+ API."""
+    def create_project(
+        self, project_name: str, project_extra: Optional[dict] = None
+    ) -> TracerProject:
+        """Create a project on the LangChain+ API."""
         endpoint = f"{self.api_url}/sessions?upsert=true"
         body = {
-            "name": session_name,
-            "extra": session_extra,
+            "name": project_name,
+            "extra": project_extra,
         }
         response = requests.post(
             endpoint,
@@ -318,45 +318,45 @@ class LangChainPlusClient(BaseSettings):
             json=body,
         )
         raise_for_status_with_text(response)
-        return TracerSession(**response.json())
+        return TracerProject(**response.json())
 
-    @xor_args(("session_id", "session_name"))
-    def read_session(
-        self, *, session_id: Optional[str] = None, session_name: Optional[str] = None
-    ) -> TracerSession:
-        """Read a session from the LangChain+ API."""
+    @xor_args(("project_id", "project_name"))
+    def read_project(
+        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+    ) -> TracerProject:
+        """Read a project from the LangChain+ API."""
         path = "/sessions"
         params: Dict[str, Any] = {"limit": 1}
-        if session_id is not None:
-            path += f"/{session_id}"
-        elif session_name is not None:
-            params["name"] = session_name
+        if project_id is not None:
+            path += f"/{project_id}"
+        elif project_name is not None:
+            params["name"] = project_name
         else:
-            raise ValueError("Must provide session_name or session_id")
+            raise ValueError("Must provide project_name or project_id")
         response = self._get_with_retries(path, params=params)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise LangChainPlusError(f"Session {session_name} not found")
-            return TracerSession(**result[0])
-        return TracerSession(**response.json())
+                raise LangChainPlusError(f"Session {project_name} not found")
+            return TracerProject(**result[0])
+        return TracerProject(**response.json())
 
-    def list_sessions(self) -> Iterator[TracerSession]:
-        """List sessions from the LangChain+ API."""
+    def list_projects(self) -> Iterator[TracerProject]:
+        """List projects from the LangChain+ API."""
         response = self._get_with_retries("/sessions")
-        yield from [TracerSession(**session) for session in response.json()]
+        yield from [TracerProject(**project) for project in response.json()]
 
-    @xor_args(("session_name", "session_id"))
-    def delete_session(
-        self, *, session_name: Optional[str] = None, session_id: Optional[str] = None
+    @xor_args(("project_name", "project_id"))
+    def delete_project(
+        self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a session from the LangChain+ API."""
-        if session_name is not None:
-            session_id = self.read_session(session_name=session_name).id
-        elif session_id is None:
-            raise ValueError("Must provide session_name or session_id")
+        """Delete a project from the LangChain+ API."""
+        if project_name is not None:
+            project_id = self.read_project(project_name=project_name).id
+        elif project_id is None:
+            raise ValueError("Must provide project_name or project_id")
         response = requests.delete(
-            self.api_url + f"/sessions/{session_id}",
+            self.api_url + f"/sessions/{project_id}",
             headers=self._headers,
         )
         raise_for_status_with_text(response)

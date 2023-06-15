@@ -33,10 +33,12 @@ class RunTree(RunBase):
         default_factory=list,
         exclude={"__all__": {"parent_run_id"}},
     )
-    session_name: str = Field(
-        default_factory=lambda: os.environ.get("LANGCHAIN_SESSION", "default")
+    project_name: str = Field(
+        default_factory=lambda: os.environ.get(
+            "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
+        )
     )
-    session_id: Optional[UUID] = Field(default=None)
+    project_id: Optional[UUID] = Field(default=None)
     execution_order: int = 1
     child_execution_order: int = Field(default=1, exclude=True)
     extra: Dict = Field(default_factory=dict)
@@ -125,7 +127,7 @@ class RunTree(RunBase):
             child_execution_order=execution_order,
             extra=extra or {},
             parent_run=self,
-            session_name=self.session_name,
+            project_name=self.project_name,
             client=self.client,
             executor=self.executor,
         )

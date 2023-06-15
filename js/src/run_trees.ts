@@ -7,7 +7,7 @@ export interface RunTreeConfig {
   name: string;
   run_type: RunType;
   id?: string;
-  session_name?: string;
+  project_name?: string;
   execution_order?: number;
   child_execution_order?: number;
   parent_run?: RunTree;
@@ -27,7 +27,7 @@ export class RunTree implements BaseRun {
   id: string;
   name: RunTreeConfig["name"];
   run_type: RunTreeConfig["run_type"];
-  session_name: string;
+  project_name: string;
   parent_run?: RunTree;
   child_runs: RunTree[];
   execution_order: number;
@@ -49,7 +49,7 @@ export class RunTree implements BaseRun {
   private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
-      session_name: getEnvironmentVariable("LANGCHAIN_SESSION") ?? "default",
+      project_name: getEnvironmentVariable("LANGCHAIN_PROJECT") ?? getEnvironmentVariable("LANGCHAIN_SESSION") ?? "default",
       child_runs: [],
       execution_order: 1,
       child_execution_order: 1,
@@ -70,7 +70,7 @@ export class RunTree implements BaseRun {
     const child = new RunTree({
       ...config,
       parent_run: this,
-      session_name: this.session_name,
+      project_name: this.project_name,
       client: this.client,
       execution_order: this.child_execution_order + 1,
       child_execution_order: this.child_execution_order + 1,
@@ -137,7 +137,7 @@ export class RunTree implements BaseRun {
       error: run.error,
       inputs: run.inputs,
       outputs: run.outputs,
-      session_name: run.session_name,
+      project_name: run.project_name,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
     };

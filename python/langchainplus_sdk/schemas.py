@@ -199,11 +199,13 @@ class Feedback(FeedbackBase):
     """The source of the feedback. In this case"""
 
 
-class TracerSession(BaseModel):
-    """TracerSession schema for the API."""
+class TracerProject(BaseModel):
+    """TracerProject schema for the API."""
 
     id: UUID
     start_time: datetime = Field(default_factory=datetime.utcnow)
     name: Optional[str] = None
     extra: Optional[Dict[str, Any]] = None
     tenant_id: UUID
+
+TracerSession = TracerProject

@@ -1,9 +1,11 @@
-export interface TracerSession {
+export interface TracerProject {
   tenant_id: string;
   id: string;
   start_time: number;
   name?: string;
 }
+
+export type TracerSession = TracerProject;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type KVMap = Record<string, any>;
