@@ -114,6 +114,9 @@ class Run(RunBase):
 
     execution_order: int
     session_id: Optional[UUID] = None
+    child_run_ids: Optional[List[UUID]] = None
+    child_runs: Optional[List[Run]] = None
+    feedback_stats: Optional[Dict[str, Any]] = None
 
 
 class RunUpdate(BaseModel):

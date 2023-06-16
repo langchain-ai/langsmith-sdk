@@ -173,6 +173,20 @@ def test_run_tree(
     assert run_map["child_tool_run"].parent_run_id == run_map["parent_run"].id
     assert run_map["parent_run"].parent_run_id is None
 
+    nested_run = langchain_client.read_run(
+        run_map["parent_run"].id, load_child_runs=True
+    )
+    assert nested_run.child_runs is not None
+    assert len(nested_run.child_runs) == 3
+    first_two = {
+        child_run_.name: child_run_ for child_run_ in nested_run.child_runs[:2]
+    }
+    assert set(first_two) == {"child_run", "child_chain_run"}
+    assert nested_run.child_runs[2].name == "child_tool_run"
+    assert first_two["child_chain_run"].child_runs is not None
+    assert len(first_two["child_chain_run"].child_runs) == 1
+    assert first_two["child_chain_run"].child_runs[0].name == "grandchild_chain_run"
+
     langchain_client.create_feedback(
         runs[0].id,  # type: ignore
         "supermetric",
@@ -250,7 +264,6 @@ def test_evaluate_run(
         session_name=session_name,
         serialized={},
         start_time=datetime.now(),
-        api_url=os.getenv("LANGCHAIN_ENDPOINT"),
         reference_example_id=example.id,
     )
     parent_run.post()

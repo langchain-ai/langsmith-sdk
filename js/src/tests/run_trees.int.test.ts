@@ -75,6 +75,26 @@ test("Test persisting runs and adding feedback", async () => {
   );
   expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
 
+  const nestedRun = await langchainClient.readRun(
+    runMap.get("parent_run")?.id ?? "",
+    { loadChildRuns: true }
+  );
+  expect(nestedRun.child_runs).not.toBeNull();
+  expect(nestedRun.child_runs?.length).toEqual(3);
+  const firstTwo = new Map(
+    nestedRun.child_runs
+      ?.slice(0, 2)
+      .map((childRun) => [childRun.name, childRun])
+  );
+  expect(firstTwo.has("child_run")).toBeTruthy();
+  expect(firstTwo.has("child_chain_run")).toBeTruthy();
+  expect(nestedRun.child_runs?.[2].name).toEqual("child_tool_run");
+  expect(firstTwo.get("child_chain_run")?.child_runs).not.toBeNull();
+  expect(firstTwo.get("child_chain_run")?.child_runs?.length).toEqual(1);
+  expect(firstTwo.get("child_chain_run")?.child_runs?.[0].name).toEqual(
+    "grandchild_chain_run"
+  );
+
   await langchainClient.createFeedback(runs[0].id, "supermetric", {
     value: {
       clarity: "good",

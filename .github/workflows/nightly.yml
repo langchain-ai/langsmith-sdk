@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+env:
+  POETRY_VERSION: "1.4.2"
+
 jobs:
   integration_test:
     runs-on: ubuntu-20.04
