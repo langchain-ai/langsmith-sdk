@@ -40,6 +40,9 @@ export interface Run extends BaseRun {
   session_id?: string;
   execution_order: number;
   start_time: number;
+  child_run_ids?: string[]; // uuid[]
+  feedback_stats?: KVMap;
+  child_runs?: Run[];
 }
 
 export interface RunCreate extends BaseRun {

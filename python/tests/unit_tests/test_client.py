@@ -1,4 +1,5 @@
 """Test the LangChain+ client."""
+import asyncio
 import uuid
 from datetime import datetime
 from io import BytesIO
@@ -79,3 +80,34 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
     assert dataset.id == uuid.UUID(dataset_id)
     assert dataset.name == "test.csv"
     assert dataset.description == "Test dataset"
+
+
+def test_async_methods():
+    """For every method defined on the LangChainPlusClient, if there is a
+
+    corresponding async method, then the async method args should be a
+    superset of the sync method args.
+    """
+    sync_methods = [
+        method
+        for method in dir(LangChainPlusClient)
+        if not method.startswith("_")
+        and callable(getattr(LangChainPlusClient, method))
+        and not asyncio.iscoroutinefunction(getattr(LangChainPlusClient, method))
+    ]
+    async_methods = [
+        method
+        for method in dir(LangChainPlusClient)
+        if not method.startswith("_")
+        and callable(getattr(LangChainPlusClient, method))
+        and asyncio.iscoroutinefunction(getattr(LangChainPlusClient, method))
+    ]
+
+    for async_method in async_methods:
+        sync_method = async_method[1:]  # Remove the "a" from the beginning
+        assert sync_method in sync_methods
+        sync_args = set(LangChainPlusClient.__dict__[sync_method].__code__.co_varnames)
+        async_args = set(
+            LangChainPlusClient.__dict__[async_method].__code__.co_varnames
+        )
+        assert sync_args.issubset(async_args)

@@ -31,6 +31,7 @@ interface ListRunsParams {
   executionOrder?: number;
   runType?: RunType;
   error?: boolean;
+  id?: string[];
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -194,8 +195,42 @@ export class LangChainPlusClient {
     await raiseForStatus(response, "update run");
   }
 
-  public async readRun(runId: string): Promise<Run> {
-    return await this._get<Run>(`/runs/${runId}`);
+  public async readRun(
+    runId: string,
+    { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false }
+  ): Promise<Run> {
+    let run = await this._get<Run>(`/runs/${runId}`);
+    if (loadChildRuns && run.child_run_ids) {
+      run = await this._loadChildRuns(run);
+    }
+    return run;
+  }
+
+  private async _loadChildRuns(run: Run): Promise<Run> {
+    const childRuns = await this.listRuns({ id: run.child_run_ids });
+    const treemap: { [key: string]: Run[] } = {};
+    const runs: { [key: string]: Run } = {};
+    childRuns.sort((a, b) => a.execution_order - b.execution_order);
+    for (const childRun of childRuns) {
+      if (
+        childRun.parent_run_id === null ||
+        childRun.parent_run_id === undefined
+      ) {
+        throw new Error(`Child run ${childRun.id} has no parent`);
+      }
+      if (!(childRun.parent_run_id in treemap)) {
+        treemap[childRun.parent_run_id] = [];
+      }
+      treemap[childRun.parent_run_id].push(childRun);
+      runs[childRun.id] = childRun;
+    }
+    run.child_runs = treemap[run.id] || [];
+    for (const runId in treemap) {
+      if (runId !== run.id) {
+        runs[runId].child_runs = treemap[runId];
+      }
+    }
+    return run;
   }
 
   public async listRuns({
@@ -204,6 +239,7 @@ export class LangChainPlusClient {
     executionOrder,
     runType,
     error,
+    id,
   }: ListRunsParams): Promise<Run[]> {
     const queryParams = new URLSearchParams();
     let sessionId_ = sessionId;
@@ -224,6 +260,11 @@ export class LangChainPlusClient {
     }
     if (error !== undefined) {
       queryParams.append("error", error.toString());
+    }
+    if (id !== undefined) {
+      for (const id_ of id) {
+        queryParams.append("id", id_);
+      }
     }
 
     return this._get<Run[]>("/runs", queryParams);
@@ -603,11 +644,14 @@ export class LangChainPlusClient {
   public async evaluateRun(
     run: Run | string,
     evaluator: RunEvaluator,
-    { sourceInfo }: { sourceInfo?: KVMap } = {}
+    {
+      sourceInfo,
+      loadChildRuns,
+    }: { sourceInfo?: KVMap; loadChildRuns: boolean } = { loadChildRuns: false }
   ): Promise<Feedback> {
     let run_: Run;
     if (typeof run === "string") {
-      run_ = await this.readRun(run);
+      run_ = await this.readRun(run, { loadChildRuns });
     } else if (typeof run === "object" && "id" in run) {
       run_ = run as Run;
     } else {
