@@ -4,13 +4,16 @@ import json
 import logging
 import os
 import socket
+from collections import defaultdict
 from datetime import datetime
 from io import BytesIO
 from typing import (
     TYPE_CHECKING,
     Any,
+    DefaultDict,
     Dict,
     Iterator,
+    List,
     Mapping,
     Optional,
     Sequence,
@@ -257,10 +260,35 @@ class LangChainPlusClient(BaseSettings):
             retry_config=self.retry_config,
         )
 
-    def read_run(self, run_id: ID_TYPE) -> Run:
-        """Read a run from the LangChain+ API."""
+    def _load_child_runs(self, run: Run) -> Run:
+        child_runs = self.list_runs(id=run.child_run_ids)
+        treemap: DefaultDict[UUID, List[Run]] = defaultdict(list)
+        runs: Dict[UUID, Run] = {}
+        for child_run in sorted(child_runs, key=lambda r: r.execution_order):
+            if child_run.parent_run_id is None:
+                raise LangChainPlusError(f"Child run {child_run.id} has no parent")
+            treemap[child_run.parent_run_id].append(child_run)
+            runs[child_run.id] = child_run
+        run.child_runs = treemap.pop(run.id, [])
+        for run_id, children in treemap.items():
+            runs[run_id].child_runs = children
+        return run
+
+    def read_run(self, run_id: ID_TYPE, load_child_runs: bool = False) -> Run:
+        """Read a run from the LangChain+ API.
+
+        Args:
+            run_id: The ID of the run to read.
+            load_child_runs: Whether to load nested child runs.
+
+        Returns:
+            The run.
+        """
         response = self._get_with_retries(f"/runs/{run_id}")
-        return Run(**response.json())
+        run = Run(**response.json())
+        if load_child_runs and run.child_run_ids:
+            run = self._load_child_runs(run)
+        return run
 
     def list_runs(
         self,
@@ -507,6 +535,34 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return Example(**response.json())
 
+    def _resolve_run_id(
+        self, run: Union[Run, RunBase, str, UUID], load_child_runs: bool
+    ) -> Run:
+        if isinstance(run, (str, UUID)):
+            run_ = self.read_run(run, load_child_runs=load_child_runs)
+        elif isinstance(run, Run):
+            run_ = run
+        elif isinstance(run, RunBase):
+            run_ = Run(**run.dict())
+        else:
+            raise TypeError(f"Invalid run type: {type(run)}")
+        return run_
+
+    def _resolve_example_id(
+        self, example: Union[Example, str, UUID, dict, None], run: Run
+    ) -> Optional[Example]:
+        if isinstance(example, (str, UUID)):
+            reference_example_ = self.read_example(example)
+        elif isinstance(example, Example):
+            reference_example_ = example
+        elif isinstance(example, dict):
+            reference_example_ = Example(**example)
+        elif run.reference_example_id is not None:
+            reference_example_ = self.read_example(run.reference_example_id)
+        else:
+            reference_example_ = None
+        return reference_example_
+
     def evaluate_run(
         self,
         run: Union[Run, RunBase, str, UUID],
@@ -514,26 +570,26 @@ class LangChainPlusClient(BaseSettings):
         *,
         source_info: Optional[Dict[str, Any]] = None,
         reference_example: Optional[Union[Example, str, dict, UUID]] = None,
+        load_child_runs: bool = False,
     ) -> Feedback:
-        """Evaluate a run."""
-        if isinstance(run, (str, UUID)):
-            run_ = self.read_run(run)
-        elif isinstance(run, Run):
-            run_ = run
-        elif isinstance(run, RunBase):
-            run_ = Run(**run.dict())
-        else:
-            raise TypeError(f"Invalid run type: {type(run)}")
-        if isinstance(reference_example, (str, UUID)):
-            reference_example_ = self.read_example(reference_example)
-        elif isinstance(reference_example, Example):
-            reference_example_ = reference_example
-        elif isinstance(reference_example, dict):
-            reference_example_ = Example(**reference_example)
-        elif run_.reference_example_id is not None:
-            reference_example_ = self.read_example(run_.reference_example_id)
-        else:
-            reference_example_ = None
+        """Evaluate a run.
+
+        Args:
+            run: The run to evaluate. Can be a run_id or a Run object.
+            evaluator: The evaluator to use.
+            source_info: Additional information about the source of the
+                 evaluation to log as feedback metadata.
+            reference_example: The example to use as a reference for the
+                evaluation. If not provided, the run's reference example
+                will be used.
+            load_child_runs: Whether to load child runs when
+                 resolving the run ID.
+
+        Returns:
+            The feedback object created by the evaluation.
+        """
+        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        reference_example_ = self._resolve_example_id(reference_example, run_)
         feedback_result = evaluator.evaluate_run(
             run_,
             example=reference_example_,
@@ -558,21 +614,30 @@ class LangChainPlusClient(BaseSettings):
         evaluator: RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
+        reference_example: Optional[Union[Example, str, dict, UUID]] = None,
+        load_child_runs: bool = False,
     ) -> Feedback:
-        """Evaluate a run."""
-        if isinstance(run, (str, UUID)):
-            run_ = self.read_run(run)
-        elif isinstance(run, Run):
-            run_ = run
-        else:
-            raise TypeError(f"Invalid run type: {type(run)}")
-        if run_.reference_example_id is not None:
-            reference_example = self.read_example(run_.reference_example_id)
-        else:
-            reference_example = None
+        """Evaluate a run.
+
+        Args:
+            run: The run to evaluate. Can be a run_id or a Run object.
+            evaluator: The evaluator to use.
+            source_info: Additional information about the source of
+                the evaluation to log as feedback metadata.
+            reference_example: The example to use as a reference
+                for the evaluation. If not provided, the run's
+                reference example will be used.
+            load_child_runs: Whether to load child runs when
+                resolving the run ID.
+
+        Returns:
+            The feedback created by the evaluation.
+        """
+        run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
+        reference_example_ = self._resolve_example_id(reference_example, run_)
         feedback_result = await evaluator.aevaluate_run(
             run_,
-            example=reference_example,
+            example=reference_example_,
         )
         source_info = source_info or {}
         if feedback_result.evaluator_info:
