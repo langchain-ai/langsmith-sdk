@@ -1,6 +1,8 @@
 """Decorator for creating a run tree from functions."""
 import contextvars
+import functools
 import inspect
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import wraps
@@ -10,10 +12,16 @@ from uuid import UUID
 from langchainplus_sdk.run_trees import RunTree
 from langchainplus_sdk.schemas import RunTypeEnum
 
+logger = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
 _SESSION_NAME = contextvars.ContextVar[str]("_SESSION_NAME", default="default")
+
+
+@functools.lru_cache(maxsize=0)
+def _warn_once() -> None:
+    logger.warning("The @traceable decorator is in early beta and may change.")
 
 
 def _get_inputs(
@@ -22,10 +30,7 @@ def _get_inputs(
     """Return a dictionary of inputs from the function signature."""
     bound = signature.bind_partial(*args, **kwargs)
     bound.apply_defaults()
-    inputs = dict(bound.arguments)
-
-    # TODO: Handle non-json-serializable inputs
-    return inputs
+    return dict(bound.arguments)
 
 
 def traceable(
@@ -36,6 +41,7 @@ def traceable(
     executor: Optional[ThreadPoolExecutor] = None,
 ) -> Callable:
     """Decorator for creating or adding a run to a run tree."""
+    _warn_once()
     extra_outer = extra or {}
 
     def decorator(func: Callable):
