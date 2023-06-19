@@ -157,6 +157,21 @@ class LangChainPlusClient(BaseSettings):
             retry_config=self.retry_config,
         )
 
+    def _get_paginated_list(
+        self, path: str, *, params: Optional[dict] = None
+    ) -> Iterator[dict]:
+        params_ = params.copy() if params else {}
+        offset = params_.get("offset", 0)
+        params_["limit"] = params_.get("limit", 100)
+        while True:
+            params_["offset"] = offset
+            response = self._get_with_retries(path, params=params_)
+            items = response.json()
+            if not items:
+                break
+            yield from items
+            offset += len(items)
+
     def upload_dataframe(
         self,
         df: pd.DataFrame,
@@ -329,8 +344,9 @@ class LangChainPlusClient(BaseSettings):
             query_params["reference_example"] = reference_example_id
         if dataset_id is not None:
             query_params["dataset"] = dataset_id
-        response = self._get_with_retries("/runs", params=query_params)
-        yield from [Run(**run) for run in response.json()]
+        yield from (
+            Run(**run) for run in self._get_paginated_list("/runs", params=query_params)
+        )
 
     def delete_run(self, run_id: ID_TYPE) -> None:
         """Delete a run from the LangChain+ API."""
@@ -390,8 +406,10 @@ class LangChainPlusClient(BaseSettings):
 
     def list_sessions(self) -> Iterator[TracerSession]:
         """List sessions from the LangChain+ API."""
-        response = self._get_with_retries("/sessions")
-        yield from [TracerSession(**session) for session in response.json()]
+        yield from (
+            TracerSession(**session)
+            for session in self._get_paginated_list("/sessions")
+        )
 
     @xor_args(("session_name", "session_id"))
     def delete_session(
@@ -450,10 +468,11 @@ class LangChainPlusClient(BaseSettings):
             return Dataset(**result[0])
         return Dataset(**result)
 
-    def list_datasets(self, limit: int = 100) -> Iterator[Dataset]:
+    def list_datasets(self) -> Iterator[Dataset]:
         """List the datasets on the LangChain+ API."""
-        response = self._get_with_retries("/datasets", params={"limit": limit})
-        yield from [Dataset(**dataset) for dataset in response.json()]
+        yield from (
+            Dataset(**dataset) for dataset in self._get_paginated_list("/datasets")
+        )
 
     @xor_args(("dataset_id", "dataset_name"))
     def delete_dataset(
@@ -518,8 +537,10 @@ class LangChainPlusClient(BaseSettings):
             params["dataset"] = dataset_id
         else:
             pass
-        response = self._get_with_retries("/examples", params=params)
-        yield from [Example(**dataset) for dataset in response.json()]
+        yield from (
+            Example(**dataset)
+            for dataset in self._get_paginated_list("/examples", params=params)
+        )
 
     def update_example(
         self,
@@ -737,8 +758,10 @@ class LangChainPlusClient(BaseSettings):
             **kwargs,
         }
 
-        response = self._get_with_retries("/feedback", params=params)
-        yield from [Feedback(**feedback) for feedback in response.json()]
+        yield from (
+            Feedback(**feedback)
+            for feedback in self._get_paginated_list("/feedback", params=params)
+        )
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID."""
