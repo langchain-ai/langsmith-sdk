@@ -161,32 +161,42 @@ class LangChainPlusClient(BaseSettings):
         self,
         df: pd.DataFrame,
         name: str,
-        description: str,
         input_keys: Sequence[str],
         output_keys: Sequence[str],
+        *,
+        description: Optional[str] = None,
     ) -> Dataset:
         """Upload a dataframe as individual examples to the LangChain+ API."""
-        dataset = self.create_dataset(dataset_name=name, description=description)
-        for row in df.itertuples():
-            inputs = {key: getattr(row, key) for key in input_keys}
-            outputs = {key: getattr(row, key) for key in output_keys}
-            self.create_example(inputs, outputs=outputs, dataset_id=dataset.id)
-        return dataset
+        csv_file = BytesIO()
+        df.to_csv(csv_file, index=False)
+        csv_file.seek(0)
+        return self.upload_csv(
+            ("data.csv", csv_file),
+            input_keys=input_keys,
+            output_keys=output_keys,
+            description=description,
+            name=name,
+        )
 
     def upload_csv(
         self,
         csv_file: Union[str, Tuple[str, BytesIO]],
-        description: str,
         input_keys: Sequence[str],
         output_keys: Sequence[str],
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> Dataset:
         """Upload a CSV file to the LangChain+ API."""
         files = {"file": csv_file}
         data = {
             "input_keys": ",".join(input_keys),
             "output_keys": ",".join(output_keys),
-            "description": description,
         }
+        if name:
+            data["name"] = name
+        if description:
+            data["description"] = description
         response = requests.post(
             self.api_url + "/datasets/upload",
             headers=self._headers,
@@ -329,25 +339,31 @@ class LangChainPlusClient(BaseSettings):
             headers=self._headers,
         )
         raise_for_status_with_text(response)
-        return
 
     def create_session(
-        self, session_name: str, *, session_extra: Optional[dict] = None, mode: Optional[str] = None
+        self,
+        session_name: str,
+        *,
+        session_extra: Optional[dict] = None,
+        mode: Optional[str] = None,
+        upsert: bool = False,
     ) -> TracerSession:
         """Create a session on the LangChain+ API."""
-        endpoint = f"{self.api_url}/sessions?upsert=true"
+        endpoint = f"{self.api_url}/sessions"
         body = {
             "name": session_name,
             "extra": session_extra,
         }
         if mode:
             body["mode"] = mode
+        params = {}
+        if upsert:
+            params["upsert"] = True
         response = requests.post(
             endpoint,
             headers=self._headers,
             json=body,
         )
-        breakpoint()
         raise_for_status_with_text(response)
         return TracerSession(**response.json())
 
@@ -383,7 +399,7 @@ class LangChainPlusClient(BaseSettings):
     ) -> None:
         """Delete a session from the LangChain+ API."""
         if session_name is not None:
-            session_id = self.read_session(session_name=session_name).id
+            session_id = str(self.read_session(session_name=session_name).id)
         elif session_id is None:
             raise ValueError("Must provide session_name or session_id")
         response = requests.delete(
@@ -391,7 +407,6 @@ class LangChainPlusClient(BaseSettings):
             headers=self._headers,
         )
         raise_for_status_with_text(response)
-        return None
 
     def create_dataset(
         self, dataset_name: str, *, description: Optional[str] = None
@@ -446,7 +461,7 @@ class LangChainPlusClient(BaseSettings):
         *,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-    ) -> Dataset:
+    ) -> None:
         """Delete a dataset by ID or name."""
         if dataset_name is not None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
@@ -457,7 +472,6 @@ class LangChainPlusClient(BaseSettings):
             headers=self._headers,
         )
         raise_for_status_with_text(response)
-        return Dataset(**response.json())
 
     @xor_args(("dataset_id", "dataset_name"))
     def create_example(
@@ -529,14 +543,13 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return response.json()
 
-    def delete_example(self, example_id: ID_TYPE) -> Example:
+    def delete_example(self, example_id: ID_TYPE) -> None:
         """Delete an example by ID."""
         response = requests.delete(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
         )
         raise_for_status_with_text(response)
-        return Example(**response.json())
 
     def _resolve_run_id(
         self, run: Union[Run, RunBase, str, UUID], load_child_runs: bool

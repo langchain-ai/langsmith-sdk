@@ -274,12 +274,15 @@ export class LangChainPlusClient {
     sessionName,
     sessionExtra,
     mode,
+    upsert,
   }: {
     sessionName: string;
     sessionExtra?: object;
     mode?: string;
+    upsert?: boolean;
   }): Promise<TracerSession> {
-    const endpoint = `${this.apiUrl}/sessions?upsert=true`;
+    const upsert_ = upsert ? `?upsert=true` : "";
+    const endpoint = `${this.apiUrl}/sessions${upsert_}`;
     const body: Record<string, object | string> = {
       name: sessionName,
     };
