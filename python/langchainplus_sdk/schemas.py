@@ -70,7 +70,7 @@ class DatasetBase(BaseModel):
 class DatasetCreate(DatasetBase):
     """Dataset create model."""
 
-    id: Optional[UUID]
+    id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

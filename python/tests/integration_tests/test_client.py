@@ -18,7 +18,7 @@ from langchainplus_sdk.utils import LangChainPlusConnectionError, LangChainPlusE
 
 @pytest.fixture
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> LangChainPlusClient:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:8000")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     return LangChainPlusClient()
 
 
@@ -30,11 +30,17 @@ def test_sessions(
     new_session = "__Test Session"
     if new_session in session_names:
         langchain_client.delete_session(session_name=new_session)
-        session_names = set([session.name for session in langchain_client.list_sessions()])
+        session_names = set(
+            [session.name for session in langchain_client.list_sessions()]
+        )
     assert new_session not in session_names
 
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:8000")
-    langchain_client.create_session(session_name=new_session, mode="eval",session_extra={"evaluator": "THE EVALUATOR"})
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    langchain_client.create_session(
+        session_name=new_session,
+        mode="eval",
+        session_extra={"evaluator": "THE EVALUATOR"},
+    )
     session = langchain_client.read_session(session_name=new_session)
     assert session.name == new_session
     assert session.mode == "eval"
@@ -126,7 +132,7 @@ def test_run_tree(
     monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
 ) -> None:
     """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:8000")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     session_name = "__test_run_tree"
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:
         langchain_client.delete_session(session_name=session_name)
@@ -137,7 +143,7 @@ def test_run_tree(
         start_time=datetime.now(),
         session_name=session_name,
         serialized={},
-        api_url=os.getenv("LANGCHAIN_ENDPOINT"),
+        client=langchain_client,
     )
     child_llm_run = parent_run.create_child(
         name="child_run", run_type="llm", inputs={"text": "hello world"}
@@ -219,7 +225,7 @@ def test_persist_update_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
 ) -> None:
     """Test the persist and update methods work as expected."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:8000")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     session_name = "__test_persist_update_run"
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:
         langchain_client.delete_session(session_name=session_name)
@@ -245,7 +251,7 @@ def test_evaluate_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
 ) -> None:
     """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:8000")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     session_name = "__test_evaluate_run"
     dataset_name = "__test_evaluate_run_dataset"
     if session_name in [sess.name for sess in langchain_client.list_sessions()]:

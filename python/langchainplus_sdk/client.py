@@ -332,7 +332,12 @@ class LangChainPlusClient(BaseSettings):
         return
 
     def create_session(
-        self, session_name: str, *, session_extra: Optional[dict] = None, mode: Optional[str] = None, upsert: bool = False
+        self,
+        session_name: str,
+        *,
+        session_extra: Optional[dict] = None,
+        mode: Optional[str] = None,
+        upsert: bool = False,
     ) -> TracerSession:
         """Create a session on the LangChain+ API."""
         endpoint = f"{self.api_url}/sessions"
@@ -350,7 +355,6 @@ class LangChainPlusClient(BaseSettings):
             headers=self._headers,
             json=body,
         )
-        breakpoint()
         raise_for_status_with_text(response)
         return TracerSession(**response.json())
 
@@ -386,7 +390,7 @@ class LangChainPlusClient(BaseSettings):
     ) -> None:
         """Delete a session from the LangChain+ API."""
         if session_name is not None:
-            session_id = self.read_session(session_name=session_name).id
+            session_id = str(self.read_session(session_name=session_name).id)
         elif session_id is None:
             raise ValueError("Must provide session_name or session_id")
         response = requests.delete(
