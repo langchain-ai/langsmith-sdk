@@ -228,6 +228,27 @@ class PlusCommand:
         self._open_browser("http://0.0.0.0:4040")
         self._open_browser("http://localhost")
 
+    def pull(
+            self,
+            *,
+            dev: bool = False,
+    ) -> None:
+        """Pull the latest LangChainPlus images.
+        
+        Args:
+            dev: If True, pull the development (rc) image of LangChainPlus.
+        """
+        if dev:
+            os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
+        subprocess.run(
+            [
+                *self.docker_compose_command,
+                "-f",
+                str(self.docker_compose_file),
+                "pull",
+            ]
+        )
+
     def start(
         self,
         *,
@@ -371,6 +392,15 @@ def main() -> None:
     )
     server_stop_parser.set_defaults(func=lambda args: server_command.stop())
 
+    server_pull_parser = server_subparsers.add_parser(
+        "pull", description="Pull the latest LangChainPlus images."
+    )
+    server_pull_parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Use the development version of the LangChainPlus image.",
+    )
+    server_pull_parser.set_defaults(func=lambda args: server_command.pull(dev=args.dev))
     server_logs_parser = server_subparsers.add_parser(
         "logs", description="Show the LangChainPlus server logs."
     )
