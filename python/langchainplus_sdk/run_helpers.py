@@ -19,9 +19,19 @@ _PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
 _SESSION_NAME = contextvars.ContextVar[str]("_SESSION_NAME", default="default")
 
 
-@functools.lru_cache(maxsize=0)
+@functools.lru_cache(None)
 def _warn_once() -> None:
-    logger.warning("The @traceable decorator is in early beta and may change.")
+    logger.warning(
+        "The @traceable decorator is experimental and will likely see breaking changes."
+    )
+
+
+@functools.lru_cache(None)
+def _warn_cm_once() -> None:
+    logger.warning(
+        "The @trace context manager is experimental and will"
+        " likely see breaking changes."
+    )
 
 
 def _get_inputs(
@@ -213,6 +223,7 @@ def trace(
     run_tree: Optional[RunTree] = None,
 ) -> Generator[RunTree, None, None]:
     """Context manager for creating a run tree."""
+    _warn_cm_once()
     extra_outer = extra or {}
     parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
     outer_session = _SESSION_NAME.get()
