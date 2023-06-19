@@ -32,6 +32,8 @@ interface ListRunsParams {
   runType?: RunType;
   error?: boolean;
   id?: string[];
+  limit?: number;
+  offset?: number;
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -240,6 +242,8 @@ export class LangChainPlusClient {
     runType,
     error,
     id,
+    limit,
+    offset,
   }: ListRunsParams): Promise<Run[]> {
     const queryParams = new URLSearchParams();
     let sessionId_ = sessionId;
@@ -265,6 +269,12 @@ export class LangChainPlusClient {
       for (const id_ of id) {
         queryParams.append("id", id_);
       }
+    }
+    if (limit !== undefined) {
+      queryParams.append("limit", limit.toString());
+    }
+    if (offset !== undefined) {
+      queryParams.append("offset", offset.toString());
     }
 
     return this._get<Run[]>("/runs", queryParams);
@@ -481,11 +491,16 @@ export class LangChainPlusClient {
 
   public async listDatasets({
     limit = 100,
+    offset = 0,
   }: {
     limit?: number;
+    offset?: number;
   } = {}): Promise<Dataset[]> {
     const path = "/datasets";
-    const params = new URLSearchParams({ limit: limit.toString() });
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
     const response = await this._get<Dataset[]>(path, params);
     if (!Array.isArray(response)) {
       throw new Error(
@@ -585,9 +600,13 @@ export class LangChainPlusClient {
   public async listExamples({
     datasetId,
     datasetName,
+    limit,
+    offset,
   }: {
     datasetId?: string;
     datasetName?: string;
+    limit?: number;
+    offset?: number;
   } = {}): Promise<Example[]> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -602,7 +621,11 @@ export class LangChainPlusClient {
     }
     const response = await this._get<Example[]>(
       "/examples",
-      new URLSearchParams({ dataset: datasetId_ })
+      new URLSearchParams({
+        dataset: datasetId_,
+        limit: limit?.toString() ?? "100",
+        offset: offset?.toString() ?? "0",
+      })
     );
     if (!Array.isArray(response)) {
       throw new Error(
@@ -765,12 +788,22 @@ export class LangChainPlusClient {
 
   public async listFeedback({
     runIds,
+    limit,
+    offset,
   }: {
     runIds?: string[];
+    limit?: number;
+    offset?: number;
   } = {}): Promise<Feedback[]> {
     const queryParams = new URLSearchParams();
     if (runIds) {
       queryParams.append("run", runIds.join(","));
+    }
+    if (limit !== undefined) {
+      queryParams.append("limit", limit.toString());
+    }
+    if (offset !== undefined) {
+      queryParams.append("offset", offset.toString());
     }
     const response = await this._get<Feedback[]>("/feedback", queryParams);
     return response;
