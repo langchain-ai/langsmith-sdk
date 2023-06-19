@@ -3,6 +3,7 @@ export interface TracerSession {
   id: string;
   start_time: number;
   name?: string;
+  mode?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

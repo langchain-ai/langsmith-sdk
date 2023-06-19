@@ -159,6 +159,20 @@ class PlusCommand {
     }
   }
 
+  async pull(args: any) {
+    if (args.dev) {
+      setEnvironmentVariable("_LANGCHAINPLUS_IMAGE_PREFIX", "rc-");
+    }
+
+    const command = [
+      ...this.dockerComposeCommand,
+      "-f",
+      this.dockerComposeFile,
+      "pull",
+    ];
+    await exec(command.join(" "));
+  }
+
   async startLocal() {
     const command = [
       ...this.dockerComposeCommand,
@@ -256,6 +270,12 @@ const stopCommand = new Command("stop")
   .description("Stop the LangChainPlus server")
   .action(async () => (await PlusCommand.create()).stop());
 
+const pullCommand = new Command("pull")
+  .command("pull")
+  .description("Pull the latest version of the LangChainPlus server")
+  .option("--dev", "Pull the development version of the LangChainPlus server")
+  .action(async (args: string[]) => (await PlusCommand.create()).pull(args));
+
 const statusCommand = new Command("status")
   .command("status")
   .description("Get the status of the LangChainPlus server")
@@ -266,6 +286,7 @@ program
   .description("Manage the LangChainPlus server")
   .addCommand(startCommand)
   .addCommand(stopCommand)
+  .addCommand(pullCommand)
   .addCommand(statusCommand);
 
 program.parse(process.argv);

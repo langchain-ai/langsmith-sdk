@@ -273,15 +273,22 @@ export class LangChainPlusClient {
   public async createSession({
     sessionName,
     sessionExtra,
+    mode,
   }: {
     sessionName: string;
     sessionExtra?: object;
+    mode?: string;
   }): Promise<TracerSession> {
     const endpoint = `${this.apiUrl}/sessions?upsert=true`;
-    const body = {
+    const body: Record<string, object | string> = {
       name: sessionName,
-      extra: sessionExtra,
     };
+    if (sessionExtra !== undefined) {
+      body["extra"] = sessionExtra;
+    }
+    if (mode !== undefined) {
+      body["mode"] = mode;
+    }
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
