@@ -209,4 +209,5 @@ class TracerSession(BaseModel):
     start_time: datetime = Field(default_factory=datetime.utcnow)
     name: Optional[str] = None
     extra: Optional[Dict[str, Any]] = None
+    mode: Optional[str] = "debug"
     tenant_id: UUID

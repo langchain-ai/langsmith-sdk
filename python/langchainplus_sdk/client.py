@@ -332,7 +332,7 @@ class LangChainPlusClient(BaseSettings):
         return
 
     def create_session(
-        self, session_name: str, session_extra: Optional[dict] = None
+        self, session_name: str, *, session_extra: Optional[dict] = None, mode: Optional[str] = None
     ) -> TracerSession:
         """Create a session on the LangChain+ API."""
         endpoint = f"{self.api_url}/sessions?upsert=true"
@@ -340,11 +340,14 @@ class LangChainPlusClient(BaseSettings):
             "name": session_name,
             "extra": session_extra,
         }
+        if mode:
+            body["mode"] = mode
         response = requests.post(
             endpoint,
             headers=self._headers,
             json=body,
         )
+        breakpoint()
         raise_for_status_with_text(response)
         return TracerSession(**response.json())
 
