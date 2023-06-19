@@ -74,14 +74,15 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
     csv_file = ("test.csv", BytesIO(b"input,output\n1,2\n3,4\n"))
 
     dataset = client.upload_csv(
-        csv_file, "Test dataset", input_keys=["input"], output_keys=["output"]
+        csv_file,
+        description="Test dataset",
+        input_keys=["input"],
+        output_keys=["output"],
     )
 
     assert dataset.id == uuid.UUID(dataset_id)
     assert dataset.name == "test.csv"
     assert dataset.description == "Test dataset"
-
-
 
 
 def test_async_methods():

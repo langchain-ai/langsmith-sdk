@@ -229,12 +229,12 @@ class PlusCommand:
         self._open_browser("http://localhost")
 
     def pull(
-            self,
-            *,
-            dev: bool = False,
+        self,
+        *,
+        dev: bool = False,
     ) -> None:
         """Pull the latest LangChainPlus images.
-        
+
         Args:
             dev: If True, pull the development (rc) image of LangChainPlus.
         """
