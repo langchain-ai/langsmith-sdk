@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import logging
 import os
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from typing import Dict, List, Optional, Union, cast
 from uuid import UUID, uuid4
 
-from pydantic import Field, root_validator, validator
+from pydantic import Field, PrivateAttr, root_validator, validator
 
 from langchainplus_sdk.client import LangChainPlusClient
 from langchainplus_sdk.schemas import RunBase, RunTypeEnum
@@ -46,6 +46,7 @@ class RunTree(RunBase):
     executor: ThreadPoolExecutor = Field(
         default_factory=_make_thread_pool, exclude=True
     )
+    _futures: List[Future] = PrivateAttr(default_factory=list)
 
     class Config:
         arbitrary_types_allowed = True
@@ -138,18 +139,29 @@ class RunTree(RunBase):
         """Post the run tree to the API asynchronously."""
         exclude = {"child_runs"} if exclude_child_runs else None
         kwargs = self.dict(exclude=exclude, exclude_none=True)
-        return self.executor.submit(
-            self.client.create_run,
-            **kwargs,
+        self._futures.append(
+            self.executor.submit(
+                self.client.create_run,
+                **kwargs,
+            )
         )
+        return self._futures[-1]
 
     def patch(self) -> Future:
         """Patch the run tree to the API in a background thread."""
-        return self.executor.submit(
-            self.client.update_run,
-            run_id=self.id,
-            outputs=self.outputs.copy() if self.outputs else None,
-            error=self.error,
-            parent_run_id=self.parent_run_id,
-            reference_example_id=self.reference_example_id,
+        self._futures.append(
+            self.executor.submit(
+                self.client.update_run,
+                run_id=self.id,
+                outputs=self.outputs.copy() if self.outputs else None,
+                error=self.error,
+                parent_run_id=self.parent_run_id,
+                reference_example_id=self.reference_example_id,
+            )
         )
+        return self._futures[-1]
+
+    def wait(self) -> None:
+        """Wait for all _futures to complete."""
+        wait(self._futures)
+        self._futures.clear()
