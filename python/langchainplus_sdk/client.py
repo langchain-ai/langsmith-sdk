@@ -170,6 +170,10 @@ class LangChainPlusClient(BaseSettings):
             if not items:
                 break
             yield from items
+            if len(items) < params_["limit"]:
+                # offset and limit isn't respected if we're
+                # querying for specific values
+                break
             offset += len(items)
 
     def upload_dataframe(

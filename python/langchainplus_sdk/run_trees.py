@@ -51,8 +51,10 @@ class RunTree(RunBase):
         arbitrary_types_allowed = True
 
     @validator("executor", pre=True)
-    def validate_executor(cls, v: ThreadPoolExecutor) -> ThreadPoolExecutor:
+    def validate_executor(cls, v: Optional[ThreadPoolExecutor]) -> ThreadPoolExecutor:
         """Ensure the executor is running."""
+        if v is None:
+            return _make_thread_pool()
         if v._shutdown:
             raise ValueError("Executor has been shutdown.")
         return v
