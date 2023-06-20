@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchainplus-sdk"
-version = "0.0.13"
+version = "0.0.14"
 description = "Client library to connect to the LangChainPlus LLM Tracing and Evaluation Platform."
 authors = ["LangChain"]
 license = "MIT"
@@ -25,6 +25,7 @@ ruff = "^0.0.270"
 types-requests = "^2.31.0.1"
 pandas-stubs = "^2.0.1.230501"
 types-pyyaml = "^6.0.12.10"
+pytest-asyncio = "^0.21.0"
 
 [build-system]
 requires = ["poetry-core"]
