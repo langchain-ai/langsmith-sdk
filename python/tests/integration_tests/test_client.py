@@ -162,7 +162,7 @@ def test_run_tree(
     child_llm_run.end(outputs={"prompts": ["hello world"]})
     parent_run.end(outputs={"output": ["Hi"]})
     parent_run.post(exclude_child_runs=False)
-    parent_run.executor.shutdown(wait=True)
+    parent_run.wait()
 
     runs = list(langchain_client.list_runs(session_name=session_name))
     assert len(runs) == 5
@@ -278,7 +278,7 @@ def test_evaluate_run(
     parent_run.post()
     parent_run.end(outputs={"output": predicted})
     parent_run.patch()
-    parent_run.executor.shutdown(wait=True)
+    parent_run.wait()
     run = langchain_client.read_run(str(parent_run.id))
     assert run.outputs == {"output": predicted}
 

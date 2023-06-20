@@ -3,6 +3,7 @@ import contextvars
 import functools
 import inspect
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import wraps
@@ -16,7 +17,12 @@ logger = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
-_SESSION_NAME = contextvars.ContextVar[str]("_SESSION_NAME", default="default")
+_SESSION_NAME = contextvars.ContextVar[Optional[str]]("_SESSION_NAME", default=None)
+
+
+def get_run_tree_context() -> Optional[RunTree]:
+    """Get the current run tree context."""
+    return _PARENT_RUN_TREE.get()
 
 
 @functools.lru_cache(None)
@@ -69,7 +75,9 @@ def traceable(
                 parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
-            outer_session = _SESSION_NAME.get()
+            outer_session = _SESSION_NAME.get() or os.environ.get(
+                "LANGCHAIN_SESSION", "default"
+            )
             session_name_ = session_name or outer_session
             signature = inspect.signature(func)
             name_ = name or func.__name__
@@ -143,7 +151,9 @@ def traceable(
                 parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
-            outer_session = _SESSION_NAME.get()
+            outer_session = _SESSION_NAME.get() or os.environ.get(
+                "LANGCHAIN_SESSION", "default"
+            )
             session_name_ = session_name or outer_session
             signature = inspect.signature(func)
             name_ = name or func.__name__
@@ -176,7 +186,7 @@ def traceable(
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
-                    session_name=session_name,
+                    session_name=session_name_,
                     extra=extra_inner,
                     executor=executor,
                 )
