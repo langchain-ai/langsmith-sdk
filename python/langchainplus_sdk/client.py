@@ -52,6 +52,7 @@ from langchainplus_sdk.schemas import (
     RunTypeEnum,
     RunUpdate,
     TracerSession,
+    TracerSessionResult,
 )
 from langchainplus_sdk.utils import (
     LangChainPlusAPIError,
@@ -390,8 +391,14 @@ class LangChainPlusClient(BaseSettings):
     @xor_args(("session_id", "session_name"))
     def read_session(
         self, *, session_id: Optional[str] = None, session_name: Optional[str] = None
-    ) -> TracerSession:
-        """Read a session from the LangChain+ API."""
+    ) -> TracerSessionResult:
+        """Read a session from the LangChain+ API.
+
+        Args:
+            session_id: The ID of the session to read.
+            session_name: The name of the session to read.
+                Note: Only one of session_id or session_name may be given.
+        """
         path = "/sessions"
         params: Dict[str, Any] = {"limit": 1}
         if session_id is not None:
@@ -405,8 +412,9 @@ class LangChainPlusClient(BaseSettings):
         if isinstance(result, list):
             if len(result) == 0:
                 raise LangChainPlusError(f"Session {session_name} not found")
-            return TracerSession(**result[0])
-        return TracerSession(**response.json())
+            return TracerSessionResult(**result[0])
+        print(response.json())
+        return TracerSessionResult(**response.json())
 
     def list_sessions(self) -> Iterator[TracerSession]:
         """List sessions from the LangChain+ API."""

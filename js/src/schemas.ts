@@ -6,6 +6,29 @@ export interface TracerSession {
   mode?: string;
 }
 
+export interface TracerSessionResult extends TracerSession {
+  // The number of runs in the session.
+  run_count?: number;
+  // The median (50th percentile) latency for the session.
+  latency_p50?: number;
+  // The 99th percentile latency for the session.
+  latency_p99?: number;
+  // The total number of tokens consumed in the session.
+  total_tokens?: number;
+  // The total number of prompt tokens consumed in the session.
+  prompt_tokens?: number;
+  // The total number of completion tokens consumed in the session.
+  completion_tokens?: number;
+  // The start time of the last run in the session.
+  last_run_start_time?: number;
+  // Feedback stats for the session.
+  feedback_stats?: Record<string, unknown>;
+  // The reference dataset IDs this session's runs were generated on.
+  reference_dataset_ids?: string[];
+  // Facets for the runs in the session.
+  run_facets?: KVMap[];
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type KVMap = Record<string, any>;
 export type RunType = "llm" | "chain" | "tool";
