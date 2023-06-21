@@ -13,6 +13,7 @@ import {
   RunUpdate,
   ScoreType,
   TracerSession,
+  TracerSessionResult,
   ValueType,
 } from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
@@ -323,7 +324,7 @@ export class LangChainPlusClient {
   }: {
     sessionId?: string;
     sessionName?: string;
-  }): Promise<TracerSession> {
+  }): Promise<TracerSessionResult> {
     let path = "/sessions";
     const params = new URLSearchParams();
     if (sessionId !== undefined && sessionName !== undefined) {
@@ -347,9 +348,9 @@ export class LangChainPlusClient {
           `Session[id=${sessionId}, name=${sessionName}] not found`
         );
       }
-      result = response[0] as TracerSession;
+      result = response[0] as TracerSessionResult;
     } else {
-      result = response as TracerSession;
+      result = response as TracerSessionResult;
     }
     return result;
   }

@@ -1,7 +1,7 @@
 """Schemas for the langchainplus API."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
@@ -200,8 +200,40 @@ class TracerSession(BaseModel):
     """TracerSession schema for the API."""
 
     id: UUID
+    """The ID of the session."""
     start_time: datetime = Field(default_factory=datetime.utcnow)
+    """The time the session was created."""
     name: Optional[str] = None
+    """The name of the session."""
     extra: Optional[Dict[str, Any]] = None
+    """Extra metadata for the session."""
     mode: Optional[str] = "debug"
+    """The mode of the session, either 'debug', 'eval', or 'monitor'."""
     tenant_id: UUID
+    """The tenant ID this session belongs to."""
+
+
+class TracerSessionResult(TracerSession):
+    """TracerSession schema returned
+    when reading a session by ID."""
+
+    run_count: Optional[int]
+    """The number of runs in the session."""
+    latency_p50: Optional[timedelta]
+    """The median (50th percentile) latency for the session."""
+    latency_p99: Optional[timedelta]
+    """The 99th percentile latency for the session."""
+    total_tokens: Optional[int]
+    """The total number of tokens consumed in the session."""
+    prompt_tokens: Optional[int]
+    """The total number of prompt tokens consumed in the session."""
+    completion_tokens: Optional[int]
+    """The total number of completion tokens consumed in the session."""
+    last_run_start_time: Optional[datetime]
+    """The start time of the last run in the session."""
+    feedback_stats: Optional[Dict[str, Any]]
+    """Feedback stats for the session."""
+    reference_dataset_ids: Optional[List[UUID]]
+    """The reference dataset IDs this session's runs were generated on."""
+    run_facets: Optional[List[Dict[str, Any]]]
+    """Facets for the runs in the session."""
