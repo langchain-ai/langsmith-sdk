@@ -3,7 +3,7 @@ import io
 import os
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import uuid4
 
@@ -214,7 +214,17 @@ def test_run_tree(
     with pytest.raises(LangChainPlusError):
         langchain_client.read_feedback(feedback.id)
     assert len(list(langchain_client.list_feedback(run_ids=[runs[0].id]))) == 1
-
+    session = langchain_client.read_session(session_name=session_name)
+    session_with_stats = langchain_client.read_session(session_id=session.id)
+    assert session_with_stats.run_count == 5
+    assert (
+        session_with_stats.latency_p50 is not None
+        and session_with_stats.latency_p50 > timedelta(0)
+    )
+    assert (
+        session_with_stats.latency_p99 is not None
+        and session_with_stats.latency_p99 > timedelta(0)
+    )
     langchain_client.delete_session(session_name=session_name)
     with pytest.raises(LangChainPlusError):
         langchain_client.read_session(session_name=session_name)

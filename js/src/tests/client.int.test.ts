@@ -200,6 +200,18 @@ test("Test evaluate run", async () => {
     error: false,
   });
 
+  const session = await langchainClient.readSession({
+    sessionName: sessionName,
+  });
+  const sessionWithStats = await langchainClient.readSession({
+    sessionId: session.id,
+  });
+  expect(sessionWithStats.name).toBe(session.name);
+  expect(sessionWithStats.run_count).toBe(1);
+  expect(sessionWithStats.latency_p50).toBeGreaterThan(0);
+  expect(sessionWithStats.latency_p99).toBeGreaterThan(0);
+  expect(sessionWithStats.total_tokens).toBeGreaterThan(2);
+
   const allFeedback = [];
   for (const run of runs) {
     allFeedback.push(await langchainClient.evaluateRun(run, evaluator));
