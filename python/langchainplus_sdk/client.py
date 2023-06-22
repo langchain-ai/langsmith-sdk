@@ -218,7 +218,7 @@ class LangChainPlusClient(BaseSettings):
             data["description"] = description
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
-                file_= {"file": f}
+                file_ = {"file": f}
                 response = requests.post(
                     self.api_url + "/datasets/upload",
                     headers=self._headers,
