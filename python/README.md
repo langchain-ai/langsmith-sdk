@@ -1,6 +1,6 @@
-# LangChainPlus Client SDK
+# LangSmith Client SDK
 
-This package contains the Python client for interacting with the [LangChainPlus platform](https://www.langchain.plus/).
+This package contains the Python client for interacting with the [LangSmith platform](https://www.langchain.plus/).
 
 To install:
 
@@ -8,21 +8,21 @@ To install:
 pip install langchainplus-sdk
 ```
 
-LangChainPlus helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchain), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
+LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchain), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
 
-> **Note**: You can enjoy the benefits of LangChainPlus without using the LangChain open-source packages! To get started with your own proprietary framework, set up your account and then skip to [Logging Traces Outside LangChain](#logging-traces-outside-langchain).
+> **Note**: You can enjoy the benefits of LangSmith without using the LangChain open-source packages! To get started with your own proprietary framework, set up your account and then skip to [Logging Traces Outside LangChain](#logging-traces-outside-langchain).
 
 A typical workflow looks like:
 
-1. Set up an account with LangChainPlus or host your [local server](https://docs.langchain.plus/docs/getting-started/local_installation).
+1. Set up an account with LangSmith or host your [local server](https://docs.langchain.plus/docs/getting-started/local_installation).
 2. Log traces.
 3. Debug, Create Datasets, and Evaluate Runs.
 
 We'll walk through these steps in more detail below.
 
-## 1. Connect to LangChainPlus
+## 1. Connect to LangSmith
 
-Sign up for [LangChainPlus](https://www.langchain.plus/) using your GitHub, Discord accounts, or an email address and password. If you sign up with an email, make sure to verify your email address before logging in.
+Sign up for [LangSmith](https://www.langchain.plus/) using your GitHub, Discord accounts, or an email address and password. If you sign up with an email, make sure to verify your email address before logging in.
 
 Then, create a unique API key on the [Settings Page](https://www.langchain.plus/settings), which is found in the menu at the top right corner of the page.
 
@@ -30,11 +30,11 @@ Note: Save the API Key in a secure location. It will not be shown again.
 
 ## 2. Log Traces
 
-You can log traces natively in your LangChain application or using a LangChainPlus RunTree.
+You can log traces natively in your LangChain application or using a LangSmith RunTree.
 
 ### Logging Traces with LangChain
 
-LangChainPlus seamlessly integrates with the Python LangChain library to record traces from your LLM applications.
+LangSmith seamlessly integrates with the Python LangChain library to record traces from your LLM applications.
 
 1. **Copy the environment variables from the Settings Page and add them to your application.**
 
@@ -52,7 +52,7 @@ os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
 
 2. **Run an Agent, Chain, or Language Model in LangChain**
 
-If the environment variables are correctly set, your application will automatically connect to the LangChainPlus platform.
+If the environment variables are correctly set, your application will automatically connect to the LangSmith platform.
 
 ```python
 from langchain.chat_models import ChatOpenAI
@@ -68,7 +68,7 @@ print(response)
 
 _Note: this API is experimental and may change in the future_
 
-You can still use the LangChainPlus development platform without depending on any
+You can still use the LangSmith development platform without depending on any
 LangChain code. You can connect either by setting the appropriate environment variables,
 or by directly specifying the connection information in the RunTree.
 
@@ -155,9 +155,9 @@ res.result()
 
 ## Create a Dataset from Existing Runs
 
-Once your runs are stored in LangChainPlus, you can convert them into a dataset.
+Once your runs are stored in LangSmith, you can convert them into a dataset.
 For this example, we will do so using the Client, but you can also do this using
-the web interface, as explained in the [LangChainPlus docs](https://docs.langchain.plus/docs/).
+the web interface, as explained in the [LangSmith docs](https://docs.langchain.plus/docs/).
 
 ```python
 from langchainplus_sdk import LangChainPlusClient
@@ -183,7 +183,7 @@ for run in runs:
 
 ## Evaluating Runs
 
-You can run evaluations directly using the LangChainPlus client.
+You can run evaluations directly using the LangSmith client.
 
 ```python
 from typing import Optional
@@ -222,4 +222,4 @@ for run in runs:
 
 ## Additional Documentation
 
-To learn more about the LangChainPlus platform, check out the [docs](https://docs.langchain.plus/docs/).
+To learn more about the LangSmith platform, check out the [docs](https://docs.langchain.plus/docs/).

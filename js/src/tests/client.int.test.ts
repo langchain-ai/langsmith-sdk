@@ -4,7 +4,7 @@ import { StringEvaluator } from "../evaluation/string_evaluator.js";
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
-test("Test LangChainPlus Client Dataset CRD", async () => {
+test("Test LangSmith Client Dataset CRD", async () => {
   const client = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
@@ -76,7 +76,7 @@ test("Test LangChainPlus Client Dataset CRD", async () => {
 });
 
 // Test Session Creation, List, Read, Delete
-test("Test LangChainPlus Client Session CRD", async () => {
+test("Test LangSmith Client Session CRD", async () => {
   const client = await new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
