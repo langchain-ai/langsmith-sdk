@@ -7,7 +7,7 @@ with any LLM Application, including a native integration with the [LangChain Pyt
 
 LangSmith is developed and maintained by [LangChain](https://langchain.com/), the company behind the LangChain framework.
 
-⚠️ The SDK and LangSmith platofrm is still in early beta and continuously evolving!
+⚠️ The SDK and LangSmith platform is still in early beta and continuously evolving!
 
 ## Quick Start
 
