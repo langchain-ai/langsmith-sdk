@@ -90,7 +90,7 @@ def get_docker_compose_command() -> List[str]:
 
 
 def get_ngrok_url(auth_token: Optional[str]) -> str:
-    """Get the ngrok URL for the LangChainPlus server."""
+    """Get the ngrok URL for the LangSmith server."""
     ngrok_url = "http://localhost:4040/api/tunnels"
     try:
         response = requests.get(ngrok_url)
@@ -157,7 +157,7 @@ def create_ngrok_config(
 
 
 class PlusCommand:
-    """Manage the LangChainPlus Tracing server."""
+    """Manage the LangSmith Tracing server."""
 
     def __init__(self) -> None:
         self.docker_compose_command = get_docker_compose_command()
@@ -233,10 +233,10 @@ class PlusCommand:
         *,
         dev: bool = False,
     ) -> None:
-        """Pull the latest LangChainPlus images.
+        """Pull the latest LangSmith images.
 
         Args:
-            dev: If True, pull the development (rc) image of LangChainPlus.
+            dev: If True, pull the development (rc) image of LangSmith.
         """
         if dev:
             os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
@@ -257,17 +257,17 @@ class PlusCommand:
         dev: bool = False,
         openai_api_key: Optional[str] = None,
     ) -> None:
-        """Run the LangChainPlus server locally.
+        """Run the LangSmith server locally.
 
         Args:
             expose: If True, expose the server to the internet using ngrok.
             auth_token: The ngrok authtoken to use (visible in the ngrok dashboard).
                 If not provided, ngrok server session length will be restricted.
-            dev: If True, use the development (rc) image of LangChainPlus.
-            openai_api_key: The OpenAI API key to use for LangChainPlus
+            dev: If True, use the development (rc) image of LangSmith.
+            openai_api_key: The OpenAI API key to use for LangSmith
                 If not provided, the OpenAI API Key will be read from the
                 OPENAI_API_KEY environment variable. If neither are provided,
-                some features of LangChainPlus will not be available.
+                some features of LangSmith will not be available.
         """
         if dev:
             os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
@@ -279,7 +279,7 @@ class PlusCommand:
             self._start_local()
 
     def stop(self) -> None:
-        """Stop the LangChainPlus server."""
+        """Stop the LangSmith server."""
         subprocess.run(
             [
                 *self.docker_compose_command,
@@ -292,7 +292,7 @@ class PlusCommand:
         )
 
     def logs(self) -> None:
-        """Print the logs from the LangChainPlus server."""
+        """Print the logs from the LangSmith server."""
         subprocess.run(
             [
                 *self.docker_compose_command,
@@ -305,7 +305,7 @@ class PlusCommand:
         )
 
     def status(self) -> None:
-        """Provide information about the status LangChainPlus server."""
+        """Provide information about the status LangSmith server."""
 
         command = [
             *self.docker_compose_command,
@@ -325,13 +325,13 @@ class PlusCommand:
             command_stdout = result.stdout.decode("utf-8")
             services_status = json.loads(command_stdout)
         except json.JSONDecodeError:
-            logger.error("Error checking LangChainPlus server status.")
+            logger.error("Error checking LangSmith server status.")
             return
         if services_status:
-            logger.info("The LangChainPlus server is currently running.")
+            logger.info("The LangSmith server is currently running.")
             pprint_services(services_status)
         else:
-            logger.info("The LangChainPlus server is not running.")
+            logger.info("The LangSmith server is not running.")
             return
 
 
@@ -345,14 +345,14 @@ def env() -> None:
 def main() -> None:
     """Main entrypoint for the CLI."""
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(description="LangChainPlus CLI commands")
+    subparsers = parser.add_subparsers(description="LangSmith CLI commands")
 
     server_command = PlusCommand()
     server_parser = subparsers.add_parser("plus", description=server_command.__doc__)
     server_subparsers = server_parser.add_subparsers()
 
     server_start_parser = server_subparsers.add_parser(
-        "start", description="Start the LangChainPlus server."
+        "start", description="Start the LangSmith server."
     )
     server_start_parser.add_argument(
         "--expose",
@@ -368,15 +368,15 @@ def main() -> None:
     server_start_parser.add_argument(
         "--dev",
         action="store_true",
-        help="Use the development version of the LangChainPlus image.",
+        help="Use the development version of the LangSmith image.",
     )
     server_start_parser.add_argument(
         "--openai-api-key",
         default=os.getenv("OPENAI_API_KEY"),
-        help="The OpenAI API key to use for LangChainPlus."
+        help="The OpenAI API key to use for LangSmith."
         " If not provided, the OpenAI API Key will be read from the"
         " OPENAI_API_KEY environment variable. If neither are provided,"
-        " some features of LangChainPlus will not be available.",
+        " some features of LangSmith will not be available.",
     )
     server_start_parser.set_defaults(
         func=lambda args: server_command.start(
@@ -388,25 +388,25 @@ def main() -> None:
     )
 
     server_stop_parser = server_subparsers.add_parser(
-        "stop", description="Stop the LangChainPlus server."
+        "stop", description="Stop the LangSmith server."
     )
     server_stop_parser.set_defaults(func=lambda args: server_command.stop())
 
     server_pull_parser = server_subparsers.add_parser(
-        "pull", description="Pull the latest LangChainPlus images."
+        "pull", description="Pull the latest LangSmith images."
     )
     server_pull_parser.add_argument(
         "--dev",
         action="store_true",
-        help="Use the development version of the LangChainPlus image.",
+        help="Use the development version of the LangSmith image.",
     )
     server_pull_parser.set_defaults(func=lambda args: server_command.pull(dev=args.dev))
     server_logs_parser = server_subparsers.add_parser(
-        "logs", description="Show the LangChainPlus server logs."
+        "logs", description="Show the LangSmith server logs."
     )
     server_logs_parser.set_defaults(func=lambda args: server_command.logs())
     server_status_parser = server_subparsers.add_parser(
-        "status", description="Show the LangChainPlus server status."
+        "status", description="Show the LangSmith server status."
     )
     server_status_parser.set_defaults(func=lambda args: server_command.status())
     env_parser = subparsers.add_parser("env")
