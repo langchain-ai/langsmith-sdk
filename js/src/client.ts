@@ -27,8 +27,8 @@ interface LangChainPlusClientConfig {
 }
 
 interface ListRunsParams {
-  sessionId?: string;
-  sessionName?: string;
+  projectId?: string;
+  projectName?: string;
   executionOrder?: number;
   runType?: RunType;
   error?: boolean;
@@ -237,8 +237,8 @@ export class LangChainPlusClient {
   }
 
   public async listRuns({
-    sessionId,
-    sessionName,
+    projectId,
+    projectName,
     executionOrder,
     runType,
     error,
@@ -247,15 +247,15 @@ export class LangChainPlusClient {
     offset,
   }: ListRunsParams): Promise<Run[]> {
     const queryParams = new URLSearchParams();
-    let sessionId_ = sessionId;
-    if (sessionName) {
-      if (sessionId) {
-        throw new Error("Only one of sessionId or sessionName may be given");
+    let projectId_ = projectId;
+    if (projectName) {
+      if (projectId) {
+        throw new Error("Only one of projectId or projectName may be given");
       }
-      sessionId_ = (await this.readSession({ sessionName })).id;
+      projectId_ = (await this.readProject({ projectName })).id;
     }
-    if (sessionId_) {
-      queryParams.append("session", sessionId_);
+    if (projectId_) {
+      queryParams.append("session", projectId_);
     }
     if (executionOrder) {
       queryParams.append("execution_order", executionOrder.toString());
@@ -281,24 +281,24 @@ export class LangChainPlusClient {
     return this._get<Run[]>("/runs", queryParams);
   }
 
-  public async createSession({
-    sessionName,
-    sessionExtra,
+  public async createProject({
+    projectName,
+    projectExtra,
     mode,
     upsert,
   }: {
-    sessionName: string;
-    sessionExtra?: object;
+    projectName: string;
+    projectExtra?: object;
     mode?: string;
     upsert?: boolean;
   }): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
     const body: Record<string, object | string> = {
-      name: sessionName,
+      name: projectName,
     };
-    if (sessionExtra !== undefined) {
-      body["extra"] = sessionExtra;
+    if (projectExtra !== undefined) {
+      body["extra"] = projectExtra;
     }
     if (mode !== undefined) {
       body["mode"] = mode;
@@ -312,29 +312,29 @@ export class LangChainPlusClient {
     const result = await response.json();
     if (!response.ok) {
       throw new Error(
-        `Failed to create session ${sessionName}: ${response.status} ${response.statusText}`
+        `Failed to create session ${projectName}: ${response.status} ${response.statusText}`
       );
     }
     return result as TracerSession;
   }
 
-  public async readSession({
-    sessionId,
-    sessionName,
+  public async readProject({
+    projectId,
+    projectName,
   }: {
-    sessionId?: string;
-    sessionName?: string;
+    projectId?: string;
+    projectName?: string;
   }): Promise<TracerSessionResult> {
     let path = "/sessions";
     const params = new URLSearchParams();
-    if (sessionId !== undefined && sessionName !== undefined) {
-      throw new Error("Must provide either sessionName or sessionId, not both");
-    } else if (sessionId !== undefined) {
-      path += `/${sessionId}`;
-    } else if (sessionName !== undefined) {
-      params.append("name", sessionName);
+    if (projectId !== undefined && projectName !== undefined) {
+      throw new Error("Must provide either projectName or projectId, not both");
+    } else if (projectId !== undefined) {
+      path += `/${projectId}`;
+    } else if (projectName !== undefined) {
+      params.append("name", projectName);
     } else {
-      throw new Error("Must provide sessionName or sessionId");
+      throw new Error("Must provide projectName or projectId");
     }
 
     const response = await this._get<TracerSession | TracerSession[]>(
@@ -345,7 +345,7 @@ export class LangChainPlusClient {
     if (Array.isArray(response)) {
       if (response.length === 0) {
         throw new Error(
-          `Session[id=${sessionId}, name=${sessionName}] not found`
+          `Project[id=${projectId}, name=${projectName}] not found`
         );
       }
       result = response[0] as TracerSessionResult;
@@ -355,30 +355,30 @@ export class LangChainPlusClient {
     return result;
   }
 
-  public async listSessions(): Promise<TracerSession[]> {
+  public async listProjects(): Promise<TracerSession[]> {
     return this._get<TracerSession[]>("/sessions");
   }
 
-  public async deleteSession({
-    sessionId,
-    sessionName,
+  public async deleteProject({
+    projectId,
+    projectName,
   }: {
-    sessionId?: string;
-    sessionName?: string;
+    projectId?: string;
+    projectName?: string;
   }): Promise<void> {
-    let sessionId_: string | undefined;
-    if (sessionId === undefined && sessionName === undefined) {
-      throw new Error("Must provide sessionName or sessionId");
-    } else if (sessionId !== undefined && sessionName !== undefined) {
-      throw new Error("Must provide either sessionName or sessionId, not both");
-    } else if (sessionId === undefined) {
-      sessionId_ = (await this.readSession({ sessionName })).id;
+    let projectId_: string | undefined;
+    if (projectId === undefined && projectName === undefined) {
+      throw new Error("Must provide projectName or projectId");
+    } else if (projectId !== undefined && projectName !== undefined) {
+      throw new Error("Must provide either projectName or projectId, not both");
+    } else if (projectId === undefined) {
+      projectId_ = (await this.readProject({ projectName })).id;
     } else {
-      sessionId_ = sessionId;
+      projectId_ = projectId;
     }
     const response = await this.caller.call(
       fetch,
-      `${this.apiUrl}/sessions/${sessionId_}`,
+      `${this.apiUrl}/sessions/${projectId_}`,
       {
         method: "DELETE",
         headers: this.headers,
@@ -387,7 +387,7 @@ export class LangChainPlusClient {
     );
     await raiseForStatus(
       response,
-      `delete session ${sessionId_} (${sessionName})`
+      `delete session ${projectId_} (${projectName})`
     );
   }
 

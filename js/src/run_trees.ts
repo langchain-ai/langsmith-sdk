@@ -49,7 +49,10 @@ export class RunTree implements BaseRun {
   private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
-      session_name: getEnvironmentVariable("LANGCHAIN_SESSION") ?? "default",
+      session_name:
+        getEnvironmentVariable("LANGCHAIN_PROJECT") ??
+        getEnvironmentVariable("LANGCHAIN_SESSION") ??
+        "default",
       child_runs: [],
       execution_order: 1,
       child_execution_order: 1,

@@ -22,42 +22,42 @@ def langchain_client(monkeypatch: pytest.MonkeyPatch) -> LangChainPlusClient:
     return LangChainPlusClient()
 
 
-def test_sessions(
+def test_projects(
     langchain_client: LangChainPlusClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Test sessions."""
-    session_names = set([session.name for session in langchain_client.list_sessions()])
-    new_session = "__Test Session"
-    if new_session in session_names:
-        langchain_client.delete_session(session_name=new_session)
-        session_names = set(
-            [session.name for session in langchain_client.list_sessions()]
+    """Test projects."""
+    project_names = set([project.name for project in langchain_client.list_projects()])
+    new_project = "__Test Project"
+    if new_project in project_names:
+        langchain_client.delete_project(project_name=new_project)
+        project_names = set(
+            [project.name for project in langchain_client.list_projects()]
         )
-    assert new_session not in session_names
+    assert new_project not in project_names
 
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    langchain_client.create_session(
-        session_name=new_session,
+    langchain_client.create_project(
+        project_name=new_project,
         mode="eval",
-        session_extra={"evaluator": "THE EVALUATOR"},
+        project_extra={"evaluator": "THE EVALUATOR"},
     )
-    session = langchain_client.read_session(session_name=new_session)
-    assert session.name == new_session
-    assert session.mode == "eval"
-    session_names = set([sess.name for sess in langchain_client.list_sessions()])
-    assert new_session in session_names
-    runs = list(langchain_client.list_runs(session_name=new_session))
-    session_id_runs = list(langchain_client.list_runs(session_id=session.id))
-    assert len(runs) == len(session_id_runs) == 0  # TODO: Add create_run method
-    langchain_client.delete_session(session_name=new_session)
+    project = langchain_client.read_project(project_name=new_project)
+    assert project.name == new_project
+    assert project.mode == "eval"
+    project_names = set([sess.name for sess in langchain_client.list_projects()])
+    assert new_project in project_names
+    runs = list(langchain_client.list_runs(project_name=new_project))
+    project_id_runs = list(langchain_client.list_runs(project_id=project.id))
+    assert len(runs) == len(project_id_runs) == 0  # TODO: Add create_run method
+    langchain_client.delete_project(project_name=new_project)
 
     with pytest.raises(LangChainPlusError):
-        langchain_client.read_session(session_name=new_session)
-    assert new_session not in set(
-        [sess.name for sess in langchain_client.list_sessions()]
+        langchain_client.read_project(project_name=new_project)
+    assert new_project not in set(
+        [sess.name for sess in langchain_client.list_projects()]
     )
     with pytest.raises(LangChainPlusError):
-        langchain_client.delete_session(session_name=new_session)
+        langchain_client.delete_project(project_name=new_project)
 
 
 def test_datasets(langchain_client: LangChainPlusClient) -> None:
@@ -76,8 +76,7 @@ def test_datasets(langchain_client: LangChainPlusClient) -> None:
         output_keys=output_keys,
     )
     assert new_dataset.id is not None
-    # TODO: Uncomment
-    # assert new_dataset.description == description
+    assert new_dataset.description == description
 
     dataset = langchain_client.read_dataset(dataset_id=new_dataset.id)
     dataset_id = dataset.id
@@ -132,15 +131,15 @@ def test_run_tree(
 ) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    session_name = "__test_run_tree"
-    if session_name in [sess.name for sess in langchain_client.list_sessions()]:
-        langchain_client.delete_session(session_name=session_name)
+    project_name = "__test_run_tree"
+    if project_name in [sess.name for sess in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
     parent_run = RunTree(
         name="parent_run",
         run_type="chain",
         inputs={"text": "hello world"},
         start_time=datetime.now(),
-        session_name=session_name,
+        project_name=project_name,
         serialized={},
         client=langchain_client,
     )
@@ -164,7 +163,7 @@ def test_run_tree(
     parent_run.post(exclude_child_runs=False)
     parent_run.wait()
 
-    runs = list(langchain_client.list_runs(session_name=session_name))
+    runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 5
     run_map = {run.name: run for run in runs}
     assert run_map["parent_run"].execution_order == 1
@@ -214,20 +213,20 @@ def test_run_tree(
     with pytest.raises(LangChainPlusError):
         langchain_client.read_feedback(feedback.id)
     assert len(list(langchain_client.list_feedback(run_ids=[runs[0].id]))) == 1
-    session = langchain_client.read_session(session_name=session_name)
-    session_with_stats = langchain_client.read_session(session_id=session.id)
-    assert session_with_stats.run_count == 5
+    project = langchain_client.read_project(project_name=project_name)
+    project_with_stats = langchain_client.read_project(project_id=project.id)
+    assert project_with_stats.run_count == 1
     assert (
-        session_with_stats.latency_p50 is not None
-        and session_with_stats.latency_p50 > timedelta(0)
+        project_with_stats.latency_p50 is not None
+        and project_with_stats.latency_p50 > timedelta(0)
     )
     assert (
-        session_with_stats.latency_p99 is not None
-        and session_with_stats.latency_p99 > timedelta(0)
+        project_with_stats.latency_p99 is not None
+        and project_with_stats.latency_p99 > timedelta(0)
     )
-    langchain_client.delete_session(session_name=session_name)
+    langchain_client.delete_project(project_name=project_name)
     with pytest.raises(LangChainPlusError):
-        langchain_client.read_session(session_name=session_name)
+        langchain_client.read_project(project_name=project_name)
 
 
 def test_persist_update_run(
@@ -235,15 +234,15 @@ def test_persist_update_run(
 ) -> None:
     """Test the persist and update methods work as expected."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    session_name = "__test_persist_update_run"
-    if session_name in [sess.name for sess in langchain_client.list_sessions()]:
-        langchain_client.delete_session(session_name=session_name)
+    project_name = "__test_persist_update_run"
+    if project_name in [sess.name for sess in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
     run: dict = dict(
         id=uuid4(),
         name="test_run",
         run_type="llm",
         inputs={"text": "hello world"},
-        session_name=session_name,
+        project_name=project_name,
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
         execution_order=1,
     )
@@ -253,7 +252,7 @@ def test_persist_update_run(
     stored_run = langchain_client.read_run(run["id"])
     assert stored_run.id == run["id"]
     assert stored_run.outputs == run["outputs"]
-    langchain_client.delete_session(session_name=session_name)
+    langchain_client.delete_project(project_name=project_name)
 
 
 def test_evaluate_run(
@@ -261,10 +260,10 @@ def test_evaluate_run(
 ) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    session_name = "__test_evaluate_run"
+    project_name = "__test_evaluate_run"
     dataset_name = "__test_evaluate_run_dataset"
-    if session_name in [sess.name for sess in langchain_client.list_sessions()]:
-        langchain_client.delete_session(session_name=session_name)
+    if project_name in [sess.name for sess in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
     if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
         langchain_client.delete_dataset(dataset_name=dataset_name)
 
@@ -280,7 +279,7 @@ def test_evaluate_run(
         name="parent_run",
         run_type="chain",
         inputs={"input": "hello world"},
-        session_name=session_name,
+        project_name=project_name,
         serialized={},
         start_time=datetime.now(),
         reference_example_id=example.id,
@@ -313,7 +312,7 @@ def test_evaluate_run(
     evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
 
     runs = langchain_client.list_runs(
-        session_name=session_name,
+        project_name=project_name,
         execution_order=1,
         error=False,
     )
@@ -326,7 +325,7 @@ def test_evaluate_run(
     assert fetched_feedback[0].score == jaccard_chars(predicted, ground_truth)
     assert fetched_feedback[0].value == "INCORRECT"
     langchain_client.delete_dataset(dataset_id=dataset.id)
-    langchain_client.delete_session(session_name=session_name)
+    langchain_client.delete_project(project_name=project_name)
 
 
 @pytest.mark.parametrize("uri", ["http://localhost:1981", "http://api.langchain.minus"])

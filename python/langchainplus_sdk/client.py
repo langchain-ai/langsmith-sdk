@@ -208,7 +208,6 @@ class LangChainPlusClient(BaseSettings):
         description: Optional[str] = None,
     ) -> Dataset:
         """Upload a CSV file to the LangChain+ API."""
-        files = {"file": csv_file}
         data = {
             "input_keys": ",".join(input_keys),
             "output_keys": ",".join(output_keys),
@@ -217,12 +216,24 @@ class LangChainPlusClient(BaseSettings):
             data["name"] = name
         if description:
             data["description"] = description
-        response = requests.post(
-            self.api_url + "/datasets/upload",
-            headers=self._headers,
-            data=data,
-            files=files,
-        )
+        if isinstance(csv_file, str):
+            with open(csv_file, "rb") as f:
+                file_= {"file": f}
+                response = requests.post(
+                    self.api_url + "/datasets/upload",
+                    headers=self._headers,
+                    data=data,
+                    files=file_,
+                )
+        elif isinstance(csv_file, tuple):
+            response = requests.post(
+                self.api_url + "/datasets/upload",
+                headers=self._headers,
+                data=data,
+                files={"file": csv_file},
+            )
+        else:
+            raise ValueError("csv_file must be a string or tuple")
         raise_for_status_with_text(response)
         result = response.json()
         # TODO: Make this more robust server-side
@@ -242,12 +253,18 @@ class LangChainPlusClient(BaseSettings):
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangChain+ API."""
-        session_name = kwargs.pop(
-            "session_name", os.environ.get("LANGCHAIN_SESSION", "default")
+        project_name = kwargs.pop(
+            "project_name",
+            kwargs.pop(
+                "session_name",
+                os.environ.get(
+                    "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
+                ),
+            ),
         )
         run_create = {
-            "session_name": session_name,
             **kwargs,
+            "session_name": project_name,
             "name": name,
             "inputs": inputs,
             "run_type": run_type,
@@ -323,8 +340,8 @@ class LangChainPlusClient(BaseSettings):
     def list_runs(
         self,
         *,
-        session_id: Optional[ID_TYPE] = None,
-        session_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
         run_type: Optional[str] = None,
         dataset_name: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
@@ -332,16 +349,16 @@ class LangChainPlusClient(BaseSettings):
         **kwargs: Any,
     ) -> Iterator[Run]:
         """List runs from the LangChain+ API."""
-        if session_name is not None:
-            if session_id is not None:
-                raise ValueError("Only one of session_id or session_name may be given")
-            session_id = self.read_session(session_name=session_name).id
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = self.read_project(project_name=project_name).id
         if dataset_name is not None:
             if dataset_id is not None:
                 raise ValueError("Only one of dataset_id or dataset_name may be given")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         query_params = {
-            "session": session_id,
+            "session": project_id,
             "run_type": run_type,
             **kwargs,
         }
@@ -361,19 +378,19 @@ class LangChainPlusClient(BaseSettings):
         )
         raise_for_status_with_text(response)
 
-    def create_session(
+    def create_project(
         self,
-        session_name: str,
+        project_name: str,
         *,
-        session_extra: Optional[dict] = None,
+        project_extra: Optional[dict] = None,
         mode: Optional[str] = None,
         upsert: bool = False,
     ) -> TracerSession:
-        """Create a session on the LangChain+ API."""
+        """Create a project on the LangChain+ API."""
         endpoint = f"{self.api_url}/sessions"
         body = {
-            "name": session_name,
-            "extra": session_extra,
+            "name": project_name,
+            "extra": project_extra,
         }
         if mode:
             body["mode"] = mode
@@ -388,52 +405,51 @@ class LangChainPlusClient(BaseSettings):
         raise_for_status_with_text(response)
         return TracerSession(**response.json())
 
-    @xor_args(("session_id", "session_name"))
-    def read_session(
-        self, *, session_id: Optional[str] = None, session_name: Optional[str] = None
+    @xor_args(("project_id", "project_name"))
+    def read_project(
+        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
     ) -> TracerSessionResult:
-        """Read a session from the LangChain+ API.
+        """Read a project from the LangChain+ API.
 
         Args:
-            session_id: The ID of the session to read.
-            session_name: The name of the session to read.
-                Note: Only one of session_id or session_name may be given.
+            project_id: The ID of the project to read.
+            project_name: The name of the project to read.
+                Note: Only one of project_id or project_name may be given.
         """
         path = "/sessions"
         params: Dict[str, Any] = {"limit": 1}
-        if session_id is not None:
-            path += f"/{session_id}"
-        elif session_name is not None:
-            params["name"] = session_name
+        if project_id is not None:
+            path += f"/{project_id}"
+        elif project_name is not None:
+            params["name"] = project_name
         else:
-            raise ValueError("Must provide session_name or session_id")
+            raise ValueError("Must provide project_name or project_id")
         response = self._get_with_retries(path, params=params)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise LangChainPlusError(f"Session {session_name} not found")
+                raise LangChainPlusError(f"Project {project_name} not found")
             return TracerSessionResult(**result[0])
-        print(response.json())
         return TracerSessionResult(**response.json())
 
-    def list_sessions(self) -> Iterator[TracerSession]:
-        """List sessions from the LangChain+ API."""
+    def list_projects(self) -> Iterator[TracerSession]:
+        """List projects from the LangChain+ API."""
         yield from (
-            TracerSession(**session)
-            for session in self._get_paginated_list("/sessions")
+            TracerSession(**project)
+            for project in self._get_paginated_list("/sessions")
         )
 
-    @xor_args(("session_name", "session_id"))
-    def delete_session(
-        self, *, session_name: Optional[str] = None, session_id: Optional[str] = None
+    @xor_args(("project_name", "project_id"))
+    def delete_project(
+        self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a session from the LangChain+ API."""
-        if session_name is not None:
-            session_id = str(self.read_session(session_name=session_name).id)
-        elif session_id is None:
-            raise ValueError("Must provide session_name or session_id")
+        """Delete a project from the LangChain+ API."""
+        if project_name is not None:
+            project_id = str(self.read_project(project_name=project_name).id)
+        elif project_id is None:
+            raise ValueError("Must provide project_name or project_id")
         response = requests.delete(
-            self.api_url + f"/sessions/{session_id}",
+            self.api_url + f"/sessions/{project_id}",
             headers=self._headers,
         )
         raise_for_status_with_text(response)
