@@ -203,40 +203,40 @@ class TracerSession(BaseModel):
     """
 
     id: UUID
-    """The ID of the session."""
+    """The ID of the project."""
     start_time: datetime = Field(default_factory=datetime.utcnow)
-    """The time the session was created."""
+    """The time the project was created."""
     name: Optional[str] = None
     """The name of the session."""
     extra: Optional[Dict[str, Any]] = None
-    """Extra metadata for the session."""
+    """Extra metadata for the project."""
     mode: Optional[str] = "debug"
-    """The mode of the session, either 'debug', 'eval', or 'monitor'."""
+    """The mode of the project, either 'debug', 'eval', or 'monitor'."""
     tenant_id: UUID
-    """The tenant ID this session belongs to."""
+    """The tenant ID this project belongs to."""
 
 
 class TracerSessionResult(TracerSession):
-    """TracerSession schema returned when reading a session
+    """TracerSession schema returned when reading a project
     by ID. Sessions are also referred to as "Projects" in the UI."""
 
     run_count: Optional[int]
-    """The number of runs in the session."""
+    """The number of runs in the project."""
     latency_p50: Optional[timedelta]
-    """The median (50th percentile) latency for the session."""
+    """The median (50th percentile) latency for the project."""
     latency_p99: Optional[timedelta]
-    """The 99th percentile latency for the session."""
+    """The 99th percentile latency for the project."""
     total_tokens: Optional[int]
-    """The total number of tokens consumed in the session."""
+    """The total number of tokens consumed in the project."""
     prompt_tokens: Optional[int]
-    """The total number of prompt tokens consumed in the session."""
+    """The total number of prompt tokens consumed in the project."""
     completion_tokens: Optional[int]
-    """The total number of completion tokens consumed in the session."""
+    """The total number of completion tokens consumed in the project."""
     last_run_start_time: Optional[datetime]
-    """The start time of the last run in the session."""
+    """The start time of the last run in the project."""
     feedback_stats: Optional[Dict[str, Any]]
-    """Feedback stats for the session."""
+    """Feedback stats for the project."""
     reference_dataset_ids: Optional[List[UUID]]
-    """The reference dataset IDs this session's runs were generated on."""
+    """The reference dataset IDs this project's runs were generated on."""
     run_facets: Optional[List[Dict[str, Any]]]
-    """Facets for the runs in the session."""
+    """Facets for the runs in the project."""

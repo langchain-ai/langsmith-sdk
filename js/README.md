@@ -48,10 +48,10 @@ Tracing can be activated by setting the following environment variables or by ma
 process.env["LANGCHAIN_TRACING_V2"] = "true";
 process.env["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"; // or your own server
 process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>";
-// process.env["LANGCHAIN_PROJECT"] = "My Session Name"; // Optional: "default" is used if not set
+// process.env["LANGCHAIN_PROJECT"] = "My Project Name"; // Optional: "default" is used if not set
 ```
 
-> **Tip:** Sessions are groups of traces. All runs are logged to a session. If not specified, the session is set to `default`.
+> **Tip:** Projects are groups of traces. All runs are logged to a project. If not specified, the project is set to `default`.
 
 2. **Run an Agent, Chain, or Language Model in LangChain**
 
@@ -80,7 +80,7 @@ or by directly specifying the connection information in the RunTree.
 ```typescript
 process.env["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"; // or your own server
 process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>";
-// process.env["LANGCHAIN_PROJECT"] = "My Session Name"; // Optional: "default" is used if not set
+// process.env["LANGCHAIN_PROJECT"] = "My Project Name"; // Optional: "default" is used if not set
 ```
 
 2. **Log traces using a RunTree.**
@@ -103,7 +103,7 @@ const parentRunConfig: RunTreeConfig = {
     text: "Summarize this morning's meetings.",
   },
   serialized: {}, // Serialized representation of this chain
-  // session_name: "Defaults to the LANGCHAIN_PROJECT env var"
+  // project_name: "Defaults to the LANGCHAIN_PROJECT env var"
   // apiUrl: "Defaults to the LANGCHAIN_ENDPOINT env var"
   // apiKey: "Defaults to the LANGCHAIN_API_KEY env var"
 };
@@ -193,7 +193,7 @@ const datasetName = "Example Dataset";
 // We will only use examples from the top level AgentExecutor run here,
 // and exclude runs that errored.
 const runs = await client.listRuns({
-  sessionName: "my_session",
+  projectName: "my_project",
   executionOrder: 1,
   error: false,
 });
@@ -247,7 +247,7 @@ const evaluator = new StringEvaluator({
 });
 
 const runs = await client.listRuns({
-  sessionName: "my_session",
+  projectName: "my_project",
   executionOrder: 1,
   error: false,
 });
