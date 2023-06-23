@@ -29,7 +29,6 @@ test("Test LangSmith Client Dataset CRD", async () => {
     outputKeys,
   });
   expect(newDataset).toHaveProperty("id");
-  console.warn(newDataset);
   expect(newDataset.description).toBe(description);
 
   const dataset = await client.readDataset({ datasetId: newDataset.id });
@@ -151,7 +150,7 @@ test("Test evaluate run", async () => {
     name: "parent_run",
     run_type: "chain",
     inputs: { input: "hello world" },
-    session_name: projectName,
+    project_name: projectName,
     serialized: {},
     client: langchainClient,
     reference_example_id: example.id,
@@ -243,9 +242,12 @@ test("Test persist update run", async () => {
     await langchainClient.deleteProject({ projectName });
   }
   const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
+  if ((await langchainClient.listRuns({ id: [runId] })).length > 0) {
+    await langchainClient.deleteRun(runId);
+  }
   await langchainClient.createRun({
     id: runId,
-    session_name: projectName,
+    project_name: projectName,
     name: "test_run",
     run_type: "llm",
     inputs: { text: "hello world" },

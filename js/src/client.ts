@@ -75,7 +75,7 @@ interface CreateRunParams {
   reference_example_id?: string;
   child_runs?: RunCreate[];
   parent_run_id?: string;
-  session_name?: string;
+  project_name?: string;
 }
 // utility functions
 const isLocalhost = (url: string): boolean => {
@@ -164,7 +164,10 @@ export class LangChainPlusClient {
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const extra = run.extra ?? {};
     const runtimeEnv = await getRuntimeEnvironment();
+    const session_name = run.project_name;
+    delete run.project_name;
     const runCreate: RunCreate = {
+      session_name,
       ...run,
       extra: {
         ...run.extra,
@@ -279,6 +282,19 @@ export class LangChainPlusClient {
     }
 
     return this._get<Run[]>("/runs", queryParams);
+  }
+
+  public async deleteRun(runId: string): Promise<void> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/${runId}`,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    await raiseForStatus(response, "delete run");
   }
 
   public async createProject({

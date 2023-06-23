@@ -26,7 +26,7 @@ def langchain_client() -> Generator[LangChainPlusClient, None, None]:
 def test_nested_runs(
     langchain_client: LangChainPlusClient,
 ):
-    project_name = "__My Tracer Session - test_nested_runs"
+    project_name = "__My Tracer Project - test_nested_runs"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
 
@@ -64,7 +64,7 @@ def test_nested_runs(
 @pytest.mark.asyncio
 async def test_nested_async_runs(langchain_client: LangChainPlusClient):
     """Test nested runs with a mix of async and sync functions."""
-    project_name = "__My Tracer Session - test_nested_async_runs"
+    project_name = "__My Tracer Project - test_nested_async_runs"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
     executor = ThreadPoolExecutor(max_workers=1)
@@ -117,7 +117,7 @@ async def test_nested_async_runs(langchain_client: LangChainPlusClient):
 @pytest.mark.asyncio
 async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlusClient):
     """Test nested runs with a mix of async and sync functions."""
-    project_name = "__My Tracer Session - test_nested_async_runs_with_threadpol"
+    project_name = "__My Tracer Project - test_nested_async_runs_with_threadpol"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
 
@@ -184,7 +184,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlus
 
 @pytest.mark.asyncio
 async def test_context_manager(langchain_client: LangChainPlusClient) -> None:
-    project_name = "__My Tracer Session - test_context_manager"
+    project_name = "__My Tracer Project - test_context_manager"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
 

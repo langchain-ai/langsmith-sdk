@@ -45,10 +45,10 @@ import os
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus" # or your own server
 os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
-# os.environ["LANGCHAIN_PROJECT"] = "My Session Name" # Optional: "default" is used if not set
+# os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
 
-> **Tip:** Sessions are groups of traces. All runs are logged to a session. If not specified, the session is set to `default`.
+> **Tip:** Projects are groups of traces. All runs are logged to a project. If not specified, the project is set to `default`.
 
 2. **Run an Agent, Chain, or Language Model in LangChain**
 
@@ -78,7 +78,7 @@ or by directly specifying the connection information in the RunTree.
 import os
 os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus" # or your own server
 os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
-# os.environ["LANGCHAIN_PROJECT"] = "My Session Name" # Optional: "default" is used if not set
+# os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
 
 2. **Log traces using a RunTree.**
@@ -99,7 +99,7 @@ parent_run = RunTree(
     run_type="chain",
     inputs={"text": "Summarize this morning's meetings."},
     serialized={},  # Serialized representation of this chain
-    # session_name= "Defaults to the LANGCHAIN_PROJECT env var"
+    # project_name= "Defaults to the LANGCHAIN_PROJECT env var"
     # api_url= "Defaults to the LANGCHAIN_ENDPOINT env var"
     # api_key= "Defaults to the LANGCHAIN_API_KEY env var"
 )
@@ -167,7 +167,7 @@ dataset_name = "Example Dataset"
 # We will only use examples from the top level AgentExecutor run here,
 # and exclude runs that errored.
 runs = client.list_runs(
-    session_name="my_session",
+    project_name="my_project",
     execution_order=1,
     error=False,
 )
@@ -212,7 +212,7 @@ def grader(run_input: str, run_output: str, answer: Optional[str]) -> dict:
 evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
 
 runs = client.list_runs(
-    session_name="my_session",
+    project_name="my_project",
     execution_order=1,
     error=False,
 )
