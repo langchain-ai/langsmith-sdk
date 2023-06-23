@@ -15,7 +15,7 @@ test("Test persisting runs and adding feedback", async () => {
     name: "parent_run",
     run_type: "chain",
     inputs: { text: "hello world" },
-    session_name: projectName,
+    project_name: projectName,
     serialized: {},
     client: langchainClient,
   };
@@ -137,7 +137,7 @@ test("Test post and patch run", async () => {
     name: "parent_run",
     run_type: "chain",
     inputs: { text: "hello world" },
-    session_name: projectName,
+    project_name: projectName,
     serialized: {},
     client: langchainClient,
   };
