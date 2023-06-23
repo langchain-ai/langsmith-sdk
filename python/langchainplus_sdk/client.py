@@ -259,7 +259,8 @@ class LangChainPlusClient(BaseSettings):
                 "session_name",
                 os.environ.get(
                     # TODO: Deprecate LANGCHAIN_SESSION
-                    "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
+                    "LANGCHAIN_PROJECT",
+                    os.environ.get("LANGCHAIN_SESSION", "default"),
                 ),
             ),
         )

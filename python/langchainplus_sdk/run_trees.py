@@ -36,7 +36,8 @@ class RunTree(RunBase):
     session_name: str = Field(
         default_factory=lambda: os.environ.get(
             # TODO: Deprecate LANGCHAIN_SESSION
-            "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
+            "LANGCHAIN_PROJECT",
+            os.environ.get("LANGCHAIN_SESSION", "default"),
         ),
         alias="project_name",
     )
