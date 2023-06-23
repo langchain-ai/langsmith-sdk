@@ -197,7 +197,10 @@ class Feedback(FeedbackBase):
 
 
 class TracerSession(BaseModel):
-    """TracerSession schema for the API."""
+    """TracerSession schema for the API.
+
+    Sessions are also referred to as "Projects" in the UI.
+    """
 
     id: UUID
     """The ID of the session."""
@@ -214,8 +217,8 @@ class TracerSession(BaseModel):
 
 
 class TracerSessionResult(TracerSession):
-    """TracerSession schema returned
-    when reading a session by ID."""
+    """TracerSession schema returned when reading a session
+    by ID. Sessions are also referred to as "Projects" in the UI."""
 
     run_count: Optional[int]
     """The number of runs in the session."""

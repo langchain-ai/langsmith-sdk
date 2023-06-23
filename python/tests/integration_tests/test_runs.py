@@ -26,9 +26,9 @@ def langchain_client() -> Generator[LangChainPlusClient, None, None]:
 def test_nested_runs(
     langchain_client: LangChainPlusClient,
 ):
-    session_name = "__My Tracer Session - test_nested_runs"
-    if session_name in [session.name for session in langchain_client.list_sessions()]:
-        langchain_client.delete_session(session_name=session_name)
+    project_name = "__My Tracer Session - test_nested_runs"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
 
     executor = ThreadPoolExecutor(max_workers=1)
 
@@ -46,9 +46,9 @@ def test_nested_runs(
     def my_chain_run(text: str):
         return my_run(text)
 
-    my_chain_run("foo", session_name=session_name)
+    my_chain_run("foo", project_name=project_name)
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(session_name=session_name))
+    runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 3
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
@@ -58,15 +58,15 @@ def test_nested_runs(
     assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
     assert runs_dict["my_llm_run"].run_type == "llm"
     assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
-    langchain_client.delete_session(session_name=session_name)
+    langchain_client.delete_project(project_name=project_name)
 
 
 @pytest.mark.asyncio
 async def test_nested_async_runs(langchain_client: LangChainPlusClient):
     """Test nested runs with a mix of async and sync functions."""
-    session_name = "__My Tracer Session - test_nested_async_runs"
-    if session_name in [session.name for session in langchain_client.list_sessions()]:
-        langchain_client.delete_session(session_name=session_name)
+    project_name = "__My Tracer Session - test_nested_async_runs"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
     executor = ThreadPoolExecutor(max_workers=1)
 
     @traceable(run_type="chain")
@@ -89,9 +89,9 @@ async def test_nested_async_runs(langchain_client: LangChainPlusClient):
     async def my_chain_run(text: str):
         return await my_run(text)
 
-    await my_chain_run("foo", session_name=session_name)
+    await my_chain_run("foo", project_name=project_name)
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(session_name=session_name))
+    runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 4
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
@@ -111,15 +111,15 @@ async def test_nested_async_runs(langchain_client: LangChainPlusClient):
         "my_arg": 20,
     }
     assert runs_dict["my_sync_tool"].execution_order == 4
-    langchain_client.delete_session(session_name=session_name)
+    langchain_client.delete_project(project_name=project_name)
 
 
 @pytest.mark.asyncio
 async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlusClient):
     """Test nested runs with a mix of async and sync functions."""
-    session_name = "__My Tracer Session - test_nested_async_runs_with_threadpol"
-    if session_name in [session.name for session in langchain_client.list_sessions()]:
-        langchain_client.delete_session(session_name=session_name)
+    project_name = "__My Tracer Session - test_nested_async_runs_with_threadpol"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="llm")
     async def async_llm(text: str):
@@ -154,9 +154,9 @@ async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlus
         thread_pool.shutdown(wait=True)
         return text
 
-    await my_chain_run("foo", session_name=session_name)
+    await my_chain_run("foo", project_name=project_name)
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(session_name=session_name))
+    runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 17
     assert sum([run.run_type == RunTypeEnum.llm for run in runs]) == 8
     assert sum([run.name == "async_llm" for run in runs]) == 6
@@ -179,14 +179,14 @@ async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlus
             assert run.parent_run_id in name_to_ids_map["my_chain_run"]
         if run.name == "my_chain_run":
             assert run.parent_run_id is None
-    langchain_client.delete_session(session_name=session_name)
+    langchain_client.delete_project(project_name=project_name)
 
 
 @pytest.mark.asyncio
 async def test_context_manager(langchain_client: LangChainPlusClient) -> None:
-    session_name = "__My Tracer Session - test_context_manager"
-    if session_name in [session.name for session in langchain_client.list_sessions()]:
-        langchain_client.delete_session(session_name=session_name)
+    project_name = "__My Tracer Session - test_context_manager"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="llm")
     async def my_llm(prompt: str) -> str:
@@ -194,7 +194,7 @@ async def test_context_manager(langchain_client: LangChainPlusClient) -> None:
 
     executor = ThreadPoolExecutor(max_workers=1)
     with trace(
-        "my_context", RunTypeEnum.chain, session_name=session_name, executor=executor
+        "my_context", RunTypeEnum.chain, project_name=project_name, executor=executor
     ) as run_tree:
         await my_llm("foo")
         with trace("my_context2", RunTypeEnum.chain, run_tree=run_tree) as run_tree2:
@@ -205,7 +205,7 @@ async def test_context_manager(langchain_client: LangChainPlusClient) -> None:
             await asyncio.gather(*runs)
         run_tree.end(outputs={"End val": "my_context2"})
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(session_name=session_name))
+    runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 8
     # Assert quuux adn corge are both children of my_context3
-    langchain_client.delete_session(session_name=session_name)
+    langchain_client.delete_project(project_name=project_name)
