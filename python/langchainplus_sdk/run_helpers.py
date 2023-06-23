@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
-_SESSION_NAME = contextvars.ContextVar[Optional[str]]("_SESSION_NAME", default=None)
+_PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
 
 
 def get_run_tree_context() -> Optional[RunTree]:
@@ -67,7 +67,7 @@ def traceable(
             reference_example_id: Optional[UUID] = None,
             run_extra: Optional[Dict] = None,
             run_tree: Optional[RunTree] = None,
-            session_name: Optional[str] = None,
+            project_name: Optional[str] = None,
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function"""
@@ -75,10 +75,10 @@ def traceable(
                 parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
-            outer_session = _SESSION_NAME.get() or os.environ.get(
-                "LANGCHAIN_SESSION", "default"
+            outer_project = _PROJECT_NAME.get() or os.environ.get(
+                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
             )
-            session_name_ = session_name or outer_session
+            project_name_ = project_name or outer_project
             signature = inspect.signature(func)
             name_ = name or func.__name__
             docstring = func.__doc__
@@ -110,12 +110,12 @@ def traceable(
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
-                    session_name=session_name_,
+                    project_name=project_name_,
                     extra=extra_inner,
                     executor=executor,
                 )
             new_run.post()
-            _SESSION_NAME.set(session_name_)
+            _PROJECT_NAME.set(project_name_)
             _PARENT_RUN_TREE.set(new_run)
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
@@ -129,10 +129,10 @@ def traceable(
                 new_run.end(error=str(e))
                 new_run.patch()
                 _PARENT_RUN_TREE.set(parent_run_)
-                _SESSION_NAME.set(outer_session)
+                _PROJECT_NAME.set(outer_project)
                 raise e
             _PARENT_RUN_TREE.set(parent_run_)
-            _SESSION_NAME.set(outer_session)
+            _PROJECT_NAME.set(outer_project)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
@@ -143,7 +143,7 @@ def traceable(
             reference_example_id: Optional[UUID] = None,
             run_extra: Optional[Dict] = None,
             run_tree: Optional[RunTree] = None,
-            session_name: Optional[str] = None,
+            project_name: Optional[str] = None,
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
@@ -151,10 +151,10 @@ def traceable(
                 parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
-            outer_session = _SESSION_NAME.get() or os.environ.get(
-                "LANGCHAIN_SESSION", "default"
+            outer_project = _PROJECT_NAME.get() or os.environ.get(
+                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
             )
-            session_name_ = session_name or outer_session
+            project_name_ = project_name or outer_project
             signature = inspect.signature(func)
             name_ = name or func.__name__
             docstring = func.__doc__
@@ -186,13 +186,13 @@ def traceable(
                     inputs=inputs,
                     run_type=run_type,
                     reference_example_id=reference_example_id,
-                    session_name=session_name_,
+                    project_name=project_name_,
                     extra=extra_inner,
                     executor=executor,
                 )
             new_run.post()
             _PARENT_RUN_TREE.set(new_run)
-            _SESSION_NAME.set(session_name_)
+            _PROJECT_NAME.set(project_name_)
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -205,10 +205,10 @@ def traceable(
                 new_run.end(error=str(e))
                 new_run.patch()
                 _PARENT_RUN_TREE.set(parent_run_)
-                _SESSION_NAME.set(outer_session)
+                _PROJECT_NAME.set(outer_project)
                 raise e
             _PARENT_RUN_TREE.set(parent_run_)
-            _SESSION_NAME.set(outer_session)
+            _PROJECT_NAME.set(outer_project)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
@@ -229,15 +229,15 @@ def trace(
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
     executor: Optional[ThreadPoolExecutor] = None,
-    session_name: Optional[str] = None,
+    project_name: Optional[str] = None,
     run_tree: Optional[RunTree] = None,
 ) -> Generator[RunTree, None, None]:
     """Context manager for creating a run tree."""
     _warn_cm_once()
     extra_outer = extra or {}
     parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
-    outer_session = _SESSION_NAME.get()
-    session_name_ = session_name or outer_session
+    outer_project = _PROJECT_NAME.get()
+    project_name_ = project_name or outer_project
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
             name=name,
@@ -251,22 +251,22 @@ def trace(
             run_type=run_type,
             extra=extra_outer,
             executor=executor,
-            session_name=session_name_,
+            project_name=project_name_,
             inputs=inputs or {},
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)
-    _SESSION_NAME.set(session_name_)
+    _PROJECT_NAME.set(project_name_)
     try:
         yield new_run
     except Exception as e:
         new_run.end(error=str(e))
         new_run.patch()
         _PARENT_RUN_TREE.set(parent_run_)
-        _SESSION_NAME.set(outer_session)
+        _PROJECT_NAME.set(outer_project)
         raise e
     _PARENT_RUN_TREE.set(parent_run_)
-    _SESSION_NAME.set(outer_session)
+    _PROJECT_NAME.set(outer_project)
     if new_run.end_time is None:
         # User didn't call end() on the run, so we'll do it for them
         new_run.end()

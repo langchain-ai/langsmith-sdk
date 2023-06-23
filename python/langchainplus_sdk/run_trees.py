@@ -34,9 +34,14 @@ class RunTree(RunBase):
         exclude={"__all__": {"parent_run_id"}},
     )
     session_name: str = Field(
-        default_factory=lambda: os.environ.get("LANGCHAIN_SESSION", "default")
+        default_factory=lambda: os.environ.get(
+            # TODO: Deprecate LANGCHAIN_SESSION
+            "LANGCHAIN_PROJECT",
+            os.environ.get("LANGCHAIN_SESSION", "default"),
+        ),
+        alias="project_name",
     )
-    session_id: Optional[UUID] = Field(default=None)
+    session_id: Optional[UUID] = Field(default=None, alias="project_id")
     execution_order: int = 1
     child_execution_order: int = Field(default=1, exclude=True)
     extra: Dict = Field(default_factory=dict)
@@ -50,6 +55,7 @@ class RunTree(RunBase):
 
     class Config:
         arbitrary_types_allowed = True
+        allow_population_by_field_name = True
 
     @validator("executor", pre=True)
     def validate_executor(cls, v: Optional[ThreadPoolExecutor]) -> ThreadPoolExecutor:
@@ -163,5 +169,7 @@ class RunTree(RunBase):
 
     def wait(self) -> None:
         """Wait for all _futures to complete."""
+        futures = self._futures
         wait(self._futures)
-        self._futures.clear()
+        for future in futures:
+            self._futures.remove(future)

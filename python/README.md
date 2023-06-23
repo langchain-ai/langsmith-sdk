@@ -45,7 +45,7 @@ import os
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus" # or your own server
 os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
-# os.environ["LANGCHAIN_SESSION"] = "My Session Name" # Optional: "default" is used if not set
+# os.environ["LANGCHAIN_PROJECT"] = "My Session Name" # Optional: "default" is used if not set
 ```
 
 > **Tip:** Sessions are groups of traces. All runs are logged to a session. If not specified, the session is set to `default`.
@@ -78,7 +78,7 @@ or by directly specifying the connection information in the RunTree.
 import os
 os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus" # or your own server
 os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
-# os.environ["LANGCHAIN_SESSION"] = "My Session Name" # Optional: "default" is used if not set
+# os.environ["LANGCHAIN_PROJECT"] = "My Session Name" # Optional: "default" is used if not set
 ```
 
 2. **Log traces using a RunTree.**
@@ -99,7 +99,7 @@ parent_run = RunTree(
     run_type="chain",
     inputs={"text": "Summarize this morning's meetings."},
     serialized={},  # Serialized representation of this chain
-    # session_name= "Defaults to the LANGCHAIN_SESSION env var"
+    # session_name= "Defaults to the LANGCHAIN_PROJECT env var"
     # api_url= "Defaults to the LANGCHAIN_ENDPOINT env var"
     # api_key= "Defaults to the LANGCHAIN_API_KEY env var"
 )

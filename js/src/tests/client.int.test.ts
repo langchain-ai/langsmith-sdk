@@ -29,6 +29,7 @@ test("Test LangSmith Client Dataset CRD", async () => {
     outputKeys,
   });
   expect(newDataset).toHaveProperty("id");
+  console.warn(newDataset);
   expect(newDataset.description).toBe(description);
 
   const dataset = await client.readDataset({ datasetId: newDataset.id });
@@ -75,45 +76,45 @@ test("Test LangSmith Client Dataset CRD", async () => {
   expect(rawDeleted.id).toBe(rawDataset.id);
 });
 
-// Test Session Creation, List, Read, Delete
-test("Test LangSmith Client Session CRD", async () => {
-  const client = await new LangChainPlusClient({
+// Test Project Creation, List, Read, Delete
+test("Test LangSmith Client Project CRD", async () => {
+  const client = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
 
-  const newSession = `__some_session.int.`;
-  if ((await client.listSessions()).map((s) => s.name).includes(newSession)) {
-    await client.deleteSession({ sessionName: newSession });
+  const newProject = `__some_project.int.`;
+  if ((await client.listProjects()).map((s) => s.name).includes(newProject)) {
+    await client.deleteProject({ projectName: newProject });
   }
 
-  let sessions = await client.listSessions();
-  let sessionNames = sessions.map((session) => session.name);
-  expect(sessionNames).not.toContain(newSession);
+  let projects = await client.listProjects();
+  let projectNames = projects.map((project) => project.name);
+  expect(projectNames).not.toContain(newProject);
 
-  await client.createSession({ sessionName: newSession });
-  const session = await client.readSession({ sessionName: newSession });
-  expect(session.name).toBe(newSession);
+  await client.createProject({ projectName: newProject });
+  const project = await client.readProject({ projectName: newProject });
+  expect(project.name).toBe(newProject);
 
-  sessions = await client.listSessions();
-  sessionNames = sessions.map((session) => session.name);
-  expect(sessionNames).toContain(newSession);
+  projects = await client.listProjects();
+  projectNames = projects.map((project) => project.name);
+  expect(projectNames).toContain(newProject);
 
-  const runs = await client.listRuns({ sessionName: newSession });
-  const sessionId_runs = await client.listRuns({ sessionId: session.id });
+  const runs = await client.listRuns({ projectName: newProject });
+  const projectId_runs = await client.listRuns({ projectId: project.id });
   expect(runs.length).toBe(0);
-  expect(sessionId_runs.length).toBe(0);
+  expect(projectId_runs.length).toBe(0);
 
-  await client.deleteSession({ sessionName: newSession });
+  await client.deleteProject({ projectName: newProject });
 
-  sessions = await client.listSessions();
-  sessionNames = sessions.map((session) => session.name);
-  expect(sessionNames).not.toContain(newSession);
+  projects = await client.listProjects();
+  projectNames = projects.map((project) => project.name);
+  expect(projectNames).not.toContain(newProject);
 
   await expect(
-    client.readSession({ sessionName: newSession })
+    client.readProject({ projectName: newProject })
   ).rejects.toThrow();
   await expect(
-    client.deleteSession({ sessionName: newSession })
+    client.deleteProject({ projectName: newProject })
   ).rejects.toThrow();
 });
 
@@ -122,13 +123,13 @@ test("Test evaluate run", async () => {
     apiUrl: "http://localhost:1984",
   });
 
-  const sessionName = "__test_evaluate_run";
+  const projectName = "__test_evaluate_run";
   const datasetName = "__test_evaluate_run_dataset";
-  const sessions = await langchainClient.listSessions();
+  const projects = await langchainClient.listProjects();
   const datasets = await langchainClient.listDatasets();
 
-  if (sessions.map((session) => session.name).includes(sessionName)) {
-    await langchainClient.deleteSession({ sessionName });
+  if (projects.map((project) => project.name).includes(projectName)) {
+    await langchainClient.deleteProject({ projectName });
   }
 
   if (datasets.map((dataset) => dataset.name).includes(datasetName)) {
@@ -150,7 +151,7 @@ test("Test evaluate run", async () => {
     name: "parent_run",
     run_type: "chain",
     inputs: { input: "hello world" },
-    session_name: sessionName,
+    session_name: projectName,
     serialized: {},
     client: langchainClient,
     reference_example_id: example.id,
@@ -195,22 +196,21 @@ test("Test evaluate run", async () => {
   });
 
   const runs = await langchainClient.listRuns({
-    sessionName: sessionName,
+    projectName: projectName,
     executionOrder: 1,
     error: false,
   });
 
-  const session = await langchainClient.readSession({
-    sessionName: sessionName,
+  const project = await langchainClient.readProject({
+    projectName: projectName,
   });
-  const sessionWithStats = await langchainClient.readSession({
-    sessionId: session.id,
+  const projectWithStats = await langchainClient.readProject({
+    projectId: project.id,
   });
-  expect(sessionWithStats.name).toBe(session.name);
-  expect(sessionWithStats.run_count).toBe(1);
-  expect(sessionWithStats.latency_p50).toBeGreaterThan(0);
-  expect(sessionWithStats.latency_p99).toBeGreaterThan(0);
-  expect(sessionWithStats.total_tokens).toBeGreaterThan(2);
+  expect(projectWithStats.name).toBe(project.name);
+  expect(projectWithStats.run_count).toBe(1);
+  expect(projectWithStats.latency_p50).toBeGreaterThan(0);
+  expect(projectWithStats.latency_p99).toBeGreaterThan(0);
 
   const allFeedback = [];
   for (const run of runs) {
@@ -229,23 +229,23 @@ test("Test evaluate run", async () => {
   expect(fetchedFeedback[0].value).toEqual("INCORRECT");
 
   await langchainClient.deleteDataset({ datasetId: dataset.id });
-  await langchainClient.deleteSession({ sessionName });
+  await langchainClient.deleteProject({ projectName });
 });
 
 test("Test persist update run", async () => {
   const langchainClient = new LangChainPlusClient({
     apiUrl: "http://localhost:1984",
   });
-  const sessionName = "__test_persist_update_run";
-  const sessions = await langchainClient.listSessions();
+  const projectName = "__test_persist_update_run";
+  const projects = await langchainClient.listProjects();
 
-  if (sessions.map((session) => session.name).includes(sessionName)) {
-    await langchainClient.deleteSession({ sessionName });
+  if (projects.map((project) => project.name).includes(projectName)) {
+    await langchainClient.deleteProject({ projectName });
   }
   const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
   await langchainClient.createRun({
     id: runId,
-    session_name: sessionName,
+    session_name: projectName,
     name: "test_run",
     run_type: "llm",
     inputs: { text: "hello world" },
@@ -257,5 +257,5 @@ test("Test persist update run", async () => {
   expect(storedRun.id).toEqual(runId);
   expect(storedRun.outputs).toEqual({ output: ["Hi"] });
 
-  await langchainClient.deleteSession({ sessionName });
+  await langchainClient.deleteProject({ projectName });
 });

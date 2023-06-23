@@ -6,6 +6,8 @@ export interface TracerSession {
   mode?: string;
 }
 
+// Fully loaded information about a Tracer Session (also known
+// as a Project)
 export interface TracerSessionResult extends TracerSession {
   // The number of runs in the session.
   run_count?: number;
