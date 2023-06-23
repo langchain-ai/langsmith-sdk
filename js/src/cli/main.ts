@@ -185,7 +185,7 @@ class PlusCommand {
     ];
     await exec(command.join(" "));
     console.info(
-      "LangChainPlus server is running at http://localhost:1984.  To connect locally, set the following environment variable when running your LangChain application."
+      "LangSmith server is running at http://localhost:1984.  To connect locally, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
   }
@@ -209,7 +209,7 @@ class PlusCommand {
     );
     const ngrokUrl = await getNgrokUrl();
     console.info(
-      "LangChainPlus server is running at http://localhost:1984. To connect remotely, set the following environment variable when running your LangChain application."
+      "LangSmith server is running at http://localhost:1984. To connect remotely, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
     console.info(`\tLANGCHAIN_ENDPOINT=${ngrokUrl}`);
@@ -240,16 +240,16 @@ class PlusCommand {
     const result = await exec(command.join(" "));
     const servicesStatus = JSON.parse(result.stdout);
     if (servicesStatus) {
-      console.info("The LangChainPlus server is currently running.");
+      console.info("The LangSmith server is currently running.");
       await pprintServices(servicesStatus);
     } else {
-      console.info("The LangChainPlus server is not running.");
+      console.info("The LangSmith server is not running.");
     }
   }
 }
 
 const startCommand = new Command("start")
-  .description("Start the LangChainPlus server")
+  .description("Start the LangSmith server")
   .option(
     "--expose",
     "Expose the server to the internet via ngrok (requires ngrok to be installed)"
@@ -258,7 +258,7 @@ const startCommand = new Command("start")
     "--ngrok-authtoken <ngrokAuthtoken>",
     "Your ngrok auth token. If this is set, --expose is implied."
   )
-  .option("--dev", "Run the development version of the LangChainPlus server")
+  .option("--dev", "Run the development version of the LangSmith server")
   .option(
     "--openai-api-key <openaiApiKey>",
     "Your OpenAI API key. If this is set, the server will be able to process text and return enhanced plus results."
@@ -267,23 +267,23 @@ const startCommand = new Command("start")
 
 const stopCommand = new Command("stop")
   .command("stop")
-  .description("Stop the LangChainPlus server")
+  .description("Stop the LangSmith server")
   .action(async () => (await PlusCommand.create()).stop());
 
 const pullCommand = new Command("pull")
   .command("pull")
-  .description("Pull the latest version of the LangChainPlus server")
-  .option("--dev", "Pull the development version of the LangChainPlus server")
+  .description("Pull the latest version of the LangSmith server")
+  .option("--dev", "Pull the development version of the LangSmith server")
   .action(async (args: string[]) => (await PlusCommand.create()).pull(args));
 
 const statusCommand = new Command("status")
   .command("status")
-  .description("Get the status of the LangChainPlus server")
+  .description("Get the status of the LangSmith server")
   .action(async () => (await PlusCommand.create()).status());
 
 program
   .command("plus")
-  .description("Manage the LangChainPlus server")
+  .description("Manage the LangSmith server")
   .addCommand(startCommand)
   .addCommand(stopCommand)
   .addCommand(pullCommand)
