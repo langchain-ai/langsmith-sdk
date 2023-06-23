@@ -48,7 +48,7 @@ Tracing can be activated by setting the following environment variables or by ma
 process.env["LANGCHAIN_TRACING_V2"] = "true";
 process.env["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"; // or your own server
 process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>";
-// process.env["LANGCHAIN_SESSION"] = "My Session Name"; // Optional: "default" is used if not set
+// process.env["LANGCHAIN_PROJECT"] = "My Session Name"; // Optional: "default" is used if not set
 ```
 
 > **Tip:** Sessions are groups of traces. All runs are logged to a session. If not specified, the session is set to `default`.
@@ -80,7 +80,7 @@ or by directly specifying the connection information in the RunTree.
 ```typescript
 process.env["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus"; // or your own server
 process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>";
-// process.env["LANGCHAIN_SESSION"] = "My Session Name"; // Optional: "default" is used if not set
+// process.env["LANGCHAIN_PROJECT"] = "My Session Name"; // Optional: "default" is used if not set
 ```
 
 2. **Log traces using a RunTree.**
@@ -103,7 +103,7 @@ const parentRunConfig: RunTreeConfig = {
     text: "Summarize this morning's meetings.",
   },
   serialized: {}, // Serialized representation of this chain
-  // session_name: "Defaults to the LANGCHAIN_SESSION env var"
+  // session_name: "Defaults to the LANGCHAIN_PROJECT env var"
   // apiUrl: "Defaults to the LANGCHAIN_ENDPOINT env var"
   // apiKey: "Defaults to the LANGCHAIN_API_KEY env var"
 };

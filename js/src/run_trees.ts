@@ -51,7 +51,7 @@ export class RunTree implements BaseRun {
       id: uuid.v4(),
       session_name:
         getEnvironmentVariable("LANGCHAIN_PROJECT") ??
-        getEnvironmentVariable("LANGCHAIN_SESSION") ??
+        getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
         "default",
       child_runs: [],
       execution_order: 1,
