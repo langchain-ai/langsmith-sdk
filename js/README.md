@@ -5,7 +5,7 @@ This package contains the TypeScript client for interacting with the [LangSmith 
 To install:
 
 ```bash
-yarn add langchainplus-sdk
+yarn add langsmith
 ```
 
 LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchainjs), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
@@ -94,7 +94,7 @@ A RunTree tracks your application. Each RunTree object is required to have a nam
 - `error`: `Optional<string>` - Any error messages that may have arisen during the call
 
 ```typescript
-import { RunTree, RunTreeConfig } from "langchainplus-sdk";
+import { RunTree, RunTreeConfig } from "langsmith";
 
 const parentRunConfig: RunTreeConfig = {
   name: "My Chat Bot",
@@ -180,8 +180,8 @@ For this example, we will do so using the Client, but you can also do this using
 the web interface, as explained in the [LangSmith docs](https://docs.langchain.plus/docs/).
 
 ```typescript
-import { LangChainPlusClient } from "langchainplus-sdk/client";
-const client = new LangChainPlusClient({
+import { Client } from "langsmith/client";
+const client = new Client({
   // apiUrl: "https://api.langchain.com", // Defaults to the LANGCHAIN_ENDPOINT env var
   // apiKey: "my_api_key", // Defaults to the LANGCHAIN_API_KEY env var
   /* callerOptions: {
@@ -214,7 +214,7 @@ for (const run of runs) {
 You can run evaluations directly using the LangSmith client.
 
 ```ts
-import { StringEvaluator } from "langchainplus-sdk/evaluation";
+import { StringEvaluator } from "langsmith/evaluation";
 
 function jaccardChars(output: string, answer: string): number {
   const predictionChars = new Set(output.trim().toLowerCase());

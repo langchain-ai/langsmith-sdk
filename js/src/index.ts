@@ -1,4 +1,4 @@
-export { LangChainPlusClient } from "./client.js";
+export { Client } from "./client.js";
 
 export { Dataset, Example, TracerSession, Run, Feedback } from "./schemas.js";
 

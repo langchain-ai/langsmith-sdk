@@ -1,5 +1,5 @@
 {
-  "name": "langchainplus-sdk",
+  "name": "langsmith",
   "version": "0.0.15",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "files": [
