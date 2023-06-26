@@ -282,7 +282,6 @@ const statusCommand = new Command("status")
   .action(async () => (await PlusCommand.create()).status());
 
 program
-  .command("plus")
   .description("Manage the LangSmith server")
   .addCommand(startCommand)
   .addCommand(stopCommand)

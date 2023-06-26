@@ -9,22 +9,20 @@ from uuid import uuid4
 
 import pytest
 
-from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.evaluation import StringEvaluator
-from langchainplus_sdk.run_trees import RunTree
-from langchainplus_sdk.schemas import Feedback
-from langchainplus_sdk.utils import LangChainPlusConnectionError, LangChainPlusError
+from langsmith.client import Client
+from langsmith.evaluation import StringEvaluator
+from langsmith.run_trees import RunTree
+from langsmith.schemas import Feedback
+from langsmith.utils import LangChainPlusConnectionError, LangChainPlusError
 
 
 @pytest.fixture
-def langchain_client(monkeypatch: pytest.MonkeyPatch) -> LangChainPlusClient:
+def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    return LangChainPlusClient()
+    return Client()
 
 
-def test_projects(
-    langchain_client: LangChainPlusClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test projects."""
     project_names = set([project.name for project in langchain_client.list_projects()])
     new_project = "__Test Project"
@@ -60,7 +58,7 @@ def test_projects(
         langchain_client.delete_project(project_name=new_project)
 
 
-def test_datasets(langchain_client: LangChainPlusClient) -> None:
+def test_datasets(langchain_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
     blob_data = io.BytesIO(csv_content.encode("utf-8"))
@@ -126,9 +124,7 @@ def test_datasets(langchain_client: LangChainPlusClient) -> None:
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
 
-def test_run_tree(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
-) -> None:
+def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     project_name = "__test_run_tree"
@@ -230,7 +226,7 @@ def test_run_tree(
 
 
 def test_persist_update_run(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test the persist and update methods work as expected."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
@@ -256,7 +252,7 @@ def test_persist_update_run(
 
 
 def test_evaluate_run(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: LangChainPlusClient
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
@@ -332,7 +328,7 @@ def test_evaluate_run(
 def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", uri)
     monkeypatch.setenv("LANGCHAIN_API_KEY", "test")
-    client = LangChainPlusClient()
+    client = Client()
     # expect connect error
     with pytest.raises(LangChainPlusConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")

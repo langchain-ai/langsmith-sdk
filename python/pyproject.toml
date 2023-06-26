@@ -1,14 +1,14 @@
 [tool.poetry]
-name = "langchainplus-sdk"
-version = "0.0.17"
+name = "langsmith"
+version = "0.0.1"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain"]
 license = "MIT"
 readme = "README.md"
-packages = [{include = "langchainplus_sdk"}]
+packages = [{include = "langsmith"}]
 
 [tool.poetry.scripts]
-langchain = "langchainplus_sdk.cli.main:main"
+langsmith = "langsmith.cli.main:main"
 
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4.0"

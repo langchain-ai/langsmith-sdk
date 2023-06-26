@@ -11,16 +11,16 @@ LangSmith is developed and maintained by [LangChain](https://langchain.com/), th
 
 ## Quick Start
 
-To get started with the Python SDK, [install the package](https://pypi.org/project/langchainplus-sdk/), then follow the instructions in the [Python README](python/README.md).
+To get started with the Python SDK, [install the package](https://pypi.org/project/langsmith/), then follow the instructions in the [Python README](python/README.md).
 
 ```bash
-pip install langchainplus-sdk
+pip install langsmith
 ```
 
-To get started with the JavaScript / TypeScript SDK, [install the package](https://www.npmjs.com/package/langchainplus-sdk), then follow the insructions in the [JS README](js/README.md).
+To get started with the JavaScript / TypeScript SDK, [install the package](https://www.npmjs.com/package/langsmith), then follow the insructions in the [JS README](js/README.md).
 
 ```bash
-yarn add langchainplus-sdk
+yarn add langsmith
 ```
 
 ## Documentation

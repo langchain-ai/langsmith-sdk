@@ -5,7 +5,7 @@ This package contains the Python client for interacting with the [LangSmith plat
 To install:
 
 ```bash
-pip install langchainplus-sdk
+pip install langsmith
 ```
 
 LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchain), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
@@ -92,7 +92,7 @@ A RunTree tracks your application. Each RunTree object is required to have a `na
 - `error`: `Optional[str]` - Any error messages that may have arisen during the call
 
 ```python
-from langchainplus_sdk.run_trees import RunTree
+from langsmith.run_trees import RunTree
 
 parent_run = RunTree(
     name="My Chat Bot",
@@ -160,9 +160,9 @@ For this example, we will do so using the Client, but you can also do this using
 the web interface, as explained in the [LangSmith docs](https://docs.langchain.plus/docs/).
 
 ```python
-from langchainplus_sdk import LangChainPlusClient
+from langsmith import Client
 
-client = LangChainPlusClient()
+client = Client()
 dataset_name = "Example Dataset"
 # We will only use examples from the top level AgentExecutor run here,
 # and exclude runs that errored.
@@ -187,7 +187,7 @@ You can run evaluations directly using the LangSmith client.
 
 ```python
 from typing import Optional
-from langchainplus_sdk.evaluation import StringEvaluator
+from langsmith.evaluation import StringEvaluator
 
 
 def jaccard_chars(output: str, answer: str) -> float:

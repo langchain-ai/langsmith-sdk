@@ -2,8 +2,8 @@ from typing import Callable, Dict, Optional
 
 from pydantic import BaseModel
 
-from langchainplus_sdk.evaluation.evaluator import EvaluationResult, RunEvaluator
-from langchainplus_sdk.schemas import Example, Run
+from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
+from langsmith.schemas import Example, Run
 
 
 class StringEvaluator(RunEvaluator, BaseModel):

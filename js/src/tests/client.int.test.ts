@@ -1,11 +1,11 @@
-import { LangChainPlusClient } from "../client.js";
+import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { StringEvaluator } from "../evaluation/string_evaluator.js";
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
 test("Test LangSmith Client Dataset CRD", async () => {
-  const client = new LangChainPlusClient({
+  const client = new Client({
     apiUrl: "http://localhost:1984",
   });
 
@@ -77,7 +77,7 @@ test("Test LangSmith Client Dataset CRD", async () => {
 
 // Test Project Creation, List, Read, Delete
 test("Test LangSmith Client Project CRD", async () => {
-  const client = new LangChainPlusClient({
+  const client = new Client({
     apiUrl: "http://localhost:1984",
   });
 
@@ -118,7 +118,7 @@ test("Test LangSmith Client Project CRD", async () => {
 });
 
 test("Test evaluate run", async () => {
-  const langchainClient = new LangChainPlusClient({
+  const langchainClient = new Client({
     apiUrl: "http://localhost:1984",
   });
 
@@ -232,7 +232,7 @@ test("Test evaluate run", async () => {
 });
 
 test("Test persist update run", async () => {
-  const langchainClient = new LangChainPlusClient({
+  const langchainClient = new Client({
     apiUrl: "http://localhost:1984",
   });
   const projectName = "__test_persist_update_run";

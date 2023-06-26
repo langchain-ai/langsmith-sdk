@@ -10,9 +10,9 @@ from uuid import UUID, uuid4
 
 from pydantic import Field, PrivateAttr, root_validator, validator
 
-from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.schemas import RunBase, RunTypeEnum
-from langchainplus_sdk.utils import get_runtime_environment
+from langsmith.client import Client
+from langsmith.schemas import RunBase, RunTypeEnum
+from langsmith.utils import get_runtime_environment
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,7 @@ class RunTree(RunBase):
     execution_order: int = 1
     child_execution_order: int = Field(default=1, exclude=True)
     extra: Dict = Field(default_factory=dict)
-    client: LangChainPlusClient = Field(
-        default_factory=LangChainPlusClient, exclude=True
-    )
+    client: Client = Field(default_factory=Client, exclude=True)
     executor: ThreadPoolExecutor = Field(
         default_factory=_make_thread_pool, exclude=True
     )
