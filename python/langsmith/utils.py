@@ -92,11 +92,11 @@ def raise_for_status_with_text(response: Response) -> None:
 def get_runtime_environment() -> dict:
     """Get information about the environment."""
     # Lazy import to avoid circular imports
-    from langchainplus_sdk import __version__
+    from langsmith import __version__
 
     return {
         "sdk_version": __version__,
-        "library": "langchainplus_sdk",
+        "library": "langsmith",
         "platform": platform.platform(),
         "runtime": "python",
         "runtime_version": platform.python_version(),

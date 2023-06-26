@@ -10,8 +10,8 @@ from functools import wraps
 from typing import Any, Callable, Dict, Generator, Optional, Union
 from uuid import UUID
 
-from langchainplus_sdk.run_trees import RunTree
-from langchainplus_sdk.schemas import RunTypeEnum
+from langsmith.run_trees import RunTree
+from langsmith.schemas import RunTypeEnum
 
 logger = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](

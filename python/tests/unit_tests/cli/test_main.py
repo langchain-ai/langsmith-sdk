@@ -1,5 +1,5 @@
 """Test utilities in the LangSmith server."""
-from langchainplus_sdk.cli.main import _dumps_yaml
+from langsmith.cli.main import _dumps_yaml
 
 
 def test__dumps_yaml() -> None:
