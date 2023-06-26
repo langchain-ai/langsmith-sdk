@@ -19,7 +19,7 @@ import {
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
-interface LangChainPlusClientConfig {
+interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
@@ -97,7 +97,7 @@ const raiseForStatus = async (response: Response, operation: string) => {
   }
 };
 
-export class LangChainPlusClient {
+export class Client {
   private apiKey?: string;
 
   private apiUrl: string;
@@ -106,8 +106,8 @@ export class LangChainPlusClient {
 
   private timeout_ms: number;
 
-  constructor(config: LangChainPlusClientConfig = {}) {
-    const defaultConfig = LangChainPlusClient.getDefaultClientConfig();
+  constructor(config: ClientConfig = {}) {
+    const defaultConfig = Client.getDefaultClientConfig();
 
     this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
     this.apiKey = config.apiKey ?? defaultConfig.apiKey;

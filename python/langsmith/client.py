@@ -34,8 +34,8 @@ from tenacity import (
     wait_exponential,
 )
 
-from langchainplus_sdk.evaluation.evaluator import RunEvaluator
-from langchainplus_sdk.schemas import (
+from langsmith.evaluation.evaluator import RunEvaluator
+from langsmith.schemas import (
     APIFeedbackSource,
     Dataset,
     DatasetCreate,
@@ -54,7 +54,7 @@ from langchainplus_sdk.schemas import (
     TracerSession,
     TracerSessionResult,
 )
-from langchainplus_sdk.utils import (
+from langsmith.utils import (
     LangChainPlusAPIError,
     LangChainPlusError,
     LangChainPlusUserError,
@@ -100,7 +100,7 @@ def _serialize_json(obj: Any) -> str:
     raise TypeError("Type %s not serializable" % type(obj))
 
 
-class LangChainPlusClient(BaseSettings):
+class Client(BaseSettings):
     """Client for interacting with the LangChain+ API."""
 
     api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
@@ -134,7 +134,7 @@ class LangChainPlusClient(BaseSettings):
 
     def __repr__(self) -> str:
         """Return a string representation of the instance with a link to the URL."""
-        return f"LangChainPlusClient (API URL: {self.api_url})"
+        return f"Client (API URL: {self.api_url})"
 
     @property
     def _headers(self) -> Dict[str, str]:

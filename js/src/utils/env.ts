@@ -67,7 +67,7 @@ export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
     const env = getEnv();
 
     runtimeEnvironment = {
-      library: "langchainplus-sdk",
+      library: "langsmith",
       runtime: env,
     };
   }

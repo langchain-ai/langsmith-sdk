@@ -1,7 +1,7 @@
 import * as uuid from "uuid";
 import { BaseRun, KVMap, RunCreate, RunType, RunUpdate } from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
-import { LangChainPlusClient } from "./client.js";
+import { Client } from "./client.js";
 
 export interface RunTreeConfig {
   name: string;
@@ -20,7 +20,7 @@ export interface RunTreeConfig {
   inputs?: KVMap;
   outputs?: KVMap;
   reference_example_id?: string;
-  client?: LangChainPlusClient;
+  client?: Client;
 }
 
 export class RunTree implements BaseRun {
@@ -40,7 +40,7 @@ export class RunTree implements BaseRun {
   inputs: KVMap;
   outputs?: KVMap;
   reference_example_id?: string;
-  client: LangChainPlusClient;
+  client: Client;
 
   constructor(config: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
@@ -65,7 +65,7 @@ export class RunTree implements BaseRun {
       serialized: {},
       inputs: {},
       extra: {},
-      client: new LangChainPlusClient({}),
+      client: new Client({}),
     };
   }
 

@@ -11,7 +11,7 @@ from typing import Dict, Generator, List, Mapping, Optional, Union, cast
 
 import requests
 
-from langchainplus_sdk.utils import get_runtime_environment
+from langsmith.utils import get_runtime_environment
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -156,7 +156,7 @@ def create_ngrok_config(
     config_path.unlink(missing_ok=True)
 
 
-class PlusCommand:
+class LangSmithCommand:
     """Manage the LangSmith Tracing server."""
 
     def __init__(self) -> None:
@@ -347,11 +347,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(description="LangSmith CLI commands")
 
-    server_command = PlusCommand()
-    server_parser = subparsers.add_parser("plus", description=server_command.__doc__)
-    server_subparsers = server_parser.add_subparsers()
-
-    server_start_parser = server_subparsers.add_parser(
+    server_command = LangSmithCommand()
+    server_start_parser = subparsers.add_parser(
         "start", description="Start the LangSmith server."
     )
     server_start_parser.add_argument(
@@ -387,12 +384,12 @@ def main() -> None:
         )
     )
 
-    server_stop_parser = server_subparsers.add_parser(
+    server_stop_parser = subparsers.add_parser(
         "stop", description="Stop the LangSmith server."
     )
     server_stop_parser.set_defaults(func=lambda args: server_command.stop())
 
-    server_pull_parser = server_subparsers.add_parser(
+    server_pull_parser = subparsers.add_parser(
         "pull", description="Pull the latest LangSmith images."
     )
     server_pull_parser.add_argument(
@@ -401,11 +398,11 @@ def main() -> None:
         help="Use the development version of the LangSmith image.",
     )
     server_pull_parser.set_defaults(func=lambda args: server_command.pull(dev=args.dev))
-    server_logs_parser = server_subparsers.add_parser(
+    server_logs_parser = subparsers.add_parser(
         "logs", description="Show the LangSmith server logs."
     )
     server_logs_parser.set_defaults(func=lambda args: server_command.logs())
-    server_status_parser = server_subparsers.add_parser(
+    server_status_parser = subparsers.add_parser(
         "status", description="Show the LangSmith server status."
     )
     server_status_parser.set_defaults(func=lambda args: server_command.status())

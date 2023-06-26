@@ -1,9 +1,9 @@
-import { LangChainPlusClient } from "../client.js";
+import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 
 test("Test persisting runs and adding feedback", async () => {
   const projectName = `__test_run_tree`;
-  const langchainClient = new LangChainPlusClient({
+  const langchainClient = new Client({
     apiUrl: "http://localhost:1984",
   });
   const projects = await langchainClient.listProjects();
@@ -125,7 +125,7 @@ test("Test persisting runs and adding feedback", async () => {
 
 test("Test post and patch run", async () => {
   const projectName = `__test_run_tree`;
-  const langchainClient = new LangChainPlusClient({
+  const langchainClient = new Client({
     apiUrl: "http://localhost:1984",
   });
   const projects = await langchainClient.listProjects();

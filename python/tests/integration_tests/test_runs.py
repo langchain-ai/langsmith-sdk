@@ -6,17 +6,17 @@ from typing import Generator, Optional
 
 import pytest
 
-from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.run_helpers import trace, traceable
-from langchainplus_sdk.run_trees import RunTree
-from langchainplus_sdk.schemas import RunTypeEnum
+from langsmith.client import Client
+from langsmith.run_helpers import trace, traceable
+from langsmith.run_trees import RunTree
+from langsmith.schemas import RunTypeEnum
 
 
 @pytest.fixture
-def langchain_client() -> Generator[LangChainPlusClient, None, None]:
+def langchain_client() -> Generator[Client, None, None]:
     original = os.environ.get("LANGCHAIN_ENDPOINT")
     os.environ["LANGCHAIN_ENDPOINT"] = "http://localhost:1984"
-    yield LangChainPlusClient()
+    yield Client()
     if original is None:
         os.environ.pop("LANGCHAIN_ENDPOINT")
     else:
@@ -24,7 +24,7 @@ def langchain_client() -> Generator[LangChainPlusClient, None, None]:
 
 
 def test_nested_runs(
-    langchain_client: LangChainPlusClient,
+    langchain_client: Client,
 ):
     project_name = "__My Tracer Project - test_nested_runs"
     if project_name in [project.name for project in langchain_client.list_projects()]:
@@ -62,7 +62,7 @@ def test_nested_runs(
 
 
 @pytest.mark.asyncio
-async def test_nested_async_runs(langchain_client: LangChainPlusClient):
+async def test_nested_async_runs(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs"
     if project_name in [project.name for project in langchain_client.list_projects()]:
@@ -115,7 +115,7 @@ async def test_nested_async_runs(langchain_client: LangChainPlusClient):
 
 
 @pytest.mark.asyncio
-async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlusClient):
+async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs_with_threadpol"
     if project_name in [project.name for project in langchain_client.list_projects()]:
@@ -183,7 +183,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlus
 
 
 @pytest.mark.asyncio
-async def test_context_manager(langchain_client: LangChainPlusClient) -> None:
+async def test_context_manager(langchain_client: Client) -> None:
     project_name = "__My Tracer Project - test_context_manager"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)

@@ -3,7 +3,7 @@ from typing import Dict, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from langchainplus_sdk.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
+from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
 
 class EvaluationResult(BaseModel):
