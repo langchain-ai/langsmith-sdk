@@ -76,7 +76,6 @@ export interface RunCreate extends BaseRun {
   session_name?: string;
 }
 
-
 export interface RunUpdate {
   end_time?: number;
   extra?: KVMap;
