@@ -50,7 +50,6 @@ from langsmith.schemas import (
     Run,
     RunBase,
     RunTypeEnum,
-    RunUpdate,
     TracerSession,
     TracerSessionResult,
 )
@@ -294,15 +293,12 @@ class Client(BaseSettings):
         **kwargs: Any,
     ) -> None:
         """Update a run to the LangChain+ API."""
-        run_update = RunUpdate(
-            **kwargs,
-        )
         headers = {**self._headers, "Accept": "application/json"}
         request_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
             request_kwargs={
-                "data": run_update.json(),
+                "data": kwargs,
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
