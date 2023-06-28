@@ -78,10 +78,13 @@ export interface RunCreate extends BaseRun {
 
 export interface RunUpdate {
   end_time?: number;
+  extra?: KVMap;
   error?: string;
   outputs?: KVMap;
   parent_run_id?: string;
   reference_example_id?: string;
+  events?: KVMap[];
+  session_id?: string;
 }
 export interface ExampleCreate extends BaseExample {
   id?: string;
