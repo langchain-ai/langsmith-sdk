@@ -113,6 +113,17 @@ class Run(RunBase):
     feedback_stats: Optional[Dict[str, Any]] = None
 
 
+# class RunUpdate(BaseModel):
+#     end_time: Optional[datetime] = None
+#     extra: Optional[dict] = None
+#     error: Optional[str] = None
+#     outputs: Optional[dict] = None
+#     parent_run_id: Optional[UUID] = None
+#     reference_example_id: Optional[UUID] = None
+#     events: Optional[List[Dict]] = None
+#     session_id: Optional[UUID] = None
+
+
 class FeedbackSourceBase(BaseModel):
     type: str
     metadata: Optional[Dict[str, Any]] = None

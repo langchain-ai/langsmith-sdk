@@ -4,6 +4,7 @@ import os
 import random
 import string
 from datetime import datetime, timedelta
+import time
 from typing import List, Optional
 from uuid import uuid4
 
@@ -249,7 +250,12 @@ def test_persist_update_run(
     run["outputs"] = {"output": ["Hi"]}
     run["extra"]["foo"] = "bar"
     langchain_client.update_run(run["id"], **run)
-    stored_run = langchain_client.read_run(run["id"])
+    for _ in range(10):
+        # Async updates..
+        stored_run = langchain_client.read_run(run["id"])
+        if "foo" in stored_run.extra:
+            break
+        time.sleep(1)
     assert stored_run.id == run["id"]
     assert stored_run.outputs == run["outputs"]
     assert stored_run.extra.get("foo") == "bar"
