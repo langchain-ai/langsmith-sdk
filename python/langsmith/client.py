@@ -103,8 +103,7 @@ class Client(BaseSettings):
     """Client for interacting with the LangChain+ API."""
 
     api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
-    api_url: str = Field(default="http://localhost:1984",
-                         env="LANGCHAIN_ENDPOINT")
+    api_url: str = Field(default="http://localhost:1984", env="LANGCHAIN_ENDPOINT")
     retry_config: Mapping[str, Any] = Field(
         default_factory=_default_retry_config, exclude=True
     )
@@ -312,8 +311,7 @@ class Client(BaseSettings):
         runs: Dict[UUID, Run] = {}
         for child_run in sorted(child_runs, key=lambda r: r.execution_order):
             if child_run.parent_run_id is None:
-                raise LangChainPlusError(
-                    f"Child run {child_run.id} has no parent")
+                raise LangChainPlusError(f"Child run {child_run.id} has no parent")
             treemap[child_run.parent_run_id].append(child_run)
             runs[child_run.id] = child_run
         run.child_runs = treemap.pop(run.id, [])
@@ -351,13 +349,11 @@ class Client(BaseSettings):
         """List runs from the LangChain+ API."""
         if project_name is not None:
             if project_id is not None:
-                raise ValueError(
-                    "Only one of project_id or project_name may be given")
+                raise ValueError("Only one of project_id or project_name may be given")
             project_id = self.read_project(project_name=project_name).id
         if dataset_name is not None:
             if dataset_id is not None:
-                raise ValueError(
-                    "Only one of dataset_id or dataset_name may be given")
+                raise ValueError("Only one of dataset_id or dataset_name may be given")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         query_params = {
             "session": project_id,
@@ -730,8 +726,7 @@ class Client(BaseSettings):
         correction: Union[str, dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,
-        feedback_source_type: Union[FeedbackSourceType,
-                                    str] = FeedbackSourceType.API,
+        feedback_source_type: Union[FeedbackSourceType, str] = FeedbackSourceType.API,
     ) -> Feedback:
         """Create a feedback in the LangChain+ API.
 
@@ -754,8 +749,7 @@ class Client(BaseSettings):
         elif feedback_source_type == FeedbackSourceType.MODEL:
             feedback_source = ModelFeedbackSource(metadata=source_info)
         else:
-            raise ValueError(
-                f"Unknown feedback source type {feedback_source_type}")
+            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
         feedback = FeedbackCreate(
             run_id=run_id,
             key=key,

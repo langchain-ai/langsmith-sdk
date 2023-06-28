@@ -3,8 +3,8 @@ import io
 import os
 import random
 import string
-from datetime import datetime, timedelta
 import time
+from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import uuid4
 
@@ -243,7 +243,7 @@ def test_persist_update_run(
         project_name=project_name,
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
         execution_order=1,
-        start_time = start_time,
+        start_time=start_time,
         extra={"extra": "extra"},
     )
     langchain_client.create_run(**run)
@@ -253,12 +253,12 @@ def test_persist_update_run(
     for _ in range(10):
         # Async updates..
         stored_run = langchain_client.read_run(run["id"])
-        if "foo" in stored_run.extra:
+        if stored_run.extra is not None and "foo" in stored_run.extra:
             break
         time.sleep(1)
     assert stored_run.id == run["id"]
     assert stored_run.outputs == run["outputs"]
-    assert stored_run.extra.get("foo") == "bar"
+    assert stored_run.extra is not None and stored_run.extra.get("foo") == "bar"
     assert stored_run.start_time == run["start_time"]
     langchain_client.delete_project(project_name=project_name)
 

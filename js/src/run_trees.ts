@@ -41,6 +41,7 @@ export class RunTree implements BaseRun {
   outputs?: KVMap;
   reference_example_id?: string;
   client: Client;
+  events?: KVMap[] | undefined;
 
   constructor(config: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
@@ -159,6 +160,8 @@ export class RunTree implements BaseRun {
       outputs: this.outputs,
       parent_run_id: this.parent_run?.id,
       reference_example_id: this.reference_example_id,
+      extra: this.extra,
+      events: this.events,
     };
 
     await this.client.updateRun(this.id, runUpdate);
