@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchainplus-sdk"
-version = "0.0.17"
+version = "0.0.18"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain"]
 license = "MIT"

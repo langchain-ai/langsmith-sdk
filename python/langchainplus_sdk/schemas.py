@@ -82,6 +82,8 @@ class RunTypeEnum(str, Enum):
     tool = "tool"
     chain = "chain"
     llm = "llm"
+    retriever = "retriever"
+    embedding = "embedding"
 
 
 class RunBase(BaseModel):

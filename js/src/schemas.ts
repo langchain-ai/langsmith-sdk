@@ -33,7 +33,7 @@ export interface TracerSessionResult extends TracerSession {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type KVMap = Record<string, any>;
-export type RunType = "llm" | "chain" | "tool";
+export type RunType = "llm" | "chain" | "tool" | "retriever" | "llm";
 export type ScoreType = number | boolean | null;
 export type ValueType = number | boolean | string | object | null;
 
