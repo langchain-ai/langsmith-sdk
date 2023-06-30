@@ -92,7 +92,7 @@ class RunBase(BaseModel):
     id: UUID
     name: str
     start_time: datetime
-    run_type: RunTypeEnum
+    run_type: str
     end_time: Optional[datetime] = None
     extra: Optional[dict] = None
     error: Optional[str] = None

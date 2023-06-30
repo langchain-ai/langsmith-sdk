@@ -7,11 +7,10 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Dict, Generator, Optional, Union
+from typing import Any, Callable, Dict, Generator, Optional
 from uuid import UUID
 
 from langchainplus_sdk.run_trees import RunTree
-from langchainplus_sdk.schemas import RunTypeEnum
 
 logger = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
@@ -50,7 +49,7 @@ def _get_inputs(
 
 
 def traceable(
-    run_type: Union[RunTypeEnum, str],
+    run_type: str,
     *,
     name: Optional[str] = None,
     extra: Optional[Dict] = None,
@@ -90,7 +89,7 @@ def traceable(
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
                     name=name_,
-                    run_type=run_type,
+                    run_type=str(run_type),
                     serialized={
                         "name": name,
                         "signature": str(signature),
@@ -108,7 +107,7 @@ def traceable(
                         "doc": docstring,
                     },
                     inputs=inputs,
-                    run_type=run_type,
+                    run_type=str(run_type),
                     reference_example_id=reference_example_id,
                     project_name=project_name_,
                     extra=extra_inner,
@@ -224,7 +223,7 @@ def traceable(
 @contextmanager
 def trace(
     name: str,
-    run_type: Union[RunTypeEnum, str],
+    run_type: str,
     *,
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
@@ -241,14 +240,14 @@ def trace(
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
             name=name,
-            run_type=run_type,
+            run_type=str(run_type),
             extra=extra_outer,
             inputs=inputs,
         )
     else:
         new_run = RunTree(
             name=name,
-            run_type=run_type,
+            run_type=str(run_type),
             extra=extra_outer,
             executor=executor,
             project_name=project_name_,

@@ -48,7 +48,7 @@ export interface BaseRun {
   name: string;
   serialized?: object;
   inputs: KVMap;
-  run_type: RunType;
+  run_type: string;
   start_time?: number;
   end_time?: number;
   extra?: KVMap;

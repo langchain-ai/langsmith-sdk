@@ -5,13 +5,13 @@ import logging
 import os
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
-from typing import Dict, List, Optional, Union, cast
+from typing import Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
 from pydantic import Field, PrivateAttr, root_validator, validator
 
 from langchainplus_sdk.client import LangChainPlusClient
-from langchainplus_sdk.schemas import RunBase, RunTypeEnum
+from langchainplus_sdk.schemas import RunBase
 from langchainplus_sdk.utils import get_runtime_environment
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ class RunTree(RunBase):
     def create_child(
         self,
         name: str,
-        run_type: Union[str, RunTypeEnum],
+        run_type: str,
         *,
         run_id: Optional[UUID] = None,
         serialized: Optional[Dict] = None,
@@ -126,7 +126,7 @@ class RunTree(RunBase):
             inputs=inputs or {},
             outputs=outputs or {},
             error=error,
-            run_type=run_type,
+            run_type=str(run_type),
             reference_example_id=reference_example_id,
             start_time=start_time or datetime.utcnow(),
             end_time=end_time,

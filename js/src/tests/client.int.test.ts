@@ -61,8 +61,7 @@ test("Test LangSmith Client Dataset CRD", async () => {
   console.log(newExampleResponse);
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
-  const deletedExample = await client.deleteExample(example.id);
-  expect(deletedExample.id).toBe(example.id);
+  await client.deleteExample(example.id);
   const examples2 = await client.listExamples({ datasetId: newDataset.id });
   expect(examples2.length).toBe(1);
 

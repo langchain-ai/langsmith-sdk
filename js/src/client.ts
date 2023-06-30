@@ -9,7 +9,6 @@ import {
   KVMap,
   Run,
   RunCreate,
-  RunType,
   RunUpdate,
   ScoreType,
   TracerSession,
@@ -30,7 +29,7 @@ interface ListRunsParams {
   projectId?: string;
   projectName?: string;
   executionOrder?: number;
-  runType?: RunType;
+  runType?: string;
   error?: boolean;
   id?: string[];
   limit?: number;
@@ -63,7 +62,7 @@ interface FeedbackCreate {
 interface CreateRunParams {
   name: string;
   inputs: KVMap;
-  run_type: RunType;
+  run_type: string;
   execution_order?: number;
   id?: string;
   start_time?: number;

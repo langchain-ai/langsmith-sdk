@@ -1,11 +1,11 @@
 import * as uuid from "uuid";
-import { BaseRun, KVMap, RunCreate, RunType, RunUpdate } from "./schemas.js";
+import { BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { LangChainPlusClient } from "./client.js";
 
 export interface RunTreeConfig {
   name: string;
-  run_type: RunType;
+  run_type: string;
   id?: string;
   project_name?: string;
   execution_order?: number;

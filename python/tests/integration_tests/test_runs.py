@@ -9,7 +9,6 @@ import pytest
 from langchainplus_sdk.client import LangChainPlusClient
 from langchainplus_sdk.run_helpers import trace, traceable
 from langchainplus_sdk.run_trees import RunTree
-from langchainplus_sdk.schemas import RunTypeEnum
 
 
 @pytest.fixture
@@ -158,11 +157,11 @@ async def test_nested_async_runs_with_threadpool(langchain_client: LangChainPlus
     executor.shutdown(wait=True)
     runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 17
-    assert sum([run.run_type == RunTypeEnum.llm for run in runs]) == 8
+    assert sum([run.run_type == "llm" for run in runs]) == 8
     assert sum([run.name == "async_llm" for run in runs]) == 6
     assert sum([run.name == "my_llm_run" for run in runs]) == 2
-    assert sum([run.run_type == RunTypeEnum.tool for run in runs]) == 6
-    assert sum([run.run_type == RunTypeEnum.chain for run in runs]) == 3
+    assert sum([run.run_type == "tool" for run in runs]) == 6
+    assert sum([run.run_type == "chain" for run in runs]) == 3
     # Check that all instances of async_llm have a parent with
     # the same name (my_tool_run)
     name_to_ids_map = defaultdict(list)
@@ -194,12 +193,12 @@ async def test_context_manager(langchain_client: LangChainPlusClient) -> None:
 
     executor = ThreadPoolExecutor(max_workers=1)
     with trace(
-        "my_context", RunTypeEnum.chain, project_name=project_name, executor=executor
+        "my_context", "chain", project_name=project_name, executor=executor
     ) as run_tree:
         await my_llm("foo")
-        with trace("my_context2", RunTypeEnum.chain, run_tree=run_tree) as run_tree2:
+        with trace("my_context2", "chain", run_tree=run_tree) as run_tree2:
             runs = [my_llm("baz"), my_llm("qux")]
-            with trace("my_context3", RunTypeEnum.chain, run_tree=run_tree2):
+            with trace("my_context3", "chain", run_tree=run_tree2):
                 await my_llm("quux")
                 await my_llm("corge")
             await asyncio.gather(*runs)

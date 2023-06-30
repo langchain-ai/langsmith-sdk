@@ -49,7 +49,6 @@ from langchainplus_sdk.schemas import (
     ModelFeedbackSource,
     Run,
     RunBase,
-    RunTypeEnum,
     RunUpdate,
     TracerSession,
     TracerSessionResult,
@@ -247,12 +246,19 @@ class LangChainPlusClient(BaseSettings):
         self,
         name: str,
         inputs: Dict[str, Any],
-        run_type: Union[str, RunTypeEnum],
+        run_type: str,
         *,
         execution_order: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
-        """Persist a run to the LangChain+ API."""
+        """Persist a run to the LangChain+ API.
+
+        Args:
+            name: The name of the run.
+            inputs: The inputs to the run.
+            run_type: The type of the run. One of "llm", "tool", "chain",
+                "retriever", or "embeddings
+        """
         project_name = kwargs.pop(
             "project_name",
             kwargs.pop(
