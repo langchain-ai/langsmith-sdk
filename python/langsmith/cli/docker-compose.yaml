@@ -1,5 +1,7 @@
 version: '3'
 services:
+  langchain-playground:
+    image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-playground:latest
   langchain-frontend:
     image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-frontend:latest
     ports:
@@ -8,6 +10,7 @@ services:
       - REACT_APP_BACKEND_URL=http://localhost:1984
     depends_on:
       - langchain-backend
+      - langchain-playground
     volumes:
       - ./conf/nginx.conf:/etc/nginx/default.conf:ro
   langchain-backend:
