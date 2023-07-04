@@ -5,8 +5,10 @@ inputs:
     description: "Python version"
     required: true
   docker_username:
+    description: "Docker username"
     required: true
   docker_password:
+    description: "Docker password"
     required: true
 runs:
   using: "composite"
@@ -40,8 +42,8 @@ runs:
       env:
         LANGCHAIN_ENDPOINT: http://127.0.0.1:1984
       run: |
-        poetry run langchain plus start --dev
-        poetry run langchain plus status
+        poetry run langsmith start --dev
+        poetry run langsmith status
         sleep 5
         counter=0
         max_tries=20

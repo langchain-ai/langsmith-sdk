@@ -533,7 +533,7 @@ export class Client {
   }: {
     datasetId?: string;
     datasetName?: string;
-  }): Promise<Dataset> {
+  }): Promise<void> {
     let path = "/datasets";
     let datasetId_ = datasetId;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -557,8 +557,7 @@ export class Client {
         `Failed to delete ${path}: ${response.status} ${response.statusText}`
       );
     }
-    const results = await response.json();
-    return results as Dataset;
+    await response.json();
   }
 
   public async createExample(
@@ -652,7 +651,7 @@ export class Client {
     return response as Example[];
   }
 
-  public async deleteExample(exampleId: string): Promise<Example> {
+  public async deleteExample(exampleId: string): Promise<void> {
     const path = `/examples/${exampleId}`;
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
@@ -664,8 +663,7 @@ export class Client {
         `Failed to delete ${path}: ${response.status} ${response.statusText}`
       );
     }
-    const result = await response.json();
-    return result as Example;
+    await response.json();
   }
 
   public async updateExample(
@@ -787,7 +785,7 @@ export class Client {
     return response;
   }
 
-  public async deleteFeedback(feedbackId: string): Promise<Feedback> {
+  public async deleteFeedback(feedbackId: string): Promise<void> {
     const path = `/feedback/${feedbackId}`;
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
@@ -799,8 +797,7 @@ export class Client {
         `Failed to delete ${path}: ${response.status} ${response.statusText}`
       );
     }
-    const result = await response.json();
-    return result as Feedback;
+    await response.json();
   }
 
   public async listFeedback({
