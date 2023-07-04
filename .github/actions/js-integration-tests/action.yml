@@ -34,8 +34,8 @@ runs:
 
     - name: Run JS integration tests
       run: |
-        node dist/cli/main.cjs plus start --dev
-        node dist/cli/main.cjs plus status
+        node dist/cli/main.cjs start --dev
+        node dist/cli/main.cjs status
         sleep 5
         counter=0
         max_tries=20
