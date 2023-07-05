@@ -37,12 +37,10 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
     langchain_client.create_project(
         project_name=new_project,
-        mode="eval",
         project_extra={"evaluator": "THE EVALUATOR"},
     )
     project = langchain_client.read_project(project_name=new_project)
     assert project.name == new_project
-    assert project.mode == "eval"
     project_names = set([sess.name for sess in langchain_client.list_projects()])
     assert new_project in project_names
     runs = list(langchain_client.list_runs(project_name=new_project))
