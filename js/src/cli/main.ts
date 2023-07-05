@@ -151,7 +151,7 @@ class PlusCommand {
     if (args.openaiApiKey) {
       setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
     }
-
+    await this.pull(args);
     if (args.expose) {
       await this.startAndExpose(args.ngrokAuthtoken);
     } else {
@@ -179,7 +179,6 @@ class PlusCommand {
       "-f",
       this.dockerComposeFile,
       "up",
-      "--pull=always",
       "--quiet-pull",
       "--wait",
     ];
@@ -199,7 +198,6 @@ class PlusCommand {
       "-f",
       this.ngrokPath,
       "up",
-      "--pull=always",
       "--quiet-pull",
       "--wait",
     ];
