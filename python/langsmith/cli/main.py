@@ -182,7 +182,6 @@ class LangSmithCommand:
             [
                 *command,
                 "up",
-                "--pull=always",
                 "--quiet-pull",
                 "--wait",
             ]
@@ -209,7 +208,6 @@ class LangSmithCommand:
                 [
                     *command,
                     "up",
-                    "--pull=always",
                     "--quiet-pull",
                     "--wait",
                 ]
@@ -273,6 +271,7 @@ class LangSmithCommand:
             os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
+        self.pull(dev=dev)
         if expose:
             self._start_and_expose(auth_token=auth_token)
         else:
