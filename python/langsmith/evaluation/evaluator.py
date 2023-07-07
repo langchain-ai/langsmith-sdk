@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from typing import Dict, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
@@ -21,12 +21,7 @@ class EvaluationResult(BaseModel):
     """What the correct value should be, if applicable."""
     evaluator_info: Dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
-
-    class Config:
-        """Pydantic model configuration."""
-
-        frozen = True
-        allow_extra = False
+    model_config = ConfigDict(frozen=True, allow_extra=False)
 
 
 class RunEvaluator:

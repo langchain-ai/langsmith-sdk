@@ -6,7 +6,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt
+from pydantic import (BaseModel, ConfigDict, Field, StrictBool, StrictFloat,
+                      StrictInt)
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
@@ -19,15 +20,13 @@ class ExampleBase(BaseModel):
     dataset_id: UUID
     inputs: Dict[str, Any]
     outputs: Optional[Dict[str, Any]] = Field(default=None)
-
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class ExampleCreate(ExampleBase):
     """Example create model."""
 
-    id: Optional[UUID]
+    id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -46,9 +45,7 @@ class ExampleUpdate(BaseModel):
     dataset_id: Optional[UUID] = None
     inputs: Optional[Dict[str, Any]] = None
     outputs: Optional[Dict[str, Any]] = None
-
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class DatasetBase(BaseModel):
@@ -56,9 +53,7 @@ class DatasetBase(BaseModel):
 
     name: str
     description: Optional[str] = None
-
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class DatasetCreate(DatasetBase):
@@ -96,7 +91,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     extra: Optional[dict] = None
     error: Optional[str] = None
-    serialized: Optional[dict]
+    serialized: Optional[dict] = None
     events: Optional[List[Dict]] = None
     inputs: dict
     outputs: Optional[dict] = None
@@ -118,9 +113,7 @@ class Run(RunBase):
 class FeedbackSourceBase(BaseModel):
     type: str
     metadata: Optional[Dict[str, Any]] = None
-
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class APIFeedbackSource(FeedbackSourceBase):
@@ -166,9 +159,7 @@ class FeedbackBase(BaseModel):
     """Correction for the run."""
     feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback."""
-
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class FeedbackCreate(FeedbackBase):
@@ -212,23 +203,23 @@ class TracerSessionResult(TracerSession):
     """TracerSession schema returned when reading a project
     by ID. Sessions are also referred to as "Projects" in the UI."""
 
-    run_count: Optional[int]
+    run_count: Optional[int] = None
     """The number of runs in the project."""
-    latency_p50: Optional[timedelta]
+    latency_p50: Optional[timedelta] = None
     """The median (50th percentile) latency for the project."""
-    latency_p99: Optional[timedelta]
+    latency_p99: Optional[timedelta] = None
     """The 99th percentile latency for the project."""
-    total_tokens: Optional[int]
+    total_tokens: Optional[int] = None
     """The total number of tokens consumed in the project."""
-    prompt_tokens: Optional[int]
+    prompt_tokens: Optional[int] = None
     """The total number of prompt tokens consumed in the project."""
-    completion_tokens: Optional[int]
+    completion_tokens: Optional[int] = None
     """The total number of completion tokens consumed in the project."""
-    last_run_start_time: Optional[datetime]
+    last_run_start_time: Optional[datetime] = None
     """The start time of the last run in the project."""
-    feedback_stats: Optional[Dict[str, Any]]
+    feedback_stats: Optional[Dict[str, Any]] = None
     """Feedback stats for the project."""
-    reference_dataset_ids: Optional[List[UUID]]
+    reference_dataset_ids: Optional[List[UUID]] = None
     """The reference dataset IDs this project's runs were generated on."""
-    run_facets: Optional[List[Dict[str, Any]]]
+    run_facets: Optional[List[Dict[str, Any]]] = None
     """Facets for the runs in the project."""

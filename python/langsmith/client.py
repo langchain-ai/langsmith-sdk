@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
-from pydantic import BaseSettings, Field, root_validator
+from pydantic import ConfigDict, model_validator, Field
 from requests import Response
 from tenacity import (
     before_sleep_log,
@@ -62,6 +62,7 @@ from langsmith.utils import (
     request_with_retries,
     xor_args,
 )
+from pydantic_settings import BaseSettings
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -90,6 +91,12 @@ def _default_retry_config() -> Dict[str, Any]:
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
 
+def _default_api_key() -> Optional[str]:
+    return os.environ.get("LANGCHAIN_API_KEY")
+
+def _default_endpoint() -> Optional[str]:
+    return os.environ.get("LANGCHAIN_API_KEY")
+
 
 def _serialize_json(obj: Any) -> str:
     if isinstance(obj, datetime):
@@ -102,14 +109,16 @@ def _serialize_json(obj: Any) -> str:
 class Client(BaseSettings):
     """Client for interacting with the LangChain+ API."""
 
-    api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
-    api_url: str = Field(default="http://localhost:1984", env="LANGCHAIN_ENDPOINT")
+    api_key: Optional[str] = Field(default=None, default_factory=_default_api_key)
+    api_url: str = Field(default="http://localhost:1984", default_factory=_default_endpoint)
     retry_config: Mapping[str, Any] = Field(
         default_factory=_default_retry_config, exclude=True
     )
     timeout_ms: int = Field(default=4000)
+    model_config = ConfigDict(extra='allow')
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def validate_api_key_if_hosted(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Verify API key is provided if url not localhost."""
         api_url: str = values.get("api_url", "http://localhost:1984")

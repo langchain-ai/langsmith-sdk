@@ -12,9 +12,10 @@ langsmith = "langsmith.cli.main:main"
 
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4.0"
-pydantic = "^1"
+pydantic = "^2"
 requests = "^2"
 tenacity = "^8.1.0"
+pydantic-settings = "^2.0.0"
 
 
 [tool.poetry.group.dev.dependencies]

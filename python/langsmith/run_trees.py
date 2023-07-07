@@ -8,7 +8,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Union, cast
 from uuid import UUID, uuid4
 
-from pydantic import Field, PrivateAttr, root_validator, validator
+from pydantic import (ConfigDict, Field, PrivateAttr, field_validator,
+                      model_validator)
 
 from langsmith.client import Client
 from langsmith.schemas import RunBase, RunTypeEnum
@@ -50,12 +51,10 @@ class RunTree(RunBase):
         default_factory=_make_thread_pool, exclude=True
     )
     _futures: List[Future] = PrivateAttr(default_factory=list)
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
 
-    class Config:
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-
-    @validator("executor", pre=True)
+    @field_validator("executor", mode="before")
+    @classmethod
     def validate_executor(cls, v: Optional[ThreadPoolExecutor]) -> ThreadPoolExecutor:
         """Ensure the executor is running."""
         if v is None:
@@ -64,7 +63,8 @@ class RunTree(RunBase):
             raise ValueError("Executor has been shutdown.")
         return v
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
         if "serialized" not in values:
