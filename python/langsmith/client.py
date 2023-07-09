@@ -39,6 +39,7 @@ from langsmith.schemas import (
     APIFeedbackSource,
     Dataset,
     DatasetCreate,
+    DataType,
     Example,
     ExampleCreate,
     ExampleUpdate,
@@ -184,6 +185,7 @@ class Client(BaseSettings):
         output_keys: Sequence[str],
         *,
         description: Optional[str] = None,
+        data_type: Optional[DataType] = DataType.kv,
     ) -> Dataset:
         """Upload a dataframe as individual examples to the LangChain+ API."""
         csv_file = BytesIO()
@@ -195,6 +197,7 @@ class Client(BaseSettings):
             output_keys=output_keys,
             description=description,
             name=name,
+            data_type=data_type,
         )
 
     def upload_csv(
@@ -205,6 +208,7 @@ class Client(BaseSettings):
         *,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        data_type: Optional[DataType] = DataType.kv,
     ) -> Dataset:
         """Upload a CSV file to the LangChain+ API."""
         data = {
@@ -215,6 +219,8 @@ class Client(BaseSettings):
             data["name"] = name
         if description:
             data["description"] = description
+        if data_type:
+            data["data_type"] = data_type
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
@@ -453,12 +459,17 @@ class Client(BaseSettings):
         raise_for_status_with_text(response)
 
     def create_dataset(
-        self, dataset_name: str, *, description: Optional[str] = None
+        self,
+        dataset_name: str,
+        *,
+        description: Optional[str] = None,
+        data_type: DataType = DataType.kv,
     ) -> Dataset:
         """Create a dataset in the LangChain+ API."""
         dataset = DatasetCreate(
             name=dataset_name,
             description=description,
+            data_type=data_type,
         )
         response = requests.post(
             self.api_url + "/datasets",
