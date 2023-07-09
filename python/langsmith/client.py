@@ -381,7 +381,6 @@ class Client(BaseSettings):
         project_name: str,
         *,
         project_extra: Optional[dict] = None,
-        mode: Optional[str] = None,
         upsert: bool = False,
     ) -> TracerSession:
         """Create a project on the LangChain+ API."""
@@ -390,8 +389,6 @@ class Client(BaseSettings):
             "name": project_name,
             "extra": project_extra,
         }
-        if mode:
-            body["mode"] = mode
         params = {}
         if upsert:
             params["upsert"] = True

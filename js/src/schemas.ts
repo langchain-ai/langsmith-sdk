@@ -3,7 +3,6 @@ export interface TracerSession {
   id: string;
   start_time: number;
   name?: string;
-  mode?: string;
 }
 
 // Fully loaded information about a Tracer Session (also known
