@@ -51,11 +51,20 @@ class ExampleUpdate(BaseModel):
         frozen = True
 
 
+class DataType(str, Enum):
+    """Enum for dataset data types."""
+
+    kv = "kv"
+    llm = "llm"
+    chat = "chat"
+
+
 class DatasetBase(BaseModel):
     """Dataset base model."""
 
     name: str
     description: Optional[str] = None
+    data_type: Optional[DataType] = None
 
     class Config:
         frozen = True

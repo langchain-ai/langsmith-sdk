@@ -13,7 +13,7 @@ import pytest
 from langsmith.client import Client
 from langsmith.evaluation import StringEvaluator
 from langsmith.run_trees import RunTree
-from langsmith.schemas import Feedback
+from langsmith.schemas import DataType, Feedback
 from langsmith.utils import LangChainPlusConnectionError, LangChainPlusError
 
 
@@ -344,3 +344,23 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
     # expect connect error
     with pytest.raises(LangChainPlusConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
+
+
+def test_create_dataset(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
+) -> None:
+    """Test persisting runs and adding feedback."""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    dataset_name = "__test_create_dataset"
+    if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+    dataset = langchain_client.create_dataset(dataset_name, data_type=DataType.llm)
+    ground_truth = "bcde"
+    langchain_client.create_example(
+        inputs={"input": "hello world"},
+        outputs={"output": ground_truth},
+        dataset_id=dataset.id,
+    )
+    loaded_dataset = langchain_client.read_dataset(dataset_name=dataset_name)
+    assert loaded_dataset.data_type == DataType.llm
+    langchain_client.delete_dataset(dataset_id=dataset.id)

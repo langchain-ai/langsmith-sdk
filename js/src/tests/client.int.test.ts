@@ -258,3 +258,26 @@ test("Test persist update run", async () => {
 
   await langchainClient.deleteProject({ projectName });
 });
+
+test("test create dataset", async () => {
+  const langchainClient = new Client({
+    apiUrl: "http://localhost:1984",
+  });
+  const datasetName = "__test_create_dataset";
+  const datasets = await langchainClient.listDatasets({});
+  if (datasets.map((dataset) => dataset.name).includes(datasetName)) {
+    await langchainClient.deleteDataset({ datasetName });
+  }
+  const dataset = await langchainClient.createDataset(datasetName, {
+    dataType: "llm",
+  });
+  await langchainClient.createExample(
+    { input: "hello world" },
+    { output: "hi there" },
+    {
+      datasetId: dataset.id,
+    }
+  );
+  const loadedDataset = await langchainClient.readDataset({ datasetName });
+  expect(loadedDataset.data_type).toEqual("llm");
+});
