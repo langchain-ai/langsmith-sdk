@@ -204,8 +204,6 @@ class TracerSession(BaseModel):
     """The name of the session."""
     extra: Optional[Dict[str, Any]] = None
     """Extra metadata for the project."""
-    mode: Optional[str] = "debug"
-    """The mode of the project, either 'debug', 'eval', or 'monitor'."""
     tenant_id: UUID
     """The tenant ID this project belongs to."""
 

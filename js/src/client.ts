@@ -300,12 +300,10 @@ export class Client {
   public async createProject({
     projectName,
     projectExtra,
-    mode,
     upsert,
   }: {
     projectName: string;
     projectExtra?: object;
-    mode?: string;
     upsert?: boolean;
   }): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
@@ -315,9 +313,6 @@ export class Client {
     };
     if (projectExtra !== undefined) {
       body["extra"] = projectExtra;
-    }
-    if (mode !== undefined) {
-      body["mode"] = mode;
     }
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",
