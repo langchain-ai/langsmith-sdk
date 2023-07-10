@@ -1,4 +1,4 @@
-"""Test the LangChain+ client."""
+"""Test the LangSmith client."""
 import asyncio
 import uuid
 from datetime import datetime

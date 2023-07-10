@@ -1,4 +1,4 @@
-"""LangChain+ Client."""
+"""LangSmith Client."""
 from importlib import metadata
 
 from langsmith.client import Client
