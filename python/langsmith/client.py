@@ -95,7 +95,7 @@ def _default_api_key() -> Optional[str]:
     return os.environ.get("LANGCHAIN_API_KEY")
 
 def _default_endpoint() -> Optional[str]:
-    return os.environ.get("LANGCHAIN_API_KEY")
+    return os.environ.get("LANGCHAIN_API_KEY", "http://localhost:1984")
 
 
 def _serialize_json(obj: Any) -> str:
@@ -109,8 +109,8 @@ def _serialize_json(obj: Any) -> str:
 class Client(BaseSettings):
     """Client for interacting with the LangChain+ API."""
 
-    api_key: Optional[str] = Field(default=None, default_factory=_default_api_key)
-    api_url: str = Field(default="http://localhost:1984", default_factory=_default_endpoint)
+    api_key: Optional[str] = Field(default_factory=_default_api_key)
+    api_url: str = Field(default_factory=_default_endpoint)
     retry_config: Mapping[str, Any] = Field(
         default_factory=_default_retry_config, exclude=True
     )

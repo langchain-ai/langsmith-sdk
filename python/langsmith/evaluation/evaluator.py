@@ -21,7 +21,7 @@ class EvaluationResult(BaseModel):
     """What the correct value should be, if applicable."""
     evaluator_info: Dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
-    model_config = ConfigDict(frozen=True, allow_extra=False)
+    model_config = ConfigDict(frozen=True, extra='forbid')
 
 
 class RunEvaluator:
