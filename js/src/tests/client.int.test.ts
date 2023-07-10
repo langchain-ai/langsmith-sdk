@@ -9,12 +9,12 @@ test("Test LangSmith Client Dataset CRD", async () => {
     apiUrl: "http://localhost:1984",
   });
 
-  const csvContent = `col1,col2\nval1,val2`;
+  const csvContent = `col1,col2,col3,col4\nval1,val2,val3,val4`;
   const blobData = new Blob([Buffer.from(csvContent)]);
 
   const description = "Test Dataset";
-  const inputKeys = ["col1"];
-  const outputKeys = ["col2"];
+  const inputKeys = ["col1", "col3"];
+  const outputKeys = ["col2", "col4"];
   const fileName = "__some_file.int.csv";
   const existingDatasets = await client.listDatasets({});
   if (existingDatasets.map((d) => d.name).includes(fileName)) {
