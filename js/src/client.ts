@@ -15,6 +15,7 @@ import {
   TracerSession,
   TracerSessionResult,
   ValueType,
+  DataType,
 } from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
@@ -42,6 +43,7 @@ interface UploadCSVParams {
   inputKeys: string[];
   outputKeys: string[];
   description?: string;
+  dataType?: DataType;
 }
 
 interface feedback_source {
@@ -408,6 +410,7 @@ export class Client {
     inputKeys,
     outputKeys,
     description,
+    dataType,
   }: UploadCSVParams): Promise<Dataset> {
     const url = `${this.apiUrl}/datasets/upload`;
     const formData = new FormData();
@@ -416,6 +419,9 @@ export class Client {
     formData.append("output_keys", outputKeys.join(","));
     if (description) {
       formData.append("description", description);
+    }
+    if (dataType) {
+      formData.append("data_type", dataType);
     }
 
     const response = await this.caller.call(fetch, url, {
@@ -441,15 +447,22 @@ export class Client {
 
   public async createDataset(
     name: string,
-    { description }: { description?: string } = {}
+    {
+      description,
+      dataType,
+    }: { description?: string; dataType?: DataType } = {}
   ): Promise<Dataset> {
+    const body: KVMap = {
+      name,
+      description,
+    };
+    if (dataType) {
+      body.data_type = dataType;
+    }
     const response = await this.caller.call(fetch, `${this.apiUrl}/datasets`, {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        description,
-      }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeout_ms),
     });
 

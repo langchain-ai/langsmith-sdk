@@ -35,6 +35,7 @@ export type KVMap = Record<string, any>;
 export type RunType = "llm" | "chain" | "tool" | "retriever" | "embedding";
 export type ScoreType = number | boolean | null;
 export type ValueType = number | boolean | string | object | null;
+export type DataType = "kv" | "llm" | "chat";
 
 export interface BaseExample {
   dataset_id: string;
@@ -106,6 +107,7 @@ export interface BaseDataset {
   name: string;
   description: string;
   tenant_id: string;
+  data_type?: DataType;
 }
 
 export interface Dataset extends BaseDataset {
