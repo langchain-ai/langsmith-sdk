@@ -101,7 +101,7 @@ def _serialize_json(obj: Any) -> str:
 
 
 class Client(BaseSettings):
-    """Client for interacting with the LangChain+ API."""
+    """Client for interacting with the LangSmith API."""
 
     api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
     api_url: str = Field(default="http://localhost:1984", env="LANGCHAIN_ENDPOINT")
@@ -118,7 +118,7 @@ class Client(BaseSettings):
         if not _is_localhost(api_url):
             if not api_key:
                 raise LangChainPlusUserError(
-                    "API key must be provided when using hosted LangChain+ API"
+                    "API key must be provided when using hosted LangSmith API"
                 )
         return values
 
@@ -130,7 +130,7 @@ class Client(BaseSettings):
             link = "https://dev.langchain.plus"
         else:
             link = "https://www.langchain.plus"
-        return f'<a href="{link}", target="_blank" rel="noopener">LangChain+ Client</a>'
+        return f'<a href="{link}", target="_blank" rel="noopener">LangSmith Client</a>'
 
     def __repr__(self) -> str:
         """Return a string representation of the instance with a link to the URL."""
@@ -187,7 +187,7 @@ class Client(BaseSettings):
         description: Optional[str] = None,
         data_type: Optional[DataType] = DataType.kv,
     ) -> Dataset:
-        """Upload a dataframe as individual examples to the LangChain+ API."""
+        """Upload a dataframe as individual examples to the LangSmith API."""
         csv_file = BytesIO()
         df.to_csv(csv_file, index=False)
         csv_file.seek(0)
@@ -210,7 +210,7 @@ class Client(BaseSettings):
         description: Optional[str] = None,
         data_type: Optional[DataType] = DataType.kv,
     ) -> Dataset:
-        """Upload a CSV file to the LangChain+ API."""
+        """Upload a CSV file to the LangSmith API."""
         data = {
             "input_keys": ",".join(input_keys),
             "output_keys": ",".join(output_keys),
@@ -220,7 +220,7 @@ class Client(BaseSettings):
         if description:
             data["description"] = description
         if data_type:
-            data["data_type"] = data_type
+            data["data_type"] = data_type.value
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
@@ -257,7 +257,7 @@ class Client(BaseSettings):
         execution_order: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
-        """Persist a run to the LangChain+ API."""
+        """Persist a run to the LangSmith API."""
         project_name = kwargs.pop(
             "project_name",
             kwargs.pop(
@@ -298,7 +298,7 @@ class Client(BaseSettings):
         run_id: ID_TYPE,
         **kwargs: Any,
     ) -> None:
-        """Update a run to the LangChain+ API."""
+        """Update a run to the LangSmith API."""
         headers = {**self._headers, "Accept": "application/json"}
         request_with_retries(
             "patch",
@@ -326,7 +326,7 @@ class Client(BaseSettings):
         return run
 
     def read_run(self, run_id: ID_TYPE, load_child_runs: bool = False) -> Run:
-        """Read a run from the LangChain+ API.
+        """Read a run from the LangSmith API.
 
         Args:
             run_id: The ID of the run to read.
@@ -352,7 +352,7 @@ class Client(BaseSettings):
         reference_example_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> Iterator[Run]:
-        """List runs from the LangChain+ API."""
+        """List runs from the LangSmith API."""
         if project_name is not None:
             if project_id is not None:
                 raise ValueError("Only one of project_id or project_name may be given")
@@ -375,7 +375,7 @@ class Client(BaseSettings):
         )
 
     def delete_run(self, run_id: ID_TYPE) -> None:
-        """Delete a run from the LangChain+ API."""
+        """Delete a run from the LangSmith API."""
         response = requests.delete(
             f"{self.api_url}/runs/{run_id}",
             headers=self._headers,
@@ -389,7 +389,7 @@ class Client(BaseSettings):
         project_extra: Optional[dict] = None,
         upsert: bool = False,
     ) -> TracerSession:
-        """Create a project on the LangChain+ API."""
+        """Create a project on the LangSmith API."""
         endpoint = f"{self.api_url}/sessions"
         body = {
             "name": project_name,
@@ -410,7 +410,7 @@ class Client(BaseSettings):
     def read_project(
         self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
     ) -> TracerSessionResult:
-        """Read a project from the LangChain+ API.
+        """Read a project from the LangSmith API.
 
         Args:
             project_id: The ID of the project to read.
@@ -434,7 +434,7 @@ class Client(BaseSettings):
         return TracerSessionResult(**response.json())
 
     def list_projects(self) -> Iterator[TracerSession]:
-        """List projects from the LangChain+ API."""
+        """List projects from the LangSmith API."""
         yield from (
             TracerSession(**project)
             for project in self._get_paginated_list("/sessions")
@@ -444,7 +444,7 @@ class Client(BaseSettings):
     def delete_project(
         self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a project from the LangChain+ API."""
+        """Delete a project from the LangSmith API."""
         if project_name is not None:
             project_id = str(self.read_project(project_name=project_name).id)
         elif project_id is None:
@@ -462,7 +462,7 @@ class Client(BaseSettings):
         description: Optional[str] = None,
         data_type: DataType = DataType.kv,
     ) -> Dataset:
-        """Create a dataset in the LangChain+ API."""
+        """Create a dataset in the LangSmith API."""
         dataset = DatasetCreate(
             name=dataset_name,
             description=description,
@@ -503,7 +503,7 @@ class Client(BaseSettings):
         return Dataset(**result)
 
     def list_datasets(self) -> Iterator[Dataset]:
-        """List the datasets on the LangChain+ API."""
+        """List the datasets on the LangSmith API."""
         yield from (
             Dataset(**dataset) for dataset in self._get_paginated_list("/datasets")
         )
@@ -535,7 +535,7 @@ class Client(BaseSettings):
         created_at: Optional[datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
     ) -> Example:
-        """Create a dataset example in the LangChain+ API."""
+        """Create a dataset example in the LangSmith API."""
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
@@ -555,14 +555,14 @@ class Client(BaseSettings):
         return Example(**result)
 
     def read_example(self, example_id: ID_TYPE) -> Example:
-        """Read an example from the LangChain+ API."""
+        """Read an example from the LangSmith API."""
         response = self._get_with_retries(f"/examples/{example_id}")
         return Example(**response.json())
 
     def list_examples(
         self, dataset_id: Optional[ID_TYPE] = None, dataset_name: Optional[str] = None
     ) -> Iterator[Example]:
-        """List the datasets on the LangChain+ API."""
+        """List the datasets on the LangSmith API."""
         params = {}
         if dataset_id is not None:
             params["dataset"] = dataset_id
@@ -736,7 +736,7 @@ class Client(BaseSettings):
         source_info: Optional[Dict[str, Any]] = None,
         feedback_source_type: Union[FeedbackSourceType, str] = FeedbackSourceType.API,
     ) -> Feedback:
-        """Create a feedback in the LangChain+ API.
+        """Create a feedback in the LangSmith API.
 
         Args:
             run_id: The ID of the run to provide feedback on.
@@ -776,7 +776,7 @@ class Client(BaseSettings):
         return Feedback(**response.json())
 
     def read_feedback(self, feedback_id: ID_TYPE) -> Feedback:
-        """Read a feedback from the LangChain+ API."""
+        """Read a feedback from the LangSmith API."""
         response = self._get_with_retries(f"/feedback/{feedback_id}")
         return Feedback(**response.json())
 
@@ -786,7 +786,7 @@ class Client(BaseSettings):
         run_ids: Optional[Sequence[ID_TYPE]] = None,
         **kwargs: Any,
     ) -> Iterator[Feedback]:
-        """List the feedback objects on the LangChain+ API."""
+        """List the feedback objects on the LangSmith API."""
         params = {
             "run": run_ids,
             **kwargs,

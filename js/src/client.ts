@@ -130,7 +130,7 @@ export class Client {
     const isLocal = isLocalhost(this.apiUrl);
     if (!isLocal && !this.apiKey) {
       throw new Error(
-        "API key must be provided when using hosted LangChain+ API"
+        "API key must be provided when using hosted LangSmith API"
       );
     }
   }

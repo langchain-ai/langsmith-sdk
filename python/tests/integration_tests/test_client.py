@@ -1,4 +1,4 @@
-"""LangChain+ langchain_client Integration Tests."""
+"""LangSmith langchain_client Integration Tests."""
 import io
 import os
 import random
