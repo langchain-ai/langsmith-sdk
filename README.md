@@ -1,6 +1,6 @@
 # LangSmith Client SDKs
 
-This repository contains `BaseTracer` schemas used in LangChain as well as the Python and Javascript clients for interacting with the [LangSmith platform](https://www.langchain.plus/).
+This repository contains `BaseTracer` schemas used in LangChain as well as the Python and Javascript clients for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
 LangSmith helps you and your team debug, evaluate, and monitor your language models and intelligent agents. It works
 with any LLM Application, including a native integration with the [LangChain Python](https://github.com/hwchase17/langchain) and [LangChain JS](https://github.com/hwchase17/langchainjs) open source libraries.
@@ -25,4 +25,4 @@ yarn add langsmith
 
 ## Documentation
 
-To learn more about the LangSmith platform, check out the [docs](https://docs.langchain.plus/docs/)
+To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/docs/)

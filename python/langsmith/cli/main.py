@@ -187,7 +187,7 @@ class LangSmithCommand:
             ]
         )
         logger.info(
-            "langchain plus server is running at http://localhost:1984.  To connect"
+            "LangSmith server is running at http://localhost:1984.  To connect"
             " locally, set the following environment variable"
             " when running your LangChain application."
         )
@@ -217,7 +217,7 @@ class LangSmithCommand:
         )
         ngrok_url = get_ngrok_url(auth_token)
         logger.info(
-            "langchain plus server is running at http://localhost:1984."
+            "LangSmith server is running at http://localhost:1984."
             " To connect remotely, set the following environment"
             " variable when running your LangChain application."
         )
@@ -237,7 +237,7 @@ class LangSmithCommand:
             dev: If True, pull the development (rc) image of LangSmith.
         """
         if dev:
-            os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
+            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         subprocess.run(
             [
                 *self.docker_compose_command,
@@ -268,7 +268,7 @@ class LangSmithCommand:
                 some features of LangSmith will not be available.
         """
         if dev:
-            os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
+            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
         self.pull(dev=dev)

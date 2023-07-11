@@ -1,9 +1,9 @@
 version: "3"
 services:
   langchain-playground:
-    image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-playground:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-playground:latest
   langchain-frontend:
-    image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-frontend:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend:latest
     ports:
       - 80:80
     environment:
@@ -14,7 +14,7 @@ services:
     volumes:
       - ./conf/nginx.conf:/etc/nginx/default.conf:ro
   langchain-backend:
-    image: langchain/${_LANGCHAINPLUS_IMAGE_PREFIX-}langchainplus-backend:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:latest
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker

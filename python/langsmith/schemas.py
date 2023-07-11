@@ -1,4 +1,4 @@
-"""Schemas for the langchainplus API."""
+"""Schemas for the LangSmith API."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
