@@ -8,19 +8,19 @@ from requests import ConnectionError, HTTPError, Response
 from tenacity import Retrying
 
 
-class LangChainPlusAPIError(Exception):
+class LangSmithAPIError(Exception):
     """An error occurred while communicating with the LangChain API."""
 
 
-class LangChainPlusUserError(Exception):
+class LangSmithUserError(Exception):
     """An error occurred while communicating with the LangChain API."""
 
 
-class LangChainPlusError(Exception):
+class LangSmithError(Exception):
     """An error occurred while communicating with the LangChain API."""
 
 
-class LangChainPlusConnectionError(Exception):
+class LangSmithConnectionError(Exception):
     """Couldn't connect to the LC+ API."""
 
 
@@ -35,24 +35,24 @@ def request_with_retries(
                 return response
             except HTTPError as e:
                 if response is not None and response.status_code == 500:
-                    raise LangChainPlusAPIError(
+                    raise LangSmithAPIError(
                         f"Server error caused failure to {request_method} {url} in"
                         f" LangSmith API. {e}"
                     )
                 else:
-                    raise LangChainPlusUserError(
+                    raise LangSmithUserError(
                         f"Failed to {request_method} {url} in LangSmith API. {e}"
                     )
             except ConnectionError as e:
-                raise LangChainPlusConnectionError(
+                raise LangSmithConnectionError(
                     f"Connection error caused failure to {request_method} {url}"
                     "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
                 ) from e
             except Exception as e:
-                raise LangChainPlusError(
+                raise LangSmithError(
                     f"Failed to {request_method} {url} in LangSmith API. {e}"
                 ) from e
-    raise LangChainPlusError(f"Failed to {request_method}  {url} in LangSmith API. ")
+    raise LangSmithError(f"Failed to {request_method}  {url} in LangSmith API. ")
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
