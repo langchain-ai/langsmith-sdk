@@ -122,7 +122,7 @@ version: '2'
   return configPath;
 }
 
-class PlusCommand {
+class SmithCommand {
   dockerComposeCommand: string[] = [];
   dockerComposeFile = "";
   ngrokPath = "";
@@ -141,12 +141,12 @@ class PlusCommand {
 
   public static async create() {
     const dockerComposeCommand = await getDockerComposeCommand();
-    return new PlusCommand({ dockerComposeCommand });
+    return new SmithCommand({ dockerComposeCommand });
   }
 
   async start(args: any) {
     if (args.dev) {
-      setEnvironmentVariable("_LANGCHAINPLUS_IMAGE_PREFIX", "rc-");
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }
     if (args.openaiApiKey) {
       setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
@@ -161,7 +161,7 @@ class PlusCommand {
 
   async pull(args: any) {
     if (args.dev) {
-      setEnvironmentVariable("_LANGCHAINPLUS_IMAGE_PREFIX", "rc-");
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }
 
     const command = [
@@ -259,25 +259,27 @@ const startCommand = new Command("start")
   .option("--dev", "Run the development version of the LangSmith server")
   .option(
     "--openai-api-key <openaiApiKey>",
-    "Your OpenAI API key. If this is set, the server will be able to process text and return enhanced plus results."
+    "Your OpenAI API key. If not provided, the OpenAI API Key will be read" +
+      " from the OPENAI_API_KEY environment variable. If neither are provided," +
+      " some features of LangSmith will not be available."
   )
-  .action(async (args: string[]) => (await PlusCommand.create()).start(args));
+  .action(async (args: string[]) => (await SmithCommand.create()).start(args));
 
 const stopCommand = new Command("stop")
   .command("stop")
   .description("Stop the LangSmith server")
-  .action(async () => (await PlusCommand.create()).stop());
+  .action(async () => (await SmithCommand.create()).stop());
 
 const pullCommand = new Command("pull")
   .command("pull")
   .description("Pull the latest version of the LangSmith server")
   .option("--dev", "Pull the development version of the LangSmith server")
-  .action(async (args: string[]) => (await PlusCommand.create()).pull(args));
+  .action(async (args: string[]) => (await SmithCommand.create()).pull(args));
 
 const statusCommand = new Command("status")
   .command("status")
   .description("Get the status of the LangSmith server")
-  .action(async () => (await PlusCommand.create()).status());
+  .action(async () => (await SmithCommand.create()).status());
 
 program
   .description("Manage the LangSmith server")
