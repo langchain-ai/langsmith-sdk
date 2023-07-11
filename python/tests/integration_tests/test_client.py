@@ -14,7 +14,7 @@ from langsmith.client import Client
 from langsmith.evaluation import StringEvaluator
 from langsmith.run_trees import RunTree
 from langsmith.schemas import DataType, Feedback
-from langsmith.utils import LangChainPlusConnectionError, LangChainPlusError
+from langsmith.utils import LangSmithConnectionError, LangSmithError
 
 
 @pytest.fixture
@@ -48,12 +48,12 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
     assert len(runs) == len(project_id_runs) == 0  # TODO: Add create_run method
     langchain_client.delete_project(project_name=new_project)
 
-    with pytest.raises(LangChainPlusError):
+    with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=new_project)
     assert new_project not in set(
         [sess.name for sess in langchain_client.list_projects()]
     )
-    with pytest.raises(LangChainPlusError):
+    with pytest.raises(LangSmithError):
         langchain_client.delete_project(project_name=new_project)
 
 
@@ -205,7 +205,7 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     feedback = langchain_client.read_feedback(feedbacks[0].id)
     assert feedback.id == feedbacks[0].id
     langchain_client.delete_feedback(feedback.id)
-    with pytest.raises(LangChainPlusError):
+    with pytest.raises(LangSmithError):
         langchain_client.read_feedback(feedback.id)
     assert len(list(langchain_client.list_feedback(run_ids=[runs[0].id]))) == 1
     project = langchain_client.read_project(project_name=project_name)
@@ -220,7 +220,7 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
         and project_with_stats.latency_p99 > timedelta(0)
     )
     langchain_client.delete_project(project_name=project_name)
-    with pytest.raises(LangChainPlusError):
+    with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=project_name)
 
 
@@ -340,7 +340,7 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
     monkeypatch.setenv("LANGCHAIN_API_KEY", "test")
     client = Client()
     # expect connect error
-    with pytest.raises(LangChainPlusConnectionError):
+    with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
 

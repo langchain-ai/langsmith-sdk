@@ -55,9 +55,9 @@ from langsmith.schemas import (
     TracerSessionResult,
 )
 from langsmith.utils import (
-    LangChainPlusAPIError,
-    LangChainPlusError,
-    LangChainPlusUserError,
+    LangSmithAPIError,
+    LangSmithError,
+    LangSmithUserError,
     get_runtime_environment,
     raise_for_status_with_text,
     request_with_retries,
@@ -87,7 +87,7 @@ def _default_retry_config() -> Dict[str, Any]:
     return dict(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(LangChainPlusAPIError),
+        retry=retry_if_exception_type(LangSmithAPIError),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
 
@@ -117,7 +117,7 @@ class Client(BaseSettings):
         api_key: Optional[str] = values.get("api_key")
         if not _is_localhost(api_url):
             if not api_key:
-                raise LangChainPlusUserError(
+                raise LangSmithUserError(
                     "API key must be provided when using hosted LangSmith API"
                 )
         return values
@@ -127,9 +127,9 @@ class Client(BaseSettings):
         if _is_localhost(self.api_url):
             link = "http://localhost"
         elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
-            link = "https://dev.langchain.plus"
+            link = "https://dev.smith.langchain.com/"
         else:
-            link = "https://www.langchain.plus"
+            link = "https://smith.langchain.com"
         return f'<a href="{link}", target="_blank" rel="noopener">LangSmith Client</a>'
 
     def __repr__(self) -> str:
@@ -317,7 +317,7 @@ class Client(BaseSettings):
         runs: Dict[UUID, Run] = {}
         for child_run in sorted(child_runs, key=lambda r: r.execution_order):
             if child_run.parent_run_id is None:
-                raise LangChainPlusError(f"Child run {child_run.id} has no parent")
+                raise LangSmithError(f"Child run {child_run.id} has no parent")
             treemap[child_run.parent_run_id].append(child_run)
             runs[child_run.id] = child_run
         run.child_runs = treemap.pop(run.id, [])
@@ -429,7 +429,7 @@ class Client(BaseSettings):
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise LangChainPlusError(f"Project {project_name} not found")
+                raise LangSmithError(f"Project {project_name} not found")
             return TracerSessionResult(**result[0])
         return TracerSessionResult(**response.json())
 
@@ -498,7 +498,7 @@ class Client(BaseSettings):
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise LangChainPlusError(f"Dataset {dataset_name} not found")
+                raise LangSmithError(f"Dataset {dataset_name} not found")
             return Dataset(**result[0])
         return Dataset(**result)
 
