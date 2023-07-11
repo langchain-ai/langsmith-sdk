@@ -44,6 +44,7 @@ interface UploadCSVParams {
   outputKeys: string[];
   description?: string;
   dataType?: DataType;
+  name?: string;
 }
 
 interface feedback_source {
@@ -130,7 +131,7 @@ export class Client {
     const isLocal = isLocalhost(this.apiUrl);
     if (!isLocal && !this.apiKey) {
       throw new Error(
-        "API key must be provided when using hosted LangSmith API"
+        "API key must be provided when using hosted LangChain+ API"
       );
     }
   }
@@ -411,17 +412,26 @@ export class Client {
     outputKeys,
     description,
     dataType,
+    name,
   }: UploadCSVParams): Promise<Dataset> {
     const url = `${this.apiUrl}/datasets/upload`;
     const formData = new FormData();
     formData.append("file", csvFile, fileName);
-    formData.append("input_keys", inputKeys.join(","));
-    formData.append("output_keys", outputKeys.join(","));
+    inputKeys.forEach((key) => {
+      formData.append("input_keys", key);
+    });
+
+    outputKeys.forEach((key) => {
+      formData.append("output_keys", key);
+    });
     if (description) {
       formData.append("description", description);
     }
     if (dataType) {
       formData.append("data_type", dataType);
+    }
+    if (name) {
+      formData.append("name", name);
     }
 
     const response = await this.caller.call(fetch, url, {

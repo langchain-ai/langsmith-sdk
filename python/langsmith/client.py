@@ -212,8 +212,8 @@ class Client(BaseSettings):
     ) -> Dataset:
         """Upload a CSV file to the LangSmith API."""
         data = {
-            "input_keys": ",".join(input_keys),
-            "output_keys": ",".join(output_keys),
+            "input_keys": input_keys,
+            "output_keys": output_keys,
         }
         if name:
             data["name"] = name
