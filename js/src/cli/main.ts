@@ -4,15 +4,15 @@ import * as util from "util";
 import { Command } from "commander";
 import * as child_process from "child_process";
 import { setEnvironmentVariable } from "../utils/env.js";
+import { spawn } from "child_process";
 
 const currentFileName = __filename;
 const currentDirName = __dirname;
 
-const exec = util.promisify(child_process.exec);
-
 const program = new Command();
 
 async function getDockerComposeCommand(): Promise<string[]> {
+  const exec = util.promisify(child_process.exec);
   try {
     await exec("docker compose --version");
     return ["docker", "compose"];
@@ -125,6 +125,7 @@ version: '2'
 class PlusCommand {
   dockerComposeCommand: string[] = [];
   dockerComposeFile = "";
+  dockerComposeDevFile = "";
   ngrokPath = "";
 
   constructor({ dockerComposeCommand }: { dockerComposeCommand: string[] }) {
@@ -133,10 +134,33 @@ class PlusCommand {
       path.dirname(currentFileName),
       "docker-compose.yaml"
     );
+    this.dockerComposeDevFile = path.join(
+      path.dirname(currentFileName),
+      "docker-compose.dev.yaml"
+    );
     this.ngrokPath = path.join(
       path.dirname(currentFileName),
       "docker-compose.ngrok.yaml"
     );
+  }
+
+  async executeCommand(command: string[]) {
+    return new Promise<void>((resolve, reject) => {
+      const child = spawn(command[0], command.slice(1), { stdio: "inherit" });
+
+      child.on("error", (error) => {
+        console.error(`error: ${error.message}`);
+        reject(error);
+      });
+
+      child.on("close", (code) => {
+        if (code !== 0) {
+          reject(new Error(`Process exited with code ${code}`));
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
   public static async create() {
@@ -153,9 +177,9 @@ class PlusCommand {
     }
     await this.pull(args);
     if (args.expose) {
-      await this.startAndExpose(args.ngrokAuthtoken);
+      await this.startAndExpose(args.ngrokAuthtoken, args.dev);
     } else {
-      await this.startLocal();
+      await this.startLocal(args.dev);
     }
   }
 
@@ -170,26 +194,27 @@ class PlusCommand {
       this.dockerComposeFile,
       "pull",
     ];
-    await exec(command.join(" "));
+    await this.executeCommand(command);
   }
 
-  async startLocal() {
+  async startLocal(dev: boolean) {
     const command = [
       ...this.dockerComposeCommand,
       "-f",
       this.dockerComposeFile,
-      "up",
-      "--quiet-pull",
-      "--wait",
     ];
-    await exec(command.join(" "));
+    if (dev) {
+      command.push("-f", this.dockerComposeDevFile);
+    }
+    command.push("up", "--quiet-pull", "--wait");
+    await this.executeCommand(command);
     console.info(
       "LangSmith server is running at http://localhost:1984.  To connect locally, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
   }
 
-  async startAndExpose(ngrokAuthToken: string | null) {
+  async startAndExpose(ngrokAuthToken: string | null, dev: boolean) {
     const configPath = await createNgrokConfig(ngrokAuthToken);
     const command = [
       ...this.dockerComposeCommand,
@@ -197,11 +222,12 @@ class PlusCommand {
       this.dockerComposeFile,
       "-f",
       this.ngrokPath,
-      "up",
-      "--quiet-pull",
-      "--wait",
     ];
-    await exec(command.join(" "));
+    if (dev) {
+      command.push("-f", this.dockerComposeDevFile);
+    }
+    command.push("up", "--quiet-pull", "--wait");
+    await this.executeCommand(command);
     console.info(
       "ngrok is running. You can view the dashboard at http://0.0.0.0:4040"
     );
@@ -224,7 +250,7 @@ class PlusCommand {
       this.ngrokPath,
       "down",
     ];
-    await exec(command.join(" "));
+    await this.executeCommand(command);
   }
   async status() {
     const command = [
@@ -235,6 +261,7 @@ class PlusCommand {
       "--format",
       "json",
     ];
+    const exec = util.promisify(child_process.exec);
     const result = await exec(command.join(" "));
     const servicesStatus = JSON.parse(result.stdout);
     if (servicesStatus) {
