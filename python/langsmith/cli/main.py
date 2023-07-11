@@ -164,6 +164,9 @@ class LangSmithCommand:
         self.docker_compose_file = (
             Path(__file__).absolute().parent / "docker-compose.yaml"
         )
+        self.docker_compose_dev_file = (
+            Path(__file__).absolute().parent / "docker-compose.dev.yaml"
+        )
         self.ngrok_path = Path(__file__).absolute().parent / "docker-compose.ngrok.yaml"
 
     def _open_browser(self, url: str) -> None:
@@ -172,12 +175,15 @@ class LangSmithCommand:
         except FileNotFoundError:
             pass
 
-    def _start_local(self) -> None:
+    def _start_local(self, dev: bool) -> None:
         command = [
             *self.docker_compose_command,
             "-f",
             str(self.docker_compose_file),
         ]
+        if dev:
+            command.append("-f")
+            command.append(str(self.docker_compose_dev_file))
         subprocess.run(
             [
                 *command,
@@ -195,7 +201,7 @@ class LangSmithCommand:
         logger.info("\tLANGCHAIN_TRACING_V2=true")
         self._open_browser("http://localhost")
 
-    def _start_and_expose(self, auth_token: Optional[str]) -> None:
+    def _start_and_expose(self, auth_token: Optional[str], dev: bool) -> None:
         with create_ngrok_config(auth_token=auth_token):
             command = [
                 *self.docker_compose_command,
@@ -204,6 +210,9 @@ class LangSmithCommand:
                 "-f",
                 str(self.ngrok_path),
             ]
+            if dev:
+                command.append("-f")
+                command.append(str(self.docker_compose_dev_file))
             subprocess.run(
                 [
                     *command,
@@ -273,9 +282,9 @@ class LangSmithCommand:
             os.environ["OPENAI_API_KEY"] = openai_api_key
         self.pull(dev=dev)
         if expose:
-            self._start_and_expose(auth_token=auth_token)
+            self._start_and_expose(auth_token=auth_token, dev=dev)
         else:
-            self._start_local()
+            self._start_local(dev=dev)
 
     def stop(self) -> None:
         """Stop the LangSmith server."""
