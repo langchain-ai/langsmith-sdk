@@ -58,6 +58,10 @@ from langsmith.utils import (
     LangChainPlusAPIError,
     LangChainPlusError,
     LangChainPlusUserError,
+    get_llm_generation_from_outputs,
+    get_message_generation_from_outputs,
+    get_messages_from_inputs,
+    get_prompt_from_inputs,
     get_runtime_environment,
     raise_for_status_with_text,
     request_with_retries,
@@ -525,6 +529,123 @@ class Client(BaseSettings):
             headers=self._headers,
         )
         raise_for_status_with_text(response)
+
+    def _get_data_type(self, dataset_id: ID_TYPE) -> DataType:
+        dataset = self.read_dataset(dataset_id=dataset_id)
+        return dataset.data_type
+
+    @xor_args(("dataset_id", "dataset_name"))
+    def create_llm_example(
+        self,
+        prompt: str,
+        generation: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+    ) -> Example:
+        """Add an example (row) to an LLM-type dataset."""
+        return self.create_example(
+            inputs={"input": prompt},
+            outputs={"output": generation},
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            created_at=created_at,
+        )
+
+    @xor_args(("dataset_id", "dataset_name"))
+    def create_chat_example(
+        self,
+        messages: List[Mapping[str, Any]],
+        generations: Optional[Mapping[str, Any]] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+    ) -> Example:
+        """Add an example (row) to a Chat-type dataset."""
+        return self.create_example(
+            inputs={"input": messages},
+            outputs={"output": generations},
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            created_at=created_at,
+        )
+
+    def create_example_from_run(
+        self,
+        run: Run,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+    ) -> Example:
+        """Add an example (row) to an LLM-type dataset."""
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+            dataset_name = None  # Nested call expects only 1 defined
+        dataset_type = self._get_data_type(dataset_id)
+        if dataset_type == DataType.llm:
+            if run.run_type != RunTypeEnum.llm:
+                raise ValueError(
+                    f"Run type {run.run_type} is not supported"
+                    " for dataset of type 'LLM'"
+                )
+            try:
+                prompt = get_prompt_from_inputs(run.inputs)
+            except ValueError:
+                raise ValueError(
+                    "Error converting LLM run inputs to prompt for run"
+                    f" {run.id} with inputs {run.inputs}"
+                )
+            inputs: Dict[str, Any] = {"input": prompt}
+            if not run.outputs:
+                outputs: Optional[Dict[str, Any]] = None
+            else:
+                try:
+                    generation = get_llm_generation_from_outputs(run.outputs)
+                except ValueError:
+                    raise ValueError(
+                        "Error converting LLM run outputs to generation for run"
+                        f" {run.id} with outputs {run.outputs}"
+                    )
+                outputs = {"output": generation}
+        elif dataset_type == DataType.chat:
+            if run.run_type != RunTypeEnum.llm:
+                raise ValueError(
+                    f"Run type {run.run_type} is not supported"
+                    " for dataset of type 'chat'"
+                )
+            try:
+                inputs = {"input": get_messages_from_inputs(run.inputs)}
+            except ValueError:
+                raise ValueError(
+                    "Error converting LLM run inputs to chat messages for run"
+                    f" {run.id} with inputs {run.inputs}"
+                )
+            if not run.outputs:
+                outputs = None
+            else:
+                try:
+                    outputs = {
+                        "output": get_message_generation_from_outputs(run.outputs)
+                    }
+                except ValueError:
+                    raise ValueError(
+                        "Error converting LLM run outputs to chat generations"
+                        f" for run {run.id} with outputs {run.outputs}"
+                    )
+        elif dataset_type == DataType.kv:
+            # Anything goes
+            inputs = run.inputs
+            outputs = run.outputs
+
+        else:
+            raise ValueError(f"Dataset type {dataset_type} not recognized.")
+        return self.create_example(
+            inputs=inputs,
+            outputs=outputs,
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
+            created_at=created_at,
+        )
 
     @xor_args(("dataset_id", "dataset_name"))
     def create_example(
