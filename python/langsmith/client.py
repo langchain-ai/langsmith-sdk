@@ -25,7 +25,6 @@ from typing import (
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseSettings, Field, PrivateAttr, root_validator
 from requests import ConnectionError, HTTPError, Response, Session
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
@@ -105,50 +104,61 @@ def close_session(session: Session) -> None:
     session.close()
 
 
-class Client(BaseSettings):
+def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
+    """Verify API key is provided if url not localhost."""
+    if not _is_localhost(api_url):
+        if not api_key:
+            raise LangSmithUserError(
+                "API key must be provided when using hosted LangSmith API"
+            )
+
+
+class Client:
     """Client for interacting with the LangSmith API."""
 
-    __slots__ = ["__weakref__"]
-
-    api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
-    api_url: str = Field(default="http://localhost:1984", env="LANGCHAIN_ENDPOINT")
-    retry_config: Retry = Field(default_factory=_default_retry_config, exclude=True)
-    timeout_ms: int = Field(default=7000)
-    session: Session = PrivateAttr()
-
-    @root_validator(pre=True)
-    def validate_api_key_if_hosted(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        """Verify API key is provided if url not localhost."""
-        api_url: str = values.get("api_url", "http://localhost:1984")
-        api_key: Optional[str] = values.get("api_key")
-        if not _is_localhost(api_url):
-            if not api_key:
-                raise LangSmithUserError(
-                    "API key must be provided when using hosted LangSmith API"
-                )
-        return values
+    __slots__ = [
+        "__weakref__",
+        "api_url",
+        "api_key",
+        "retry_config",
+        "timeout_ms",
+        "session",
+    ]
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        *,
+        api_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
         timeout_ms: Optional[int] = None,
-        **kwargs: Any,
     ) -> None:
-        kwargs = kwargs or {}
-        if api_key is not None:
-            kwargs["api_key"] = api_key
-        if api_url is not None:
-            kwargs["api_url"] = api_url
-        if retry_config is not None:
-            kwargs["retry_config"] = retry_config
-        if timeout_ms is not None:
-            kwargs["timeout_ms"] = timeout_ms
-        super().__init__(
-            **kwargs,
-        )
+        """Initialize a Client instance.
 
+        Args:
+            api_key: API key for the LangSmith API. Defaults to the
+                LANGCHAIN_API_KEY environment variable.
+            api_url: URL for the LangSmith API. Defaults to the
+                LANGCHAIN_ENDPOINT environment variable or
+                http://localhost:1984 if not set.
+            retry_config: Retry configuration for the HTTPAdapter.
+            timeout_ms: Timeout in milliseconds for the HTTPAdapter.
+
+        Raises:
+            LangSmithUserError: If the API key is not provided when using the
+             hosted service.
+        """
+        self.api_url = (
+            api_url
+            if api_url is not None
+            else os.getenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+        )
+        self.api_key = (
+            api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
+        )
+        _validate_api_key_if_hosted(self.api_url, self.api_key)
+        self.retry_config = retry_config or _default_retry_config()
+        self.timeout_ms = timeout_ms or 7000
         # Create a session and register a finalizer to close it
         self.session = Session()
         weakref.finalize(self, close_session, self.session)
