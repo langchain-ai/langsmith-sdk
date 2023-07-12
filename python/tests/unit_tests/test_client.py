@@ -39,8 +39,8 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client_no_key._headers == {}
 
 
-@mock.patch("langsmith.client.requests.post")
-def test_upload_csv(mock_post: mock.Mock) -> None:
+@mock.patch("langsmith.client.Session")
+def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     dataset_id = str(uuid.uuid4())
     example_1 = Example(
         id=str(uuid.uuid4()),
@@ -65,7 +65,9 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
         "created_at": _CREATED_AT,
         "examples": [example_1, example_2],
     }
-    mock_post.return_value = mock_response
+    mock_session = mock.Mock()
+    mock_session.post.return_value = mock_response
+    mock_session_cls.return_value = mock_session
 
     client = Client(
         api_url="http://localhost:1984",
