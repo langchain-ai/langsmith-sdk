@@ -14,7 +14,7 @@ LangSmith helps you and your team develop and evaluate language models and intel
 
 A typical workflow looks like:
 
-1. Set up an account with LangSmith or host your [local server](https://docs.smith.langchain.com/docs/getting-started/local_installation).
+1. Set up an account with LangSmith or host your [local server](https://docs.smith.langchain.com/docs/additional-resources/local_installation).
 2. Log traces.
 3. Debug, Create Datasets, and Evaluate Runs.
 
