@@ -130,10 +130,24 @@ class Client(BaseSettings):
 
     def __init__(
         self,
-        *args,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+        retry_config: Optional[Retry] = None,
+        timeout_ms: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(*args, **kwargs)
+        kwargs = kwargs or {}
+        if api_key is not None:
+            kwargs["api_key"] = api_key
+        if api_url is not None:
+            kwargs["api_url"] = api_url
+        if retry_config is not None:
+            kwargs["retry_config"] = retry_config
+        if timeout_ms is not None:
+            kwargs["timeout_ms"] = timeout_ms
+        super().__init__(
+            **kwargs,
+        )
 
         # Create a session and register a finalizer to close it
         self.session = Session()
