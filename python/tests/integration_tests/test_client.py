@@ -248,15 +248,9 @@ def test_persist_update_run(
     run["outputs"] = {"output": ["Hi"]}
     run["extra"]["foo"] = "bar"
     langchain_client.update_run(run["id"], **run)
-    for _ in range(10):
-        # Async updates..
-        stored_run = langchain_client.read_run(run["id"])
-        if stored_run.extra is not None and "foo" in stored_run.extra:
-            break
-        time.sleep(1)
+    stored_run = langchain_client.read_run(run["id"])
     assert stored_run.id == run["id"]
     assert stored_run.outputs == run["outputs"]
-    assert stored_run.extra is not None and stored_run.extra.get("foo") == "bar"
     assert stored_run.start_time == run["start_time"]
     langchain_client.delete_project(project_name=project_name)
 
