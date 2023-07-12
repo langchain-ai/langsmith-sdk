@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import socket
+import weakref
 from collections import defaultdict
 from datetime import datetime
 from io import BytesIO
@@ -24,15 +25,9 @@ from typing import (
 from urllib.parse import urlsplit
 from uuid import UUID
 
-import requests
-from pydantic import BaseSettings, Field, root_validator
-from requests import Response
-from tenacity import (
-    before_sleep_log,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from requests import ConnectionError, HTTPError, Response, Session
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from langsmith.evaluation.evaluator import RunEvaluator
 from langsmith.schemas import (
@@ -56,11 +51,11 @@ from langsmith.schemas import (
 )
 from langsmith.utils import (
     LangSmithAPIError,
+    LangSmithConnectionError,
     LangSmithError,
     LangSmithUserError,
     get_runtime_environment,
     raise_for_status_with_text,
-    request_with_retries,
     xor_args,
 )
 
@@ -83,12 +78,15 @@ def _is_localhost(url: str) -> bool:
 ID_TYPE = Union[UUID, str]
 
 
-def _default_retry_config() -> Dict[str, Any]:
-    return dict(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(LangSmithAPIError),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
+def _default_retry_config() -> Retry:
+    return Retry(
+        total=3,
+        allowed_methods=None,  # Retry on all methods
+        status_forcelist=[502, 503, 504, 408, 425, 429],
+        backoff_factor=0.5,
+        # Sadly urllib3 1.x doesn't support backoff_jitter
+        raise_on_redirect=False,
+        raise_on_status=False,
     )
 
 
@@ -100,27 +98,75 @@ def _serialize_json(obj: Any) -> str:
     raise TypeError("Type %s not serializable" % type(obj))
 
 
-class Client(BaseSettings):
+def close_session(session: Session) -> None:
+    """Close the session."""
+    logger.debug("Closing Client.session")
+    session.close()
+
+
+def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
+    """Verify API key is provided if url not localhost."""
+    if not _is_localhost(api_url):
+        if not api_key:
+            raise LangSmithUserError(
+                "API key must be provided when using hosted LangSmith API"
+            )
+
+
+class Client:
     """Client for interacting with the LangSmith API."""
 
-    api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
-    api_url: str = Field(default="http://localhost:1984", env="LANGCHAIN_ENDPOINT")
-    retry_config: Mapping[str, Any] = Field(
-        default_factory=_default_retry_config, exclude=True
-    )
-    timeout_ms: int = Field(default=4000)
+    __slots__ = [
+        "__weakref__",
+        "api_url",
+        "api_key",
+        "retry_config",
+        "timeout_ms",
+        "session",
+    ]
 
-    @root_validator(pre=True)
-    def validate_api_key_if_hosted(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        """Verify API key is provided if url not localhost."""
-        api_url: str = values.get("api_url", "http://localhost:1984")
-        api_key: Optional[str] = values.get("api_key")
-        if not _is_localhost(api_url):
-            if not api_key:
-                raise LangSmithUserError(
-                    "API key must be provided when using hosted LangSmith API"
-                )
-        return values
+    def __init__(
+        self,
+        api_url: Optional[str] = None,
+        *,
+        api_key: Optional[str] = None,
+        retry_config: Optional[Retry] = None,
+        timeout_ms: Optional[int] = None,
+    ) -> None:
+        """Initialize a Client instance.
+
+        Args:
+            api_key: API key for the LangSmith API. Defaults to the
+                LANGCHAIN_API_KEY environment variable.
+            api_url: URL for the LangSmith API. Defaults to the
+                LANGCHAIN_ENDPOINT environment variable or
+                http://localhost:1984 if not set.
+            retry_config: Retry configuration for the HTTPAdapter.
+            timeout_ms: Timeout in milliseconds for the HTTPAdapter.
+
+        Raises:
+            LangSmithUserError: If the API key is not provided when using the
+             hosted service.
+        """
+        self.api_url = (
+            api_url
+            if api_url is not None
+            else os.getenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+        )
+        self.api_key = (
+            api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
+        )
+        _validate_api_key_if_hosted(self.api_url, self.api_key)
+        self.retry_config = retry_config or _default_retry_config()
+        self.timeout_ms = timeout_ms or 7000
+        # Create a session and register a finalizer to close it
+        self.session = Session()
+        weakref.finalize(self, close_session, self.session)
+
+        # Mount the HTTPAdapter with the retry configuration
+        adapter = HTTPAdapter(max_retries=self.retry_config)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL."""
@@ -144,10 +190,42 @@ class Client(BaseSettings):
             headers["x-api-key"] = self.api_key
         return headers
 
+    def request_with_retries(
+        self,
+        request_method: str,
+        url: str,
+        request_kwargs: Mapping,
+    ) -> Response:
+        try:
+            response = self.session.request(
+                request_method, url, stream=False, **request_kwargs
+            )
+            raise_for_status_with_text(response)
+            return response
+        except HTTPError as e:
+            if response is not None and response.status_code == 500:
+                raise LangSmithAPIError(
+                    f"Server error caused failure to {request_method} {url} in"
+                    f" LangChain+ API. {e}"
+                )
+            else:
+                raise LangSmithUserError(
+                    f"Failed to {request_method} {url} in LangChain+ API. {e}"
+                )
+        except ConnectionError as e:
+            raise LangSmithConnectionError(
+                f"Connection error caused failure to {request_method} {url}"
+                "  in LangChain+ API. Please confirm your LANGCHAIN_ENDPOINT."
+            ) from e
+        except Exception as e:
+            raise LangSmithError(
+                f"Failed to {request_method} {url} in LangChain+ API. {e}"
+            ) from e
+
     def _get_with_retries(
         self, path: str, params: Optional[Dict[str, Any]] = None
     ) -> Response:
-        return request_with_retries(
+        return self.request_with_retries(
             "get",
             f"{self.api_url}{path}",
             request_kwargs={
@@ -155,7 +233,6 @@ class Client(BaseSettings):
                 "headers": self._headers,
                 "timeout": self.timeout_ms / 1000,
             },
-            retry_config=self.retry_config,
         )
 
     def _get_paginated_list(
@@ -224,14 +301,14 @@ class Client(BaseSettings):
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
-                response = requests.post(
+                response = self.session.post(
                     self.api_url + "/datasets/upload",
                     headers=self._headers,
                     data=data,
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
-            response = requests.post(
+            response = self.session.post(
                 self.api_url + "/datasets/upload",
                 headers=self._headers,
                 data=data,
@@ -282,7 +359,7 @@ class Client(BaseSettings):
         runtime_env = get_runtime_environment()
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {**self._headers, "Accept": "application/json"}
-        request_with_retries(
+        self.request_with_retries(
             "post",
             f"{self.api_url}/runs",
             request_kwargs={
@@ -290,7 +367,6 @@ class Client(BaseSettings):
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
-            retry_config=self.retry_config,
         )
 
     def update_run(
@@ -300,7 +376,7 @@ class Client(BaseSettings):
     ) -> None:
         """Update a run to the LangSmith API."""
         headers = {**self._headers, "Accept": "application/json"}
-        request_with_retries(
+        self.request_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
             request_kwargs={
@@ -308,7 +384,6 @@ class Client(BaseSettings):
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
-            retry_config=self.retry_config,
         )
 
     def _load_child_runs(self, run: Run) -> Run:
@@ -376,7 +451,7 @@ class Client(BaseSettings):
 
     def delete_run(self, run_id: ID_TYPE) -> None:
         """Delete a run from the LangSmith API."""
-        response = requests.delete(
+        response = self.session.delete(
             f"{self.api_url}/runs/{run_id}",
             headers=self._headers,
         )
@@ -398,7 +473,7 @@ class Client(BaseSettings):
         params = {}
         if upsert:
             params["upsert"] = True
-        response = requests.post(
+        response = self.session.post(
             endpoint,
             headers=self._headers,
             json=body,
@@ -449,7 +524,7 @@ class Client(BaseSettings):
             project_id = str(self.read_project(project_name=project_name).id)
         elif project_id is None:
             raise ValueError("Must provide project_name or project_id")
-        response = requests.delete(
+        response = self.session.delete(
             self.api_url + f"/sessions/{project_id}",
             headers=self._headers,
         )
@@ -468,7 +543,7 @@ class Client(BaseSettings):
             description=description,
             data_type=data_type,
         )
-        response = requests.post(
+        response = self.session.post(
             self.api_url + "/datasets",
             headers=self._headers,
             data=dataset.json(),
@@ -520,7 +595,7 @@ class Client(BaseSettings):
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
-        response = requests.delete(
+        response = self.session.delete(
             f"{self.api_url}/datasets/{dataset_id}",
             headers=self._headers,
         )
@@ -547,7 +622,7 @@ class Client(BaseSettings):
         if created_at:
             data["created_at"] = created_at.isoformat()
         example = ExampleCreate(**data)
-        response = requests.post(
+        response = self.session.post(
             f"{self.api_url}/examples", headers=self._headers, data=example.json()
         )
         raise_for_status_with_text(response)
@@ -590,7 +665,7 @@ class Client(BaseSettings):
             outputs=outputs,
             dataset_id=dataset_id,
         )
-        response = requests.patch(
+        response = self.session.patch(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
             data=example.json(exclude_none=True),
@@ -600,7 +675,7 @@ class Client(BaseSettings):
 
     def delete_example(self, example_id: ID_TYPE) -> None:
         """Delete an example by ID."""
-        response = requests.delete(
+        response = self.session.delete(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
         )
@@ -767,7 +842,7 @@ class Client(BaseSettings):
             comment=comment,
             feedback_source=feedback_source,
         )
-        response = requests.post(
+        response = self.session.post(
             self.api_url + "/feedback",
             headers={**self._headers, "Content-Type": "application/json"},
             data=feedback.json(exclude_none=True),
@@ -799,7 +874,7 @@ class Client(BaseSettings):
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID."""
-        response = requests.delete(
+        response = self.session.delete(
             f"{self.api_url}/feedback/{feedback_id}",
             headers=self._headers,
         )

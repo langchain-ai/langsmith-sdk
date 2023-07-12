@@ -1,11 +1,9 @@
 """Generic utility functions."""
 import platform
 from functools import lru_cache
-from typing import Any, Callable, Mapping, Tuple
+from typing import Any, Callable, Tuple
 
-import requests
-from requests import ConnectionError, HTTPError, Response
-from tenacity import Retrying
+from requests import HTTPError, Response
 
 
 class LangSmithAPIError(Exception):
@@ -22,37 +20,6 @@ class LangSmithError(Exception):
 
 class LangSmithConnectionError(Exception):
     """Couldn't connect to the LC+ API."""
-
-
-def request_with_retries(
-    request_method: str, url: str, request_kwargs: Mapping, retry_config: Mapping
-) -> Response:
-    for attempt in Retrying(**retry_config):
-        with attempt:
-            try:
-                response = requests.request(request_method, url, **request_kwargs)
-                raise_for_status_with_text(response)
-                return response
-            except HTTPError as e:
-                if response is not None and response.status_code == 500:
-                    raise LangSmithAPIError(
-                        f"Server error caused failure to {request_method} {url} in"
-                        f" LangSmith API. {e}"
-                    )
-                else:
-                    raise LangSmithUserError(
-                        f"Failed to {request_method} {url} in LangSmith API. {e}"
-                    )
-            except ConnectionError as e:
-                raise LangSmithConnectionError(
-                    f"Connection error caused failure to {request_method} {url}"
-                    "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-                ) from e
-            except Exception as e:
-                raise LangSmithError(
-                    f"Failed to {request_method} {url} in LangSmith API. {e}"
-                ) from e
-    raise LangSmithError(f"Failed to {request_method}  {url} in LangSmith API. ")
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
