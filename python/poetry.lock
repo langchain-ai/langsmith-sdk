@@ -488,21 +488,6 @@ files = [
 ]
 
 [[package]]
-name = "tenacity"
-version = "8.2.2"
-description = "Retry code until it succeeds"
-category = "main"
-optional = false
-python-versions = ">=3.6"
-files = [
-    {file = "tenacity-8.2.2-py3-none-any.whl", hash = "sha256:2f277afb21b851637e8f52e6a613ff08734c347dc19ade928e519d7d2d8569b0"},
-    {file = "tenacity-8.2.2.tar.gz", hash = "sha256:43af037822bd0029025877f3b2d97cc4d7bb0c2991000a3d59d71517c5c969e0"},
-]
-
-[package.extras]
-doc = ["reno", "sphinx", "tornado (>=4.5)"]
-
-[[package]]
 name = "tomli"
 version = "2.0.1"
 description = "A lil' TOML parser"
@@ -598,4 +583,4 @@ zstd = ["zstandard (>=0.18.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0"
-content-hash = "9198b57e71006ce9734dee74418dabb443d5b3f7e337d9dcbdc533ca425600e2"
+content-hash = "5ea010a4e75e55a695996dc7f70016bebaa1ce57abeaab03e23c7358f5ead3bc"
