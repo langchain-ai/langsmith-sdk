@@ -9,8 +9,12 @@ from pathlib import Path
 from typing import Dict, Generator, List, Mapping, Optional, Union, cast
 
 import requests
-from langsmith.utils import (get_docker_compose_command,
-                             get_docker_environment, get_runtime_environment)
+
+from langsmith.utils import (
+    get_docker_compose_command,
+    get_docker_environment,
+    get_runtime_environment,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -271,7 +275,8 @@ class LangSmithCommand:
         ]
         if clear_volumes:
             confirm = input(
-                "You are about to delete all the locally cached LangSmith containers and volumes. "
+                "You are about to delete all the locally cached "
+                "LangSmith containers and volumes. "
                 "This operation cannot be undone. Are you sure? [y/N]"
             )
             if confirm.lower() != "y":
@@ -388,7 +393,9 @@ def main() -> None:
         action="store_true",
         help="Delete all the locally cached LangSmith containers and volumes.",
     )
-    server_stop_parser.set_defaults(func=lambda args: server_command.stop(clear_volumes=args.clear_volumes))
+    server_stop_parser.set_defaults(
+        func=lambda args: server_command.stop(clear_volumes=args.clear_volumes)
+    )
 
     server_pull_parser = subparsers.add_parser(
         "pull", description="Pull the latest LangSmith images."
