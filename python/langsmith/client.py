@@ -352,7 +352,7 @@ class Client:
             "name": name,
             "inputs": inputs,
             "run_type": run_type,
-            "execution_order": execution_order,
+            "execution_order": execution_order if execution_order is not None else 1,
         }
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
