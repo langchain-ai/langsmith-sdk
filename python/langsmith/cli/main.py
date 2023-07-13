@@ -6,12 +6,15 @@ import shutil
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
-from subprocess import CalledProcessError
 from typing import Dict, Generator, List, Mapping, Optional, Union, cast
 
 import requests
 
-from langsmith.utils import get_runtime_environment
+from langsmith.utils import (
+    get_docker_compose_command,
+    get_docker_environment,
+    get_runtime_environment,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -61,32 +64,6 @@ def pprint_services(services_status: List[Mapping[str, Union[str, List[str]]]]) 
         f"\nLANGCHAIN_ENDPOINT={langchain_endpoint}"
     )
     logger.info("\n".join(service_message))
-
-
-def get_docker_compose_command() -> List[str]:
-    """Get the correct docker compose command for this system."""
-    try:
-        subprocess.check_call(
-            ["docker", "compose", "--version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return ["docker", "compose"]
-    except (CalledProcessError, FileNotFoundError):
-        try:
-            subprocess.check_call(
-                ["docker-compose", "--version"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return ["docker-compose"]
-        except (CalledProcessError, FileNotFoundError):
-            raise ValueError(
-                "Neither 'docker compose' nor 'docker-compose'"
-                " commands are available. Please install the Docker"
-                " server following the instructions for your operating"
-                " system at https://docs.docker.com/engine/install/"
-            )
 
 
 def get_ngrok_url(auth_token: Optional[str]) -> str:
@@ -286,18 +263,28 @@ class LangSmithCommand:
         else:
             self._start_local(dev=dev)
 
-    def stop(self) -> None:
+    def stop(self, clear_volumes: bool = False) -> None:
         """Stop the LangSmith server."""
-        subprocess.run(
-            [
-                *self.docker_compose_command,
-                "-f",
-                str(self.docker_compose_file),
-                "-f",
-                str(self.ngrok_path),
-                "down",
-            ]
-        )
+        cmd = [
+            *self.docker_compose_command,
+            "-f",
+            str(self.docker_compose_file),
+            "-f",
+            str(self.ngrok_path),
+            "down",
+        ]
+        if clear_volumes:
+            confirm = input(
+                "You are about to delete all the locally cached "
+                "LangSmith containers and volumes. "
+                "This operation cannot be undone. Are you sure? [y/N]"
+            )
+            if confirm.lower() != "y":
+                print("Aborting.")
+                return
+            cmd.append("--volumes")
+
+        subprocess.run(cmd)
 
     def logs(self) -> None:
         """Print the logs from the LangSmith server."""
@@ -346,8 +333,14 @@ class LangSmithCommand:
 def env() -> None:
     """Print the runtime environment information."""
     env = get_runtime_environment()
+    env.update(get_docker_environment())
+
+    # calculate the max length of keys
+    max_key_length = max(len(key) for key in env.keys())
+
     logger.info("LangChain Environment:")
-    logger.info("\n".join(f"{k}:{v}" for k, v in env.items()))
+    for k, v in env.items():
+        logger.info(f"{k:{max_key_length}}: {v}")
 
 
 def main() -> None:
@@ -395,7 +388,14 @@ def main() -> None:
     server_stop_parser = subparsers.add_parser(
         "stop", description="Stop the LangSmith server."
     )
-    server_stop_parser.set_defaults(func=lambda args: server_command.stop())
+    server_stop_parser.add_argument(
+        "--clear-volumes",
+        action="store_true",
+        help="Delete all the locally cached LangSmith containers and volumes.",
+    )
+    server_stop_parser.set_defaults(
+        func=lambda args: server_command.stop(clear_volumes=args.clear_volumes)
+    )
 
     server_pull_parser = subparsers.add_parser(
         "pull", description="Pull the latest LangSmith images."
