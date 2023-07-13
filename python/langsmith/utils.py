@@ -1,25 +1,26 @@
 """Generic utility functions."""
 import platform
+import subprocess
 from functools import lru_cache
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, List, Tuple
 
 from requests import HTTPError, Response
 
 
 class LangSmithAPIError(Exception):
-    """An error occurred while communicating with the LangChain API."""
+    """An error occurred while communicating with the LangSmith API."""
 
 
 class LangSmithUserError(Exception):
-    """An error occurred while communicating with the LangChain API."""
+    """An error occurred while communicating with the LangSmith API."""
 
 
 class LangSmithError(Exception):
-    """An error occurred while communicating with the LangChain API."""
+    """An error occurred while communicating with the LangSmith API."""
 
 
 class LangSmithConnectionError(Exception):
-    """Couldn't connect to the LC+ API."""
+    """Couldn't connect to the LangSmith API."""
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
@@ -67,4 +68,61 @@ def get_runtime_environment() -> dict:
         "platform": platform.platform(),
         "runtime": "python",
         "runtime_version": platform.python_version(),
+    }
+
+
+@lru_cache
+def get_docker_compose_command() -> List[str]:
+    """Get the correct docker compose command for this system."""
+    try:
+        subprocess.check_call(
+            ["docker", "compose", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return ["docker", "compose"]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        try:
+            subprocess.check_call(
+                ["docker-compose", "--version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return ["docker-compose"]
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise ValueError(
+                "Neither 'docker compose' nor 'docker-compose'"
+                " commands are available. Please install the Docker"
+                " server following the instructions for your operating"
+                " system at https://docs.docker.com/engine/install/"
+            )
+
+
+@lru_cache
+def get_docker_environment() -> dict:
+    """Get information about the environment."""
+    # Try to get the docker CLI version via subprocess
+    import subprocess
+
+    try:
+        docker_version = (
+            subprocess.check_output(["docker", "--version"]).decode("utf-8").strip()
+        )
+    except FileNotFoundError:
+        docker_version = "unknown"
+
+    compose_command = get_docker_compose_command()
+    try:
+        docker_compose_version = (
+            subprocess.check_output(["docker-compose", "--version"])
+            .decode("utf-8")
+            .strip()
+        )
+    except FileNotFoundError:
+        docker_compose_version = "unknown"
+
+    return {
+        "docker_version": docker_version,
+        "docker_compose_command": " ".join(compose_command),
+        "docker_compose_version": docker_compose_version,
     }
