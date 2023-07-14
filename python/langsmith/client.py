@@ -11,6 +11,7 @@ from io import BytesIO
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     DefaultDict,
     Dict,
     Iterator,
@@ -55,12 +56,18 @@ from langsmith.utils import (
     LangSmithError,
     LangSmithUserError,
     get_runtime_environment,
+    load_langchain,
     raise_for_status_with_text,
     xor_args,
 )
 
 if TYPE_CHECKING:
     import pandas as pd
+
+BaseLanguageModel = Any
+Chain = Any
+MODEL_OR_CHAIN_FACTORY = Union[Callable[[], Chain], BaseLanguageModel]
+RunEvalConfig = Any
 
 logger = logging.getLogger(__name__)
 
@@ -830,6 +837,122 @@ class Client:
             correction=feedback_result.correction,
             source_info=source_info,
             feedback_source_type=FeedbackSourceType.MODEL,
+        )
+
+    def run_on_dataset(
+        self,
+        dataset_name: str,
+        llm_or_chain_factory: MODEL_OR_CHAIN_FACTORY,
+        *,
+        evaluation: Optional[RunEvalConfig] = None,
+        num_repetitions: int = 1,
+        project_name: Optional[str] = None,
+        verbose: bool = False,
+        tags: Optional[List[str]] = None,
+        input_mapper: Optional[Callable[[Dict], Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run the Chain or language model on a dataset and store traces
+        to the specified project name.
+
+        Requires `langchain` to be installed with `pip install langchain`.
+
+        Args:
+            client: LangSmith client to use to access the dataset and to
+                log feedback and run traces.
+            dataset_name: Name of the dataset to run the chain on.
+            llm_or_chain_factory: Language model or Chain constructor to run
+                over the dataset. The Chain constructor is used to permit
+                independent calls on each example without carrying over state.
+            evaluation: Configuration for evaluators to run on the
+                results of the chain
+            num_repetitions: Number of times to run the model on each example.
+                This is useful when testing success rates or generating confidence
+                intervals.
+            project_name: Name of the project to store the traces in.
+                Defaults to {dataset_name}-{chain class name}-{datetime}.
+            verbose: Whether to print progress.
+            tags: Tags to add to each run in the project.
+            input_mapper: A function to map to the inputs dictionary from an Example
+                to the format expected by the model to be evaluated. This is useful if
+                your model needs to deserialize more complex schema or if your dataset
+                has inputs with keys that differ from what is expected by your chain
+                or agent.
+
+        Returns:
+            A dictionary containing the run's project name
+            and the resulting model outputs.
+        """
+        langchain = load_langchain()
+        return langchain.smith.run_on_dataset(
+            self,
+            dataset_name,
+            llm_or_chain_factory,
+            evaluation=evaluation,
+            num_repetitions=num_repetitions,
+            project_name=project_name,
+            verbose=verbose,
+            tags=tags,
+            input_mapper=input_mapper,
+        )
+
+    async def arun_on_dataset(
+        self,
+        dataset_name: str,
+        llm_or_chain_factory: MODEL_OR_CHAIN_FACTORY,
+        *,
+        evaluation: Optional[RunEvalConfig] = None,
+        concurrency_level: int = 5,
+        num_repetitions: int = 1,
+        project_name: Optional[str] = None,
+        verbose: bool = False,
+        tags: Optional[List[str]] = None,
+        input_mapper: Optional[Callable[[Dict], Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Asynchronously run the Chain or language model on a dataset
+        and store traces to the specified project name.
+
+        Requires `langchain` to be installed with `pip install langchain`.
+
+        Args:
+            client: LangSmith client to use to read the dataset, and to
+                log feedback and run traces.
+            dataset_name: Name of the dataset to run the chain on.
+            llm_or_chain_factory: Language model or Chain constructor to run
+                over the dataset. The Chain constructor is used to permit
+                independent calls on each example without carrying over state.
+            evaluation: Optional evaluation configuration to use when evaluating
+            concurrency_level: The number of async tasks to run concurrently.
+            num_repetitions: Number of times to run the model on each example.
+                This is useful when testing success rates or generating confidence
+                intervals.
+            project_name: Name of the project to store the traces in.
+                Defaults to {dataset_name}-{chain class name}-{datetime}.
+            verbose: Whether to print progress.
+            tags: Tags to add to each run in the project.
+            input_mapper: A function to map to the inputs dictionary from an Example
+                to the format expected by the model to be evaluated. This is useful if
+                your model needs to deserialize more complex schema or if your dataset
+                has inputs with keys that differ from what is expected by your chain
+                or agent.
+
+        Returns:
+            A dictionary containing the run's project name and the
+            resulting model outputs.
+        """
+        langchain = load_langchain()
+        return await langchain.smith.arun_on_dataset(
+            self,
+            dataset_name,
+            llm_or_chain_factory,
+            evaluation=evaluation,
+            concurrency_level=concurrency_level,
+            num_repetitions=num_repetitions,
+            project_name=project_name,
+            verbose=verbose,
+            tags=tags,
+            input_mapper=input_mapper,
         )
 
     def create_feedback(

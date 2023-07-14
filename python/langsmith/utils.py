@@ -23,6 +23,19 @@ class LangSmithConnectionError(Exception):
     """Couldn't connect to the LangSmith API."""
 
 
+def load_langchain() -> Any:
+    """Load the langchain module."""
+    try:
+        import langchain
+    except ImportError:
+        raise ImportError(
+            "The langchain module is not installed. "
+            "For this call, please install langchain with: "
+            "`pip install langchain`"
+        ) from None
+    return langchain
+
+
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     """Validate specified keyword args are mutually exclusive."""
 
