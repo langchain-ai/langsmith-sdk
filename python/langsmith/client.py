@@ -425,6 +425,8 @@ class Client:
         dataset_name: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
         reference_example_id: Optional[ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
         **kwargs: Any,
     ) -> Iterator[Run]:
         """List runs from the LangSmith API."""
@@ -445,6 +447,10 @@ class Client:
             query_params["reference_example"] = reference_example_id
         if dataset_id is not None:
             query_params["dataset"] = dataset_id
+        if query is not None:
+            query_params["query"] = query
+        if filter is not None:
+            query_params["filter"] = filter
         yield from (
             Run(**run) for run in self._get_paginated_list("/runs", params=query_params)
         )
