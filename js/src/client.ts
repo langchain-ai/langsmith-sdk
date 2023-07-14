@@ -36,6 +36,8 @@ interface ListRunsParams {
   id?: string[];
   limit?: number;
   offset?: number;
+  query?: string;
+  filter?: string;
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -251,6 +253,8 @@ export class Client {
     id,
     limit,
     offset,
+    query,
+    filter,
   }: ListRunsParams): Promise<Run[]> {
     const queryParams = new URLSearchParams();
     let projectId_ = projectId;
@@ -283,7 +287,12 @@ export class Client {
     if (offset !== undefined) {
       queryParams.append("offset", offset.toString());
     }
-
+    if (query !== undefined) {
+      queryParams.append("query", query);
+    }
+    if (filter !== undefined) {
+      queryParams.append("filter", filter);
+    }
     return this._get<Run[]>("/runs", queryParams);
   }
 
