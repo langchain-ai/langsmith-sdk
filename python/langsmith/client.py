@@ -425,6 +425,17 @@ class Client:
         dataset_name: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
         reference_example_id: Optional[ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        execution_order: Optional[int] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        error: Optional[bool] = None,
+        run_ids: Optional[List[ID_TYPE]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[Sequence[str]] = None,
         **kwargs: Any,
     ) -> Iterator[Run]:
         """List runs from the LangSmith API."""
@@ -436,7 +447,7 @@ class Client:
             if dataset_id is not None:
                 raise ValueError("Only one of dataset_id or dataset_name may be given")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-        query_params = {
+        query_params: Dict[str, Any] = {
             "session": project_id,
             "run_type": run_type,
             **kwargs,
@@ -445,6 +456,28 @@ class Client:
             query_params["reference_example"] = reference_example_id
         if dataset_id is not None:
             query_params["dataset"] = dataset_id
+        if query is not None:
+            query_params["query"] = query
+        if filter is not None:
+            query_params["filter"] = filter
+        if execution_order is not None:
+            query_params["execution_order"] = execution_order
+        if parent_run_id is not None:
+            query_params["parent_run"] = parent_run_id
+        if start_time is not None:
+            query_params["start_time"] = start_time.isoformat()
+        if end_time is not None:
+            query_params["end_time"] = end_time.isoformat()
+        if error is not None:
+            query_params["error"] = error
+        if run_ids is not None:
+            query_params["id"] = run_ids
+        if limit is not None:
+            query_params["limit"] = limit
+        if offset is not None:
+            query_params["offset"] = offset
+        if order_by is not None:
+            query_params["order"] = order_by
         yield from (
             Run(**run) for run in self._get_paginated_list("/runs", params=query_params)
         )
