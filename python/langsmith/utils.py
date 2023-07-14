@@ -110,8 +110,10 @@ def get_docker_environment() -> dict:
         )
     except FileNotFoundError:
         docker_version = "unknown"
-
-    compose_command = get_docker_compose_command()
+    try:
+        compose_command = get_docker_compose_command()
+    except ValueError as e:
+        compose_command = [f"NOT INSTALLED: {e}"]
     try:
         docker_compose_version = (
             subprocess.check_output(["docker-compose", "--version"])
