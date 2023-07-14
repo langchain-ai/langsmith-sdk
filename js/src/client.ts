@@ -31,11 +31,19 @@ interface ListRunsParams {
   projectId?: string;
   projectName?: string;
   executionOrder?: number;
+  parentRunId?: string;
+  referenceExampleId?: string;
+  datasetId?: string;
+  startTime?: Date;
+  endTime?: Date;
   runType?: RunType;
   error?: boolean;
   id?: string[];
   limit?: number;
   offset?: number;
+  query?: string;
+  filter?: string;
+  orderBy?: string[];
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -245,12 +253,20 @@ export class Client {
   public async listRuns({
     projectId,
     projectName,
+    parentRunId,
+    referenceExampleId,
+    datasetId,
+    startTime,
+    endTime,
     executionOrder,
     runType,
     error,
     id,
     limit,
     offset,
+    query,
+    filter,
+    orderBy,
   }: ListRunsParams): Promise<Run[]> {
     const queryParams = new URLSearchParams();
     let projectId_ = projectId;
@@ -262,6 +278,21 @@ export class Client {
     }
     if (projectId_) {
       queryParams.append("session", projectId_);
+    }
+    if (parentRunId) {
+      queryParams.append("parent_run", parentRunId);
+    }
+    if (referenceExampleId) {
+      queryParams.append("reference_example", referenceExampleId);
+    }
+    if (datasetId) {
+      queryParams.append("dataset", datasetId);
+    }
+    if (startTime) {
+      queryParams.append("start_time", startTime.toISOString());
+    }
+    if (endTime) {
+      queryParams.append("end_time", endTime.toISOString());
     }
     if (executionOrder) {
       queryParams.append("execution_order", executionOrder.toString());
@@ -282,6 +313,15 @@ export class Client {
     }
     if (offset !== undefined) {
       queryParams.append("offset", offset.toString());
+    }
+    if (query !== undefined) {
+      queryParams.append("query", query);
+    }
+    if (filter !== undefined) {
+      queryParams.append("filter", filter);
+    }
+    if (orderBy !== undefined) {
+      orderBy.map((order) => queryParams.append("order_by", order));
     }
 
     return this._get<Run[]>("/runs", queryParams);
