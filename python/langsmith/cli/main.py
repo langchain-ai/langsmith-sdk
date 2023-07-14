@@ -137,7 +137,6 @@ class LangSmithCommand:
     """Manage the LangSmith Tracing server."""
 
     def __init__(self) -> None:
-        self.docker_compose_command = get_docker_compose_command()
         self.docker_compose_file = (
             Path(__file__).absolute().parent / "docker-compose.yaml"
         )
@@ -145,6 +144,10 @@ class LangSmithCommand:
             Path(__file__).absolute().parent / "docker-compose.dev.yaml"
         )
         self.ngrok_path = Path(__file__).absolute().parent / "docker-compose.ngrok.yaml"
+
+    @property
+    def docker_compose_command(self) -> List[str]:
+        return get_docker_compose_command()
 
     def _open_browser(self, url: str) -> None:
         try:
