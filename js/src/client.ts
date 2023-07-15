@@ -128,10 +128,13 @@ export class Client {
   }
 
   public static getDefaultClientConfig(): { apiUrl: string; apiKey?: string } {
+    const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
+    const apiUrl =
+      getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
+      (apiKey ? "https://api.smith.langchain.com" : "http://localhost:1984");
     return {
-      apiUrl:
-        getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
-      apiKey: getEnvironmentVariable("LANGCHAIN_API_KEY"),
+      apiUrl: apiUrl,
+      apiKey: apiKey,
     };
   }
 
