@@ -169,6 +169,10 @@ class SmithCommand {
   }
 
   async start(args: any) {
+    console.info(
+      "BY USING THIS SOFTWARE YOU AGREE TO THE TERMS OF SERVICE AT:"
+    );
+    console.info("https://smith.langchain.com/terms-of-service.pdf");
     if (args.dev) {
       setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }

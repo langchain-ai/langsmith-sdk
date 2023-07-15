@@ -348,6 +348,9 @@ def env() -> None:
 
 def main() -> None:
     """Main entrypoint for the CLI."""
+    print("BY USING THIS SOFTWARE YOU AGREE TO THE TERMS OF SERVICE AT:")
+    print("https://smith.langchain.com/terms-of-service.pdf")
+
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(description="LangSmith CLI commands")
 
