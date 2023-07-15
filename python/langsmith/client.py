@@ -148,13 +148,18 @@ class Client:
             LangSmithUserError: If the API key is not provided when using the
              hosted service.
         """
+        self.api_key = (
+            api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
+        )
         self.api_url = (
             api_url
             if api_url is not None
-            else os.getenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-        )
-        self.api_key = (
-            api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
+            else os.getenv(
+                "LANGCHAIN_ENDPOINT",
+                "https://api.smith.langchain.com"
+                if self.api_key
+                else "http://localhost:1984",
+            )
         )
         _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
