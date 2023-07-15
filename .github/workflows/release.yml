@@ -1,4 +1,4 @@
-name: Python Release
+name: Release
 
 on:
   pull_request:
@@ -13,10 +13,6 @@ on:
 env:
   POETRY_VERSION: "1.4.2"
 
-defaults:
-  run:
-    working-directory: python
-
 jobs:
   if_release:
     if: |
@@ -28,6 +24,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v3
+      # Python Build
       - name: Install poetry
         run: pipx install poetry==$POETRY_VERSION
       - name: Set up Python 3.11
@@ -36,7 +33,18 @@ jobs:
           python-version: "3.11"
           cache: "poetry"
       - name: Build project for distribution
-        run: poetry build
+        run: cd python && poetry build
+      # JS Build
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: cd js && yarn install --immutable
+      - name: Build
+        run: cd js && yarn run build
       - name: Check Version
         id: check-version
         run: |
@@ -44,7 +52,9 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "python/dist/*"
+          artifacts: |
+            - "python/dist/*"
+            - "js/dist/*"
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           generateReleaseNotes: true
