@@ -14,7 +14,7 @@ LangSmith helps you and your team develop and evaluate language models and intel
 
 A typical workflow looks like:
 
-1. Set up an account with LangSmith or host your [local server](https://docs.smith.langchain.com/docs/additional-resources/local_installation).
+1. Set up an account with LangSmith.
 2. Log traces.
 3. Debug, Create Datasets, and Evaluate Runs.
 
@@ -24,7 +24,7 @@ We'll walk through these steps in more detail below.
 
 Sign up for [LangSmith](https://smith.langchain.com/) using your GitHub, Discord accounts, or an email address and password. If you sign up with an email, make sure to verify your email address before logging in.
 
-Then, create a unique API key on the [Settings Page](https://smith.langchain.com/settings), which is found in the menu at the top right corner of the page.
+Then, create a unique API key on the [Settings Page](https://smith.langchain.com/settings).
 
 Note: Save the API Key in a secure location. It will not be shown again.
 
@@ -211,7 +211,9 @@ for (const run of runs) {
 
 # Evaluating Runs
 
-You can run evaluations directly using the LangSmith client.
+Check out the [LangSmith Testing & Evaluation dos](https://docs.smith.langchain.com/docs/evaluation/) for up-to-date workflows.
+
+For generating automated feedback on individual runs, you can run evaluations directly using the LangSmith client.
 
 ```ts
 import { StringEvaluator } from "langsmith/evaluation";
