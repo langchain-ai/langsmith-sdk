@@ -315,20 +315,20 @@ class Client:
             if response is not None and response.status_code == 500:
                 raise LangSmithAPIError(
                     f"Server error caused failure to {request_method} {url} in"
-                    f" LangChain+ API. {e}"
+                    f" LangSmith API. {e}"
                 )
             else:
                 raise LangSmithUserError(
-                    f"Failed to {request_method} {url} in LangChain+ API. {e}"
+                    f"Failed to {request_method} {url} in LangSmith API. {e}"
                 )
         except ConnectionError as e:
             raise LangSmithConnectionError(
                 f"Connection error caused failure to {request_method} {url}"
-                "  in LangChain+ API. Please confirm your LANGCHAIN_ENDPOINT."
+                "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
             ) from e
         except Exception as e:
             raise LangSmithError(
-                f"Failed to {request_method} {url} in LangChain+ API. {e}"
+                f"Failed to {request_method} {url} in LangSmith API. {e}"
             ) from e
 
     def _get_with_retries(
