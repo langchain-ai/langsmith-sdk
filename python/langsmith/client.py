@@ -66,7 +66,18 @@ logger = logging.getLogger(__name__)
 
 
 def _is_localhost(url: str) -> bool:
-    """Check if the URL is localhost."""
+    """Check if the URL is localhost.
+
+    Parameters
+    ----------
+    url : str
+        The URL to check.
+
+    Returns
+    -------
+    bool
+        True if the URL is localhost, False otherwise.
+    """
     try:
         netloc = urlsplit(url).netloc.split(":")[0]
         ip = socket.gethostbyname(netloc)
@@ -79,6 +90,13 @@ ID_TYPE = Union[UUID, str]
 
 
 def _default_retry_config() -> Retry:
+    """Get the default retry configuration.
+
+    Returns
+    -------
+    Retry
+        The default retry configuration.
+    """
     return Retry(
         total=3,
         allowed_methods=None,  # Retry on all methods
@@ -91,6 +109,23 @@ def _default_retry_config() -> Retry:
 
 
 def _serialize_json(obj: Any) -> str:
+    """Serialize an object to JSON.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize.
+
+    Returns
+    -------
+    str
+        The serialized JSON string.
+
+    Raises
+    ------
+    TypeError
+        If the object type is not serializable.
+    """
     if isinstance(obj, datetime):
         return obj.isoformat()
     elif isinstance(obj, UUID):
@@ -99,13 +134,32 @@ def _serialize_json(obj: Any) -> str:
 
 
 def close_session(session: Session) -> None:
-    """Close the session."""
+    """Close the session.
+
+    Parameters
+    ----------
+    session : Session
+        The session to close.
+    """
     logger.debug("Closing Client.session")
     session.close()
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
-    """Verify API key is provided if url not localhost."""
+    """Verify API key is provided if url not localhost.
+
+    Parameters
+    ----------
+    api_url : str
+        The API URL.
+    api_key : str or None
+        The API key.
+
+    Raises
+    ------
+    LangSmithUserError
+        If the API key is not provided when using the hosted service.
+    """
     if not _is_localhost(api_url):
         if not api_key:
             raise LangSmithUserError(
@@ -135,18 +189,23 @@ class Client:
     ) -> None:
         """Initialize a Client instance.
 
-        Args:
-            api_key: API key for the LangSmith API. Defaults to the
-                LANGCHAIN_API_KEY environment variable.
-            api_url: URL for the LangSmith API. Defaults to the
-                LANGCHAIN_ENDPOINT environment variable or
-                http://localhost:1984 if not set.
-            retry_config: Retry configuration for the HTTPAdapter.
-            timeout_ms: Timeout in milliseconds for the HTTPAdapter.
+        Parameters
+        ----------
+        api_url : str or None, default=None
+            URL for the LangSmith API. Defaults to the LANGCHAIN_ENDPOINT
+            environment variable or http://localhost:1984 if not set.
+        api_key : str or None, default=None
+            API key for the LangSmith API. Defaults to the LANGCHAIN_API_KEY
+            environment variable.
+        retry_config : Retry or None, default=None
+            Retry configuration for the HTTPAdapter.
+        timeout_ms : int or None, default=None
+            Timeout in milliseconds for the HTTPAdapter.
 
-        Raises:
-            LangSmithUserError: If the API key is not provided when using the
-             hosted service.
+        Raises
+        ------
+        LangSmithUserError
+            If the API key is not provided when using the hosted service.
         """
         self.api_key = (
             api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
@@ -174,7 +233,13 @@ class Client:
         self.session.mount("https://", adapter)
 
     def _repr_html_(self) -> str:
-        """Return an HTML representation of the instance with a link to the URL."""
+        """Return an HTML representation of the instance with a link to the URL.
+
+        Returns
+        -------
+        str
+            The HTML representation of the instance.
+        """
         if _is_localhost(self.api_url):
             link = "http://localhost"
         elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
@@ -184,12 +249,24 @@ class Client:
         return f'<a href="{link}", target="_blank" rel="noopener">LangSmith Client</a>'
 
     def __repr__(self) -> str:
-        """Return a string representation of the instance with a link to the URL."""
+        """Return a string representation of the instance with a link to the URL.
+
+        Returns
+        -------
+        str
+            The string representation of the instance.
+        """
         return f"Client (API URL: {self.api_url})"
 
     @property
     def _headers(self) -> Dict[str, str]:
-        """Get the headers for the API request."""
+        """Get the headers for the API request.
+
+        Returns
+        -------
+        Dict[str, str]
+            The headers for the API request.
+        """
         headers = {}
         if self.api_key:
             headers["x-api-key"] = self.api_key
@@ -201,6 +278,33 @@ class Client:
         url: str,
         request_kwargs: Mapping,
     ) -> Response:
+        """Send a request with retries.
+
+        Parameters
+        ----------
+        request_method : str
+            The HTTP request method.
+        url : str
+            The URL to send the request to.
+        request_kwargs : Mapping
+            Additional request parameters.
+
+        Returns
+        -------
+        Response
+            The response object.
+
+        Raises
+        ------
+        LangSmithAPIError
+            If a server error occurs.
+        LangSmithUserError
+            If the request fails.
+        LangSmithConnectionError
+            If a connection error occurs.
+        LangSmithError
+            If the request fails.
+        """
         try:
             response = self.session.request(
                 request_method, url, stream=False, **request_kwargs
@@ -230,6 +334,31 @@ class Client:
     def _get_with_retries(
         self, path: str, params: Optional[Dict[str, Any]] = None
     ) -> Response:
+        """Send a GET request with retries.
+
+        Parameters
+        ----------
+        path : str
+            The path of the request URL.
+        params : Dict[str, Any] or None, default=None
+            The query parameters.
+
+        Returns
+        -------
+        Response
+            The response object.
+
+        Raises
+        ------
+        LangSmithAPIError
+            If a server error occurs.
+        LangSmithUserError
+            If the request fails.
+        LangSmithConnectionError
+            If a connection error occurs.
+        LangSmithError
+            If the request fails.
+        """
         return self.request_with_retries(
             "get",
             f"{self.api_url}{path}",
@@ -243,6 +372,20 @@ class Client:
     def _get_paginated_list(
         self, path: str, *, params: Optional[dict] = None
     ) -> Iterator[dict]:
+        """Get a paginated list of items.
+
+        Parameters
+        ----------
+        path : str
+            The path of the request URL.
+        params : dict or None, default=None
+            The query parameters.
+
+        Yields
+        ------
+        dict
+            The items in the paginated list.
+        """
         params_ = params.copy() if params else {}
         offset = params_.get("offset", 0)
         params_["limit"] = params_.get("limit", 100)
@@ -269,7 +412,33 @@ class Client:
         description: Optional[str] = None,
         data_type: Optional[DataType] = DataType.kv,
     ) -> Dataset:
-        """Upload a dataframe as individual examples to the LangSmith API."""
+        """Upload a dataframe as individual examples to the LangSmith API.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The dataframe to upload.
+        name : str
+            The name of the dataset.
+        input_keys : Sequence[str]
+            The input keys.
+        output_keys : Sequence[str]
+            The output keys.
+        description : str or None, default=None
+            The description of the dataset.
+        data_type : DataType or None, default=DataType.kv
+            The data type of the dataset.
+
+        Returns
+        -------
+        Dataset
+            The uploaded dataset.
+
+        Raises
+        ------
+        ValueError
+            If the csv_file is not a string or tuple.
+        """
         csv_file = BytesIO()
         df.to_csv(csv_file, index=False)
         csv_file.seek(0)
@@ -292,7 +461,34 @@ class Client:
         description: Optional[str] = None,
         data_type: Optional[DataType] = DataType.kv,
     ) -> Dataset:
-        """Upload a CSV file to the LangSmith API."""
+        """Upload a CSV file to the LangSmith API.
+
+        Parameters
+        ----------
+        csv_file : str or Tuple[str, BytesIO]
+            The CSV file to upload. If a string, it should be the path to the file.
+            If a tuple, it should be a tuple containing the filename and a BytesIO object.
+        input_keys : Sequence[str]
+            The input keys.
+        output_keys : Sequence[str]
+            The output keys.
+        name : str or None, default=None
+            The name of the dataset.
+        description : str or None, default=None
+            The description of the dataset.
+        data_type : DataType or None, default=DataType.kv
+            The data type of the dataset.
+
+        Returns
+        -------
+        Dataset
+            The uploaded dataset.
+
+        Raises
+        ------
+        ValueError
+            If the csv_file is not a string or tuple.
+        """
         data = {
             "input_keys": input_keys,
             "output_keys": output_keys,
@@ -339,7 +535,26 @@ class Client:
         execution_order: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
-        """Persist a run to the LangSmith API."""
+        """Persist a run to the LangSmith API.
+
+        Parameters
+        ----------
+        name : str
+            The name of the run.
+        inputs : Dict[str, Any]
+            The input values for the run.
+        run_type : str or RunTypeEnum
+            The type of the run.
+        execution_order : int or None, default=None
+            The execution order of the run.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Raises
+        ------
+        LangSmithUserError
+            If the API key is not provided when using the hosted service.
+        """
         project_name = kwargs.pop(
             "project_name",
             kwargs.pop(
@@ -379,7 +594,15 @@ class Client:
         run_id: ID_TYPE,
         **kwargs: Any,
     ) -> None:
-        """Update a run to the LangSmith API."""
+        """Update a run in the LangSmith API.
+
+        Parameters
+        ----------
+        run_id : str or UUID
+            The ID of the run to update.
+        **kwargs : Any
+            Additional keyword arguments.
+        """
         headers = {**self._headers, "Accept": "application/json"}
         self.request_with_retries(
             "patch",
@@ -392,6 +615,23 @@ class Client:
         )
 
     def _load_child_runs(self, run: Run) -> Run:
+        """Load child runs for a given run.
+
+        Parameters
+        ----------
+        run : Run
+            The run to load child runs for.
+
+        Returns
+        -------
+        Run
+            The run with loaded child runs.
+
+        Raises
+        ------
+        LangSmithError
+            If a child run has no parent.
+        """
         child_runs = self.list_runs(id=run.child_run_ids)
         treemap: DefaultDict[UUID, List[Run]] = defaultdict(list)
         runs: Dict[UUID, Run] = {}
@@ -408,11 +648,16 @@ class Client:
     def read_run(self, run_id: ID_TYPE, load_child_runs: bool = False) -> Run:
         """Read a run from the LangSmith API.
 
-        Args:
-            run_id: The ID of the run to read.
-            load_child_runs: Whether to load nested child runs.
+        Parameters
+        ----------
+        run_id : str or UUID
+            The ID of the run to read.
+        load_child_runs : bool, default=False
+            Whether to load nested child runs.
 
-        Returns:
+        Returns
+        -------
+        Run
             The run.
         """
         response = self._get_with_retries(f"/runs/{run_id}")
@@ -443,7 +688,52 @@ class Client:
         order_by: Optional[Sequence[str]] = None,
         **kwargs: Any,
     ) -> Iterator[Run]:
-        """List runs from the LangSmith API."""
+        """List runs from the LangSmith API.
+
+        Parameters
+        ----------
+        project_id : str or UUID or None, default=None
+            The ID of the project to filter by.
+        project_name : str or None, default=None
+            The name of the project to filter by.
+        run_type : str or None, default=None
+            The type of the runs to filter by.
+        dataset_name : str or None, default=None
+            The name of the dataset to filter by.
+        dataset_id : str or UUID or None, default=None
+            The ID of the dataset to filter by.
+        reference_example_id : str or UUID or None, default=None
+            The ID of the reference example to filter by.
+        query : str or None, default=None
+            The query string to filter by.
+        filter : str or None, default=None
+            The filter string to filter by.
+        execution_order : int or None, default=None
+            The execution order to filter by.
+        parent_run_id : str or UUID or None, default=None
+            The ID of the parent run to filter by.
+        start_time : datetime or None, default=None
+            The start time to filter by.
+        end_time : datetime or None, default=None
+            The end time to filter by.
+        error : bool or None, default=None
+            Whether to filter by error status.
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        limit : int or None, default=None
+            The maximum number of runs to return.
+        offset : int or None, default=None
+            The number of runs to skip.
+        order_by : Sequence[str] or None, default=None
+            The fields to order the runs by.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields
+        ------
+        Run
+            The runs.
+        """
         if project_name is not None:
             if project_id is not None:
                 raise ValueError("Only one of project_id or project_name may be given")
@@ -488,7 +778,13 @@ class Client:
         )
 
     def delete_run(self, run_id: ID_TYPE) -> None:
-        """Delete a run from the LangSmith API."""
+        """Delete a run from the LangSmith API.
+
+        Parameters
+        ----------
+        run_id : str or UUID
+            The ID of the run to delete.
+        """
         response = self.session.delete(
             f"{self.api_url}/runs/{run_id}",
             headers=self._headers,
@@ -502,7 +798,22 @@ class Client:
         project_extra: Optional[dict] = None,
         upsert: bool = False,
     ) -> TracerSession:
-        """Create a project on the LangSmith API."""
+        """Create a project on the LangSmith API.
+
+        Parameters
+        ----------
+        project_name : str
+            The name of the project.
+        project_extra : dict or None, default=None
+            Additional project information.
+        upsert : bool, default=False
+            Whether to update the project if it already exists.
+
+        Returns
+        -------
+        TracerSession
+            The created project.
+        """
         endpoint = f"{self.api_url}/sessions"
         body = {
             "name": project_name,
@@ -525,10 +836,18 @@ class Client:
     ) -> TracerSessionResult:
         """Read a project from the LangSmith API.
 
-        Args:
-            project_id: The ID of the project to read.
-            project_name: The name of the project to read.
+        Parameters
+        ----------
+        project_id : str or None, default=None
+            The ID of the project to read.
+        project_name : str or None, default=None
+            The name of the project to read.
                 Note: Only one of project_id or project_name may be given.
+
+        Returns
+        -------
+        TracerSessionResult
+            The project.
         """
         path = "/sessions"
         params: Dict[str, Any] = {"limit": 1}
@@ -547,7 +866,13 @@ class Client:
         return TracerSessionResult(**response.json())
 
     def list_projects(self) -> Iterator[TracerSession]:
-        """List projects from the LangSmith API."""
+        """List projects from the LangSmith API.
+
+        Yields
+        ------
+        TracerSession
+            The projects.
+        """
         yield from (
             TracerSession(**project)
             for project in self._get_paginated_list("/sessions")
@@ -557,7 +882,15 @@ class Client:
     def delete_project(
         self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a project from the LangSmith API."""
+        """Delete a project from the LangSmith API.
+
+        Parameters
+        ----------
+        project_name : str or None, default=None
+            The name of the project to delete.
+        project_id : str or None, default=None
+            The ID of the project to delete.
+        """
         if project_name is not None:
             project_id = str(self.read_project(project_name=project_name).id)
         elif project_id is None:
@@ -575,7 +908,22 @@ class Client:
         description: Optional[str] = None,
         data_type: DataType = DataType.kv,
     ) -> Dataset:
-        """Create a dataset in the LangSmith API."""
+        """Create a dataset in the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset.
+        description : str or None, default=None
+            The description of the dataset.
+        data_type : DataType or None, default=DataType.kv
+            The data type of the dataset.
+
+        Returns
+        -------
+        Dataset
+            The created dataset.
+        """
         dataset = DatasetCreate(
             name=dataset_name,
             description=description,
@@ -596,6 +944,20 @@ class Client:
         dataset_name: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dataset:
+        """Read a dataset from the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_name : str or None, default=None
+            The name of the dataset to read.
+        dataset_id : str or UUID or None, default=None
+            The ID of the dataset to read.
+
+        Returns
+        -------
+        Dataset
+            The dataset.
+        """
         path = "/datasets"
         params: Dict[str, Any] = {"limit": 1}
         if dataset_id is not None:
@@ -616,7 +978,13 @@ class Client:
         return Dataset(**result)
 
     def list_datasets(self) -> Iterator[Dataset]:
-        """List the datasets on the LangSmith API."""
+        """List the datasets on the LangSmith API.
+
+        Yields
+        ------
+        Dataset
+            The datasets.
+        """
         yield from (
             Dataset(**dataset) for dataset in self._get_paginated_list("/datasets")
         )
@@ -628,7 +996,15 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
     ) -> None:
-        """Delete a dataset by ID or name."""
+        """Delete a dataset from the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_id : str or UUID or None, default=None
+            The ID of the dataset to delete.
+        dataset_name : str or None, default=None
+            The name of the dataset to delete.
+        """
         if dataset_name is not None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
@@ -648,7 +1024,26 @@ class Client:
         created_at: Optional[datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
     ) -> Example:
-        """Create a dataset example in the LangSmith API."""
+        """Create a dataset example in the LangSmith API.
+
+        Parameters
+        ----------
+        inputs : Mapping[str, Any]
+            The input values for the example.
+        dataset_id : str or UUID or None, default=None
+            The ID of the dataset to create the example in.
+        dataset_name : str or None, default=None
+            The name of the dataset to create the example in.
+        created_at : datetime or None, default=None
+            The creation timestamp of the example.
+        outputs : Mapping[str, Any] or None, default=None
+            The output values for the example.
+
+        Returns
+        -------
+        Example
+            The created example.
+        """
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
@@ -668,14 +1063,38 @@ class Client:
         return Example(**result)
 
     def read_example(self, example_id: ID_TYPE) -> Example:
-        """Read an example from the LangSmith API."""
+        """Read an example from the LangSmith API.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to read.
+
+        Returns
+        -------
+        Example
+            The example.
+        """
         response = self._get_with_retries(f"/examples/{example_id}")
         return Example(**response.json())
 
     def list_examples(
         self, dataset_id: Optional[ID_TYPE] = None, dataset_name: Optional[str] = None
     ) -> Iterator[Example]:
-        """List the datasets on the LangSmith API."""
+        """List the examples on the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_id : str or UUID or None, default=None
+            The ID of the dataset to filter by.
+        dataset_name : str or None, default=None
+            The name of the dataset to filter by.
+
+        Yields
+        ------
+        Example
+            The examples.
+        """
         params = {}
         if dataset_id is not None:
             params["dataset"] = dataset_id
@@ -697,7 +1116,24 @@ class Client:
         outputs: Optional[Mapping[str, Any]] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
-        """Update a specific example."""
+        """Update a specific example.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to update.
+        inputs : Dict[str, Any] or None, default=None
+            The input values to update.
+        outputs : Mapping[str, Any] or None, default=None
+            The output values to update.
+        dataset_id : str or UUID or None, default=None
+            The ID of the dataset to update.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The updated example.
+        """
         example = ExampleUpdate(
             inputs=inputs,
             outputs=outputs,
@@ -712,7 +1148,13 @@ class Client:
         return response.json()
 
     def delete_example(self, example_id: ID_TYPE) -> None:
-        """Delete an example by ID."""
+        """Delete an example by ID.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to delete.
+        """
         response = self.session.delete(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
@@ -722,6 +1164,25 @@ class Client:
     def _resolve_run_id(
         self, run: Union[Run, RunBase, str, UUID], load_child_runs: bool
     ) -> Run:
+        """Resolve the run ID.
+
+        Parameters
+        ----------
+        run : Run or RunBase or str or UUID
+            The run to resolve.
+        load_child_runs : bool
+            Whether to load child runs.
+
+        Returns
+        -------
+        Run
+            The resolved run.
+
+        Raises
+        ------
+        TypeError
+            If the run type is invalid.
+        """
         if isinstance(run, (str, UUID)):
             run_ = self.read_run(run, load_child_runs=load_child_runs)
         elif isinstance(run, Run):
@@ -735,6 +1196,20 @@ class Client:
     def _resolve_example_id(
         self, example: Union[Example, str, UUID, dict, None], run: Run
     ) -> Optional[Example]:
+        """Resolve the example ID.
+
+        Parameters
+        ----------
+        example : Example or str or UUID or dict or None
+            The example to resolve.
+        run : Run
+            The run associated with the example.
+
+        Returns
+        -------
+        Example or None
+            The resolved example.
+        """
         if isinstance(example, (str, UUID)):
             reference_example_ = self.read_example(example)
         elif isinstance(example, Example):
@@ -758,18 +1233,22 @@ class Client:
     ) -> Feedback:
         """Evaluate a run.
 
-        Args:
-            run: The run to evaluate. Can be a run_id or a Run object.
-            evaluator: The evaluator to use.
-            source_info: Additional information about the source of the
-                 evaluation to log as feedback metadata.
-            reference_example: The example to use as a reference for the
-                evaluation. If not provided, the run's reference example
-                will be used.
-            load_child_runs: Whether to load child runs when
-                 resolving the run ID.
+        Parameters
+        ----------
+        run : Run or RunBase or str or UUID
+            The run to evaluate.
+        evaluator : RunEvaluator
+            The evaluator to use.
+        source_info : Dict[str, Any] or None, default=None
+            Additional information about the source of the evaluation to log as feedback metadata.
+        reference_example : Example or str or dict or UUID or None, default=None
+            The example to use as a reference for the evaluation. If not provided, the run's reference example will be used.
+        load_child_runs : bool, default=False
+            Whether to load child runs when resolving the run ID.
 
-        Returns:
+        Returns
+        -------
+        Feedback
             The feedback object created by the evaluation.
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
@@ -801,20 +1280,24 @@ class Client:
         reference_example: Optional[Union[Example, str, dict, UUID]] = None,
         load_child_runs: bool = False,
     ) -> Feedback:
-        """Evaluate a run.
+        """Evaluate a run asynchronously.
 
-        Args:
-            run: The run to evaluate. Can be a run_id or a Run object.
-            evaluator: The evaluator to use.
-            source_info: Additional information about the source of
-                the evaluation to log as feedback metadata.
-            reference_example: The example to use as a reference
-                for the evaluation. If not provided, the run's
-                reference example will be used.
-            load_child_runs: Whether to load child runs when
-                resolving the run ID.
+        Parameters
+        ----------
+        run : Run or str or UUID
+            The run to evaluate.
+        evaluator : RunEvaluator
+            The evaluator to use.
+        source_info : Dict[str, Any] or None, default=None
+            Additional information about the source of the evaluation to log as feedback metadata.
+        reference_example : Example or str or dict or UUID or None, default=None
+            The example to use as a reference for the evaluation. If not provided, the run's reference example will be used.
+        load_child_runs : bool, default=False
+            Whether to load child runs when resolving the run ID.
 
-        Returns:
+        Returns
+        -------
+        Feedback
             The feedback created by the evaluation.
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
@@ -851,17 +1334,29 @@ class Client:
     ) -> Feedback:
         """Create a feedback in the LangSmith API.
 
-        Args:
-            run_id: The ID of the run to provide feedback on.
-            key: The name of the metric, tag, or 'aspect' this
-                feedback is about.
-            score: The score to rate this run on the metric
-                or aspect.
-            value: The display value or non-numeric value for this feedback.
-            correction: The proper ground truth for this run.
-            comment: A comment about this feedback.
-            source_info: Information about the source of this feedback.
-            feedback_source_type: The type of feedback source.
+        Parameters
+        ----------
+        run_id : str or UUID
+            The ID of the run to provide feedback on.
+        key : str
+            The name of the metric, tag, or 'aspect' this feedback is about.
+        score : float or int or bool or None, default=None
+            The score to rate this run on the metric or aspect.
+        value : float or int or bool or str or dict or None, default=None
+            The display value or non-numeric value for this feedback.
+        correction : str or dict or None, default=None
+            The proper ground truth for this run.
+        comment : str or None, default=None
+            A comment about this feedback.
+        source_info : Dict[str, Any] or None, default=None
+            Information about the source of this feedback.
+        feedback_source_type : FeedbackSourceType or str, default=FeedbackSourceType.API
+            The type of feedback source.
+
+        Returns
+        -------
+        Feedback
+            The created feedback.
         """
         if feedback_source_type == FeedbackSourceType.API:
             feedback_source: FeedbackSourceBase = APIFeedbackSource(
@@ -889,7 +1384,18 @@ class Client:
         return Feedback(**response.json())
 
     def read_feedback(self, feedback_id: ID_TYPE) -> Feedback:
-        """Read a feedback from the LangSmith API."""
+        """Read a feedback from the LangSmith API.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to read.
+
+        Returns
+        -------
+        Feedback
+            The feedback.
+        """
         response = self._get_with_retries(f"/feedback/{feedback_id}")
         return Feedback(**response.json())
 
@@ -899,7 +1405,20 @@ class Client:
         run_ids: Optional[Sequence[ID_TYPE]] = None,
         **kwargs: Any,
     ) -> Iterator[Feedback]:
-        """List the feedback objects on the LangSmith API."""
+        """List the feedback objects on the LangSmith API.
+
+        Parameters
+        ----------
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields
+        ------
+        Feedback
+            The feedback objects.
+        """
         params = {
             "run": run_ids,
             **kwargs,
@@ -911,7 +1430,13 @@ class Client:
         )
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:
-        """Delete a feedback by ID."""
+        """Delete a feedback by ID.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to delete.
+        """
         response = self.session.delete(
             f"{self.api_url}/feedback/{feedback_id}",
             headers=self._headers,
