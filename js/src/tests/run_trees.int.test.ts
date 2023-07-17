@@ -1,5 +1,13 @@
-import { Client, toArray } from "../client.js";
+import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
+
+async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const item of iterable) {
+    result.push(item);
+  }
+  return result;
+}
 
 test("Test persisting runs and adding feedback", async () => {
   const projectName = `__test_run_tree`;

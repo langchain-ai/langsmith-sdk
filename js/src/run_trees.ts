@@ -62,7 +62,6 @@ export class RunTree implements BaseRun {
       api_key: getEnvironmentVariable("LANGCHAIN_API_KEY"),
       caller_options: {},
       start_time: Date.now(),
-      end_time: null,
       serialized: {},
       inputs: {},
       extra: {},
