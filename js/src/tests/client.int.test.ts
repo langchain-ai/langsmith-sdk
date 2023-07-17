@@ -1,7 +1,15 @@
-import { Client, toArray } from "../client.js";
+import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { StringEvaluator } from "../evaluation/string_evaluator.js";
-import { Feedback } from "../schemas.js";
+import { Dataset, Feedback } from "../schemas.js";
+
+async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const item of iterable) {
+    result.push(item);
+  }
+  return result;
+}
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
@@ -279,13 +287,12 @@ test("test create dataset", async () => {
     apiUrl: "http://localhost:1984",
   });
   const datasetName = "__test_create_dataset";
-  const datasets = [];
-  for await (const dataset of langchainClient.listDatasets({})) {
-    datasets.push(dataset);
-  }
-  if (datasets.some((dataset: any) => dataset.name === datasetName)) {
-    await langchainClient.deleteDataset({ datasetName });
-  }
+  const datasets = await toArray(langchainClient.listDatasets());
+  datasets.map(async (dataset: Dataset) => {
+    if (dataset.name === datasetName) {
+      await langchainClient.deleteDataset({ datasetName });
+    }
+  });
   const dataset = await langchainClient.createDataset(datasetName, {
     dataType: "llm",
   });

@@ -108,7 +108,7 @@ const raiseForStatus = async (response: Response, operation: string) => {
   }
 };
 
-export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const item of iterable) {
     result.push(item);
