@@ -466,8 +466,9 @@ class Client:
         Parameters
         ----------
         csv_file : str or Tuple[str, BytesIO]
-            The CSV file to upload. If a string, it should be the path to the file.
-            If a tuple, it should be a tuple containing the filename and a BytesIO object.
+            The CSV file to upload. If a string, it should be the path
+            If a tuple, it should be a tuple containing the filename
+            and a BytesIO object.
         input_keys : Sequence[str]
             The input keys.
         output_keys : Sequence[str]
@@ -692,7 +693,7 @@ class Client:
 
         Parameters
         ----------
-        project_id : str or UUID or None, default=None
+        project_id : UUID or None, default=None
             The ID of the project to filter by.
         project_name : str or None, default=None
             The name of the project to filter by.
@@ -700,9 +701,9 @@ class Client:
             The type of the runs to filter by.
         dataset_name : str or None, default=None
             The name of the dataset to filter by.
-        dataset_id : str or UUID or None, default=None
+        dataset_id : UUID or None, default=None
             The ID of the dataset to filter by.
-        reference_example_id : str or UUID or None, default=None
+        reference_example_id : UUID or None, default=None
             The ID of the reference example to filter by.
         query : str or None, default=None
             The query string to filter by.
@@ -710,7 +711,7 @@ class Client:
             The filter string to filter by.
         execution_order : int or None, default=None
             The execution order to filter by.
-        parent_run_id : str or UUID or None, default=None
+        parent_run_id : UUID or None, default=None
             The ID of the parent run to filter by.
         start_time : datetime or None, default=None
             The start time to filter by.
@@ -950,7 +951,7 @@ class Client:
         ----------
         dataset_name : str or None, default=None
             The name of the dataset to read.
-        dataset_id : str or UUID or None, default=None
+        dataset_id : UUID or None, default=None
             The ID of the dataset to read.
 
         Returns
@@ -1000,7 +1001,7 @@ class Client:
 
         Parameters
         ----------
-        dataset_id : str or UUID or None, default=None
+        dataset_id : UUID or None, default=None
             The ID of the dataset to delete.
         dataset_name : str or None, default=None
             The name of the dataset to delete.
@@ -1030,7 +1031,7 @@ class Client:
         ----------
         inputs : Mapping[str, Any]
             The input values for the example.
-        dataset_id : str or UUID or None, default=None
+        dataset_id : UUID or None, default=None
             The ID of the dataset to create the example in.
         dataset_name : str or None, default=None
             The name of the dataset to create the example in.
@@ -1085,7 +1086,7 @@ class Client:
 
         Parameters
         ----------
-        dataset_id : str or UUID or None, default=None
+        dataset_id : UUID or None, default=None
             The ID of the dataset to filter by.
         dataset_name : str or None, default=None
             The name of the dataset to filter by.
@@ -1126,7 +1127,7 @@ class Client:
             The input values to update.
         outputs : Mapping[str, Any] or None, default=None
             The output values to update.
-        dataset_id : str or UUID or None, default=None
+        dataset_id : UUID or None, default=None
             The ID of the dataset to update.
 
         Returns
@@ -1240,9 +1241,11 @@ class Client:
         evaluator : RunEvaluator
             The evaluator to use.
         source_info : Dict[str, Any] or None, default=None
-            Additional information about the source of the evaluation to log as feedback metadata.
+            Additional information about the source of the evaluation to log
+            as feedback metadata.
         reference_example : Example or str or dict or UUID or None, default=None
-            The example to use as a reference for the evaluation. If not provided, the run's reference example will be used.
+            The example to use as a reference for the evaluation.
+            If not provided, the run's reference example will be used.
         load_child_runs : bool, default=False
             Whether to load child runs when resolving the run ID.
 
@@ -1289,9 +1292,11 @@ class Client:
         evaluator : RunEvaluator
             The evaluator to use.
         source_info : Dict[str, Any] or None, default=None
-            Additional information about the source of the evaluation to log as feedback metadata.
-        reference_example : Example or str or dict or UUID or None, default=None
-            The example to use as a reference for the evaluation. If not provided, the run's reference example will be used.
+            Additional information about the source of the evaluation to log
+            as feedback metadata.
+        reference_example : Optional Example or UUID, default=None
+            The example to use as a reference for the evaluation.
+            If not provided, the run's reference example will be used.
         load_child_runs : bool, default=False
             Whether to load child runs when resolving the run ID.
 
