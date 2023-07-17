@@ -156,7 +156,8 @@ class FeedbackSourceType(Enum):
 class FeedbackBase(BaseModel):
     """Feedback schema."""
 
-    id: Optional[UUID] = None
+    id: UUID
+    """The unique ID of the feedback."""
     created_at: Optional[datetime] = None
     """The time the feedback was created."""
     modified_at: Optional[datetime] = None
