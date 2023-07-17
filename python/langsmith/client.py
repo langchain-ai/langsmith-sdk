@@ -23,7 +23,7 @@ from typing import (
     cast,
 )
 from urllib.parse import urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from requests import ConnectionError, HTTPError, Response, Session
 from requests.adapters import HTTPAdapter
@@ -1372,6 +1372,7 @@ class Client:
         else:
             raise ValueError(f"Unknown feedback source type {feedback_source_type}")
         feedback = FeedbackCreate(
+            id=uuid4(),
             run_id=run_id,
             key=key,
             score=score,
