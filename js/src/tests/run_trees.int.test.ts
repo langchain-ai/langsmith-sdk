@@ -1,12 +1,20 @@
 import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 
+async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const item of iterable) {
+    result.push(item);
+  }
+  return result;
+}
+
 test("Test persisting runs and adding feedback", async () => {
   const projectName = `__test_run_tree`;
   const langchainClient = new Client({
     apiUrl: "http://localhost:1984",
   });
-  const projects = await langchainClient.listProjects();
+  const projects = await toArray(langchainClient.listProjects());
   if (projects.map((project) => project.name).includes(projectName)) {
     await langchainClient.deleteProject({ projectName });
   }
@@ -51,8 +59,7 @@ test("Test persisting runs and adding feedback", async () => {
   await child_llm_run.end({ prompts: ["hello world"] });
   await parent_run.end({ output: ["Hi"] });
   await parent_run.postRun(false);
-
-  const runs = await langchainClient.listRuns({ projectName });
+  const runs = await toArray(langchainClient.listRuns({ projectName }));
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
   expect(runMap.get("parent_run")?.execution_order).toEqual(1);
@@ -105,8 +112,8 @@ test("Test persisting runs and adding feedback", async () => {
     feedbackSourceType: "MODEL",
   });
   await langchainClient.createFeedback(runs[0].id, "a tag", {});
-  const feedbacks = Array.from(
-    await langchainClient.listFeedback({ runIds: [runs[0].id] })
+  const feedbacks = await toArray(
+    langchainClient.listFeedback({ runIds: [runs[0].id] })
   );
   expect(feedbacks.length).toEqual(2);
   expect(feedbacks[0].run_id).toEqual(runs[0].id);
@@ -114,10 +121,10 @@ test("Test persisting runs and adding feedback", async () => {
   expect(feedback.id).toEqual(feedbacks[0].id);
   await langchainClient.deleteFeedback(feedback.id);
   await expect(langchainClient.readFeedback(feedback.id)).rejects.toThrow();
-  expect(
-    Array.from(await langchainClient.listFeedback({ runIds: [runs[0].id] }))
-      .length
-  ).toEqual(1);
+  const feedbackArray = await toArray(
+    langchainClient.listFeedback({ runIds: [runs[0].id] })
+  );
+  expect(feedbackArray.length).toEqual(1);
 
   await langchainClient.deleteProject({ projectName });
   await expect(langchainClient.readProject({ projectName })).rejects.toThrow();
@@ -128,7 +135,7 @@ test("Test post and patch run", async () => {
   const langchainClient = new Client({
     apiUrl: "http://localhost:1984",
   });
-  const projects = await langchainClient.listProjects();
+  const projects = await toArray(langchainClient.listProjects());
   if (projects.map((project) => project.name).includes(projectName)) {
     await langchainClient.deleteProject({ projectName });
   }
@@ -182,7 +189,7 @@ test("Test post and patch run", async () => {
   await parent_run.end({ output: ["Hi"] });
   await parent_run.patchRun();
 
-  const runs = await langchainClient.listRuns({ projectName });
+  const runs = await toArray(langchainClient.listRuns({ projectName }));
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
   expect(runMap.get("parent_run")?.execution_order).toEqual(1);

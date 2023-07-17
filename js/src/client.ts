@@ -108,6 +108,14 @@ const raiseForStatus = async (response: Response, operation: string) => {
   }
 };
 
+async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const item of iterable) {
+    result.push(item);
+  }
+  return result;
+}
+
 export class Client {
   private apiKey?: string;
 
@@ -173,6 +181,40 @@ export class Client {
     }
     return response.json() as T;
   }
+  private async *_getPaginated<T>(
+    path: string,
+    queryParams: URLSearchParams = new URLSearchParams()
+  ): AsyncIterable<T[]> {
+    let offset = Number(queryParams.get("offset")) || 0;
+    const limit = Number(queryParams.get("limit")) || 100;
+    while (true) {
+      queryParams.set("offset", String(offset));
+      queryParams.set("limit", String(limit));
+
+      const url = `${this.apiUrl}${path}?${queryParams}`;
+      const response = await this.caller.call(fetch, url, {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch ${path}: ${response.status} ${response.statusText}`
+        );
+      }
+      const items: T[] = await response.json();
+
+      if (items.length === 0) {
+        break;
+      }
+      yield items;
+
+      if (items.length < limit) {
+        break;
+      }
+      offset += items.length;
+    }
+  }
 
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
@@ -227,7 +269,7 @@ export class Client {
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
-    const childRuns = await this.listRuns({ id: run.child_run_ids });
+    const childRuns = await toArray(this.listRuns({ id: run.child_run_ids }));
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
     childRuns.sort((a, b) => a.execution_order - b.execution_order);
@@ -253,7 +295,7 @@ export class Client {
     return run;
   }
 
-  public async listRuns({
+  public async *listRuns({
     projectId,
     projectName,
     parentRunId,
@@ -270,7 +312,7 @@ export class Client {
     query,
     filter,
     orderBy,
-  }: ListRunsParams): Promise<Run[]> {
+  }: ListRunsParams): AsyncIterable<Run> {
     const queryParams = new URLSearchParams();
     let projectId_ = projectId;
     if (projectName) {
@@ -327,7 +369,9 @@ export class Client {
       orderBy.map((order) => queryParams.append("order_by", order));
     }
 
-    return this._get<Run[]>("/runs", queryParams);
+    for await (const runs of this._getPaginated<Run>("/runs", queryParams)) {
+      yield* runs;
+    }
   }
 
   public async deleteRun(runId: string): Promise<void> {
@@ -412,8 +456,12 @@ export class Client {
     return result;
   }
 
-  public async listProjects(): Promise<TracerSession[]> {
-    return this._get<TracerSession[]>("/sessions");
+  public async *listProjects(): AsyncIterable<TracerSession> {
+    for await (const projects of this._getPaginated<TracerSession>(
+      "/sessions"
+    )) {
+      yield* projects;
+    }
   }
 
   public async deleteProject({
@@ -567,25 +615,21 @@ export class Client {
     return result;
   }
 
-  public async listDatasets({
+  public async *listDatasets({
     limit = 100,
     offset = 0,
   }: {
     limit?: number;
     offset?: number;
-  } = {}): Promise<Dataset[]> {
+  } = {}): AsyncIterable<Dataset> {
     const path = "/datasets";
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
     });
-    const response = await this._get<Dataset[]>(path, params);
-    if (!Array.isArray(response)) {
-      throw new Error(
-        `Expected ${path} to return an array, but got ${response}`
-      );
+    for await (const datasets of this._getPaginated<Dataset>(path, params)) {
+      yield* datasets;
     }
-    return response as Dataset[];
   }
 
   public async deleteDataset({
@@ -674,17 +718,13 @@ export class Client {
     return await this._get<Example>(path);
   }
 
-  public async listExamples({
+  public async *listExamples({
     datasetId,
     datasetName,
-    limit,
-    offset,
   }: {
     datasetId?: string;
     datasetName?: string;
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<Example[]> {
+  } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
       throw new Error("Must provide either datasetName or datasetId, not both");
@@ -696,20 +736,13 @@ export class Client {
     } else {
       throw new Error("Must provide a datasetName or datasetId");
     }
-    const response = await this._get<Example[]>(
+    const params = new URLSearchParams({ dataset: datasetId_ });
+    for await (const examples of this._getPaginated<Example>(
       "/examples",
-      new URLSearchParams({
-        dataset: datasetId_,
-        limit: limit?.toString() ?? "100",
-        offset: offset?.toString() ?? "0",
-      })
-    );
-    if (!Array.isArray(response)) {
-      throw new Error(
-        `Expected /examples to return an array, but got ${response}`
-      );
+      params
+    )) {
+      yield* examples;
     }
-    return response as Example[];
   }
 
   public async deleteExample(exampleId: string): Promise<void> {
@@ -861,26 +894,20 @@ export class Client {
     await response.json();
   }
 
-  public async listFeedback({
+  public async *listFeedback({
     runIds,
-    limit,
-    offset,
   }: {
     runIds?: string[];
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<Feedback[]> {
+  } = {}): AsyncIterable<Feedback> {
     const queryParams = new URLSearchParams();
     if (runIds) {
       queryParams.append("run", runIds.join(","));
     }
-    if (limit !== undefined) {
-      queryParams.append("limit", limit.toString());
+    for await (const feedbacks of this._getPaginated<Feedback>(
+      "/feedback",
+      queryParams
+    )) {
+      yield* feedbacks;
     }
-    if (offset !== undefined) {
-      queryParams.append("offset", offset.toString());
-    }
-    const response = await this._get<Feedback[]>("/feedback", queryParams);
-    return response;
   }
 }
