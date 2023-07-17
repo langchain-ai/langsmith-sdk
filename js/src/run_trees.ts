@@ -33,7 +33,7 @@ export class RunTree implements BaseRun {
   execution_order: number;
   child_execution_order: number;
   start_time: number;
-  end_time: number;
+  end_time?: number;
   extra: KVMap;
   error?: string;
   serialized: object;
@@ -62,7 +62,7 @@ export class RunTree implements BaseRun {
       api_key: getEnvironmentVariable("LANGCHAIN_API_KEY"),
       caller_options: {},
       start_time: Date.now(),
-      end_time: Date.now(),
+      end_time: null,
       serialized: {},
       inputs: {},
       extra: {},
