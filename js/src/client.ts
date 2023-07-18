@@ -116,6 +116,16 @@ async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
+function trimQuotes(str?: string): string | undefined {
+  if (str === undefined) {
+    return undefined;
+  }
+  return str
+    .trim()
+    .replace(/^"(.*)"$/, "$1")
+    .replace(/^'(.*)'$/, "$1");
+}
+
 export class Client {
   private apiKey?: string;
 
@@ -128,8 +138,8 @@ export class Client {
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
-    this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
-    this.apiKey = config.apiKey ?? defaultConfig.apiKey;
+    this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
+    this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.validateApiKeyIfHosted();
     this.timeout_ms = config.timeout_ms ?? 4000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
