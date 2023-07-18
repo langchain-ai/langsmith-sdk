@@ -167,6 +167,27 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
             )
 
 
+def _get_api_key(api_key: Optional[str]) -> Optional[str]:
+    api_key = api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
+    if api_key is None or not api_key.strip():
+        return None
+    return api_key.strip().strip('"').strip("'")
+
+
+def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
+    api_url = (
+        api_url
+        if api_url is not None
+        else os.getenv(
+            "LANGCHAIN_ENDPOINT",
+            "https://api.smith.langchain.com" if api_key else "http://localhost:1984",
+        )
+    )
+    if not api_url.strip():
+        raise LangSmithUserError("API URL cannot be empty")
+    return api_url.strip().strip('"').strip("'").rstrip("/")
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -207,19 +228,8 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
-        self.api_key = (
-            api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
-        )
-        self.api_url = (
-            api_url
-            if api_url is not None
-            else os.getenv(
-                "LANGCHAIN_ENDPOINT",
-                "https://api.smith.langchain.com"
-                if self.api_key
-                else "http://localhost:1984",
-            )
-        )
+        self.api_key = _get_api_key(api_key)
+        self.api_url = _get_api_url(api_url, self.api_key)
         _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 7000
