@@ -184,7 +184,7 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
         )
     )
     if not api_url.strip():
-        raise LangSmithUserError("API URL cannot be empty")
+        raise LangSmithUserError("LangSmith API URL cannot be empty")
     return api_url.strip().strip('"').strip("'").rstrip("/")
 
 
