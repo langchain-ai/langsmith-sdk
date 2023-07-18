@@ -46,7 +46,7 @@ Tracing can be activated by setting the following environment variables or by ma
 
 ```typescript
 process.env["LANGCHAIN_TRACING_V2"] = "true";
-process.env["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"; // or your own server
+process.env["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com";
 process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>";
 // process.env["LANGCHAIN_PROJECT"] = "My Project Name"; // Optional: "default" is used if not set
 ```
