@@ -43,7 +43,7 @@ Tracing can be activated by setting the following environment variables or by ma
 ```python
 import os
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com" # or your own server
+os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
 os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 # os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
@@ -76,7 +76,7 @@ or by directly specifying the connection information in the RunTree.
 
 ```python
 import os
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com" # or your own server
+os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
 os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 # os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
