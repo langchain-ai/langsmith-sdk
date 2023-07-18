@@ -1,13 +1,15 @@
 """Test the LangSmith client."""
 import asyncio
+import os
 import uuid
 from datetime import datetime
 from io import BytesIO
 from unittest import mock
+from unittest.mock import patch
 
 import pytest
 
-from langsmith.client import Client, _is_localhost
+from langsmith.client import Client, _get_api_key, _get_api_url, _is_localhost
 from langsmith.schemas import Example
 from langsmith.utils import LangSmithUserError
 
@@ -114,3 +116,37 @@ def test_async_methods():
         sync_args = set(Client.__dict__[sync_method].__code__.co_varnames)
         async_args = set(Client.__dict__[async_method].__code__.co_varnames)
         assert sync_args.issubset(async_args)
+
+
+def test_get_api_key():
+    assert _get_api_key("provided_api_key") == "provided_api_key"
+    assert _get_api_key("'provided_api_key'") == "provided_api_key"
+    assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
+
+    with patch.dict(os.environ, {"LANGCHAIN_API_KEY": "env_api_key"}):
+        assert _get_api_key(None) == "env_api_key"
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert _get_api_key(None) is None
+
+    assert _get_api_key("") is None
+    assert _get_api_key(" ") is None
+
+
+def test_get_api_url():
+    assert _get_api_url("http://provided.url", "api_key") == "http://provided.url"
+
+    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert _get_api_url(None, "api_key") == "http://env.url"
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert _get_api_url(None, "api_key") == "https://api.smith.langchain.com"
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert _get_api_url(None, None) == "http://localhost:1984"
+
+    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert _get_api_url(None, None) == "http://env.url"
+
+    with pytest.raises(LangSmithUserError):
+        _get_api_url(" ", "api_key")
