@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt
+from pydantic import BaseModel, Field, PrivateAttr, StrictBool, StrictFloat, StrictInt
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
@@ -118,10 +118,31 @@ class Run(RunBase):
     """Run schema when loading from the DB."""
 
     execution_order: int
+    """The execution order of the run within a run trace."""
     session_id: Optional[UUID] = None
+    """The project ID this run belongs to."""
     child_run_ids: Optional[List[UUID]] = None
+    """The child run IDs of this run."""
     child_runs: Optional[List[Run]] = None
+    """The child runs of this run, if instructed to load using the client
+    These are not populated by default, as it is a heavier query to make."""
     feedback_stats: Optional[Dict[str, Any]] = None
+    """Feedback stats for this run."""
+    app_path: Optional[str] = None
+    """Relative URL path of this run within the app."""
+    _host_url: Optional[str] = PrivateAttr(default=None)
+
+    def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
+        """Initialize a Run object."""
+        super().__init__(**kwargs)
+        self._host_url = _host_url
+
+    @property
+    def url(self) -> Optional[str]:
+        """URL of this run within the app."""
+        if self._host_url and self.app_path:
+            return f"{self._host_url}{self.app_path}"
+        return None
 
 
 class FeedbackSourceBase(BaseModel):
