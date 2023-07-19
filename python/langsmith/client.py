@@ -250,12 +250,7 @@ class Client:
         str
             The HTML representation of the instance.
         """
-        if _is_localhost(self.api_url):
-            link = "http://localhost"
-        elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
-            link = "https://dev.smith.langchain.com/"
-        else:
-            link = "https://smith.langchain.com"
+        link = self._host_url
         return f'<a href="{link}", target="_blank" rel="noopener">LangSmith Client</a>'
 
     def __repr__(self) -> str:
@@ -267,6 +262,17 @@ class Client:
             The string representation of the instance.
         """
         return f"Client (API URL: {self.api_url})"
+
+    @property
+    def _host_url(self) -> str:
+        """The web host url."""
+        if _is_localhost(self.api_url):
+            link = "http://localhost"
+        elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
+            link = "https://dev.smith.langchain.com"
+        else:
+            link = "https://smith.langchain.com"
+        return link
 
     @property
     def _headers(self) -> Dict[str, str]:
@@ -672,7 +678,7 @@ class Client:
             The run.
         """
         response = self._get_with_retries(f"/runs/{run_id}")
-        run = Run(**response.json())
+        run = Run(**response.json(), _host_url=self._host_url)
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
@@ -785,7 +791,8 @@ class Client:
         if order_by is not None:
             query_params["order"] = order_by
         yield from (
-            Run(**run) for run in self._get_paginated_list("/runs", params=query_params)
+            Run(**run, _host_url=self._host_url)
+            for run in self._get_paginated_list("/runs", params=query_params)
         )
 
     def delete_run(self, run_id: ID_TYPE) -> None:
