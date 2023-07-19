@@ -165,6 +165,16 @@ export class Client {
     }
   }
 
+  private getHostUrl(): string {
+    if (isLocalhost(this.apiUrl)) {
+      return "http://localhost";
+    } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
+      return "https://dev.smith.langchain.com";
+    } else {
+      return "https://smith.langchain.com";
+    }
+  }
+
   private get headers(): { [header: string]: string } {
     const headers: { [header: string]: string } = {};
     if (this.apiKey) {
@@ -276,6 +286,19 @@ export class Client {
       run = await this._loadChildRuns(run);
     }
     return run;
+  }
+
+  public async getRunUrl({
+    runId,
+  }: {
+    runId: string;
+  }): Promise<string | undefined> {
+    const run = await this.readRun(runId);
+    if (!run.app_path) {
+      return undefined;
+    }
+    const baseUrl = this.getHostUrl();
+    return `${baseUrl}${run.app_path}`;
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {

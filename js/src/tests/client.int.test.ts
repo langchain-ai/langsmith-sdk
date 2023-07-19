@@ -179,6 +179,9 @@ test("Test evaluate run", async () => {
 
   const run = await langchainClient.readRun(parentRun.id);
   expect(run.outputs).toEqual({ output: predicted });
+  const runUrl = await langchainClient.getRunUrl({ runId: run.id });
+  expect(runUrl).toMatch(/http:\/\/localhost\/.*/);
+  expect(runUrl).toContain(run.id);
 
   function jaccardChars(output: string, answer: string): number {
     const predictionChars = new Set(output.trim().toLowerCase());
