@@ -7,6 +7,7 @@ import socket
 import weakref
 from collections import defaultdict
 from datetime import datetime
+from functools import lru_cache
 from io import BytesIO
 from typing import (
     TYPE_CHECKING,
@@ -50,14 +51,14 @@ from langsmith.schemas import (
     TracerSessionResult,
 )
 from langsmith.utils import (
-    get_llm_generation_from_outputs,
-    get_message_generation_from_outputs,
-    get_messages_from_inputs,
-    get_prompt_from_inputs,
     LangSmithAPIError,
     LangSmithConnectionError,
     LangSmithError,
     LangSmithUserError,
+    get_llm_generation_from_outputs,
+    get_message_generation_from_outputs,
+    get_messages_from_inputs,
+    get_prompt_from_inputs,
     get_runtime_environment,
     raise_for_status_with_text,
     xor_args,
@@ -202,6 +203,7 @@ class Client:
         "retry_config",
         "timeout_ms",
         "session",
+        "_get_data_type_cached",
     ]
 
     def __init__(
@@ -245,6 +247,7 @@ class Client:
         adapter = HTTPAdapter(max_retries=self.retry_config)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
+        self._get_data_type_cached = lru_cache(maxsize=10)(self._get_data_type)
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -1088,7 +1091,7 @@ class Client:
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
             dataset_name = None  # Nested call expects only 1 defined
-        dataset_type = self._get_data_type(dataset_id)
+        dataset_type = self._get_data_type_cached(dataset_id)
         if dataset_type == DataType.llm:
             if run.run_type != RunTypeEnum.llm:
                 raise ValueError(
