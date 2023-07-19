@@ -2,7 +2,7 @@
 import platform
 import subprocess
 from functools import lru_cache
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Tuple
 
 from requests import HTTPError, Response
 
@@ -69,6 +69,103 @@ def get_runtime_environment() -> dict:
         "runtime": "python",
         "runtime_version": platform.python_version(),
     }
+
+
+def _get_message_type(message: Mapping[str, Any]) -> str:
+    if not message:
+        raise ValueError("Message is empty.")
+    if "lc" in message:
+        if "id" not in message:
+            raise ValueError(
+                f"Unexpected format for serialized message: {message}"
+                " Message does not have an id."
+            )
+        return message["id"][-1].replace("Message", "").lower()
+    else:
+        if "type" not in message:
+            raise ValueError(
+                f"Unexpected format for stored message: {message}"
+                " Message does not have a type."
+            )
+        return message["type"]
+
+
+def _get_message_fields(message: Mapping[str, Any]) -> Mapping[str, Any]:
+    if not message:
+        raise ValueError("Message is empty.")
+    if "lc" in message:
+        if "kwargs" not in message:
+            raise ValueError(
+                f"Unexpected format for serialized message: {message}"
+                " Message does not have kwargs."
+            )
+        return message["kwargs"]
+    else:
+        if "data" not in message:
+            raise ValueError(
+                f"Unexpected format for stored message: {message}"
+                " Message does not have data."
+            )
+        return message["data"]
+
+
+def _convert_message(message: Mapping[str, Any]) -> Dict[str, Any]:
+    """Extract message from a message object."""
+    message_type = _get_message_type(message)
+    message_data = _get_message_fields(message)
+    return {"type": message_type, "data": message_data}
+
+
+def get_messages_from_inputs(inputs: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    if "messages" in inputs:
+        return [_convert_message(message) for message in inputs["messages"]]
+    if "message" in inputs:
+        return [_convert_message(inputs["message"])]
+    raise ValueError(f"Could not find message(s) in run with inputs {inputs}.")
+
+
+def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> Dict[str, Any]:
+    if "generations" not in outputs:
+        raise ValueError(f"No generations found in in run with output: {outputs}.")
+    generations = outputs["generations"]
+    if len(generations) != 1:
+        raise ValueError(
+            "Chat examples expect exactly one generation."
+            f" Found {len(generations)} generations: {generations}."
+        )
+    first_generation = generations[0]
+    if "message" not in first_generation:
+        raise ValueError(
+            f"Unexpected format for generation: {first_generation}."
+            " Generation does not have a message."
+        )
+    return _convert_message(first_generation["message"])
+
+
+def get_prompt_from_inputs(inputs: Mapping[str, Any]) -> str:
+    if "prompt" in inputs:
+        return inputs["prompt"]
+    if "prompts" in inputs:
+        prompts = inputs["prompts"]
+        if len(prompts) == 1:
+            return prompts[0]
+        raise ValueError(
+            f"Multiple prompts in run with inputs {inputs}."
+            " Please create example manually."
+        )
+    raise ValueError(f"Could not find prompt in run with inputs {inputs}.")
+
+
+def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
+    if "generations" not in outputs:
+        raise ValueError(f"No generations found in in run with output: {outputs}.")
+    generations = outputs["generations"]
+    if len(generations) != 1:
+        raise ValueError(f"Multiple generations in run: {generations}")
+    first_generation = generations[0]
+    if "text" not in first_generation:
+        raise ValueError(f"No text in generation: {first_generation}")
+    return first_generation["text"]
 
 
 @lru_cache
