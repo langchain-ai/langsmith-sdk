@@ -31,11 +31,19 @@ interface ListRunsParams {
   projectId?: string;
   projectName?: string;
   executionOrder?: number;
+  parentRunId?: string;
+  referenceExampleId?: string;
+  datasetId?: string;
+  startTime?: Date;
+  endTime?: Date;
   runType?: RunType;
   error?: boolean;
   id?: string[];
   limit?: number;
   offset?: number;
+  query?: string;
+  filter?: string;
+  orderBy?: string[];
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -44,6 +52,7 @@ interface UploadCSVParams {
   outputKeys: string[];
   description?: string;
   dataType?: DataType;
+  name?: string;
 }
 
 interface feedback_source {
@@ -99,6 +108,24 @@ const raiseForStatus = async (response: Response, operation: string) => {
   }
 };
 
+async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const item of iterable) {
+    result.push(item);
+  }
+  return result;
+}
+
+function trimQuotes(str?: string): string | undefined {
+  if (str === undefined) {
+    return undefined;
+  }
+  return str
+    .trim()
+    .replace(/^"(.*)"$/, "$1")
+    .replace(/^'(.*)'$/, "$1");
+}
+
 export class Client {
   private apiKey?: string;
 
@@ -111,18 +138,21 @@ export class Client {
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
-    this.apiUrl = config.apiUrl ?? defaultConfig.apiUrl;
-    this.apiKey = config.apiKey ?? defaultConfig.apiKey;
+    this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
+    this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.validateApiKeyIfHosted();
     this.timeout_ms = config.timeout_ms ?? 4000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
   public static getDefaultClientConfig(): { apiUrl: string; apiKey?: string } {
+    const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
+    const apiUrl =
+      getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
+      (apiKey ? "https://api.smith.langchain.com" : "http://localhost:1984");
     return {
-      apiUrl:
-        getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
-      apiKey: getEnvironmentVariable("LANGCHAIN_API_KEY"),
+      apiUrl: apiUrl,
+      apiKey: apiKey,
     };
   }
 
@@ -160,6 +190,40 @@ export class Client {
       );
     }
     return response.json() as T;
+  }
+  private async *_getPaginated<T>(
+    path: string,
+    queryParams: URLSearchParams = new URLSearchParams()
+  ): AsyncIterable<T[]> {
+    let offset = Number(queryParams.get("offset")) || 0;
+    const limit = Number(queryParams.get("limit")) || 100;
+    while (true) {
+      queryParams.set("offset", String(offset));
+      queryParams.set("limit", String(limit));
+
+      const url = `${this.apiUrl}${path}?${queryParams}`;
+      const response = await this.caller.call(fetch, url, {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch ${path}: ${response.status} ${response.statusText}`
+        );
+      }
+      const items: T[] = await response.json();
+
+      if (items.length === 0) {
+        break;
+      }
+      yield items;
+
+      if (items.length < limit) {
+        break;
+      }
+      offset += items.length;
+    }
   }
 
   public async createRun(run: CreateRunParams): Promise<void> {
@@ -215,7 +279,7 @@ export class Client {
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
-    const childRuns = await this.listRuns({ id: run.child_run_ids });
+    const childRuns = await toArray(this.listRuns({ id: run.child_run_ids }));
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
     childRuns.sort((a, b) => a.execution_order - b.execution_order);
@@ -241,16 +305,24 @@ export class Client {
     return run;
   }
 
-  public async listRuns({
+  public async *listRuns({
     projectId,
     projectName,
+    parentRunId,
+    referenceExampleId,
+    datasetId,
+    startTime,
+    endTime,
     executionOrder,
     runType,
     error,
     id,
     limit,
     offset,
-  }: ListRunsParams): Promise<Run[]> {
+    query,
+    filter,
+    orderBy,
+  }: ListRunsParams): AsyncIterable<Run> {
     const queryParams = new URLSearchParams();
     let projectId_ = projectId;
     if (projectName) {
@@ -261,6 +333,21 @@ export class Client {
     }
     if (projectId_) {
       queryParams.append("session", projectId_);
+    }
+    if (parentRunId) {
+      queryParams.append("parent_run", parentRunId);
+    }
+    if (referenceExampleId) {
+      queryParams.append("reference_example", referenceExampleId);
+    }
+    if (datasetId) {
+      queryParams.append("dataset", datasetId);
+    }
+    if (startTime) {
+      queryParams.append("start_time", startTime.toISOString());
+    }
+    if (endTime) {
+      queryParams.append("end_time", endTime.toISOString());
     }
     if (executionOrder) {
       queryParams.append("execution_order", executionOrder.toString());
@@ -282,8 +369,19 @@ export class Client {
     if (offset !== undefined) {
       queryParams.append("offset", offset.toString());
     }
+    if (query !== undefined) {
+      queryParams.append("query", query);
+    }
+    if (filter !== undefined) {
+      queryParams.append("filter", filter);
+    }
+    if (orderBy !== undefined) {
+      orderBy.map((order) => queryParams.append("order_by", order));
+    }
 
-    return this._get<Run[]>("/runs", queryParams);
+    for await (const runs of this._getPaginated<Run>("/runs", queryParams)) {
+      yield* runs;
+    }
   }
 
   public async deleteRun(runId: string): Promise<void> {
@@ -368,8 +466,12 @@ export class Client {
     return result;
   }
 
-  public async listProjects(): Promise<TracerSession[]> {
-    return this._get<TracerSession[]>("/sessions");
+  public async *listProjects(): AsyncIterable<TracerSession> {
+    for await (const projects of this._getPaginated<TracerSession>(
+      "/sessions"
+    )) {
+      yield* projects;
+    }
   }
 
   public async deleteProject({
@@ -411,17 +513,26 @@ export class Client {
     outputKeys,
     description,
     dataType,
+    name,
   }: UploadCSVParams): Promise<Dataset> {
     const url = `${this.apiUrl}/datasets/upload`;
     const formData = new FormData();
     formData.append("file", csvFile, fileName);
-    formData.append("input_keys", inputKeys.join(","));
-    formData.append("output_keys", outputKeys.join(","));
+    inputKeys.forEach((key) => {
+      formData.append("input_keys", key);
+    });
+
+    outputKeys.forEach((key) => {
+      formData.append("output_keys", key);
+    });
     if (description) {
       formData.append("description", description);
     }
     if (dataType) {
       formData.append("data_type", dataType);
+    }
+    if (name) {
+      formData.append("name", name);
     }
 
     const response = await this.caller.call(fetch, url, {
@@ -514,25 +625,21 @@ export class Client {
     return result;
   }
 
-  public async listDatasets({
+  public async *listDatasets({
     limit = 100,
     offset = 0,
   }: {
     limit?: number;
     offset?: number;
-  } = {}): Promise<Dataset[]> {
+  } = {}): AsyncIterable<Dataset> {
     const path = "/datasets";
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
     });
-    const response = await this._get<Dataset[]>(path, params);
-    if (!Array.isArray(response)) {
-      throw new Error(
-        `Expected ${path} to return an array, but got ${response}`
-      );
+    for await (const datasets of this._getPaginated<Dataset>(path, params)) {
+      yield* datasets;
     }
-    return response as Dataset[];
   }
 
   public async deleteDataset({
@@ -621,17 +728,13 @@ export class Client {
     return await this._get<Example>(path);
   }
 
-  public async listExamples({
+  public async *listExamples({
     datasetId,
     datasetName,
-    limit,
-    offset,
   }: {
     datasetId?: string;
     datasetName?: string;
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<Example[]> {
+  } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
       throw new Error("Must provide either datasetName or datasetId, not both");
@@ -643,20 +746,13 @@ export class Client {
     } else {
       throw new Error("Must provide a datasetName or datasetId");
     }
-    const response = await this._get<Example[]>(
+    const params = new URLSearchParams({ dataset: datasetId_ });
+    for await (const examples of this._getPaginated<Example>(
       "/examples",
-      new URLSearchParams({
-        dataset: datasetId_,
-        limit: limit?.toString() ?? "100",
-        offset: offset?.toString() ?? "0",
-      })
-    );
-    if (!Array.isArray(response)) {
-      throw new Error(
-        `Expected /examples to return an array, but got ${response}`
-      );
+      params
+    )) {
+      yield* examples;
     }
-    return response as Example[];
   }
 
   public async deleteExample(exampleId: string): Promise<void> {
@@ -808,26 +904,20 @@ export class Client {
     await response.json();
   }
 
-  public async listFeedback({
+  public async *listFeedback({
     runIds,
-    limit,
-    offset,
   }: {
     runIds?: string[];
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<Feedback[]> {
+  } = {}): AsyncIterable<Feedback> {
     const queryParams = new URLSearchParams();
     if (runIds) {
       queryParams.append("run", runIds.join(","));
     }
-    if (limit !== undefined) {
-      queryParams.append("limit", limit.toString());
+    for await (const feedbacks of this._getPaginated<Feedback>(
+      "/feedback",
+      queryParams
+    )) {
+      yield* feedbacks;
     }
-    if (offset !== undefined) {
-      queryParams.append("offset", offset.toString());
-    }
-    const response = await this._get<Feedback[]>("/feedback", queryParams);
-    return response;
   }
 }

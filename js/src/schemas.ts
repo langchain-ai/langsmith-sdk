@@ -69,6 +69,7 @@ export interface Run extends BaseRun {
   child_run_ids?: string[]; // uuid[]
   feedback_stats?: KVMap;
   child_runs?: Run[];
+  app_path?: string;
 }
 
 export interface RunCreate extends BaseRun {

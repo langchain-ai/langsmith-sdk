@@ -1,15 +1,17 @@
 """Test the LangSmith client."""
 import asyncio
+import os
 import uuid
 from datetime import datetime
 from io import BytesIO
 from unittest import mock
+from unittest.mock import patch
 
 import pytest
 
-from langsmith.client import Client, _is_localhost
+from langsmith.client import Client, _get_api_key, _get_api_url, _is_localhost
 from langsmith.schemas import Example
-from langsmith.utils import LangChainPlusUserError
+from langsmith.utils import LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -23,7 +25,7 @@ def test_is_localhost() -> None:
 
 def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    with pytest.raises(LangChainPlusUserError, match="API key must be provided"):
+    with pytest.raises(LangSmithUserError, match="API key must be provided"):
         Client(api_url="http://www.example.com")
     client = Client(api_url="http://localhost:1984")
     assert client.api_url == "http://localhost:1984"
@@ -39,8 +41,8 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client_no_key._headers == {}
 
 
-@mock.patch("langsmith.client.requests.post")
-def test_upload_csv(mock_post: mock.Mock) -> None:
+@mock.patch("langsmith.client.Session")
+def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     dataset_id = str(uuid.uuid4())
     example_1 = Example(
         id=str(uuid.uuid4()),
@@ -65,7 +67,9 @@ def test_upload_csv(mock_post: mock.Mock) -> None:
         "created_at": _CREATED_AT,
         "examples": [example_1, example_2],
     }
-    mock_post.return_value = mock_response
+    mock_session = mock.Mock()
+    mock_session.post.return_value = mock_response
+    mock_session_cls.return_value = mock_session
 
     client = Client(
         api_url="http://localhost:1984",
@@ -112,3 +116,37 @@ def test_async_methods():
         sync_args = set(Client.__dict__[sync_method].__code__.co_varnames)
         async_args = set(Client.__dict__[async_method].__code__.co_varnames)
         assert sync_args.issubset(async_args)
+
+
+def test_get_api_key():
+    assert _get_api_key("provided_api_key") == "provided_api_key"
+    assert _get_api_key("'provided_api_key'") == "provided_api_key"
+    assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
+
+    with patch.dict(os.environ, {"LANGCHAIN_API_KEY": "env_api_key"}):
+        assert _get_api_key(None) == "env_api_key"
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert _get_api_key(None) is None
+
+    assert _get_api_key("") is None
+    assert _get_api_key(" ") is None
+
+
+def test_get_api_url():
+    assert _get_api_url("http://provided.url", "api_key") == "http://provided.url"
+
+    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert _get_api_url(None, "api_key") == "http://env.url"
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert _get_api_url(None, "api_key") == "https://api.smith.langchain.com"
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert _get_api_url(None, None) == "http://localhost:1984"
+
+    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert _get_api_url(None, None) == "http://env.url"
+
+    with pytest.raises(LangSmithUserError):
+        _get_api_url(" ", "api_key")
