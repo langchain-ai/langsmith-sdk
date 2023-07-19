@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.0.2"
+version = "0.0.10"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain"]
 license = "MIT"
@@ -14,7 +14,6 @@ langsmith = "langsmith.cli.main:main"
 python = ">=3.8.1,<4.0"
 pydantic = "^1"
 requests = "^2"
-tenacity = "^8.1.0"
 
 
 [tool.poetry.group.dev.dependencies]

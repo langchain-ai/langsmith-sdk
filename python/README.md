@@ -1,6 +1,6 @@
 # LangSmith Client SDK
 
-This package contains the Python client for interacting with the [LangSmith platform](https://www.langchain.plus/).
+This package contains the Python client for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
 To install:
 
@@ -14,7 +14,7 @@ LangSmith helps you and your team develop and evaluate language models and intel
 
 A typical workflow looks like:
 
-1. Set up an account with LangSmith or host your [local server](https://docs.langchain.plus/docs/getting-started/local_installation).
+1. Set up an account with LangSmith.
 2. Log traces.
 3. Debug, Create Datasets, and Evaluate Runs.
 
@@ -22,9 +22,9 @@ We'll walk through these steps in more detail below.
 
 ## 1. Connect to LangSmith
 
-Sign up for [LangSmith](https://www.langchain.plus/) using your GitHub, Discord accounts, or an email address and password. If you sign up with an email, make sure to verify your email address before logging in.
+Sign up for [LangSmith](https://smith.langchain.com/) using your GitHub, Discord accounts, or an email address and password. If you sign up with an email, make sure to verify your email address before logging in.
 
-Then, create a unique API key on the [Settings Page](https://www.langchain.plus/settings), which is found in the menu at the top right corner of the page.
+Then, create a unique API key on the [Settings Page](https://smith.langchain.com/settings), which is found in the menu at the top right corner of the page.
 
 Note: Save the API Key in a secure location. It will not be shown again.
 
@@ -43,8 +43,8 @@ Tracing can be activated by setting the following environment variables or by ma
 ```python
 import os
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus" # or your own server
-os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
+os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
+os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 # os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
 
@@ -76,8 +76,8 @@ or by directly specifying the connection information in the RunTree.
 
 ```python
 import os
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.langchain.plus" # or your own server
-os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGCHAINPLUS-API-KEY>"
+os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
+os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 # os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
 
@@ -157,7 +157,7 @@ res.result()
 
 Once your runs are stored in LangSmith, you can convert them into a dataset.
 For this example, we will do so using the Client, but you can also do this using
-the web interface, as explained in the [LangSmith docs](https://docs.langchain.plus/docs/).
+the web interface, as explained in the [LangSmith docs](https://docs.smith.langchain.com/docs/).
 
 ```python
 from langsmith import Client
@@ -183,7 +183,9 @@ for run in runs:
 
 ## Evaluating Runs
 
-You can run evaluations directly using the LangSmith client.
+Check out the [LangSmith Testing & Evaluation dos](https://docs.smith.langchain.com/docs/evaluation/) for up-to-date workflows.
+
+For generating automated feedback on individual runs, you can run evaluations directly using the LangSmith client.
 
 ```python
 from typing import Optional
@@ -222,4 +224,4 @@ for run in runs:
 
 ## Additional Documentation
 
-To learn more about the LangSmith platform, check out the [docs](https://docs.langchain.plus/docs/).
+To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/docs/).

@@ -1,6 +1,15 @@
 import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { StringEvaluator } from "../evaluation/string_evaluator.js";
+import { Dataset, Feedback } from "../schemas.js";
+
+async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const item of iterable) {
+    result.push(item);
+  }
+  return result;
+}
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
@@ -9,14 +18,14 @@ test("Test LangSmith Client Dataset CRD", async () => {
     apiUrl: "http://localhost:1984",
   });
 
-  const csvContent = `col1,col2\nval1,val2`;
+  const csvContent = `col1,col2,col3,col4\nval1,val2,val3,val4`;
   const blobData = new Blob([Buffer.from(csvContent)]);
 
   const description = "Test Dataset";
-  const inputKeys = ["col1"];
-  const outputKeys = ["col2"];
+  const inputKeys = ["col1", "col3"];
+  const outputKeys = ["col2", "col4"];
   const fileName = "__some_file.int.csv";
-  const existingDatasets = await client.listDatasets({});
+  const existingDatasets = await toArray(client.listDatasets());
   if (existingDatasets.map((d) => d.name).includes(fileName)) {
     await client.deleteDataset({ datasetName: fileName });
   }
@@ -36,7 +45,7 @@ test("Test LangSmith Client Dataset CRD", async () => {
   const dataset2 = await client.readDataset({ datasetId });
   expect(dataset.id).toBe(dataset2.id);
 
-  const datasets = await client.listDatasets({});
+  const datasets = await toArray(client.listDatasets({}));
   expect(datasets.length).toBeGreaterThan(0);
   expect(datasets.map((d) => d.id)).toContain(datasetId);
 
@@ -49,7 +58,9 @@ test("Test LangSmith Client Dataset CRD", async () => {
   expect(exampleValue.inputs.col1).toBe("addedExampleCol1");
   expect(exampleValue.outputs?.col2).toBe("addedExampleCol2");
 
-  const examples = await client.listExamples({ datasetId: newDataset.id });
+  const examples = await toArray(
+    client.listExamples({ datasetId: newDataset.id })
+  );
   expect(examples.length).toBe(2);
   expect(examples.map((e) => e.id)).toContain(example.id);
 
@@ -62,7 +73,9 @@ test("Test LangSmith Client Dataset CRD", async () => {
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
   await client.deleteExample(example.id);
-  const examples2 = await client.listExamples({ datasetId: newDataset.id });
+  const examples2 = await toArray(
+    client.listExamples({ datasetId: newDataset.id })
+  );
   expect(examples2.length).toBe(1);
 
   await client.deleteDataset({ datasetId });
@@ -79,11 +92,15 @@ test("Test LangSmith Client Project CRD", async () => {
   });
 
   const newProject = `__some_project.int.`;
-  if ((await client.listProjects()).map((s) => s.name).includes(newProject)) {
+  if (
+    (await toArray(client.listProjects()))
+      .map((s) => s.name)
+      .includes(newProject)
+  ) {
     await client.deleteProject({ projectName: newProject });
   }
 
-  let projects = await client.listProjects();
+  let projects = await toArray(client.listProjects());
   let projectNames = projects.map((project) => project.name);
   expect(projectNames).not.toContain(newProject);
 
@@ -91,18 +108,20 @@ test("Test LangSmith Client Project CRD", async () => {
   const project = await client.readProject({ projectName: newProject });
   expect(project.name).toBe(newProject);
 
-  projects = await client.listProjects();
+  projects = await toArray(client.listProjects());
   projectNames = projects.map((project) => project.name);
   expect(projectNames).toContain(newProject);
 
-  const runs = await client.listRuns({ projectName: newProject });
-  const projectId_runs = await client.listRuns({ projectId: project.id });
+  const runs = await toArray(client.listRuns({ projectName: newProject }));
+  const projectId_runs = await toArray(
+    client.listRuns({ projectId: project.id })
+  );
   expect(runs.length).toBe(0);
   expect(projectId_runs.length).toBe(0);
 
   await client.deleteProject({ projectName: newProject });
 
-  projects = await client.listProjects();
+  projects = await toArray(client.listProjects());
   projectNames = projects.map((project) => project.name);
   expect(projectNames).not.toContain(newProject);
 
@@ -121,8 +140,8 @@ test("Test evaluate run", async () => {
 
   const projectName = "__test_evaluate_run";
   const datasetName = "__test_evaluate_run_dataset";
-  const projects = await langchainClient.listProjects();
-  const datasets = await langchainClient.listDatasets();
+  const projects = await toArray(langchainClient.listProjects());
+  const datasets = await toArray(langchainClient.listDatasets());
 
   if (projects.map((project) => project.name).includes(projectName)) {
     await langchainClient.deleteProject({ projectName });
@@ -209,15 +228,18 @@ test("Test evaluate run", async () => {
   expect(projectWithStats.latency_p99).toBeGreaterThan(0);
 
   const allFeedback = [];
-  for (const run of runs) {
+  for await (const run of runs) {
     allFeedback.push(await langchainClient.evaluateRun(run, evaluator));
   }
 
   expect(allFeedback.length).toEqual(1);
 
-  const fetchedFeedback = await langchainClient.listFeedback({
+  const fetchedFeedback: Feedback[] = [];
+  for await (const feedback of langchainClient.listFeedback({
     runIds: [run.id],
-  });
+  })) {
+    fetchedFeedback.push(feedback);
+  }
   expect(fetchedFeedback[0].id).toEqual(allFeedback[0].id);
   expect(fetchedFeedback[0].score).toEqual(
     jaccardChars(predicted, groundTruth)
@@ -234,12 +256,13 @@ test("Test persist update run", async () => {
   });
   const projectName = "__test_persist_update_run";
   const projects = await langchainClient.listProjects();
-
-  if (projects.map((project) => project.name).includes(projectName)) {
-    await langchainClient.deleteProject({ projectName });
+  for await (const project of projects) {
+    if (project.name === projectName) {
+      await langchainClient.deleteProject({ projectName });
+    }
   }
   const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
-  if ((await langchainClient.listRuns({ id: [runId] })).length > 0) {
+  if ((await toArray(langchainClient.listRuns({ id: [runId] }))).length > 0) {
     await langchainClient.deleteRun(runId);
   }
   await langchainClient.createRun({
@@ -264,10 +287,12 @@ test("test create dataset", async () => {
     apiUrl: "http://localhost:1984",
   });
   const datasetName = "__test_create_dataset";
-  const datasets = await langchainClient.listDatasets({});
-  if (datasets.map((dataset) => dataset.name).includes(datasetName)) {
-    await langchainClient.deleteDataset({ datasetName });
-  }
+  const datasets = await toArray(langchainClient.listDatasets());
+  datasets.map(async (dataset: Dataset) => {
+    if (dataset.name === datasetName) {
+      await langchainClient.deleteDataset({ datasetName });
+    }
+  });
   const dataset = await langchainClient.createDataset(datasetName, {
     dataType: "llm",
   });

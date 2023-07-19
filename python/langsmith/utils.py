@@ -1,58 +1,26 @@
 """Generic utility functions."""
 import platform
+import subprocess
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Mapping, Tuple
 
-import requests
-from requests import ConnectionError, HTTPError, Response
-from tenacity import Retrying
+from requests import HTTPError, Response
 
 
-class LangChainPlusAPIError(Exception):
-    """An error occurred while communicating with the LangChain API."""
+class LangSmithAPIError(Exception):
+    """An error occurred while communicating with the LangSmith API."""
 
 
-class LangChainPlusUserError(Exception):
-    """An error occurred while communicating with the LangChain API."""
+class LangSmithUserError(Exception):
+    """An error occurred while communicating with the LangSmith API."""
 
 
-class LangChainPlusError(Exception):
-    """An error occurred while communicating with the LangChain API."""
+class LangSmithError(Exception):
+    """An error occurred while communicating with the LangSmith API."""
 
 
-class LangChainPlusConnectionError(Exception):
-    """Couldn't connect to the LC+ API."""
-
-
-def request_with_retries(
-    request_method: str, url: str, request_kwargs: Mapping, retry_config: Mapping
-) -> Response:
-    for attempt in Retrying(**retry_config):
-        with attempt:
-            try:
-                response = requests.request(request_method, url, **request_kwargs)
-                raise_for_status_with_text(response)
-                return response
-            except HTTPError as e:
-                if response is not None and response.status_code == 500:
-                    raise LangChainPlusAPIError(
-                        f"Server error caused failure to {request_method} {url} in"
-                        f" LangSmith API. {e}"
-                    )
-                else:
-                    raise LangChainPlusUserError(
-                        f"Failed to {request_method} {url} in LangSmith API. {e}"
-                    )
-            except ConnectionError as e:
-                raise LangChainPlusConnectionError(
-                    f"Connection error caused failure to {request_method} {url}"
-                    "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-                ) from e
-            except Exception as e:
-                raise LangChainPlusError(
-                    f"Failed to {request_method} {url} in LangSmith API. {e}"
-                ) from e
-    raise LangChainPlusError(f"Failed to {request_method}  {url} in LangSmith API. ")
+class LangSmithConnectionError(Exception):
+    """Couldn't connect to the LangSmith API."""
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
@@ -198,3 +166,62 @@ def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
     if "text" not in first_generation:
         raise ValueError(f"No text in generation: {first_generation}")
     return first_generation["text"]
+
+
+@lru_cache
+def get_docker_compose_command() -> List[str]:
+    """Get the correct docker compose command for this system."""
+    try:
+        subprocess.check_call(
+            ["docker", "compose", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return ["docker", "compose"]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        try:
+            subprocess.check_call(
+                ["docker-compose", "--version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return ["docker-compose"]
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise ValueError(
+                "Neither 'docker compose' nor 'docker-compose'"
+                " commands are available. Please install the Docker"
+                " server following the instructions for your operating"
+                " system at https://docs.docker.com/engine/install/"
+            )
+
+
+@lru_cache
+def get_docker_environment() -> dict:
+    """Get information about the environment."""
+    # Try to get the docker CLI version via subprocess
+    import subprocess
+
+    try:
+        docker_version = (
+            subprocess.check_output(["docker", "--version"]).decode("utf-8").strip()
+        )
+    except FileNotFoundError:
+        docker_version = "unknown"
+    try:
+        compose_command = get_docker_compose_command()
+    except ValueError as e:
+        compose_command = [f"NOT INSTALLED: {e}"]
+    try:
+        docker_compose_version = (
+            subprocess.check_output(["docker-compose", "--version"])
+            .decode("utf-8")
+            .strip()
+        )
+    except FileNotFoundError:
+        docker_compose_version = "unknown"
+
+    return {
+        "docker_version": docker_version,
+        "docker_compose_command": " ".join(compose_command),
+        "docker_compose_version": docker_compose_version,
+    }

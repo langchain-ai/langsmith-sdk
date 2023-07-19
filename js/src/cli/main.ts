@@ -4,15 +4,15 @@ import * as util from "util";
 import { Command } from "commander";
 import * as child_process from "child_process";
 import { setEnvironmentVariable } from "../utils/env.js";
+import { spawn } from "child_process";
 
 const currentFileName = __filename;
 const currentDirName = __dirname;
 
-const exec = util.promisify(child_process.exec);
-
 const program = new Command();
 
 async function getDockerComposeCommand(): Promise<string[]> {
+  const exec = util.promisify(child_process.exec);
   try {
     await exec("docker compose --version");
     return ["docker", "compose"];
@@ -122,9 +122,10 @@ version: '2'
   return configPath;
 }
 
-class PlusCommand {
+class SmithCommand {
   dockerComposeCommand: string[] = [];
   dockerComposeFile = "";
+  dockerComposeDevFile = "";
   ngrokPath = "";
 
   constructor({ dockerComposeCommand }: { dockerComposeCommand: string[] }) {
@@ -133,35 +134,62 @@ class PlusCommand {
       path.dirname(currentFileName),
       "docker-compose.yaml"
     );
+    this.dockerComposeDevFile = path.join(
+      path.dirname(currentFileName),
+      "docker-compose.dev.yaml"
+    );
     this.ngrokPath = path.join(
       path.dirname(currentFileName),
       "docker-compose.ngrok.yaml"
     );
   }
 
+  async executeCommand(command: string[]) {
+    return new Promise<void>((resolve, reject) => {
+      const child = spawn(command[0], command.slice(1), { stdio: "inherit" });
+
+      child.on("error", (error) => {
+        console.error(`error: ${error.message}`);
+        reject(error);
+      });
+
+      child.on("close", (code) => {
+        if (code !== 0) {
+          reject(new Error(`Process exited with code ${code}`));
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
   public static async create() {
     const dockerComposeCommand = await getDockerComposeCommand();
-    return new PlusCommand({ dockerComposeCommand });
+    return new SmithCommand({ dockerComposeCommand });
   }
 
   async start(args: any) {
+    console.info(
+      "BY USING THIS SOFTWARE YOU AGREE TO THE TERMS OF SERVICE AT:"
+    );
+    console.info("https://smith.langchain.com/terms-of-service.pdf");
     if (args.dev) {
-      setEnvironmentVariable("_LANGCHAINPLUS_IMAGE_PREFIX", "rc-");
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }
     if (args.openaiApiKey) {
       setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
     }
     await this.pull(args);
     if (args.expose) {
-      await this.startAndExpose(args.ngrokAuthtoken);
+      await this.startAndExpose(args.ngrokAuthtoken, args.dev);
     } else {
-      await this.startLocal();
+      await this.startLocal(args.dev);
     }
   }
 
   async pull(args: any) {
     if (args.dev) {
-      setEnvironmentVariable("_LANGCHAINPLUS_IMAGE_PREFIX", "rc-");
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }
 
     const command = [
@@ -170,26 +198,27 @@ class PlusCommand {
       this.dockerComposeFile,
       "pull",
     ];
-    await exec(command.join(" "));
+    await this.executeCommand(command);
   }
 
-  async startLocal() {
+  async startLocal(dev: boolean) {
     const command = [
       ...this.dockerComposeCommand,
       "-f",
       this.dockerComposeFile,
-      "up",
-      "--quiet-pull",
-      "--wait",
     ];
-    await exec(command.join(" "));
+    if (dev) {
+      command.push("-f", this.dockerComposeDevFile);
+    }
+    command.push("up", "--quiet-pull", "--wait");
+    await this.executeCommand(command);
     console.info(
       "LangSmith server is running at http://localhost:1984.  To connect locally, set the following environment variable when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
   }
 
-  async startAndExpose(ngrokAuthToken: string | null) {
+  async startAndExpose(ngrokAuthToken: string | null, dev: boolean) {
     const configPath = await createNgrokConfig(ngrokAuthToken);
     const command = [
       ...this.dockerComposeCommand,
@@ -197,11 +226,12 @@ class PlusCommand {
       this.dockerComposeFile,
       "-f",
       this.ngrokPath,
-      "up",
-      "--quiet-pull",
-      "--wait",
     ];
-    await exec(command.join(" "));
+    if (dev) {
+      command.push("-f", this.dockerComposeDevFile);
+    }
+    command.push("up", "--quiet-pull", "--wait");
+    await this.executeCommand(command);
     console.info(
       "ngrok is running. You can view the dashboard at http://0.0.0.0:4040"
     );
@@ -224,7 +254,7 @@ class PlusCommand {
       this.ngrokPath,
       "down",
     ];
-    await exec(command.join(" "));
+    await this.executeCommand(command);
   }
   async status() {
     const command = [
@@ -235,6 +265,7 @@ class PlusCommand {
       "--format",
       "json",
     ];
+    const exec = util.promisify(child_process.exec);
     const result = await exec(command.join(" "));
     const servicesStatus = JSON.parse(result.stdout);
     if (servicesStatus) {
@@ -259,25 +290,27 @@ const startCommand = new Command("start")
   .option("--dev", "Run the development version of the LangSmith server")
   .option(
     "--openai-api-key <openaiApiKey>",
-    "Your OpenAI API key. If this is set, the server will be able to process text and return enhanced plus results."
+    "Your OpenAI API key. If not provided, the OpenAI API Key will be read" +
+      " from the OPENAI_API_KEY environment variable. If neither are provided," +
+      " some features of LangSmith will not be available."
   )
-  .action(async (args: string[]) => (await PlusCommand.create()).start(args));
+  .action(async (args: string[]) => (await SmithCommand.create()).start(args));
 
 const stopCommand = new Command("stop")
   .command("stop")
   .description("Stop the LangSmith server")
-  .action(async () => (await PlusCommand.create()).stop());
+  .action(async () => (await SmithCommand.create()).stop());
 
 const pullCommand = new Command("pull")
   .command("pull")
   .description("Pull the latest version of the LangSmith server")
   .option("--dev", "Pull the development version of the LangSmith server")
-  .action(async (args: string[]) => (await PlusCommand.create()).pull(args));
+  .action(async (args: string[]) => (await SmithCommand.create()).pull(args));
 
 const statusCommand = new Command("status")
   .command("status")
   .description("Get the status of the LangSmith server")
-  .action(async () => (await PlusCommand.create()).status());
+  .action(async () => (await SmithCommand.create()).status());
 
 program
   .description("Manage the LangSmith server")

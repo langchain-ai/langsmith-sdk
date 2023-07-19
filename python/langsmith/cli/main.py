@@ -6,12 +6,15 @@ import shutil
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
-from subprocess import CalledProcessError
 from typing import Dict, Generator, List, Mapping, Optional, Union, cast
 
 import requests
 
-from langsmith.utils import get_runtime_environment
+from langsmith.utils import (
+    get_docker_compose_command,
+    get_docker_environment,
+    get_runtime_environment,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -61,32 +64,6 @@ def pprint_services(services_status: List[Mapping[str, Union[str, List[str]]]]) 
         f"\nLANGCHAIN_ENDPOINT={langchain_endpoint}"
     )
     logger.info("\n".join(service_message))
-
-
-def get_docker_compose_command() -> List[str]:
-    """Get the correct docker compose command for this system."""
-    try:
-        subprocess.check_call(
-            ["docker", "compose", "--version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return ["docker", "compose"]
-    except (CalledProcessError, FileNotFoundError):
-        try:
-            subprocess.check_call(
-                ["docker-compose", "--version"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return ["docker-compose"]
-        except (CalledProcessError, FileNotFoundError):
-            raise ValueError(
-                "Neither 'docker compose' nor 'docker-compose'"
-                " commands are available. Please install the Docker"
-                " server following the instructions for your operating"
-                " system at https://docs.docker.com/engine/install/"
-            )
 
 
 def get_ngrok_url(auth_token: Optional[str]) -> str:
@@ -160,11 +137,17 @@ class LangSmithCommand:
     """Manage the LangSmith Tracing server."""
 
     def __init__(self) -> None:
-        self.docker_compose_command = get_docker_compose_command()
         self.docker_compose_file = (
             Path(__file__).absolute().parent / "docker-compose.yaml"
         )
+        self.docker_compose_dev_file = (
+            Path(__file__).absolute().parent / "docker-compose.dev.yaml"
+        )
         self.ngrok_path = Path(__file__).absolute().parent / "docker-compose.ngrok.yaml"
+
+    @property
+    def docker_compose_command(self) -> List[str]:
+        return get_docker_compose_command()
 
     def _open_browser(self, url: str) -> None:
         try:
@@ -172,12 +155,15 @@ class LangSmithCommand:
         except FileNotFoundError:
             pass
 
-    def _start_local(self) -> None:
+    def _start_local(self, dev: bool) -> None:
         command = [
             *self.docker_compose_command,
             "-f",
             str(self.docker_compose_file),
         ]
+        if dev:
+            command.append("-f")
+            command.append(str(self.docker_compose_dev_file))
         subprocess.run(
             [
                 *command,
@@ -187,7 +173,7 @@ class LangSmithCommand:
             ]
         )
         logger.info(
-            "langchain plus server is running at http://localhost:1984.  To connect"
+            "LangSmith server is running at http://localhost:1984.  To connect"
             " locally, set the following environment variable"
             " when running your LangChain application."
         )
@@ -195,7 +181,7 @@ class LangSmithCommand:
         logger.info("\tLANGCHAIN_TRACING_V2=true")
         self._open_browser("http://localhost")
 
-    def _start_and_expose(self, auth_token: Optional[str]) -> None:
+    def _start_and_expose(self, auth_token: Optional[str], dev: bool) -> None:
         with create_ngrok_config(auth_token=auth_token):
             command = [
                 *self.docker_compose_command,
@@ -204,6 +190,9 @@ class LangSmithCommand:
                 "-f",
                 str(self.ngrok_path),
             ]
+            if dev:
+                command.append("-f")
+                command.append(str(self.docker_compose_dev_file))
             subprocess.run(
                 [
                     *command,
@@ -217,7 +206,7 @@ class LangSmithCommand:
         )
         ngrok_url = get_ngrok_url(auth_token)
         logger.info(
-            "langchain plus server is running at http://localhost:1984."
+            "LangSmith server is running at http://localhost:1984."
             " To connect remotely, set the following environment"
             " variable when running your LangChain application."
         )
@@ -237,7 +226,7 @@ class LangSmithCommand:
             dev: If True, pull the development (rc) image of LangSmith.
         """
         if dev:
-            os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
+            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         subprocess.run(
             [
                 *self.docker_compose_command,
@@ -268,27 +257,37 @@ class LangSmithCommand:
                 some features of LangSmith will not be available.
         """
         if dev:
-            os.environ["_LANGCHAINPLUS_IMAGE_PREFIX"] = "rc-"
+            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
         self.pull(dev=dev)
         if expose:
-            self._start_and_expose(auth_token=auth_token)
+            self._start_and_expose(auth_token=auth_token, dev=dev)
         else:
-            self._start_local()
+            self._start_local(dev=dev)
 
-    def stop(self) -> None:
+    def stop(self, clear_volumes: bool = False) -> None:
         """Stop the LangSmith server."""
-        subprocess.run(
-            [
-                *self.docker_compose_command,
-                "-f",
-                str(self.docker_compose_file),
-                "-f",
-                str(self.ngrok_path),
-                "down",
-            ]
-        )
+        cmd = [
+            *self.docker_compose_command,
+            "-f",
+            str(self.docker_compose_file),
+            "-f",
+            str(self.ngrok_path),
+            "down",
+        ]
+        if clear_volumes:
+            confirm = input(
+                "You are about to delete all the locally cached "
+                "LangSmith containers and volumes. "
+                "This operation cannot be undone. Are you sure? [y/N]"
+            )
+            if confirm.lower() != "y":
+                print("Aborting.")
+                return
+            cmd.append("--volumes")
+
+        subprocess.run(cmd)
 
     def logs(self) -> None:
         """Print the logs from the LangSmith server."""
@@ -337,12 +336,21 @@ class LangSmithCommand:
 def env() -> None:
     """Print the runtime environment information."""
     env = get_runtime_environment()
+    env.update(get_docker_environment())
+
+    # calculate the max length of keys
+    max_key_length = max(len(key) for key in env.keys())
+
     logger.info("LangChain Environment:")
-    logger.info("\n".join(f"{k}:{v}" for k, v in env.items()))
+    for k, v in env.items():
+        logger.info(f"{k:{max_key_length}}: {v}")
 
 
 def main() -> None:
     """Main entrypoint for the CLI."""
+    print("BY USING THIS SOFTWARE YOU AGREE TO THE TERMS OF SERVICE AT:")
+    print("https://smith.langchain.com/terms-of-service.pdf")
+
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(description="LangSmith CLI commands")
 
@@ -386,7 +394,14 @@ def main() -> None:
     server_stop_parser = subparsers.add_parser(
         "stop", description="Stop the LangSmith server."
     )
-    server_stop_parser.set_defaults(func=lambda args: server_command.stop())
+    server_stop_parser.add_argument(
+        "--clear-volumes",
+        action="store_true",
+        help="Delete all the locally cached LangSmith containers and volumes.",
+    )
+    server_stop_parser.set_defaults(
+        func=lambda args: server_command.stop(clear_volumes=args.clear_volumes)
+    )
 
     server_pull_parser = subparsers.add_parser(
         "pull", description="Pull the latest LangSmith images."
