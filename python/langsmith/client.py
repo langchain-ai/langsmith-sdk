@@ -133,9 +133,8 @@ def _serialize_json(obj: Any) -> str:
     """
     if isinstance(obj, datetime):
         return obj.isoformat()
-    elif isinstance(obj, UUID):
+    else:
         return str(obj)
-    raise TypeError("Type %s not serializable" % type(obj))
 
 
 def close_session(session: Session) -> None:
