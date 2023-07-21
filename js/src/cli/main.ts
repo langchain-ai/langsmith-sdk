@@ -213,7 +213,11 @@ class SmithCommand {
     command.push("up", "--quiet-pull", "--wait");
     await this.executeCommand(command);
     console.info(
-      "LangSmith server is running at http://localhost:1984.  To connect locally, set the following environment variable when running your LangChain application."
+      "LangSmith server is running at http://localhost:1984.\n" +
+        "To view the app, navigate your browser to http://localhost:80" +
+        "\n\nTo connect your LangChain application to the server" +
+        " locally, set the following environment variable" +
+        " when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
   }
@@ -237,7 +241,11 @@ class SmithCommand {
     );
     const ngrokUrl = await getNgrokUrl();
     console.info(
-      "LangSmith server is running at http://localhost:1984. To connect remotely, set the following environment variable when running your LangChain application."
+      "LangSmith server is running at http://localhost:1984." +
+        "To view the app, navigate your browser to http://localhost:80" +
+        "\n\nTo connect your LangChain application to the server" +
+        " remotely, set the following environment variable" +
+        " when running your LangChain application."
     );
     console.info("\tLANGCHAIN_TRACING_V2=true");
     console.info(`\tLANGCHAIN_ENDPOINT=${ngrokUrl}`);
