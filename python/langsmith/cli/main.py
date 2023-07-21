@@ -173,9 +173,11 @@ class LangSmithCommand:
             ]
         )
         logger.info(
-            "LangSmith server is running at http://localhost:1984.  To connect"
-            " locally, set the following environment variable"
-            " when running your LangChain application."
+            "LangSmith server is running at http://localhost:1984.\n"
+            "To view the app, navigate your browser to http://localhost:80"
+            "\n\nTo connect your LangChain application to the server"
+            " locally,\nset the following environment variable"
+            " when running your LangChain application.\n"
         )
 
         logger.info("\tLANGCHAIN_TRACING_V2=true")
@@ -207,6 +209,7 @@ class LangSmithCommand:
         ngrok_url = get_ngrok_url(auth_token)
         logger.info(
             "LangSmith server is running at http://localhost:1984."
+            "\nTo view the app, navigate your browser to http://localhost:80"
             " To connect remotely, set the following environment"
             " variable when running your LangChain application."
         )

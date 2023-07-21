@@ -7,7 +7,17 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Mapping,
+    Optional,
+    TypedDict,
+    Union,
+)
 from uuid import UUID
 
 from langsmith.run_trees import RunTree
@@ -49,6 +59,17 @@ def _get_inputs(
     return dict(bound.arguments)
 
 
+class LangSmithExtra(TypedDict):
+    """Any additional info to be injected into the run dynamically."""
+
+    reference_example_id: Optional[UUID]
+    run_extra: Optional[Dict]
+    run_tree: Optional[RunTree]
+    project_name: Optional[str]
+    metadata: Optional[Dict[str, Any]]
+    tags: Optional[List[str]]
+
+
 def traceable(
     run_type: Union[RunTypeEnum, str],
     *,
@@ -66,21 +87,22 @@ def traceable(
         @wraps(func)
         async def async_wrapper(
             *args: Any,
-            reference_example_id: Optional[UUID] = None,
-            run_extra: Optional[Dict] = None,
-            run_tree: Optional[RunTree] = None,
-            project_name: Optional[str] = None,
+            langsmith_extra: Optional[Union[LangSmithExtra, Dict]] = None,
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function"""
+            outer_project = _PROJECT_NAME.get() or os.environ.get(
+                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
+            )
+            langsmith_extra = langsmith_extra or {}
+            run_tree = langsmith_extra.get("run_tree", None)
+            project_name_ = langsmith_extra.get("project_name", outer_project)
+            run_extra = langsmith_extra.get("run_extra", None)
+            reference_example_id = langsmith_extra.get("reference_example_id", None)
             if run_tree is None:
                 parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
-            outer_project = _PROJECT_NAME.get() or os.environ.get(
-                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
-            )
-            project_name_ = project_name or outer_project
             signature = inspect.signature(func)
             name_ = name or func.__name__
             docstring = func.__doc__
@@ -88,9 +110,11 @@ def traceable(
                 extra_inner = {**extra_outer, **run_extra}
             else:
                 extra_inner = extra_outer
-            if metadata:
-                extra_inner["metadata"] = metadata
+            metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
+            if metadata_:
+                extra_inner["metadata"] = metadata_
             inputs = _get_inputs(signature, *args, **kwargs)
+            tags_ = tags or [] + (langsmith_extra.get("tags") or [])
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
                     name=name_,
@@ -101,7 +125,7 @@ def traceable(
                         "doc": docstring,
                     },
                     inputs=inputs,
-                    tags=tags,
+                    tags=tags_,
                     extra=extra_inner,
                 )
             else:
@@ -117,7 +141,7 @@ def traceable(
                     reference_example_id=reference_example_id,
                     project_name=project_name_,
                     extra=extra_inner,
-                    tags=tags,
+                    tags=tags_,
                     executor=executor,
                 )
             new_run.post()
@@ -146,21 +170,22 @@ def traceable(
         @wraps(func)
         def wrapper(
             *args: Any,
-            reference_example_id: Optional[UUID] = None,
-            run_extra: Optional[Dict] = None,
-            run_tree: Optional[RunTree] = None,
-            project_name: Optional[str] = None,
+            langsmith_extra: Optional[Union[LangSmithExtra, Dict]] = None,
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
+            outer_project = _PROJECT_NAME.get() or os.environ.get(
+                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
+            )
+            langsmith_extra = langsmith_extra or {}
+            run_tree = langsmith_extra.get("run_tree", None)
+            project_name_ = langsmith_extra.get("project_name", outer_project)
+            run_extra = langsmith_extra.get("run_extra", None)
+            reference_example_id = langsmith_extra.get("reference_example_id", None)
             if run_tree is None:
                 parent_run_ = _PARENT_RUN_TREE.get()
             else:
                 parent_run_ = run_tree
-            outer_project = _PROJECT_NAME.get() or os.environ.get(
-                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
-            )
-            project_name_ = project_name or outer_project
             signature = inspect.signature(func)
             name_ = name or func.__name__
             docstring = func.__doc__
@@ -168,9 +193,11 @@ def traceable(
                 extra_inner = {**extra_outer, **run_extra}
             else:
                 extra_inner = extra_outer
-            if metadata:
-                extra_inner["metadata"] = metadata
+            metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
+            if metadata_:
+                extra_inner["metadata"] = metadata_
             inputs = _get_inputs(signature, *args, **kwargs)
+            tags_ = tags or [] + (langsmith_extra.get("tags") or [])
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
                     name=name_,
@@ -181,7 +208,7 @@ def traceable(
                         "doc": docstring,
                     },
                     inputs=inputs,
-                    tags=tags,
+                    tags=tags_,
                     extra=extra_inner,
                 )
             else:
@@ -197,7 +224,7 @@ def traceable(
                     reference_example_id=reference_example_id,
                     project_name=project_name_,
                     extra=extra_inner,
-                    tags=tags,
+                    tags=tags_,
                     executor=executor,
                 )
             new_run.post()
