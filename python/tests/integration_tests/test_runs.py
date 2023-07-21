@@ -42,7 +42,7 @@ def test_nested_runs(
         # The function needn't accept a run
         return f"Completed: {text}"
 
-    @traceable(run_type="chain", executor=executor)
+    @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])
     def my_chain_run(text: str):
         return my_run(text)
 
@@ -53,6 +53,7 @@ def test_nested_runs(
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
     assert runs_dict["my_chain_run"].run_type == "chain"
+    assert runs_dict["my_chain_run"].tags == ["foo", "bar"]
     assert runs_dict["my_run"].parent_run_id == runs_dict["my_chain_run"].id
     assert runs_dict["my_run"].run_type == "chain"
     assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
