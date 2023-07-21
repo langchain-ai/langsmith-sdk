@@ -46,7 +46,7 @@ def test_nested_runs(
     def my_chain_run(text: str):
         return my_run(text)
 
-    my_chain_run("foo", project_name=project_name)
+    my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
     runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 3
@@ -90,7 +90,7 @@ async def test_nested_async_runs(langchain_client: Client):
     async def my_chain_run(text: str):
         return await my_run(text)
 
-    await my_chain_run("foo", project_name=project_name)
+    await my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
     runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 4
@@ -141,7 +141,9 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         llm_run_result = my_llm_run(text)
         thread_pool = ThreadPoolExecutor(max_workers=1)
         for i in range(3):
-            thread_pool.submit(my_tool_run, f"Child Tool {i}", run_tree=run_tree)
+            thread_pool.submit(
+                my_tool_run, f"Child Tool {i}", langsmith_extra={"run_tree": run_tree}
+            )
         thread_pool.shutdown(wait=True)
         return llm_run_result
 
@@ -151,11 +153,13 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     async def my_chain_run(text: str, run_tree: RunTree):
         thread_pool = ThreadPoolExecutor(max_workers=3)
         for i in range(2):
-            thread_pool.submit(my_run, f"Child {i}", run_tree=run_tree)
+            thread_pool.submit(
+                my_run, f"Child {i}", langsmith_extra=dict(run_tree=run_tree)
+            )
         thread_pool.shutdown(wait=True)
         return text
 
-    await my_chain_run("foo", project_name=project_name)
+    await my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
     runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 17
