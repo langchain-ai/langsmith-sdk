@@ -7,7 +7,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Dict, Generator, Optional, Union
+from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, Union
 from uuid import UUID
 
 from langsmith.run_trees import RunTree
@@ -55,6 +55,8 @@ def traceable(
     name: Optional[str] = None,
     extra: Optional[Dict] = None,
     executor: Optional[ThreadPoolExecutor] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
+    tags: Optional[List[str]] = None,
 ) -> Callable:
     """Decorator for creating or adding a run to a run tree."""
     _warn_once()
@@ -86,6 +88,8 @@ def traceable(
                 extra_inner = {**extra_outer, **run_extra}
             else:
                 extra_inner = extra_outer
+            if metadata:
+                extra_inner["metadata"] = metadata
             inputs = _get_inputs(signature, *args, **kwargs)
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
@@ -97,6 +101,7 @@ def traceable(
                         "doc": docstring,
                     },
                     inputs=inputs,
+                    tags=tags,
                     extra=extra_inner,
                 )
             else:
@@ -112,6 +117,7 @@ def traceable(
                     reference_example_id=reference_example_id,
                     project_name=project_name_,
                     extra=extra_inner,
+                    tags=tags,
                     executor=executor,
                 )
             new_run.post()
@@ -162,6 +168,8 @@ def traceable(
                 extra_inner = {**extra_outer, **run_extra}
             else:
                 extra_inner = extra_outer
+            if metadata:
+                extra_inner["metadata"] = metadata
             inputs = _get_inputs(signature, *args, **kwargs)
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
@@ -173,6 +181,7 @@ def traceable(
                         "doc": docstring,
                     },
                     inputs=inputs,
+                    tags=tags,
                     extra=extra_inner,
                 )
             else:
@@ -188,6 +197,7 @@ def traceable(
                     reference_example_id=reference_example_id,
                     project_name=project_name_,
                     extra=extra_inner,
+                    tags=tags,
                     executor=executor,
                 )
             new_run.post()
@@ -231,10 +241,14 @@ def trace(
     executor: Optional[ThreadPoolExecutor] = None,
     project_name: Optional[str] = None,
     run_tree: Optional[RunTree] = None,
+    tags: Optional[List[str]] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
 ) -> Generator[RunTree, None, None]:
     """Context manager for creating a run tree."""
     _warn_cm_once()
     extra_outer = extra or {}
+    if metadata:
+        extra_outer["metadata"] = metadata
     parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
     outer_project = _PROJECT_NAME.get()
     project_name_ = project_name or outer_project
@@ -244,6 +258,7 @@ def trace(
             run_type=run_type,
             extra=extra_outer,
             inputs=inputs,
+            tags=tags,
         )
     else:
         new_run = RunTree(
@@ -253,6 +268,7 @@ def trace(
             executor=executor,
             project_name=project_name_,
             inputs=inputs or {},
+            tags=tags,
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)

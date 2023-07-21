@@ -112,6 +112,7 @@ class RunTree(RunBase):
         reference_example_id: Optional[UUID] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
+        tags: Optional[List[str]] = None,
         extra: Optional[Dict] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
@@ -135,6 +136,7 @@ class RunTree(RunBase):
             session_name=self.session_name,
             client=self.client,
             executor=self.executor,
+            tags=tags,
         )
         self.child_runs.append(run)
         return run
