@@ -95,7 +95,7 @@ def traceable(
                 "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
             )
             langsmith_extra = langsmith_extra or {}
-            run_tree = langsmith_extra.get("run_tree", None)
+            run_tree = langsmith_extra.get("run_tree", kwargs.get("run_tree", None))
             project_name_ = langsmith_extra.get("project_name", outer_project)
             run_extra = langsmith_extra.get("run_extra", None)
             reference_example_id = langsmith_extra.get("reference_example_id", None)
@@ -178,7 +178,7 @@ def traceable(
                 "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
             )
             langsmith_extra = langsmith_extra or {}
-            run_tree = langsmith_extra.get("run_tree", None)
+            run_tree = langsmith_extra.get("run_tree", kwargs.get("run_tree", None))
             project_name_ = langsmith_extra.get("project_name", outer_project)
             run_extra = langsmith_extra.get("run_extra", None)
             reference_example_id = langsmith_extra.get("reference_example_id", None)
