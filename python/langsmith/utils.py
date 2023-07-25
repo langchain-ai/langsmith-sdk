@@ -216,7 +216,7 @@ def get_docker_version() -> Optional[str]:
         )
     except FileNotFoundError:
         docker_version = "unknown"
-    except:
+    except:  # noqa
         return None
     return docker_version
 
@@ -231,7 +231,7 @@ def get_docker_compose_version() -> Optional[str]:
         )
     except FileNotFoundError:
         docker_compose_version = "unknown"
-    except:
+    except:  # noqa
         return None
     return docker_compose_version
 
@@ -242,7 +242,7 @@ def _get_compose_command() -> Optional[List[str]]:
         compose_command = get_docker_compose_command()
     except ValueError as e:
         compose_command = [f"NOT INSTALLED: {e}"]
-    except:
+    except:  # noqa
         return None
     return compose_command
 
@@ -253,6 +253,8 @@ def get_docker_environment() -> dict:
     compose_command = _get_compose_command()
     return {
         "docker_version": get_docker_version(),
-        "docker_compose_command": " ".join(compose_command) if compose_command is not None else None,
+        "docker_compose_command": " ".join(compose_command)
+        if compose_command is not None
+        else None,
         "docker_compose_version": get_docker_compose_version(),
     }
