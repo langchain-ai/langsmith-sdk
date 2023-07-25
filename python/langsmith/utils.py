@@ -2,7 +2,7 @@
 import platform
 import subprocess
 from functools import lru_cache
-from typing import Any, Callable, Dict, List, Mapping, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from requests import HTTPError, Response
 
@@ -56,7 +56,7 @@ def raise_for_status_with_text(response: Response) -> None:
         raise ValueError(response.text) from e
 
 
-@lru_cache(maxsize=1)
+@lru_cache
 def get_runtime_environment() -> dict:
     """Get information about the environment."""
     # Lazy import to avoid circular imports
@@ -68,6 +68,7 @@ def get_runtime_environment() -> dict:
         "platform": platform.platform(),
         "runtime": "python",
         "runtime_version": platform.python_version(),
+        "langchain_version": get_langchain_environment(),
     }
 
 
@@ -196,9 +197,17 @@ def get_docker_compose_command() -> List[str]:
 
 
 @lru_cache
-def get_docker_environment() -> dict:
-    """Get information about the environment."""
-    # Try to get the docker CLI version via subprocess
+def get_langchain_environment() -> Optional[str]:
+    try:
+        import langchain
+
+        return langchain.__version__
+    except ImportError:
+        return None
+
+
+@lru_cache
+def get_docker_version() -> Optional[str]:
     import subprocess
 
     try:
@@ -207,10 +216,13 @@ def get_docker_environment() -> dict:
         )
     except FileNotFoundError:
         docker_version = "unknown"
-    try:
-        compose_command = get_docker_compose_command()
-    except ValueError as e:
-        compose_command = [f"NOT INSTALLED: {e}"]
+    except:
+        return None
+    return docker_version
+
+
+@lru_cache
+def get_docker_compose_version() -> Optional[str]:
     try:
         docker_compose_version = (
             subprocess.check_output(["docker-compose", "--version"])
@@ -219,9 +231,28 @@ def get_docker_environment() -> dict:
         )
     except FileNotFoundError:
         docker_compose_version = "unknown"
+    except:
+        return None
+    return docker_compose_version
 
+
+@lru_cache
+def _get_compose_command() -> Optional[List[str]]:
+    try:
+        compose_command = get_docker_compose_command()
+    except ValueError as e:
+        compose_command = [f"NOT INSTALLED: {e}"]
+    except:
+        return None
+    return compose_command
+
+
+@lru_cache
+def get_docker_environment() -> dict:
+    """Get information about the environment."""
+    compose_command = _get_compose_command()
     return {
-        "docker_version": docker_version,
-        "docker_compose_command": " ".join(compose_command),
-        "docker_compose_version": docker_compose_version,
+        "docker_version": get_docker_version(),
+        "docker_compose_command": " ".join(compose_command) if compose_command is not None else None,
+        "docker_compose_version": get_docker_compose_version(),
     }
