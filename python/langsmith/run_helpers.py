@@ -57,8 +57,8 @@ def _get_inputs(
     bound = signature.bind_partial(*args, **kwargs)
     bound.apply_defaults()
     arguments = dict(bound.arguments)
-    arguments.pop('self', None)
-    arguments.pop('cls', None)
+    arguments.pop("self", None)
+    arguments.pop("cls", None)
     return arguments
 
 
