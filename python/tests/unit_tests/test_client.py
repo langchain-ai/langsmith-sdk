@@ -165,5 +165,7 @@ def test_create_run_unicode():
     session.request = mock.Mock()
     with patch.object(client, "session", session):
         id_ = uuid.uuid4()
-        client.create_run("my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_)
+        client.create_run(
+            "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
+        )
         client.update_run(id_, status="completed")
