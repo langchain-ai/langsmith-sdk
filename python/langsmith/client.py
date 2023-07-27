@@ -179,7 +179,7 @@ def _get_api_key(api_key: Optional[str]) -> Optional[str]:
 
 
 def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
-    api_url = (
+    _api_url = (
         api_url
         if api_url is not None
         else os.getenv(
@@ -187,9 +187,9 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
             "https://api.smith.langchain.com" if api_key else "http://localhost:1984",
         )
     )
-    if not api_url.strip():
+    if not _api_url.strip():
         raise LangSmithUserError("LangSmith API URL cannot be empty")
-    return api_url.strip().strip('"').strip("'").rstrip("/")
+    return _api_url.strip().strip('"').strip("'").rstrip("/")
 
 
 class Client:
