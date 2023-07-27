@@ -56,7 +56,10 @@ def _get_inputs(
     """Return a dictionary of inputs from the function signature."""
     bound = signature.bind_partial(*args, **kwargs)
     bound.apply_defaults()
-    return dict(bound.arguments)
+    arguments = dict(bound.arguments)
+    arguments.pop("self", None)
+    arguments.pop("cls", None)
+    return arguments
 
 
 class LangSmithExtra(TypedDict):
