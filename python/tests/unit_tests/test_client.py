@@ -150,3 +150,22 @@ def test_get_api_url():
 
     with pytest.raises(LangSmithUserError):
         _get_api_url(" ", "api_key")
+
+
+def test_create_run_unicode():
+    client = Client(api_url="http://localhost:1984", api_key="123")
+    inputs = {
+        "foo": "これは私の友達です",
+        "bar": "این یک کتاب است",
+        "baz": "😊🌺🎉💻🚀🌈🍕🏄‍♂️🎁🐶🌟🏖️👍🚲🎈",
+        "qux": "나는\u3000밥을\u3000먹었습니다.",
+        "는\u3000밥": "나는\u3000밥을\u3000먹었습니다.",
+    }
+    session = mock.Mock()
+    session.request = mock.Mock()
+    with patch.object(client, "session", session):
+        id_ = uuid.uuid4()
+        client.create_run(
+            "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
+        )
+        client.update_run(id_, status="completed")

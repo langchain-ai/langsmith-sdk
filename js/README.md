@@ -168,9 +168,8 @@ await parentRun.end({
   },
 });
 
-await parentRun.postRun({
-  exclude_child_runs: false,
-});
+// False directs to not exclude child runs
+await parentRun.postRun(false);
 ```
 
 ### Create a Dataset from Existing Runs
