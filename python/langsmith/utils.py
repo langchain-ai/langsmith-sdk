@@ -199,7 +199,7 @@ def get_docker_compose_command() -> List[str]:
 @lru_cache
 def get_langchain_environment() -> Optional[str]:
     try:
-        import langchain
+        import langchain  # type: ignore
 
         return langchain.__version__
     except ImportError:
