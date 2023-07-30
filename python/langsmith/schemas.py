@@ -93,6 +93,8 @@ class RunTypeEnum(str, Enum):
     llm = "llm"
     retriever = "retriever"
     embedding = "embedding"
+    prompt = "prompt"
+    parser = "parser"
 
 
 class RunBase(BaseModel):
