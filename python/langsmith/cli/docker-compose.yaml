@@ -50,7 +50,7 @@ services:
   langchain-redis:
     image: redis:7
     ports:
-      - 6379:6379
+      - 63791:6379
     volumes:
       - langchain-redis-data:/data
 volumes:
