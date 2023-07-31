@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 services:
   langchain-playground:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-playground:latest
@@ -22,15 +22,22 @@ services:
       - 1984:1984
     depends_on:
       - langchain-db
+      - langchain-redis
+  langchain-queue:
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:latest
+    environment:
+      - LANGCHAIN_ENV=local_docker
+      - LOG_LEVEL=warning
+    entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.json_serializer.ORJSONSerializer"
   langchain-db:
-    image: postgres:14.1
+    image: postgres:14.7
     command:
       [
         "postgres",
         "-c",
         "log_min_messages=WARNING",
         "-c",
-        "client_min_messages=WARNING"
+        "client_min_messages=WARNING",
       ]
     environment:
       - POSTGRES_PASSWORD=postgres
@@ -40,5 +47,12 @@ services:
       - langchain-db-data:/var/lib/postgresql/data
     ports:
       - 5433:5432
+  langchain-redis:
+    image: redis:7
+    ports:
+      - 63791:6379
+    volumes:
+      - langchain-redis-data:/data
 volumes:
   langchain-db-data:
+  langchain-redis-data:
