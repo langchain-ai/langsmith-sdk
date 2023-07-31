@@ -21,7 +21,6 @@ from typing import (
 from uuid import UUID
 
 from langsmith.run_trees import RunTree
-from langsmith.schemas import RunTypeEnum
 
 logger = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
@@ -74,7 +73,7 @@ class LangSmithExtra(TypedDict):
 
 
 def traceable(
-    run_type: Union[RunTypeEnum, str],
+    run_type: str,
     *,
     name: Optional[str] = None,
     extra: Optional[Dict] = None,
@@ -264,7 +263,7 @@ def traceable(
 @contextmanager
 def trace(
     name: str,
-    run_type: Union[RunTypeEnum, str],
+    run_type: str,
     *,
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
