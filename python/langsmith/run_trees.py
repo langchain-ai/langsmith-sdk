@@ -5,13 +5,13 @@ import logging
 import os
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
-from typing import Dict, List, Optional, Union, cast
+from typing import Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
 from pydantic import Field, PrivateAttr, root_validator, validator
 
 from langsmith.client import Client
-from langsmith.schemas import RunBase, RunTypeEnum
+from langsmith.schemas import RunBase
 from langsmith.utils import get_runtime_environment
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class RunTree(RunBase):
     def create_child(
         self,
         name: str,
-        run_type: Union[str, RunTypeEnum],
+        run_type: str,
         *,
         run_id: Optional[UUID] = None,
         serialized: Optional[Dict] = None,

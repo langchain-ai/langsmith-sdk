@@ -86,7 +86,7 @@ class Dataset(DatasetBase):
 
 
 class RunTypeEnum(str, Enum):
-    """Enum for run types."""
+    """(Deprecated) Enum for run types. Use string directly."""
 
     tool = "tool"
     chain = "chain"
@@ -103,7 +103,9 @@ class RunBase(BaseModel):
     id: UUID
     name: str
     start_time: datetime
-    run_type: Union[RunTypeEnum, str]
+    run_type: str
+    """The type of run, such as tool, chain, llm, retriever,
+    embedding, prompt, parser."""
     end_time: Optional[datetime] = None
     extra: Optional[dict] = None
     error: Optional[str] = None
