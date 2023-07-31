@@ -28,7 +28,7 @@ services:
     environment:
       - LANGCHAIN_ENV=local_docker
       - LOG_LEVEL=warning
-    entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379"
+    entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.json_serializer.ORJSONSerializer"
   langchain-db:
     image: postgres:14.7
     command:
