@@ -23,7 +23,7 @@ services:
     depends_on:
       - langchain-db
   langchain-db:
-    image: postgres:14.1
+    image: postgres:14.7
     command:
       [
         "postgres",
