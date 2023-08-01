@@ -132,7 +132,7 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
         name="parent_run",
         run_type="chain",
         inputs={"text": "hello world"},
-        start_time=datetime.now(),
+        start_time=datetime.utcnow(),
         project_name=project_name,
         serialized={},
         client=langchain_client,
@@ -231,7 +231,7 @@ def test_persist_update_run(
     project_name = "__test_persist_update_run"
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
-    start_time = datetime.now()
+    start_time = datetime.utcnow()
     run: dict = dict(
         id=uuid4(),
         name="test_run",
@@ -280,7 +280,7 @@ def test_evaluate_run(
         inputs={"input": "hello world"},
         project_name=project_name,
         serialized={},
-        start_time=datetime.now(),
+        start_time=datetime.utcnow(),
         reference_example_id=example.id,
     )
     parent_run.post()

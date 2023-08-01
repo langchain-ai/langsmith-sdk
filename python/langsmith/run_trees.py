@@ -34,7 +34,7 @@ class RunTree(RunBase):
         project_name: Optional[str] = None,
         project_id: Optional[ID_TYPE] = None,
         execution_order: int = 1,
-        child_execution_order: int = 1,
+        child_execution_order: Optional[int] = None,
         extra: Optional[Dict] = None,
         client: Optional[Client] = None,
         executor: Optional[ThreadPoolExecutor] = None,
@@ -55,12 +55,20 @@ class RunTree(RunBase):
         )
         self.session_id = project_id
         self.execution_order = execution_order
-        self.child_execution_order = child_execution_order
+        self.child_execution_order = child_execution_order or execution_order
         self.extra = extra if extra else {}
         self.client = client if client else Client()
         self.executor = executor if executor else _make_thread_pool()
         self._futures: List[Future] = []
-        self.__post_init__()
+        if not self.executor or self.executor._shutdown:
+            raise ValueError("Executor has been shutdown.")
+        if not self.serialized:
+            self.serialized = {"name": self.name}
+        if self.parent_run is not None:
+            self.parent_run_id = self.parent_run.id
+        runtime = self.extra.setdefault("runtime", {})
+        runtime.update(get_runtime_environment())
+        self._ended = False
 
     @property
     def project_name(self) -> str:
@@ -71,24 +79,6 @@ class RunTree(RunBase):
     def project_id(self) -> Optional[ID_TYPE]:
         """Alias for session_id."""
         return self.session_id
-
-    def __post_init__(self):
-        if not self.executor or self.executor._shutdown:
-            raise ValueError("Executor has been shutdown.")
-
-        if "serialized" not in self.extra:
-            self.extra["serialized"] = {"name": self.name}
-        if "execution_order" not in self.extra:
-            self.extra["execution_order"] = 1
-        if "child_execution_order" not in self.extra:
-            self.extra["child_execution_order"] = self.execution_order
-        if self.parent_run is not None:
-            self.extra["parent_run_id"] = self.parent_run.id
-        extra = self.extra.setdefault("extra", {})
-        runtime = extra.setdefault("runtime", {})
-        # `get_runtime_environment()` is not defined in your code snippet,
-        # please replace this function with the actual one
-        runtime.update(get_runtime_environment())
 
     def end(
         self,
@@ -103,7 +93,7 @@ class RunTree(RunBase):
             self.outputs = outputs
         if error is not None:
             self.error = error
-        if self.parent_run:
+        if self.parent_run is not None:
             self.parent_run.child_execution_order = max(
                 self.parent_run.child_execution_order,
                 self.child_execution_order,
@@ -155,9 +145,16 @@ class RunTree(RunBase):
         self, exclude: Optional[Set[str]] = None, exclude_none: bool = False
     ) -> Dict:
         """Return a dictionary representation of the run tree."""
+        exclude = exclude or set()
+        exclude.update({"parent_run", "executor", "client", "_futures"})
         run_dict = super().dict(exclude=exclude, exclude_none=exclude_none)
         if "child_runs" in run_dict:
-            run_dict["child_runs"] = [run.dict() for run in run_dict["child_runs"]]
+            # If we are posting a nested run tree, parent_run_id is redundant
+            exclude.add("parent_run_id")
+            run_dict["child_runs"] = [
+                run.dict(exclude=exclude, exclude_none=exclude_none)
+                for run in run_dict["child_runs"]
+            ]
         return run_dict
 
     def post(self, exclude_child_runs: bool = True) -> Future:
@@ -174,6 +171,8 @@ class RunTree(RunBase):
 
     def patch(self) -> Future:
         """Patch the run tree to the API in a background thread."""
+        if not self._ended:
+            self.end()
         self._futures.append(
             self.executor.submit(
                 self.client.update_run,

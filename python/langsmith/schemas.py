@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
 from uuid import UUID, uuid4
@@ -332,12 +332,11 @@ class Run(RunBase):
             setattr(self, key, value)
 
 
-
 class Feedback:
     def __init__(
         self,
-        id: UUID,
-        run_id: UUID,
+        id: ID_TYPE,
+        run_id: ID_TYPE,
         key: str,
         *,
         score: SCORE_TYPE = None,
@@ -361,8 +360,8 @@ class Feedback:
         :param correction: Optional correction for the run
         :param feedback_source: Optional source of the feedback
         """
-        self.id = id
-        self.run_id = run_id
+        self.id = _coerce_req_uuid(id)
+        self.run_id = _coerce_req_uuid(run_id)
         self.key = key
         self.score = score
         self.value = value
@@ -386,6 +385,12 @@ class TracerSession:
         last_run_start_time_live: Optional[DATE_TYPE] = None,
         reference_dataset_ids: Optional[List[ID_TYPE]] = None,
         tenant_id: Optional[ID_TYPE] = None,
+        run_count: Optional[int] = None,
+        start_time: Optional[DATE_TYPE] = None,
+        extra: Optional[dict] = None,
+        default_dataset_id: Optional[ID_TYPE] = None,
+        latency_p50: Optional[float] = None,
+        latency_p99: Optional[Union[float, timedelta]] = None,
         **kwargs: Any,
     ) -> None:
         """Initialize TracerSession.
@@ -397,6 +402,15 @@ class TracerSession:
         :param events: Events associated with the project
         :param num_runs: Number of runs in the project
         :param num_feedback: Number of feedback items in the project
+        :param last_run_start_time: Optional last run start time
+        :param last_run_start_time_live: Optional last run start time live
+        :param reference_dataset_ids: Optional list of reference dataset IDs
+        :param tenant_id: Optional tenant ID
+        :param run_count: Optional run count
+        :param extra: Optional extra information
+        :param default_dataset_id: Optional default dataset ID
+        :param latency_p50: Optional latency p50
+        :param latency_p99: Optional latency p99
         """
         self.id = _coerce_req_uuid(id)
         self.name = name
@@ -404,6 +418,8 @@ class TracerSession:
         self.num_runs = num_runs
         self.num_feedback = num_feedback
         self.tenant_id = _coerce_uuid(tenant_id)
+        self.run_count = run_count
+        self.start_time = _parse_datetime(start_time) if start_time else None
         self.last_run_start_time = (
             _parse_datetime(last_run_start_time) if last_run_start_time else None
         )
@@ -412,10 +428,18 @@ class TracerSession:
             if last_run_start_time_live
             else None
         )
+        self.extra = extra
+        self.default_dataset_id = _coerce_uuid(default_dataset_id)
         self.reference_dataset_ids = (
             [_coerce_req_uuid(_id) for _id in reference_dataset_ids]
             if reference_dataset_ids is not None
             else None
+        )
+        self.latency_p50 = (
+            timedelta(latency_p50) if isinstance(latency_p50, float) else latency_p50
+        )
+        self.latency_p99 = (
+            timedelta(latency_p99) if isinstance(latency_p99, float) else latency_p50
         )
         for key, value in kwargs.items():
             setattr(self, key, value)
