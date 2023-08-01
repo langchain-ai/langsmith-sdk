@@ -6,6 +6,8 @@ authors = ["LangChain"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/langchain-ai/langsmith-sdk"
+homepage = "https://smith.langchain.com/"
+documentation = "https://docs.smith.langchain.com/"
 packages = [{include = "langsmith"}]
 
 [tool.poetry.scripts]
