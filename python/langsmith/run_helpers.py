@@ -62,7 +62,7 @@ def _get_inputs(
     return arguments
 
 
-class LangSmithExtra(TypedDict):
+class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
     reference_example_id: Optional[UUID]
@@ -76,17 +76,17 @@ class LangSmithExtra(TypedDict):
 def _setup_run_tree(
     func: Callable[..., Any],
     func_args: Tuple[Any, ...],
-    func_kwargs: Dict[str, Any],
-    run_type: RunTypeEnum,
+    func_kwargs: Mapping[str, Any],
+    run_type: str,
     name: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
     outer_project: Optional[str] = None,
-    extra_outer: Optional[Dict[str, Any]] = None,
-    langsmith_extra: Optional[LangSmithExtra] = None,
+    extra_outer: Optional[Mapping[str, Any]] = None,
+    langsmith_extra: Optional[Union[LangSmithExtra, Dict]] = None,
     executor: Optional[ThreadPoolExecutor] = None,
 ) -> RunTree:
-    langsmith_extra = langsmith_extra or {}
+    langsmith_extra = langsmith_extra or LangSmithExtra()
     run_tree = langsmith_extra.get("run_tree", func_kwargs.get("run_tree", None))
     project_name_ = langsmith_extra.get("project_name", outer_project)
     run_extra = langsmith_extra.get("run_extra", None)
@@ -98,10 +98,7 @@ def _setup_run_tree(
     signature = inspect.signature(func)
     name_ = name or func.__name__
     docstring = func.__doc__
-    if run_extra:
-        extra_inner = {**extra_outer, **run_extra}
-    else:
-        extra_inner = extra_outer
+    extra_inner = {**(extra_outer or {}), **(run_extra or {})}
     metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
     if metadata_:
         extra_inner["metadata"] = metadata_
@@ -121,11 +118,6 @@ def _setup_run_tree(
             extra=extra_inner,
         )
     else:
-        _kwargs = {}
-        if project_name_:
-            _kwargs["session_name"] = project_name_
-        if executor:
-            _kwargs["executor"] = executor
         new_run = RunTree(
             name=name_,
             serialized={
@@ -138,7 +130,8 @@ def _setup_run_tree(
             reference_example_id=reference_example_id,
             extra=extra_inner,
             tags=tags_,
-            **_kwargs,
+            project_name=project_name_,
+            executor=executor,
         )
     new_run.post()
     return new_run
@@ -286,18 +279,14 @@ def trace(
             tags=tags,
         )
     else:
-        _kwargs = {}
-        if project_name_:
-            _kwargs["session_name"] = project_name_
-        if executor:
-            _kwargs["executor"] = executor
         new_run = RunTree(
             name=name,
             run_type=run_type,
             extra=extra_outer,
             inputs=inputs or {},
             tags=tags,
-            **_kwargs,
+            executor=executor,
+            project_name=project_name_,
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)

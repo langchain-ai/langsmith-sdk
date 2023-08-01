@@ -1,20 +1,36 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
-from uuid import UUID
-
-from datetime import timedelta
-from typing import Optional, Dict, List
-from uuid import UUID
+from typing import Any, Dict, List, Optional, Set, Union
+from uuid import UUID, uuid4
 
 SCORE_TYPE = Union[bool, int, float, None]
 VALUE_TYPE = Union[Dict, bool, int, float, str, None]
+DATE_TYPE = Union[datetime, str]
+ID_TYPE = Union[UUID, str]
 
 
-class DataType(Enum):
+def _coerce_req_uuid(value: ID_TYPE) -> UUID:
+    return value if isinstance(value, UUID) else UUID(value)
+
+
+def _coerce_uuid(value: Optional[ID_TYPE]) -> Optional[UUID]:
+    if value is None:
+        return value
+    return _coerce_req_uuid(value)
+
+
+def _parse_datetime(value: Union[str, datetime]) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    elif isinstance(value, str):
+        return datetime.fromisoformat(value)
+    else:
+        raise ValueError("The input must be either a string or a datetime object.")
+
+
+class DataType(str, Enum):
     """Enum for dataset data types."""
 
     kv = "kv"
@@ -34,39 +50,13 @@ class RunTypeEnum(str, Enum):
     parser = "parser"
 
 
-class FeedbackSourceType(Enum):
+class FeedbackSourceType(str, Enum):
     """Feedback source type."""
 
     API = "api"
     """General feedback submitted from the API."""
     MODEL = "model"
     """Model-assisted feedback."""
-
-
-SCORE_TYPE = Union[bool, int, float, None]
-VALUE_TYPE = Union[Dict, bool, int, float, str, None]
-
-
-# Enum classes remain unchanged.
-class DataType(Enum):
-    kv = "kv"
-    llm = "llm"
-    chat = "chat"
-
-
-class RunTypeEnum(str, Enum):
-    tool = "tool"
-    chain = "chain"
-    llm = "llm"
-    retriever = "retriever"
-    embedding = "embedding"
-    prompt = "prompt"
-    parser = "parser"
-
-
-class FeedbackSourceType(Enum):
-    API = "api"
-    MODEL = "model"
 
 
 class ExampleBase:
@@ -76,6 +66,7 @@ class ExampleBase:
         dataset_id: Union[UUID, str],
         inputs: Dict[str, Any],
         outputs: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
     ) -> None:
         """Initialize ExampleBase.
 
@@ -84,24 +75,25 @@ class ExampleBase:
             inputs: Inputs dictionary
             outputs: Optional Outputs dictionary
         """
-        self.dataset_id = (
-            dataset_id if isinstance(dataset_id, UUID) else UUID(dataset_id)
-        )
+        self.dataset_id = _coerce_req_uuid(dataset_id)
         self.inputs = inputs
         self.outputs = outputs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 class Example(ExampleBase):
     def __init__(
         self,
         *,
-        id: UUID,
-        dataset_id: UUID,
+        id: ID_TYPE,
+        dataset_id: ID_TYPE,
         inputs: Dict[str, Any],
-        created_at: datetime,
+        created_at: DATE_TYPE,
         outputs: Optional[Dict[str, Any]] = None,
         modified_at: Optional[datetime] = None,
         runs: List[Run] = [],
+        **kwargs: Any,
     ) -> None:
         """Initialize Example.
 
@@ -113,9 +105,11 @@ class Example(ExampleBase):
         :param modified_at: Optional modification timestamp
         :param runs: List of Runs
         """
-        super().__init__(dataset_id=dataset_id, inputs=inputs, outputs=outputs)
-        self.id = id
-        self.created_at = created_at
+        super().__init__(
+            dataset_id=dataset_id, inputs=inputs, outputs=outputs, **kwargs
+        )
+        self.id = _coerce_req_uuid(id)
+        self.created_at = _parse_datetime(created_at)
         self.modified_at = modified_at
         self.runs = runs
 
@@ -123,7 +117,7 @@ class Example(ExampleBase):
 class ExampleUpdate:
     def __init__(
         self,
-        dataset_id: Optional[UUID] = None,
+        dataset_id: Optional[ID_TYPE] = None,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -133,7 +127,7 @@ class ExampleUpdate:
         :param inputs: Optional Inputs dictionary
         :param outputs: Optional Outputs dictionary
         """
-        self.dataset_id = dataset_id
+        self.dataset_id = _coerce_uuid(dataset_id)
         self.inputs = inputs
         self.outputs = outputs
 
@@ -145,6 +139,7 @@ class DatasetBase:
         name: str,
         description: Optional[str] = None,
         data_type: Optional[DataType] = None,
+        **kwargs: Any,
     ) -> None:
         """Initialize DatasetBase.
 
@@ -155,18 +150,22 @@ class DatasetBase:
         self.name = name
         self.description = description
         self.data_type = data_type
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 class Dataset(DatasetBase):
     def __init__(
         self,
-        *
+        *,
         name: str,
-        id: UUID,
-        created_at: datetime,
+        id: ID_TYPE,
+        created_at: DATE_TYPE,
         description: Optional[str] = None,
-        modified_at: Optional[datetime] = None,
+        modified_at: Optional[DATE_TYPE] = None,
         data_type: Optional[DataType] = None,
+        tenant_id: Optional[ID_TYPE] = None,
+        **kwargs: Any,
     ) -> None:
         """Initialize Dataset.
 
@@ -177,29 +176,32 @@ class Dataset(DatasetBase):
         :param modified_at: Optional modification timestamp
         :param data_type: Optional DataType
         """
-        super().__init__(name=name, description=description, data_type=data_type)
-        self.id = id
-        self.created_at = created_at
+        super().__init__(
+            name=name, description=description, data_type=data_type, **kwargs
+        )
+        self.id = _coerce_uuid(id)
+        self.created_at = _parse_datetime(created_at)
         self.modified_at = modified_at
+        self.tenant_id = _coerce_uuid(tenant_id)
 
 
-class RunBase:
+class RunBase(dict):
     def __init__(
         self,
         *,
         name: str,
         inputs: dict,
         run_type: str,
-        id: Optional[UUID] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        id: Optional[ID_TYPE] = None,
+        start_time: Optional[DATE_TYPE] = None,
+        end_time: Optional[DATE_TYPE] = None,
         extra: Optional[dict] = None,
         error: Optional[str] = None,
         serialized: Optional[dict] = None,
         events: Optional[List[Dict]] = None,
         outputs: Optional[dict] = None,
-        reference_example_id: Optional[UUID] = None,
-        parent_run_id: Optional[UUID] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
         tags: Optional[List[str]] = None,
     ) -> None:
         """Initialize RunBase.
@@ -219,20 +221,35 @@ class RunBase:
         :param parent_run_id: Optional parent run ID
         :param tags: Optional tags
         """
-        self.id = id
+        self.id = _coerce_req_uuid(id) if id is not None else uuid4()
         self.name = name
-        self.start_time = start_time
+        self.start_time = _parse_datetime(start_time) if start_time else None
         self.inputs = inputs
         self.run_type = run_type
-        self.end_time = end_time
+        self.end_time = _parse_datetime(end_time) if end_time else None
         self.extra = extra
         self.error = error
         self.serialized = serialized
         self.events = events
         self.outputs = outputs
         self.reference_example_id = reference_example_id
-        self.parent_run_id = parent_run_id
+        self.parent_run_id = _coerce_uuid(parent_run_id)
         self.tags = tags
+
+    def dict(
+        self, exclude: Optional[Set[str]] = None, exclude_none: bool = False
+    ) -> Dict:
+        d = self.__dict__.copy()
+        if exclude is not None:
+            for key in exclude:
+                d.pop(key, None)
+        if exclude_none:
+            d = {k: v for k, v in d.items() if v is not None}
+        return d
+
+    def __repr__(self) -> str:
+        d = self.dict()
+        return f"{self.__class__.__name__}({d})"
 
 
 class Run(RunBase):
@@ -243,23 +260,23 @@ class Run(RunBase):
         name: str,
         inputs: dict,
         run_type: str,
-        start_time: Optional[datetime] = None,
+        start_time: Optional[DATE_TYPE] = None,
         execution_order: Optional[int] = None,
-        session_id: Optional[UUID] = None,
-        child_run_ids: Optional[List[UUID]] = None,
+        session_id: Optional[ID_TYPE] = None,
+        child_run_ids: Optional[List[ID_TYPE]] = None,
         child_runs: Optional[List[Run]] = None,
         feedback_stats: Optional[Dict[str, Any]] = None,
         app_path: Optional[str] = None,
-        _host_url: Optional[str] = None,
-        end_time: Optional[datetime] = None,
+        end_time: Optional[DATE_TYPE] = None,
         extra: Optional[dict] = None,
         error: Optional[str] = None,
         serialized: Optional[dict] = None,
         events: Optional[List[Dict]] = None,
         outputs: Optional[dict] = None,
-        reference_example_id: Optional[UUID] = None,
-        parent_run_id: Optional[UUID] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
         tags: Optional[List[str]] = None,
+        **kwargs: Any,
     ) -> None:
         """Initialize Run.
         :param id: ID of the run
@@ -282,7 +299,6 @@ class Run(RunBase):
         :param child_runs: Optional child runs
         :param feedback_stats: Optional feedback stats
         :param app_path: Optional app path
-        :param _host_url: Optional host URL
         """
         super().__init__(
             id=id,
@@ -300,26 +316,21 @@ class Run(RunBase):
             parent_run_id=parent_run_id,
             tags=tags,
         )
-        self.execution_order = execution_order
-        self.session_id = session_id
-        self.child_run_ids = child_run_ids
+        self.id = _coerce_req_uuid(id)
+        self.execution_order = execution_order if execution_order is not None else 1
+        self.session_id = _coerce_uuid(session_id)
+        self.child_run_ids = (
+            [_coerce_uuid(_child_id) for _child_id in child_run_ids]
+            if child_run_ids is not None
+            else None
+        )
         self.child_runs = child_runs
         self.feedback_stats = feedback_stats
         self.app_path = app_path
-        self._host_url = _host_url
+        self._host_url = kwargs.get("_host_url")
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
-
-class FeedbackSource:
-    def __init__(
-        self, type: FeedbackSourceType, metadata: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """Initialize FeedbackSource.
-
-        :param type: Type of feedback source
-        :param metadata: Optional metadata associated with the feedback source
-        """
-        self.type = type
-        self.metadata = metadata
 
 
 class Feedback:
@@ -328,13 +339,14 @@ class Feedback:
         id: UUID,
         run_id: UUID,
         key: str,
+        *,
         score: SCORE_TYPE = None,
         value: VALUE_TYPE = None,
-        created_at: Optional[datetime] = None,
-        modified_at: Optional[datetime] = None,
+        created_at: Optional[DATE_TYPE] = None,
+        modified_at: Optional[DATE_TYPE] = None,
         comment: Optional[str] = None,
         correction: Union[str, dict, None] = None,
-        feedback_source: Optional[FeedbackSource] = None,
+        feedback_source: Optional[dict] = None,
     ) -> None:
         """Initialize Feedback.
 
@@ -354,8 +366,8 @@ class Feedback:
         self.key = key
         self.score = score
         self.value = value
-        self.created_at = created_at
-        self.modified_at = modified_at
+        self.created_at = _parse_datetime(created_at) if created_at else None
+        self.modified_at = _parse_datetime(modified_at) if modified_at else None
         self.comment = comment
         self.correction = correction
         self.feedback_source = feedback_source
@@ -364,13 +376,17 @@ class Feedback:
 class TracerSession:
     def __init__(
         self,
-        id: UUID,
-        start_time: Optional[datetime] = None,
+        *,
+        id: ID_TYPE,
         name: Optional[str] = None,
-        end_time: Optional[datetime] = None,
         events: Optional[List[dict]] = None,
         num_runs: int = 0,
         num_feedback: int = 0,
+        last_run_start_time: Optional[DATE_TYPE] = None,
+        last_run_start_time_live: Optional[DATE_TYPE] = None,
+        reference_dataset_ids: Optional[List[ID_TYPE]] = None,
+        tenant_id: Optional[ID_TYPE] = None,
+        **kwargs: Any,
     ) -> None:
         """Initialize TracerSession.
 
@@ -382,55 +398,24 @@ class TracerSession:
         :param num_runs: Number of runs in the project
         :param num_feedback: Number of feedback items in the project
         """
-        self.id = id
-        self.start_time = start_time or datetime.utcnow()
+        self.id = _coerce_req_uuid(id)
         self.name = name
-        self.end_time = end_time
         self.events = events or []
         self.num_runs = num_runs
         self.num_feedback = num_feedback
-
-
-class TracerSessionResult(TracerSession):
-    """TracerSession schema returned when reading a project
-    by ID. Sessions are also referred to as "Projects" in the UI."""
-
-    def __init__(
-        self,
-        run_count: Optional[int] = None,
-        latency_p50: Optional[timedelta] = None,
-        latency_p99: Optional[timedelta] = None,
-        total_tokens: Optional[int] = None,
-        prompt_tokens: Optional[int] = None,
-        completion_tokens: Optional[int] = None,
-        last_run_start_time: Optional[datetime] = None,
-        feedback_stats: Optional[Dict[str, Any]] = None,
-        reference_dataset_ids: Optional[List[UUID]] = None,
-        run_facets: Optional[List[Dict[str, Any]]] = None,
-        *args,
-        **kwargs,
-    ) -> None:
-        """Initialize TracerSessionResult.
-
-        :param run_count: The number of runs in the project
-        :param latency_p50: The median (50th percentile) latency for the project
-        :param latency_p99: The 99th percentile latency for the project
-        :param total_tokens: The total number of tokens consumed in the project
-        :param prompt_tokens: The total number of prompt tokens consumed in the project
-        :param completion_tokens: The total number of completion tokens consumed in the project
-        :param last_run_start_time: The start time of the last run in the project
-        :param feedback_stats: Feedback stats for the project
-        :param reference_dataset_ids: The reference dataset IDs this project's runs were generated on
-        :param run_facets: Facets for the runs in the project
-        """
-        super().__init__(*args, **kwargs)
-        self.run_count = run_count
-        self.latency_p50 = latency_p50
-        self.latency_p99 = latency_p99
-        self.total_tokens = total_tokens
-        self.prompt_tokens = prompt_tokens
-        self.completion_tokens = completion_tokens
-        self.last_run_start_time = last_run_start_time
-        self.feedback_stats = feedback_stats
-        self.reference_dataset_ids = reference_dataset_ids
-        self.run_facets = run_facets
+        self.tenant_id = _coerce_uuid(tenant_id)
+        self.last_run_start_time = (
+            _parse_datetime(last_run_start_time) if last_run_start_time else None
+        )
+        self.last_run_start_time_live = (
+            _parse_datetime(last_run_start_time_live)
+            if last_run_start_time_live
+            else None
+        )
+        self.reference_dataset_ids = (
+            [_coerce_req_uuid(_id) for _id in reference_dataset_ids]
+            if reference_dataset_ids is not None
+            else None
+        )
+        for key, value in kwargs.items():
+            setattr(self, key, value)
