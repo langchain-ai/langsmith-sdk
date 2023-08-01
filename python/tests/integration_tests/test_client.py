@@ -133,7 +133,7 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
         run_type="chain",
         inputs={"text": "hello world"},
         start_time=datetime.now(),
-        session_name=project_name,
+        project_name=project_name,
         serialized={},
         client=langchain_client,
     )

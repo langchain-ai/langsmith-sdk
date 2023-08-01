@@ -32,17 +32,15 @@ from urllib3.util import Retry
 
 from langsmith.evaluation.evaluator import RunEvaluator
 from langsmith.schemas import (
+    ID_TYPE,
     Dataset,
     DataType,
     Example,
-    ExampleUpdate,
     Feedback,
-    FeedbackSource,
     FeedbackSourceType,
     Run,
     RunBase,
     TracerSession,
-    TracerSessionResult,
 )
 from langsmith.utils import (
     LangSmithAPIError,
@@ -83,9 +81,6 @@ def _is_localhost(url: str) -> bool:
         return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
     except socket.gaierror:
         return False
-
-
-ID_TYPE = Union[UUID, str]
 
 
 def _default_retry_config() -> Retry:
@@ -852,7 +847,7 @@ class Client:
     @xor_args(("project_id", "project_name"))
     def read_project(
         self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
-    ) -> TracerSessionResult:
+    ) -> TracerSession:
         """Read a project from the LangSmith API.
 
         Parameters
@@ -865,7 +860,7 @@ class Client:
 
         Returns
         -------
-        TracerSessionResult
+        TracerSession
             The project.
         """
         path = "/sessions"
@@ -881,8 +876,8 @@ class Client:
         if isinstance(result, list):
             if len(result) == 0:
                 raise LangSmithError(f"Project {project_name} not found")
-            return TracerSessionResult(**result[0])
-        return TracerSessionResult(**response.json())
+            return TracerSession(**result[0])
+        return TracerSession(**response.json())
 
     def list_projects(self) -> Iterator[TracerSession]:
         """List projects from the LangSmith API.
@@ -948,9 +943,8 @@ class Client:
             "name": dataset_name,
             "description": description,
             "data_type": data_type,
+            "id": dataset_id,
         }
-        if dataset_id is not None:
-            data["id"] = dataset_id
         response = self.session.post(
             self.api_url + "/datasets",
             headers=self._headers,
@@ -1274,15 +1268,15 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
-        example = ExampleUpdate(
-            inputs=inputs,
-            outputs=outputs,
-            dataset_id=dataset_id,
-        )
+        example = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
         response = self.session.patch(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
-            data=example.json(exclude_none=True),
+            data=json.dumps(example, default=_serialize_json),
         )
         raise_for_status_with_text(response)
         return response.json()
@@ -1502,10 +1496,10 @@ class Client:
         Feedback
             The created feedback.
         """
-        feedback_source = FeedbackSource(
-            type=feedback_source_type, metadata=source_info
-        )
-        feedback = {
+        feedback_source = {
+            "type":feedback_source_type, "metadata":source_info
+        }
+        feedback: Dict[str, Any] = {
             "id": uuid4(),
             "run_id": run_id,
             "key": key,
