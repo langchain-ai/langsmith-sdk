@@ -1,32 +1,67 @@
+import json
 from abc import abstractmethod
-from typing import Dict, Optional, Union
-
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional, Union
 
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
+from langsmith.utils import serialize_json
 
 
-class EvaluationResult(BaseModel):
+class EvaluationResult(dict):
     """Evaluation result."""
 
-    key: str
-    """The aspect, metric name, or label for this evaluation."""
-    score: SCORE_TYPE = None
-    """The numeric score for this evaluation."""
-    value: VALUE_TYPE = None
-    """The value for this evaluation, if not numeric."""
-    comment: Optional[str] = None
-    """An explanation regarding the evaluation."""
-    correction: Optional[Union[Dict, str]] = None
-    """What the correct value should be, if applicable."""
-    evaluator_info: Dict = Field(default_factory=dict)
-    """Additional information about the evaluator."""
+    def __init__(
+        self,
+        key: str,
+        *,
+        score: SCORE_TYPE = None,
+        value: VALUE_TYPE = None,
+        comment: Optional[str] = None,
+        correction: Optional[Union[Dict, str]] = None,
+        evaluator_info: Optional[Dict] = None,
+    ) -> None:
+        """Initialize the evaluation result.
 
-    class Config:
-        """Pydantic model configuration."""
+        Args:
+            key: The aspect, metric name, or label for this evaluation.
+            score: The numeric score for this evaluation.
+            value: The value for this evaluation, if not numeric.
+            comment: An explanation regarding the evaluation.
+            correction: What the correct value should be, if applicable.
+            evaluator_info: Additional information about the evaluator.
+        """
+        super().__init__()
+        setattr(self, "key", key)
+        setattr(self, "score", score)
+        setattr(self, "value", value)
+        setattr(self, "comment", comment)
+        setattr(self, "correction", correction)
+        setattr(self, "evaluator_info", evaluator_info)
 
-        frozen = True
-        allow_extra = False
+    def __setattr__(self, k: str, v: Any):
+        if k[0] == "_" or k in self.__dict__:
+            return super().__setattr__(k, v)
+        self[k] = v
+        return None
+
+    def __getattr__(self, k):
+        if k[0] == "_":
+            raise AttributeError(k)
+        try:
+            return self[k]
+        except KeyError as err:
+            raise AttributeError(*err.args)
+
+    def __delattr__(self, k):
+        if k[0] == "_" or k in self.__dict__:
+            return super().__delattr__(k)
+        else:
+            del self[k]
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        return json.dumps(self.__dict__, indent=2, default=serialize_json)
 
 
 class RunEvaluator:

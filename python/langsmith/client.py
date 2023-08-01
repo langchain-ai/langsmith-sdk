@@ -53,6 +53,7 @@ from langsmith.utils import (
     get_prompt_from_inputs,
     get_runtime_environment,
     raise_for_status_with_text,
+    serialize_json,
     xor_args,
 )
 
@@ -100,30 +101,6 @@ def _default_retry_config() -> Retry:
         raise_on_redirect=False,
         raise_on_status=False,
     )
-
-
-def _serialize_json(obj: Any) -> str:
-    """Serialize an object to JSON.
-
-    Parameters
-    ----------
-    obj : Any
-        The object to serialize.
-
-    Returns
-    -------
-    str
-        The serialized JSON string.
-
-    Raises
-    ------
-    TypeError
-        If the object type is not serializable.
-    """
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    else:
-        return str(obj)
 
 
 def close_session(session: Session) -> None:
@@ -596,7 +573,7 @@ class Client:
             "post",
             f"{self.api_url}/runs",
             request_kwargs={
-                "data": json.dumps(run_create, default=_serialize_json),
+                "data": json.dumps(run_create, default=serialize_json),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -621,7 +598,7 @@ class Client:
             "patch",
             f"{self.api_url}/runs/{run_id}",
             request_kwargs={
-                "data": json.dumps(kwargs, default=_serialize_json),
+                "data": json.dumps(kwargs, default=serialize_json),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -948,7 +925,7 @@ class Client:
         response = self.session.post(
             self.api_url + "/datasets",
             headers=self._headers,
-            data=json.dumps(data, default=_serialize_json),
+            data=json.dumps(data, default=serialize_json),
         )
         raise_for_status_with_text(response)
         return Dataset(**response.json())
@@ -1190,7 +1167,7 @@ class Client:
         response = self.session.post(
             f"{self.api_url}/examples",
             headers=self._headers,
-            data=json.dumps(data, default=_serialize_json),
+            data=json.dumps(data, default=serialize_json),
         )
         raise_for_status_with_text(response)
         result = response.json()
@@ -1276,7 +1253,7 @@ class Client:
         response = self.session.patch(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
-            data=json.dumps(example, default=_serialize_json),
+            data=json.dumps(example, default=serialize_json),
         )
         raise_for_status_with_text(response)
         return response.json()
@@ -1496,9 +1473,7 @@ class Client:
         Feedback
             The created feedback.
         """
-        feedback_source = {
-            "type":feedback_source_type, "metadata":source_info
-        }
+        feedback_source = {"type": feedback_source_type, "metadata": source_info}
         feedback: Dict[str, Any] = {
             "id": uuid4(),
             "run_id": run_id,
@@ -1512,7 +1487,7 @@ class Client:
         response = self.session.post(
             self.api_url + "/feedback",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(feedback, default=_serialize_json),
+            data=json.dumps(feedback, default=serialize_json),
         )
         raise_for_status_with_text(response)
         return Feedback(**response.json())

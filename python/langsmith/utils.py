@@ -1,6 +1,7 @@
 """Generic utility functions."""
 import platform
 import subprocess
+from datetime import datetime
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
@@ -21,6 +22,30 @@ class LangSmithError(Exception):
 
 class LangSmithConnectionError(Exception):
     """Couldn't connect to the LangSmith API."""
+
+
+def serialize_json(obj: Any) -> str:
+    """Serialize an object to JSON.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize.
+
+    Returns
+    -------
+    str
+        The serialized JSON string.
+
+    Raises
+    ------
+    TypeError
+        If the object type is not serializable.
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    else:
+        return str(obj)
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
