@@ -101,14 +101,10 @@ class RunBase:
     id: UUID
     name: str
     start_time: datetime
-<<<<<<< HEAD
+    inputs: dict
     run_type: str
     """The type of run, such as tool, chain, llm, retriever,
     embedding, prompt, parser."""
-=======
-    inputs: dict
-    run_type: Union[RunTypeEnum, str]
->>>>>>> 86df593 (this sucks)
     end_time: Optional[datetime] = None
     extra: Optional[dict] = None
     error: Optional[str] = None
