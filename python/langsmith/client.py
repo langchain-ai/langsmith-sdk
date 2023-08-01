@@ -46,7 +46,6 @@ from langsmith.schemas import (
     ModelFeedbackSource,
     Run,
     RunBase,
-    RunTypeEnum,
     TracerSession,
     TracerSessionResult,
 )
@@ -553,7 +552,7 @@ class Client:
         self,
         name: str,
         inputs: Dict[str, Any],
-        run_type: Union[str, RunTypeEnum],
+        run_type: str,
         *,
         execution_order: Optional[int] = None,
         **kwargs: Any,
@@ -566,8 +565,9 @@ class Client:
             The name of the run.
         inputs : Dict[str, Any]
             The input values for the run.
-        run_type : str or RunTypeEnum
-            The type of the run.
+        run_type : str
+            The type of the run, such as  such as tool, chain, llm, retriever,
+            embedding, prompt, or parser.
         execution_order : int or None, default=None
             The execution order of the run.
         **kwargs : Any
@@ -1092,7 +1092,7 @@ class Client:
             dataset_name = None  # Nested call expects only 1 defined
         dataset_type = self._get_data_type_cached(dataset_id)
         if dataset_type == DataType.llm:
-            if run.run_type != RunTypeEnum.llm:
+            if run.run_type != "llm":
                 raise ValueError(
                     f"Run type {run.run_type} is not supported"
                     " for dataset of type 'LLM'"
@@ -1117,7 +1117,7 @@ class Client:
                     )
                 outputs = {"output": generation}
         elif dataset_type == DataType.chat:
-            if run.run_type != RunTypeEnum.llm:
+            if run.run_type != "llm":
                 raise ValueError(
                     f"Run type {run.run_type} is not supported"
                     " for dataset of type 'chat'"
