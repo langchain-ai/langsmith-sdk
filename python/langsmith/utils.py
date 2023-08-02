@@ -210,7 +210,7 @@ def get_langchain_environment() -> Optional[str]:
         import langchain  # type: ignore
 
         return langchain.__version__
-    except: # noqa
+    except:  # noqa
         return None
 
 
