@@ -54,6 +54,7 @@ from langsmith.utils import (
     LangSmithConnectionError,
     LangSmithError,
     LangSmithUserError,
+    get_enum_value,
     get_llm_generation_from_outputs,
     get_message_generation_from_outputs,
     get_messages_from_inputs,
@@ -520,7 +521,7 @@ class Client:
         if description:
             data["description"] = description
         if data_type:
-            data["data_type"] = data_type.value
+            data["data_type"] = get_enum_value(data_type)
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
