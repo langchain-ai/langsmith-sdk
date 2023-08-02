@@ -40,32 +40,43 @@ class RunTree(RunBase):
         executor: Optional[ThreadPoolExecutor] = None,
         **kwargs: Any,
     ):
+        _session_name = kwargs.pop("session_name", None)
+        _session_id = kwargs.pop("session_id", None)
+        _parent_run_id = kwargs.pop("parent_run_id", None)
         super().__init__(name=name, **kwargs)
-        self.id = _coerce_req_uuid(id) if id else uuid4()
-        self.start_time = start_time if start_time else datetime.utcnow()
-        self.parent_run = parent_run
-        self.child_runs = child_runs if child_runs else []
-        self.session_name = (
-            project_name
-            if project_name
+        setattr(self, "id", _coerce_req_uuid(id) if id else uuid4())
+        setattr(self, "start_time", start_time if start_time else datetime.utcnow())
+        setattr(self, "child_runs", child_runs if child_runs else [])
+        setattr(
+            self,
+            "session_name",
+            project_name if project_name
             # TODO: Deprecate LANGCHAIN_SESSION
-            else os.environ.get(
-                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
-            )
+            else (
+                _session_name
+                if _session_name
+                else os.environ.get(
+                    "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
+                )
+            ),
         )
-        self.session_id = project_id
-        self.execution_order = execution_order
-        self.child_execution_order = child_execution_order or execution_order
-        self.extra = extra if extra else {}
-        self.client = client if client else Client()
-        self.executor = executor if executor else _make_thread_pool()
+        setattr(self, "session_id", project_id or _session_id)
+        setattr(self, "execution_order", execution_order)
+        setattr(self, "extra", extra if extra else {})
+        self.parent_run = parent_run
+        self._client = client if client else Client()
+        self._executor = executor if executor else _make_thread_pool()
         self._futures: List[Future] = []
-        if not self.executor or self.executor._shutdown:
+        self.child_runs: List[RunTree] = []
+        if not self._executor or self._executor._shutdown:
             raise ValueError("Executor has been shutdown.")
-        if not self.serialized:
-            self.serialized = {"name": self.name}
+        serialized: Optional[dict] = self.serialized
+        if not serialized:
+            setattr(self, "serialized", {"name": self.name})
         if self.parent_run is not None:
-            self.parent_run_id = self.parent_run.id
+            setattr(self, "parent_run_id", self.parent_run.id)
+        elif _parent_run_id is not None:
+            setattr(self, "parent_run_id", _parent_run_id)
         runtime = self.extra.setdefault("runtime", {})
         runtime.update(get_runtime_environment())
         self._ended = False
@@ -134,8 +145,8 @@ class RunTree(RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.project_name,
-            client=self.client,
-            executor=self.executor,
+            client=self._client,
+            executor=self._executor,
             tags=tags,
         )
         self.child_runs.append(run)
@@ -146,7 +157,7 @@ class RunTree(RunBase):
     ) -> Dict:
         """Return a dictionary representation of the run tree."""
         exclude = exclude or set()
-        exclude.update({"parent_run", "executor", "client", "_futures"})
+        exclude.update()
         run_dict = super().dict(exclude=exclude, exclude_none=exclude_none)
         if "child_runs" in run_dict:
             # If we are posting a nested run tree, parent_run_id is redundant
@@ -159,14 +170,9 @@ class RunTree(RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> Future:
         """Post the run tree to the API asynchronously."""
-        exclude = {"child_runs"} if exclude_child_runs else None
+        exclude = {"child_runs", "parent_run"} if exclude_child_runs else {"parent_run"}
         kwargs = self.dict(exclude=exclude, exclude_none=True)
-        self._futures.append(
-            self.executor.submit(
-                self.client.create_run,
-                **kwargs,
-            )
-        )
+        self._futures.append(self._executor.submit(self._client.create_run, **kwargs))
         return self._futures[-1]
 
     def patch(self) -> Future:
@@ -174,8 +180,8 @@ class RunTree(RunBase):
         if not self._ended:
             self.end()
         self._futures.append(
-            self.executor.submit(
-                self.client.update_run,
+            self._executor.submit(
+                self._client.update_run,
                 run_id=self.id,
                 outputs=self.outputs.copy() if self.outputs else None,
                 error=self.error,
