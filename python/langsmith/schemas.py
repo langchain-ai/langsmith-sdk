@@ -228,7 +228,9 @@ class RunBase(DictMixin):
             setattr(self, key, value)
 
     @staticmethod
-    def _get_name_from_serialized(serialized: dict) -> Optional[str]:
+    def _get_name_from_serialized(serialized: Optional[dict]) -> Optional[str]:
+        if not serialized:
+            return None
         if "name" in serialized:
             return serialized["name"]
         elif "id" in serialized:
@@ -251,63 +253,31 @@ class Run(RunBase):
         self,
         *,
         id: UUID,
+        name: str,
         inputs: dict,
         run_type: str,
-        name: Optional[str] = None,
-        start_time: Optional[DATE_TYPE] = None,
         session_id: Optional[ID_TYPE] = None,
         child_run_ids: Optional[List[ID_TYPE]] = None,
-        child_runs: Optional[List[Run]] = None,
         feedback_stats: Optional[Dict[str, Any]] = None,
         app_path: Optional[str] = None,
-        end_time: Optional[DATE_TYPE] = None,
-        extra: Optional[dict] = None,
-        error: Optional[str] = None,
-        serialized: Optional[dict] = None,
-        events: Optional[List[Dict]] = None,
-        outputs: Optional[dict] = None,
-        reference_example_id: Optional[ID_TYPE] = None,
-        parent_run_id: Optional[ID_TYPE] = None,
-        tags: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
         """Initialize Run.
         :param id: ID of the run
         :param name: Name of the run
-        :param start_time: Start time of the run
         :param inputs: Inputs for the run
         :param run_type: Type of run
-        :param end_time: Optional end time of the run
-        :param extra: Optional extra information
-        :param error: Optional error information
-        :param serialized: Optional serialized information
-        :param events: Optional list of events
-        :param outputs: Optional outputs
-        :param reference_example_id: Optional reference example ID
-        :param parent_run_id: Optional parent run ID
-        :param tags: Optional tags
-        :param execution_order: Optional execution order of the run
         :param session_id: Optional session ID
         :param child_run_ids: Optional child run IDs
-        :param child_runs: Optional child runs
         :param feedback_stats: Optional feedback stats
         :param app_path: Optional app path
         """
+        self.name = name
         super().__init__(
             id=id,
             name=name,
-            start_time=start_time,
             inputs=inputs,
             run_type=run_type,
-            end_time=end_time,
-            extra=extra,
-            error=error,
-            serialized=serialized,
-            events=events,
-            outputs=outputs,
-            reference_example_id=reference_example_id,
-            parent_run_id=parent_run_id,
-            tags=tags,
             **kwargs,
         )
         self.id = _coerce_req_uuid(id)
@@ -317,7 +287,6 @@ class Run(RunBase):
             if child_run_ids is not None
             else None
         )
-        self.child_runs = child_runs
         self.feedback_stats = feedback_stats
         self.app_path = app_path
         self._host_url = kwargs.get("_host_url")
