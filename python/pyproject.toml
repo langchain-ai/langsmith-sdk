@@ -15,7 +15,6 @@ langsmith = "langsmith.cli.main:main"
 
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4.0"
-pydantic = "^1"
 requests = "^2"
 
 
@@ -35,9 +34,9 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
 select = [
-  "E",  # pycodestyle
-  "F",  # pyflakes
-  "I",  # isort
+  "E", # pycodestyle
+  "F", # pyflakes
+  "I", # isort
 ]
 
 [tool.mypy]

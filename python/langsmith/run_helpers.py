@@ -15,6 +15,7 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Tuple,
     TypedDict,
     Union,
 )
@@ -72,6 +73,77 @@ class LangSmithExtra(TypedDict):
     tags: Optional[List[str]]
 
 
+def _setup_run_tree(
+    func: Callable[..., Any],
+    func_args: Tuple[Any, ...],
+    func_kwargs: Dict[str, Any],
+    run_type: RunTypeEnum,
+    name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    tags: Optional[List[str]] = None,
+    outer_project: Optional[str] = None,
+    extra_outer: Optional[Dict[str, Any]] = None,
+    langsmith_extra: Optional[LangSmithExtra] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
+) -> RunTree:
+    langsmith_extra = langsmith_extra or {}
+    run_tree = langsmith_extra.get("run_tree", func_kwargs.get("run_tree", None))
+    project_name_ = langsmith_extra.get("project_name", outer_project)
+    run_extra = langsmith_extra.get("run_extra", None)
+    reference_example_id = langsmith_extra.get("reference_example_id", None)
+    if run_tree is None:
+        parent_run_ = _PARENT_RUN_TREE.get()
+    else:
+        parent_run_ = run_tree
+    signature = inspect.signature(func)
+    name_ = name or func.__name__
+    docstring = func.__doc__
+    if run_extra:
+        extra_inner = {**extra_outer, **run_extra}
+    else:
+        extra_inner = extra_outer
+    metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
+    if metadata_:
+        extra_inner["metadata"] = metadata_
+    inputs = _get_inputs(signature, *func_args, **func_kwargs)
+    tags_ = tags or [] + (langsmith_extra.get("tags") or [])
+    if parent_run_ is not None:
+        new_run = parent_run_.create_child(
+            name=name_,
+            run_type=run_type,
+            serialized={
+                "name": name,
+                "signature": str(signature),
+                "doc": docstring,
+            },
+            inputs=inputs,
+            tags=tags_,
+            extra=extra_inner,
+        )
+    else:
+        _kwargs = {}
+        if project_name_:
+            _kwargs["session_name"] = project_name_
+        if executor:
+            _kwargs["executor"] = executor
+        new_run = RunTree(
+            name=name_,
+            serialized={
+                "name": name,
+                "signature": str(signature),
+                "doc": docstring,
+            },
+            inputs=inputs,
+            run_type=run_type,
+            reference_example_id=reference_example_id,
+            extra=extra_inner,
+            tags=tags_,
+            **_kwargs,
+        )
+    new_run.post()
+    return new_run
+
+
 def traceable(
     run_type: str,
     *,
@@ -96,58 +168,20 @@ def traceable(
             outer_project = _PROJECT_NAME.get() or os.environ.get(
                 "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
             )
-            langsmith_extra = langsmith_extra or {}
-            run_tree = langsmith_extra.get("run_tree", kwargs.get("run_tree", None))
-            project_name_ = langsmith_extra.get("project_name", outer_project)
-            run_extra = langsmith_extra.get("run_extra", None)
-            reference_example_id = langsmith_extra.get("reference_example_id", None)
-            if run_tree is None:
-                parent_run_ = _PARENT_RUN_TREE.get()
-            else:
-                parent_run_ = run_tree
-            signature = inspect.signature(func)
-            name_ = name or func.__name__
-            docstring = func.__doc__
-            if run_extra:
-                extra_inner = {**extra_outer, **run_extra}
-            else:
-                extra_inner = extra_outer
-            metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
-            if metadata_:
-                extra_inner["metadata"] = metadata_
-            inputs = _get_inputs(signature, *args, **kwargs)
-            tags_ = tags or [] + (langsmith_extra.get("tags") or [])
-            if parent_run_ is not None:
-                new_run = parent_run_.create_child(
-                    name=name_,
-                    run_type=run_type,
-                    serialized={
-                        "name": name,
-                        "signature": str(signature),
-                        "doc": docstring,
-                    },
-                    inputs=inputs,
-                    tags=tags_,
-                    extra=extra_inner,
-                )
-            else:
-                new_run = RunTree(
-                    name=name_,
-                    serialized={
-                        "name": name,
-                        "signature": str(signature),
-                        "doc": docstring,
-                    },
-                    inputs=inputs,
-                    run_type=run_type,
-                    reference_example_id=reference_example_id,
-                    project_name=project_name_,
-                    extra=extra_inner,
-                    tags=tags_,
-                    executor=executor,
-                )
-            new_run.post()
-            _PROJECT_NAME.set(project_name_)
+            new_run: RunTree = _setup_run_tree(
+                func,
+                args,
+                kwargs,
+                run_type,
+                name=name,
+                metadata=metadata,
+                tags=tags,
+                outer_project=outer_project,
+                extra_outer=extra_outer,
+                langsmith_extra=langsmith_extra,
+                executor=executor,
+            )
+            _PROJECT_NAME.set(new_run.session_name)
             _PARENT_RUN_TREE.set(new_run)
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
@@ -160,10 +194,10 @@ def traceable(
             except Exception as e:
                 new_run.end(error=str(e))
                 new_run.patch()
-                _PARENT_RUN_TREE.set(parent_run_)
+                _PARENT_RUN_TREE.set(new_run.parent_run)
                 _PROJECT_NAME.set(outer_project)
                 raise e
-            _PARENT_RUN_TREE.set(parent_run_)
+            _PARENT_RUN_TREE.set(new_run.parent_run)
             _PROJECT_NAME.set(outer_project)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
@@ -179,59 +213,21 @@ def traceable(
             outer_project = _PROJECT_NAME.get() or os.environ.get(
                 "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
             )
-            langsmith_extra = langsmith_extra or {}
-            run_tree = langsmith_extra.get("run_tree", kwargs.get("run_tree", None))
-            project_name_ = langsmith_extra.get("project_name", outer_project)
-            run_extra = langsmith_extra.get("run_extra", None)
-            reference_example_id = langsmith_extra.get("reference_example_id", None)
-            if run_tree is None:
-                parent_run_ = _PARENT_RUN_TREE.get()
-            else:
-                parent_run_ = run_tree
-            signature = inspect.signature(func)
-            name_ = name or func.__name__
-            docstring = func.__doc__
-            if run_extra:
-                extra_inner = {**extra_outer, **run_extra}
-            else:
-                extra_inner = extra_outer
-            metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
-            if metadata_:
-                extra_inner["metadata"] = metadata_
-            inputs = _get_inputs(signature, *args, **kwargs)
-            tags_ = tags or [] + (langsmith_extra.get("tags") or [])
-            if parent_run_ is not None:
-                new_run = parent_run_.create_child(
-                    name=name_,
-                    run_type=run_type,
-                    serialized={
-                        "name": name,
-                        "signature": str(signature),
-                        "doc": docstring,
-                    },
-                    inputs=inputs,
-                    tags=tags_,
-                    extra=extra_inner,
-                )
-            else:
-                new_run = RunTree(
-                    name=name_,
-                    serialized={
-                        "name": name,
-                        "signature": str(signature),
-                        "doc": docstring,
-                    },
-                    inputs=inputs,
-                    run_type=run_type,
-                    reference_example_id=reference_example_id,
-                    project_name=project_name_,
-                    extra=extra_inner,
-                    tags=tags_,
-                    executor=executor,
-                )
-            new_run.post()
+            new_run: RunTree = _setup_run_tree(
+                func,
+                args,
+                kwargs,
+                run_type,
+                name=name,
+                metadata=metadata,
+                tags=tags,
+                outer_project=outer_project,
+                extra_outer=extra_outer,
+                langsmith_extra=langsmith_extra,
+                executor=executor,
+            )
+            _PROJECT_NAME.set(new_run.session_name)
             _PARENT_RUN_TREE.set(new_run)
-            _PROJECT_NAME.set(project_name_)
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -243,10 +239,10 @@ def traceable(
             except Exception as e:
                 new_run.end(error=str(e))
                 new_run.patch()
-                _PARENT_RUN_TREE.set(parent_run_)
+                _PARENT_RUN_TREE.set(new_run.parent_run)
                 _PROJECT_NAME.set(outer_project)
                 raise e
-            _PARENT_RUN_TREE.set(parent_run_)
+            _PARENT_RUN_TREE.set(new_run.parent_run)
             _PROJECT_NAME.set(outer_project)
             new_run.end(outputs={"output": function_result})
             new_run.patch()
@@ -290,14 +286,18 @@ def trace(
             tags=tags,
         )
     else:
+        _kwargs = {}
+        if project_name_:
+            _kwargs["session_name"] = project_name_
+        if executor:
+            _kwargs["executor"] = executor
         new_run = RunTree(
             name=name,
             run_type=run_type,
             extra=extra_outer,
-            executor=executor,
-            project_name=project_name_,
             inputs=inputs or {},
             tags=tags,
+            **_kwargs,
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)
