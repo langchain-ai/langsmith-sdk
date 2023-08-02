@@ -190,7 +190,6 @@ class RunBase(DictMixin):
         reference_example_id: Optional[ID_TYPE] = None,
         parent_run_id: Optional[ID_TYPE] = None,
         tags: Optional[List[str]] = None,
-        child_execution_order: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         """Initialize RunBase.
@@ -211,7 +210,7 @@ class RunBase(DictMixin):
         :param tags: Optional tags
         """
         setattr(self, "id", _coerce_req_uuid(id) if id is not None else uuid4())
-        setattr(self, "name", name or serialized.get("name", None))
+        setattr(self, "name", name or RunBase._get_name_from_serialized(serialized))
         setattr(self, "start_time", _parse_datetime(start_time) if start_time else None)
         setattr(self, "inputs", inputs)
         setattr(self, "outputs", outputs)
@@ -225,10 +224,16 @@ class RunBase(DictMixin):
         setattr(self, "parent_run_id", _coerce_uuid(parent_run_id))
         setattr(self, "tags", tags)
         self.execution_order = execution_order if execution_order is not None else 1
-        self.child_execution_order = child_execution_order or self.execution_order
-
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    @staticmethod
+    def _get_name_from_serialized(serialized: dict) -> Optional[str]:
+        if "name" in serialized:
+            return serialized["name"]
+        elif "id" in serialized:
+            return serialized["id"][-1]
+        return None
 
     def dict(
         self, exclude: Optional[Set[str]] = None, exclude_none: bool = False
@@ -246,9 +251,9 @@ class Run(RunBase):
         self,
         *,
         id: UUID,
-        name: str,
         inputs: dict,
         run_type: str,
+        name: Optional[str] = None,
         start_time: Optional[DATE_TYPE] = None,
         session_id: Optional[ID_TYPE] = None,
         child_run_ids: Optional[List[ID_TYPE]] = None,
@@ -336,6 +341,13 @@ class Run(RunBase):
                 else:
                     res[k] = v
         return res
+
+    @property
+    def url(self) -> Optional[str]:
+        """URL of this run within the app."""
+        if self._host_url and self.app_path:
+            return f"{self._host_url}{self.app_path}"
+        return None
 
 
 class Feedback(DictMixin):
