@@ -44,40 +44,37 @@ class RunTree(RunBase):
         _session_id = kwargs.pop("session_id", None)
         _parent_run_id = kwargs.pop("parent_run_id", None)
         super().__init__(name=name, **kwargs)
-        setattr(self, "id", _coerce_req_uuid(id) if id else uuid4())
-        setattr(self, "start_time", start_time if start_time else datetime.utcnow())
-        setattr(self, "child_runs", child_runs if child_runs else [])
-        setattr(
-            self,
-            "session_name",
-            project_name if project_name
-            # TODO: Deprecate LANGCHAIN_SESSION
+        self.id = _coerce_req_uuid(id) if id else uuid4()
+        self.start_time = start_time if start_time else datetime.utcnow()
+        self.child_runs = child_runs if child_runs else []
+        self.session_name = (
+            project_name
+            if project_name
             else (
                 _session_name
                 if _session_name
                 else os.environ.get(
                     "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
                 )
-            ),
+            )
         )
-        setattr(self, "session_id", project_id or _session_id)
-        setattr(self, "execution_order", execution_order)
-        setattr(self, "extra", extra if extra else {})
+        self.session_id = project_id or _session_id
+        self.execution_order = execution_order
+        self.extra = extra if extra else {}
         self.child_execution_order = child_execution_order or self.execution_order
         self.parent_run = parent_run
         self._client = client if client else Client()
         self._executor = executor if executor else _make_thread_pool()
         self._futures: List[Future] = []
-        self.child_runs: List[RunTree] = []
         if not self._executor or self._executor._shutdown:
             raise ValueError("Executor has been shutdown.")
         serialized: Optional[dict] = self.serialized
         if not serialized:
-            setattr(self, "serialized", {"name": self.name})
+            self.serialized = {"name": self.name}
         if self.parent_run is not None:
-            setattr(self, "parent_run_id", self.parent_run.id)
+            self.parent_run_id = self.parent_run.id
         elif _parent_run_id is not None:
-            setattr(self, "parent_run_id", _parent_run_id)
+            self.parent_run_id = _parent_run_id
         runtime = self.extra.setdefault("runtime", {})
         runtime.update(get_runtime_environment())
         self._ended = False
