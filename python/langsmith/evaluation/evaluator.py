@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import abstractmethod
 from typing import Dict, Optional, Union
 
@@ -34,7 +36,23 @@ class EvaluationResult(DictMixin):
         self.value = value
         self.comment = comment
         self.correction = correction
-        self.evaluator_info = evaluator_info
+        self.evaluator_info = evaluator_info or {}
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> EvaluationResult:
+        """Create an EvaluationResult from a dict."""
+        result_args = {
+            "key",
+            "score",
+            "value",
+            "comment",
+            "correction",
+            "evaluator_info",
+        }
+        eval_kwargs = {k: v for k, v in data.items() if k in result_args}
+        if "comment" not in eval_kwargs:
+            eval_kwargs["comment"] = data.get("reasoning")
+        return cls(**eval_kwargs)
 
 
 class RunEvaluator:
