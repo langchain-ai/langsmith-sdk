@@ -32,18 +32,13 @@ from urllib3.util import Retry
 
 from langsmith.evaluation.evaluator import RunEvaluator
 from langsmith.schemas import (
-    APIFeedbackSource,
     Dataset,
-    DatasetCreate,
     DataType,
     Example,
-    ExampleCreate,
     ExampleUpdate,
     Feedback,
-    FeedbackCreate,
-    FeedbackSourceBase,
+    FeedbackSource,
     FeedbackSourceType,
-    ModelFeedbackSource,
     Run,
     RunBase,
     TracerSession,
@@ -931,6 +926,7 @@ class Client:
         *,
         description: Optional[str] = None,
         data_type: DataType = DataType.kv,
+        dataset_id: Optional[ID_TYPE] = None,
     ) -> Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -948,15 +944,17 @@ class Client:
         Dataset
             The created dataset.
         """
-        dataset = DatasetCreate(
-            name=dataset_name,
-            description=description,
-            data_type=data_type,
-        )
+        data = {
+            "name": dataset_name,
+            "description": description,
+            "data_type": data_type,
+        }
+        if dataset_id is not None:
+            data["id"] = dataset_id
         response = self.session.post(
             self.api_url + "/datasets",
             headers=self._headers,
-            data=dataset.json(),
+            data=json.dumps(data, default=_serialize_json),
         )
         raise_for_status_with_text(response)
         return Dataset(**response.json())
@@ -1195,9 +1193,10 @@ class Client:
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
-        example = ExampleCreate(**data)
         response = self.session.post(
-            f"{self.api_url}/examples", headers=self._headers, data=example.json()
+            f"{self.api_url}/examples",
+            headers=self._headers,
+            data=json.dumps(data, default=_serialize_json),
         )
         raise_for_status_with_text(response)
         result = response.json()
@@ -1503,28 +1502,23 @@ class Client:
         Feedback
             The created feedback.
         """
-        if feedback_source_type == FeedbackSourceType.API:
-            feedback_source: FeedbackSourceBase = APIFeedbackSource(
-                metadata=source_info
-            )
-        elif feedback_source_type == FeedbackSourceType.MODEL:
-            feedback_source = ModelFeedbackSource(metadata=source_info)
-        else:
-            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
-        feedback = FeedbackCreate(
-            id=uuid4(),
-            run_id=run_id,
-            key=key,
-            score=score,
-            value=value,
-            correction=correction,
-            comment=comment,
-            feedback_source=feedback_source,
+        feedback_source = FeedbackSource(
+            type=feedback_source_type, metadata=source_info
         )
+        feedback = {
+            "id": uuid4(),
+            "run_id": run_id,
+            "key": key,
+            "score": score,
+            "value": value,
+            "correction": correction,
+            "comment": comment,
+            "feedback_source": feedback_source,
+        }
         response = self.session.post(
             self.api_url + "/feedback",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=feedback.json(exclude_none=True),
+            data=json.dumps(feedback, default=_serialize_json),
         )
         raise_for_status_with_text(response)
         return Feedback(**response.json())

@@ -4,11 +4,12 @@ from __future__ import annotations
 import logging
 import os
 from concurrent.futures import Future, ThreadPoolExecutor, wait
+from dataclasses import Field, dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
-from pydantic import Field, PrivateAttr, root_validator, validator
+from dataclasses_json import dataclass_json
 
 from langsmith.client import Client
 from langsmith.schemas import RunBase
@@ -22,63 +23,48 @@ def _make_thread_pool() -> ThreadPoolExecutor:
     return ThreadPoolExecutor(max_workers=1)
 
 
+@dataclass_json
+@dataclass
 class RunTree(RunBase):
     """Run Schema with back-references for posting runs."""
 
-    name: str
-    id: UUID = Field(default_factory=uuid4)
-    start_time: datetime = Field(default_factory=datetime.utcnow)
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    child_runs: List[RunTree] = Field(
-        default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
-    )
-    session_name: str = Field(
+    id: UUID = field(default_factory=uuid4)
+    start_time: datetime = field(default_factory=datetime.utcnow)
+    parent_run: Optional["RunTree"] = field(default=None)
+    child_runs: List["RunTree"] = field(default_factory=list)
+    session_name: str = field(
         default_factory=lambda: os.environ.get(
-            # TODO: Deprecate LANGCHAIN_SESSION
             "LANGCHAIN_PROJECT",
             os.environ.get("LANGCHAIN_SESSION", "default"),
         ),
-        alias="project_name",
     )
-    session_id: Optional[UUID] = Field(default=None, alias="project_id")
+    session_id: Optional[UUID] = field(default=None)
     execution_order: int = 1
-    child_execution_order: int = Field(default=1, exclude=True)
-    extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=Client, exclude=True)
-    executor: ThreadPoolExecutor = Field(
-        default_factory=_make_thread_pool, exclude=True
+    child_execution_order: int = field(default=1)
+    extra: Dict = field(default_factory=dict)
+    client: Client = field(default_factory=Client)
+    executor: ThreadPoolExecutor = field(
+        default_factory=_make_thread_pool,
     )
-    _futures: List[Future] = PrivateAttr(default_factory=list)
+    _futures: List[Future] = field(default_factory=list, repr=False)
 
-    class Config:
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-
-    @validator("executor", pre=True)
-    def validate_executor(cls, v: Optional[ThreadPoolExecutor]) -> ThreadPoolExecutor:
-        """Ensure the executor is running."""
-        if v is None:
-            return _make_thread_pool()
-        if v._shutdown:
+    def __post_init__(self):
+        if not self.executor or self.executor._shutdown:
             raise ValueError("Executor has been shutdown.")
-        return v
 
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if "serialized" not in values:
-            values["serialized"] = {"name": values["name"]}
-        if "execution_order" not in values:
-            values["execution_order"] = 1
-        if "child_execution_order" not in values:
-            values["child_execution_order"] = values["execution_order"]
-        if values.get("parent_run") is not None:
-            values["parent_run_id"] = values["parent_run"].id
-        extra = cast(dict, values.setdefault("extra", {}))
-        runtime = cast(dict, extra.setdefault("runtime", {}))
+        if "serialized" not in self.extra:
+            self.extra["serialized"] = {"name": self.name}
+        if "execution_order" not in self.extra:
+            self.extra["execution_order"] = 1
+        if "child_execution_order" not in self.extra:
+            self.extra["child_execution_order"] = self.execution_order
+        if self.parent_run is not None:
+            self.extra["parent_run_id"] = self.parent_run.id
+        extra = self.extra.setdefault("extra", {})
+        runtime = extra.setdefault("runtime", {})
+        # `get_runtime_environment()` is not defined in your code snippet,
+        # please replace this function with the actual one
         runtime.update(get_runtime_environment())
-        return values
 
     def end(
         self,
