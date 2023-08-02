@@ -29,12 +29,12 @@ class EvaluationResult(DictMixin):
             evaluator_info: Additional information about the evaluator.
         """
         super().__init__()
-        setattr(self, "key", key)
-        setattr(self, "score", score)
-        setattr(self, "value", value)
-        setattr(self, "comment", comment)
-        setattr(self, "correction", correction)
-        setattr(self, "evaluator_info", evaluator_info)
+        self.key = key
+        self.score = score
+        self.value = value
+        self.comment = comment
+        self.correction = correction
+        self.evaluator_info = evaluator_info
 
 
 class RunEvaluator:
