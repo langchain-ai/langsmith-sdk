@@ -1,8 +1,9 @@
 """Generic utility functions."""
 import platform
 import subprocess
+from enum import Enum
 from functools import lru_cache
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 from requests import HTTPError, Response
 
@@ -54,6 +55,13 @@ def raise_for_status_with_text(response: Response) -> None:
         response.raise_for_status()
     except HTTPError as e:
         raise ValueError(response.text) from e
+
+
+def get_enum_value(enum: Union[Enum, str]) -> str:
+    """Get the value of a string enum."""
+    if isinstance(enum, Enum):
+        return enum.value
+    return enum
 
 
 @lru_cache
@@ -202,7 +210,7 @@ def get_langchain_environment() -> Optional[str]:
         import langchain  # type: ignore
 
         return langchain.__version__
-    except ImportError:
+    except:  # noqa
         return None
 
 
