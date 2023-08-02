@@ -5,6 +5,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
 from uuid import UUID, uuid4
 
+from langsmith.utils import DictMixin
+
 SCORE_TYPE = Union[bool, int, float, None]
 VALUE_TYPE = Union[Dict, bool, int, float, str, None]
 DATE_TYPE = Union[datetime, str]
@@ -59,7 +61,7 @@ class FeedbackSourceType(str, Enum):
     """Model-assisted feedback."""
 
 
-class ExampleBase:
+class ExampleBase(DictMixin):
     def __init__(
         self,
         *,
@@ -75,9 +77,9 @@ class ExampleBase:
             inputs: Inputs dictionary
             outputs: Optional Outputs dictionary
         """
-        self.dataset_id = _coerce_req_uuid(dataset_id)
-        self.inputs = inputs
-        self.outputs = outputs
+        setattr(self, "dataset_id", _coerce_req_uuid(dataset_id))
+        setattr(self, "inputs", inputs)
+        setattr(self, "outputs", outputs)
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -108,31 +110,13 @@ class Example(ExampleBase):
         super().__init__(
             dataset_id=dataset_id, inputs=inputs, outputs=outputs, **kwargs
         )
-        self.id = _coerce_req_uuid(id)
-        self.created_at = _parse_datetime(created_at)
-        self.modified_at = modified_at
-        self.runs = runs
+        setattr(self, "id", _coerce_req_uuid(id))
+        setattr(self, "created_at", _parse_datetime(created_at))
+        setattr(self, "modified_at", modified_at)
+        setattr(self, "runs", runs)
 
 
-class ExampleUpdate:
-    def __init__(
-        self,
-        dataset_id: Optional[ID_TYPE] = None,
-        inputs: Optional[Dict[str, Any]] = None,
-        outputs: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Initialize ExampleUpdate.
-
-        :param dataset_id: Optional ID of the dataset
-        :param inputs: Optional Inputs dictionary
-        :param outputs: Optional Outputs dictionary
-        """
-        self.dataset_id = _coerce_uuid(dataset_id)
-        self.inputs = inputs
-        self.outputs = outputs
-
-
-class DatasetBase:
+class DatasetBase(DictMixin):
     def __init__(
         self,
         *,
@@ -147,9 +131,9 @@ class DatasetBase:
         :param description: Optional description
         :param data_type: Optional DataType
         """
-        self.name = name
-        self.description = description
-        self.data_type = data_type
+        setattr(self, "name", name)
+        setattr(self, "description", description)
+        setattr(self, "data_type", data_type)
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -179,22 +163,25 @@ class Dataset(DatasetBase):
         super().__init__(
             name=name, description=description, data_type=data_type, **kwargs
         )
-        self.id = _coerce_uuid(id)
-        self.created_at = _parse_datetime(created_at)
-        self.modified_at = modified_at
-        self.tenant_id = _coerce_uuid(tenant_id)
+        setattr(self, "id", _coerce_req_uuid(id))
+        setattr(self, "created_at", _parse_datetime(created_at))
+        setattr(self, "modified_at", modified_at)
+        setattr(self, "tenant_id", _coerce_uuid(tenant_id))
 
 
-class RunBase(dict):
+class RunBase(DictMixin):
+    """Base class for Run."""
+
     def __init__(
         self,
         *,
-        name: str,
         inputs: dict,
         run_type: str,
+        name: Optional[str] = None,
         id: Optional[ID_TYPE] = None,
         start_time: Optional[DATE_TYPE] = None,
         end_time: Optional[DATE_TYPE] = None,
+        execution_order: Optional[int] = None,
         extra: Optional[dict] = None,
         error: Optional[str] = None,
         serialized: Optional[dict] = None,
@@ -203,6 +190,8 @@ class RunBase(dict):
         reference_example_id: Optional[ID_TYPE] = None,
         parent_run_id: Optional[ID_TYPE] = None,
         tags: Optional[List[str]] = None,
+        child_execution_order: Optional[int] = None,
+        **kwargs: Any,
     ) -> None:
         """Initialize RunBase.
 
@@ -221,35 +210,35 @@ class RunBase(dict):
         :param parent_run_id: Optional parent run ID
         :param tags: Optional tags
         """
-        self.id = _coerce_req_uuid(id) if id is not None else uuid4()
-        self.name = name
-        self.start_time = _parse_datetime(start_time) if start_time else None
-        self.inputs = inputs
-        self.run_type = run_type
-        self.end_time = _parse_datetime(end_time) if end_time else None
-        self.extra = extra
-        self.error = error
-        self.serialized = serialized
-        self.events = events
-        self.outputs = outputs
-        self.reference_example_id = reference_example_id
-        self.parent_run_id = _coerce_uuid(parent_run_id)
-        self.tags = tags
+        setattr(self, "id", _coerce_req_uuid(id) if id is not None else uuid4())
+        setattr(self, "name", name or serialized.get("name", None))
+        setattr(self, "start_time", _parse_datetime(start_time) if start_time else None)
+        setattr(self, "inputs", inputs)
+        setattr(self, "outputs", outputs)
+        setattr(self, "run_type", run_type)
+        setattr(self, "end_time", _parse_datetime(end_time) if end_time else None)
+        setattr(self, "extra", extra)
+        setattr(self, "error", error)
+        setattr(self, "serialized", serialized)
+        setattr(self, "events", events)
+        setattr(self, "reference_example_id", _coerce_uuid(reference_example_id))
+        setattr(self, "parent_run_id", _coerce_uuid(parent_run_id))
+        setattr(self, "tags", tags)
+        self.execution_order = execution_order if execution_order is not None else 1
+        self.child_execution_order = child_execution_order or self.execution_order
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def dict(
         self, exclude: Optional[Set[str]] = None, exclude_none: bool = False
     ) -> Dict:
-        d = self.__dict__.copy()
-        if exclude is not None:
-            for key in exclude:
-                d.pop(key, None)
-        if exclude_none:
-            d = {k: v for k, v in d.items() if v is not None}
-        return d
-
-    def __repr__(self) -> str:
-        d = self.dict()
-        return f"{self.__class__.__name__}({d})"
+        exclude = exclude or set()
+        res = {}
+        for k, v in self.items():
+            if k not in exclude and (v is not None or not exclude_none):
+                res[k] = v
+        return res
 
 
 class Run(RunBase):
@@ -261,7 +250,6 @@ class Run(RunBase):
         inputs: dict,
         run_type: str,
         start_time: Optional[DATE_TYPE] = None,
-        execution_order: Optional[int] = None,
         session_id: Optional[ID_TYPE] = None,
         child_run_ids: Optional[List[ID_TYPE]] = None,
         child_runs: Optional[List[Run]] = None,
@@ -315,9 +303,9 @@ class Run(RunBase):
             reference_example_id=reference_example_id,
             parent_run_id=parent_run_id,
             tags=tags,
+            **kwargs,
         )
         self.id = _coerce_req_uuid(id)
-        self.execution_order = execution_order if execution_order is not None else 1
         self.session_id = _coerce_uuid(session_id)
         self.child_run_ids = (
             [_coerce_uuid(_child_id) for _child_id in child_run_ids]
@@ -328,11 +316,29 @@ class Run(RunBase):
         self.feedback_stats = feedback_stats
         self.app_path = app_path
         self._host_url = kwargs.get("_host_url")
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+
+    def dict(
+        self, exclude: Optional[Set[str]] = None, exclude_none: bool = False
+    ) -> Dict:
+        exclude = exclude or set()
+        res: Dict[Any, Any] = {}
+        for k, v in self.items():
+            if k not in exclude and (v is not None or not exclude_none):
+                if isinstance(v, RunBase):
+                    res[k] = v.dict(exclude=exclude, exclude_none=exclude_none)
+                elif isinstance(v, (list, tuple)):
+                    res[k] = [
+                        _v.dict(exclude=exclude, exclude_none=exclude_none)
+                        if isinstance(_v, RunBase)
+                        else _v
+                        for _v in v
+                    ]
+                else:
+                    res[k] = v
+        return res
 
 
-class Feedback:
+class Feedback(DictMixin):
     def __init__(
         self,
         id: ID_TYPE,
@@ -360,19 +366,21 @@ class Feedback:
         :param correction: Optional correction for the run
         :param feedback_source: Optional source of the feedback
         """
-        self.id = _coerce_req_uuid(id)
-        self.run_id = _coerce_req_uuid(run_id)
-        self.key = key
-        self.score = score
-        self.value = value
-        self.created_at = _parse_datetime(created_at) if created_at else None
-        self.modified_at = _parse_datetime(modified_at) if modified_at else None
-        self.comment = comment
-        self.correction = correction
-        self.feedback_source = feedback_source
+        setattr(self, "id", _coerce_req_uuid(id))
+        setattr(self, "run_id", _coerce_req_uuid(run_id))
+        setattr(self, "key", key)
+        setattr(self, "score", score)
+        setattr(self, "value", value)
+        setattr(self, "created_at", _parse_datetime(created_at) if created_at else None)
+        setattr(
+            self, "modified_at", _parse_datetime(modified_at) if modified_at else None
+        )
+        setattr(self, "comment", comment)
+        setattr(self, "correction", correction)
+        setattr(self, "feedback_source", feedback_source)
 
 
-class TracerSession:
+class TracerSession(DictMixin):
     def __init__(
         self,
         *,
@@ -412,34 +420,44 @@ class TracerSession:
         :param latency_p50: Optional latency p50
         :param latency_p99: Optional latency p99
         """
-        self.id = _coerce_req_uuid(id)
-        self.name = name
-        self.events = events or []
-        self.num_runs = num_runs
-        self.num_feedback = num_feedback
-        self.tenant_id = _coerce_uuid(tenant_id)
-        self.run_count = run_count
-        self.start_time = _parse_datetime(start_time) if start_time else None
-        self.last_run_start_time = (
-            _parse_datetime(last_run_start_time) if last_run_start_time else None
+        setattr(self, "id", _coerce_req_uuid(id))
+        setattr(self, "name", name)
+        setattr(self, "events", events or [])
+        setattr(self, "num_runs", num_runs)
+        setattr(self, "num_feedback", num_feedback)
+        setattr(self, "tenant_id", _coerce_uuid(tenant_id))
+        setattr(self, "run_count", run_count)
+        setattr(self, "start_time", _parse_datetime(start_time) if start_time else None)
+        setattr(
+            self,
+            "last_run_start_time",
+            _parse_datetime(last_run_start_time) if last_run_start_time else None,
         )
-        self.last_run_start_time_live = (
+        setattr(
+            self,
+            "last_run_start_time_live",
             _parse_datetime(last_run_start_time_live)
             if last_run_start_time_live
-            else None
+            else None,
         )
-        self.extra = extra
-        self.default_dataset_id = _coerce_uuid(default_dataset_id)
-        self.reference_dataset_ids = (
+        setattr(self, "extra", extra)
+        setattr(self, "default_dataset_id", _coerce_uuid(default_dataset_id))
+        setattr(
+            self,
+            "reference_dataset_ids",
             [_coerce_req_uuid(_id) for _id in reference_dataset_ids]
             if reference_dataset_ids is not None
-            else None
+            else None,
         )
-        self.latency_p50 = (
-            timedelta(latency_p50) if isinstance(latency_p50, float) else latency_p50
+        setattr(
+            self,
+            "latency_p50",
+            timedelta(latency_p50) if isinstance(latency_p50, float) else latency_p50,
         )
-        self.latency_p99 = (
-            timedelta(latency_p99) if isinstance(latency_p99, float) else latency_p50
+        setattr(
+            self,
+            "latency_p99",
+            timedelta(latency_p99) if isinstance(latency_p99, float) else latency_p99,
         )
         for key, value in kwargs.items():
             setattr(self, key, value)

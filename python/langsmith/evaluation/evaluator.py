@@ -1,12 +1,11 @@
-import json
 from abc import abstractmethod
-from typing import Any, Dict, Optional, Union
+from typing import Dict, Optional, Union
 
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
-from langsmith.utils import serialize_json
+from langsmith.utils import DictMixin
 
 
-class EvaluationResult(dict):
+class EvaluationResult(DictMixin):
     """Evaluation result."""
 
     def __init__(
@@ -36,32 +35,6 @@ class EvaluationResult(dict):
         setattr(self, "comment", comment)
         setattr(self, "correction", correction)
         setattr(self, "evaluator_info", evaluator_info)
-
-    def __setattr__(self, k: str, v: Any):
-        if k[0] == "_" or k in self.__dict__:
-            return super().__setattr__(k, v)
-        self[k] = v
-        return None
-
-    def __getattr__(self, k):
-        if k[0] == "_":
-            raise AttributeError(k)
-        try:
-            return self[k]
-        except KeyError as err:
-            raise AttributeError(*err.args)
-
-    def __delattr__(self, k):
-        if k[0] == "_" or k in self.__dict__:
-            return super().__delattr__(k)
-        else:
-            del self[k]
-
-    def __repr__(self) -> str:
-        return str(self)
-
-    def __str__(self) -> str:
-        return json.dumps(self.__dict__, indent=2, default=serialize_json)
 
 
 class RunEvaluator:

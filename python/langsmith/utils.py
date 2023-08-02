@@ -1,6 +1,10 @@
 """Generic utility functions."""
+from __future__ import annotations
+
+import json
 import platform
 import subprocess
+from copy import copy, deepcopy
 from datetime import datetime
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
@@ -22,6 +26,42 @@ class LangSmithError(Exception):
 
 class LangSmithConnectionError(Exception):
     """Couldn't connect to the LangSmith API."""
+
+
+class DictMixin(dict):
+    def __setattr__(self, k: str, v: Any):
+        if k[0] == "_" or k in self.__dict__:
+            return super().__setattr__(k, v)
+        self[k] = v
+        return None
+
+    def __getattr__(self, k):
+        try:
+            return self[k]
+        except KeyError as err:
+            raise AttributeError(*err.args)
+
+    def __delattr__(self, k):
+        if k[0] == "_" or k in self.__dict__:
+            return super().__delattr__(k)
+        else:
+            del self[k]
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        serialized = json.dumps(self, indent=2, default=serialize_json)
+        return f"{self.__class__.__name__}({serialized})"
+
+    def copy(self, deep: bool = False) -> DictMixin:
+        try:
+            if deep:
+                return deepcopy(self)
+            else:
+                return copy(self)
+        except Exception as e:
+            breakpoint()
 
 
 def serialize_json(obj: Any) -> str:
