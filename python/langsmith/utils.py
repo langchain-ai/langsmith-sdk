@@ -29,19 +29,19 @@ class LangSmithConnectionError(Exception):
 
 
 class DictMixin(dict):
-    def __setattr__(self, k: str, v: Any):
+    def __setattr__(self, k: str, v: Any) -> None:
         if k[0] == "_" or k in self.__dict__:
             return super().__setattr__(k, v)
         self[k] = v
         return None
 
-    def __getattr__(self, k):
+    def __getattr__(self, k: Any) -> Any:
         try:
             return self[k]
         except KeyError as err:
             raise AttributeError(*err.args)
 
-    def __delattr__(self, k):
+    def __delattr__(self, k: Any) -> None:
         if k[0] == "_" or k in self.__dict__:
             return super().__delattr__(k)
         else:
@@ -55,13 +55,10 @@ class DictMixin(dict):
         return f"{self.__class__.__name__}({serialized})"
 
     def copy(self, deep: bool = False) -> DictMixin:
-        try:
-            if deep:
-                return deepcopy(self)
-            else:
-                return copy(self)
-        except Exception as e:
-            breakpoint()
+        if deep:
+            return deepcopy(self)
+        else:
+            return copy(self)
 
 
 def serialize_json(obj: Any) -> str:

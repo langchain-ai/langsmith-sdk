@@ -24,7 +24,7 @@ def langchain_client() -> Generator[Client, None, None]:
 
 def test_nested_runs(
     langchain_client: Client,
-):
+) -> None:
     project_name = "__My Tracer Project - test_nested_runs"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
@@ -32,17 +32,17 @@ def test_nested_runs(
     executor = ThreadPoolExecutor(max_workers=1)
 
     @traceable(run_type="chain")
-    def my_run(text: str):
+    def my_run(text: str) -> str:
         my_llm_run(text)
         return text
 
     @traceable(run_type="llm")
-    def my_llm_run(text: str):
+    def my_llm_run(text: str) -> str:
         # The function needn't accept a run
         return f"Completed: {text}"
 
     @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])
-    def my_chain_run(text: str):
+    def my_chain_run(text: str) -> str:
         return my_run(text)
 
     my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
@@ -62,7 +62,7 @@ def test_nested_runs(
 
 
 @pytest.mark.asyncio
-async def test_nested_async_runs(langchain_client: Client):
+async def test_nested_async_runs(langchain_client: Client) -> None:
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs"
     if project_name in [project.name for project in langchain_client.list_projects()]:
@@ -70,23 +70,23 @@ async def test_nested_async_runs(langchain_client: Client):
     executor = ThreadPoolExecutor(max_workers=1)
 
     @traceable(run_type="chain")
-    async def my_run(text: str):
+    async def my_run(text: str) -> str:
         await my_llm_run(text)
         my_sync_tool(text, my_arg=20)
         return text
 
     @traceable(run_type="llm")
-    async def my_llm_run(text: str):
+    async def my_llm_run(text: str) -> str:
         # The function needn't accept a run
         await asyncio.sleep(0.2)
         return f"Completed: {text}"
 
     @traceable(run_type="tool")
-    def my_sync_tool(text: str, *, my_arg: int = 10):
+    def my_sync_tool(text: str, *, my_arg: int = 10) -> str:
         return f"Completed: {text} {my_arg}"
 
     @traceable(run_type="chain", executor=executor)
-    async def my_chain_run(text: str):
+    async def my_chain_run(text: str) -> str:
         return await my_run(text)
 
     await my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
@@ -115,28 +115,28 @@ async def test_nested_async_runs(langchain_client: Client):
 
 
 @pytest.mark.asyncio
-async def test_nested_async_runs_with_threadpool(langchain_client: Client):
+async def test_nested_async_runs_with_threadpool(langchain_client: Client) -> None:
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs_with_threadpol"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="llm")
-    async def async_llm(text: str):
+    async def async_llm(text: str) -> str:
         return f"Baby LLM: {text}"
 
     @traceable(run_type="llm")
-    def my_llm_run(text: str):
+    def my_llm_run(text: str) -> str:
         # The function needn't accept a run
         return f"Completed: {text}"
 
     @traceable(run_type="tool")
-    def my_tool_run(text: str):
+    def my_tool_run(text: str) -> str:
         val = asyncio.run(async_llm(text))
         return f"Completed: {text} - val: {val}"
 
     @traceable(run_type="chain")
-    def my_run(text: str, *, run_tree: Optional[RunTree] = None):
+    def my_run(text: str, *, run_tree: Optional[RunTree] = None) -> str:
         llm_run_result = my_llm_run(text)
         thread_pool = ThreadPoolExecutor(max_workers=1)
         for i in range(3):
@@ -149,7 +149,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     executor = ThreadPoolExecutor(max_workers=1)
 
     @traceable(run_type="chain", executor=executor)
-    async def my_chain_run(text: str, run_tree: RunTree):
+    async def my_chain_run(text: str, run_tree: RunTree) -> str:
         thread_pool = ThreadPoolExecutor(max_workers=3)
         for i in range(2):
             thread_pool.submit(

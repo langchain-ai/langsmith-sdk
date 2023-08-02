@@ -63,6 +63,7 @@ class RunTree(RunBase):
         setattr(self, "session_id", project_id or _session_id)
         setattr(self, "execution_order", execution_order)
         setattr(self, "extra", extra if extra else {})
+        self.child_execution_order = child_execution_order or self.execution_order
         self.parent_run = parent_run
         self._client = client if client else Client()
         self._executor = executor if executor else _make_thread_pool()

@@ -150,7 +150,7 @@ def traceable(
     _warn_once()
     extra_outer = extra or {}
 
-    def decorator(func: Callable):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def async_wrapper(
             *args: Any,
