@@ -419,6 +419,63 @@ export class Client {
     await raiseForStatus(response, "delete run");
   }
 
+  public async shareRun(
+    runId: string,
+    { shareId }: { shareId?: string } = {}
+  ): Promise<string> {
+    const data = {
+      run_id: runId,
+      share_token: shareId || uuid.v4(),
+    };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/${runId}/share`,
+      {
+        method: "PUT",
+        headers: this.headers,
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    // await raiseForStatus(response, "share run");
+    const result = await response.json();
+    if (result === null || !("share_token" in result)) {
+      throw new Error("Invalid response from server");
+    }
+    return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
+  }
+
+  public async unshareRun(runId: string): Promise<void> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/${runId}/share`,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    await raiseForStatus(response, "unshare run");
+  }
+
+  public async readRunSharedLink(runId: string): Promise<string | undefined> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/${runId}/share`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    // await raiseForStatus(response, "read run shared link");
+    const result = await response.json();
+    if (result === null || !("share_token" in result)) {
+      return undefined;
+    }
+    return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
+  }
+
   public async createProject({
     projectName,
     projectExtra,

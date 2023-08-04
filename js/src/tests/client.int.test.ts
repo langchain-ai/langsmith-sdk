@@ -2,6 +2,7 @@ import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { StringEvaluator } from "../evaluation/string_evaluator.js";
 import { Dataset, Feedback } from "../schemas.js";
+import { v4 as uuidv4 } from "uuid";
 
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
@@ -308,4 +309,29 @@ test("test create dataset", async () => {
   );
   const loadedDataset = await langchainClient.readDataset({ datasetName });
   expect(loadedDataset.data_type).toEqual("llm");
+});
+
+test("Test share and unshare run", async () => {
+  const langchainClient = new Client({
+    apiUrl: "http://localhost:1984",
+  });
+
+  // Create a new run
+  const runId = uuidv4();
+  await langchainClient.createRun({
+    name: "Test run",
+    inputs: { input: "hello world" },
+    run_type: "chain",
+    id: runId,
+  });
+
+  // Share the run and verify the shared link
+  const sharedUrl = await langchainClient.shareRun(runId);
+  const response = await fetch(sharedUrl);
+  expect(response.status).toEqual(200);
+  expect(await langchainClient.readRunSharedLink(runId)).toEqual(sharedUrl);
+
+  await langchainClient.unshareRun(runId);
+  const sharedLink = await langchainClient.readRunSharedLink(runId);
+  expect(sharedLink).toBe(undefined);
 });
