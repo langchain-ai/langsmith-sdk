@@ -817,6 +817,45 @@ class Client:
         )
         raise_for_status_with_text(response)
 
+    def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
+        """Get a share link for a run."""
+        data = {
+            "run_id": str(run_id),
+            "share_token": share_id or str(uuid4()),
+        }
+        response = self.session.put(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+            json=data,
+        )
+        raise_for_status_with_text(response)
+        share_token = response.json()["share_token"]
+        return f"{self._host_url}/public/{share_token}/r"
+
+    def unshare_run(self, run_id: ID_TYPE) -> None:
+        """Delete share link for a run."""
+        response = self.session.delete(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+        )
+        raise_for_status_with_text(response)
+
+    def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
+        response = self.session.get(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+        )
+        raise_for_status_with_text(response)
+        result = response.json()
+        if result is None or "share_token" not in result:
+            return None
+        return f"{self._host_url}/public/{result['share_token']}/r"
+
+    def run_is_shared(self, run_id: ID_TYPE) -> bool:
+        """Get share state for a run."""
+        link = self.read_run_shared_link(run_id)
+        return link is not None
+
     def create_project(
         self,
         project_name: str,

@@ -8,6 +8,7 @@ from typing import List, Optional
 from uuid import uuid4
 
 import pytest
+import requests
 
 from langsmith.client import Client
 from langsmith.evaluation import StringEvaluator
@@ -355,3 +356,22 @@ def test_create_dataset(
     loaded_dataset = langchain_client.read_dataset(dataset_name=dataset_name)
     assert loaded_dataset.data_type == DataType.llm
     langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_share_unshare_run(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
+) -> None:
+    """Test persisting runs and adding feedback."""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    run_id = uuid4()
+    langchain_client.create_run(
+        name="Test run",
+        inputs={"input": "hello world"},
+        run_type="chain",
+        id=run_id,
+    )
+    shared_url = langchain_client.share_run(run_id)
+    response = requests.get(shared_url)
+    assert response.status_code == 200
+    assert langchain_client.read_run_shared_link(run_id) == shared_url
+    langchain_client.unshare_run(run_id)
