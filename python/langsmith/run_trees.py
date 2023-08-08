@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 from pydantic import Field, PrivateAttr, root_validator, validator
 
-from langsmith.client import Client
+from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import RunBase
 from langsmith.utils import get_runtime_environment
 
@@ -104,7 +104,7 @@ class RunTree(RunBase):
         name: str,
         run_type: str,
         *,
-        run_id: Optional[UUID] = None,
+        run_id: Optional[ID_TYPE] = None,
         serialized: Optional[Dict] = None,
         inputs: Optional[Dict] = None,
         outputs: Optional[Dict] = None,
