@@ -12,6 +12,8 @@ LangSmith helps you and your team develop and evaluate language models and intel
 
 > **Note**: You can enjoy the benefits of LangSmith without using the LangChain open-source packages! To get started with your own proprietary framework, set up your account and then skip to [Logging Traces Outside LangChain](#logging-traces-outside-langchain).
 
+> **Cookbook:** For tutorials on how to get more value out of LangSmith, check out the [Langsmith Cookbook](https://github.com/langchain-ai/langsmith-cookbook/tree/main) repo.
+
 A typical workflow looks like:
 
 1. Set up an account with LangSmith.
