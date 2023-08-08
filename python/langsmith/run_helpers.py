@@ -1,6 +1,5 @@
 """Decorator for creating a run tree from functions."""
 import contextvars
-import functools
 import inspect
 import logging
 import os
@@ -18,8 +17,9 @@ from typing import (
     TypedDict,
     Union,
 )
-from uuid import UUID
+from uuid import uuid4
 
+from langsmith.client import ID_TYPE
 from langsmith.run_trees import RunTree
 
 logger = logging.getLogger(__name__)
@@ -32,21 +32,6 @@ _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=N
 def get_run_tree_context() -> Optional[RunTree]:
     """Get the current run tree context."""
     return _PARENT_RUN_TREE.get()
-
-
-@functools.lru_cache(None)
-def _warn_once() -> None:
-    logger.warning(
-        "The @traceable decorator is experimental and will likely see breaking changes."
-    )
-
-
-@functools.lru_cache(None)
-def _warn_cm_once() -> None:
-    logger.warning(
-        "The @trace context manager is experimental and will"
-        " likely see breaking changes."
-    )
 
 
 def _get_inputs(
@@ -64,12 +49,13 @@ def _get_inputs(
 class LangSmithExtra(TypedDict):
     """Any additional info to be injected into the run dynamically."""
 
-    reference_example_id: Optional[UUID]
+    reference_example_id: Optional[ID_TYPE]
     run_extra: Optional[Dict]
     run_tree: Optional[RunTree]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
+    run_id: Optional[ID_TYPE]
 
 
 def traceable(
@@ -82,7 +68,6 @@ def traceable(
     tags: Optional[List[str]] = None,
 ) -> Callable:
     """Decorator for creating or adding a run to a run tree."""
-    _warn_once()
     extra_outer = extra or {}
 
     def decorator(func: Callable):
@@ -116,7 +101,8 @@ def traceable(
             if metadata_:
                 extra_inner["metadata"] = metadata_
             inputs = _get_inputs(signature, *args, **kwargs)
-            tags_ = tags or [] + (langsmith_extra.get("tags") or [])
+            tags_ = (tags or []) + (langsmith_extra.get("tags") or [])
+            id_ = langsmith_extra.get("run_id", uuid4())
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
                     name=name_,
@@ -129,9 +115,11 @@ def traceable(
                     inputs=inputs,
                     tags=tags_,
                     extra=extra_inner,
+                    run_id=id_,
                 )
             else:
                 new_run = RunTree(
+                    id=id_,
                     name=name_,
                     serialized={
                         "name": name,
@@ -199,10 +187,12 @@ def traceable(
             if metadata_:
                 extra_inner["metadata"] = metadata_
             inputs = _get_inputs(signature, *args, **kwargs)
-            tags_ = tags or [] + (langsmith_extra.get("tags") or [])
+            tags_ = (tags or []) + (langsmith_extra.get("tags") or [])
+            id_ = langsmith_extra.get("run_id", uuid4())
             if parent_run_ is not None:
                 new_run = parent_run_.create_child(
                     name=name_,
+                    run_id=id_,
                     run_type=run_type,
                     serialized={
                         "name": name,
@@ -216,6 +206,7 @@ def traceable(
             else:
                 new_run = RunTree(
                     name=name_,
+                    id=id_,
                     serialized={
                         "name": name,
                         "signature": str(signature),
@@ -274,7 +265,6 @@ def trace(
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> Generator[RunTree, None, None]:
     """Context manager for creating a run tree."""
-    _warn_cm_once()
     extra_outer = extra or {}
     if metadata:
         extra_outer["metadata"] = metadata
