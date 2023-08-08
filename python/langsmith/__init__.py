@@ -4,6 +4,7 @@ from importlib import metadata
 from langsmith.client import Client
 from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
 from langsmith.run_trees import RunTree
+from langsmith.run_helpers import trace, traceable
 
 try:
     __version__ = metadata.version(__package__)
