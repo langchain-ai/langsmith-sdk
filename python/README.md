@@ -85,7 +85,8 @@ os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 
 2. **Log traces**
 
-    a. You can choose to use the `traceable` decorator to automatically trace your application. An example is below:
+The easiest way to log traces using the SDK is via the `@traceable` decorator. Below is an example. 
+
 ```python
 from datetime import datetime
 from typing import List, Optional, Tuple
@@ -121,8 +122,11 @@ def argument_chain(query: str, additional_description: str = "") -> str:
     argument = argument_generator(query, additional_description)
     # ... Do other processing or call other functions... 
     return argument
+
+argument_chain("Why is blue better than orange?")
 ```
-    b. Manually logging using a `RunTree`
+
+Alternatively, you can manually log events using the `Client` directly or using a `RunTree`, which is what the traceable decorator is meant to manage for you!
 
 A RunTree tracks your application. Each RunTree object is required to have a `name` and `run_type`. These and other important attributes are as follows:
 
