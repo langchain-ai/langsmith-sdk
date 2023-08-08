@@ -1,3 +1,4 @@
+import asyncio
 from abc import abstractmethod
 from typing import Dict, Optional, Union
 
@@ -42,6 +43,6 @@ class RunEvaluator:
         self, run: Run, example: Optional[Example] = None
     ) -> EvaluationResult:
         """Evaluate an example asynchronously."""
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement aevaluate_run"
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.evaluate_run, run, example
         )
