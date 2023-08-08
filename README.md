@@ -23,6 +23,10 @@ To get started with the JavaScript / TypeScript SDK, [install the package](https
 yarn add langsmith
 ```
 
+## Cookbook
+
+For tutorials on how to get more value out of LangSmith, check out the [Langsmith Cookbook](https://github.com/langchain-ai/langsmith-cookbook/tree/main) repo.
+
 ## Documentation
 
 To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/docs/)
