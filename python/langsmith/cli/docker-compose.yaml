@@ -6,8 +6,6 @@ services:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend:latest
     ports:
       - 80:80
-    environment:
-      - REACT_APP_BACKEND_URL=http://localhost:1984
     depends_on:
       - langchain-backend
       - langchain-playground
