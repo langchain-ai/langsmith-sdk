@@ -3,6 +3,7 @@ from importlib import metadata
 
 from langsmith.client import Client
 from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
+from langsmith.run_helpers import trace, traceable
 from langsmith.run_trees import RunTree
 
 try:
@@ -17,4 +18,6 @@ __all__ = [
     "__version__",
     "EvaluationResult",
     "RunEvaluator",
+    "traceable",
+    "trace",
 ]
