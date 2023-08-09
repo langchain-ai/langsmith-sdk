@@ -707,15 +707,32 @@ export class Client {
   public async *listDatasets({
     limit = 100,
     offset = 0,
+    datasetIds,
+    datasetName,
+    datasetNameContains,
   }: {
     limit?: number;
     offset?: number;
+    datasetIds?: string[];
+    datasetName?: string;
+    datasetNameContains?: string;
   } = {}): AsyncIterable<Dataset> {
     const path = "/datasets";
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
     });
+    if (datasetIds !== undefined) {
+      for (const id_ of datasetIds) {
+        params.append("id", id_);
+      }
+    }
+    if (datasetName !== undefined) {
+      params.append("name", datasetName);
+    }
+    if (datasetNameContains !== undefined) {
+      params.append("name_contains", datasetNameContains);
+    }
     for await (const datasets of this._getPaginated<Dataset>(path, params)) {
       yield* datasets;
     }

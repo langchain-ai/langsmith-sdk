@@ -309,6 +309,7 @@ test("test create dataset", async () => {
   );
   const loadedDataset = await langchainClient.readDataset({ datasetName });
   expect(loadedDataset.data_type).toEqual("llm");
+  await langchainClient.deleteDataset({ datasetName });
 });
 
 test("Test share and unshare run", async () => {
@@ -334,4 +335,80 @@ test("Test share and unshare run", async () => {
   await langchainClient.unshareRun(runId);
   const sharedLink = await langchainClient.readRunSharedLink(runId);
   expect(sharedLink).toBe(undefined);
+});
+
+test("Test list datasets", async () => {
+  const langchainClient = new Client({
+    apiUrl: "http://localhost:1984",
+  });
+  const datasetName1 = "___TEST dataset1";
+  const datasetName2 = "___TEST dataset2";
+
+  // Delete any existing datasets with the same name
+  const existingDatasets1 = langchainClient.listDatasets({
+    datasetName: datasetName1,
+  });
+  for await (const dataset of existingDatasets1) {
+    await langchainClient.deleteDataset({ datasetId: dataset.id });
+  }
+  const existingDatasets2 = langchainClient.listDatasets({
+    datasetName: datasetName2,
+  });
+  for await (const dataset of existingDatasets2) {
+    await langchainClient.deleteDataset({ datasetId: dataset.id });
+  }
+
+  // Create two new datasets
+  const dataset1 = await langchainClient.createDataset(datasetName1, {
+    dataType: "llm",
+  });
+  const dataset2 = await langchainClient.createDataset(datasetName2, {
+    dataType: "kv",
+  });
+
+  // List datasets by ID
+  const datasetsById: Dataset[] = [];
+  const datasetsByIdIterable = langchainClient.listDatasets({
+    datasetIds: [dataset1.id, dataset2.id],
+  });
+  for await (const dataset of datasetsByIdIterable) {
+    datasetsById.push(dataset);
+  }
+  expect(datasetsById).toHaveLength(2);
+  expect(datasetsById.map((dataset) => dataset.id)).toContain(dataset1.id);
+  expect(datasetsById.map((dataset) => dataset.id)).toContain(dataset2.id);
+
+  // List datasets by data type
+  const datasetsByDataTypeIterable = langchainClient.listDatasets({
+    datasetName: datasetName1,
+  });
+  const datasetsByDataType = [];
+  for await (const dataset of datasetsByDataTypeIterable) {
+    datasetsByDataType.push(dataset);
+  }
+  expect(datasetsByDataType).toHaveLength(1);
+  expect(datasetsByDataType[0].id).toBe(dataset1.id);
+
+  // List datasets by name
+  const datasetsByNameIterable = langchainClient.listDatasets({
+    datasetName: datasetName1,
+  });
+  const datasetsByName = [];
+  for await (const dataset of datasetsByNameIterable) {
+    datasetsByName.push(dataset);
+  }
+  expect(datasetsByName).toHaveLength(1);
+  expect(datasetsByName.map((dataset) => dataset.id)).toContain(dataset1.id);
+
+  // Delete datasets
+  await langchainClient.deleteDataset({ datasetId: dataset1.id });
+  await langchainClient.deleteDataset({ datasetId: dataset2.id });
+  const remainingDatasetsIterable = langchainClient.listDatasets({
+    datasetIds: [dataset1.id, dataset2.id],
+  });
+  const remainingDatasets = [];
+  for await (const dataset of remainingDatasetsIterable) {
+    remainingDatasets.push(dataset);
+  }
+  expect(remainingDatasets).toHaveLength(0);
 });
