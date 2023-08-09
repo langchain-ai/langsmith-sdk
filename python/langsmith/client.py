@@ -1042,7 +1042,14 @@ class Client:
             return Dataset(**result[0])
         return Dataset(**result)
 
-    def list_datasets(self) -> Iterator[Dataset]:
+    def list_datasets(
+        self,
+        *,
+        dataset_ids: Optional[List[ID_TYPE]] = None,
+        data_type: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        dataset_name_contains: Optional[str] = None,
+    ) -> Iterator[Dataset]:
         """List the datasets on the LangSmith API.
 
         Yields
@@ -1050,8 +1057,19 @@ class Client:
         Dataset
             The datasets.
         """
+        params: Dict[str, Any] = {}
+        if dataset_ids is not None:
+            params["id"] = dataset_ids
+        if data_type is not None:
+            params["data_type"] = data_type
+        if dataset_name is not None:
+            params["name"] = dataset_name
+        if dataset_name_contains is not None:
+            params["name_contains"] = dataset_name_contains
+
         yield from (
-            Dataset(**dataset) for dataset in self._get_paginated_list("/datasets")
+            Dataset(**dataset)
+            for dataset in self._get_paginated_list("/datasets", params=params)
         )
 
     @xor_args(("dataset_id", "dataset_name"))
