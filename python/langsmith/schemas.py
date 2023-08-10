@@ -83,6 +83,19 @@ class Dataset(DatasetBase):
     id: UUID
     created_at: datetime
     modified_at: Optional[datetime] = Field(default=None)
+    _host_url: Optional[str] = PrivateAttr(default=None)
+
+    def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
+        """Initialize a Run object."""
+        super().__init__(**kwargs)
+        self._host_url = _host_url
+
+    @property
+    def url(self) -> Optional[str]:
+        """URL of this run within the app."""
+        if self._host_url:
+            return f"{self._host_url}/datasets/{self.id}"
+        return None
 
 
 class RunTypeEnum(str, Enum):
