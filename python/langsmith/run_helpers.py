@@ -43,6 +43,14 @@ def _get_inputs(
     arguments = dict(bound.arguments)
     arguments.pop("self", None)
     arguments.pop("cls", None)
+    for param_name, param in signature.parameters.items():
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            # Update with the **kwargs, and remove the original entry
+            # This is to help flatten out keyword arguments
+            if param_name in arguments:
+                arguments.update(arguments[param_name])
+                arguments.pop(param_name)
+
     return arguments
 
 
@@ -153,7 +161,10 @@ def traceable(
                 raise e
             _PARENT_RUN_TREE.set(parent_run_)
             _PROJECT_NAME.set(outer_project)
-            new_run.end(outputs={"output": function_result})
+            if isinstance(function_result, dict):
+                new_run.end(outputs=function_result)
+            else:
+                new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
 
@@ -239,7 +250,10 @@ def traceable(
                 raise e
             _PARENT_RUN_TREE.set(parent_run_)
             _PROJECT_NAME.set(outer_project)
-            new_run.end(outputs={"output": function_result})
+            if isinstance(function_result, dict):
+                new_run.end(outputs=function_result)
+            else:
+                new_run.end(outputs={"output": function_result})
             new_run.patch()
             return function_result
 
@@ -269,7 +283,9 @@ def trace(
     if metadata:
         extra_outer["metadata"] = metadata
     parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
-    outer_project = _PROJECT_NAME.get()
+    outer_project = _PROJECT_NAME.get() or os.environ.get(
+        "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
+    )
     project_name_ = project_name or outer_project
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
