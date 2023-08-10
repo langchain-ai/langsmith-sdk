@@ -389,7 +389,8 @@ def test_list_datasets(langchain_client: Client) -> None:
     dataset2 = langchain_client.create_dataset(
         "___TEST dataset2", data_type=DataType.kv
     )
-
+    assert dataset1.url is not None
+    assert dataset2.url is not None
     datasets = list(
         langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
     )

@@ -548,7 +548,7 @@ class Client:
             file_name = csv_file if isinstance(csv_file, str) else csv_file[0]
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
-        return Dataset(**result)
+        return Dataset(**result, _host_url=self._host_url)
 
     def create_run(
         self,
@@ -1000,7 +1000,7 @@ class Client:
             data=dataset.json(),
         )
         raise_for_status_with_text(response)
-        return Dataset(**response.json())
+        return Dataset(**response.json(), _host_url=self._host_url)
 
     @xor_args(("dataset_name", "dataset_id"))
     def read_dataset(
@@ -1039,8 +1039,8 @@ class Client:
         if isinstance(result, list):
             if len(result) == 0:
                 raise LangSmithError(f"Dataset {dataset_name} not found")
-            return Dataset(**result[0])
-        return Dataset(**result)
+            return Dataset(**result[0], _host_url=self._host_url)
+        return Dataset(**result, _host_url=self._host_url)
 
     def list_datasets(
         self,
@@ -1068,7 +1068,7 @@ class Client:
             params["name_contains"] = dataset_name_contains
 
         yield from (
-            Dataset(**dataset)
+            Dataset(**dataset, _host_url=self._host_url)
             for dataset in self._get_paginated_list("/datasets", params=params)
         )
 
