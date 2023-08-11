@@ -113,7 +113,7 @@ class RunTree(RunBase):
         name: str,
         run_type: str,
         *,
-        run_id: Optional[UUID] = None,
+        run_id: Optional[ID_TYPE] = None,
         serialized: Optional[Dict] = None,
         inputs: Optional[Dict] = None,
         outputs: Optional[Dict] = None,

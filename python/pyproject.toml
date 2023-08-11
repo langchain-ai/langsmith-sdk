@@ -2,13 +2,24 @@
 name = "langsmith"
 version = "0.1.0-rc1"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
-authors = ["LangChain"]
+authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/langchain-ai/langsmith-sdk"
 homepage = "https://smith.langchain.com/"
 documentation = "https://docs.smith.langchain.com/"
-packages = [{include = "langsmith"}]
+keywords = [
+  "langsmith",
+  "langchain",
+  "llm",
+  "nlp",
+  "language",
+  "translation",
+  "evaluation",
+  "tracing",
+  "platform",
+]
+packages = [{ include = "langsmith" }]
 
 [tool.poetry.scripts]
 langsmith = "langsmith.cli.main:main"

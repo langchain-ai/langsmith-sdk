@@ -158,6 +158,7 @@ class Dataset(DatasetBase):
         modified_at: Optional[DATE_TYPE] = None,
         data_type: Optional[DataType] = None,
         tenant_id: Optional[ID_TYPE] = None,
+        _host_url: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -180,6 +181,8 @@ class Dataset(DatasetBase):
         self.created_at = _parse_datetime(created_at)
         self.modified_at = modified_at
         self.tenant_id = _coerce_uuid(tenant_id)
+        if _host_url:
+            self.url = f"{_host_url}/datasets/{self.id}"
 
 
 class RunBase(DictMixin):
