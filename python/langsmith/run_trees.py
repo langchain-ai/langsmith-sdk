@@ -9,7 +9,12 @@ from typing import Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import Field, PrivateAttr, root_validator, validator
+    from pydantic.v1 import (  # type: ignore[import]
+        Field,
+        PrivateAttr,
+        root_validator,
+        validator,
+    )
 except ImportError:
     from pydantic import Field, PrivateAttr, root_validator, validator
 

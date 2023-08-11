@@ -3,7 +3,7 @@ from abc import abstractmethod
 from typing import Dict, Optional, Union
 
 try:
-    from pydantic.v1 import BaseModel, Field
+    from pydantic.v1 import BaseModel, Field  # type: ignore[import]
 except ImportError:
     from pydantic import BaseModel, Field
 
