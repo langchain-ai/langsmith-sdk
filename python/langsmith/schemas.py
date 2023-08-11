@@ -7,9 +7,23 @@ from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 try:
-    from pydantic.v1 import Field, PrivateAttr, root_validator, validator
+    from pydantic.v1 import (
+        BaseModel,
+        Field,
+        PrivateAttr,
+        StrictBool,
+        StrictFloat,
+        StrictInt,
+    )
 except ImportError:
-    from pydantic import Field, PrivateAttr, root_validator, validator
+    from pydantic import (
+        BaseModel,
+        Field,
+        PrivateAttr,
+        StrictBool,
+        StrictFloat,
+        StrictInt,
+    )
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
