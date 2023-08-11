@@ -8,7 +8,15 @@ from datetime import datetime
 from typing import Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
-from pydantic import Field, PrivateAttr, root_validator, validator
+try:
+    from pydantic.v1 import (  # type: ignore[import]
+        Field,
+        PrivateAttr,
+        root_validator,
+        validator,
+    )
+except ImportError:
+    from pydantic import Field, PrivateAttr, root_validator, validator
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import RunBase

@@ -2,7 +2,10 @@ import asyncio
 from abc import abstractmethod
 from typing import Dict, Optional, Union
 
-from pydantic import BaseModel, Field
+try:
+    from pydantic.v1 import BaseModel, Field  # type: ignore[import]
+except ImportError:
+    from pydantic import BaseModel, Field
 
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
