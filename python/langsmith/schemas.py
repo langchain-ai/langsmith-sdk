@@ -6,7 +6,10 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field, PrivateAttr, StrictBool, StrictFloat, StrictInt
+try:
+    from pydantic.v1 import Field, PrivateAttr, root_validator, validator
+except ImportError:
+    from pydantic import Field, PrivateAttr, root_validator, validator
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
