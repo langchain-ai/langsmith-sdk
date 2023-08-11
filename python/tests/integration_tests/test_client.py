@@ -375,3 +375,47 @@ def test_share_unshare_run(
     assert response.status_code == 200
     assert langchain_client.read_run_shared_link(run_id) == shared_url
     langchain_client.unshare_run(run_id)
+
+
+def test_list_datasets(langchain_client: Client) -> None:
+    for name in ["___TEST dataset1", "___TEST dataset2"]:
+        datasets = list(langchain_client.list_datasets(dataset_name=name))
+        if datasets:
+            for dataset in datasets:
+                langchain_client.delete_dataset(dataset_id=dataset.id)
+    dataset1 = langchain_client.create_dataset(
+        "___TEST dataset1", data_type=DataType.llm
+    )
+    dataset2 = langchain_client.create_dataset(
+        "___TEST dataset2", data_type=DataType.kv
+    )
+    assert dataset1.url is not None
+    assert dataset2.url is not None
+    datasets = list(
+        langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
+    )
+    assert len(datasets) == 2
+    assert dataset1.id in [dataset.id for dataset in datasets]
+    assert dataset2.id in [dataset.id for dataset in datasets]
+    assert dataset1.data_type == DataType.llm
+    assert dataset2.data_type == DataType.kv
+    # Sub-filter on data type
+    datasets = list(langchain_client.list_datasets(data_type=DataType.llm.value))
+    assert len(datasets) == 1
+    assert datasets[0].id == dataset1.id
+    # Sub-filter on name
+    datasets = list(
+        langchain_client.list_datasets(
+            dataset_ids=[dataset1.id, dataset2.id], dataset_name="___TEST dataset1"
+        )
+    )
+    assert len(datasets) == 1
+    # Delete datasets
+    langchain_client.delete_dataset(dataset_id=dataset1.id)
+    langchain_client.delete_dataset(dataset_id=dataset2.id)
+    assert (
+        len(
+            list(langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id]))
+        )
+        == 0
+    )

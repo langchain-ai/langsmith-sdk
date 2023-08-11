@@ -12,6 +12,8 @@ LangSmith helps you and your team develop and evaluate language models and intel
 
 > **Note**: You can enjoy the benefits of LangSmith without using the LangChain open-source packages! To get started with your own proprietary framework, set up your account and then skip to [Logging Traces Outside LangChain](#logging-traces-outside-langchain).
 
+> **Cookbook:** For tutorials on how to get more value out of LangSmith, check out the [Langsmith Cookbook](https://github.com/langchain-ai/langsmith-cookbook/tree/main) repo.
+
 A typical workflow looks like:
 
 1. Set up an account with LangSmith.
@@ -81,7 +83,50 @@ os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 # os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
 
-2. **Log traces using a RunTree.**
+2. **Log traces**
+
+The easiest way to log traces using the SDK is via the `@traceable` decorator. Below is an example. 
+
+```python
+from datetime import datetime
+from typing import List, Optional, Tuple
+
+import openai
+from langsmith import traceable
+
+
+@traceable(run_type="llm")
+def call_openai(data: List[dict], model: str = "gpt-3.5-turbo", temperature: float = 0.0):
+    return openai.ChatCompletion.create(
+        model=model,
+        messages=data,
+        temperature=temperature,
+    )
+
+
+@traceable(run_type="chain")
+def argument_generator(query: str, additional_description: str = "") -> str:
+    return call_openai(
+        [
+            {"role": "system", "content": f"You are a debater making an argument on a topic."
+             f"{additional_description}"
+             f" The current time is {datetime.now()}"},
+            {"role": "user", "content": f"The discussion topic is {query}"}
+        ]
+    ).choices[0].message.content
+
+    
+
+@traceable(run_type="chain")      
+def argument_chain(query: str, additional_description: str = "") -> str:
+    argument = argument_generator(query, additional_description)
+    # ... Do other processing or call other functions... 
+    return argument
+
+argument_chain("Why is blue better than orange?")
+```
+
+Alternatively, you can manually log events using the `Client` directly or using a `RunTree`, which is what the traceable decorator is meant to manage for you!
 
 A RunTree tracks your application. Each RunTree object is required to have a `name` and `run_type`. These and other important attributes are as follows:
 
