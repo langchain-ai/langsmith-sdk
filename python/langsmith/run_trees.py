@@ -5,7 +5,7 @@ import logging
 import os
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
-from typing import Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
 try:
@@ -149,12 +149,20 @@ class RunTree(RunBase):
         self.child_runs.append(run)
         return run
 
+    def _execute(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.exception(e)
+            raise e
+
     def post(self, exclude_child_runs: bool = True) -> Future:
         """Post the run tree to the API asynchronously."""
         exclude = {"child_runs"} if exclude_child_runs else None
         kwargs = self.dict(exclude=exclude, exclude_none=True)
         self._futures.append(
             self.executor.submit(
+                self._execute,
                 self.client.create_run,
                 **kwargs,
             )
@@ -165,6 +173,7 @@ class RunTree(RunBase):
         """Patch the run tree to the API in a background thread."""
         self._futures.append(
             self.executor.submit(
+                self._execute,
                 self.client.update_run,
                 run_id=self.id,
                 outputs=self.outputs.copy() if self.outputs else None,
