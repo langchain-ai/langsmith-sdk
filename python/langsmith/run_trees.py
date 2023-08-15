@@ -72,6 +72,13 @@ class RunTree(RunBase):
             raise ValueError("Executor has been shutdown.")
         return v
 
+    @validator("client", pre=True)
+    def validate_client(cls, v: Optional[Client]) -> Client:
+        """Ensure the client is specified."""
+        if v is None:
+            return Client()
+        return v
+
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
