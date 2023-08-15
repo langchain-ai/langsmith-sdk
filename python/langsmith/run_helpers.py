@@ -157,11 +157,11 @@ def traceable(
     run_type: str = "chain",
     *,
     name: Optional[str] = None,
-    extra: Optional[Dict] = None,
     executor: Optional[ThreadPoolExecutor] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
     client: Optional[client.Client] = None,
+    extra: Optional[Dict] = None,
 ) -> Callable:
     """Decorator for creating or adding a run to a run tree."""
     extra_outer = extra or {}
