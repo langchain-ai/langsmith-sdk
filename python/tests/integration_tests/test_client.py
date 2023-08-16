@@ -196,12 +196,19 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
         value={"clarity": "good", "fluency": "good", "relevance": "very bad"},
         score=0.5,
     )
-    langchain_client.create_feedback(runs[0].id, "a tag")  # type: ignore
+    feedback_2 = langchain_client.create_feedback(runs[0].id, "a tag")  # type: ignore
+    assert feedback_2.value is None
+    langchain_client.update_feedback(
+        feedback_2.id, correction={"good_output": "a correction"}
+    )
     feedbacks = list(
         langchain_client.list_feedback(run_ids=[runs[0].id])  # type: ignore
     )
     assert len(feedbacks) == 2
     assert feedbacks[0].run_id == runs[0].id
+    assert langchain_client.read_feedback(feedback_2.id).correction == {
+        "good_output": "a correction"
+    }
     feedback = langchain_client.read_feedback(feedbacks[0].id)
     assert feedback.id == feedbacks[0].id
     langchain_client.delete_feedback(feedback.id)
