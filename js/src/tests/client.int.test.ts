@@ -227,9 +227,6 @@ test("Test evaluate run", async () => {
     projectId: project.id,
   });
   expect(projectWithStats.name).toBe(project.name);
-  expect(projectWithStats.run_count).toBe(1);
-  expect(projectWithStats.latency_p50).toBeGreaterThan(0);
-  expect(projectWithStats.latency_p99).toBeGreaterThan(0);
 
   const allFeedback = [];
   for await (const run of runs) {

@@ -65,9 +65,16 @@ interface FeedbackCreate {
   key: string;
   score?: ScoreType;
   value?: ValueType;
-  correction?: string | object | null;
+  correction?: object | null;
   comment?: string | null;
   feedback_source?: feedback_source | KVMap | null;
+}
+
+interface FeedbackUpdate {
+  score?: ScoreType;
+  value?: ValueType;
+  correction?: object | null;
+  comment?: string | null;
 }
 
 interface CreateRunParams {
@@ -940,7 +947,7 @@ export class Client {
     }: {
       score?: ScoreType;
       value?: ValueType;
-      correction?: string | object;
+      correction?: object;
       comment?: string;
       sourceInfo?: object;
       feedbackSourceType?: "API" | "MODEL";
@@ -977,6 +984,46 @@ export class Client {
     }
     const result = await response.json();
     return result as Feedback;
+  }
+
+  public async updateFeedback(
+    feedbackId: string,
+    {
+      score,
+      value,
+      correction,
+      comment,
+    }: {
+      score?: number | boolean | null;
+      value?: number | boolean | string | object | null;
+      correction?: object | null;
+      comment?: string | null;
+    }
+  ): Promise<Feedback> {
+    const feedbackUpdate: FeedbackUpdate = {};
+    if (score !== undefined && score !== null) {
+      feedbackUpdate["score"] = score;
+    }
+    if (value !== undefined && value !== null) {
+      feedbackUpdate["value"] = value;
+    }
+    if (correction !== undefined && correction !== null) {
+      feedbackUpdate["correction"] = correction;
+    }
+    if (comment !== undefined && comment !== null) {
+      feedbackUpdate["comment"] = comment;
+    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/feedback/${feedbackId}`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(feedbackUpdate),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    return response.json();
   }
 
   public async readFeedback(feedbackId: string): Promise<Feedback> {

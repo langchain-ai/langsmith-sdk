@@ -1531,7 +1531,7 @@ class Client:
         *,
         score: Union[float, int, bool, None] = None,
         value: Union[float, int, bool, str, dict, None] = None,
-        correction: Union[str, dict, None] = None,
+        correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,
         feedback_source_type: Union[FeedbackSourceType, str] = FeedbackSourceType.API,
@@ -1548,7 +1548,7 @@ class Client:
             The score to rate this run on the metric or aspect.
         value : float or int or bool or str or dict or None, default=None
             The display value or non-numeric value for this feedback.
-        correction : str or dict or None, default=None
+        correction : dict or None, default=None
             The proper ground truth for this run.
         comment : str or None, default=None
             A comment about this feedback.
@@ -1584,6 +1584,52 @@ class Client:
             self.api_url + "/feedback",
             headers={**self._headers, "Content-Type": "application/json"},
             data=feedback.json(exclude_none=True),
+        )
+        raise_for_status_with_text(response)
+        return Feedback(**response.json())
+
+    def update_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> Feedback:
+        """Update a feedback in the LangSmith API.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to update.
+        score : float or int or bool or None, default=None
+            The score to update the feedback with.
+        value : float or int or bool or str or dict or None, default=None
+            The value to update the feedback with.
+        correction : dict or None, default=None
+            The correction to update the feedback with.
+        comment : str or None, default=None
+            The comment to update the feedback with.
+
+        Returns
+        -------
+        Feedback
+            The updated feedback.
+        """
+        feedback_update: Dict[str, Any] = {}
+        if score is not None:
+            feedback_update["score"] = score
+        if value is not None:
+            feedback_update["value"] = value
+        if correction is not None:
+            feedback_update["correction"] = correction
+        if comment is not None:
+            feedback_update["comment"] = comment
+        response = self.session.patch(
+            self.api_url + f"/feedback/{feedback_id}",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=json.dumps(feedback_update, default=_serialize_json),
         )
         raise_for_status_with_text(response)
         return Feedback(**response.json())
