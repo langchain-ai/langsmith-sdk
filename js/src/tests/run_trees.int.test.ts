@@ -111,12 +111,23 @@ test("Test persisting runs and adding feedback", async () => {
     score: 0.5,
     feedbackSourceType: "MODEL",
   });
-  await langchainClient.createFeedback(runs[0].id, "a tag", {});
+  const feedback2 = await langchainClient.createFeedback(
+    runs[0].id,
+    "a tag",
+    {}
+  );
+  expect(feedback2.id).not.toBeNull();
+  const res = await langchainClient.updateFeedback(feedback2.id, {
+    correction: { good_output: "a correction" },
+  });
+  expect(res.correction).toEqual({ good_output: "a correction" });
   const feedbacks = await toArray(
     langchainClient.listFeedback({ runIds: [runs[0].id] })
   );
   expect(feedbacks.length).toEqual(2);
   expect(feedbacks[0].run_id).toEqual(runs[0].id);
+  const updatedFeedback = await langchainClient.readFeedback(feedback2.id);
+  expect(updatedFeedback.correction).toEqual({ good_output: "a correction" });
   const feedback = await langchainClient.readFeedback(feedbacks[0].id);
   expect(feedback.id).toEqual(feedbacks[0].id);
   await langchainClient.deleteFeedback(feedback.id);
