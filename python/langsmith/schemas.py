@@ -181,10 +181,7 @@ class Run(RunBase):
 
 class FeedbackSourceBase(BaseModel):
     type: str
-    metadata: Optional[Dict[str, Any]] = None
-
-    class Config:
-        frozen = True
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class APIFeedbackSource(FeedbackSourceBase):
