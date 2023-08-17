@@ -1535,6 +1535,7 @@ class Client:
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,
         feedback_source_type: Union[FeedbackSourceType, str] = FeedbackSourceType.API,
+        source_run_id: Optional[ID_TYPE] = None,
     ) -> Feedback:
         """Create a feedback in the LangSmith API.
 
@@ -1556,6 +1557,8 @@ class Client:
             Information about the source of this feedback.
         feedback_source_type : FeedbackSourceType or str, default=FeedbackSourceType.API
             The type of feedback source.
+        source_run_id : str or UUID or None, default=None,
+            The ID of the run that generated this feedback, if a "model" type.
 
         Returns
         -------
@@ -1572,6 +1575,8 @@ class Client:
             feedback_source = ModelFeedbackSource(metadata=source_info)
         else:
             raise ValueError(f"Unknown feedback source type {feedback_source_type}")
+        if source_run_id is not None and "__run" not in feedback_source.metadata:
+            feedback_source.metadata["__run"] = str(source_run_id)
         feedback = FeedbackCreate(
             id=uuid4(),
             run_id=run_id,
