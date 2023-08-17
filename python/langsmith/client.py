@@ -1575,7 +1575,9 @@ class Client:
             feedback_source = ModelFeedbackSource(metadata=source_info)
         else:
             raise ValueError(f"Unknown feedback source type {feedback_source_type}")
-        feedback_source.metadata = feedback_source.metadata if feedback_source.metadata is not None else  {}
+        feedback_source.metadata = (
+            feedback_source.metadata if feedback_source.metadata is not None else {}
+        )
         if source_run_id is not None and "__run" not in feedback_source.metadata:
             feedback_source.metadata["__run"] = str(source_run_id)
         feedback = FeedbackCreate(
