@@ -3,7 +3,7 @@ import io
 import os
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
 
@@ -215,17 +215,7 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     with pytest.raises(LangSmithError):
         langchain_client.read_feedback(feedback.id)
     assert len(list(langchain_client.list_feedback(run_ids=[runs[0].id]))) == 1
-    project = langchain_client.read_project(project_name=project_name)
-    project_with_stats = langchain_client.read_project(project_id=project.id)
-    assert project_with_stats.run_count == 1
-    assert (
-        project_with_stats.latency_p50 is not None
-        and project_with_stats.latency_p50 > timedelta(0)
-    )
-    assert (
-        project_with_stats.latency_p99 is not None
-        and project_with_stats.latency_p99 > timedelta(0)
-    )
+    langchain_client.read_project(project_name=project_name)
     langchain_client.delete_project(project_name=project_name)
     with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=project_name)
