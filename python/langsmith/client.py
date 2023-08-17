@@ -1562,6 +1562,8 @@ class Client:
         Feedback
             The created feedback.
         """
+        if not isinstance(feedback_source_type, FeedbackSourceType):
+            feedback_source_type = FeedbackSourceType(feedback_source_type)
         if feedback_source_type == FeedbackSourceType.API:
             feedback_source: FeedbackSourceBase = APIFeedbackSource(
                 metadata=source_info
