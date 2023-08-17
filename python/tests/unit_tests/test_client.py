@@ -170,3 +170,25 @@ def test_create_run_unicode():
             "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
         )
         client.update_run(id_, status="completed")
+
+
+@pytest.mark.parametrize("source_type", ["api", "model"])
+def test_create_feedback_string_source_type(source_type: str):
+    client = Client(api_url="http://localhost:1984", api_key="123")
+    session = mock.Mock()
+    request_object = mock.Mock()
+    request_object.json.return_value = {
+        "id": uuid.uuid4(),
+        "key": "Foo",
+        "created_at": _CREATED_AT,
+        "modified_at": _CREATED_AT,
+        "run_id": uuid.uuid4(),
+    }
+    session.post.return_value = request_object
+    with patch.object(client, "session", session):
+        id_ = uuid.uuid4()
+        client.create_feedback(
+            id_,
+            key="Foo",
+            feedback_source_type=source_type,
+        )
