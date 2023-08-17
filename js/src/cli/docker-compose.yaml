@@ -6,8 +6,6 @@ services:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend:latest
     ports:
       - 80:80
-    environment:
-      - REACT_APP_BACKEND_URL=http://localhost:1984
     depends_on:
       - langchain-backend
       - langchain-playground
@@ -22,6 +20,13 @@ services:
       - 1984:1984
     depends_on:
       - langchain-db
+      - langchain-redis
+  langchain-queue:
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:latest
+    environment:
+      - LANGCHAIN_ENV=local_docker
+      - LOG_LEVEL=warning
+    entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker"
   langchain-db:
     image: postgres:14.7
     command:
@@ -40,5 +45,12 @@ services:
       - langchain-db-data:/var/lib/postgresql/data
     ports:
       - 5433:5432
+  langchain-redis:
+    image: redis:7
+    ports:
+      - 63791:6379
+    volumes:
+      - langchain-redis-data:/data
 volumes:
   langchain-db-data:
+  langchain-redis-data:
