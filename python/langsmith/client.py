@@ -1711,7 +1711,6 @@ class Client:
         *,
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
-        num_repetitions: int = 1,
         project_name: Optional[str] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
@@ -1728,9 +1727,6 @@ class Client:
                 independent calls on each example without carrying over state.
             evaluation: Optional evaluation configuration to use when evaluating
             concurrency_level: The number of async tasks to run concurrently.
-            num_repetitions: Number of times to run the model on each example.
-                This is useful when testing success rates or generating confidence
-                intervals.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             verbose: Whether to print progress.
@@ -1836,7 +1832,6 @@ class Client:
             llm_or_chain_factory,
             evaluation=evaluation,
             concurrency_level=concurrency_level,
-            num_repetitions=num_repetitions,
             project_name=project_name,
             verbose=verbose,
             tags=tags,
@@ -1849,7 +1844,6 @@ class Client:
         llm_or_chain_factory: Any,
         *,
         evaluation: Optional[Any] = None,
-        num_repetitions: int = 1,
         project_name: Optional[str] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
@@ -1866,9 +1860,6 @@ class Client:
                 independent calls on each example without carrying over state.
             evaluation: Configuration for evaluators to run on the
                 results of the chain
-            num_repetitions: Number of times to run the model on each example.
-                This is useful when testing success rates or generating confidence
-                intervals.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             verbose: Whether to print progress.
@@ -1973,7 +1964,6 @@ class Client:
             dataset_name,
             llm_or_chain_factory,
             evaluation=evaluation,
-            num_repetitions=num_repetitions,
             project_name=project_name,
             verbose=verbose,
             tags=tags,
