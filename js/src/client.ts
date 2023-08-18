@@ -834,9 +834,11 @@ export class Client {
   public async *listExamples({
     datasetId,
     datasetName,
+    exampleIds,
   }: {
     datasetId?: string;
     datasetName?: string;
+    exampleIds?: string[];
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -850,6 +852,11 @@ export class Client {
       throw new Error("Must provide a datasetName or datasetId");
     }
     const params = new URLSearchParams({ dataset: datasetId_ });
+    if (exampleIds !== undefined) {
+      for (const id_ of exampleIds) {
+        params.append("id", id_);
+      }
+    }
     for await (const examples of this._getPaginated<Example>(
       "/examples",
       params
