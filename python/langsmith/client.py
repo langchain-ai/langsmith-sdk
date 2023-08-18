@@ -1279,7 +1279,10 @@ class Client:
         return Example(**response.json())
 
     def list_examples(
-        self, dataset_id: Optional[ID_TYPE] = None, dataset_name: Optional[str] = None
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        example_ids: Optional[List[ID_TYPE]] = None,
     ) -> Iterator[Example]:
         """List the examples on the LangSmith API.
 
@@ -1289,13 +1292,15 @@ class Client:
             The ID of the dataset to filter by.
         dataset_name : str or None, default=None
             The name of the dataset to filter by.
+        example_ids : List[UUID] or None, default=None
+            The IDs of the examples to filter by.
 
         Yields
         ------
         Example
             The examples.
         """
-        params = {}
+        params: Dict[str, Any] = {}
         if dataset_id is not None:
             params["dataset"] = dataset_id
         elif dataset_name is not None:
@@ -1303,6 +1308,8 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
+        if example_ids is not None:
+            params["id"] = example_ids
         yield from (
             Example(**dataset)
             for dataset in self._get_paginated_list("/examples", params=params)
