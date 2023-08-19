@@ -1,0 +1,35 @@
+name: Schema Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "_scripts/_check_schema_validity.py"
+  pull_request:
+jobs:
+  validate:
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Create and activate virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+
+      - name: Install required packages
+        run: |
+          pip install requests
+          pip install PyYAML
+          pip install openapi-spec-validator
+          # Add other dependencies if needed
+
+      - name: Run schema validity check
+        run: python _scripts/_check_schema_validity.py
