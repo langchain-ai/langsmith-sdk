@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Generator, List, Mapping, Optional, Union, cast
+from typing import Dict, Generator, List, Literal, Mapping, Optional, Union, cast
 
 import requests
 
@@ -143,6 +143,9 @@ class LangSmithCommand:
         self.docker_compose_dev_file = (
             Path(__file__).absolute().parent / "docker-compose.dev.yaml"
         )
+        self.docker_compose_beta_file = (
+            Path(__file__).absolute().parent / "docker-compose.beta.yaml"
+        )
         self.ngrok_path = Path(__file__).absolute().parent / "docker-compose.ngrok.yaml"
 
     @property
@@ -155,15 +158,20 @@ class LangSmithCommand:
         except FileNotFoundError:
             pass
 
-    def _start_local(self, dev: bool, beta: bool) -> None:
+    def _start_local(
+        self, stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod"
+    ) -> None:
         command = [
             *self.docker_compose_command,
             "-f",
             str(self.docker_compose_file),
         ]
-        if dev or beta:
+        if stage == "dev":
             command.append("-f")
             command.append(str(self.docker_compose_dev_file))
+        elif stage == "beta":
+            command.append("-f")
+            command.append(str(self.docker_compose_beta_file))
         subprocess.run(
             [
                 *command,
@@ -184,7 +192,9 @@ class LangSmithCommand:
         self._open_browser("http://localhost")
 
     def _start_and_expose(
-        self, auth_token: Optional[str], dev: bool, beta: bool
+        self,
+        auth_token: Optional[str],
+        stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]],
     ) -> None:
         with create_ngrok_config(auth_token=auth_token):
             command = [
@@ -194,9 +204,13 @@ class LangSmithCommand:
                 "-f",
                 str(self.ngrok_path),
             ]
-            if dev or beta:
+            if stage == "dev":
                 command.append("-f")
                 command.append(str(self.docker_compose_dev_file))
+            elif stage == "beta":
+                command.append("-f")
+                command.append(str(self.docker_compose_beta_file))
+
             subprocess.run(
                 [
                     *command,
@@ -223,17 +237,17 @@ class LangSmithCommand:
     def pull(
         self,
         *,
-        dev: bool = False,
-        beta: bool = False,
+        stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
     ) -> None:
         """Pull the latest LangSmith images.
 
         Args:
-            dev: If True, pull the development (rc) image of LangSmith.
+            stage: Which stage of LangSmith images to pull.
+                One of "prod", "dev", or "beta".
         """
-        if dev:
+        if stage == "dev":
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "dev-"
-        if beta:
+        elif stage == "beta":
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         subprocess.run(
             [
@@ -249,8 +263,7 @@ class LangSmithCommand:
         *,
         expose: bool = False,
         auth_token: Optional[str] = None,
-        dev: bool = False,
-        beta: bool = False,
+        stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
         openai_api_key: Optional[str] = None,
     ) -> None:
         """Run the LangSmith server locally.
@@ -259,23 +272,24 @@ class LangSmithCommand:
             expose: If True, expose the server to the internet using ngrok.
             auth_token: The ngrok authtoken to use (visible in the ngrok dashboard).
                 If not provided, ngrok server session length will be restricted.
-            dev: If True, use the development (rc) image of LangSmith.
+            stage: Which set of images to pull when running.
+                One of "prod", "dev", or "beta".
             openai_api_key: The OpenAI API key to use for LangSmith
                 If not provided, the OpenAI API Key will be read from the
                 OPENAI_API_KEY environment variable. If neither are provided,
                 some features of LangSmith will not be available.
         """
-        if dev:
+        if stage == "dev":
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "dev-"
-        if beta:
+        elif stage == "beta":
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
-        self.pull(dev=dev, beta=beta)
+        self.pull(stage=stage)
         if expose:
-            self._start_and_expose(auth_token=auth_token, dev=dev, beta=beta)
+            self._start_and_expose(auth_token=auth_token, stage=stage)
         else:
-            self._start_local(dev=dev, beta=beta)
+            self._start_local(stage=stage)
 
     def stop(self, clear_volumes: bool = False) -> None:
         """Stop the LangSmith server."""
@@ -381,14 +395,10 @@ def main() -> None:
         " If not provided, ngrok server session length will be restricted.",
     )
     server_start_parser.add_argument(
-        "--dev",
-        action="store_true",
-        help="Use the development version of the LangSmith image.",
-    )
-    server_start_parser.add_argument(
-        "--beta",
-        action="store_true",
-        help="Use the beta version of the LangSmith image.",
+        "--stage",
+        default="prod",
+        choices=["prod", "dev", "beta"],
+        help="Which set of images to pull when running.",
     )
     server_start_parser.add_argument(
         "--openai-api-key",
@@ -402,8 +412,7 @@ def main() -> None:
         func=lambda args: server_command.start(
             expose=args.expose,
             auth_token=args.ngrok_authtoken,
-            dev=args.dev,
-            beta=args.beta,
+            stage=args.stage,
             openai_api_key=args.openai_api_key,
         )
     )
@@ -424,11 +433,14 @@ def main() -> None:
         "pull", description="Pull the latest LangSmith images."
     )
     server_pull_parser.add_argument(
-        "--dev",
-        action="store_true",
-        help="Use the development version of the LangSmith image.",
+        "--stage",
+        default="prod",
+        choices=["prod", "dev", "beta"],
+        help="Which stage of LangSmith images to pull.",
     )
-    server_pull_parser.set_defaults(func=lambda args: server_command.pull(dev=args.dev))
+    server_pull_parser.set_defaults(
+        func=lambda args: server_command.pull(stage=args.stage)
+    )
     server_logs_parser = subparsers.add_parser(
         "logs", description="Show the LangSmith server logs."
     )
