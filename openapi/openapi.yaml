@@ -1,0 +1,630 @@
+openapi: 3.0.2
+info:
+  title: LangSmith
+  version: 0.1.0
+paths:
+  /runs/{run_id}:
+    patch:
+      tags:
+      - run
+      summary: Update Run
+      description: Update a run.
+      operationId: update_run_runs__run_id__patch
+      parameters:
+      - required: true
+        schema:
+          title: Run Id
+          type: string
+          format: uuid
+        name: run_id
+        in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunUpdateSchemaExtended'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /runs:
+    post:
+      tags:
+      - run
+      summary: Create Run
+      description: Create a new run.
+      operationId: create_run_runs_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunCreateSchemaExtended'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    RunUpdateSchemaExtended:
+      title: RunUpdateSchemaExtended
+      type: object
+      properties:
+        end_time:
+          title: End Time
+          type: string
+          format: date-time
+        error:
+          title: Error
+          type: string
+        inputs:
+          title: Inputs
+          anyOf:
+          - type: object
+          - $ref: '#/components/schemas/CreateChatCompletionRequest'
+          - $ref: '#/components/schemas/CreateCompletionRequest'
+        outputs:
+          title: Outputs
+          anyOf:
+          - type: object
+          - $ref: '#/components/schemas/CreateChatCompletionResponse'
+          - $ref: '#/components/schemas/CreateCompletionResponse'
+        events:
+          title: Events
+          type: array
+          items:
+            type: object
+    CreateChatCompletionRequest:
+      title: CreateChatCompletionRequest
+      type: object
+      properties:
+        model:
+          title: Model
+          type: string
+          default: ''
+        messages:
+          title: Messages
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionRequestMessage'
+          default: []
+        functions:
+          title: Functions
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionFunctions'
+          default: []
+        temperature:
+          title: Temperature
+          type: number
+        top_p:
+          title: Top P
+          type: number
+        n:
+          title: N
+          type: integer
+        stream:
+          title: Stream
+          type: boolean
+        stop:
+          title: Stop
+          anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+        max_tokens:
+          title: Max Tokens
+          type: integer
+        presence_penalty:
+          title: Presence Penalty
+          type: number
+        frequency_penalty:
+          title: Frequency Penalty
+          type: number
+        logit_bias:
+          title: Logit Bias
+          type: object
+          additionalProperties:
+            type: integer
+    ChatCompletionRequestMessage:
+      title: ChatCompletionRequestMessage
+      type: object
+      properties:
+        role:
+          title: Role
+          type: string
+          default: ''
+        content:
+          title: Content
+          type: string
+        name:
+          title: Name
+          type: string
+        function_call:
+          $ref: '#/components/schemas/ChatCompletionFunctionCall'
+    ChatCompletionFunctionCall:
+      title: ChatCompletionFunctionCall
+      type: object
+      properties:
+        name:
+          title: Name
+          type: string
+          default: ''
+        arguments:
+          title: Arguments
+          type: string
+          default: ''
+    ChatCompletionFunctions:
+      title: ChatCompletionFunctions
+      type: object
+      properties:
+        name:
+          title: Name
+          type: string
+          default: ''
+        description:
+          title: Description
+          type: string
+          default: ''
+        parameters:
+          $ref: '#/components/schemas/ChatCompletionFunctionParameters'
+    ChatCompletionFunctionParameters:
+      title: ChatCompletionFunctionParameters
+      type: object
+      properties:
+        type:
+          title: Type
+          type: string
+          default: ''
+        properties:
+          title: Properties
+          type: object
+          default: {}
+    CreateCompletionRequest:
+      title: CreateCompletionRequest
+      required:
+      - model
+      - prompt
+      type: object
+      properties:
+        model:
+          title: Model
+          anyOf:
+          - type: string
+          - type: object
+            additionalProperties:
+              anyOf:
+              - type: string
+              - type: array
+                items:
+                  type: string
+        prompt:
+          title: Prompt
+          anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+          - type: array
+            items:
+              type: integer
+          - type: array
+            items:
+              type: array
+              items:
+                type: integer
+        suffix:
+          title: Suffix
+          type: string
+        max_tokens:
+          title: Max Tokens
+          type: integer
+        temperature:
+          title: Temperature
+          type: number
+        top_p:
+          title: Top P
+          type: number
+        n:
+          title: N
+          type: integer
+        stream:
+          title: Stream
+          type: boolean
+        logprobs:
+          title: Logprobs
+          type: integer
+        echo:
+          title: Echo
+          type: boolean
+        stop:
+          title: Stop
+          anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+        presence_penalty:
+          title: Presence Penalty
+          type: number
+        frequency_penalty:
+          title: Frequency Penalty
+          type: number
+        best_of:
+          title: Best Of
+          type: integer
+        logit_bias:
+          title: Logit Bias
+          type: object
+          additionalProperties:
+            type: integer
+        user:
+          title: User
+          type: string
+    CreateChatCompletionResponse:
+      title: CreateChatCompletionResponse
+      type: object
+      properties:
+        id:
+          title: Id
+          type: string
+          default: ''
+        object:
+          title: Object
+          type: string
+          default: ''
+        created:
+          title: Created
+          type: integer
+          default: 0
+        model:
+          title: Model
+          type: string
+          default: ''
+        choices:
+          title: Choices
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChoice'
+          default: []
+        usage:
+          $ref: '#/components/schemas/CompletionUsage'
+    ChatCompletionChoice:
+      title: ChatCompletionChoice
+      type: object
+      properties:
+        index:
+          title: Index
+          type: integer
+          default: 0
+        message:
+          $ref: '#/components/schemas/ChatCompletionResponseMessage'
+        finish_reason:
+          title: Finish Reason
+          type: string
+          default: ''
+    ChatCompletionResponseMessage:
+      title: ChatCompletionResponseMessage
+      type: object
+      properties:
+        role:
+          title: Role
+          type: string
+          default: ''
+        content:
+          title: Content
+          type: string
+        function_call:
+          $ref: '#/components/schemas/ChatCompletionFunctionCall'
+    CompletionUsage:
+      title: CompletionUsage
+      type: object
+      properties:
+        prompt_tokens:
+          title: Prompt Tokens
+          type: integer
+          default: 0
+        completion_tokens:
+          title: Completion Tokens
+          type: integer
+          default: 0
+        total_tokens:
+          title: Total Tokens
+          type: integer
+          default: 0
+    CreateCompletionResponse:
+      title: CreateCompletionResponse
+      type: object
+      properties:
+        id:
+          title: Id
+          type: string
+        object:
+          title: Object
+          type: string
+        created:
+          title: Created
+          type: string
+        model:
+          title: Model
+          type: string
+        choices:
+          title: Choices
+          type: array
+          items:
+            $ref: '#/components/schemas/Choice'
+          default: []
+        usage:
+          $ref: '#/components/schemas/CompletionUsage'
+    Choice:
+      title: Choice
+      type: object
+      properties:
+        text:
+          title: Text
+          type: string
+          default: ''
+        index:
+          title: Index
+          type: integer
+          default: 0
+        logprobs:
+          $ref: '#/components/schemas/Logprobs'
+        finish_reason:
+          title: Finish Reason
+          type: string
+          default: ''
+    Logprobs:
+      title: Logprobs
+      type: object
+      properties:
+        tokens:
+          title: Tokens
+          type: array
+          items:
+            type: string
+          default: []
+        token_logprobs:
+          title: Token Logprobs
+          type: array
+          items:
+            type: number
+          default: []
+        top_logprobs:
+          title: Top Logprobs
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: integer
+          default: []
+        text_offset:
+          title: Text Offset
+          type: array
+          items:
+            type: integer
+          default: []
+    HTTPValidationError:
+      title: HTTPValidationError
+      type: object
+      properties:
+        detail:
+          title: Detail
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+    ValidationError:
+      title: ValidationError
+      required:
+      - loc
+      - msg
+      - type
+      type: object
+      properties:
+        loc:
+          title: Location
+          type: array
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+    RunCreateSchemaExtended:
+      title: RunCreateSchemaExtended
+      required:
+      - name
+      - run_type
+      type: object
+      properties:
+        name:
+          title: Name
+          type: string
+        inputs:
+          title: Inputs
+          anyOf:
+          - type: object
+          - $ref: '#/components/schemas/CreateChatCompletionRequest'
+          - $ref: '#/components/schemas/CreateCompletionRequest'
+        run_type:
+          $ref: '#/components/schemas/RunTypeEnum'
+        start_time:
+          title: Start Time
+          type: string
+          format: date-time
+        end_time:
+          title: End Time
+          type: string
+          format: date-time
+        extra:
+          title: Extra
+          type: object
+        error:
+          title: Error
+          type: string
+        execution_order:
+          title: Execution Order
+          minimum: 1.0
+          type: integer
+          default: 1
+        serialized:
+          title: Serialized
+          type: object
+        outputs:
+          title: Outputs
+          anyOf:
+          - type: object
+          - $ref: '#/components/schemas/CreateChatCompletionResponse'
+          - $ref: '#/components/schemas/CreateCompletionResponse'
+        parent_run_id:
+          title: Parent Run Id
+          type: string
+          format: uuid
+        manifest_id:
+          title: Manifest Id
+          type: string
+          format: uuid
+        events:
+          title: Events
+          type: array
+          items:
+            type: object
+        tags:
+          title: Tags
+          type: array
+          items:
+            type: string
+        id:
+          title: Id
+          type: string
+          format: uuid
+        session_id:
+          title: Session Id
+          type: string
+          format: uuid
+        session_name:
+          title: Session Name
+          type: string
+        child_runs:
+          title: Child Runs
+          type: array
+          items:
+            $ref: '#/components/schemas/RunCreateSchema'
+        reference_example_id:
+          title: Reference Example Id
+          type: string
+          format: uuid
+      description: Create class for a run object, with additional typehints.
+    RunTypeEnum:
+      title: RunTypeEnum
+      enum:
+      - tool
+      - chain
+      - llm
+      - retriever
+      - embedding
+      - prompt
+      - parser
+      type: string
+      description: Enum for run types.
+    RunCreateSchema:
+      title: RunCreateSchema
+      required:
+      - name
+      - run_type
+      type: object
+      properties:
+        name:
+          title: Name
+          type: string
+        inputs:
+          title: Inputs
+          type: object
+        run_type:
+          $ref: '#/components/schemas/RunTypeEnum'
+        start_time:
+          title: Start Time
+          type: string
+          format: date-time
+        end_time:
+          title: End Time
+          type: string
+          format: date-time
+        extra:
+          title: Extra
+          type: object
+        error:
+          title: Error
+          type: string
+        execution_order:
+          title: Execution Order
+          minimum: 1.0
+          type: integer
+          default: 1
+        serialized:
+          title: Serialized
+          type: object
+        outputs:
+          title: Outputs
+          type: object
+        parent_run_id:
+          title: Parent Run Id
+          type: string
+          format: uuid
+        manifest_id:
+          title: Manifest Id
+          type: string
+          format: uuid
+        events:
+          title: Events
+          type: array
+          items:
+            type: object
+        tags:
+          title: Tags
+          type: array
+          items:
+            type: string
+        id:
+          title: Id
+          type: string
+          format: uuid
+        session_id:
+          title: Session Id
+          type: string
+          format: uuid
+        session_name:
+          title: Session Name
+          type: string
+        child_runs:
+          title: Child Runs
+          type: array
+          items:
+            $ref: '#/components/schemas/RunCreateSchema'
+        reference_example_id:
+          title: Reference Example Id
+          type: string
+          format: uuid
+      description: Create class for a Run object.
