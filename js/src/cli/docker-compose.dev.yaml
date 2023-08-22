@@ -1,5 +1,15 @@
 version: '3'
 services:
+  langchain-hub:
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:latest
+    environment:
+      - PORT=1985
+      - LANGCHAIN_ENV=local_docker
+      - LOG_LEVEL=warning
+    ports:
+      - 1985:1985
+    depends_on:
+      - langchain-db
   langchain-db:
     volumes:
         - rc-langchain-db-data:/var/lib/postgresql/data
