@@ -1,5 +1,6 @@
 import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
+import { jest } from "@jest/globals";
 
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
@@ -58,7 +59,17 @@ test("Test persisting runs and adding feedback", async () => {
   await child_tool_run.end({ output: ["Hi"] });
   await child_llm_run.end({ prompts: ["hello world"] });
   await parent_run.end({ output: ["Hi"] });
+  // Capture console.warn output
+  const consoleWarnSpy = jest
+    .spyOn(console, "warn")
+    .mockImplementation(() => {});
+
+  // Assert that console.warn was called
   await parent_run.postRun(false);
+  expect(consoleWarnSpy).toHaveBeenCalled();
+
+  // Restore console.warn
+  consoleWarnSpy.mockRestore();
   const runs = await toArray(langchainClient.listRuns({ projectName }));
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
