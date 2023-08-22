@@ -9,6 +9,7 @@ services:
     depends_on:
       - langchain-backend
       - langchain-playground
+      - langchain-hub
   langchain-backend:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:latest
     environment:
@@ -27,6 +28,16 @@ services:
       - LANGCHAIN_ENV=local_docker
       - LOG_LEVEL=warning
     entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker --connection-class lc_database.queue.connection.RedisRetry"
+  langchain-hub:
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:latest
+    environment:
+      - PORT=1985
+      - LANGCHAIN_ENV=local_docker
+      - LOG_LEVEL=warning
+    ports:
+      - 1985:1985
+    depends_on:
+      - langchain-db
   langchain-db:
     image: postgres:14.7
     command:
