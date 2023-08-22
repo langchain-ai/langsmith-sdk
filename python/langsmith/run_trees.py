@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, cast
@@ -132,6 +133,7 @@ class RunTree(RunBase):
     ) -> RunTree:
         """Add a child run to the run tree."""
         execution_order = self.child_execution_order + 1
+        self.child_execution_order += 1
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
@@ -165,8 +167,7 @@ class RunTree(RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> Future:
         """Post the run tree to the API asynchronously."""
-        exclude = {"child_runs"} if exclude_child_runs else None
-        kwargs = self.dict(exclude=exclude, exclude_none=True)
+        kwargs = self.dict(exclude={"child_runs"}, exclude_none=True)
         self._futures.append(
             self.executor.submit(
                 self._execute,
@@ -174,6 +175,14 @@ class RunTree(RunBase):
                 **kwargs,
             )
         )
+        if not exclude_child_runs:
+            warnings.warn(
+                "Posting with exclude_child_runs=False is deprecated"
+                " and will be removed in a future version.",
+                DeprecationWarning,
+            )
+            for child_run in self.child_runs:
+                self._futures.append(child_run.post(exclude_child_runs=False))
         return self._futures[-1]
 
     def patch(self) -> Future:

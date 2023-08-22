@@ -3,6 +3,15 @@ import { BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { Client } from "./client.js";
 
+const warnedMessages: Record<string, boolean> = {};
+
+function warnOnce(message: string): void {
+  if (!warnedMessages[message]) {
+    console.warn(message);
+    warnedMessages[message] = true;
+  }
+}
+
 export interface RunTreeConfig {
   name: string;
   run_type: string;
@@ -148,8 +157,17 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
-    const runCreate = await this._convertToCreate(this, excludeChildRuns);
+    const runCreate = await this._convertToCreate(this, true);
     await this.client.createRun(runCreate);
+
+    if (!excludeChildRuns) {
+      warnOnce(
+        "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
+      );
+      for (const childRun of this.child_runs) {
+        await childRun.postRun(false);
+      }
+    }
   }
 
   async patchRun(): Promise<void> {
