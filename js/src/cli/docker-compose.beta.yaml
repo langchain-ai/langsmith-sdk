@@ -1,5 +1,6 @@
 version: '3'
 services:
+  # TODO: Move to the regular docker-compose.yaml once deployed
   langchain-hub:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:latest
     environment:
@@ -12,6 +13,6 @@ services:
       - langchain-db
   langchain-db:
     volumes:
-        - dev-langchain-db-data:/var/lib/postgresql/data
+        - rc-langchain-db-data:/var/lib/postgresql/data
 volumes:
-    dev-langchain-db-data:
+    rc-langchain-db-data:
