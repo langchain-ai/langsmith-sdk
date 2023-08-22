@@ -112,6 +112,8 @@ const parentRunConfig: RunTreeConfig = {
 
 const parentRun = new RunTree(parentRunConfig);
 
+await parentRun.postRun();
+
 const childLlmRun = await parentRun.createChild({
   name: "My Proprietary LLM",
   run_type: "llm",
@@ -123,6 +125,8 @@ const childLlmRun = await parentRun.createChild({
   },
 });
 
+await childLlmRun.postRun();
+
 await childLlmRun.end({
   outputs: {
     generations: [
@@ -132,6 +136,8 @@ await childLlmRun.end({
   },
 });
 
+await childLlmRun.patchRun();
+
 const childToolRun = await parentRun.createChild({
   name: "transcript_loader",
   run_type: "tool",
@@ -140,12 +146,15 @@ const childToolRun = await parentRun.createChild({
     content_type: "meeting_transcripts",
   },
 });
+await childToolRun.postRun();
 
 await childToolRun.end({
   outputs: {
     meetings: ["Meeting1 notes.."],
   },
 });
+
+await childToolRun.patchRun();
 
 const childChainRun = await parentRun.createChild({
   name: "Unreliable Component",
@@ -155,6 +164,8 @@ const childChainRun = await parentRun.createChild({
   },
 });
 
+await childChainRun.postRun();
+
 try {
   // .... the component does work
   throw new Error("Something went wrong");
@@ -162,7 +173,11 @@ try {
   await childChainRun.end({
     error: `I errored again ${e.message}`,
   });
+  await childChainRun.patchRun(); 
+  throw e;
 }
+
+await childChainRun.patchRun();
 
 await parentRun.end({
   outputs: {
@@ -171,7 +186,7 @@ await parentRun.end({
 });
 
 // False directs to not exclude child runs
-await parentRun.postRun(false);
+await parentRun.patchRun();
 ```
 
 ### Create a Dataset from Existing Runs

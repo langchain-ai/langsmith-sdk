@@ -155,7 +155,10 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     child_tool_run.end(outputs={"output": ["Hi"]})
     child_llm_run.end(outputs={"prompts": ["hello world"]})
     parent_run.end(outputs={"output": ["Hi"]})
-    parent_run.post(exclude_child_runs=False)
+    with pytest.warns(
+        DeprecationWarning, match="Posting with exclude_child_runs=False is deprecated"
+    ):
+        parent_run.post(exclude_child_runs=False)
     parent_run.wait()
 
     runs = list(langchain_client.list_runs(project_name=project_name))
@@ -164,9 +167,9 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     assert run_map["parent_run"].execution_order == 1
     # The child run and child chain run are executed 'in parallel'
     assert run_map["child_run"].execution_order == 2
-    assert run_map["child_chain_run"].execution_order == 2
-    assert run_map["grandchild_chain_run"].execution_order == 3
-    assert run_map["child_tool_run"].execution_order == 4
+    assert run_map["child_chain_run"].execution_order == 3
+    assert run_map["grandchild_chain_run"].execution_order == 4
+    assert run_map["child_tool_run"].execution_order == 5
 
     assert run_map["child_run"].parent_run_id == run_map["parent_run"].id
     assert run_map["child_chain_run"].parent_run_id == run_map["parent_run"].id
