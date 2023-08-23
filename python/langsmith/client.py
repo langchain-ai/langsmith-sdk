@@ -803,20 +803,6 @@ class Client:
             for run in self._get_paginated_list("/runs", params=query_params)
         )
 
-    def delete_run(self, run_id: ID_TYPE) -> None:
-        """Delete a run from the LangSmith API.
-
-        Parameters
-        ----------
-        run_id : str or UUID
-            The ID of the run to delete.
-        """
-        response = self.session.delete(
-            f"{self.api_url}/runs/{run_id}",
-            headers=self._headers,
-        )
-        raise_for_status_with_text(response)
-
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run."""
         data = {
