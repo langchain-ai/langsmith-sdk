@@ -413,19 +413,6 @@ export class Client {
     }
   }
 
-  public async deleteRun(runId: string): Promise<void> {
-    const response = await this.caller.call(
-      fetch,
-      `${this.apiUrl}/runs/${runId}`,
-      {
-        method: "DELETE",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-      }
-    );
-    await raiseForStatus(response, "delete run");
-  }
-
   public async shareRun(
     runId: string,
     { shareId }: { shareId?: string } = {}

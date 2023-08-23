@@ -263,9 +263,6 @@ test("Test persist update run", async () => {
     }
   }
   const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
-  if ((await toArray(langchainClient.listRuns({ id: [runId] }))).length > 0) {
-    await langchainClient.deleteRun(runId);
-  }
   await langchainClient.createRun({
     id: runId,
     project_name: projectName,
