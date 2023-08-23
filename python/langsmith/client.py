@@ -92,6 +92,26 @@ def _is_localhost(url: str) -> bool:
         return False
 
 
+def _is_langchain_hosted(url: str) -> bool:
+    """Check if the URL is langchain hosted.
+
+    Parameters
+    ----------
+    url : str
+        The URL to check.
+
+    Returns
+    -------
+    bool
+        True if the URL is langchain hosted, False otherwise.
+    """
+    try:
+        netloc = urlsplit(url).netloc.split(":")[0]
+        return netloc.endswith("langchain.com")
+    except Exception:
+        return False
+
+
 ID_TYPE = Union[UUID, str]
 
 
@@ -165,8 +185,9 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     LangSmithUserError
         If the API key is not provided when using the hosted service.
     """
-    if not _is_localhost(api_url):
-        if not api_key:
+    # If the domain is langchain.com, raise error if no api_key
+    if not api_key:
+        if _is_langchain_hosted(api_url):
             raise LangSmithUserError(
                 "API key must be provided when using hosted LangSmith API"
             )
