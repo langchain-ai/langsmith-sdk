@@ -34,7 +34,6 @@ interface ListRunsParams {
   referenceExampleId?: string;
   datasetId?: string;
   startTime?: Date;
-  endTime?: Date;
   runType?: string;
   error?: boolean;
   id?: string[];
@@ -340,7 +339,6 @@ export class Client {
     referenceExampleId,
     datasetId,
     startTime,
-    endTime,
     executionOrder,
     runType,
     error,
@@ -372,9 +370,6 @@ export class Client {
     }
     if (startTime) {
       queryParams.append("start_time", startTime.toISOString());
-    }
-    if (endTime) {
-      queryParams.append("end_time", endTime.toISOString());
     }
     if (executionOrder) {
       queryParams.append("execution_order", executionOrder.toString());

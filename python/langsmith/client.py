@@ -726,7 +726,6 @@ class Client:
         execution_order: Optional[int] = None,
         parent_run_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
         error: Optional[bool] = None,
         run_ids: Optional[List[ID_TYPE]] = None,
         limit: Optional[int] = None,
@@ -759,8 +758,6 @@ class Client:
             The ID of the parent run to filter by.
         start_time : datetime or None, default=None
             The start time to filter by.
-        end_time : datetime or None, default=None
-            The end time to filter by.
         error : bool or None, default=None
             Whether to filter by error status.
         run_ids : List[str or UUID] or None, default=None
@@ -804,8 +801,6 @@ class Client:
             query_params["parent_run"] = parent_run_id
         if start_time is not None:
             query_params["start_time"] = start_time.isoformat()
-        if end_time is not None:
-            query_params["end_time"] = end_time.isoformat()
         if error is not None:
             query_params["error"] = error
         if run_ids is not None:
