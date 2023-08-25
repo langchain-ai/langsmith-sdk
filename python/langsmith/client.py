@@ -718,8 +718,6 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         project_name: Optional[str] = None,
         run_type: Optional[str] = None,
-        dataset_name: Optional[str] = None,
-        dataset_id: Optional[ID_TYPE] = None,
         reference_example_id: Optional[ID_TYPE] = None,
         query: Optional[str] = None,
         filter: Optional[str] = None,
@@ -742,10 +740,6 @@ class Client:
             The name of the project to filter by.
         run_type : str or None, default=None
             The type of the runs to filter by.
-        dataset_name : str or None, default=None
-            The name of the dataset to filter by.
-        dataset_id : UUID or None, default=None
-            The ID of the dataset to filter by.
         reference_example_id : UUID or None, default=None
             The ID of the reference example to filter by.
         query : str or None, default=None
@@ -778,10 +772,6 @@ class Client:
             if project_id is not None:
                 raise ValueError("Only one of project_id or project_name may be given")
             project_id = self.read_project(project_name=project_name).id
-        if dataset_name is not None:
-            if dataset_id is not None:
-                raise ValueError("Only one of dataset_id or dataset_name may be given")
-            dataset_id = self.read_dataset(dataset_name=dataset_name).id
         query_params: Dict[str, Any] = {
             "session": project_id,
             "run_type": run_type,
@@ -789,8 +779,6 @@ class Client:
         }
         if reference_example_id is not None:
             query_params["reference_example"] = reference_example_id
-        if dataset_id is not None:
-            query_params["dataset"] = dataset_id
         if query is not None:
             query_params["query"] = query
         if filter is not None:
