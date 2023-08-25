@@ -731,7 +731,6 @@ class Client:
         run_ids: Optional[List[ID_TYPE]] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
-        order_by: Optional[Sequence[str]] = None,
         **kwargs: Any,
     ) -> Iterator[Run]:
         """List runs from the LangSmith API.
@@ -770,8 +769,6 @@ class Client:
             The maximum number of runs to return.
         offset : int or None, default=None
             The number of runs to skip.
-        order_by : Sequence[str] or None, default=None
-            The fields to order the runs by.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -817,8 +814,6 @@ class Client:
             query_params["limit"] = limit
         if offset is not None:
             query_params["offset"] = offset
-        if order_by is not None:
-            query_params["order"] = order_by
         yield from (
             Run(**run, _host_url=self._host_url)
             for run in self._get_paginated_list("/runs", params=query_params)

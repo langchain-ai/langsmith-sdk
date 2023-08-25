@@ -42,7 +42,6 @@ interface ListRunsParams {
   offset?: number;
   query?: string;
   filter?: string;
-  orderBy?: string[];
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -350,7 +349,6 @@ export class Client {
     offset,
     query,
     filter,
-    orderBy,
   }: ListRunsParams): AsyncIterable<Run> {
     const queryParams = new URLSearchParams();
     let projectId_ = projectId;
@@ -403,9 +401,6 @@ export class Client {
     }
     if (filter !== undefined) {
       queryParams.append("filter", filter);
-    }
-    if (orderBy !== undefined) {
-      orderBy.map((order) => queryParams.append("order_by", order));
     }
 
     for await (const runs of this._getPaginated<Run>("/runs", queryParams)) {
