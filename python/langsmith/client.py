@@ -338,7 +338,7 @@ class Client:
                 raise ls_utils.LangSmithUserError(
                     f"Failed to {request_method} {url} in LangSmith API. {e}"
                 )
-        except ConnectionError as e:
+        except requests.ConnectionError as e:
             raise ls_utils.LangSmithConnectionError(
                 f"Connection error caused failure to {request_method} {url}"
                 "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
