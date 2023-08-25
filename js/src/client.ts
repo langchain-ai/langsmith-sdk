@@ -32,7 +32,6 @@ interface ListRunsParams {
   executionOrder?: number;
   parentRunId?: string;
   referenceExampleId?: string;
-  datasetId?: string;
   startTime?: Date;
   runType?: string;
   error?: boolean;
@@ -337,7 +336,6 @@ export class Client {
     projectName,
     parentRunId,
     referenceExampleId,
-    datasetId,
     startTime,
     executionOrder,
     runType,
@@ -364,9 +362,6 @@ export class Client {
     }
     if (referenceExampleId) {
       queryParams.append("reference_example", referenceExampleId);
-    }
-    if (datasetId) {
-      queryParams.append("dataset", datasetId);
     }
     if (startTime) {
       queryParams.append("start_time", startTime.toISOString());
