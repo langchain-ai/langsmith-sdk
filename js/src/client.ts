@@ -34,7 +34,6 @@ interface ListRunsParams {
   referenceExampleId?: string;
   datasetId?: string;
   startTime?: Date;
-  endTime?: Date;
   runType?: string;
   error?: boolean;
   id?: string[];
@@ -42,7 +41,6 @@ interface ListRunsParams {
   offset?: number;
   query?: string;
   filter?: string;
-  orderBy?: string[];
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -341,7 +339,6 @@ export class Client {
     referenceExampleId,
     datasetId,
     startTime,
-    endTime,
     executionOrder,
     runType,
     error,
@@ -350,7 +347,6 @@ export class Client {
     offset,
     query,
     filter,
-    orderBy,
   }: ListRunsParams): AsyncIterable<Run> {
     const queryParams = new URLSearchParams();
     let projectId_ = projectId;
@@ -374,9 +370,6 @@ export class Client {
     }
     if (startTime) {
       queryParams.append("start_time", startTime.toISOString());
-    }
-    if (endTime) {
-      queryParams.append("end_time", endTime.toISOString());
     }
     if (executionOrder) {
       queryParams.append("execution_order", executionOrder.toString());
@@ -403,9 +396,6 @@ export class Client {
     }
     if (filter !== undefined) {
       queryParams.append("filter", filter);
-    }
-    if (orderBy !== undefined) {
-      orderBy.map((order) => queryParams.append("order_by", order));
     }
 
     for await (const runs of this._getPaginated<Run>("/runs", queryParams)) {
