@@ -1,34 +1,24 @@
 """Decorator for creating a run tree from functions."""
+import contextlib
 import contextvars
+import functools
 import inspect
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from functools import wraps
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    List,
-    Mapping,
-    Optional,
-    TypedDict,
-)
-from uuid import uuid4
+import uuid
+from concurrent import futures
+from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, TypedDict
 
-from langsmith import client
-from langsmith.run_trees import RunTree
+from langsmith import client, run_trees, utils
 
 logger = logging.getLogger(__name__)
-_PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
+_PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
 
 
-def get_run_tree_context() -> Optional[RunTree]:
+def get_run_tree_context() -> Optional[run_trees.RunTree]:
     """Get the current run tree context."""
     return _PARENT_RUN_TREE.get()
 
@@ -58,7 +48,7 @@ class LangSmithExtra(TypedDict, total=False):
 
     reference_example_id: Optional[client.ID_TYPE]
     run_extra: Optional[Dict]
-    run_tree: Optional[RunTree]
+    run_tree: Optional[run_trees.RunTree]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
@@ -69,7 +59,7 @@ class LangSmithExtra(TypedDict, total=False):
 class _TraceableContainer(TypedDict, total=False):
     """Typed response when initializing a run a traceable."""
 
-    new_run: RunTree
+    new_run: run_trees.RunTree
     project_name: Optional[str]
     outer_project: Optional[str]
 
@@ -89,7 +79,7 @@ def _setup_run(
     extra_outer: dict,
     langsmith_extra: Optional[LangSmithExtra] = None,
     name: Optional[str] = None,
-    executor: Optional[ThreadPoolExecutor] = None,
+    executor: Optional[futures.ThreadPoolExecutor] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
     client: Optional[client.Client] = None,
@@ -111,7 +101,7 @@ def _setup_run(
         extra_inner["metadata"] = metadata_
     inputs = _get_inputs(signature, *args, **kwargs)
     tags_ = (tags or []) + (langsmith_extra.get("tags") or [])
-    id_ = langsmith_extra.get("run_id", uuid4())
+    id_ = langsmith_extra.get("run_id", uuid.uuid4())
     client_ = langsmith_extra.get("client", client)
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
@@ -128,7 +118,7 @@ def _setup_run(
             run_id=id_,
         )
     else:
-        new_run = RunTree(
+        new_run = run_trees.RunTree(
             id=id_,
             name=name_,
             serialized={
@@ -157,7 +147,7 @@ def traceable(
     run_type: str = "chain",
     *,
     name: Optional[str] = None,
-    executor: Optional[ThreadPoolExecutor] = None,
+    executor: Optional[futures.ThreadPoolExecutor] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
     client: Optional[client.Client] = None,
@@ -167,7 +157,13 @@ def traceable(
     extra_outer = extra or {}
 
     def decorator(func: Callable):
-        @wraps(func)
+        if not utils.tracing_is_enabled():
+            utils.log_once(
+                logging.DEBUG, "Tracing is disabled, returning original function"
+            )
+            return func
+
+        @functools.wraps(func)
         async def async_wrapper(
             *args: Any,
             langsmith_extra: Optional[LangSmithExtra] = None,
@@ -215,7 +211,7 @@ def traceable(
             run_container["new_run"].patch()
             return function_result
 
-        @wraps(func)
+        @functools.wraps(func)
         def wrapper(
             *args: Any,
             langsmith_extra: Optional[LangSmithExtra] = None,
@@ -270,19 +266,19 @@ def traceable(
     return decorator
 
 
-@contextmanager
+@contextlib.contextmanager
 def trace(
     name: str,
     run_type: str,
     *,
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
-    executor: Optional[ThreadPoolExecutor] = None,
+    executor: Optional[futures.ThreadPoolExecutor] = None,
     project_name: Optional[str] = None,
-    run_tree: Optional[RunTree] = None,
+    run_tree: Optional[run_trees.RunTree] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
-) -> Generator[RunTree, None, None]:
+) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
     extra_outer = extra or {}
     if metadata:
@@ -301,7 +297,7 @@ def trace(
             tags=tags,
         )
     else:
-        new_run = RunTree(
+        new_run = run_trees.RunTree(
             name=name,
             run_type=run_type,
             extra=extra_outer,

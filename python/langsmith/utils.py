@@ -1,11 +1,15 @@
 """Generic utility functions."""
+import enum
+import functools
+import logging
+import os
 import platform
 import subprocess
-from enum import Enum
-from functools import lru_cache
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
-from requests import HTTPError, Response
+import requests
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class LangSmithAPIError(Exception):
@@ -22,6 +26,16 @@ class LangSmithError(Exception):
 
 class LangSmithConnectionError(Exception):
     """Couldn't connect to the LangSmith API."""
+
+
+def tracing_is_enabled() -> bool:
+    """Return True if tracing is enabled."""
+    return (
+        os.environ.get(
+            "LANGCHAIN_TRACING_V2", os.environ.get("LANGCHAIN_TRACING", "")
+        ).lower()
+        == "true"
+    )
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
@@ -49,22 +63,27 @@ def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     return decorator
 
 
-def raise_for_status_with_text(response: Response) -> None:
+def raise_for_status_with_text(response: requests.Response) -> None:
     """Raise an error with the response text."""
     try:
         response.raise_for_status()
-    except HTTPError as e:
+    except requests.HTTPError as e:
         raise ValueError(response.text) from e
 
 
-def get_enum_value(enum: Union[Enum, str]) -> str:
+def get_enum_value(enu: Union[enum.Enum, str]) -> str:
     """Get the value of a string enum."""
-    if isinstance(enum, Enum):
-        return enum.value
-    return enum
+    if isinstance(enu, enum.Enum):
+        return enu.value
+    return enu
 
 
-@lru_cache
+@functools.lru_cache
+def log_once(level: int, message: str) -> None:
+    _LOGGER.log(level, message)
+
+
+@functools.lru_cache
 def get_runtime_environment() -> dict:
     """Get information about the environment."""
     # Lazy import to avoid circular imports
@@ -177,7 +196,7 @@ def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
     return first_generation["text"]
 
 
-@lru_cache
+@functools.lru_cache
 def get_docker_compose_command() -> List[str]:
     """Get the correct docker compose command for this system."""
     try:
@@ -204,7 +223,7 @@ def get_docker_compose_command() -> List[str]:
             )
 
 
-@lru_cache
+@functools.lru_cache
 def get_langchain_environment() -> Optional[str]:
     try:
         import langchain  # type: ignore
@@ -214,7 +233,7 @@ def get_langchain_environment() -> Optional[str]:
         return None
 
 
-@lru_cache
+@functools.lru_cache
 def get_docker_version() -> Optional[str]:
     import subprocess
 
@@ -229,7 +248,7 @@ def get_docker_version() -> Optional[str]:
     return docker_version
 
 
-@lru_cache
+@functools.lru_cache
 def get_docker_compose_version() -> Optional[str]:
     try:
         docker_compose_version = (
@@ -244,7 +263,7 @@ def get_docker_compose_version() -> Optional[str]:
     return docker_compose_version
 
 
-@lru_cache
+@functools.lru_cache
 def _get_compose_command() -> Optional[List[str]]:
     try:
         compose_command = get_docker_compose_command()
@@ -255,7 +274,7 @@ def _get_compose_command() -> Optional[List[str]]:
     return compose_command
 
 
-@lru_cache
+@functools.lru_cache
 def get_docker_environment() -> dict:
     """Get information about the environment."""
     compose_command = _get_compose_command()
