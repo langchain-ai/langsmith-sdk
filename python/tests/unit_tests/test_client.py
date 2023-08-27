@@ -53,7 +53,7 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client_no_key._headers == {}
 
 
-@mock.patch("langsmith.client.Session")
+@mock.patch("langsmith.client.requests.Session")
 def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     dataset_id = str(uuid.uuid4())
     example_1 = Example(
