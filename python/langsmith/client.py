@@ -916,20 +916,67 @@ class Client:
         if isinstance(result, list):
             if len(result) == 0:
                 raise ls_utils.LangSmithError(f"Project {project_name} not found")
-            return ls_schemas.TracerSessionResult(**result[0])
-        return ls_schemas.TracerSessionResult(**response.json())
+            return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
+        return ls_schemas.TracerSessionResult(
+            **response.json(), _host_url=self._host_url
+        )
 
-    def list_projects(self) -> Iterator[ls_schemas.TracerSession]:
-        """List projects from the LangSmith API.
+    def list_projects(
+        self,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+        reference_dataset_name: Optional[str] = None,
+        reference_free: Optional[bool] = None,
+    ) -> Iterator[ls_schemas.TracerSession]:
+        """
+        List projects from the LangSmith API.
+
+        Parameters
+        ----------
+        project_ids : Optional[List[ID_TYPE]], optional
+            A list of project IDs to filter by, by default None
+        name : Optional[str], optional
+            The name of the project to filter by, by default None
+        name_contains : Optional[str], optional
+            A string to search for in the project name, by default None
+        reference_dataset_id : Optional[List[ID_TYPE]], optional
+            A dataset ID to filter by, by default None
+        reference_dataset_name : Optional[str], optional
+            The name of the reference dataset to filter by, by default None
+        reference_free : Optional[bool], optional
+            Whether to filter for only projects not associated with a dataset.
 
         Yields
         ------
         TracerSession
             The projects.
         """
+        params: Dict[str, Any] = {}
+        if project_ids is not None:
+            params["id"] = project_ids
+        if name is not None:
+            params["name"] = name
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        if reference_dataset_id is not None:
+            if reference_dataset_name is not None:
+                raise ValueError(
+                    "Only one of reference_dataset_id or"
+                    " reference_dataset_name may be given"
+                )
+            params["reference_dataset"] = reference_dataset_id
+        elif reference_dataset_name is not None:
+            reference_dataset_id = self.read_dataset(
+                dataset_name=reference_dataset_name
+            ).id
+            params["reference_dataset"] = reference_dataset_id
+        if reference_free is not None:
+            params["reference_free"] = reference_free
         yield from (
             ls_schemas.TracerSession(**project, _host_url=self._host_url)
-            for project in self._get_paginated_list("/sessions")
+            for project in self._get_paginated_list("/sessions", params=params)
         )
 
     @ls_utils.xor_args(("project_name", "project_id"))
