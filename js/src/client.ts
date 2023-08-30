@@ -416,7 +416,6 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    // await raiseForStatus(response, "share run");
     const result = await response.json();
     if (result === null || !("share_token" in result)) {
       throw new Error("Invalid response from server");
@@ -447,7 +446,6 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    // await raiseForStatus(response, "read run shared link");
     const result = await response.json();
     if (result === null || !("share_token" in result)) {
       return undefined;

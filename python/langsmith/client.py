@@ -342,10 +342,15 @@ class Client:
             raise ls_utils.LangSmithConnectionError(
                 f"Connection error caused failure to {request_method} {url}"
                 "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+                f" {e}"
             ) from e
-        except Exception as e:
+        except ValueError as e:
+            args = list(e.args)
+            msg = args[1] if len(args) > 1 else ""
+            msg = msg.replace("session", "session (project)")
+            emsg = "\n".join([args[0]] + [msg] + args[2:])
             raise ls_utils.LangSmithError(
-                f"Failed to {request_method} {url} in LangSmith API. {e}"
+                f"Failed to {request_method} {url} in LangSmith API. {emsg}"
             ) from e
 
     def _get_with_retries(
