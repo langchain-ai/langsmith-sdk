@@ -269,6 +269,20 @@ class TracerSession(BaseModel):
     tenant_id: UUID
     """The tenant ID this project belongs to."""
 
+    _host_url: Optional[str] = PrivateAttr(default=None)
+
+    def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
+        """Initialize a Run object."""
+        super().__init__(**kwargs)
+        self._host_url = _host_url
+
+    @property
+    def url(self) -> Optional[str]:
+        """URL of this run within the app."""
+        if self._host_url:
+            return f"{self._host_url}/o/{self.tenant_id}/projects/p/{self.id}"
+        return None
+
 
 class TracerSessionResult(TracerSession):
     """TracerSession schema returned when reading a project
