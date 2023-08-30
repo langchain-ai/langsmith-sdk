@@ -338,6 +338,17 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
 
+def test_create_project(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
+) -> None:
+    """Test the project creation"""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    project_name = "__test_create_project"
+    project = langchain_client.create_project(project_name=project_name)
+    assert project.name == project_name
+    langchain_client.delete_project(project_id=project.id)
+
+
 def test_create_dataset(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:

@@ -882,7 +882,7 @@ class Client:
             json=body,
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.TracerSession(**response.json())
+        return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
 
     @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
@@ -928,7 +928,7 @@ class Client:
             The projects.
         """
         yield from (
-            ls_schemas.TracerSession(**project)
+            ls_schemas.TracerSession(**project, _host_url=self._host_url)
             for project in self._get_paginated_list("/sessions")
         )
 
