@@ -947,7 +947,7 @@ export class Client {
       feedback_source?.metadata !== undefined &&
       !feedback_source.metadata["__run"]
     ) {
-      feedback_source.metadata["__run"] = {run_id: sourceRunId};
+      feedback_source.metadata["__run"] = { run_id: sourceRunId };
     }
     const feedback: FeedbackCreate = {
       id: uuid.v4(),
