@@ -963,7 +963,8 @@ class Client:
         if reference_dataset_id is not None:
             if reference_dataset_name is not None:
                 raise ValueError(
-                    "Only one of reference_dataset_id or reference_dataset_name may be given"
+                    "Only one of reference_dataset_id or"
+                    " reference_dataset_name may be given"
                 )
             params["reference_dataset"] = reference_dataset_id
         elif reference_dataset_name is not None:
