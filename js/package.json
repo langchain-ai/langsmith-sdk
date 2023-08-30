@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "files": [
     "dist/",
