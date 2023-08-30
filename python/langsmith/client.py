@@ -1587,7 +1587,7 @@ class Client:
             feedback_source.metadata if feedback_source.metadata is not None else {}
         )
         if source_run_id is not None and "__run" not in feedback_source.metadata:
-            feedback_source.metadata["__run"] = str(source_run_id)
+            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
         feedback = ls_schemas.FeedbackCreate(
             id=uuid.uuid4(),
             run_id=run_id,
