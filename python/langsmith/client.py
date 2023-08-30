@@ -916,8 +916,10 @@ class Client:
         if isinstance(result, list):
             if len(result) == 0:
                 raise ls_utils.LangSmithError(f"Project {project_name} not found")
-            return ls_schemas.TracerSessionResult(**result[0])
-        return ls_schemas.TracerSessionResult(**response.json())
+            return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
+        return ls_schemas.TracerSessionResult(
+            **response.json(), _host_url=self._host_url
+        )
 
     def list_projects(self) -> Iterator[ls_schemas.TracerSession]:
         """List projects from the LangSmith API.
