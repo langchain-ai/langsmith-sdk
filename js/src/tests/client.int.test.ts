@@ -406,3 +406,44 @@ test("Test list datasets", async () => {
   }
   expect(remainingDatasets).toHaveLength(0);
 });
+
+test("Test create feedback with source run", async () => {
+  const langchainClient = new Client({
+    apiUrl: "http://localhost:1984",
+  });
+  const projectName = "__test_create_feedback_with_source_run";
+  const projects = langchainClient.listProjects();
+  for await (const project of projects) {
+    if (project.name === projectName) {
+      await langchainClient.deleteProject({ projectName });
+    }
+  }
+  const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
+  await langchainClient.createRun({
+    id: runId,
+    project_name: projectName,
+    name: "test_run",
+    run_type: "llm",
+    inputs: { prompt: "hello world" },
+    outputs: { generation: "hi there" },
+    start_time: new Date().getTime(),
+    end_time: new Date().getTime(),
+  });
+
+  const runId2 = "8bac165f-480e-4bf8-baa0-15f2de4cc707";
+  await langchainClient.createRun({
+    id: runId2,
+    project_name: projectName,
+    name: "test_run_2",
+    run_type: "llm",
+    inputs: { prompt: "hello world 2" },
+    outputs: { generation: "hi there 2" },
+    start_time: new Date().getTime(),
+    end_time: new Date().getTime(),
+  });
+
+  await langchainClient.createFeedback(runId, "test_feedback", {
+    score: 0.5,
+    sourceRunId: runId2,
+  });
+});

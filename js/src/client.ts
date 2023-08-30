@@ -923,6 +923,7 @@ export class Client {
       comment,
       sourceInfo,
       feedbackSourceType = "API",
+      sourceRunId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -930,6 +931,7 @@ export class Client {
       comment?: string;
       sourceInfo?: object;
       feedbackSourceType?: "API" | "MODEL";
+      sourceRunId?: string;
     }
   ): Promise<Feedback> {
     let feedback_source: feedback_source;
@@ -939,6 +941,13 @@ export class Client {
       feedback_source = { type: "model", metadata: sourceInfo ?? {} };
     } else {
       throw new Error(`Unknown feedback source type ${feedbackSourceType}`);
+    }
+    if (
+      sourceRunId !== undefined &&
+      feedback_source?.metadata !== undefined &&
+      !feedback_source.metadata["__run"]
+    ) {
+      feedback_source.metadata["__run"] = { run_id: sourceRunId };
     }
     const feedback: FeedbackCreate = {
       id: uuid.v4(),
