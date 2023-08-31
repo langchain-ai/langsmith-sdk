@@ -52,7 +52,7 @@ export interface BaseExample {
 }
 
 export interface BaseRun {
-  id?: string;
+  id: string;
   name: string;
   serialized?: object;
   inputs: KVMap;
