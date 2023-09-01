@@ -3,9 +3,8 @@ import enum
 import functools
 import logging
 import os
-import platform
 import subprocess
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
 
 import requests
 
@@ -78,25 +77,9 @@ def get_enum_value(enu: Union[enum.Enum, str]) -> str:
     return enu
 
 
-@functools.lru_cache
+@functools.lru_cache(maxsize=1)
 def log_once(level: int, message: str) -> None:
     _LOGGER.log(level, message)
-
-
-@functools.lru_cache
-def get_runtime_environment() -> dict:
-    """Get information about the environment."""
-    # Lazy import to avoid circular imports
-    from langsmith import __version__
-
-    return {
-        "sdk_version": __version__,
-        "library": "langsmith",
-        "platform": platform.platform(),
-        "runtime": "python",
-        "runtime_version": platform.python_version(),
-        "langchain_version": get_langchain_environment(),
-    }
 
 
 def _get_message_type(message: Mapping[str, Any]) -> str:
@@ -196,7 +179,7 @@ def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
     return first_generation["text"]
 
 
-@functools.lru_cache
+@functools.lru_cache(maxsize=1)
 def get_docker_compose_command() -> List[str]:
     """Get the correct docker compose command for this system."""
     try:
@@ -221,67 +204,3 @@ def get_docker_compose_command() -> List[str]:
                 " server following the instructions for your operating"
                 " system at https://docs.docker.com/engine/install/"
             )
-
-
-@functools.lru_cache
-def get_langchain_environment() -> Optional[str]:
-    try:
-        import langchain  # type: ignore
-
-        return langchain.__version__
-    except:  # noqa
-        return None
-
-
-@functools.lru_cache
-def get_docker_version() -> Optional[str]:
-    import subprocess
-
-    try:
-        docker_version = (
-            subprocess.check_output(["docker", "--version"]).decode("utf-8").strip()
-        )
-    except FileNotFoundError:
-        docker_version = "unknown"
-    except:  # noqa
-        return None
-    return docker_version
-
-
-@functools.lru_cache
-def get_docker_compose_version() -> Optional[str]:
-    try:
-        docker_compose_version = (
-            subprocess.check_output(["docker-compose", "--version"])
-            .decode("utf-8")
-            .strip()
-        )
-    except FileNotFoundError:
-        docker_compose_version = "unknown"
-    except:  # noqa
-        return None
-    return docker_compose_version
-
-
-@functools.lru_cache
-def _get_compose_command() -> Optional[List[str]]:
-    try:
-        compose_command = get_docker_compose_command()
-    except ValueError as e:
-        compose_command = [f"NOT INSTALLED: {e}"]
-    except:  # noqa
-        return None
-    return compose_command
-
-
-@functools.lru_cache
-def get_docker_environment() -> dict:
-    """Get information about the environment."""
-    compose_command = _get_compose_command()
-    return {
-        "docker_version": get_docker_version(),
-        "docker_compose_command": " ".join(compose_command)
-        if compose_command is not None
-        else None,
-        "docker_compose_version": get_docker_compose_version(),
-    }

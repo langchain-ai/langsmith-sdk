@@ -65,10 +65,12 @@ let runtimeEnvironment: RuntimeEnvironment | undefined;
 export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
   if (runtimeEnvironment === undefined) {
     const env = getEnv();
+    const releaseEnv = getShas();
 
     runtimeEnvironment = {
       library: "langsmith",
       runtime: env,
+      ...releaseEnv,
     };
   }
   return runtimeEnvironment;
@@ -92,4 +94,50 @@ export function setEnvironmentVariable(name: string, value: string): void {
     // eslint-disable-next-line no-process-env
     process.env[name] = value;
   }
+}
+
+interface ICommitSHAs {
+  [key: string]: string;
+}
+let cachedCommitSHAs: ICommitSHAs | undefined;
+/**
+ * Get the Git commit SHA from common environment variables
+ * used by different CI/CD platforms.
+ * @returns {string | undefined} The Git commit SHA or undefined if not found.
+ */
+export function getShas(): ICommitSHAs {
+  if (cachedCommitSHAs !== undefined) {
+    return cachedCommitSHAs;
+  }
+  const common_release_envs = [
+    "VERCEL_GIT_COMMIT_SHA",
+    "NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA",
+    "COMMIT_REF",
+    "RENDER_GIT_COMMIT",
+    "CI_COMMIT_SHA",
+    "CIRCLE_SHA1",
+    "CF_PAGES_COMMIT_SHA",
+    "REACT_APP_GIT_SHA",
+    "SOURCE_VERSION",
+    "GITHUB_SHA",
+    "TRAVIS_COMMIT",
+    "GIT_COMMIT",
+    "BUILD_VCS_NUMBER",
+    "bamboo_planRepository_revision",
+    "Build.SourceVersion",
+    "BITBUCKET_COMMIT",
+    "DRONE_COMMIT_SHA",
+    "SEMAPHORE_GIT_SHA",
+    "BUILDKITE_COMMIT",
+  ] as const;
+
+  const shas: ICommitSHAs = {};
+  for (const env of common_release_envs) {
+    const envVar = getEnvironmentVariable(env);
+    if (envVar !== undefined) {
+      shas[env] = envVar;
+    }
+  }
+  cachedCommitSHAs = shas;
+  return shas;
 }

@@ -97,8 +97,8 @@ def _setup_run(
     docstring = func.__doc__
     extra_inner = _collect_extra(extra_outer, langsmith_extra)
     metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
-    if metadata_:
-        extra_inner["metadata"] = metadata_
+    metadata_["ls_method"] = "traceable"
+    extra_inner["metadata"] = metadata_
     inputs = _get_inputs(signature, *args, **kwargs)
     tags_ = (tags or []) + (langsmith_extra.get("tags") or [])
     id_ = langsmith_extra.get("run_id", uuid.uuid4())
@@ -281,8 +281,8 @@ def trace(
 ) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
     extra_outer = extra or {}
-    if metadata:
-        extra_outer["metadata"] = metadata
+    metadata = metadata or {}
+    extra_outer["metadata"] = {**metadata, "ls_method": "trace"}
     parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
     outer_project = _PROJECT_NAME.get() or os.environ.get(
         "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
