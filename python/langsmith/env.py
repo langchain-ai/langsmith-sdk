@@ -29,10 +29,10 @@ def get_system_metrics() -> Dict[str, Union[float, dict]]:
     metrics: Dict[str, Union[float, dict]] = {}
 
     with process.oneshot():
+        mem_info = process.memory_info()
         metrics["thread_count"] = float(process.num_threads())
         metrics["mem"] = {
-            "rss": float(process.memory_info().rss),
-            "vms": float(process.memory_info().vms),
+            "rss": float(mem_info.rss),
         }
         ctx_switches = process.num_ctx_switches()
         cpu_times = process.cpu_times()
