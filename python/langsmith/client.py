@@ -32,6 +32,7 @@ import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
 
+from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import RunEvaluator
@@ -600,7 +601,7 @@ class Client:
         }
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
-        runtime_env = ls_utils.get_runtime_environment()
+        runtime_env = ls_env.get_runtime_and_metrics()
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {**self._headers, "Accept": "application/json"}
         self.request_with_retries(

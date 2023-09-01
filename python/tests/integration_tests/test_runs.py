@@ -38,7 +38,6 @@ def test_nested_runs(
 
     @traceable(run_type="llm")
     def my_llm_run(text: str):
-        # The function needn't accept a run
         return f"Completed: {text}"
 
     @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])
