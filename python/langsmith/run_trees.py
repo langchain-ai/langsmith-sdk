@@ -21,7 +21,6 @@ except ImportError:
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import RunBase
-from langsmith.utils import get_runtime_environment
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +90,7 @@ class RunTree(RunBase):
             values["child_execution_order"] = values["execution_order"]
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
-        extra = cast(dict, values.setdefault("extra", {}))
-        runtime = cast(dict, extra.setdefault("runtime", {}))
-        runtime.update(get_runtime_environment())
+        cast(dict, values.setdefault("extra", {}))
         return values
 
     def end(

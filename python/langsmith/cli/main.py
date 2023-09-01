@@ -10,11 +10,8 @@ from typing import Dict, Generator, List, Literal, Mapping, Optional, Union, cas
 
 import requests
 
-from langsmith.utils import (
-    get_docker_compose_command,
-    get_docker_environment,
-    get_runtime_environment,
-)
+from langsmith import env as ls_env
+from langsmith import utils as ls_utils
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -150,7 +147,7 @@ class LangSmithCommand:
 
     @property
     def docker_compose_command(self) -> List[str]:
-        return get_docker_compose_command()
+        return ls_utils.get_docker_compose_command()
 
     def _open_browser(self, url: str) -> None:
         try:
@@ -360,8 +357,8 @@ class LangSmithCommand:
 
 def env() -> None:
     """Print the runtime environment information."""
-    env = get_runtime_environment()
-    env.update(get_docker_environment())
+    env = ls_env.get_runtime_environment()
+    env.update(ls_env.get_docker_environment())
 
     # calculate the max length of keys
     max_key_length = max(len(key) for key in env.keys())
