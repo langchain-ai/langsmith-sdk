@@ -62,6 +62,9 @@ export interface BaseRun {
   /** A human-readable name for the run. */
   name: string;
 
+  /** Defines the sequence in which the run was executed. */
+  execution_order?: number;
+
   /** The epoch time at which the run started, if available. */
   start_time?: number;
 
