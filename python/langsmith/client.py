@@ -416,6 +416,7 @@ class Client:
             params_["offset"] = offset
             response = self._get_with_retries(path, params=params_)
             items = response.json()
+
             if not items:
                 break
             yield from items
