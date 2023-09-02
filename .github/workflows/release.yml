@@ -61,3 +61,8 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: "python/dist"
+      - name: Publish package to NPM
+        run: |
+          cd js
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          yarn publish --non-interactive
