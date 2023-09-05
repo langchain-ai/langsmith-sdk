@@ -120,7 +120,7 @@ test("Test persisting runs and adding feedback", async () => {
       relevance: "very bad",
     },
     score: 0.5,
-    feedbackSourceType: "MODEL",
+    feedbackSourceType: "model",
   });
   const feedback2 = await langchainClient.createFeedback(
     runs[0].id,
