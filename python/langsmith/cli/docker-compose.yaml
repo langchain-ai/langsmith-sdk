@@ -26,7 +26,7 @@ services:
     environment:
       - LANGCHAIN_ENV=local_docker
       - LOG_LEVEL=warning
-    entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker --connection-class lc_database.queue.connection.RedisRetry"
+    entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker --connection-class lc_database.queue.connection.RedisRetry --job-class lc_database.queue.job.AsyncJob"
   langchain-hub:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:latest
     environment:
