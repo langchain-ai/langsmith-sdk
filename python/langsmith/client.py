@@ -993,7 +993,7 @@ class Client:
     def delete_project(
         self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a project from the LangSmith API.
+        """Delete a project from LangSmith.
 
         Parameters
         ----------
@@ -1274,6 +1274,10 @@ class Client:
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
+        Examples are rows in a dataset, containing the inputs
+        and expected outputs (or other reference information)
+        for a model or chain.
+
         Parameters
         ----------
         inputs : Mapping[str, Any]
@@ -1332,7 +1336,7 @@ class Client:
         dataset_name: Optional[str] = None,
         example_ids: Optional[List[ID_TYPE]] = None,
     ) -> Iterator[ls_schemas.Example]:
-        """List the examples on the LangSmith API.
+        """Retrieve the example rows of the specified dataset.
 
         Parameters
         ----------
@@ -1754,7 +1758,7 @@ class Client:
         Feedback
             The feedback objects.
         """
-        params = {
+        params: dict = {
             "run": run_ids,
             **kwargs,
         }
