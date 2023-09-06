@@ -359,6 +359,7 @@ def env() -> None:
     """Print the runtime environment information."""
     env = ls_env.get_runtime_environment()
     env.update(ls_env.get_docker_environment())
+    env.update(ls_env.get_langchain_env_vars())
 
     # calculate the max length of keys
     max_key_length = max(len(key) for key in env.keys())
