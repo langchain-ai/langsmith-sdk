@@ -572,7 +572,8 @@ class Client:
             The type of the run, such as  such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
         execution_order : int or None, default=None
-            The execution order of the run.
+            The position of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -758,7 +759,9 @@ class Client:
         filter : str or None, default=None
             The filter string to filter by.
         execution_order : int or None, default=None
-            The execution order to filter by.
+            The execution order to filter by. Execution order is the position
+            of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
         parent_run_id : UUID or None, default=None
             The ID of the parent run to filter by.
         start_time : datetime or None, default=None
@@ -990,7 +993,7 @@ class Client:
     def delete_project(
         self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a project from the LangSmith API.
+        """Delete a project from LangSmith.
 
         Parameters
         ----------
@@ -1271,6 +1274,10 @@ class Client:
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
+        Examples are rows in a dataset, containing the inputs
+        and expected outputs (or other reference information)
+        for a model or chain.
+
         Parameters
         ----------
         inputs : Mapping[str, Any]
@@ -1329,7 +1336,7 @@ class Client:
         dataset_name: Optional[str] = None,
         example_ids: Optional[List[ID_TYPE]] = None,
     ) -> Iterator[ls_schemas.Example]:
-        """List the examples on the LangSmith API.
+        """Retrieve the example rows of the specified dataset.
 
         Parameters
         ----------
@@ -1618,7 +1625,8 @@ class Client:
         source_info : Dict[str, Any] or None, default=None
             Information about the source of this feedback.
         feedback_source_type : FeedbackSourceType or str, default=FeedbackSourceType.API
-            The type of feedback source.
+            The type of feedback source, such as model (for model-generated feedback)
+                or API.
         source_run_id : str or UUID or None, default=None,
             The ID of the run that generated this feedback, if a "model" type.
 
@@ -1726,6 +1734,8 @@ class Client:
         self,
         *,
         run_ids: Optional[Sequence[ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Feedback]:
         """List the feedback objects on the LangSmith API.
@@ -1734,6 +1744,12 @@ class Client:
         ----------
         run_ids : List[str or UUID] or None, default=None
             The IDs of the runs to filter by.
+        feedback_key: List[str] or None, default=None
+            The feedback key(s) to filter by. Example: 'correctness'
+            The query performs a union of all feedback keys.
+        feedback_source_type: List[FeedbackSourceType] or None, default=None
+            The type of feedback source, such as model
+            (for model-generated feedback) or API.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -1742,11 +1758,14 @@ class Client:
         Feedback
             The feedback objects.
         """
-        params = {
+        params: dict = {
             "run": run_ids,
             **kwargs,
         }
-
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if feedback_source_type is not None:
+            params["source"] = feedback_source_type
         yield from (
             ls_schemas.Feedback(**feedback)
             for feedback in self._get_paginated_list("/feedback", params=params)

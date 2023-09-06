@@ -91,6 +91,9 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
 }
+
+export type FeedbackSourceType = "model" | "api" | "app";
+
 // utility functions
 const isLocalhost = (url: string): boolean => {
   const strippedUrl = url.replace("http://", "").replace("https://", "");
@@ -945,7 +948,7 @@ export class Client {
       comment: feedbackResult.comment,
       correction: feedbackResult.correction,
       sourceInfo: sourceInfo_,
-      feedbackSourceType: "MODEL",
+      feedbackSourceType: "model",
     });
   }
 
@@ -958,7 +961,7 @@ export class Client {
       correction,
       comment,
       sourceInfo,
-      feedbackSourceType = "API",
+      feedbackSourceType = "api",
       sourceRunId,
     }: {
       score?: ScoreType;
@@ -966,18 +969,14 @@ export class Client {
       correction?: object;
       comment?: string;
       sourceInfo?: object;
-      feedbackSourceType?: "API" | "MODEL";
+      feedbackSourceType?: FeedbackSourceType;
       sourceRunId?: string;
     }
   ): Promise<Feedback> {
-    let feedback_source: feedback_source;
-    if (feedbackSourceType === "API") {
-      feedback_source = { type: "api", metadata: sourceInfo ?? {} };
-    } else if (feedbackSourceType === "MODEL") {
-      feedback_source = { type: "model", metadata: sourceInfo ?? {} };
-    } else {
-      throw new Error(`Unknown feedback source type ${feedbackSourceType}`);
-    }
+    const feedback_source: feedback_source = {
+      type: feedbackSourceType ?? "api",
+      metadata: sourceInfo ?? {},
+    };
     if (
       sourceRunId !== undefined &&
       feedback_source?.metadata !== undefined &&
@@ -1073,12 +1072,26 @@ export class Client {
 
   public async *listFeedback({
     runIds,
+    feedbackKeys,
+    feedbackSourceTypes,
   }: {
     runIds?: string[];
+    feedbackKeys?: string[];
+    feedbackSourceTypes?: FeedbackSourceType[];
   } = {}): AsyncIterable<Feedback> {
     const queryParams = new URLSearchParams();
     if (runIds) {
       queryParams.append("run", runIds.join(","));
+    }
+    if (feedbackKeys) {
+      for (const key of feedbackKeys) {
+        queryParams.append("key", key);
+      }
+    }
+    if (feedbackSourceTypes) {
+      for (const type of feedbackSourceTypes) {
+        queryParams.append("source", type);
+      }
     }
     for await (const feedbacks of this._getPaginated<Feedback>(
       "/feedback",
