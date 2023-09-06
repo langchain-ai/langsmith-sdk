@@ -133,6 +133,16 @@ def get_docker_environment() -> dict:
     }
 
 
+def get_langchain_env_vars() -> dict:
+    """Retrieve the langchain environment variables."""
+    env_vars = {k: v for k, v in os.environ.items() if k.startswith("LANGCHAIN_")}
+    for key in list(env_vars):
+        if "key" in key.lower():
+            v = env_vars[key]
+            env_vars[key] = v[:2] + "*" * (len(v) - 4) + v[-2:]
+    return env_vars
+
+
 @functools.lru_cache(maxsize=1)
 def get_release_shas() -> Dict[str, str]:
     common_release_envs = [
