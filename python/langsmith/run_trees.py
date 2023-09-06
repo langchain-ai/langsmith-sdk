@@ -193,6 +193,7 @@ class RunTree(RunBase):
                 error=self.error,
                 parent_run_id=self.parent_run_id,
                 reference_example_id=self.reference_example_id,
+                end_time=self.end_time,
             )
         )
         return self._futures[-1]

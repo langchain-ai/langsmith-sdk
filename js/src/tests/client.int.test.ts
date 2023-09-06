@@ -238,6 +238,8 @@ test("Test evaluate run", async () => {
   const fetchedFeedback: Feedback[] = [];
   for await (const feedback of langchainClient.listFeedback({
     runIds: [run.id],
+    feedbackKeys: ["Jaccard"],
+    feedbackSourceTypes: ["model"],
   })) {
     fetchedFeedback.push(feedback);
   }
@@ -445,5 +447,6 @@ test("Test create feedback with source run", async () => {
   await langchainClient.createFeedback(runId, "test_feedback", {
     score: 0.5,
     sourceRunId: runId2,
+    feedbackSourceType: "app",
   });
 });
