@@ -1918,9 +1918,9 @@ class Client:
                 "package to run.\nInstall with pip install langchain"
             )
         return await _arun_on_dataset(
-            self,
-            dataset_name,
-            llm_or_chain_factory,
+            dataset_name=dataset_name,
+            llm_or_chain_factory=llm_or_chain_factory,
+            client=self,
             evaluation=evaluation,
             concurrency_level=concurrency_level,
             project_name=project_name,
@@ -2051,9 +2051,9 @@ class Client:
                 "package to run.\nInstall with pip install langchain"
             )
         return _run_on_dataset(
-            self,
-            dataset_name,
-            llm_or_chain_factory,
+            dataset_name=dataset_name,
+            llm_or_chain_factory=llm_or_chain_factory,
+            client=self,
             evaluation=evaluation,
             project_name=project_name,
             verbose=verbose,
