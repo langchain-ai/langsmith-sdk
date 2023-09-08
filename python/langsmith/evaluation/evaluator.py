@@ -1,6 +1,7 @@
 import asyncio
 from abc import abstractmethod
 from typing import Dict, Optional
+from langsmith.client import ID_TYPE
 
 try:
     from pydantic.v1 import BaseModel, Field  # type: ignore[import]
@@ -25,6 +26,7 @@ class EvaluationResult(BaseModel):
     """What the correct value should be, if applicable."""
     evaluator_info: Dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
+    source_run_id: Optional[ID_TYPE] = None
 
     class Config:
         """Pydantic model configuration."""

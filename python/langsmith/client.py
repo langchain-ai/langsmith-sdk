@@ -1545,6 +1545,7 @@ class Client:
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
+            source_run_id=feedback_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
 
@@ -1598,6 +1599,7 @@ class Client:
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
+            source_run_id=feedback_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
 
