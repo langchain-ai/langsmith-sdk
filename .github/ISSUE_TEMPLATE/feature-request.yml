@@ -1,4 +1,4 @@
-name: "\U0001F680 Feature request"
+name: "Feature request"
 description: Submit a proposal/request for a new LangSmith feature
 labels: ["02 Feature Request"]
 body:
