@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 import requests
 from freezegun import freeze_time
+
 from langsmith.client import Client
 from langsmith.evaluation import StringEvaluator
 from langsmith.run_trees import RunTree
@@ -122,6 +123,7 @@ def test_datasets(langchain_client: Client) -> None:
 
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
+
 @freeze_time("2023-01-01")
 def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> None:
     """Test persisting runs and adding feedback."""
@@ -223,6 +225,7 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=project_name)
 
+
 @freeze_time("2023-01-01")
 def test_persist_update_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
@@ -253,6 +256,7 @@ def test_persist_update_run(
     assert stored_run.outputs == run["outputs"]
     assert stored_run.start_time == run["start_time"]
     langchain_client.delete_project(project_name=project_name)
+
 
 @freeze_time("2023-01-01")
 def test_evaluate_run(
@@ -337,6 +341,7 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
+
 @freeze_time("2023-01-01")
 def test_create_project(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
@@ -347,6 +352,7 @@ def test_create_project(
     project = langchain_client.create_project(project_name=project_name)
     assert project.name == project_name
     langchain_client.delete_project(project_id=project.id)
+
 
 @freeze_time("2023-01-01")
 def test_create_dataset(
@@ -368,6 +374,7 @@ def test_create_dataset(
     assert loaded_dataset.data_type == DataType.llm
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
+
 @freeze_time("2023-01-01")
 def test_share_unshare_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
@@ -386,6 +393,7 @@ def test_share_unshare_run(
     assert response.status_code == 200
     assert langchain_client.read_run_shared_link(run_id) == shared_url
     langchain_client.unshare_run(run_id)
+
 
 @freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
@@ -431,8 +439,11 @@ def test_list_datasets(langchain_client: Client) -> None:
         == 0
     )
 
+
 @freeze_time("2023-01-01")
-def test_create_run_with_masked_inputs_outputs(langchain_client: Client,  monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_run_with_masked_inputs_outputs(
+    langchain_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
     project_name = "__test_create_run_with_masked_inputs_outputs"
     monkeypatch.setenv("LANGCHAIN_HIDE_INPUTS", "true")
     monkeypatch.setenv("LANGCHAIN_HIDE_OUTPUTS", "true")
