@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+version: 2.1
+contact_links:
+  - name: Email
+    url: mailto:support@langchain.dev
+    about: LangChain team support email
+  - name: Discord
+    url: https://discord.gg/langchain
+    about: General community discussions
