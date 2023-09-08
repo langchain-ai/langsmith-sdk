@@ -1,5 +1,3 @@
-import { exec } from "child_process";
-
 // Inlined from https://github.com/flexdinesh/browser-or-node
 declare global {
   const Deno:
@@ -76,58 +74,6 @@ export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
     };
   }
   return runtimeEnvironment;
-}
-
-export async function getDockerEnvironment(): Promise<{
-  dockerVersion: string | undefined;
-  dockerComposeCommand: string | undefined;
-  dockerComposeVersion: string | undefined;
-}> {
-  const getDockerVersion = () =>
-    new Promise<string | undefined>((resolve) => {
-      exec("docker --version", (error, stdout) => {
-        if (error) {
-          resolve(undefined);
-        } else {
-          resolve(stdout.trim());
-        }
-      });
-    });
-
-  const getDockerComposeCommand = () =>
-    new Promise<string | undefined>((resolve) => {
-      exec("which docker-compose", (error, stdout) => {
-        if (error) {
-          resolve(undefined);
-        } else {
-          resolve(stdout.trim());
-        }
-      });
-    });
-
-  const getDockerComposeVersion = () =>
-    new Promise<string | undefined>((resolve) => {
-      exec("docker-compose --version", (error, stdout) => {
-        if (error) {
-          resolve(undefined);
-        } else {
-          resolve(stdout.trim());
-        }
-      });
-    });
-
-  const [dockerVersion, dockerComposeCommand, dockerComposeVersion] =
-    await Promise.all([
-      getDockerVersion(),
-      getDockerComposeCommand(),
-      getDockerComposeVersion(),
-    ]);
-
-  return {
-    dockerVersion,
-    dockerComposeCommand,
-    dockerComposeVersion,
-  };
 }
 
 /**
