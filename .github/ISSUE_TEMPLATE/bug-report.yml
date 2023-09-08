@@ -8,7 +8,7 @@ body:
         Thank you for taking the time to file a bug report. Before creating a new
         issue, please make sure to take a few moments to check the issue tracker
         for existing issues about the bug.
-  
+
   - type: checkboxes
     id: tracing-method
     attributes:
@@ -19,7 +19,7 @@ body:
         - label: "SDK/Client"
         - label: "REST API"
         - label: "Other"
-  
+
   - type: checkboxes
     id: runtime-language
     attributes:
@@ -29,7 +29,7 @@ body:
         - label: "Python"
         - label: "JavaScript/TypeScript"
         - label: "Other"
-  
+
   - type: checkboxes
     id: platform-environment
     attributes:
