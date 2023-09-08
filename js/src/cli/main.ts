@@ -4,7 +4,6 @@ import * as util from "util";
 import { Command } from "commander";
 import * as child_process from "child_process";
 import {
-  getDockerEnvironment,
   getLangChainEnvVars,
   getRuntimeEnvironment,
   setEnvironmentVariable,
@@ -295,11 +294,9 @@ class SmithCommand {
 
   async env() {
     const env = await getRuntimeEnvironment();
-    const dockerEnv = await getDockerEnvironment();
     const envVars = await getLangChainEnvVars();
     const envDict = {
       ...env,
-      ...dockerEnv,
       ...envVars,
     };
     // Pretty print
