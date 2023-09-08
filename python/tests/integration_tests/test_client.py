@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import pytest
 import requests
-
+from freezegun import freeze_time
 from langsmith.client import Client
 from langsmith.evaluation import StringEvaluator
 from langsmith.run_trees import RunTree
@@ -122,7 +122,7 @@ def test_datasets(langchain_client: Client) -> None:
 
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
-
+@freeze_time("2023-01-01")
 def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
@@ -223,7 +223,7 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=project_name)
 
-
+@freeze_time("2023-01-01")
 def test_persist_update_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -254,7 +254,7 @@ def test_persist_update_run(
     assert stored_run.start_time == run["start_time"]
     langchain_client.delete_project(project_name=project_name)
 
-
+@freeze_time("2023-01-01")
 def test_evaluate_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -337,7 +337,7 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
-
+@freeze_time("2023-01-01")
 def test_create_project(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -348,7 +348,7 @@ def test_create_project(
     assert project.name == project_name
     langchain_client.delete_project(project_id=project.id)
 
-
+@freeze_time("2023-01-01")
 def test_create_dataset(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -368,7 +368,7 @@ def test_create_dataset(
     assert loaded_dataset.data_type == DataType.llm
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
-
+@freeze_time("2023-01-01")
 def test_share_unshare_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -387,7 +387,7 @@ def test_share_unshare_run(
     assert langchain_client.read_run_shared_link(run_id) == shared_url
     langchain_client.unshare_run(run_id)
 
-
+@freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
     for name in ["___TEST dataset1", "___TEST dataset2"]:
         datasets = list(langchain_client.list_datasets(dataset_name=name))
@@ -430,3 +430,52 @@ def test_list_datasets(langchain_client: Client) -> None:
         )
         == 0
     )
+
+@freeze_time("2023-01-01")
+def test_create_run_with_masked_inputs_outputs(langchain_client: Client,  monkeypatch: pytest.MonkeyPatch) -> None:
+    project_name = "__test_create_run_with_masked_inputs_outputs"
+    monkeypatch.setenv("LANGCHAIN_HIDE_INPUTS", "true")
+    monkeypatch.setenv("LANGCHAIN_HIDE_OUTPUTS", "true")
+    for project in langchain_client.list_projects():
+        if project.name == project_name:
+            langchain_client.delete_project(project_name=project_name)
+
+    run_id = "8bac165f-470e-4bf8-baa0-15f2de4cc706"
+    langchain_client.create_run(
+        id=run_id,
+        project_name=project_name,
+        name="test_run",
+        run_type="llm",
+        inputs={"prompt": "hello world"},
+        outputs={"generation": "hi there"},
+        start_time=datetime.utcnow(),
+        end_time=datetime.utcnow(),
+        hide_inputs=True,
+        hide_outputs=True,
+    )
+
+    run_id2 = "8bac165f-490e-4bf8-baa0-15f2de4cc707"
+    langchain_client.create_run(
+        id=run_id2,
+        project_name=project_name,
+        name="test_run_2",
+        run_type="llm",
+        inputs={"messages": "hello world 2"},
+        start_time=datetime.utcnow(),
+        hide_inputs=True,
+    )
+
+    langchain_client.update_run(
+        run_id2,
+        outputs={"generation": "hi there 2"},
+        end_time=datetime.utcnow(),
+        hide_outputs=True,
+    )
+
+    run1 = langchain_client.read_run(run_id)
+    assert run1.inputs == {}
+    assert run1.outputs == {}
+
+    run2 = langchain_client.read_run(run_id2)
+    assert run2.inputs == {}
+    assert run2.outputs == {}

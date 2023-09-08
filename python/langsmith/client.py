@@ -186,15 +186,15 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
     return _api_url.strip().strip('"').strip("'").rstrip("/")
 
 
-def _mask_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    if os.environ.get("LANGCHAIN_MASK_INPUTS") == "true":
-        return {k: "********" for k in inputs}
+def _hide_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    if os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true":
+        return {}
     return inputs
 
 
-def _mask_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
-    if os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true":
-        return {k: "********" for k in outputs}
+def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
+    if os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true":
+        return {}
     return outputs
 
 
@@ -609,12 +609,12 @@ class Client:
             **kwargs,
             "session_name": project_name,
             "name": name,
-            "inputs": _mask_inputs(inputs),
+            "inputs": _hide_inputs(inputs),
             "run_type": run_type,
             "execution_order": execution_order if execution_order is not None else 1,
         }
         if "outputs" in run_create:
-            run_create["outputs"] = _mask_outputs(run_create["outputs"])
+            run_create["outputs"] = _hide_outputs(run_create["outputs"])
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
         runtime_env = ls_env.get_runtime_and_metrics()
@@ -667,9 +667,9 @@ class Client:
         if error is not None:
             data["error"] = error
         if inputs is not None:
-            data["inputs"] = _mask_inputs(inputs)
+            data["inputs"] = _hide_inputs(inputs)
         if outputs is not None:
-            data["outputs"] = _mask_outputs(outputs)
+            data["outputs"] = _hide_outputs(outputs)
         if events is not None:
             data["events"] = events
         self.request_with_retries(

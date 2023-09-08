@@ -132,16 +132,16 @@ function trimQuotes(str?: string): string | undefined {
     .replace(/^'(.*)'$/, "$1");
 }
 
-function maskInputs(inputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_MASK_INPUTS") === "true") {
-    return Object.fromEntries(Object.keys(inputs).map((k) => [k, "********"]));
+function hideInputs(inputs: KVMap): KVMap {
+  if (getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true") {
+    return {};
   }
   return inputs;
 }
 
-function maskOutputs(outputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true") {
-    return Object.fromEntries(Object.keys(outputs).map((k) => [k, "********"]));
+function hideOutputs(outputs: KVMap): KVMap {
+  if (getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true") {
+    return {};
   }
   return outputs;
 }
@@ -272,9 +272,9 @@ export class Client {
         },
       },
     };
-    runCreate.inputs = maskInputs(runCreate.inputs);
+    runCreate.inputs = hideInputs(runCreate.inputs);
     if (runCreate.outputs) {
-      runCreate.outputs = maskOutputs(runCreate.outputs);
+      runCreate.outputs = hideOutputs(runCreate.outputs);
     }
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
@@ -288,11 +288,11 @@ export class Client {
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
     if (run.inputs) {
-      run.inputs = maskInputs(run.inputs);
+      run.inputs = hideInputs(run.inputs);
     }
 
     if (run.outputs) {
-      run.outputs = maskOutputs(run.outputs);
+      run.outputs = hideOutputs(run.outputs);
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
