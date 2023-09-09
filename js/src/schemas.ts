@@ -229,3 +229,8 @@ export interface FeedbackCreate extends FeedbackBase {
 export interface Feedback extends FeedbackBase {
   id: string;
 }
+
+export interface LangChainBaseMessage {
+  _getType: () => string;
+  content: string;
+}
