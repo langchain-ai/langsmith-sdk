@@ -233,4 +233,5 @@ export interface Feedback extends FeedbackBase {
 export interface LangChainBaseMessage {
   _getType: () => string;
   content: string;
+  additional_kwargs?: KVMap;
 }
