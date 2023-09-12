@@ -1183,16 +1183,36 @@ class Client:
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_chat_example(
         self,
-        messages: List[Mapping[str, Any]],
-        generations: Optional[Mapping[str, Any]] = None,
+        messages: List[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
+        generations: Optional[
+            Union[Mapping[str, Any], ls_schemas.BaseMessageLike]
+        ] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
         """Add an example (row) to a Chat-type dataset."""
+        final_input = []
+        for message in messages:
+            if ls_utils.is_base_message_like(message):
+                final_input.append(
+                    ls_utils.convert_langchain_message(
+                        cast(ls_schemas.BaseMessageLike, message)
+                    )
+                )
+            else:
+                final_input.append(cast(dict, message))
+        final_generations = None
+        if generations is not None:
+            if ls_utils.is_base_message_like(generations):
+                final_generations = ls_utils.convert_langchain_message(
+                    cast(ls_schemas.BaseMessageLike, generations)
+                )
+            else:
+                final_generations = cast(dict, generations)
         return self.create_example(
-            inputs={"input": messages},
-            outputs={"output": generations},
+            inputs={"input": final_input},
+            outputs={"output": final_generations} if final_generations is not None else None,
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             created_at=created_at,

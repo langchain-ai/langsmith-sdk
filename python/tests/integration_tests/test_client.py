@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 import requests
 from freezegun import freeze_time
+from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import Client
 from langsmith.evaluation import StringEvaluator
@@ -490,3 +491,55 @@ def test_create_run_with_masked_inputs_outputs(
     run2 = langchain_client.read_run(run_id2)
     assert run2.inputs == {}
     assert run2.outputs == {}
+
+
+@freeze_time("2023-01-01")
+def test_create_chat_example(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
+) -> None:
+    dataset_name = "__createChatExample-test-dataset"
+    try:
+        existing_dataset = langchain_client.read_dataset(dataset_name=dataset_name)
+        langchain_client.delete_dataset(dataset_id=existing_dataset.id)
+    except LangSmithError:
+        # If the dataset doesn't exist,
+        pass
+
+    dataset = langchain_client.create_dataset(dataset_name)
+
+    input = [HumanMessage(content="Hello, world!")]
+    generation = FunctionMessage(
+        name="foo",
+        content="",
+        additional_kwargs={"function_call": {"arguments": "args", "name": "foo"}},
+    )
+    # Create the example from messages
+    langchain_client.create_chat_example(input, generation, dataset_id=dataset.id)
+
+    # Read the example
+    examples = []
+    for example in langchain_client.list_examples(dataset_id=dataset.id):
+        examples.append(example)
+    assert len(examples) == 1
+    assert examples[0].inputs == {
+        "input": [
+            {
+                "type": "human",
+                "data": {"content": "Hello, world!"},
+            },
+        ],
+    }
+    assert examples[0].outputs == {
+        "output": {
+            "type": "function",
+            "data": {
+                "content": "",
+                "additional_kwargs": {
+                    "function_call": {"arguments": "args", "name": "foo"}
+                },
+            },
+        },
+    }
+
+    # Delete dataset
+    langchain_client.delete_dataset(dataset_id=dataset.id)
