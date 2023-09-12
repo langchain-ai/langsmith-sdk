@@ -1212,7 +1212,9 @@ class Client:
                 final_generations = cast(dict, generations)
         return self.create_example(
             inputs={"input": final_input},
-            outputs={"output": final_generations} if final_generations is not None else None,
+            outputs={"output": final_generations}
+            if final_generations is not None
+            else None,
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             created_at=created_at,
