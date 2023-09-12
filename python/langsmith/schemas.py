@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
 from uuid import UUID
 
 try:
@@ -24,6 +24,7 @@ except ImportError:
         StrictFloat,
         StrictInt,
     )
+
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
@@ -353,3 +354,17 @@ class TracerSessionResult(TracerSession):
     """The reference dataset IDs this project's runs were generated on."""
     run_facets: Optional[List[Dict[str, Any]]]
     """Facets for the runs in the project."""
+
+
+@runtime_checkable
+class BaseMessageLike(Protocol):
+    """
+    A protocol representing objects similar to BaseMessage.
+    """
+
+    content: str
+    additional_kwargs: Dict
+
+    @property
+    def type(self) -> str:
+        """Type of the Message, used for serialization."""
