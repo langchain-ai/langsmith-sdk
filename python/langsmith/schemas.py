@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
 from uuid import UUID
 
 try:
-    from pydantic.v1 import (
+    from pydantic.v1 import (  # type: ignore[import]
         BaseModel,
-        Field,  # type: ignore[import]
+        Field,
         PrivateAttr,
         StrictBool,
         StrictFloat,
