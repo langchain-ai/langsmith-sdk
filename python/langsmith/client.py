@@ -4,6 +4,7 @@ from __future__ import annotations
 import collections
 import datetime
 import functools
+import importlib
 import io
 import json
 import logging
@@ -28,7 +29,6 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import pkg_resources
 import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
@@ -110,15 +110,14 @@ def _default_retry_config() -> Retry:
     # the `allowed_methods` keyword is not available in urllib3 < 1.26
 
     # check to see if urllib3 version is 1.26 or greater
-    urllib3_version = pkg_resources.get_distribution("urllib3").version
-    parsed_urlib3_version = pkg_resources.parse_version(urllib3_version)
-    use_allowed_methods = parsed_urlib3_version >= pkg_resources.parse_version("1.26")
+    urllib3_version = importlib.metadata.version("urllib3")
+    use_allowed_methods = tuple(map(int, urllib3_version.split("."))) >= (1, 26)
 
     if use_allowed_methods:
         # Retry on all methods
         retry_params["allowed_methods"] = None
 
-    return Retry(**retry_params)
+    return Retry(**retry_params)  # type: ignore
 
 
 def _serialize_json(obj: Any) -> str:
