@@ -175,11 +175,6 @@ class RunTree(RunBase):
             ]
         return run_dict
 
-    def post(self, exclude_child_runs: bool = True) -> Future:
-        """Post the run tree to the API asynchronously."""
-        exclude = {"child_runs", "parent_run"} if exclude_child_runs else {"parent_run"}
-        kwargs = self.dict(exclude=exclude, exclude_none=True)
-        self._futures.append(self._executor.submit(self._client.create_run, **kwargs))
 
     def _execute(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         try:
@@ -210,11 +205,7 @@ class RunTree(RunBase):
 
     def patch(self) -> Future:
         """Patch the run tree to the API in a background thread."""
-        if not self._ended:
-            self.end()
         self._futures.append(
-            self._executor.submit(
-                self._client.update_run,
             self.executor.submit(
                 self._execute,
                 self.client.update_run,

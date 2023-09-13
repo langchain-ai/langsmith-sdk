@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from abc import abstractmethod
 from typing import Dict, Optional, Union
 
@@ -21,7 +20,7 @@ class EvaluationResult(DictMixin):
         comment: Optional[str] = None,
         correction: Optional[Union[Dict, str]] = None,
         evaluator_info: Optional[Dict] = None,
-        evaluator_run_id: Optional[ID_TYPE] = None,
+        source_run_id: Optional[ID_TYPE] = None,
     ) -> None:
         """Initialize the evaluation result.
 
@@ -32,7 +31,7 @@ class EvaluationResult(DictMixin):
             comment: An explanation regarding the evaluation.
             correction: What the correct value should be, if applicable.
             evaluator_info: Additional information about the evaluator.
-            evaluator_run_id: The ID of the run that produced this result,
+            source_run_id: The ID of the run that produced this result,
                 if applicable.
         """
         super().__init__()
@@ -42,8 +41,8 @@ class EvaluationResult(DictMixin):
         self.comment = comment
         self.correction = correction
         self.evaluator_info = evaluator_info or {}
-        if evaluator_run_id is not None and "__run" not in self.evaluator_info:
-            self.evaluator_info["__run"] = evaluator_run_id
+        if source_run_id is not None and "__run" not in self.evaluator_info:
+            self.evaluator_info["__run"] = source_run_id
 
     @classmethod
     def from_dict(cls, data: Dict) -> EvaluationResult:
@@ -55,7 +54,7 @@ class EvaluationResult(DictMixin):
             "comment",
             "correction",
             "evaluator_info",
-            "evaluator_run_id",
+            "source_run_id",
         }
         eval_kwargs = {k: v for k, v in data.items() if k in result_args}
         if "comment" not in eval_kwargs:

@@ -638,7 +638,7 @@ class Client:
             "post",
             f"{self.api_url}/runs",
             request_kwargs={
-                "data": json.dumps(run_create, default=serialize_json),
+                "data": json.dumps(run_create, default=_serialize_json),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -938,7 +938,7 @@ class Client:
 
         Returns
         -------
-        TracerSession
+        TracerSessionResult
             The project.
         """
         path = "/sessions"
@@ -1067,12 +1067,11 @@ class Client:
             "name": dataset_name,
             "description": description,
             "data_type": data_type,
-            "id": dataset_id,
         }
         response = self.session.post(
             self.api_url + "/datasets",
             headers=self._headers,
-            data=json.dumps(data, default=serialize_json),
+            data=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
@@ -1360,7 +1359,7 @@ class Client:
         response = self.session.post(
             f"{self.api_url}/examples",
             headers=self._headers,
-            data=json.dumps(data, default=serialize_json),
+            data=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -1689,7 +1688,6 @@ class Client:
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
         if feedback_source_type == ls_schemas.FeedbackSourceType.API:
                 ls_schemas.APIFeedbackSource(metadata=source_info)
-            )
         elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
             feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
         else:
@@ -1699,7 +1697,20 @@ class Client:
         )
         if source_run_id is not None and "__run" not in feedback_source.metadata:
             feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
-            data=json.dumps(feedback, default=serialize_json),
+        feedback = ls_schemas.FeedbackCreate(
+            id=uuid.uuid4(),
+            run_id=run_id,
+            key=key,
+            score=score,
+            value=value,
+            correction=correction,
+            comment=comment,
+            feedback_source=feedback_source,
+        )
+        response = self.session.post(
+            self.api_url + "/feedback",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=feedback.json(exclude_none=True),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Feedback(**response.json())

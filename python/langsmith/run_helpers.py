@@ -5,26 +5,9 @@ import functools
 import inspect
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from functools import wraps
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    List,
-    Mapping,
-    Optional,
-    Tuple,
-    TypedDict,
-    Union,
-)
-from uuid import uuid4
 import uuid
 from concurrent import futures
 from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, TypedDict
-
 from langsmith import client, run_trees, utils
 
 logger = logging.getLogger(__name__)
@@ -157,77 +140,6 @@ def _setup_run(
         project_name=project_name_,
         outer_project=outer_project,
     )
-
-
-def _setup_run_tree(
-    func: Callable[..., Any],
-    func_args: Tuple[Any, ...],
-    func_kwargs: Mapping[str, Any],
-    run_type: str,
-    name: Optional[str] = None,
-    metadata: Optional[Mapping[str, Any]] = None,
-    tags: Optional[List[str]] = None,
-    outer_project: Optional[str] = None,
-    extra_outer: Optional[Mapping[str, Any]] = None,
-    langsmith_extra: Optional[Union[LangSmithExtra, Dict]] = None,
-    executor: Optional[ThreadPoolExecutor] = None,
-) -> RunTree:
-    langsmith_extra = langsmith_extra or {}
-    run_tree = langsmith_extra.get("run_tree", None)
-    project_name_ = langsmith_extra.get("project_name", outer_project)
-    run_extra = langsmith_extra.get("run_extra", None)
-    reference_example_id = langsmith_extra.get("reference_example_id", None)
-    if run_tree is None:
-        parent_run_ = _PARENT_RUN_TREE.get()
-    else:
-        parent_run_ = run_tree
-    signature = inspect.signature(func)
-    name_ = name or func.__name__
-    docstring = func.__doc__
-    extra_outer_ = dict(extra_outer) if extra_outer else {}
-    if run_extra:
-        extra_inner = {**extra_outer_, **run_extra}
-    else:
-        extra_inner = extra_outer_
-    metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
-    if metadata_:
-        extra_inner["metadata"] = metadata_
-    inputs = _get_inputs(signature, *func_args, **func_kwargs)
-    tags_ = (tags or []) + (langsmith_extra.get("tags") or [])
-    id_ = langsmith_extra.get("run_id", uuid4())
-    if parent_run_ is not None:
-        new_run = parent_run_.create_child(
-            name=name_,
-            run_id=id_,
-            run_type=run_type,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
-            inputs=inputs,
-            tags=tags_,
-            extra=extra_inner,
-        )
-    else:
-        new_run = RunTree(
-            name=name_,
-            id=id_,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
-            inputs=inputs,
-            run_type=run_type,
-            reference_example_id=reference_example_id,
-            project_name=project_name_,
-            extra=extra_inner,
-            tags=tags_,
-            executor=executor,
-        )
-    new_run.post()
-    return new_run
 
 
 def traceable(
