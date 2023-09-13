@@ -8,7 +8,6 @@ import io
 import json
 import logging
 import os
-import pkg_resources
 import socket
 import uuid
 import weakref
@@ -29,6 +28,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+import pkg_resources
 import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
