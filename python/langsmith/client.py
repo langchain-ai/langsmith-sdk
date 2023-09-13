@@ -1707,6 +1707,8 @@ class Client:
             correction=correction,
             comment=comment,
             feedback_source=feedback_source,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            modified_at=datetime.datetime.now(datetime.timezone.utc),
         )
         response = self.session.post(
             self.api_url + "/feedback",
@@ -1714,7 +1716,7 @@ class Client:
             data=feedback.json(exclude_none=True),
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Feedback(**response.json())
+        return ls_schemas.Feedback(**feedback.dict())
 
     def update_feedback(
         self,

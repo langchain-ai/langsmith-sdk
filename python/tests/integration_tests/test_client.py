@@ -349,6 +349,11 @@ def test_create_project(
 ) -> None:
     """Test the project creation"""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    try:
+        langchain_client.read_project(project_name="__test_create_project")
+        langchain_client.delete_project(project_name="__test_create_project")
+    except LangSmithError:
+        pass
     project_name = "__test_create_project"
     project = langchain_client.create_project(project_name=project_name)
     assert project.name == project_name
