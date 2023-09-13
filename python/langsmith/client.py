@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import os
+import pkg_resources
 import socket
 import uuid
 import weakref
@@ -90,20 +91,34 @@ ID_TYPE = Union[uuid.UUID, str]
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
 
+    If urllib3 version is 1.26 or greater, retry on all methods.
+
     Returns
     -------
     Retry
         The default retry configuration.
     """
-    return Retry(
+    retry_params = dict(
         total=3,
-        allowed_methods=None,  # Retry on all methods
         status_forcelist=[502, 503, 504, 408, 425, 429],
         backoff_factor=0.5,
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
         raise_on_status=False,
     )
+
+    # the `allowed_methods` keyword is not available in urllib3 < 1.26
+
+    # check to see if urllib3 version is 1.26 or greater
+    urllib3_version = pkg_resources.get_distribution("urllib3").version
+    parsed_urlib3_version = pkg_resources.parse_version(urllib3_version)
+    use_allowed_methods = parsed_urlib3_version >= pkg_resources.parse_version("1.26")
+
+    if use_allowed_methods:
+        # Retry on all methods
+        retry_params["allowed_methods"] = None
+
+    return Retry(**retry_params)
 
 
 def _serialize_json(obj: Any) -> str:
