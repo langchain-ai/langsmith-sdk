@@ -15,7 +15,12 @@ import {
   TracerSessionResult,
   ValueType,
   DataType,
+  LangChainBaseMessage,
 } from "./schemas.js";
+import {
+  convertLangChainMessageToExample,
+  isLangChainMessage,
+} from "./utils/messages.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
@@ -91,6 +96,15 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
 }
+
+export type FeedbackSourceType = "model" | "api" | "app";
+
+export type CreateExampleOptions = {
+  datasetId?: string;
+  datasetName?: string;
+  createdAt?: Date;
+};
+
 // utility functions
 const isLocalhost = (url: string): boolean => {
   const strippedUrl = url.replace("http://", "").replace("https://", "");
@@ -129,6 +143,19 @@ function trimQuotes(str?: string): string | undefined {
     .replace(/^'(.*)'$/, "$1");
 }
 
+function hideInputs(inputs: KVMap): KVMap {
+  if (getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true") {
+    return {};
+  }
+  return inputs;
+}
+
+function hideOutputs(outputs: KVMap): KVMap {
+  if (getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true") {
+    return {};
+  }
+  return outputs;
+}
 export class Client {
   private apiKey?: string;
 
@@ -256,6 +283,11 @@ export class Client {
         },
       },
     };
+    runCreate.inputs = hideInputs(runCreate.inputs);
+    if (runCreate.outputs) {
+      runCreate.outputs = hideOutputs(runCreate.outputs);
+    }
+
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,
@@ -266,6 +298,13 @@ export class Client {
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+    if (run.inputs) {
+      run.inputs = hideInputs(run.inputs);
+    }
+
+    if (run.outputs) {
+      run.outputs = hideOutputs(run.outputs);
+    }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
       fetch,
@@ -789,15 +828,7 @@ export class Client {
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    {
-      datasetId,
-      datasetName,
-      createdAt,
-    }: {
-      datasetId?: string;
-      datasetName?: string;
-      createdAt?: Date;
-    }
+    { datasetId, datasetName, createdAt }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
     if (datasetId_ === undefined && datasetName === undefined) {
@@ -832,6 +863,35 @@ export class Client {
 
     const result = await response.json();
     return result as Example;
+  }
+
+  public async createLLMExample(
+    input: string,
+    generation: string | undefined,
+    options: CreateExampleOptions
+  ) {
+    return this.createExample({ input }, { output: generation }, options);
+  }
+
+  public async createChatExample(
+    input: KVMap[] | LangChainBaseMessage[],
+    generations: KVMap | LangChainBaseMessage | undefined,
+    options: CreateExampleOptions
+  ) {
+    const finalInput = input.map((message) => {
+      if (isLangChainMessage(message)) {
+        return convertLangChainMessageToExample(message);
+      }
+      return message;
+    });
+    const finalOutput = isLangChainMessage(generations)
+      ? convertLangChainMessageToExample(generations)
+      : generations;
+    return this.createExample(
+      { input: finalInput },
+      { output: finalOutput },
+      options
+    );
   }
 
   public async readExample(exampleId: string): Promise<Example> {
@@ -945,7 +1005,7 @@ export class Client {
       comment: feedbackResult.comment,
       correction: feedbackResult.correction,
       sourceInfo: sourceInfo_,
-      feedbackSourceType: "MODEL",
+      feedbackSourceType: "model",
     });
   }
 
@@ -958,7 +1018,7 @@ export class Client {
       correction,
       comment,
       sourceInfo,
-      feedbackSourceType = "API",
+      feedbackSourceType = "api",
       sourceRunId,
     }: {
       score?: ScoreType;
@@ -966,18 +1026,14 @@ export class Client {
       correction?: object;
       comment?: string;
       sourceInfo?: object;
-      feedbackSourceType?: "API" | "MODEL";
+      feedbackSourceType?: FeedbackSourceType;
       sourceRunId?: string;
     }
   ): Promise<Feedback> {
-    let feedback_source: feedback_source;
-    if (feedbackSourceType === "API") {
-      feedback_source = { type: "api", metadata: sourceInfo ?? {} };
-    } else if (feedbackSourceType === "MODEL") {
-      feedback_source = { type: "model", metadata: sourceInfo ?? {} };
-    } else {
-      throw new Error(`Unknown feedback source type ${feedbackSourceType}`);
-    }
+    const feedback_source: feedback_source = {
+      type: feedbackSourceType ?? "api",
+      metadata: sourceInfo ?? {},
+    };
     if (
       sourceRunId !== undefined &&
       feedback_source?.metadata !== undefined &&
@@ -1073,12 +1129,26 @@ export class Client {
 
   public async *listFeedback({
     runIds,
+    feedbackKeys,
+    feedbackSourceTypes,
   }: {
     runIds?: string[];
+    feedbackKeys?: string[];
+    feedbackSourceTypes?: FeedbackSourceType[];
   } = {}): AsyncIterable<Feedback> {
     const queryParams = new URLSearchParams();
     if (runIds) {
       queryParams.append("run", runIds.join(","));
+    }
+    if (feedbackKeys) {
+      for (const key of feedbackKeys) {
+        queryParams.append("key", key);
+      }
+    }
+    if (feedbackSourceTypes) {
+      for (const type of feedbackSourceTypes) {
+        queryParams.append("source", type);
+      }
     }
     for await (const feedbacks of this._getPaginated<Feedback>(
       "/feedback",

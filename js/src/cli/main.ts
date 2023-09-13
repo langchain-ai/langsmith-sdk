@@ -3,7 +3,11 @@ import * as path from "path";
 import * as util from "util";
 import { Command } from "commander";
 import * as child_process from "child_process";
-import { setEnvironmentVariable } from "../utils/env.js";
+import {
+  getLangChainEnvVars,
+  getRuntimeEnvironment,
+  setEnvironmentVariable,
+} from "../utils/env.js";
 import { spawn } from "child_process";
 
 const currentFileName = __filename;
@@ -287,6 +291,23 @@ class SmithCommand {
       console.info("The LangSmith server is not running.");
     }
   }
+
+  async env() {
+    const env = await getRuntimeEnvironment();
+    const envVars = await getLangChainEnvVars();
+    const envDict = {
+      ...env,
+      ...envVars,
+    };
+    // Pretty print
+    const maxKeyLength = Math.max(
+      ...Object.keys(envDict).map((key) => key.length)
+    );
+    console.info("LangChain Environment:");
+    for (const [key, value] of Object.entries(envDict)) {
+      console.info(`${key.padEnd(maxKeyLength)}: ${value}`);
+    }
+  }
 }
 
 const startCommand = new Command("start")
@@ -357,11 +378,19 @@ const statusCommand = new Command("status")
     await smith.status();
   });
 
+const envCommand = new Command("env")
+  .description("Get relevant environment information for the LangSmith server")
+  .action(async () => {
+    const smith = await SmithCommand.create();
+    await smith.env();
+  });
+
 program
   .description("Manage the LangSmith server")
   .addCommand(startCommand)
   .addCommand(stopCommand)
   .addCommand(pullCommand)
-  .addCommand(statusCommand);
+  .addCommand(statusCommand)
+  .addCommand(envCommand);
 
 program.parse(process.argv);

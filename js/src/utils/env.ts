@@ -76,6 +76,68 @@ export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
   return runtimeEnvironment;
 }
 
+/**
+ * Retrieves the LangChain-specific environment variables from the current runtime environment.
+ * Sensitive keys (containing the word "key") have their values redacted for security.
+ *
+ * @returns {Record<string, string>}
+ *  - A record of LangChain-specific environment variables.
+ */
+export function getLangChainEnvVars(): Record<string, string> {
+  const allEnvVars = getEnvironmentVariables() || {};
+  const envVars: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(allEnvVars)) {
+    if (key.startsWith("LANGCHAIN_") && typeof value === "string") {
+      envVars[key] = value;
+    }
+  }
+
+  for (const key in envVars) {
+    if (key.toLowerCase().includes("key") && typeof envVars[key] === "string") {
+      const value = envVars[key];
+      envVars[key] =
+        value.slice(0, 2) + "*".repeat(value.length - 4) + value.slice(-2);
+    }
+  }
+
+  return envVars;
+}
+
+/**
+ * Retrieves the environment variables from the current runtime environment.
+ *
+ * This function is designed to operate in a variety of JS environments,
+ * including Node.js, Deno, browsers, etc.
+ *
+ * @returns {Record<string, string> | undefined}
+ *  - A record of environment variables if available.
+ *  - `undefined` if the environment does not support or allows access to environment variables.
+ */
+export function getEnvironmentVariables(): Record<string, string> | undefined {
+  try {
+    // Check for Node.js environment
+    // eslint-disable-next-line no-process-env
+    if (typeof process !== "undefined" && process.env) {
+      // eslint-disable-next-line no-process-env
+      Object.entries(process.env).reduce(
+        (acc: { [key: string]: string }, [key, value]) => {
+          acc[key] = String(value);
+          return acc;
+        },
+        {}
+      );
+    }
+
+    // For browsers and other environments, we may not have direct access to env variables
+    // Return undefined or any other fallback as required.
+    return undefined;
+  } catch (e) {
+    // Catch any errors that might occur while trying to access environment variables
+    return undefined;
+  }
+}
+
 export function getEnvironmentVariable(name: string): string | undefined {
   // Certain Deno setups will throw an error if you try to access environment variables
   // https://github.com/hwchase17/langchainjs/issues/1412

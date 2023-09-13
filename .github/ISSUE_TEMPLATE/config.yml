@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+version: 2.1
+contact_links:
+  - name: Support Email
+    url: mailto:support@langchain.dev
+    about: Address to contact for enterprise support requests.
+  - name: Discord
+    url: https://discord.gg/6adMQxSpJS
+    about: General community discussions

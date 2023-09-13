@@ -186,6 +186,18 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
     return _api_url.strip().strip('"').strip("'").rstrip("/")
 
 
+def _hide_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    if os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true":
+        return {}
+    return inputs
+
+
+def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
+    if os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true":
+        return {}
+    return outputs
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -572,7 +584,8 @@ class Client:
             The type of the run, such as  such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
         execution_order : int or None, default=None
-            The execution order of the run.
+            The position of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -596,10 +609,12 @@ class Client:
             **kwargs,
             "session_name": project_name,
             "name": name,
-            "inputs": inputs,
+            "inputs": _hide_inputs(inputs),
             "run_type": run_type,
             "execution_order": execution_order if execution_order is not None else 1,
         }
+        if "outputs" in run_create:
+            run_create["outputs"] = _hide_outputs(run_create["outputs"])
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
         runtime_env = ls_env.get_runtime_and_metrics()
@@ -652,9 +667,9 @@ class Client:
         if error is not None:
             data["error"] = error
         if inputs is not None:
-            data["inputs"] = inputs
+            data["inputs"] = _hide_inputs(inputs)
         if outputs is not None:
-            data["outputs"] = outputs
+            data["outputs"] = _hide_outputs(outputs)
         if events is not None:
             data["events"] = events
         self.request_with_retries(
@@ -758,7 +773,9 @@ class Client:
         filter : str or None, default=None
             The filter string to filter by.
         execution_order : int or None, default=None
-            The execution order to filter by.
+            The execution order to filter by. Execution order is the position
+            of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
         parent_run_id : UUID or None, default=None
             The ID of the parent run to filter by.
         start_time : datetime or None, default=None
@@ -990,7 +1007,7 @@ class Client:
     def delete_project(
         self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a project from the LangSmith API.
+        """Delete a project from LangSmith.
 
         Parameters
         ----------
@@ -1166,16 +1183,38 @@ class Client:
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_chat_example(
         self,
-        messages: List[Mapping[str, Any]],
-        generations: Optional[Mapping[str, Any]] = None,
+        messages: List[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
+        generations: Optional[
+            Union[Mapping[str, Any], ls_schemas.BaseMessageLike]
+        ] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
         """Add an example (row) to a Chat-type dataset."""
+        final_input = []
+        for message in messages:
+            if ls_utils.is_base_message_like(message):
+                final_input.append(
+                    ls_utils.convert_langchain_message(
+                        cast(ls_schemas.BaseMessageLike, message)
+                    )
+                )
+            else:
+                final_input.append(cast(dict, message))
+        final_generations = None
+        if generations is not None:
+            if ls_utils.is_base_message_like(generations):
+                final_generations = ls_utils.convert_langchain_message(
+                    cast(ls_schemas.BaseMessageLike, generations)
+                )
+            else:
+                final_generations = cast(dict, generations)
         return self.create_example(
-            inputs={"input": messages},
-            outputs={"output": generations},
+            inputs={"input": final_input},
+            outputs={"output": final_generations}
+            if final_generations is not None
+            else None,
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             created_at=created_at,
@@ -1271,6 +1310,10 @@ class Client:
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
+        Examples are rows in a dataset, containing the inputs
+        and expected outputs (or other reference information)
+        for a model or chain.
+
         Parameters
         ----------
         inputs : Mapping[str, Any]
@@ -1329,7 +1372,7 @@ class Client:
         dataset_name: Optional[str] = None,
         example_ids: Optional[List[ID_TYPE]] = None,
     ) -> Iterator[ls_schemas.Example]:
-        """List the examples on the LangSmith API.
+        """Retrieve the example rows of the specified dataset.
 
         Parameters
         ----------
@@ -1439,12 +1482,8 @@ class Client:
         """
         if isinstance(run, (str, uuid.UUID)):
             run_ = self.read_run(run, load_child_runs=load_child_runs)
-        elif isinstance(run, ls_schemas.Run):
-            run_ = run
-        elif isinstance(run, ls_schemas.RunBase):
-            run_ = ls_schemas.Run(**run.dict())
         else:
-            raise TypeError(f"Invalid run type: {type(run)}")
+            run_ = run
         return run_
 
     def _resolve_example_id(
@@ -1528,6 +1567,7 @@ class Client:
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
+            source_run_id=feedback_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
 
@@ -1581,6 +1621,7 @@ class Client:
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
+            source_run_id=feedback_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
 
@@ -1618,7 +1659,8 @@ class Client:
         source_info : Dict[str, Any] or None, default=None
             Information about the source of this feedback.
         feedback_source_type : FeedbackSourceType or str, default=FeedbackSourceType.API
-            The type of feedback source.
+            The type of feedback source, such as model (for model-generated feedback)
+                or API.
         source_run_id : str or UUID or None, default=None,
             The ID of the run that generated this feedback, if a "model" type.
 
@@ -1726,6 +1768,8 @@ class Client:
         self,
         *,
         run_ids: Optional[Sequence[ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Feedback]:
         """List the feedback objects on the LangSmith API.
@@ -1734,6 +1778,12 @@ class Client:
         ----------
         run_ids : List[str or UUID] or None, default=None
             The IDs of the runs to filter by.
+        feedback_key: List[str] or None, default=None
+            The feedback key(s) to filter by. Example: 'correctness'
+            The query performs a union of all feedback keys.
+        feedback_source_type: List[FeedbackSourceType] or None, default=None
+            The type of feedback source, such as model
+            (for model-generated feedback) or API.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -1742,11 +1792,14 @@ class Client:
         Feedback
             The feedback objects.
         """
-        params = {
+        params: dict = {
             "run": run_ids,
             **kwargs,
         }
-
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if feedback_source_type is not None:
+            params["source"] = feedback_source_type
         yield from (
             ls_schemas.Feedback(**feedback)
             for feedback in self._get_paginated_list("/feedback", params=params)
@@ -1889,9 +1942,9 @@ class Client:
                 "package to run.\nInstall with pip install langchain"
             )
         return await _arun_on_dataset(
-            self,
-            dataset_name,
-            llm_or_chain_factory,
+            dataset_name=dataset_name,
+            llm_or_chain_factory=llm_or_chain_factory,
+            client=self,
             evaluation=evaluation,
             concurrency_level=concurrency_level,
             project_name=project_name,
@@ -2022,9 +2075,9 @@ class Client:
                 "package to run.\nInstall with pip install langchain"
             )
         return _run_on_dataset(
-            self,
-            dataset_name,
-            llm_or_chain_factory,
+            dataset_name=dataset_name,
+            llm_or_chain_factory=llm_or_chain_factory,
+            client=self,
             evaluation=evaluation,
             project_name=project_name,
             verbose=verbose,
