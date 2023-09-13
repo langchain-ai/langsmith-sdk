@@ -103,6 +103,7 @@ export type CreateExampleOptions = {
   datasetId?: string;
   datasetName?: string;
   createdAt?: Date;
+  exampleId?: string;
 };
 
 // utility functions
@@ -828,7 +829,7 @@ export class Client {
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    { datasetId, datasetName, createdAt }: CreateExampleOptions
+    { datasetId, datasetName, createdAt, exampleId }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
     if (datasetId_ === undefined && datasetName === undefined) {
@@ -846,6 +847,7 @@ export class Client {
       inputs,
       outputs,
       created_at: createdAt_.toISOString(),
+      id: exampleId,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
@@ -1020,6 +1022,7 @@ export class Client {
       sourceInfo,
       feedbackSourceType = "api",
       sourceRunId,
+      feedbackId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -1028,6 +1031,7 @@ export class Client {
       sourceInfo?: object;
       feedbackSourceType?: FeedbackSourceType;
       sourceRunId?: string;
+      feedbackId?: string;
     }
   ): Promise<Feedback> {
     const feedback_source: feedback_source = {
@@ -1042,7 +1046,7 @@ export class Client {
       feedback_source.metadata["__run"] = { run_id: sourceRunId };
     }
     const feedback: FeedbackCreate = {
-      id: uuid.v4(),
+      id: feedbackId ?? uuid.v4(),
       run_id: runId,
       key,
       score,
@@ -1057,13 +1061,8 @@ export class Client {
       body: JSON.stringify(feedback),
       signal: AbortSignal.timeout(this.timeout_ms),
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create feedback for run ${runId}: ${response.status} ${response.statusText}`
-      );
-    }
-    const result = await response.json();
-    return result as Feedback;
+    await raiseForStatus(response, "create feedback");
+    return feedback as Feedback;
   }
 
   public async updateFeedback(
