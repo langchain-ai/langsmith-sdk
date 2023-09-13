@@ -15,7 +15,12 @@ import {
   TracerSessionResult,
   ValueType,
   DataType,
+  LangChainBaseMessage,
 } from "./schemas.js";
+import {
+  convertLangChainMessageToExample,
+  isLangChainMessage,
+} from "./utils/messages.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
@@ -32,9 +37,7 @@ interface ListRunsParams {
   executionOrder?: number;
   parentRunId?: string;
   referenceExampleId?: string;
-  datasetId?: string;
   startTime?: Date;
-  endTime?: Date;
   runType?: string;
   error?: boolean;
   id?: string[];
@@ -42,7 +45,6 @@ interface ListRunsParams {
   offset?: number;
   query?: string;
   filter?: string;
-  orderBy?: string[];
 }
 interface UploadCSVParams {
   csvFile: Blob;
@@ -65,9 +67,16 @@ interface FeedbackCreate {
   key: string;
   score?: ScoreType;
   value?: ValueType;
-  correction?: string | object | null;
+  correction?: object | null;
   comment?: string | null;
   feedback_source?: feedback_source | KVMap | null;
+}
+
+interface FeedbackUpdate {
+  score?: ScoreType;
+  value?: ValueType;
+  correction?: object | null;
+  comment?: string | null;
 }
 
 interface CreateRunParams {
@@ -87,6 +96,15 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
 }
+
+export type FeedbackSourceType = "model" | "api" | "app";
+
+export type CreateExampleOptions = {
+  datasetId?: string;
+  datasetName?: string;
+  createdAt?: Date;
+};
+
 // utility functions
 const isLocalhost = (url: string): boolean => {
   const strippedUrl = url.replace("http://", "").replace("https://", "");
@@ -125,6 +143,19 @@ function trimQuotes(str?: string): string | undefined {
     .replace(/^'(.*)'$/, "$1");
 }
 
+function hideInputs(inputs: KVMap): KVMap {
+  if (getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true") {
+    return {};
+  }
+  return inputs;
+}
+
+function hideOutputs(outputs: KVMap): KVMap {
+  if (getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true") {
+    return {};
+  }
+  return outputs;
+}
 export class Client {
   private apiKey?: string;
 
@@ -252,6 +283,11 @@ export class Client {
         },
       },
     };
+    runCreate.inputs = hideInputs(runCreate.inputs);
+    if (runCreate.outputs) {
+      runCreate.outputs = hideOutputs(runCreate.outputs);
+    }
+
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,
@@ -262,6 +298,13 @@ export class Client {
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+    if (run.inputs) {
+      run.inputs = hideInputs(run.inputs);
+    }
+
+    if (run.outputs) {
+      run.outputs = hideOutputs(run.outputs);
+    }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
       fetch,
@@ -332,9 +375,7 @@ export class Client {
     projectName,
     parentRunId,
     referenceExampleId,
-    datasetId,
     startTime,
-    endTime,
     executionOrder,
     runType,
     error,
@@ -343,7 +384,6 @@ export class Client {
     offset,
     query,
     filter,
-    orderBy,
   }: ListRunsParams): AsyncIterable<Run> {
     const queryParams = new URLSearchParams();
     let projectId_ = projectId;
@@ -362,14 +402,8 @@ export class Client {
     if (referenceExampleId) {
       queryParams.append("reference_example", referenceExampleId);
     }
-    if (datasetId) {
-      queryParams.append("dataset", datasetId);
-    }
     if (startTime) {
       queryParams.append("start_time", startTime.toISOString());
-    }
-    if (endTime) {
-      queryParams.append("end_time", endTime.toISOString());
     }
     if (executionOrder) {
       queryParams.append("execution_order", executionOrder.toString());
@@ -397,26 +431,10 @@ export class Client {
     if (filter !== undefined) {
       queryParams.append("filter", filter);
     }
-    if (orderBy !== undefined) {
-      orderBy.map((order) => queryParams.append("order_by", order));
-    }
 
     for await (const runs of this._getPaginated<Run>("/runs", queryParams)) {
       yield* runs;
     }
-  }
-
-  public async deleteRun(runId: string): Promise<void> {
-    const response = await this.caller.call(
-      fetch,
-      `${this.apiUrl}/runs/${runId}`,
-      {
-        method: "DELETE",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-      }
-    );
-    await raiseForStatus(response, "delete run");
   }
 
   public async shareRun(
@@ -437,7 +455,6 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    // await raiseForStatus(response, "share run");
     const result = await response.json();
     if (result === null || !("share_token" in result)) {
       throw new Error("Invalid response from server");
@@ -468,7 +485,6 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    // await raiseForStatus(response, "read run shared link");
     const result = await response.json();
     if (result === null || !("share_token" in result)) {
       return undefined;
@@ -545,9 +561,47 @@ export class Client {
     return result;
   }
 
-  public async *listProjects(): AsyncIterable<TracerSession> {
+  public async *listProjects({
+    projectIds,
+    name,
+    nameContains,
+    referenceDatasetId,
+    referenceDatasetName,
+    referenceFree,
+  }: {
+    projectIds?: string[];
+    name?: string;
+    nameContains?: string;
+    referenceDatasetId?: string;
+    referenceDatasetName?: string;
+    referenceFree?: boolean;
+  } = {}): AsyncIterable<TracerSession> {
+    const params = new URLSearchParams();
+    if (projectIds !== undefined) {
+      for (const projectId of projectIds) {
+        params.append("id", projectId);
+      }
+    }
+    if (name !== undefined) {
+      params.append("name", name);
+    }
+    if (nameContains !== undefined) {
+      params.append("name_contains", nameContains);
+    }
+    if (referenceDatasetId !== undefined) {
+      params.append("reference_dataset", referenceDatasetId);
+    } else if (referenceDatasetName !== undefined) {
+      const dataset = await this.readDataset({
+        datasetName: referenceDatasetName,
+      });
+      params.append("reference_dataset", dataset.id);
+    }
+    if (referenceFree !== undefined) {
+      params.append("reference_free", referenceFree.toString());
+    }
     for await (const projects of this._getPaginated<TracerSession>(
-      "/sessions"
+      "/sessions",
+      params
     )) {
       yield* projects;
     }
@@ -774,15 +828,7 @@ export class Client {
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    {
-      datasetId,
-      datasetName,
-      createdAt,
-    }: {
-      datasetId?: string;
-      datasetName?: string;
-      createdAt?: Date;
-    }
+    { datasetId, datasetName, createdAt }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
     if (datasetId_ === undefined && datasetName === undefined) {
@@ -819,6 +865,35 @@ export class Client {
     return result as Example;
   }
 
+  public async createLLMExample(
+    input: string,
+    generation: string | undefined,
+    options: CreateExampleOptions
+  ) {
+    return this.createExample({ input }, { output: generation }, options);
+  }
+
+  public async createChatExample(
+    input: KVMap[] | LangChainBaseMessage[],
+    generations: KVMap | LangChainBaseMessage | undefined,
+    options: CreateExampleOptions
+  ) {
+    const finalInput = input.map((message) => {
+      if (isLangChainMessage(message)) {
+        return convertLangChainMessageToExample(message);
+      }
+      return message;
+    });
+    const finalOutput = isLangChainMessage(generations)
+      ? convertLangChainMessageToExample(generations)
+      : generations;
+    return this.createExample(
+      { input: finalInput },
+      { output: finalOutput },
+      options
+    );
+  }
+
   public async readExample(exampleId: string): Promise<Example> {
     const path = `/examples/${exampleId}`;
     return await this._get<Example>(path);
@@ -827,9 +902,11 @@ export class Client {
   public async *listExamples({
     datasetId,
     datasetName,
+    exampleIds,
   }: {
     datasetId?: string;
     datasetName?: string;
+    exampleIds?: string[];
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -843,6 +920,11 @@ export class Client {
       throw new Error("Must provide a datasetName or datasetId");
     }
     const params = new URLSearchParams({ dataset: datasetId_ });
+    if (exampleIds !== undefined) {
+      for (const id_ of exampleIds) {
+        params.append("id", id_);
+      }
+    }
     for await (const examples of this._getPaginated<Example>(
       "/examples",
       params
@@ -923,7 +1005,7 @@ export class Client {
       comment: feedbackResult.comment,
       correction: feedbackResult.correction,
       sourceInfo: sourceInfo_,
-      feedbackSourceType: "MODEL",
+      feedbackSourceType: "model",
     });
   }
 
@@ -936,23 +1018,28 @@ export class Client {
       correction,
       comment,
       sourceInfo,
-      feedbackSourceType = "API",
+      feedbackSourceType = "api",
+      sourceRunId,
     }: {
       score?: ScoreType;
       value?: ValueType;
-      correction?: string | object;
+      correction?: object;
       comment?: string;
       sourceInfo?: object;
-      feedbackSourceType?: "API" | "MODEL";
+      feedbackSourceType?: FeedbackSourceType;
+      sourceRunId?: string;
     }
   ): Promise<Feedback> {
-    let feedback_source: feedback_source;
-    if (feedbackSourceType === "API") {
-      feedback_source = { type: "api", metadata: sourceInfo ?? {} };
-    } else if (feedbackSourceType === "MODEL") {
-      feedback_source = { type: "model", metadata: sourceInfo ?? {} };
-    } else {
-      throw new Error(`Unknown feedback source type ${feedbackSourceType}`);
+    const feedback_source: feedback_source = {
+      type: feedbackSourceType ?? "api",
+      metadata: sourceInfo ?? {},
+    };
+    if (
+      sourceRunId !== undefined &&
+      feedback_source?.metadata !== undefined &&
+      !feedback_source.metadata["__run"]
+    ) {
+      feedback_source.metadata["__run"] = { run_id: sourceRunId };
     }
     const feedback: FeedbackCreate = {
       id: uuid.v4(),
@@ -979,6 +1066,46 @@ export class Client {
     return result as Feedback;
   }
 
+  public async updateFeedback(
+    feedbackId: string,
+    {
+      score,
+      value,
+      correction,
+      comment,
+    }: {
+      score?: number | boolean | null;
+      value?: number | boolean | string | object | null;
+      correction?: object | null;
+      comment?: string | null;
+    }
+  ): Promise<Feedback> {
+    const feedbackUpdate: FeedbackUpdate = {};
+    if (score !== undefined && score !== null) {
+      feedbackUpdate["score"] = score;
+    }
+    if (value !== undefined && value !== null) {
+      feedbackUpdate["value"] = value;
+    }
+    if (correction !== undefined && correction !== null) {
+      feedbackUpdate["correction"] = correction;
+    }
+    if (comment !== undefined && comment !== null) {
+      feedbackUpdate["comment"] = comment;
+    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/feedback/${feedbackId}`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(feedbackUpdate),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    return response.json();
+  }
+
   public async readFeedback(feedbackId: string): Promise<Feedback> {
     const path = `/feedback/${feedbackId}`;
     const response = await this._get<Feedback>(path);
@@ -1002,12 +1129,26 @@ export class Client {
 
   public async *listFeedback({
     runIds,
+    feedbackKeys,
+    feedbackSourceTypes,
   }: {
     runIds?: string[];
+    feedbackKeys?: string[];
+    feedbackSourceTypes?: FeedbackSourceType[];
   } = {}): AsyncIterable<Feedback> {
     const queryParams = new URLSearchParams();
     if (runIds) {
       queryParams.append("run", runIds.join(","));
+    }
+    if (feedbackKeys) {
+      for (const key of feedbackKeys) {
+        queryParams.append("key", key);
+      }
+    }
+    if (feedbackSourceTypes) {
+      for (const type of feedbackSourceTypes) {
+        queryParams.append("source", type);
+      }
     }
     for await (const feedbacks of this._getPaginated<Feedback>(
       "/feedback",

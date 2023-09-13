@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+from uuid import UUID
 from typing import Any, Dict, List, Optional, Set, Union
 from uuid import UUID, uuid4
 
 from langsmith.utils import DictMixin
+
+from typing_extensions import Literal
 
 SCORE_TYPE = Union[bool, int, float, None]
 VALUE_TYPE = Union[Dict, bool, int, float, str, None]
@@ -280,6 +284,20 @@ class Run(RunBase):
         child_run_ids: Optional[List[ID_TYPE]] = None,
         feedback_stats: Optional[Dict[str, Any]] = None,
         app_path: Optional[str] = None,
+        manifest_id: Optional[UUID] = None
+        """Unique ID of the serialized object for this run."""
+        status: Optional[str] = None
+        """Status of the run (e.g., 'success')."""
+        prompt_tokens: Optional[int] = None
+        """Number of tokens used for the prompt."""
+        completion_tokens: Optional[int] = None
+        """Number of tokens generated as output."""
+        total_tokens: Optional[int] = None
+        """Total tokens for prompt and completion."""
+        first_token_time: Optional[datetime] = None
+        """Time the first token was processed."""
+        parent_run_ids: Optional[List[UUID]] = None
+        """List of parent run IDs."""
         **kwargs: Any,
     ) -> None:
         """Initialize Run.
@@ -293,6 +311,17 @@ class Run(RunBase):
             child_run_ids: Optional child run IDs (default: None)
             feedback_stats: Optional feedback stats (default: None)
             app_path: Optional app path (default: None)
+            manifest_id: Unique identifier for the serialized object
+            status: Status (pending, error, success)
+            prompt_tokens: Aggregate input token counts contained in this
+                and all child runs
+            completion_tokens: Aggregate output token counts contained in
+                this and all child runs
+            total_tokens: Aggregate total token counts contained in this
+                and all child runs
+            first_token_time: Time the first token was emitted, if applicable
+            parent_run_ids: Parent and grandparent run IDs
+
         """
         self.name = name
         super().__init__(
@@ -404,7 +433,6 @@ class TracerSession(DictMixin):
         **kwargs: Any,
     ) -> None:
         """Initialize TracerSession.
-
         :param id: ID of the project
         :param start_time: Creation timestamp, default is current time
         :param name: Optional name of the project
@@ -457,3 +485,137 @@ class TracerSession(DictMixin):
         )
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+
+class ModelFeedbackSource(FeedbackSourceBase):
+    """Model feedback source."""
+
+    type: Literal["model"] = "model"
+
+
+class FeedbackSourceType(Enum):
+    """Feedback source type."""
+
+    API = "api"
+    """General feedback submitted from the API."""
+    MODEL = "model"
+    """Model-assisted feedback."""
+
+
+class FeedbackBase(BaseModel):
+    """Feedback schema."""
+
+    id: UUID
+    """The unique ID of the feedback."""
+    created_at: Optional[datetime] = None
+    """The time the feedback was created."""
+    modified_at: Optional[datetime] = None
+    """The time the feedback was last modified."""
+    run_id: UUID
+    """The associated run ID this feedback is logged for."""
+    key: str
+    """The metric name, tag, or aspect to provide feedback on."""
+    score: SCORE_TYPE = None
+    """Value or score to assign the run."""
+    value: VALUE_TYPE = None
+    """The display value, tag or other value for the feedback if not a metric."""
+    comment: Optional[str] = None
+    """Comment or explanation for the feedback."""
+    correction: Union[str, dict, None] = None
+    """Correction for the run."""
+    feedback_source: Optional[FeedbackSourceBase] = None
+    """The source of the feedback."""
+
+    class Config:
+        frozen = True
+
+
+class FeedbackCreate(FeedbackBase):
+    """Schema used for creating feedback."""
+
+    feedback_source: FeedbackSourceBase
+    """The source of the feedback."""
+
+
+class Feedback(FeedbackBase):
+    """Schema for getting feedback."""
+
+    id: UUID
+    created_at: datetime
+    """The time the feedback was created."""
+    modified_at: datetime
+    """The time the feedback was last modified."""
+    feedback_source: Optional[FeedbackSourceBase] = None
+    """The source of the feedback. In this case"""
+
+
+class TracerSession(BaseModel):
+    """TracerSession schema for the API.
+
+    Sessions are also referred to as "Projects" in the UI.
+    """
+
+    id: UUID
+    """The ID of the project."""
+    start_time: datetime = Field(default_factory=datetime.utcnow)
+    """The time the project was created."""
+    name: Optional[str] = None
+    """The name of the session."""
+    extra: Optional[Dict[str, Any]] = None
+    """Extra metadata for the project."""
+    tenant_id: UUID
+    """The tenant ID this project belongs to."""
+
+    _host_url: Optional[str] = PrivateAttr(default=None)
+
+    def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
+        """Initialize a Run object."""
+        super().__init__(**kwargs)
+        self._host_url = _host_url
+
+    @property
+    def url(self) -> Optional[str]:
+        """URL of this run within the app."""
+        if self._host_url:
+            return f"{self._host_url}/o/{self.tenant_id}/projects/p/{self.id}"
+        return None
+
+
+class TracerSessionResult(TracerSession):
+    """TracerSession schema returned when reading a project
+    by ID. Sessions are also referred to as "Projects" in the UI."""
+
+    run_count: Optional[int]
+    """The number of runs in the project."""
+    latency_p50: Optional[timedelta]
+    """The median (50th percentile) latency for the project."""
+    latency_p99: Optional[timedelta]
+    """The 99th percentile latency for the project."""
+    total_tokens: Optional[int]
+    """The total number of tokens consumed in the project."""
+    prompt_tokens: Optional[int]
+    """The total number of prompt tokens consumed in the project."""
+    completion_tokens: Optional[int]
+    """The total number of completion tokens consumed in the project."""
+    last_run_start_time: Optional[datetime]
+    """The start time of the last run in the project."""
+    feedback_stats: Optional[Dict[str, Any]]
+    """Feedback stats for the project."""
+    reference_dataset_ids: Optional[List[UUID]]
+    """The reference dataset IDs this project's runs were generated on."""
+    run_facets: Optional[List[Dict[str, Any]]]
+    """Facets for the runs in the project."""
+
+
+@runtime_checkable
+class BaseMessageLike(Protocol):
+    """
+    A protocol representing objects similar to BaseMessage.
+    """
+
+    content: str
+    additional_kwargs: Dict
+
+    @property
+    def type(self) -> str:
+        """Type of the Message, used for serialization."""

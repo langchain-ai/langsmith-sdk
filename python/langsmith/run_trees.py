@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
@@ -11,6 +12,13 @@ from uuid import UUID, uuid4
 from langsmith.client import Client
 from langsmith.schemas import ID_TYPE, RunBase, _coerce_req_uuid
 from langsmith.utils import get_runtime_environment
+from typing import Any, Callable, Dict, List, Optional, cast
+from uuid import UUID, uuid4
+
+
+
+from langsmith.client import ID_TYPE, Client
+from langsmith.schemas import RunBase
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +134,7 @@ class RunTree(RunBase):
     ) -> RunTree:
         """Add a child run to the run tree."""
         execution_order = self.child_execution_order + 1
+        self.child_execution_order += 1
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
@@ -171,6 +180,32 @@ class RunTree(RunBase):
         exclude = {"child_runs", "parent_run"} if exclude_child_runs else {"parent_run"}
         kwargs = self.dict(exclude=exclude, exclude_none=True)
         self._futures.append(self._executor.submit(self._client.create_run, **kwargs))
+
+    def _execute(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.exception(e)
+            raise e
+
+    def post(self, exclude_child_runs: bool = True) -> Future:
+        """Post the run tree to the API asynchronously."""
+        kwargs = self.dict(exclude={"child_runs"}, exclude_none=True)
+        self._futures.append(
+            self.executor.submit(
+                self._execute,
+                self.client.create_run,
+                **kwargs,
+            )
+        )
+        if not exclude_child_runs:
+            warnings.warn(
+                "Posting with exclude_child_runs=False is deprecated"
+                " and will be removed in a future version.",
+                DeprecationWarning,
+            )
+            for child_run in self.child_runs:
+                self._futures.append(child_run.post(exclude_child_runs=False))
         return self._futures[-1]
 
     def patch(self) -> Future:
@@ -180,11 +215,15 @@ class RunTree(RunBase):
         self._futures.append(
             self._executor.submit(
                 self._client.update_run,
+            self.executor.submit(
+                self._execute,
+                self.client.update_run,
                 run_id=self.id,
                 outputs=self.outputs.copy() if self.outputs else None,
                 error=self.error,
                 parent_run_id=self.parent_run_id,
                 reference_example_id=self.reference_example_id,
+                end_time=self.end_time,
             )
         )
         return self._futures[-1]

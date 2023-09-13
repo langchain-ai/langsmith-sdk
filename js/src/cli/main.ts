@@ -3,7 +3,11 @@ import * as path from "path";
 import * as util from "util";
 import { Command } from "commander";
 import * as child_process from "child_process";
-import { setEnvironmentVariable } from "../utils/env.js";
+import {
+  getLangChainEnvVars,
+  getRuntimeEnvironment,
+  setEnvironmentVariable,
+} from "../utils/env.js";
 import { spawn } from "child_process";
 
 const currentFileName = __filename;
@@ -126,6 +130,7 @@ class SmithCommand {
   dockerComposeCommand: string[] = [];
   dockerComposeFile = "";
   dockerComposeDevFile = "";
+  dockerComposeBetaFile = "";
   ngrokPath = "";
 
   constructor({ dockerComposeCommand }: { dockerComposeCommand: string[] }) {
@@ -137,6 +142,10 @@ class SmithCommand {
     this.dockerComposeDevFile = path.join(
       path.dirname(currentFileName),
       "docker-compose.dev.yaml"
+    );
+    this.dockerComposeBetaFile = path.join(
+      path.dirname(currentFileName),
+      "docker-compose.beta.yaml"
     );
     this.ngrokPath = path.join(
       path.dirname(currentFileName),
@@ -164,31 +173,18 @@ class SmithCommand {
   }
 
   public static async create() {
-    const dockerComposeCommand = await getDockerComposeCommand();
-    return new SmithCommand({ dockerComposeCommand });
-  }
-
-  async start(args: any) {
     console.info(
       "BY USING THIS SOFTWARE YOU AGREE TO THE TERMS OF SERVICE AT:"
     );
     console.info("https://smith.langchain.com/terms-of-service.pdf");
-    if (args.dev) {
-      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
-    }
-    if (args.openaiApiKey) {
-      setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
-    }
-    await this.pull(args);
-    if (args.expose) {
-      await this.startAndExpose(args.ngrokAuthtoken, args.dev);
-    } else {
-      await this.startLocal(args.dev);
-    }
+    const dockerComposeCommand = await getDockerComposeCommand();
+    return new SmithCommand({ dockerComposeCommand });
   }
 
-  async pull(args: any) {
-    if (args.dev) {
+  async pull({ stage = "prod" }) {
+    if (stage === "dev") {
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "dev-");
+    } else if (stage === "beta") {
       setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }
 
@@ -201,17 +197,22 @@ class SmithCommand {
     await this.executeCommand(command);
   }
 
-  async startLocal(dev: boolean) {
+  async startLocal(stage = "prod") {
     const command = [
       ...this.dockerComposeCommand,
       "-f",
       this.dockerComposeFile,
     ];
-    if (dev) {
+
+    if (stage === "dev") {
       command.push("-f", this.dockerComposeDevFile);
+    } else if (stage === "beta") {
+      command.push("-f", this.dockerComposeBetaFile);
     }
+
     command.push("up", "--quiet-pull", "--wait");
     await this.executeCommand(command);
+
     console.info(
       "LangSmith server is running at http://localhost:1984.\n" +
         "To view the app, navigate your browser to http://localhost:80" +
@@ -219,10 +220,11 @@ class SmithCommand {
         " locally, set the following environment variable" +
         " when running your LangChain application."
     );
+
     console.info("\tLANGCHAIN_TRACING_V2=true");
   }
 
-  async startAndExpose(ngrokAuthToken: string | null, dev: boolean) {
+  async startAndExpose(ngrokAuthToken: string | null, stage = "prod") {
     const configPath = await createNgrokConfig(ngrokAuthToken);
     const command = [
       ...this.dockerComposeCommand,
@@ -231,11 +233,16 @@ class SmithCommand {
       "-f",
       this.ngrokPath,
     ];
-    if (dev) {
+
+    if (stage === "dev") {
       command.push("-f", this.dockerComposeDevFile);
+    } else if (stage === "beta") {
+      command.push("-f", this.dockerComposeBetaFile);
     }
+
     command.push("up", "--quiet-pull", "--wait");
     await this.executeCommand(command);
+
     console.info(
       "ngrok is running. You can view the dashboard at http://0.0.0.0:4040"
     );
@@ -264,6 +271,7 @@ class SmithCommand {
     ];
     await this.executeCommand(command);
   }
+
   async status() {
     const command = [
       ...this.dockerComposeCommand,
@@ -283,6 +291,23 @@ class SmithCommand {
       console.info("The LangSmith server is not running.");
     }
   }
+
+  async env() {
+    const env = await getRuntimeEnvironment();
+    const envVars = await getLangChainEnvVars();
+    const envDict = {
+      ...env,
+      ...envVars,
+    };
+    // Pretty print
+    const maxKeyLength = Math.max(
+      ...Object.keys(envDict).map((key) => key.length)
+    );
+    console.info("LangChain Environment:");
+    for (const [key, value] of Object.entries(envDict)) {
+      console.info(`${key.padEnd(maxKeyLength)}: ${value}`);
+    }
+  }
 }
 
 const startCommand = new Command("start")
@@ -295,36 +320,77 @@ const startCommand = new Command("start")
     "--ngrok-authtoken <ngrokAuthtoken>",
     "Your ngrok auth token. If this is set, --expose is implied."
   )
-  .option("--dev", "Run the development version of the LangSmith server")
+  .option(
+    "--stage <stage>",
+    "Which version of LangSmith to run. Options: prod, dev, beta (default: prod)"
+  )
   .option(
     "--openai-api-key <openaiApiKey>",
     "Your OpenAI API key. If not provided, the OpenAI API Key will be read" +
       " from the OPENAI_API_KEY environment variable. If neither are provided," +
       " some features of LangSmith will not be available."
   )
-  .action(async (args: string[]) => (await SmithCommand.create()).start(args));
+  .action(async (args) => {
+    const smith = await SmithCommand.create();
+    if (args.stage === "dev") {
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "dev-");
+    } else if (args.stage === "beta") {
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
+    }
+    if (args.openaiApiKey) {
+      setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
+    }
+    await smith.pull({ stage: args.stage });
+    if (args.expose) {
+      await smith.startAndExpose(args.ngrokAuthtoken, args.stage);
+    } else {
+      await smith.startLocal(args.stage);
+    }
+  });
 
 const stopCommand = new Command("stop")
-  .command("stop")
   .description("Stop the LangSmith server")
-  .action(async () => (await SmithCommand.create()).stop());
+  .action(async () => {
+    const smith = await SmithCommand.create();
+    await smith.stop();
+  });
 
 const pullCommand = new Command("pull")
-  .command("pull")
   .description("Pull the latest version of the LangSmith server")
-  .option("--dev", "Pull the development version of the LangSmith server")
-  .action(async (args: string[]) => (await SmithCommand.create()).pull(args));
+  .option(
+    "--stage <stage>",
+    "Which version of LangSmith to pull. Options: prod, dev, beta (default: prod)"
+  )
+  .action(async (args) => {
+    const smith = await SmithCommand.create();
+    if (args.stage === "dev") {
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "dev-");
+    } else if (args.stage === "beta") {
+      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
+    }
+    await smith.pull({ stage: args.stage });
+  });
 
 const statusCommand = new Command("status")
-  .command("status")
   .description("Get the status of the LangSmith server")
-  .action(async () => (await SmithCommand.create()).status());
+  .action(async () => {
+    const smith = await SmithCommand.create();
+    await smith.status();
+  });
+
+const envCommand = new Command("env")
+  .description("Get relevant environment information for the LangSmith server")
+  .action(async () => {
+    const smith = await SmithCommand.create();
+    await smith.env();
+  });
 
 program
   .description("Manage the LangSmith server")
   .addCommand(startCommand)
   .addCommand(stopCommand)
   .addCommand(pullCommand)
-  .addCommand(statusCommand);
+  .addCommand(statusCommand)
+  .addCommand(envCommand);
 
 program.parse(process.argv);

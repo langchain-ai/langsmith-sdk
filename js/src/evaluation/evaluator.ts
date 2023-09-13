@@ -5,7 +5,7 @@ export interface EvaluationResult {
   score?: ScoreType;
   value?: ValueType;
   comment?: string;
-  correction?: string | object;
+  correction?: object;
   evaluatorInfo?: KVMap;
 }
 

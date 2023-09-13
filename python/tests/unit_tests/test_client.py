@@ -9,7 +9,13 @@ from unittest.mock import patch
 
 import pytest
 
-from langsmith.client import Client, _get_api_key, _get_api_url, _is_localhost
+from langsmith.client import (
+    Client,
+    _get_api_key,
+    _get_api_url,
+    _is_langchain_hosted,
+    _is_localhost,
+)
 from langsmith.schemas import Example
 from langsmith.utils import LangSmithUserError
 
@@ -23,10 +29,16 @@ def test_is_localhost() -> None:
     assert not _is_localhost("http://example.com:1984")
 
 
+def test__is_langchain_hosted() -> None:
+    assert _is_langchain_hosted("https://api.smith.langchain.com")
+    assert _is_langchain_hosted("https://beta.api.smith.langchain.com")
+    assert _is_langchain_hosted("https://dev.api.smith.langchain.com")
+
+
 def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
     with pytest.raises(LangSmithUserError, match="API key must be provided"):
-        Client(api_url="http://www.example.com")
+        Client(api_url="https://api.smith.langchain.com")
     client = Client(api_url="http://localhost:1984")
     assert client.api_url == "http://localhost:1984"
     assert client.api_key is None
@@ -41,7 +53,7 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client_no_key._headers == {}
 
 
-@mock.patch("langsmith.client.Session")
+@mock.patch("langsmith.client.requests.Session")
 def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     dataset_id = str(uuid.uuid4())
     example_1 = Example(
@@ -170,3 +182,25 @@ def test_create_run_unicode() -> None:
             "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
         )
         client.update_run(id_, status="completed")
+
+
+@pytest.mark.parametrize("source_type", ["api", "model"])
+def test_create_feedback_string_source_type(source_type: str):
+    client = Client(api_url="http://localhost:1984", api_key="123")
+    session = mock.Mock()
+    request_object = mock.Mock()
+    request_object.json.return_value = {
+        "id": uuid.uuid4(),
+        "key": "Foo",
+        "created_at": _CREATED_AT,
+        "modified_at": _CREATED_AT,
+        "run_id": uuid.uuid4(),
+    }
+    session.post.return_value = request_object
+    with patch.object(client, "session", session):
+        id_ = uuid.uuid4()
+        client.create_feedback(
+            id_,
+            key="Foo",
+            feedback_source_type=source_type,
+        )

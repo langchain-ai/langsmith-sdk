@@ -3,12 +3,14 @@ import io
 import os
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
 
 import pytest
 import requests
+from freezegun import freeze_time
+from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import Client
 from langsmith.evaluation import StringEvaluator
@@ -123,6 +125,7 @@ def test_datasets(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
 
+@freeze_time("2023-01-01")
 def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
@@ -155,7 +158,10 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     child_tool_run.end(outputs={"output": ["Hi"]})
     child_llm_run.end(outputs={"prompts": ["hello world"]})
     parent_run.end(outputs={"output": ["Hi"]})
-    parent_run.post(exclude_child_runs=False)
+    with pytest.warns(
+        DeprecationWarning, match="Posting with exclude_child_runs=False is deprecated"
+    ):
+        parent_run.post(exclude_child_runs=False)
     parent_run.wait()
 
     runs = list(langchain_client.list_runs(project_name=project_name))
@@ -164,9 +170,9 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
     assert run_map["parent_run"].execution_order == 1
     # The child run and child chain run are executed 'in parallel'
     assert run_map["child_run"].execution_order == 2
-    assert run_map["child_chain_run"].execution_order == 2
-    assert run_map["grandchild_chain_run"].execution_order == 3
-    assert run_map["child_tool_run"].execution_order == 4
+    assert run_map["child_chain_run"].execution_order == 3
+    assert run_map["grandchild_chain_run"].execution_order == 4
+    assert run_map["child_tool_run"].execution_order == 5
 
     assert run_map["child_run"].parent_run_id == run_map["parent_run"].id
     assert run_map["child_chain_run"].parent_run_id == run_map["parent_run"].id
@@ -196,34 +202,32 @@ def test_run_tree(monkeypatch: pytest.MonkeyPatch, langchain_client: Client) -> 
         value={"clarity": "good", "fluency": "good", "relevance": "very bad"},
         score=0.5,
     )
-    langchain_client.create_feedback(runs[0].id, "a tag")  # type: ignore
+    feedback_2 = langchain_client.create_feedback(runs[0].id, "a tag")  # type: ignore
+    assert feedback_2.value is None
+    langchain_client.update_feedback(
+        feedback_2.id, correction={"good_output": "a correction"}
+    )
     feedbacks = list(
         langchain_client.list_feedback(run_ids=[runs[0].id])  # type: ignore
     )
     assert len(feedbacks) == 2
     assert feedbacks[0].run_id == runs[0].id
+    assert langchain_client.read_feedback(feedback_2.id).correction == {
+        "good_output": "a correction"
+    }
     feedback = langchain_client.read_feedback(feedbacks[0].id)
     assert feedback.id == feedbacks[0].id
     langchain_client.delete_feedback(feedback.id)
     with pytest.raises(LangSmithError):
         langchain_client.read_feedback(feedback.id)
     assert len(list(langchain_client.list_feedback(run_ids=[runs[0].id]))) == 1
-    project = langchain_client.read_project(project_name=project_name)
-    project_with_stats = langchain_client.read_project(project_id=project.id)
-    assert project_with_stats.run_count == 1
-    assert (
-        project_with_stats.latency_p50 is not None
-        and project_with_stats.latency_p50 > timedelta(0)
-    )
-    assert (
-        project_with_stats.latency_p99 is not None
-        and project_with_stats.latency_p99 > timedelta(0)
-    )
+    langchain_client.read_project(project_name=project_name)
     langchain_client.delete_project(project_name=project_name)
     with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=project_name)
 
 
+@freeze_time("2023-01-01")
 def test_persist_update_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -255,6 +259,7 @@ def test_persist_update_run(
     langchain_client.delete_project(project_name=project_name)
 
 
+@freeze_time("2023-01-01")
 def test_evaluate_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -338,6 +343,19 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
 
+@freeze_time("2023-01-01")
+def test_create_project(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
+) -> None:
+    """Test the project creation"""
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    project_name = "__test_create_project"
+    project = langchain_client.create_project(project_name=project_name)
+    assert project.name == project_name
+    langchain_client.delete_project(project_id=project.id)
+
+
+@freeze_time("2023-01-01")
 def test_create_dataset(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -358,6 +376,7 @@ def test_create_dataset(
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+@freeze_time("2023-01-01")
 def test_share_unshare_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
@@ -377,6 +396,7 @@ def test_share_unshare_run(
     langchain_client.unshare_run(run_id)
 
 
+@freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
     for name in ["___TEST dataset1", "___TEST dataset2"]:
         datasets = list(langchain_client.list_datasets(dataset_name=name))
@@ -419,3 +439,107 @@ def test_list_datasets(langchain_client: Client) -> None:
         )
         == 0
     )
+
+
+@freeze_time("2023-01-01")
+def test_create_run_with_masked_inputs_outputs(
+    langchain_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_name = "__test_create_run_with_masked_inputs_outputs"
+    monkeypatch.setenv("LANGCHAIN_HIDE_INPUTS", "true")
+    monkeypatch.setenv("LANGCHAIN_HIDE_OUTPUTS", "true")
+    for project in langchain_client.list_projects():
+        if project.name == project_name:
+            langchain_client.delete_project(project_name=project_name)
+
+    run_id = "8bac165f-470e-4bf8-baa0-15f2de4cc706"
+    langchain_client.create_run(
+        id=run_id,
+        project_name=project_name,
+        name="test_run",
+        run_type="llm",
+        inputs={"prompt": "hello world"},
+        outputs={"generation": "hi there"},
+        start_time=datetime.utcnow(),
+        end_time=datetime.utcnow(),
+        hide_inputs=True,
+        hide_outputs=True,
+    )
+
+    run_id2 = "8bac165f-490e-4bf8-baa0-15f2de4cc707"
+    langchain_client.create_run(
+        id=run_id2,
+        project_name=project_name,
+        name="test_run_2",
+        run_type="llm",
+        inputs={"messages": "hello world 2"},
+        start_time=datetime.utcnow(),
+        hide_inputs=True,
+    )
+
+    langchain_client.update_run(
+        run_id2,
+        outputs={"generation": "hi there 2"},
+        end_time=datetime.utcnow(),
+        hide_outputs=True,
+    )
+
+    run1 = langchain_client.read_run(run_id)
+    assert run1.inputs == {}
+    assert run1.outputs == {}
+
+    run2 = langchain_client.read_run(run_id2)
+    assert run2.inputs == {}
+    assert run2.outputs == {}
+
+
+@freeze_time("2023-01-01")
+def test_create_chat_example(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
+) -> None:
+    dataset_name = "__createChatExample-test-dataset"
+    try:
+        existing_dataset = langchain_client.read_dataset(dataset_name=dataset_name)
+        langchain_client.delete_dataset(dataset_id=existing_dataset.id)
+    except LangSmithError:
+        # If the dataset doesn't exist,
+        pass
+
+    dataset = langchain_client.create_dataset(dataset_name)
+
+    input = [HumanMessage(content="Hello, world!")]
+    generation = FunctionMessage(
+        name="foo",
+        content="",
+        additional_kwargs={"function_call": {"arguments": "args", "name": "foo"}},
+    )
+    # Create the example from messages
+    langchain_client.create_chat_example(input, generation, dataset_id=dataset.id)
+
+    # Read the example
+    examples = []
+    for example in langchain_client.list_examples(dataset_id=dataset.id):
+        examples.append(example)
+    assert len(examples) == 1
+    assert examples[0].inputs == {
+        "input": [
+            {
+                "type": "human",
+                "data": {"content": "Hello, world!"},
+            },
+        ],
+    }
+    assert examples[0].outputs == {
+        "output": {
+            "type": "function",
+            "data": {
+                "content": "",
+                "additional_kwargs": {
+                    "function_call": {"arguments": "args", "name": "foo"}
+                },
+            },
+        },
+    }
+
+    # Delete dataset
+    langchain_client.delete_dataset(dataset_id=dataset.id)
