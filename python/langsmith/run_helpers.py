@@ -1,5 +1,7 @@
 """Decorator for creating a run tree from functions."""
+import contextlib
 import contextvars
+import functools
 import inspect
 import logging
 import os
@@ -19,18 +21,20 @@ from typing import (
     Union,
 )
 from uuid import uuid4
+import uuid
+from concurrent import futures
+from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, TypedDict
 
-from langsmith.client import ID_TYPE
-from langsmith.run_trees import RunTree
+from langsmith import client, run_trees, utils
 
 logger = logging.getLogger(__name__)
-_PARENT_RUN_TREE = contextvars.ContextVar[Optional[RunTree]](
+_PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
 
 
-def get_run_tree_context() -> Optional[RunTree]:
+def get_run_tree_context() -> Optional[run_trees.RunTree]:
     """Get the current run tree context."""
     return _PARENT_RUN_TREE.get()
 
@@ -58,13 +62,101 @@ def _get_inputs(
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
-    reference_example_id: Optional[ID_TYPE]
+    reference_example_id: Optional[client.ID_TYPE]
     run_extra: Optional[Dict]
-    run_tree: Optional[RunTree]
+    run_tree: Optional[run_trees.RunTree]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
-    run_id: Optional[ID_TYPE]
+    run_id: Optional[client.ID_TYPE]
+    client: Optional[client.Client]
+
+
+class _TraceableContainer(TypedDict, total=False):
+    """Typed response when initializing a run a traceable."""
+
+    new_run: run_trees.RunTree
+    project_name: Optional[str]
+    outer_project: Optional[str]
+
+
+def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
+    run_extra = langsmith_extra.get("run_extra", None)
+    if run_extra:
+        extra_inner = {**extra_outer, **run_extra}
+    else:
+        extra_inner = extra_outer
+    return extra_inner
+
+
+def _setup_run(
+    func: Callable,
+    run_type: str,
+    extra_outer: dict,
+    langsmith_extra: Optional[LangSmithExtra] = None,
+    name: Optional[str] = None,
+    executor: Optional[futures.ThreadPoolExecutor] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
+    tags: Optional[List[str]] = None,
+    client: Optional[client.Client] = None,
+    args: Any = None,
+    kwargs: Any = None,
+) -> _TraceableContainer:
+    outer_project = _PROJECT_NAME.get() or os.environ.get(
+        "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
+    )
+    langsmith_extra = langsmith_extra or LangSmithExtra()
+    parent_run_ = langsmith_extra.get("run_tree") or _PARENT_RUN_TREE.get()
+    project_name_ = langsmith_extra.get("project_name", outer_project)
+    signature = inspect.signature(func)
+    name_ = name or func.__name__
+    docstring = func.__doc__
+    extra_inner = _collect_extra(extra_outer, langsmith_extra)
+    metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
+    metadata_["ls_method"] = "traceable"
+    extra_inner["metadata"] = metadata_
+    inputs = _get_inputs(signature, *args, **kwargs)
+    tags_ = (tags or []) + (langsmith_extra.get("tags") or [])
+    id_ = langsmith_extra.get("run_id", uuid.uuid4())
+    client_ = langsmith_extra.get("client", client)
+    if parent_run_ is not None:
+        new_run = parent_run_.create_child(
+            name=name_,
+            run_type=run_type,
+            serialized={
+                "name": name,
+                "signature": str(signature),
+                "doc": docstring,
+            },
+            inputs=inputs,
+            tags=tags_,
+            extra=extra_inner,
+            run_id=id_,
+        )
+    else:
+        new_run = run_trees.RunTree(
+            id=id_,
+            name=name_,
+            serialized={
+                "name": name,
+                "signature": str(signature),
+                "doc": docstring,
+            },
+            inputs=inputs,
+            run_type=run_type,
+            reference_example_id=langsmith_extra.get("reference_example_id"),
+            project_name=project_name_,
+            extra=extra_inner,
+            tags=tags_,
+            executor=executor,
+            client=client_,
+        )
+    new_run.post()
+    return _TraceableContainer(
+        new_run=new_run,
+        project_name=project_name_,
+        outer_project=outer_project,
+    )
 
 
 def _setup_run_tree(
@@ -139,112 +231,118 @@ def _setup_run_tree(
 
 
 def traceable(
-    run_type: str,
+    run_type: str = "chain",
     *,
     name: Optional[str] = None,
-    extra: Optional[Dict] = None,
-    executor: Optional[ThreadPoolExecutor] = None,
+    executor: Optional[futures.ThreadPoolExecutor] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
+    client: Optional[client.Client] = None,
+    extra: Optional[Dict] = None,
 ) -> Callable:
     """Decorator for creating or adding a run to a run tree."""
     extra_outer = extra or {}
 
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
+    def decorator(func: Callable):
+        if not utils.tracing_is_enabled():
+            utils.log_once(
+                logging.DEBUG, "Tracing is disabled, returning original function"
+            )
+            return func
+
+        @functools.wraps(func)
         async def async_wrapper(
             *args: Any,
-            langsmith_extra: Optional[Union[LangSmithExtra, Dict]] = None,
+            langsmith_extra: Optional[LangSmithExtra] = None,
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function"""
-            outer_project = _PROJECT_NAME.get() or os.environ.get(
-                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
-            )
-            new_run: RunTree = _setup_run_tree(
+
+            run_container = _setup_run(
                 func,
-                args,
-                kwargs,
-                run_type,
+                run_type=run_type,
+                langsmith_extra=langsmith_extra,
+                extra_outer=extra_outer,
                 name=name,
+                executor=executor,
                 metadata=metadata,
                 tags=tags,
-                outer_project=outer_project,
-                extra_outer=extra_outer,
-                langsmith_extra=langsmith_extra,
-                executor=executor,
+                client=client,
+                args=args,
+                kwargs=kwargs,
             )
-            _PROJECT_NAME.set(new_run.session_name)
-            _PARENT_RUN_TREE.set(new_run)
+            _PROJECT_NAME.set(run_container["project_name"])
+            _PARENT_RUN_TREE.set(run_container["new_run"])
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
             try:
                 if func_accepts_parent_run:
-                    function_result = await func(*args, run_tree=new_run, **kwargs)
+                    function_result = await func(
+                        *args, run_tree=run_container["new_run"], **kwargs
+                    )
                 else:
                     function_result = await func(*args, **kwargs)
             except Exception as e:
-                new_run.end(error=str(e))
-                new_run.patch()
-                _PARENT_RUN_TREE.set(new_run.parent_run)
-                _PROJECT_NAME.set(outer_project)
+                run_container["new_run"].end(error=str(e))
+                run_container["new_run"].patch()
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
                 raise e
-            _PARENT_RUN_TREE.set(new_run.parent_run)
-            _PROJECT_NAME.set(outer_project)
+            _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+            _PROJECT_NAME.set(run_container["outer_project"])
             if isinstance(function_result, dict):
-                new_run.end(outputs=function_result)
+                run_container["new_run"].end(outputs=function_result)
             else:
-                new_run.end(outputs={"output": function_result})
-            new_run.patch()
+                run_container["new_run"].end(outputs={"output": function_result})
+            run_container["new_run"].patch()
             return function_result
 
-        @wraps(func)
+        @functools.wraps(func)
         def wrapper(
             *args: Any,
-            langsmith_extra: Optional[Union[LangSmithExtra, Dict]] = None,
+            langsmith_extra: Optional[LangSmithExtra] = None,
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
-            outer_project = _PROJECT_NAME.get() or os.environ.get(
-                "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
-            )
-            new_run: RunTree = _setup_run_tree(
+            run_container = _setup_run(
                 func,
-                args,
-                kwargs,
-                run_type,
+                run_type=run_type,
+                langsmith_extra=langsmith_extra,
+                extra_outer=extra_outer,
                 name=name,
+                executor=executor,
                 metadata=metadata,
                 tags=tags,
-                outer_project=outer_project,
-                extra_outer=extra_outer,
-                langsmith_extra=langsmith_extra,
-                executor=executor,
+                client=client,
+                args=args,
+                kwargs=kwargs,
             )
-            _PROJECT_NAME.set(new_run.session_name)
-            _PARENT_RUN_TREE.set(new_run)
+            _PROJECT_NAME.set(run_container["project_name"])
+            _PARENT_RUN_TREE.set(run_container["new_run"])
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
             try:
                 if func_accepts_parent_run:
-                    function_result = func(*args, run_tree=new_run, **kwargs)
+                    function_result = func(
+                        *args, run_tree=run_container["new_run"], **kwargs
+                    )
                 else:
                     function_result = func(*args, **kwargs)
             except Exception as e:
-                new_run.end(error=str(e))
-                new_run.patch()
-                _PARENT_RUN_TREE.set(new_run.parent_run)
-                _PROJECT_NAME.set(outer_project)
+                run_container["new_run"].end(error=str(e))
+                run_container["new_run"].patch()
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
                 raise e
-            _PARENT_RUN_TREE.set(new_run.parent_run)
-            _PROJECT_NAME.set(outer_project)
+            _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+            _PROJECT_NAME.set(run_container["outer_project"])
             if isinstance(function_result, dict):
-                new_run.end(outputs=function_result)
+                run_container["new_run"].end(outputs=function_result)
             else:
-                new_run.end(outputs={"output": function_result})
-            new_run.patch()
+                run_container["new_run"].end(outputs={"output": function_result})
+            run_container["new_run"].patch()
             return function_result
 
         if inspect.iscoroutinefunction(func):
@@ -255,23 +353,23 @@ def traceable(
     return decorator
 
 
-@contextmanager
+@contextlib.contextmanager
 def trace(
     name: str,
     run_type: str,
     *,
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
-    executor: Optional[ThreadPoolExecutor] = None,
+    executor: Optional[futures.ThreadPoolExecutor] = None,
     project_name: Optional[str] = None,
-    run_tree: Optional[RunTree] = None,
+    run_tree: Optional[run_trees.RunTree] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
-) -> Generator[RunTree, None, None]:
+) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
     extra_outer = extra or {}
-    if metadata:
-        extra_outer["metadata"] = metadata
+    metadata = metadata or {}
+    extra_outer["metadata"] = {**metadata, "ls_method": "trace"}
     parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
     outer_project = _PROJECT_NAME.get() or os.environ.get(
         "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
@@ -286,7 +384,7 @@ def trace(
             tags=tags,
         )
     else:
-        new_run = RunTree(
+        new_run = run_trees.RunTree(
             name=name,
             run_type=run_type,
             extra=extra_outer,

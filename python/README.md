@@ -148,6 +148,7 @@ parent_run = RunTree(
     # api_url= "Defaults to the LANGCHAIN_ENDPOINT env var"
     # api_key= "Defaults to the LANGCHAIN_API_KEY env var"
 )
+parent_run.post()
 # .. My Chat Bot calls an LLM
 child_llm_run = parent_run.create_child(
     name="My Proprietary LLM",
@@ -159,6 +160,7 @@ child_llm_run = parent_run.create_child(
         ]
     },
 )
+child_llm_run.post()
 child_llm_run.end(
     outputs={
         "generations": [
@@ -167,6 +169,7 @@ child_llm_run.end(
         ]
     }
 )
+child_llm_run.patch()
 # ..  My Chat Bot takes the LLM output and calls
 # a tool / function for fetching transcripts ..
 child_tool_run = parent_run.create_child(
@@ -174,27 +177,31 @@ child_tool_run = parent_run.create_child(
     run_type="tool",
     inputs={"date": "XYZ", "content_type": "meeting_transcripts"},
 )
+child_tool_run.post()
 # The tool returns meeting notes to the chat bot
 child_tool_run.end(outputs={"meetings": ["Meeting1 notes.."]})
+child_tool_run.patch()
 
 child_chain_run = parent_run.create_child(
     name="Unreliable Component",
     run_type="tool",
     inputs={"input": "Summarize these notes..."},
 )
+child_chain_run.post()
 
 try:
     # .... the component does work
     raise ValueError("Something went wrong")
+    child_chain_run.end(outputs={"output": "foo"}
+    child_chain_run.patch()
 except Exception as e:
     child_chain_run.end(error=f"I errored again {e}")
+    child_chain_run.patch()
     pass
 # .. The chat agent recovers
 
 parent_run.end(outputs={"output": ["The meeting notes are as follows:..."]})
-
-# This posts all nested runs as a batch
-res = parent_run.post(exclude_child_runs=False)
+res = parent_run.patch()
 res.result()
 ```
 

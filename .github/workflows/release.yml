@@ -1,9 +1,7 @@
 name: Release
 
 on:
-  pull_request:
-    types:
-      - closed
+  push:
     branches:
       - main
     paths:
@@ -15,9 +13,8 @@ env:
 
 jobs:
   if_release:
-    if: |
-      ${{ github.event.pull_request.merged == true }}
-      && ${{ contains(github.event.pull_request.labels.*.name, 'release') }}
+    # Disallow publishing from branches that aren't `main`.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -64,3 +61,8 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: "python/dist"
+      - name: Publish package to NPM
+        run: |
+          cd js
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          yarn publish --non-interactive

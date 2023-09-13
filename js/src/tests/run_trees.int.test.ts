@@ -1,5 +1,6 @@
 import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
+import { jest } from "@jest/globals";
 
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
@@ -58,7 +59,17 @@ test("Test persisting runs and adding feedback", async () => {
   await child_tool_run.end({ output: ["Hi"] });
   await child_llm_run.end({ prompts: ["hello world"] });
   await parent_run.end({ output: ["Hi"] });
+  // Capture console.warn output
+  const consoleWarnSpy = jest
+    .spyOn(console, "warn")
+    .mockImplementation(() => {});
+
+  // Assert that console.warn was called
   await parent_run.postRun(false);
+  expect(consoleWarnSpy).toHaveBeenCalled();
+
+  // Restore console.warn
+  consoleWarnSpy.mockRestore();
   const runs = await toArray(langchainClient.listRuns({ projectName }));
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
@@ -109,14 +120,25 @@ test("Test persisting runs and adding feedback", async () => {
       relevance: "very bad",
     },
     score: 0.5,
-    feedbackSourceType: "MODEL",
+    feedbackSourceType: "model",
   });
-  await langchainClient.createFeedback(runs[0].id, "a tag", {});
+  const feedback2 = await langchainClient.createFeedback(
+    runs[0].id,
+    "a tag",
+    {}
+  );
+  expect(feedback2.id).not.toBeNull();
+  const res = await langchainClient.updateFeedback(feedback2.id, {
+    correction: { good_output: "a correction" },
+  });
+  expect(res.correction).toEqual({ good_output: "a correction" });
   const feedbacks = await toArray(
     langchainClient.listFeedback({ runIds: [runs[0].id] })
   );
   expect(feedbacks.length).toEqual(2);
   expect(feedbacks[0].run_id).toEqual(runs[0].id);
+  const updatedFeedback = await langchainClient.readFeedback(feedback2.id);
+  expect(updatedFeedback.correction).toEqual({ good_output: "a correction" });
   const feedback = await langchainClient.readFeedback(feedbacks[0].id);
   expect(feedback.id).toEqual(feedbacks[0].id);
   await langchainClient.deleteFeedback(feedback.id);

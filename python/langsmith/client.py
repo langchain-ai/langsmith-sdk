@@ -1,14 +1,17 @@
+"""The LangSmith Client."""
 from __future__ import annotations
 
+import collections
+import datetime
+import functools
+import importlib
+import io
 import json
 import logging
 import os
 import socket
+import uuid
 import weakref
-from collections import defaultdict
-from datetime import datetime
-from functools import lru_cache
-from io import BytesIO
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -24,40 +27,16 @@ from typing import (
     Union,
     cast,
 )
-from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from urllib import parse as urllib_parse
 
-from requests import ConnectionError, HTTPError, Response, Session
-from requests.adapters import HTTPAdapter
+import requests
+from requests import adapters as requests_adapters
 from urllib3.util import Retry
 
+from langsmith import env as ls_env
+from langsmith import schemas as ls_schemas
+from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import RunEvaluator
-from langsmith.schemas import (
-    ID_TYPE,
-    Dataset,
-    DataType,
-    Example,
-    Feedback,
-    FeedbackSourceType,
-    Run,
-    RunBase,
-    TracerSession,
-)
-from langsmith.utils import (
-    LangSmithAPIError,
-    LangSmithConnectionError,
-    LangSmithError,
-    LangSmithUserError,
-    get_enum_value,
-    get_llm_generation_from_outputs,
-    get_message_generation_from_outputs,
-    get_messages_from_inputs,
-    get_prompt_from_inputs,
-    get_runtime_environment,
-    raise_for_status_with_text,
-    serialize_json,
-    xor_args,
-)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -79,24 +58,48 @@ def _is_localhost(url: str) -> bool:
         True if the URL is localhost, False otherwise.
     """
     try:
-        netloc = urlsplit(url).netloc.split(":")[0]
+        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
         ip = socket.gethostbyname(netloc)
         return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
     except socket.gaierror:
         return False
 
 
+def _is_langchain_hosted(url: str) -> bool:
+    """Check if the URL is langchain hosted.
+
+    Parameters
+    ----------
+    url : str
+        The URL to check.
+
+    Returns
+    -------
+    bool
+        True if the URL is langchain hosted, False otherwise.
+    """
+    try:
+        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
+        return netloc.endswith("langchain.com")
+    except Exception:
+        return False
+
+
+ID_TYPE = Union[uuid.UUID, str]
+
+
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
+
+    If urllib3 version is 1.26 or greater, retry on all methods.
 
     Returns
     -------
     Retry
         The default retry configuration.
     """
-    return Retry(
+    retry_params = dict(
         total=3,
-        allowed_methods=None,  # Retry on all methods
         status_forcelist=[502, 503, 504, 408, 425, 429],
         backoff_factor=0.5,
         # Sadly urllib3 1.x doesn't support backoff_jitter
@@ -104,8 +107,44 @@ def _default_retry_config() -> Retry:
         raise_on_status=False,
     )
 
+    # the `allowed_methods` keyword is not available in urllib3 < 1.26
 
-def close_session(session: Session) -> None:
+    # check to see if urllib3 version is 1.26 or greater
+    urllib3_version = importlib.metadata.version("urllib3")
+    use_allowed_methods = tuple(map(int, urllib3_version.split("."))) >= (1, 26)
+
+    if use_allowed_methods:
+        # Retry on all methods
+        retry_params["allowed_methods"] = None
+
+    return Retry(**retry_params)  # type: ignore
+
+
+def _serialize_json(obj: Any) -> str:
+    """Serialize an object to JSON.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize.
+
+    Returns
+    -------
+    str
+        The serialized JSON string.
+
+    Raises
+    ------
+    TypeError
+        If the object type is not serializable.
+    """
+    if isinstance(obj, datetime.datetime):
+        return obj.isoformat()
+    else:
+        return str(obj)
+
+
+def close_session(session: requests.Session) -> None:
     """Close the session.
 
     Parameters
@@ -132,9 +171,10 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     LangSmithUserError
         If the API key is not provided when using the hosted service.
     """
-    if not _is_localhost(api_url):
-        if not api_key:
-            raise LangSmithUserError(
+    # If the domain is langchain.com, raise error if no api_key
+    if not api_key:
+        if _is_langchain_hosted(api_url):
+            raise ls_utils.LangSmithUserError(
                 "API key must be provided when using hosted LangSmith API"
             )
 
@@ -156,8 +196,20 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
         )
     )
     if not _api_url.strip():
-        raise LangSmithUserError("LangSmith API URL cannot be empty")
+        raise ls_utils.LangSmithUserError("LangSmith API URL cannot be empty")
     return _api_url.strip().strip('"').strip("'").rstrip("/")
+
+
+def _hide_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    if os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true":
+        return {}
+    return inputs
+
+
+def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
+    if os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true":
+        return {}
+    return outputs
 
 
 class Client:
@@ -207,14 +259,16 @@ class Client:
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 7000
         # Create a session and register a finalizer to close it
-        self.session = Session()
+        self.session = requests.Session()
         weakref.finalize(self, close_session, self.session)
 
         # Mount the HTTPAdapter with the retry configuration
-        adapter = HTTPAdapter(max_retries=self.retry_config)
+        adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
-        self._get_data_type_cached = lru_cache(maxsize=10)(self._get_data_type)
+        self._get_data_type_cached = functools.lru_cache(maxsize=10)(
+            self._get_data_type
+        )
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -267,7 +321,7 @@ class Client:
         request_method: str,
         url: str,
         request_kwargs: Mapping,
-    ) -> Response:
+    ) -> requests.Response:
         """Send a request with retries.
 
         Parameters
@@ -299,31 +353,36 @@ class Client:
             response = self.session.request(
                 request_method, url, stream=False, **request_kwargs
             )
-            raise_for_status_with_text(response)
+            ls_utils.raise_for_status_with_text(response)
             return response
-        except HTTPError as e:
+        except requests.HTTPError as e:
             if response is not None and response.status_code == 500:
-                raise LangSmithAPIError(
+                raise ls_utils.LangSmithAPIError(
                     f"Server error caused failure to {request_method} {url} in"
                     f" LangSmith API. {e}"
                 )
             else:
-                raise LangSmithUserError(
+                raise ls_utils.LangSmithUserError(
                     f"Failed to {request_method} {url} in LangSmith API. {e}"
                 )
-        except ConnectionError as e:
-            raise LangSmithConnectionError(
+        except requests.ConnectionError as e:
+            raise ls_utils.LangSmithConnectionError(
                 f"Connection error caused failure to {request_method} {url}"
                 "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+                f" {e}"
             ) from e
-        except Exception as e:
-            raise LangSmithError(
-                f"Failed to {request_method} {url} in LangSmith API. {e}"
+        except ValueError as e:
+            args = list(e.args)
+            msg = args[1] if len(args) > 1 else ""
+            msg = msg.replace("session", "session (project)")
+            emsg = "\n".join([args[0]] + [msg] + args[2:])
+            raise ls_utils.LangSmithError(
+                f"Failed to {request_method} {url} in LangSmith API. {emsg}"
             ) from e
 
     def _get_with_retries(
         self, path: str, params: Optional[Dict[str, Any]] = None
-    ) -> Response:
+    ) -> requests.Response:
         """Send a GET request with retries.
 
         Parameters
@@ -383,6 +442,7 @@ class Client:
             params_["offset"] = offset
             response = self._get_with_retries(path, params=params_)
             items = response.json()
+
             if not items:
                 break
             yield from items
@@ -400,8 +460,8 @@ class Client:
         output_keys: Sequence[str],
         *,
         description: Optional[str] = None,
-        data_type: Optional[DataType] = DataType.kv,
-    ) -> Dataset:
+        data_type: Optional[ls_schemas.DataType] = ls_schemas.DataType.kv,
+    ) -> ls_schemas.Dataset:
         """Upload a dataframe as individual examples to the LangSmith API.
 
         Parameters
@@ -429,7 +489,7 @@ class Client:
         ValueError
             If the csv_file is not a string or tuple.
         """
-        csv_file = BytesIO()
+        csv_file = io.BytesIO()
         df.to_csv(csv_file, index=False)
         csv_file.seek(0)
         return self.upload_csv(
@@ -443,14 +503,14 @@ class Client:
 
     def upload_csv(
         self,
-        csv_file: Union[str, Tuple[str, BytesIO]],
+        csv_file: Union[str, Tuple[str, io.BytesIO]],
         input_keys: Sequence[str],
         output_keys: Sequence[str],
         *,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        data_type: Optional[DataType] = DataType.kv,
-    ) -> Dataset:
+        data_type: Optional[ls_schemas.DataType] = ls_schemas.DataType.kv,
+    ) -> ls_schemas.Dataset:
         """Upload a CSV file to the LangSmith API.
 
         Parameters
@@ -489,7 +549,7 @@ class Client:
         if description:
             data["description"] = description
         if data_type:
-            data["data_type"] = get_enum_value(data_type)
+            data["data_type"] = ls_utils.get_enum_value(data_type)
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
@@ -508,14 +568,14 @@ class Client:
             )
         else:
             raise ValueError("csv_file must be a string or tuple")
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
         result = response.json()
         # TODO: Make this more robust server-side
         if "detail" in result and "already exists" in result["detail"]:
             file_name = csv_file if isinstance(csv_file, str) else csv_file[0]
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
-        return Dataset(**result, _host_url=self._host_url)
+        return ls_schemas.Dataset(**result, _host_url=self._host_url)
 
     def create_run(
         self,
@@ -538,7 +598,8 @@ class Client:
             The type of the run, such as  such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
         execution_order : int or None, default=None
-            The execution order of the run.
+            The position of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -562,13 +623,15 @@ class Client:
             **kwargs,
             "session_name": project_name,
             "name": name,
-            "inputs": inputs,
+            "inputs": _hide_inputs(inputs),
             "run_type": run_type,
             "execution_order": execution_order if execution_order is not None else 1,
         }
+        if "outputs" in run_create:
+            run_create["outputs"] = _hide_outputs(run_create["outputs"])
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
-        runtime_env = get_runtime_environment()
+        runtime_env = ls_env.get_runtime_and_metrics()
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {**self._headers, "Accept": "application/json"}
         self.request_with_retries(
@@ -584,6 +647,12 @@ class Client:
     def update_run(
         self,
         run_id: ID_TYPE,
+        *,
+        end_time: Optional[datetime.datetime] = None,
+        error: Optional[str] = None,
+        inputs: Optional[Dict] = None,
+        outputs: Optional[Dict] = None,
+        events: Optional[Sequence[dict]] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -592,21 +661,42 @@ class Client:
         ----------
         run_id : str or UUID
             The ID of the run to update.
+        end_time : datetime or None
+            The end time of the run.
+        error : str or None, default=None
+            The error message of the run.
+        inputs : Dict or None, default=None
+            The input values for the run.
+        outputs : Dict or None, default=None
+            The output values for the run.
+        events : Sequence[dict] or None, default=None
+            The events for the run.
         **kwargs : Any
-            Additional keyword arguments.
+            Kwargs are ignored.
         """
         headers = {**self._headers, "Accept": "application/json"}
+        data: Dict[str, Any] = {}
+        if end_time is not None:
+            data["end_time"] = end_time.isoformat()
+        if error is not None:
+            data["error"] = error
+        if inputs is not None:
+            data["inputs"] = _hide_inputs(inputs)
+        if outputs is not None:
+            data["outputs"] = _hide_outputs(outputs)
+        if events is not None:
+            data["events"] = events
         self.request_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
             request_kwargs={
-                "data": json.dumps(kwargs, default=serialize_json),
+                "data": json.dumps(data, default=_serialize_json),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
         )
 
-    def _load_child_runs(self, run: Run) -> Run:
+    def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
 
         Parameters
@@ -625,11 +715,13 @@ class Client:
             If a child run has no parent.
         """
         child_runs = self.list_runs(id=run.child_run_ids)
-        treemap: DefaultDict[UUID, List[Run]] = defaultdict(list)
-        runs: Dict[UUID, Run] = {}
+        treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
+            list
+        )
+        runs: Dict[uuid.UUID, ls_schemas.Run] = {}
         for child_run in sorted(child_runs, key=lambda r: r.execution_order):
             if child_run.parent_run_id is None:
-                raise LangSmithError(f"Child run {child_run.id} has no parent")
+                raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
             treemap[child_run.parent_run_id].append(child_run)
             runs[child_run.id] = child_run
         run.child_runs = treemap.pop(run.id, [])
@@ -637,7 +729,9 @@ class Client:
             runs[run_id].child_runs = children
         return run
 
-    def read_run(self, run_id: ID_TYPE, load_child_runs: bool = False) -> Run:
+    def read_run(
+        self, run_id: ID_TYPE, load_child_runs: bool = False
+    ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
         Parameters
@@ -653,7 +747,7 @@ class Client:
             The run.
         """
         response = self._get_with_retries(f"/runs/{run_id}")
-        run = Run(**response.json(), _host_url=self._host_url)
+        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
@@ -664,22 +758,18 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         project_name: Optional[str] = None,
         run_type: Optional[str] = None,
-        dataset_name: Optional[str] = None,
-        dataset_id: Optional[ID_TYPE] = None,
         reference_example_id: Optional[ID_TYPE] = None,
         query: Optional[str] = None,
         filter: Optional[str] = None,
         execution_order: Optional[int] = None,
         parent_run_id: Optional[ID_TYPE] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: Optional[datetime.datetime] = None,
         error: Optional[bool] = None,
         run_ids: Optional[List[ID_TYPE]] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
-        order_by: Optional[Sequence[str]] = None,
         **kwargs: Any,
-    ) -> Iterator[Run]:
+    ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
 
         Parameters
@@ -690,10 +780,6 @@ class Client:
             The name of the project to filter by.
         run_type : str or None, default=None
             The type of the runs to filter by.
-        dataset_name : str or None, default=None
-            The name of the dataset to filter by.
-        dataset_id : UUID or None, default=None
-            The ID of the dataset to filter by.
         reference_example_id : UUID or None, default=None
             The ID of the reference example to filter by.
         query : str or None, default=None
@@ -701,13 +787,13 @@ class Client:
         filter : str or None, default=None
             The filter string to filter by.
         execution_order : int or None, default=None
-            The execution order to filter by.
+            The execution order to filter by. Execution order is the position
+            of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
         parent_run_id : UUID or None, default=None
             The ID of the parent run to filter by.
         start_time : datetime or None, default=None
             The start time to filter by.
-        end_time : datetime or None, default=None
-            The end time to filter by.
         error : bool or None, default=None
             Whether to filter by error status.
         run_ids : List[str or UUID] or None, default=None
@@ -716,8 +802,6 @@ class Client:
             The maximum number of runs to return.
         offset : int or None, default=None
             The number of runs to skip.
-        order_by : Sequence[str] or None, default=None
-            The fields to order the runs by.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -730,10 +814,6 @@ class Client:
             if project_id is not None:
                 raise ValueError("Only one of project_id or project_name may be given")
             project_id = self.read_project(project_name=project_name).id
-        if dataset_name is not None:
-            if dataset_id is not None:
-                raise ValueError("Only one of dataset_id or dataset_name may be given")
-            dataset_id = self.read_dataset(dataset_name=dataset_name).id
         query_params: Dict[str, Any] = {
             "session": project_id,
             "run_type": run_type,
@@ -741,8 +821,6 @@ class Client:
         }
         if reference_example_id is not None:
             query_params["reference_example"] = reference_example_id
-        if dataset_id is not None:
-            query_params["dataset"] = dataset_id
         if query is not None:
             query_params["query"] = query
         if filter is not None:
@@ -753,8 +831,6 @@ class Client:
             query_params["parent_run"] = parent_run_id
         if start_time is not None:
             query_params["start_time"] = start_time.isoformat()
-        if end_time is not None:
-            query_params["end_time"] = end_time.isoformat()
         if error is not None:
             query_params["error"] = error
         if run_ids is not None:
@@ -763,39 +839,23 @@ class Client:
             query_params["limit"] = limit
         if offset is not None:
             query_params["offset"] = offset
-        if order_by is not None:
-            query_params["order"] = order_by
         yield from (
-            Run(**run, _host_url=self._host_url)
+            ls_schemas.Run(**run, _host_url=self._host_url)
             for run in self._get_paginated_list("/runs", params=query_params)
         )
-
-    def delete_run(self, run_id: ID_TYPE) -> None:
-        """Delete a run from the LangSmith API.
-
-        Parameters
-        ----------
-        run_id : str or UUID
-            The ID of the run to delete.
-        """
-        response = self.session.delete(
-            f"{self.api_url}/runs/{run_id}",
-            headers=self._headers,
-        )
-        raise_for_status_with_text(response)
 
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run."""
         data = {
             "run_id": str(run_id),
-            "share_token": share_id or str(uuid4()),
+            "share_token": share_id or str(uuid.uuid4()),
         }
         response = self.session.put(
             f"{self.api_url}/runs/{run_id}/share",
             headers=self._headers,
             json=data,
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
@@ -805,14 +865,14 @@ class Client:
             f"{self.api_url}/runs/{run_id}/share",
             headers=self._headers,
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
 
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
         response = self.session.get(
             f"{self.api_url}/runs/{run_id}/share",
             headers=self._headers,
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
         result = response.json()
         if result is None or "share_token" not in result:
             return None
@@ -829,7 +889,7 @@ class Client:
         *,
         project_extra: Optional[dict] = None,
         upsert: bool = False,
-    ) -> TracerSession:
+    ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
 
         Parameters
@@ -859,13 +919,13 @@ class Client:
             headers=self._headers,
             json=body,
         )
-        raise_for_status_with_text(response)
-        return TracerSession(**response.json())
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
 
-    @xor_args(("project_id", "project_name"))
+    @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
         self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
-    ) -> TracerSession:
+    ) -> ls_schemas.TracerSessionResult:
         """Read a project from the LangSmith API.
 
         Parameters
@@ -893,28 +953,75 @@ class Client:
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise LangSmithError(f"Project {project_name} not found")
-            return TracerSession(**result[0])
-        return TracerSession(**response.json())
+                raise ls_utils.LangSmithError(f"Project {project_name} not found")
+            return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
+        return ls_schemas.TracerSessionResult(
+            **response.json(), _host_url=self._host_url
+        )
 
-    def list_projects(self) -> Iterator[TracerSession]:
-        """List projects from the LangSmith API.
+    def list_projects(
+        self,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+        reference_dataset_name: Optional[str] = None,
+        reference_free: Optional[bool] = None,
+    ) -> Iterator[ls_schemas.TracerSession]:
+        """
+        List projects from the LangSmith API.
+
+        Parameters
+        ----------
+        project_ids : Optional[List[ID_TYPE]], optional
+            A list of project IDs to filter by, by default None
+        name : Optional[str], optional
+            The name of the project to filter by, by default None
+        name_contains : Optional[str], optional
+            A string to search for in the project name, by default None
+        reference_dataset_id : Optional[List[ID_TYPE]], optional
+            A dataset ID to filter by, by default None
+        reference_dataset_name : Optional[str], optional
+            The name of the reference dataset to filter by, by default None
+        reference_free : Optional[bool], optional
+            Whether to filter for only projects not associated with a dataset.
 
         Yields
         ------
         TracerSession
             The projects.
         """
+        params: Dict[str, Any] = {}
+        if project_ids is not None:
+            params["id"] = project_ids
+        if name is not None:
+            params["name"] = name
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        if reference_dataset_id is not None:
+            if reference_dataset_name is not None:
+                raise ValueError(
+                    "Only one of reference_dataset_id or"
+                    " reference_dataset_name may be given"
+                )
+            params["reference_dataset"] = reference_dataset_id
+        elif reference_dataset_name is not None:
+            reference_dataset_id = self.read_dataset(
+                dataset_name=reference_dataset_name
+            ).id
+            params["reference_dataset"] = reference_dataset_id
+        if reference_free is not None:
+            params["reference_free"] = reference_free
         yield from (
-            TracerSession(**project)
-            for project in self._get_paginated_list("/sessions")
+            ls_schemas.TracerSession(**project, _host_url=self._host_url)
+            for project in self._get_paginated_list("/sessions", params=params)
         )
 
-    @xor_args(("project_name", "project_id"))
+    @ls_utils.xor_args(("project_name", "project_id"))
     def delete_project(
         self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
-        """Delete a project from the LangSmith API.
+        """Delete a project from LangSmith.
 
         Parameters
         ----------
@@ -931,16 +1038,15 @@ class Client:
             self.api_url + f"/sessions/{project_id}",
             headers=self._headers,
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
 
     def create_dataset(
         self,
         dataset_name: str,
         *,
         description: Optional[str] = None,
-        data_type: DataType = DataType.kv,
-        dataset_id: Optional[ID_TYPE] = None,
-    ) -> Dataset:
+        data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
+    ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
         Parameters
@@ -968,16 +1074,16 @@ class Client:
             headers=self._headers,
             data=json.dumps(data, default=serialize_json),
         )
-        raise_for_status_with_text(response)
-        return Dataset(**response.json(), _host_url=self._host_url)
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
 
-    @xor_args(("dataset_name", "dataset_id"))
+    @ls_utils.xor_args(("dataset_name", "dataset_id"))
     def read_dataset(
         self,
         *,
         dataset_name: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
-    ) -> Dataset:
+    ) -> ls_schemas.Dataset:
         """Read a dataset from the LangSmith API.
 
         Parameters
@@ -1007,9 +1113,9 @@ class Client:
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise LangSmithError(f"Dataset {dataset_name} not found")
-            return Dataset(**result[0], _host_url=self._host_url)
-        return Dataset(**result, _host_url=self._host_url)
+                raise ls_utils.LangSmithError(f"Dataset {dataset_name} not found")
+            return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
+        return ls_schemas.Dataset(**result, _host_url=self._host_url)
 
     def list_datasets(
         self,
@@ -1018,7 +1124,7 @@ class Client:
         data_type: Optional[str] = None,
         dataset_name: Optional[str] = None,
         dataset_name_contains: Optional[str] = None,
-    ) -> Iterator[Dataset]:
+    ) -> Iterator[ls_schemas.Dataset]:
         """List the datasets on the LangSmith API.
 
         Yields
@@ -1037,11 +1143,11 @@ class Client:
             params["name_contains"] = dataset_name_contains
 
         yield from (
-            Dataset(**dataset, _host_url=self._host_url)
+            ls_schemas.Dataset(**dataset, _host_url=self._host_url)
             for dataset in self._get_paginated_list("/datasets", params=params)
         )
 
-    @xor_args(("dataset_id", "dataset_name"))
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def delete_dataset(
         self,
         *,
@@ -1065,21 +1171,21 @@ class Client:
             f"{self.api_url}/datasets/{dataset_id}",
             headers=self._headers,
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
 
-    def _get_data_type(self, dataset_id: ID_TYPE) -> DataType:
+    def _get_data_type(self, dataset_id: ID_TYPE) -> ls_schemas.DataType:
         dataset = self.read_dataset(dataset_id=dataset_id)
         return dataset.data_type
 
-    @xor_args(("dataset_id", "dataset_name"))
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_llm_example(
         self,
         prompt: str,
         generation: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        created_at: Optional[datetime] = None,
-    ) -> Example:
+        created_at: Optional[datetime.datetime] = None,
+    ) -> ls_schemas.Example:
         """Add an example (row) to an LLM-type dataset."""
         return self.create_example(
             inputs={"input": prompt},
@@ -1089,19 +1195,41 @@ class Client:
             created_at=created_at,
         )
 
-    @xor_args(("dataset_id", "dataset_name"))
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_chat_example(
         self,
-        messages: List[Mapping[str, Any]],
-        generations: Optional[Mapping[str, Any]] = None,
+        messages: List[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
+        generations: Optional[
+            Union[Mapping[str, Any], ls_schemas.BaseMessageLike]
+        ] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        created_at: Optional[datetime] = None,
-    ) -> Example:
+        created_at: Optional[datetime.datetime] = None,
+    ) -> ls_schemas.Example:
         """Add an example (row) to a Chat-type dataset."""
+        final_input = []
+        for message in messages:
+            if ls_utils.is_base_message_like(message):
+                final_input.append(
+                    ls_utils.convert_langchain_message(
+                        cast(ls_schemas.BaseMessageLike, message)
+                    )
+                )
+            else:
+                final_input.append(cast(dict, message))
+        final_generations = None
+        if generations is not None:
+            if ls_utils.is_base_message_like(generations):
+                final_generations = ls_utils.convert_langchain_message(
+                    cast(ls_schemas.BaseMessageLike, generations)
+                )
+            else:
+                final_generations = cast(dict, generations)
         return self.create_example(
-            inputs={"input": messages},
-            outputs={"output": generations},
+            inputs={"input": final_input},
+            outputs={"output": final_generations}
+            if final_generations is not None
+            else None,
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             created_at=created_at,
@@ -1109,24 +1237,24 @@ class Client:
 
     def create_example_from_run(
         self,
-        run: Run,
+        run: ls_schemas.Run,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        created_at: Optional[datetime] = None,
-    ) -> Example:
+        created_at: Optional[datetime.datetime] = None,
+    ) -> ls_schemas.Example:
         """Add an example (row) to an LLM-type dataset."""
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
             dataset_name = None  # Nested call expects only 1 defined
         dataset_type = self._get_data_type_cached(dataset_id)
-        if dataset_type == DataType.llm:
+        if dataset_type == ls_schemas.DataType.llm:
             if run.run_type != "llm":
                 raise ValueError(
                     f"Run type {run.run_type} is not supported"
                     " for dataset of type 'LLM'"
                 )
             try:
-                prompt = get_prompt_from_inputs(run.inputs)
+                prompt = ls_utils.get_prompt_from_inputs(run.inputs)
             except ValueError:
                 raise ValueError(
                     "Error converting LLM run inputs to prompt for run"
@@ -1137,21 +1265,21 @@ class Client:
                 outputs: Optional[Dict[str, Any]] = None
             else:
                 try:
-                    generation = get_llm_generation_from_outputs(run.outputs)
+                    generation = ls_utils.get_llm_generation_from_outputs(run.outputs)
                 except ValueError:
                     raise ValueError(
                         "Error converting LLM run outputs to generation for run"
                         f" {run.id} with outputs {run.outputs}"
                     )
                 outputs = {"output": generation}
-        elif dataset_type == DataType.chat:
+        elif dataset_type == ls_schemas.DataType.chat:
             if run.run_type != "llm":
                 raise ValueError(
                     f"Run type {run.run_type} is not supported"
                     " for dataset of type 'chat'"
                 )
             try:
-                inputs = {"input": get_messages_from_inputs(run.inputs)}
+                inputs = {"input": ls_utils.get_messages_from_inputs(run.inputs)}
             except ValueError:
                 raise ValueError(
                     "Error converting LLM run inputs to chat messages for run"
@@ -1162,14 +1290,16 @@ class Client:
             else:
                 try:
                     outputs = {
-                        "output": get_message_generation_from_outputs(run.outputs)
+                        "output": ls_utils.get_message_generation_from_outputs(
+                            run.outputs
+                        )
                     }
                 except ValueError:
                     raise ValueError(
                         "Error converting LLM run outputs to chat generations"
                         f" for run {run.id} with outputs {run.outputs}"
                     )
-        elif dataset_type == DataType.kv:
+        elif dataset_type == ls_schemas.DataType.kv:
             # Anything goes
             inputs = run.inputs
             outputs = run.outputs
@@ -1184,16 +1314,20 @@ class Client:
             created_at=created_at,
         )
 
-    @xor_args(("dataset_id", "dataset_name"))
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
         self,
         inputs: Mapping[str, Any],
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        created_at: Optional[datetime] = None,
+        created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
-    ) -> Example:
+    ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
+
+        Examples are rows in a dataset, containing the inputs
+        and expected outputs (or other reference information)
+        for a model or chain.
 
         Parameters
         ----------
@@ -1228,11 +1362,11 @@ class Client:
             headers=self._headers,
             data=json.dumps(data, default=serialize_json),
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
         result = response.json()
-        return Example(**result)
+        return ls_schemas.Example(**result)
 
-    def read_example(self, example_id: ID_TYPE) -> Example:
+    def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
         """Read an example from the LangSmith API.
 
         Parameters
@@ -1246,12 +1380,15 @@ class Client:
             The example.
         """
         response = self._get_with_retries(f"/examples/{example_id}")
-        return Example(**response.json())
+        return ls_schemas.Example(**response.json())
 
     def list_examples(
-        self, dataset_id: Optional[ID_TYPE] = None, dataset_name: Optional[str] = None
-    ) -> Iterator[Example]:
-        """List the examples on the LangSmith API.
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        example_ids: Optional[List[ID_TYPE]] = None,
+    ) -> Iterator[ls_schemas.Example]:
+        """Retrieve the example rows of the specified dataset.
 
         Parameters
         ----------
@@ -1259,13 +1396,15 @@ class Client:
             The ID of the dataset to filter by.
         dataset_name : str or None, default=None
             The name of the dataset to filter by.
+        example_ids : List[UUID] or None, default=None
+            The IDs of the examples to filter by.
 
         Yields
         ------
         Example
             The examples.
         """
-        params = {}
+        params: Dict[str, Any] = {}
         if dataset_id is not None:
             params["dataset"] = dataset_id
         elif dataset_name is not None:
@@ -1273,8 +1412,10 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
+        if example_ids is not None:
+            params["id"] = example_ids
         yield from (
-            Example(**dataset)
+            ls_schemas.Example(**dataset)
             for dataset in self._get_paginated_list("/examples", params=params)
         )
 
@@ -1314,7 +1455,7 @@ class Client:
             headers=self._headers,
             data=json.dumps(example, default=serialize_json),
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
         return response.json()
 
     def delete_example(self, example_id: ID_TYPE) -> None:
@@ -1329,11 +1470,13 @@ class Client:
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
 
     def _resolve_run_id(
-        self, run: Union[Run, RunBase, str, UUID], load_child_runs: bool
-    ) -> Run:
+        self,
+        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
+        load_child_runs: bool,
+    ) -> ls_schemas.Run:
         """Resolve the run ID.
 
         Parameters
@@ -1353,19 +1496,17 @@ class Client:
         TypeError
             If the run type is invalid.
         """
-        if isinstance(run, (str, UUID)):
+        if isinstance(run, (str, uuid.UUID)):
             run_ = self.read_run(run, load_child_runs=load_child_runs)
-        elif isinstance(run, Run):
-            run_ = run
-        elif isinstance(run, RunBase):
-            run_ = Run(**run.dict())
         else:
-            raise TypeError(f"Invalid run type: {type(run)}")
+            run_ = run
         return run_
 
     def _resolve_example_id(
-        self, example: Union[Example, str, UUID, dict, None], run: Run
-    ) -> Optional[Example]:
+        self,
+        example: Union[ls_schemas.Example, str, uuid.UUID, dict, None],
+        run: ls_schemas.Run,
+    ) -> Optional[ls_schemas.Example]:
         """Resolve the example ID.
 
         Parameters
@@ -1380,12 +1521,12 @@ class Client:
         Example or None
             The resolved example.
         """
-        if isinstance(example, (str, UUID)):
+        if isinstance(example, (str, uuid.UUID)):
             reference_example_ = self.read_example(example)
-        elif isinstance(example, Example):
+        elif isinstance(example, ls_schemas.Example):
             reference_example_ = example
         elif isinstance(example, dict):
-            reference_example_ = Example(**example)
+            reference_example_ = ls_schemas.Example(**example)
         elif run.reference_example_id is not None:
             reference_example_ = self.read_example(run.reference_example_id)
         else:
@@ -1394,13 +1535,15 @@ class Client:
 
     def evaluate_run(
         self,
-        run: Union[Run, RunBase, str, UUID],
+        run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
-        reference_example: Optional[Union[Example, str, dict, UUID]] = None,
+        reference_example: Optional[
+            Union[ls_schemas.Example, str, dict, uuid.UUID]
+        ] = None,
         load_child_runs: bool = False,
-    ) -> Feedback:
+    ) -> ls_schemas.Feedback:
         """Evaluate a run.
 
         Parameters
@@ -1440,18 +1583,21 @@ class Client:
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
-            feedback_source_type=FeedbackSourceType.MODEL,
+            source_run_id=feedback_result.source_run_id,
+            feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
 
     async def aevaluate_run(
         self,
-        run: Union[Run, str, UUID],
+        run: Union[ls_schemas.Run, str, uuid.UUID],
         evaluator: RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
-        reference_example: Optional[Union[Example, str, dict, UUID]] = None,
+        reference_example: Optional[
+            Union[ls_schemas.Example, str, dict, uuid.UUID]
+        ] = None,
         load_child_runs: bool = False,
-    ) -> Feedback:
+    ) -> ls_schemas.Feedback:
         """Evaluate a run asynchronously.
 
         Parameters
@@ -1491,7 +1637,8 @@ class Client:
             comment=feedback_result.comment,
             correction=feedback_result.correction,
             source_info=source_info,
-            feedback_source_type=FeedbackSourceType.MODEL,
+            source_run_id=feedback_result.source_run_id,
+            feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
 
     def create_feedback(
@@ -1501,11 +1648,14 @@ class Client:
         *,
         score: Union[float, int, bool, None] = None,
         value: Union[float, int, bool, str, dict, None] = None,
-        correction: Union[str, dict, None] = None,
+        correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,
-        feedback_source_type: Union[FeedbackSourceType, str] = FeedbackSourceType.API,
-    ) -> Feedback:
+        feedback_source_type: Union[
+            ls_schemas.FeedbackSourceType, str
+        ] = ls_schemas.FeedbackSourceType.API,
+        source_run_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
 
         Parameters
@@ -1518,40 +1668,89 @@ class Client:
             The score to rate this run on the metric or aspect.
         value : float or int or bool or str or dict or None, default=None
             The display value or non-numeric value for this feedback.
-        correction : str or dict or None, default=None
+        correction : dict or None, default=None
             The proper ground truth for this run.
         comment : str or None, default=None
             A comment about this feedback.
         source_info : Dict[str, Any] or None, default=None
             Information about the source of this feedback.
         feedback_source_type : FeedbackSourceType or str, default=FeedbackSourceType.API
-            The type of feedback source.
+            The type of feedback source, such as model (for model-generated feedback)
+                or API.
+        source_run_id : str or UUID or None, default=None,
+            The ID of the run that generated this feedback, if a "model" type.
 
         Returns
         -------
         Feedback
             The created feedback.
         """
-        feedback_source = {"type": feedback_source_type, "metadata": source_info}
-        feedback: Dict[str, Any] = {
-            "id": uuid4(),
-            "run_id": run_id,
-            "key": key,
-            "score": score,
-            "value": value,
-            "correction": correction,
-            "comment": comment,
-            "feedback_source": feedback_source,
-        }
-        response = self.session.post(
-            self.api_url + "/feedback",
-            headers={**self._headers, "Content-Type": "application/json"},
+        if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
+            feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
+        if feedback_source_type == ls_schemas.FeedbackSourceType.API:
+                ls_schemas.APIFeedbackSource(metadata=source_info)
+            )
+        elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
+            feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
+        else:
+            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
+        feedback_source.metadata = (
+            feedback_source.metadata if feedback_source.metadata is not None else {}
+        )
+        if source_run_id is not None and "__run" not in feedback_source.metadata:
+            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
             data=json.dumps(feedback, default=serialize_json),
         )
-        raise_for_status_with_text(response)
-        return Feedback(**response.json())
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Feedback(**response.json())
 
-    def read_feedback(self, feedback_id: ID_TYPE) -> Feedback:
+    def update_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> ls_schemas.Feedback:
+        """Update a feedback in the LangSmith API.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to update.
+        score : float or int or bool or None, default=None
+            The score to update the feedback with.
+        value : float or int or bool or str or dict or None, default=None
+            The value to update the feedback with.
+        correction : dict or None, default=None
+            The correction to update the feedback with.
+        comment : str or None, default=None
+            The comment to update the feedback with.
+
+        Returns
+        -------
+        Feedback
+            The updated feedback.
+        """
+        feedback_update: Dict[str, Any] = {}
+        if score is not None:
+            feedback_update["score"] = score
+        if value is not None:
+            feedback_update["value"] = value
+        if correction is not None:
+            feedback_update["correction"] = correction
+        if comment is not None:
+            feedback_update["comment"] = comment
+        response = self.session.patch(
+            self.api_url + f"/feedback/{feedback_id}",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=json.dumps(feedback_update, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Feedback(**response.json())
+
+    def read_feedback(self, feedback_id: ID_TYPE) -> ls_schemas.Feedback:
         """Read a feedback from the LangSmith API.
 
         Parameters
@@ -1565,20 +1764,28 @@ class Client:
             The feedback.
         """
         response = self._get_with_retries(f"/feedback/{feedback_id}")
-        return Feedback(**response.json())
+        return ls_schemas.Feedback(**response.json())
 
     def list_feedback(
         self,
         *,
         run_ids: Optional[Sequence[ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
         **kwargs: Any,
-    ) -> Iterator[Feedback]:
+    ) -> Iterator[ls_schemas.Feedback]:
         """List the feedback objects on the LangSmith API.
 
         Parameters
         ----------
         run_ids : List[str or UUID] or None, default=None
             The IDs of the runs to filter by.
+        feedback_key: List[str] or None, default=None
+            The feedback key(s) to filter by. Example: 'correctness'
+            The query performs a union of all feedback keys.
+        feedback_source_type: List[FeedbackSourceType] or None, default=None
+            The type of feedback source, such as model
+            (for model-generated feedback) or API.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -1587,13 +1794,16 @@ class Client:
         Feedback
             The feedback objects.
         """
-        params = {
+        params: dict = {
             "run": run_ids,
             **kwargs,
         }
-
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if feedback_source_type is not None:
+            params["source"] = feedback_source_type
         yield from (
-            Feedback(**feedback)
+            ls_schemas.Feedback(**feedback)
             for feedback in self._get_paginated_list("/feedback", params=params)
         )
 
@@ -1609,7 +1819,7 @@ class Client:
             f"{self.api_url}/feedback/{feedback_id}",
             headers=self._headers,
         )
-        raise_for_status_with_text(response)
+        ls_utils.raise_for_status_with_text(response)
 
     async def arun_on_dataset(
         self,
@@ -1618,7 +1828,6 @@ class Client:
         *,
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
-        num_repetitions: int = 1,
         project_name: Optional[str] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
@@ -1635,9 +1844,6 @@ class Client:
                 independent calls on each example without carrying over state.
             evaluation: Optional evaluation configuration to use when evaluating
             concurrency_level: The number of async tasks to run concurrently.
-            num_repetitions: Number of times to run the model on each example.
-                This is useful when testing success rates or generating confidence
-                intervals.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             verbose: Whether to print progress.
@@ -1738,12 +1944,11 @@ class Client:
                 "package to run.\nInstall with pip install langchain"
             )
         return await _arun_on_dataset(
-            self,
-            dataset_name,
-            llm_or_chain_factory,
+            dataset_name=dataset_name,
+            llm_or_chain_factory=llm_or_chain_factory,
+            client=self,
             evaluation=evaluation,
             concurrency_level=concurrency_level,
-            num_repetitions=num_repetitions,
             project_name=project_name,
             verbose=verbose,
             tags=tags,
@@ -1756,7 +1961,6 @@ class Client:
         llm_or_chain_factory: Any,
         *,
         evaluation: Optional[Any] = None,
-        num_repetitions: int = 1,
         project_name: Optional[str] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
@@ -1773,9 +1977,6 @@ class Client:
                 independent calls on each example without carrying over state.
             evaluation: Configuration for evaluators to run on the
                 results of the chain
-            num_repetitions: Number of times to run the model on each example.
-                This is useful when testing success rates or generating confidence
-                intervals.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             verbose: Whether to print progress.
@@ -1876,11 +2077,10 @@ class Client:
                 "package to run.\nInstall with pip install langchain"
             )
         return _run_on_dataset(
-            self,
-            dataset_name,
-            llm_or_chain_factory,
+            dataset_name=dataset_name,
+            llm_or_chain_factory=llm_or_chain_factory,
+            client=self,
             evaluation=evaluation,
-            num_repetitions=num_repetitions,
             project_name=project_name,
             verbose=verbose,
             tags=tags,

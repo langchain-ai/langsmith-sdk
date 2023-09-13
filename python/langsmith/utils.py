@@ -1,7 +1,11 @@
 """Generic utility functions."""
 from __future__ import annotations
 
+import enum
+import functools
 import json
+import logging
+import os
 import platform
 import subprocess
 from copy import copy, deepcopy
@@ -10,7 +14,10 @@ from enum import Enum
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
-from requests import HTTPError, Response
+import requests
+from langsmith import schemas as ls_schemas
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class LangSmithAPIError(Exception):
@@ -86,11 +93,22 @@ def serialize_json(obj: Any) -> str:
         return str(obj)
 
 
+def tracing_is_enabled() -> bool:
+    """Return True if tracing is enabled."""
+    return (
+        os.environ.get(
+            "LANGCHAIN_TRACING_V2", os.environ.get("LANGCHAIN_TRACING", "")
+        ).lower()
+        == "true"
+    )
+
+
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     """Validate specified keyword args are mutually exclusive."""
 
     def decorator(func: Callable) -> Callable:
-        def wrapper(*args: Any, **kwargs: Any) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             """Validate exactly one arg in each group is not None."""
             counts = [
                 sum(1 for arg in arg_group if kwargs.get(arg) is not None)
@@ -111,35 +129,24 @@ def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     return decorator
 
 
-def raise_for_status_with_text(response: Response) -> None:
+def raise_for_status_with_text(response: requests.Response) -> None:
     """Raise an error with the response text."""
     try:
         response.raise_for_status()
-    except HTTPError as e:
-        raise ValueError(response.text) from e
+    except requests.HTTPError as e:
+        raise ValueError(str(e), response.text) from e
 
 
-def get_enum_value(enum: Union[Enum, str]) -> str:
+def get_enum_value(enu: Union[enum.Enum, str]) -> str:
     """Get the value of a string enum."""
-    if isinstance(enum, Enum):
-        return enum.value
-    return enum
+    if isinstance(enu, enum.Enum):
+        return enu.value
+    return enu
 
 
-@lru_cache
-def get_runtime_environment() -> dict:
-    """Get information about the environment."""
-    # Lazy import to avoid circular imports
-    from langsmith import __version__
-
-    return {
-        "sdk_version": __version__,
-        "library": "langsmith",
-        "platform": platform.platform(),
-        "runtime": "python",
-        "runtime_version": platform.python_version(),
-        "langchain_version": get_langchain_environment(),
-    }
+@functools.lru_cache(maxsize=1)
+def log_once(level: int, message: str) -> None:
+    _LOGGER.log(level, message)
 
 
 def _get_message_type(message: Mapping[str, Any]) -> str:
@@ -239,7 +246,7 @@ def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
     return first_generation["text"]
 
 
-@lru_cache
+@functools.lru_cache(maxsize=1)
 def get_docker_compose_command() -> List[str]:
     """Get the correct docker compose command for this system."""
     try:
@@ -266,65 +273,32 @@ def get_docker_compose_command() -> List[str]:
             )
 
 
-@lru_cache
-def get_langchain_environment() -> Optional[str]:
-    try:
-        import langchain  # type: ignore
-
-        return langchain.__version__
-    except:  # noqa
-        return None
-
-
-@lru_cache
-def get_docker_version() -> Optional[str]:
-    import subprocess
-
-    try:
-        docker_version = (
-            subprocess.check_output(["docker", "--version"]).decode("utf-8").strip()
-        )
-    except FileNotFoundError:
-        docker_version = "unknown"
-    except:  # noqa
-        return None
-    return docker_version
-
-
-@lru_cache
-def get_docker_compose_version() -> Optional[str]:
-    try:
-        docker_compose_version = (
-            subprocess.check_output(["docker-compose", "--version"])
-            .decode("utf-8")
-            .strip()
-        )
-    except FileNotFoundError:
-        docker_compose_version = "unknown"
-    except:  # noqa
-        return None
-    return docker_compose_version
-
-
-@lru_cache
-def _get_compose_command() -> Optional[List[str]]:
-    try:
-        compose_command = get_docker_compose_command()
-    except ValueError as e:
-        compose_command = [f"NOT INSTALLED: {e}"]
-    except:  # noqa
-        return None
-    return compose_command
-
-
-@lru_cache
-def get_docker_environment() -> dict:
-    """Get information about the environment."""
-    compose_command = _get_compose_command()
-    return {
-        "docker_version": get_docker_version(),
-        "docker_compose_command": " ".join(compose_command)
-        if compose_command is not None
-        else None,
-        "docker_compose_version": get_docker_compose_version(),
+def convert_langchain_message(message: ls_schemas.BaseMessageLike) -> dict:
+    """Convert a LangChain message to an example."""
+    converted: Dict[str, Any] = {
+        "type": message.type,
+        "data": {"content": message.content},
     }
+    # Check for presence of keys in additional_kwargs
+    if message.additional_kwargs and len(message.additional_kwargs) > 0:
+        converted["data"]["additional_kwargs"] = {**message.additional_kwargs}
+    return converted
+
+
+def is_base_message_like(obj: object) -> bool:
+    """
+    Check if the given object is similar to BaseMessage.
+
+    Args:
+        obj (object): The object to check.
+
+    Returns:
+        bool: True if the object is similar to BaseMessage, False otherwise.
+    """
+    return all(
+        [
+            isinstance(getattr(obj, "content", None), str),
+            isinstance(getattr(obj, "additional_kwargs", None), dict),
+            hasattr(obj, "type") and isinstance(getattr(obj, "type"), str),
+        ]
+    )
