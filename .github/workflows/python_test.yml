@@ -9,11 +9,6 @@ on:
     paths:
       - "python/**"
   workflow_dispatch:
-    inputs:
-      run_integration_tests:
-        description: "Run integration tests"
-        default: "false"
-        options: ["true", "false"]
 
 env:
   POETRY_VERSION: "1.4.2"
@@ -25,8 +20,6 @@ jobs:
       matrix:
         python-version:
           - "3.8"
-          - "3.9"
-          - "3.10"
           - "3.11"
     defaults:
       run:
@@ -83,20 +76,3 @@ jobs:
       - name: Run tests
         run: make tests
         shell: bash
-
-  # integration_test:
-  #   needs: build
-  #   runs-on: ubuntu-20.04
-  #   if: >
-  #     (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-  #     (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'release')) ||
-  #     (github.event_name == 'workflow_dispatch' && github.event.inputs.run_integration_tests == 'true')
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v3
-  #     - name: Run integration tests
-  #       uses: ./.github/actions/python-integration-tests
-  #       with:
-  #         python-version: ${{ needs.build.outputs.python-version }}
-  #         docker_username: ${{ secrets.DOCKER_USERNAME }}
-  #         docker_password: ${{ secrets.DOCKER_PASSWORD }}
