@@ -13,9 +13,9 @@ from freezegun import freeze_time
 from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import Client
-from langsmith.evaluation import StringEvaluator
+from langsmith.evaluation import EvaluationResult, StringEvaluator
 from langsmith.run_trees import RunTree
-from langsmith.schemas import DataType, Feedback
+from langsmith.schemas import DataType
 from langsmith.utils import LangSmithConnectionError, LangSmithError
 
 
@@ -321,12 +321,11 @@ def test_evaluate_run(
         execution_order=1,
         error=False,
     )
-    all_feedback: List[Feedback] = []
+    all_eval_results: List[EvaluationResult] = []
     for run in runs:
-        all_feedback.append(langchain_client.evaluate_run(run, evaluator))
-    assert len(all_feedback) == 1
+        all_eval_results.append(langchain_client.evaluate_run(run, evaluator))
+    assert len(all_eval_results) == 1
     fetched_feedback = list(langchain_client.list_feedback(run_ids=[run.id]))
-    assert fetched_feedback[0].id == all_feedback[0].id
     assert fetched_feedback[0].score == jaccard_chars(predicted, ground_truth)
     assert fetched_feedback[0].value == "INCORRECT"
     langchain_client.delete_dataset(dataset_id=dataset.id)

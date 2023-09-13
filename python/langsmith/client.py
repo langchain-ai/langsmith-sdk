@@ -36,7 +36,7 @@ from urllib3.util import Retry
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.evaluation.evaluator import RunEvaluator
+from langsmith.evaluation import evaluator as ls_evaluator
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1321,6 +1321,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
@@ -1340,6 +1341,9 @@ class Client:
             The creation timestamp of the example.
         outputs : Mapping[str, Any] or None, default=None
             The output values for the example.
+        exemple_id : UUID or None, default=None
+            The ID of the example to create. If not provided, a new
+            example will be created.
 
         Returns
         -------
@@ -1356,6 +1360,8 @@ class Client:
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
+        if example_id:
+            data["id"] = example_id
         example = ls_schemas.ExampleCreate(**data)
         response = self.session.post(
             f"{self.api_url}/examples", headers=self._headers, data=example.json()
@@ -1534,14 +1540,14 @@ class Client:
     def evaluate_run(
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
-        evaluator: RunEvaluator,
+        evaluator: ls_evaluator.RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
         load_child_runs: bool = False,
-    ) -> ls_schemas.Feedback:
+    ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run.
 
         Parameters
@@ -1566,36 +1572,37 @@ class Client:
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        feedback_result = evaluator.evaluate_run(
+        evaluation_result = evaluator.evaluate_run(
             run_,
             example=reference_example_,
         )
         source_info = source_info or {}
-        if feedback_result.evaluator_info:
-            source_info = {**feedback_result.evaluator_info, **source_info}
-        return self.create_feedback(
+        if evaluation_result.evaluator_info:
+            source_info = {**evaluation_result.evaluator_info, **source_info}
+        self.create_feedback(
             run_.id,
-            feedback_result.key,
-            score=feedback_result.score,
-            value=feedback_result.value,
-            comment=feedback_result.comment,
-            correction=feedback_result.correction,
+            evaluation_result.key,
+            score=evaluation_result.score,
+            value=evaluation_result.value,
+            comment=evaluation_result.comment,
+            correction=evaluation_result.correction,
             source_info=source_info,
-            source_run_id=feedback_result.source_run_id,
+            source_run_id=evaluation_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
+        return evaluation_result
 
     async def aevaluate_run(
         self,
         run: Union[ls_schemas.Run, str, uuid.UUID],
-        evaluator: RunEvaluator,
+        evaluator: ls_evaluator.RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
         load_child_runs: bool = False,
-    ) -> ls_schemas.Feedback:
+    ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run asynchronously.
 
         Parameters
@@ -1615,29 +1622,30 @@ class Client:
 
         Returns
         -------
-        Feedback
-            The feedback created by the evaluation.
+        EvaluationResult
+            The evaluation result object created by the evaluation.
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        feedback_result = await evaluator.aevaluate_run(
+        evaluation_result = await evaluator.aevaluate_run(
             run_,
             example=reference_example_,
         )
         source_info = source_info or {}
-        if feedback_result.evaluator_info:
-            source_info = {**feedback_result.evaluator_info, **source_info}
-        return self.create_feedback(
+        if evaluation_result.evaluator_info:
+            source_info = {**evaluation_result.evaluator_info, **source_info}
+        self.create_feedback(
             run_.id,
-            feedback_result.key,
-            score=feedback_result.score,
-            value=feedback_result.value,
-            comment=feedback_result.comment,
-            correction=feedback_result.correction,
+            evaluation_result.key,
+            score=evaluation_result.score,
+            value=evaluation_result.value,
+            comment=evaluation_result.comment,
+            correction=evaluation_result.correction,
             source_info=source_info,
-            source_run_id=feedback_result.source_run_id,
+            source_run_id=evaluation_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
+        return evaluation_result
 
     def create_feedback(
         self,
@@ -1653,6 +1661,7 @@ class Client:
             ls_schemas.FeedbackSourceType, str
         ] = ls_schemas.FeedbackSourceType.API,
         source_run_id: Optional[ID_TYPE] = None,
+        feedback_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
 
@@ -1677,11 +1686,9 @@ class Client:
                 or API.
         source_run_id : str or UUID or None, default=None,
             The ID of the run that generated this feedback, if a "model" type.
-
-        Returns
-        -------
-        Feedback
-            The created feedback.
+        feedback_id : str or UUID or None, default=None
+            The ID of the feedback to create. If not provided, a random UUID will be
+            generated.
         """
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
@@ -1699,7 +1706,7 @@ class Client:
         if source_run_id is not None and "__run" not in feedback_source.metadata:
             feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
         feedback = ls_schemas.FeedbackCreate(
-            id=uuid.uuid4(),
+            id=feedback_id or uuid.uuid4(),
             run_id=run_id,
             key=key,
             score=score,
@@ -1741,11 +1748,6 @@ class Client:
             The correction to update the feedback with.
         comment : str or None, default=None
             The comment to update the feedback with.
-
-        Returns
-        -------
-        Feedback
-            The updated feedback.
         """
         feedback_update: Dict[str, Any] = {}
         if score is not None:
