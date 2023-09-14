@@ -42,7 +42,7 @@ runs:
       env:
         LANGCHAIN_ENDPOINT: http://127.0.0.1:1984
       run: |
-        poetry run langsmith start --dev
+        poetry run langsmith start --stage dev
         poetry run langsmith status
         sleep 5
         counter=0

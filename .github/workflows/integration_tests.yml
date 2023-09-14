@@ -3,6 +3,9 @@ name: Integration Tests CI
 on:
   workflow_dispatch:
 
+env:
+  POETRY_VERSION: "1.4.2"
+
 jobs:
   python_integration_test:
     name: Python Integration Test
