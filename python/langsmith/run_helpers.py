@@ -5,6 +5,7 @@ import functools
 import inspect
 import logging
 import os
+import traceback
 import uuid
 from concurrent import futures
 from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, TypedDict
@@ -16,6 +17,8 @@ _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
+_TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
+_METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
 
 
 def get_run_tree_context() -> Optional[run_trees.RunTree]:
@@ -62,6 +65,8 @@ class _TraceableContainer(TypedDict, total=False):
     new_run: run_trees.RunTree
     project_name: Optional[str]
     outer_project: Optional[str]
+    outer_metadata: Optional[Dict[str, Any]]
+    outer_tags: Optional[List[str]]
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
@@ -96,11 +101,20 @@ def _setup_run(
     name_ = name or func.__name__
     docstring = func.__doc__
     extra_inner = _collect_extra(extra_outer, langsmith_extra)
-    metadata_ = {**(metadata or {}), **(langsmith_extra.get("metadata") or {})}
+    outer_metadata = _METADATA.get()
+    metadata_ = {
+        **(langsmith_extra.get("metadata") or {}),
+        **(outer_metadata or {}),
+    }
+    _METADATA.set(metadata_)
+    metadata_.update(metadata or {})
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
     inputs = _get_inputs(signature, *args, **kwargs)
-    tags_ = (tags or []) + (langsmith_extra.get("tags") or [])
+    outer_tags = _TAGS.get()
+    tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
+    _TAGS.set(tags_)
+    tags_ += tags or []
     id_ = langsmith_extra.get("run_id", uuid.uuid4())
     client_ = langsmith_extra.get("client", client)
     if parent_run_ is not None:
@@ -140,6 +154,8 @@ def _setup_run(
         new_run=new_run,
         project_name=project_name_,
         outer_project=outer_project,
+        outer_metadata=outer_metadata,
+        outer_tags=outer_tags,
     )
 
 
@@ -243,14 +259,19 @@ def traceable(
                     )
                 else:
                     function_result = func(*args, **kwargs)
-            except Exception as e:
-                run_container["new_run"].end(error=str(e))
+            except (BaseException, Exception, KeyboardInterrupt) as e:
+                stacktrace = traceback.format_exc()
+                run_container["new_run"].end(error=stacktrace)
                 run_container["new_run"].patch()
                 _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
                 raise e
             _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
             _PROJECT_NAME.set(run_container["outer_project"])
+            _TAGS.set(run_container["outer_tags"])
+            _METADATA.set(run_container["outer_metadata"])
             if isinstance(function_result, dict):
                 run_container["new_run"].end(outputs=function_result)
             else:
@@ -280,13 +301,22 @@ def trace(
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
-    extra_outer = extra or {}
-    metadata = metadata or {}
-    extra_outer["metadata"] = {**metadata, "ls_method": "trace"}
-    parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
+    outer_tags = _TAGS.get()
+    outer_metadata = _METADATA.get()
     outer_project = _PROJECT_NAME.get() or os.environ.get(
         "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
     )
+    parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
+
+    # Merge and set context varaibles
+    tags_ = sorted(set((tags or []) + (outer_tags or [])))
+    _TAGS.set(tags_)
+    metadata = {**(metadata or {}), **(outer_metadata or {}), "ls_method": "trace"}
+    _METADATA.set(metadata)
+
+    extra_outer = extra or {}
+    extra_outer["metadata"] = metadata
+
     project_name_ = project_name or outer_project
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
@@ -294,7 +324,7 @@ def trace(
             run_type=run_type,
             extra=extra_outer,
             inputs=inputs,
-            tags=tags,
+            tags=tags_,
         )
     else:
         new_run = run_trees.RunTree(
@@ -304,21 +334,26 @@ def trace(
             executor=executor,
             project_name=project_name_,
             inputs=inputs or {},
-            tags=tags,
+            tags=tags_,
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)
     _PROJECT_NAME.set(project_name_)
     try:
         yield new_run
-    except Exception as e:
-        new_run.end(error=str(e))
+    except (Exception, KeyboardInterrupt, BaseException) as e:
+        tb = traceback.format_exc()
+        new_run.end(error=tb)
         new_run.patch()
         _PARENT_RUN_TREE.set(parent_run_)
         _PROJECT_NAME.set(outer_project)
+        _TAGS.set(outer_tags)
+        _METADATA.set(outer_metadata)
         raise e
     _PARENT_RUN_TREE.set(parent_run_)
     _PROJECT_NAME.set(outer_project)
+    _TAGS.set(outer_tags)
+    _METADATA.set(outer_metadata)
     if new_run.end_time is None:
         # User didn't call end() on the run, so we'll do it for them
         new_run.end()
