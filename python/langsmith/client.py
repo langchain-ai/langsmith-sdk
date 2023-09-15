@@ -608,6 +608,10 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
+        import time
+
+        time.sleep(1)
+        logger.error("create_run")
         project_name = kwargs.pop(
             "project_name",
             kwargs.pop(
