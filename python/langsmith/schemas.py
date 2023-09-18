@@ -209,6 +209,10 @@ class Run(RunBase):
     """Time the first token was processed."""
     parent_run_ids: Optional[List[UUID]] = None
     """List of parent run IDs."""
+    trace_id: UUID
+    """Trace ID for the run."""
+    dotted_order: str
+    """Dotted order for the run."""
 
     _host_url: Optional[str] = PrivateAttr(default=None)
 
