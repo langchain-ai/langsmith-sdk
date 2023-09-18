@@ -148,6 +148,22 @@ export interface Run extends BaseRun {
 
   /** IDs of parent runs, if multiple exist. */
   parent_run_ids?: string[];
+  /**Unique ID assigned to every run within this nested trace.**/
+  trace_id: string;
+
+  /**
+   * The dotted order for the run.
+   *
+   * This is a string composed of {time}{run-uuid}.* so that a trace can be
+   * sorted in the order it was executed.
+   *
+   * Example:
+   * - Parent: 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8
+   * - Children:
+   *    - 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155649Z809ed3a2-0172-4f4d-8a02-a64e9b7a0f8a
+   *   - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
+   */
+  dotted_order: string;
 }
 
 export interface RunCreate extends BaseRun {
