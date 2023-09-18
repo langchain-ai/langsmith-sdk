@@ -497,10 +497,12 @@ export class Client {
     projectName,
     projectExtra,
     upsert,
+    referenceDatasetId,
   }: {
     projectName: string;
     projectExtra?: object;
     upsert?: boolean;
+    referenceDatasetId?: string;
   }): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -509,6 +511,9 @@ export class Client {
     };
     if (projectExtra !== undefined) {
       body["extra"] = projectExtra;
+    }
+    if (referenceDatasetId !== undefined) {
+      body["reference_dataset_id"] = referenceDatasetId;
     }
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",

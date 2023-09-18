@@ -889,6 +889,7 @@ class Client:
         *,
         project_extra: Optional[dict] = None,
         upsert: bool = False,
+        reference_dataset_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
 
@@ -900,6 +901,8 @@ class Client:
             Additional project information.
         upsert : bool, default=False
             Whether to update the project if it already exists.
+        reference_dataset_id: UUID or None, default=None
+            The ID of the reference dataset to associate with the project.
 
         Returns
         -------
@@ -914,10 +917,12 @@ class Client:
         params = {}
         if upsert:
             params["upsert"] = True
+        if reference_dataset_id is not None:
+            body["reference_dataset_id"] = reference_dataset_id
         response = self.session.post(
             endpoint,
             headers=self._headers,
-            json=body,
+            data=json.dumps(body, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
@@ -1419,8 +1424,8 @@ class Client:
         if example_ids is not None:
             params["id"] = example_ids
         yield from (
-            ls_schemas.Example(**dataset)
-            for dataset in self._get_paginated_list("/examples", params=params)
+            ls_schemas.Example(**example)
+            for example in self._get_paginated_list("/examples", params=params)
         )
 
     def update_example(
