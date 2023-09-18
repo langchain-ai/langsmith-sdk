@@ -1424,8 +1424,8 @@ class Client:
         if example_ids is not None:
             params["id"] = example_ids
         yield from (
-            ls_schemas.Example(**dataset)
-            for dataset in self._get_paginated_list("/examples", params=params)
+            ls_schemas.Example(**example)
+            for example in self._get_paginated_list("/examples", params=params)
         )
 
     def update_example(
