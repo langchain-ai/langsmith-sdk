@@ -910,7 +910,7 @@ class Client:
             The created project.
         """
         endpoint = f"{self.api_url}/sessions"
-        body = {
+        body: Dict[str, Any] = {
             "name": project_name,
             "extra": project_extra,
         }
