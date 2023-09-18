@@ -3,7 +3,7 @@ import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { StringEvaluator } from "../evaluation/string_evaluator.js";
 import { Dataset, Feedback } from "../schemas.js";
 import { v4 as uuidv4 } from "uuid";
-
+import { HumanMessage, FunctionMessage } from "langchain/schema";
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const item of iterable) {
@@ -504,3 +504,67 @@ test("Test create run with masked inputs/outputs", async () => {
   expect(run2.outputs).toBeDefined();
   expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
 }, 10000);
+
+describe("createChatExample", () => {
+  it("should convert LangChainBaseMessage objects to examples", async () => {
+    const langchainClient = new Client({
+      apiUrl: "http://localhost:1984",
+    });
+
+    const datasetName = "__createChatExample-test-dataset";
+    try {
+      const existingDataset = await langchainClient.readDataset({
+        datasetName,
+      });
+      await langchainClient.deleteDataset({ datasetId: existingDataset.id });
+    } catch (e) {
+      console.log("Dataset does not exist");
+    }
+
+    const dataset = await langchainClient.createDataset(datasetName);
+
+    const input = [new HumanMessage({ content: "Hello, world!" })];
+    const generation = new FunctionMessage({
+      name: "foo",
+      content: "",
+      additional_kwargs: {
+        function_call: { arguments: "args", name: "foo" },
+      },
+    });
+    const options = { datasetId: dataset.id };
+
+    // Create the example from messages
+    await langchainClient.createChatExample(input, generation, options);
+
+    // Read the example
+    const examples = [];
+    for await (const example of langchainClient.listExamples({
+      datasetId: dataset.id,
+    })) {
+      examples.push(example);
+    }
+    expect(examples.length).toBe(1);
+    expect(examples[0].inputs).toEqual({
+      input: [
+        {
+          type: "human",
+          data: { content: "Hello, world!" },
+        },
+      ],
+    });
+    expect(examples[0].outputs).toEqual({
+      output: {
+        type: "function",
+        data: {
+          content: "",
+          additional_kwargs: {
+            function_call: { arguments: "args", name: "foo" },
+          },
+        },
+      },
+    });
+
+    // Delete dataset
+    await langchainClient.deleteDataset({ datasetId: dataset.id });
+  }, 10000);
+});

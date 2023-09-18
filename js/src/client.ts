@@ -15,7 +15,12 @@ import {
   TracerSessionResult,
   ValueType,
   DataType,
+  LangChainBaseMessage,
 } from "./schemas.js";
+import {
+  convertLangChainMessageToExample,
+  isLangChainMessage,
+} from "./utils/messages.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
@@ -93,6 +98,13 @@ interface CreateRunParams {
 }
 
 export type FeedbackSourceType = "model" | "api" | "app";
+
+export type CreateExampleOptions = {
+  datasetId?: string;
+  datasetName?: string;
+  createdAt?: Date;
+  exampleId?: string;
+};
 
 // utility functions
 const isLocalhost = (url: string): boolean => {
@@ -817,15 +829,7 @@ export class Client {
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    {
-      datasetId,
-      datasetName,
-      createdAt,
-    }: {
-      datasetId?: string;
-      datasetName?: string;
-      createdAt?: Date;
-    }
+    { datasetId, datasetName, createdAt, exampleId }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
     if (datasetId_ === undefined && datasetName === undefined) {
@@ -843,6 +847,7 @@ export class Client {
       inputs,
       outputs,
       created_at: createdAt_.toISOString(),
+      id: exampleId,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
@@ -860,6 +865,35 @@ export class Client {
 
     const result = await response.json();
     return result as Example;
+  }
+
+  public async createLLMExample(
+    input: string,
+    generation: string | undefined,
+    options: CreateExampleOptions
+  ) {
+    return this.createExample({ input }, { output: generation }, options);
+  }
+
+  public async createChatExample(
+    input: KVMap[] | LangChainBaseMessage[],
+    generations: KVMap | LangChainBaseMessage | undefined,
+    options: CreateExampleOptions
+  ) {
+    const finalInput = input.map((message) => {
+      if (isLangChainMessage(message)) {
+        return convertLangChainMessageToExample(message);
+      }
+      return message;
+    });
+    const finalOutput = isLangChainMessage(generations)
+      ? convertLangChainMessageToExample(generations)
+      : generations;
+    return this.createExample(
+      { input: finalInput },
+      { output: finalOutput },
+      options
+    );
   }
 
   public async readExample(exampleId: string): Promise<Example> {
@@ -988,6 +1022,7 @@ export class Client {
       sourceInfo,
       feedbackSourceType = "api",
       sourceRunId,
+      feedbackId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -996,6 +1031,7 @@ export class Client {
       sourceInfo?: object;
       feedbackSourceType?: FeedbackSourceType;
       sourceRunId?: string;
+      feedbackId?: string;
     }
   ): Promise<Feedback> {
     const feedback_source: feedback_source = {
@@ -1010,7 +1046,7 @@ export class Client {
       feedback_source.metadata["__run"] = { run_id: sourceRunId };
     }
     const feedback: FeedbackCreate = {
-      id: uuid.v4(),
+      id: feedbackId ?? uuid.v4(),
       run_id: runId,
       key,
       score,
@@ -1025,13 +1061,8 @@ export class Client {
       body: JSON.stringify(feedback),
       signal: AbortSignal.timeout(this.timeout_ms),
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create feedback for run ${runId}: ${response.status} ${response.statusText}`
-      );
-    }
-    const result = await response.json();
-    return result as Feedback;
+    await raiseForStatus(response, "create feedback");
+    return feedback as Feedback;
   }
 
   public async updateFeedback(

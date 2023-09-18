@@ -10,11 +10,12 @@ from uuid import uuid4
 import pytest
 import requests
 from freezegun import freeze_time
+from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import Client
-from langsmith.evaluation import StringEvaluator
+from langsmith.evaluation import EvaluationResult, StringEvaluator
 from langsmith.run_trees import RunTree
-from langsmith.schemas import DataType, Feedback
+from langsmith.schemas import DataType
 from langsmith.utils import LangSmithConnectionError, LangSmithError
 
 
@@ -320,12 +321,11 @@ def test_evaluate_run(
         execution_order=1,
         error=False,
     )
-    all_feedback: List[Feedback] = []
+    all_eval_results: List[EvaluationResult] = []
     for run in runs:
-        all_feedback.append(langchain_client.evaluate_run(run, evaluator))
-    assert len(all_feedback) == 1
+        all_eval_results.append(langchain_client.evaluate_run(run, evaluator))
+    assert len(all_eval_results) == 1
     fetched_feedback = list(langchain_client.list_feedback(run_ids=[run.id]))
-    assert fetched_feedback[0].id == all_feedback[0].id
     assert fetched_feedback[0].score == jaccard_chars(predicted, ground_truth)
     assert fetched_feedback[0].value == "INCORRECT"
     langchain_client.delete_dataset(dataset_id=dataset.id)
@@ -348,6 +348,11 @@ def test_create_project(
 ) -> None:
     """Test the project creation"""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    try:
+        langchain_client.read_project(project_name="__test_create_project")
+        langchain_client.delete_project(project_name="__test_create_project")
+    except LangSmithError:
+        pass
     project_name = "__test_create_project"
     project = langchain_client.create_project(project_name=project_name)
     assert project.name == project_name
@@ -490,3 +495,55 @@ def test_create_run_with_masked_inputs_outputs(
     run2 = langchain_client.read_run(run_id2)
     assert run2.inputs == {}
     assert run2.outputs == {}
+
+
+@freeze_time("2023-01-01")
+def test_create_chat_example(
+    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
+) -> None:
+    dataset_name = "__createChatExample-test-dataset"
+    try:
+        existing_dataset = langchain_client.read_dataset(dataset_name=dataset_name)
+        langchain_client.delete_dataset(dataset_id=existing_dataset.id)
+    except LangSmithError:
+        # If the dataset doesn't exist,
+        pass
+
+    dataset = langchain_client.create_dataset(dataset_name)
+
+    input = [HumanMessage(content="Hello, world!")]
+    generation = FunctionMessage(
+        name="foo",
+        content="",
+        additional_kwargs={"function_call": {"arguments": "args", "name": "foo"}},
+    )
+    # Create the example from messages
+    langchain_client.create_chat_example(input, generation, dataset_id=dataset.id)
+
+    # Read the example
+    examples = []
+    for example in langchain_client.list_examples(dataset_id=dataset.id):
+        examples.append(example)
+    assert len(examples) == 1
+    assert examples[0].inputs == {
+        "input": [
+            {
+                "type": "human",
+                "data": {"content": "Hello, world!"},
+            },
+        ],
+    }
+    assert examples[0].outputs == {
+        "output": {
+            "type": "function",
+            "data": {
+                "content": "",
+                "additional_kwargs": {
+                    "function_call": {"arguments": "args", "name": "foo"}
+                },
+            },
+        },
+    }
+
+    # Delete dataset
+    langchain_client.delete_dataset(dataset_id=dataset.id)

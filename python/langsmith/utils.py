@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
 
 import requests
 
+from langsmith import schemas as ls_schemas
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -41,7 +43,8 @@ def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     """Validate specified keyword args are mutually exclusive."""
 
     def decorator(func: Callable) -> Callable:
-        def wrapper(*args: Any, **kwargs: Any) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             """Validate exactly one arg in each group is not None."""
             counts = [
                 sum(1 for arg in arg_group if kwargs.get(arg) is not None)
@@ -204,3 +207,34 @@ def get_docker_compose_command() -> List[str]:
                 " server following the instructions for your operating"
                 " system at https://docs.docker.com/engine/install/"
             )
+
+
+def convert_langchain_message(message: ls_schemas.BaseMessageLike) -> dict:
+    """Convert a LangChain message to an example."""
+    converted: Dict[str, Any] = {
+        "type": message.type,
+        "data": {"content": message.content},
+    }
+    # Check for presence of keys in additional_kwargs
+    if message.additional_kwargs and len(message.additional_kwargs) > 0:
+        converted["data"]["additional_kwargs"] = {**message.additional_kwargs}
+    return converted
+
+
+def is_base_message_like(obj: object) -> bool:
+    """
+    Check if the given object is similar to BaseMessage.
+
+    Args:
+        obj (object): The object to check.
+
+    Returns:
+        bool: True if the object is similar to BaseMessage, False otherwise.
+    """
+    return all(
+        [
+            isinstance(getattr(obj, "content", None), str),
+            isinstance(getattr(obj, "additional_kwargs", None), dict),
+            hasattr(obj, "type") and isinstance(getattr(obj, "type"), str),
+        ]
+    )
