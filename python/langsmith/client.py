@@ -719,7 +719,7 @@ class Client:
             list
         )
         runs: Dict[uuid.UUID, ls_schemas.Run] = {}
-        for child_run in sorted(child_runs, key=lambda r: r.execution_order):
+        for child_run in sorted(child_runs, key=lambda r: r.dotted_order):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
             treemap[child_run.parent_run_id].append(child_run)
