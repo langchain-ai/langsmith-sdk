@@ -1982,6 +1982,7 @@ class Client:
         llm_or_chain_factory: Any,
         *,
         evaluation: Optional[Any] = None,
+        concurrency_level: int = 5,
         project_name: Optional[str] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
@@ -1998,6 +1999,7 @@ class Client:
                 independent calls on each example without carrying over state.
             evaluation: Configuration for evaluators to run on the
                 results of the chain
+            concurrency_level: The number of tasks to execute concurrently.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             verbose: Whether to print progress.
@@ -2100,6 +2102,7 @@ class Client:
         return _run_on_dataset(
             dataset_name=dataset_name,
             llm_or_chain_factory=llm_or_chain_factory,
+            concurrency_level=concurrency_level,
             client=self,
             evaluation=evaluation,
             project_name=project_name,
