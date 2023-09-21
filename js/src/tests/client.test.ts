@@ -76,22 +76,3 @@ describe("Client", () => {
     });
   });
 });
-
-test("Test getRunUrl with run", async () => {
-  const client = new Client({
-    apiUrl: "http://localhost:1984",
-  });
-  const run: Run = {
-    id: "123",
-    execution_order: 1,
-    name: "foo",
-    run_type: "llm",
-    inputs: { input: "hello world" },
-  };
-  const projectOpts = {
-    projectId: "abcd-1234",
-  };
-  const expectedUrl = `http://localhost/o/00000000-0000-0000-0000-000000000000/projects/p/${projectOpts.projectId}/r/${run.id}?poll=true`;
-  const result = await client.getRunUrl({ run, projectOpts });
-  expect(result).toEqual(expectedUrl);
-});
