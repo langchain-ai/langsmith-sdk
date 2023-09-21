@@ -209,9 +209,9 @@ class Run(RunBase):
     """Time the first token was processed."""
     parent_run_ids: Optional[List[UUID]] = None
     """List of parent run IDs."""
-    trace_id: UUID
+    trace_id: Optional[UUID] = None
     """Unique ID assigned to every run within this nested trace."""
-    dotted_order: str
+    dotted_order: str = ""
     """Dotted order for the run.
 
     This is a string composed of {time}{run-uuid}.* so that a trace can be
