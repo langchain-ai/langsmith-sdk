@@ -21,7 +21,11 @@ import {
   convertLangChainMessageToExample,
   isLangChainMessage,
 } from "./utils/messages.js";
-import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
+import {
+  getEnv,
+  getEnvironmentVariable,
+  getRuntimeEnvironment,
+} from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface ClientConfig {
@@ -29,6 +33,7 @@ interface ClientConfig {
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
+  webUrl?: string;
 }
 
 interface ListRunsParams {
@@ -97,6 +102,11 @@ interface CreateRunParams {
   project_name?: string;
 }
 
+interface projectOptions {
+  projectName?: string;
+  projectId?: string;
+}
+
 export type FeedbackSourceType = "model" | "api" | "app";
 
 export type CreateExampleOptions = {
@@ -162,21 +172,30 @@ export class Client {
 
   private apiUrl: string;
 
+  private webUrl?: string;
+
   private caller: AsyncCaller;
 
   private timeout_ms: number;
+
+  private _tenantId: string | null = null;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
+    this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     this.validateApiKeyIfHosted();
     this.timeout_ms = config.timeout_ms ?? 4000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
-  public static getDefaultClientConfig(): { apiUrl: string; apiKey?: string } {
+  public static getDefaultClientConfig(): {
+    apiUrl: string;
+    apiKey?: string;
+    webUrl?: string;
+  } {
     const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
     const apiUrl =
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
@@ -184,6 +203,7 @@ export class Client {
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
+      webUrl: undefined,
     };
   }
 
@@ -197,11 +217,16 @@ export class Client {
   }
 
   private getHostUrl(): string {
-    if (isLocalhost(this.apiUrl)) {
+    if (this.webUrl) {
+      return this.webUrl;
+    } else if (isLocalhost(this.apiUrl)) {
+      this.webUrl = "http://localhost";
       return "http://localhost";
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
+      this.webUrl = "https://dev.smith.langchain.com";
       return "https://dev.smith.langchain.com";
     } else {
+      this.webUrl = "https://smith.langchain.com";
       return "https://smith.langchain.com";
     }
   }
@@ -333,15 +358,43 @@ export class Client {
 
   public async getRunUrl({
     runId,
+    run,
+    projectOpts,
   }: {
-    runId: string;
-  }): Promise<string | undefined> {
-    const run = await this.readRun(runId);
-    if (!run.app_path) {
-      return undefined;
+    runId?: string;
+    run?: Run;
+    projectOpts?: projectOptions;
+  }): Promise<string> {
+    if (run !== undefined) {
+      let sessionId: string;
+      if (run.session_id) {
+        sessionId = run.session_id;
+      } else if (projectOpts?.projectName) {
+        sessionId = (
+          await this.readProject({ projectName: projectOpts?.projectName })
+        ).id;
+      } else if (projectOpts?.projectId) {
+        sessionId = projectOpts?.projectId;
+      } else {
+        const project = await this.readProject({
+          projectName: getEnvironmentVariable("LANGCHAIN_PROJECT") || "default",
+        });
+        sessionId = project.id;
+      }
+      const tenantId = await this._getTenantId();
+      return `${this.getHostUrl()}/o/${tenantId}/projects/p/${sessionId}/r/${
+        run.id
+      }?poll=true`;
+    } else if (runId !== undefined) {
+      const run_ = await this.readRun(runId);
+      if (!run_.app_path) {
+        throw new Error(`Run ${runId} has no app_path`);
+      }
+      const baseUrl = this.getHostUrl();
+      return `${baseUrl}${run_.app_path}`;
+    } else {
+      throw new Error("Must provide either runId or run");
     }
-    const baseUrl = this.getHostUrl();
-    return `${baseUrl}${run.app_path}`;
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
@@ -568,6 +621,21 @@ export class Client {
       result = response as TracerSessionResult;
     }
     return result;
+  }
+
+  private async _getTenantId(): Promise<string> {
+    if (this._tenantId !== null) {
+      return this._tenantId;
+    }
+    const queryParams = new URLSearchParams({ limit: "1" });
+    for await (const projects of this._getPaginated<TracerSession>(
+      "/sessions",
+      queryParams
+    )) {
+      this._tenantId = projects[0].tenant_id;
+      return projects[0].tenant_id;
+    }
+    throw new Error("No projects found to resolve tenant.");
   }
 
   public async *listProjects({

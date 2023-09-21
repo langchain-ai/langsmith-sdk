@@ -871,10 +871,10 @@ class Client:
         """
         if hasattr(run, "session_id") and run.session_id is not None:
             session_id = run.session_id
-        elif project_name is not None:
-            session_id = self.read_project(project_name=project_name).id
         elif project_id is not None:
             session_id = project_id
+        elif project_name is not None:
+            session_id = self.read_project(project_name=project_name).id
         else:
             project_name = os.environ.get(
                 "LANGCHAIN_PROJECT",
