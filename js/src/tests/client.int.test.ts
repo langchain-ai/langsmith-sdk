@@ -1,7 +1,7 @@
 import { Client } from "../client.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { StringEvaluator } from "../evaluation/string_evaluator.js";
-import { Dataset, Feedback } from "../schemas.js";
+import { Dataset, Feedback, Run } from "../schemas.js";
 import { v4 as uuidv4 } from "uuid";
 import { HumanMessage, FunctionMessage } from "langchain/schema";
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
@@ -567,4 +567,42 @@ describe("createChatExample", () => {
     // Delete dataset
     await langchainClient.deleteDataset({ datasetId: dataset.id });
   }, 10000);
+});
+
+test("Test getRunUrl with run", async () => {
+  const client = new Client({
+    apiUrl: "http://localhost:1984",
+  });
+  const run: Run = {
+    id: uuidv4(),
+    execution_order: 1,
+    name: "foo",
+    run_type: "llm",
+    inputs: { input: "hello world" },
+  };
+  await client.createRun({ project_name: "foo", ...run });
+  const result = await client.getRunUrl({
+    run,
+    projectOpts: { projectName: "foo" },
+  });
+  console.log(result);
+});
+
+test("Test getRunUrl with run", async () => {
+  const client = new Client({
+    apiUrl: "http://localhost:1984",
+  });
+  const run: Run = {
+    id: "123",
+    execution_order: 1,
+    name: "foo",
+    run_type: "llm",
+    inputs: { input: "hello world" },
+  };
+  const projectOpts = {
+    projectId: "abcd-1234",
+  };
+  const expectedUrl = `http://localhost/o/00000000-0000-0000-0000-000000000000/projects/p/${projectOpts.projectId}/r/${run.id}?poll=true`;
+  const result = await client.getRunUrl({ run, projectOpts });
+  expect(result).toEqual(expectedUrl);
 });
