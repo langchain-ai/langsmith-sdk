@@ -595,7 +595,7 @@ class Client:
         inputs : Dict[str, Any]
             The input values for the run.
         run_type : str
-            The type of the run, such as  such as tool, chain, llm, retriever,
+            The type of the run, such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
         execution_order : int or None, default=None
             The position of the run in the full trace's execution sequence.
