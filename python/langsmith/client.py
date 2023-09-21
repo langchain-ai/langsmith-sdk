@@ -223,6 +223,7 @@ class Client:
         "timeout_ms",
         "session",
         "_get_data_type_cached",
+        "_web_url",
     ]
 
     def __init__(
@@ -232,6 +233,7 @@ class Client:
         api_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
         timeout_ms: Optional[int] = None,
+        web_url: Optional[str] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -247,6 +249,9 @@ class Client:
             Retry configuration for the HTTPAdapter.
         timeout_ms : int or None, default=None
             Timeout in milliseconds for the HTTPAdapter.
+        web_url : str or None, default=None
+            URL for the LangSmith web app. Default is auto-inferred from
+            the ENDPOINT.
 
         Raises
         ------
@@ -258,6 +263,7 @@ class Client:
         _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 7000
+        self._web_url = web_url
         # Create a session and register a finalizer to close it
         self.session = requests.Session()
         weakref.finalize(self, close_session, self.session)
@@ -294,7 +300,9 @@ class Client:
     @property
     def _host_url(self) -> str:
         """The web host url."""
-        if _is_localhost(self.api_url):
+        if self._web_url:
+            link = self._web_url
+        elif _is_localhost(self.api_url):
             link = "http://localhost"
         elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
             link = "https://dev.smith.langchain.com"
@@ -770,8 +778,6 @@ class Client:
         start_time: Optional[datetime.datetime] = None,
         error: Optional[bool] = None,
         run_ids: Optional[List[ID_TYPE]] = None,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
@@ -802,10 +808,6 @@ class Client:
             Whether to filter by error status.
         run_ids : List[str or UUID] or None, default=None
             The IDs of the runs to filter by.
-        limit : int or None, default=None
-            The maximum number of runs to return.
-        offset : int or None, default=None
-            The number of runs to skip.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -839,13 +841,49 @@ class Client:
             query_params["error"] = error
         if run_ids is not None:
             query_params["id"] = run_ids
-        if limit is not None:
-            query_params["limit"] = limit
-        if offset is not None:
-            query_params["offset"] = offset
         yield from (
             ls_schemas.Run(**run, _host_url=self._host_url)
             for run in self._get_paginated_list("/runs", params=query_params)
+        )
+
+    def get_run_url(
+        self,
+        *,
+        run: ls_schemas.RunBase,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> str:
+        """Get the URL for a run.
+
+        Parameters
+        ----------
+        run : Run
+            The run.
+        project_name : str or None, default=None
+            The name of the project.
+        project_id : UUID or None, default=None
+            The ID of the project.
+
+        Returns
+        -------
+        str
+            The URL for the run.
+        """
+        if hasattr(run, "session_id") and run.session_id is not None:
+            session_id = run.session_id
+        elif project_name is not None:
+            session_id = self.read_project(project_name=project_name).id
+        elif project_id is not None:
+            session_id = project_id
+        else:
+            project_name = os.environ.get(
+                "LANGCHAIN_PROJECT",
+                "default",
+            )
+            session_id = self.read_project(project_name=project_name).id
+        return (
+            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id}/"
+            f"r/{run.id}?poll=true"
         )
 
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
@@ -930,6 +968,17 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
+
+    @functools.lru_cache(maxsize=1)
+    def _get_tenant_id(self) -> uuid.UUID:
+        response = self._get_with_retries("/sessions", params={"limit": 1})
+        result = response.json()
+        if isinstance(result, list):
+            tracer_session = ls_schemas.TracerSessionResult(
+                **result[0], _host_url=self._host_url
+            )
+            return tracer_session.tenant_id
+        raise ls_utils.LangSmithError("No projects found")
 
     @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
