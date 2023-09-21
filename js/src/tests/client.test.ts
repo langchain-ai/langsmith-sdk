@@ -1,6 +1,5 @@
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
-import { Run } from "../schemas.js";
 
 describe("Client", () => {
   describe("createLLMExample", () => {

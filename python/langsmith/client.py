@@ -12,6 +12,7 @@ import os
 import socket
 import uuid
 import weakref
+import concurrent
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -1374,6 +1375,57 @@ class Client:
             dataset_name=dataset_name,
             created_at=created_at,
         )
+
+    def create_examples(
+        self,
+        *,
+        inputs: Sequence[Mapping[str, Any]],
+        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        dataset_id: Optional[ls_schemas.ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        max_concurrency: int = 10,
+    ) -> None:
+        """Create examples in a dataset.
+
+        Parameters
+        ----------
+        inputs : Sequence[Mapping[str, Any]]
+            The input values for the examples.
+        outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
+            The output values for the examples.
+        dataset_id : Optional[ls_schemas.ID_TYPE], default=None
+            The ID of the dataset to create the examples in.
+        dataset_name : Optional[str], default=None
+            The name of the dataset to create the examples in.
+        max_concurrency : int, default=10
+            The maximum number of concurrent requests to make.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If both `dataset_id` and `dataset_name` are `None`.
+        """
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be provided.")
+
+        if dataset_id is None:
+            dataset_id = self.get_dataset_id(dataset_name)
+
+        max_concurrency = min(max_concurrency, len(inputs))
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_concurrency
+        ) as executor:
+            for input_data, output_data in zip(inputs, outputs or [None] * len(inputs)):
+                executor.submit(
+                    self.create_example,
+                    inputs=input_data,
+                    outputs=output_data,
+                    dataset_id=dataset_id,
+                )
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
