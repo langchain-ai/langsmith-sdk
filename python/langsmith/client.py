@@ -224,6 +224,7 @@ class Client:
         "session",
         "_get_data_type_cached",
         "_web_url",
+        "_tenant_id",
     ]
 
     def __init__(
@@ -264,6 +265,7 @@ class Client:
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 7000
         self._web_url = web_url
+        self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
         self.session = requests.Session()
         weakref.finalize(self, close_session, self.session)
@@ -969,15 +971,17 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
 
-    @functools.lru_cache(maxsize=1)
     def _get_tenant_id(self) -> uuid.UUID:
+        if self._tenant_id is not None:
+            return self._tenant_id
         response = self._get_with_retries("/sessions", params={"limit": 1})
         result = response.json()
         if isinstance(result, list):
             tracer_session = ls_schemas.TracerSessionResult(
                 **result[0], _host_url=self._host_url
             )
-            return tracer_session.tenant_id
+            self._tenant_id = tracer_session.tenant_id
+            return self._tenant_id
         raise ls_utils.LangSmithError("No projects found")
 
     @ls_utils.xor_args(("project_id", "project_name"))

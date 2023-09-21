@@ -21,11 +21,7 @@ import {
   convertLangChainMessageToExample,
   isLangChainMessage,
 } from "./utils/messages.js";
-import {
-  getEnv,
-  getEnvironmentVariable,
-  getRuntimeEnvironment,
-} from "./utils/env.js";
+import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface ClientConfig {
