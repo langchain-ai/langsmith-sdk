@@ -211,7 +211,11 @@ class Run(RunBase):
     """List of parent run IDs."""
     trace_id: UUID
     """Unique ID assigned to every run within this nested trace."""
+<<<<<<< Updated upstream
     dotted_order: str
+=======
+    dotted_order: Optional[str] = None
+>>>>>>> Stashed changes
     """Dotted order for the run.
 
     This is a string composed of {time}{run-uuid}.* so that a trace can be
