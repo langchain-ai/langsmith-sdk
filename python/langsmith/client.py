@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import concurrent
 import datetime
 import functools
 import importlib
@@ -12,7 +13,6 @@ import os
 import socket
 import uuid
 import weakref
-import concurrent
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -1381,7 +1381,7 @@ class Client:
         *,
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        dataset_id: Optional[ls_schemas.ID_TYPE] = None,
+        dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         max_concurrency: int = 10,
     ) -> None:
@@ -1393,7 +1393,7 @@ class Client:
             The input values for the examples.
         outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The output values for the examples.
-        dataset_id : Optional[ls_schemas.ID_TYPE], default=None
+        dataset_id : Optional[ID_TYPE], default=None
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
             The name of the dataset to create the examples in.
@@ -1413,7 +1413,7 @@ class Client:
             raise ValueError("Either dataset_id or dataset_name must be provided.")
 
         if dataset_id is None:
-            dataset_id = self.get_dataset_id(dataset_name)
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
         max_concurrency = min(max_concurrency, len(inputs))
         with concurrent.futures.ThreadPoolExecutor(
