@@ -349,7 +349,9 @@ export class Client {
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
     // TODO: make dotted order required when the migration finishes
-    childRuns.sort((a, b) => (a?.dotted_order ?? "").localeCompare((b?.dotted_order ?? "")));
+    childRuns.sort((a, b) =>
+      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+    );
     for (const childRun of childRuns) {
       if (
         childRun.parent_run_id === null ||
