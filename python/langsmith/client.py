@@ -124,12 +124,16 @@ def close_client(client: httpx.Client) -> None:
     client : client
         The httpx client to close.
     """
+    if client.is_closed:
+        return
     logger.debug("Closing Client._client")
     client.close()
 
 
 def close_async_client(client: httpx.AsyncClient) -> None:
     logger.debug("Closing Client._aclient")
+    if client.is_closed:
+        return
     coro = client.aclose()
     try:
         # Raises RuntimeError if there is no current event loop.
@@ -137,19 +141,21 @@ def close_async_client(client: httpx.AsyncClient) -> None:
         loop_running = True
     except RuntimeError:
         loop_running = False
+    try:
+        if loop_running:
+            # If we try to submit this coroutine to the running loop
+            # we end up in a deadlock, as we'd have gotten here from a
+            # running coroutine, which we cannot interrupt to run this one.
+            # The solution is to create a new loop in a new thread.
+            with concurrent.futures.ThreadPoolExecutor(1) as executor:
+                executor.submit(_run_coro, coro).result()
+        else:
+            _run_coro(coro)
+    except RuntimeError as e:
+        logger.debug("Failed to close Client._aclient: %s", e)
 
-    if loop_running:
-        # If we try to submit this coroutine to the running loop
-        # we end up in a deadlock, as we'd have gotten here from a
-        # running coroutine, which we cannot interrupt to run this one.
-        # The solution is to create a new loop in a new thread.
-        with concurrent.futures.ThreadPoolExecutor(1) as executor:
-            executor.submit(_run_coros, coro).result()
-    else:
-        _run_coros(coro)
 
-
-def _run_coros(coro: Coroutine) -> None:
+def _run_coro(coro: Coroutine) -> None:
     if hasattr(asyncio, "Runner"):
         # Python 3.11+
         # Run the coroutines in a new event loop, taking care to
@@ -655,7 +661,7 @@ class Client:
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {**self._headers, "Accept": "application/json"}
         return {
-            "data": json.dumps(run_create, default=_serialize_json),
+            "content": json.dumps(run_create, default=_serialize_json),
             "headers": headers,
             "timeout": self.timeout_ms / 1000,
         }
@@ -771,7 +777,7 @@ class Client:
         if events is not None:
             data["events"] = events
         return {
-            "data": json.dumps(data, default=_serialize_json),
+            "content": json.dumps(data, default=_serialize_json),
             "headers": headers,
             "timeout": self.timeout_ms / 1000,
         }
@@ -1317,7 +1323,7 @@ class Client:
         return {
             "url": endpoint,
             "headers": self._headers,
-            "data": json.dumps(body, default=_serialize_json),
+            "content": json.dumps(body, default=_serialize_json),
         }
 
     def create_project(
@@ -1498,6 +1504,38 @@ class Client:
         result = response.json()
         return self._postprocess_read_project(result, project_name)
 
+    def _prepare_list_projects(
+        self,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+        reference_dataset_name: Optional[str] = None,
+        reference_free: Optional[bool] = None,
+    ) -> dict:
+        params: Dict[str, Any] = {}
+        if project_ids is not None:
+            params["id"] = project_ids
+        if name is not None:
+            params["name"] = name
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        if reference_dataset_id is not None:
+            if reference_dataset_name is not None:
+                raise ValueError(
+                    "Only one of reference_dataset_id or"
+                    " reference_dataset_name may be given"
+                )
+            params["reference_dataset"] = reference_dataset_id
+        elif reference_dataset_name is not None:
+            reference_dataset_id = self.read_dataset(
+                dataset_name=reference_dataset_name
+            ).id
+            params["reference_dataset"] = reference_dataset_id
+        if reference_free is not None:
+            params["reference_free"] = reference_free
+        return {"path": "/sessions", "params": params}
+
     def list_projects(
         self,
         project_ids: Optional[List[ID_TYPE]] = None,
@@ -1530,35 +1568,69 @@ class Client:
         TracerSession
             The projects.
         """
-        params: Dict[str, Any] = {}
-        if project_ids is not None:
-            params["id"] = project_ids
-        if name is not None:
-            params["name"] = name
-        if name_contains is not None:
-            params["name_contains"] = name_contains
-        if reference_dataset_id is not None:
-            if reference_dataset_name is not None:
-                raise ValueError(
-                    "Only one of reference_dataset_id or"
-                    " reference_dataset_name may be given"
-                )
-            params["reference_dataset"] = reference_dataset_id
-        elif reference_dataset_name is not None:
-            reference_dataset_id = self.read_dataset(
-                dataset_name=reference_dataset_name
-            ).id
-            params["reference_dataset"] = reference_dataset_id
-        if reference_free is not None:
-            params["reference_free"] = reference_free
+        get_list_kwargs = self._prepare_list_projects(
+            project_ids=project_ids,
+            name=name,
+            name_contains=name_contains,
+            reference_dataset_id=reference_dataset_id,
+            reference_dataset_name=reference_dataset_name,
+            reference_free=reference_free,
+        )
         yield from (
             ls_schemas.TracerSession(**project, _host_url=self._host_url)
-            for project in self._get_paginated_list("/sessions", params=params)
+            for project in self._get_paginated_list(**get_list_kwargs)
         )
 
-    @ls_utils.xor_args(("project_name", "project_id"))
-    def delete_project(
-        self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
+    async def alist_projects(
+        self,
+        *,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+        reference_dataset_name: Optional[str] = None,
+        reference_free: Optional[bool] = None,
+    ) -> AsyncGenerator[ls_schemas.TracerSession, None]:
+        """
+        List projects from the LangSmith API.
+
+        Parameters
+        ----------
+        project_ids : Optional[List[ID_TYPE]], optional
+            A list of project IDs to filter by, by default None
+        name : Optional[str], optional
+            The name of the project to filter by, by default None
+        name_contains : Optional[str], optional
+            A string to search for in the project name, by default None
+        reference_dataset_id : Optional[List[ID_TYPE]], optional
+            A dataset ID to filter by, by default None
+        reference_dataset_name : Optional[str], optional
+            The name of the reference dataset to filter by, by default None
+        reference_free : Optional[bool], optional
+            Whether to filter for only projects not associated with a dataset.
+
+        Yields
+        ------
+        TracerSession
+            The projects.
+        """
+        get_list_kwargs = self._prepare_list_projects(
+            project_ids=project_ids,
+            name=name,
+            name_contains=name_contains,
+            reference_dataset_id=reference_dataset_id,
+            reference_dataset_name=reference_dataset_name,
+            reference_free=reference_free,
+        )
+        projects = self._aget_paginated_list(**get_list_kwargs)
+        async for project in projects:
+            yield ls_schemas.TracerSession(**project, _host_url=self._host_url)
+
+    async def adelete_project(
+        self,
+        *,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
     ) -> None:
         """Delete a project from LangSmith.
 
@@ -1570,6 +1642,35 @@ class Client:
             The ID of the project to delete.
         """
         if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = (await self.aread_project(project_name=project_name)).id
+        elif project_id is None:
+            raise ValueError("Must provide project_name or project_id")
+        response = self._client.delete(
+            self.api_url + f"/sessions/{project_id}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def delete_project(
+        self,
+        *,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> None:
+        """Delete a project from LangSmith.
+
+        Parameters
+        ----------
+        project_name : str or None, default=None
+            The name of the project to delete.
+        project_id : str or None, default=None
+            The ID of the project to delete.
+        """
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
             project_id = str(self.read_project(project_name=project_name).id)
         elif project_id is None:
             raise ValueError("Must provide project_name or project_id")
@@ -1610,7 +1711,7 @@ class Client:
         response = self._client.post(
             self.api_url + "/datasets",
             headers=self._headers,
-            data=dataset.json(),
+            content=dataset.json(),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
@@ -1954,7 +2055,7 @@ class Client:
             data["id"] = example_id
         example = ls_schemas.ExampleCreate(**data)
         response = self._client.post(
-            f"{self.api_url}/examples", headers=self._headers, data=example.json()
+            f"{self.api_url}/examples", headers=self._headers, content=example.json()
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -2047,7 +2148,7 @@ class Client:
         response = self._client.patch(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
-            data=example.json(exclude_none=True),
+            content=example.json(exclude_none=True),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -2283,7 +2384,7 @@ class Client:
         return {
             "post_args": {
                 "headers": {**self._headers, "Content-Type": "application/json"},
-                "data": feedback.json(exclude_none=True),
+                "content": feedback.json(exclude_none=True),
             },
             "feedback": feedback,
         }
@@ -2433,7 +2534,7 @@ class Client:
         return {
             "url": self.api_url + f"/feedback/{feedback_id}",
             "headers": {**self._headers, "Content-Type": "application/json"},
-            "data": json.dumps(feedback_update, default=_serialize_json),
+            "content": json.dumps(feedback_update, default=_serialize_json),
         }
 
     def update_feedback(
@@ -2522,6 +2623,43 @@ class Client:
         response = self._get_with_retries(f"/feedback/{feedback_id}")
         return ls_schemas.Feedback(**response.json())
 
+    async def aread_feedback(self, feedback_id: ID_TYPE) -> ls_schemas.Feedback:
+        """Read a feedback from the LangSmith API.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to read.
+
+        Returns
+        -------
+        Feedback
+            The feedback.
+        """
+        response = await self._aget_with_retries(f"/feedback/{feedback_id}")
+        return ls_schemas.Feedback(**response.json())
+
+    def _prepare_list_feedback(
+        self,
+        *,
+        run_ids: Optional[Sequence[ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
+        **kwargs: Any,
+    ) -> dict:
+        params: dict = {
+            "run": run_ids,
+            **kwargs,
+        }
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if feedback_source_type is not None:
+            params["source"] = feedback_source_type
+        return {
+            "path": "/feedback",
+            "params": params,
+        }
+
     def list_feedback(
         self,
         *,
@@ -2550,18 +2688,54 @@ class Client:
         Feedback
             The feedback objects.
         """
-        params: dict = {
-            "run": run_ids,
+        feedback_args = self._prepare_list_feedback(
+            run_ids=run_ids,
+            feedback_key=feedback_key,
+            feedback_source_type=feedback_source_type,
             **kwargs,
-        }
-        if feedback_key is not None:
-            params["key"] = feedback_key
-        if feedback_source_type is not None:
-            params["source"] = feedback_source_type
+        )
         yield from (
             ls_schemas.Feedback(**feedback)
-            for feedback in self._get_paginated_list("/feedback", params=params)
+            for feedback in self._get_paginated_list(**feedback_args)
         )
+
+    async def alist_feedback(
+        self,
+        *,
+        run_ids: Optional[Sequence[ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[ls_schemas.Feedback, None]:
+        """List the feedback objects on the LangSmith API.
+
+        Parameters
+        ----------
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        feedback_key: List[str] or None, default=None
+            The feedback key(s) to filter by. Example: 'correctness'
+            The query performs a union of all feedback keys.
+        feedback_source_type: List[FeedbackSourceType] or None, default=None
+            The type of feedback source, such as model
+            (for model-generated feedback) or API.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields
+        ------
+        Feedback
+            The feedback objects.
+        """
+        feedback_args = self._prepare_list_feedback(
+            run_ids=run_ids,
+            feedback_key=feedback_key,
+            feedback_source_type=feedback_source_type,
+            **kwargs,
+        )
+        all_feedback = self._aget_paginated_list(**feedback_args)
+        async for feedback in all_feedback:
+            yield ls_schemas.Feedback(**feedback)
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID.
@@ -2572,6 +2746,20 @@ class Client:
             The ID of the feedback to delete.
         """
         response = self._client.delete(
+            f"{self.api_url}/feedback/{feedback_id}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def adelete_feedback(self, feedback_id: ID_TYPE) -> None:
+        """Delete a feedback by ID.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to delete.
+        """
+        response = await self._aclient.delete(
             f"{self.api_url}/feedback/{feedback_id}",
             headers=self._headers,
         )

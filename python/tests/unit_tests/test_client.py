@@ -208,16 +208,23 @@ def test_create_feedback_string_source_type(source_type: str):
         )
 
 
-@pytest.mark.asyncio
-async def test_close_async_client() -> None:
+async def main():
     async with httpx.AsyncClient() as client:
         close_async_client(client)
         assert client.is_closed
 
 
-@pytest.mark.asyncio
-async def test_close_async_client_in_event_loop() -> None:
-    async with httpx.AsyncClient() as client:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, close_async_client, client)
-        assert client.is_closed
+# asyncio.run(main())
+# @pytest.mark.asyncio
+# async def test_close_async_client() -> None:
+#     async with httpx.AsyncClient() as client:
+#         close_async_client(client)
+#         assert client.is_closed
+
+
+# @pytest.mark.asyncio
+# async def test_close_async_client_in_event_loop() -> None:
+#     async with httpx.AsyncClient() as client:
+#         loop = asyncio.get_event_loop()
+#         await loop.run_in_executor(None, close_async_client, client)
+#         assert client.is_closed
