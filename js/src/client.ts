@@ -29,6 +29,7 @@ interface ClientConfig {
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
+  webUrl?: string;
 }
 
 interface ListRunsParams {
@@ -97,12 +98,18 @@ interface CreateRunParams {
   project_name?: string;
 }
 
+interface projectOptions {
+  projectName?: string;
+  projectId?: string;
+}
+
 export type FeedbackSourceType = "model" | "api" | "app";
 
 export type CreateExampleOptions = {
   datasetId?: string;
   datasetName?: string;
   createdAt?: Date;
+  exampleId?: string;
 };
 
 // utility functions
@@ -161,21 +168,30 @@ export class Client {
 
   private apiUrl: string;
 
+  private webUrl?: string;
+
   private caller: AsyncCaller;
 
   private timeout_ms: number;
+
+  private _tenantId: string | null = null;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
+    this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     this.validateApiKeyIfHosted();
     this.timeout_ms = config.timeout_ms ?? 4000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
-  public static getDefaultClientConfig(): { apiUrl: string; apiKey?: string } {
+  public static getDefaultClientConfig(): {
+    apiUrl: string;
+    apiKey?: string;
+    webUrl?: string;
+  } {
     const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
     const apiUrl =
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
@@ -183,6 +199,7 @@ export class Client {
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
+      webUrl: undefined,
     };
   }
 
@@ -196,11 +213,16 @@ export class Client {
   }
 
   private getHostUrl(): string {
-    if (isLocalhost(this.apiUrl)) {
+    if (this.webUrl) {
+      return this.webUrl;
+    } else if (isLocalhost(this.apiUrl)) {
+      this.webUrl = "http://localhost";
       return "http://localhost";
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
+      this.webUrl = "https://dev.smith.langchain.com";
       return "https://dev.smith.langchain.com";
     } else {
+      this.webUrl = "https://smith.langchain.com";
       return "https://smith.langchain.com";
     }
   }
@@ -332,22 +354,53 @@ export class Client {
 
   public async getRunUrl({
     runId,
+    run,
+    projectOpts,
   }: {
-    runId: string;
-  }): Promise<string | undefined> {
-    const run = await this.readRun(runId);
-    if (!run.app_path) {
-      return undefined;
+    runId?: string;
+    run?: Run;
+    projectOpts?: projectOptions;
+  }): Promise<string> {
+    if (run !== undefined) {
+      let sessionId: string;
+      if (run.session_id) {
+        sessionId = run.session_id;
+      } else if (projectOpts?.projectName) {
+        sessionId = (
+          await this.readProject({ projectName: projectOpts?.projectName })
+        ).id;
+      } else if (projectOpts?.projectId) {
+        sessionId = projectOpts?.projectId;
+      } else {
+        const project = await this.readProject({
+          projectName: getEnvironmentVariable("LANGCHAIN_PROJECT") || "default",
+        });
+        sessionId = project.id;
+      }
+      const tenantId = await this._getTenantId();
+      return `${this.getHostUrl()}/o/${tenantId}/projects/p/${sessionId}/r/${
+        run.id
+      }?poll=true`;
+    } else if (runId !== undefined) {
+      const run_ = await this.readRun(runId);
+      if (!run_.app_path) {
+        throw new Error(`Run ${runId} has no app_path`);
+      }
+      const baseUrl = this.getHostUrl();
+      return `${baseUrl}${run_.app_path}`;
+    } else {
+      throw new Error("Must provide either runId or run");
     }
-    const baseUrl = this.getHostUrl();
-    return `${baseUrl}${run.app_path}`;
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
     const childRuns = await toArray(this.listRuns({ id: run.child_run_ids }));
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
-    childRuns.sort((a, b) => a.execution_order - b.execution_order);
+    // TODO: make dotted order required when the migration finishes
+    childRuns.sort((a, b) =>
+      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+    );
     for (const childRun of childRuns) {
       if (
         childRun.parent_run_id === null ||
@@ -496,10 +549,12 @@ export class Client {
     projectName,
     projectExtra,
     upsert,
+    referenceDatasetId,
   }: {
     projectName: string;
     projectExtra?: object;
     upsert?: boolean;
+    referenceDatasetId?: string;
   }): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -508,6 +563,9 @@ export class Client {
     };
     if (projectExtra !== undefined) {
       body["extra"] = projectExtra;
+    }
+    if (referenceDatasetId !== undefined) {
+      body["reference_dataset_id"] = referenceDatasetId;
     }
     const response = await this.caller.call(fetch, endpoint, {
       method: "POST",
@@ -559,6 +617,21 @@ export class Client {
       result = response as TracerSessionResult;
     }
     return result;
+  }
+
+  private async _getTenantId(): Promise<string> {
+    if (this._tenantId !== null) {
+      return this._tenantId;
+    }
+    const queryParams = new URLSearchParams({ limit: "1" });
+    for await (const projects of this._getPaginated<TracerSession>(
+      "/sessions",
+      queryParams
+    )) {
+      this._tenantId = projects[0].tenant_id;
+      return projects[0].tenant_id;
+    }
+    throw new Error("No projects found to resolve tenant.");
   }
 
   public async *listProjects({
@@ -828,7 +901,7 @@ export class Client {
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    { datasetId, datasetName, createdAt }: CreateExampleOptions
+    { datasetId, datasetName, createdAt, exampleId }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
     if (datasetId_ === undefined && datasetName === undefined) {
@@ -846,6 +919,7 @@ export class Client {
       inputs,
       outputs,
       created_at: createdAt_.toISOString(),
+      id: exampleId,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
@@ -1020,6 +1094,7 @@ export class Client {
       sourceInfo,
       feedbackSourceType = "api",
       sourceRunId,
+      feedbackId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -1028,6 +1103,7 @@ export class Client {
       sourceInfo?: object;
       feedbackSourceType?: FeedbackSourceType;
       sourceRunId?: string;
+      feedbackId?: string;
     }
   ): Promise<Feedback> {
     const feedback_source: feedback_source = {
@@ -1042,7 +1118,7 @@ export class Client {
       feedback_source.metadata["__run"] = { run_id: sourceRunId };
     }
     const feedback: FeedbackCreate = {
-      id: uuid.v4(),
+      id: feedbackId ?? uuid.v4(),
       run_id: runId,
       key,
       score,
@@ -1057,13 +1133,8 @@ export class Client {
       body: JSON.stringify(feedback),
       signal: AbortSignal.timeout(this.timeout_ms),
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create feedback for run ${runId}: ${response.status} ${response.statusText}`
-      );
-    }
-    const result = await response.json();
-    return result as Feedback;
+    await raiseForStatus(response, "create feedback");
+    return feedback as Feedback;
   }
 
   public async updateFeedback(
