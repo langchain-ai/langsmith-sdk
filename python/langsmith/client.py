@@ -17,9 +17,11 @@ import weakref
 from typing import (
     TYPE_CHECKING,
     Any,
+    AsyncIterator,
     Callable,
     DefaultDict,
     Dict,
+    Iterable,
     Iterator,
     List,
     Mapping,
@@ -287,9 +289,7 @@ class Client:
         self._client = httpx.Client(**httpx_client_config)
         weakref.finalize(self, close_client, self._client)
         self._aclient = httpx.AsyncClient(**async_httpx_client_config)
-        weakref.finalize(self, aclose_client, self._aclient)
-
-        # Mount the HTTPAdapter with the retry configuration
+        weakref.finalize(self, close_async_client, self._aclient)
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
@@ -398,23 +398,23 @@ class Client:
             },
         )
 
+    async def _aget_with_retries(
+        self, path: str, params: Optional[Dict[str, Any]] = None
+    ) -> httpx.Response:
+        """Send a GET request with retries."""
+        return await self.arequest_with_retries(
+            "get",
+            f"{self.api_url}{path}",
+            request_kwargs={
+                "params": params,
+                "headers": self._headers,
+                "timeout": self.timeout_ms / 1000,
+            },
+        )
+
     def _get_paginated_list(
         self, path: str, *, params: Optional[dict] = None
     ) -> Iterator[dict]:
-        """Get a paginated list of items.
-
-        Parameters
-        ----------
-        path : str
-            The path of the request URL.
-        params : dict or None, default=None
-            The query parameters.
-
-        Yields
-        ------
-        dict
-            The items in the paginated list.
-        """
         params_ = params.copy() if params else {}
         offset = params_.get("offset", 0)
         params_["limit"] = params_.get("limit", 100)
@@ -426,6 +426,27 @@ class Client:
             if not items:
                 break
             yield from items
+            if len(items) < params_["limit"]:
+                # offset and limit isn't respected if we're
+                # querying for specific values
+                break
+            offset += len(items)
+
+    async def _aget_paginated_list(
+        self, path: str, *, params: Optional[dict] = None
+    ) -> AsyncIterator[dict]:
+        params_ = params.copy() if params else {}
+        offset = params_.get("offset", 0)
+        params_["limit"] = params_.get("limit", 100)
+        while True:
+            params_["offset"] = offset
+            response = await self._aget_with_retries(path, params=params_)
+            items = response.json()
+
+            if not items:
+                break
+            for item in items:
+                yield item
             if len(items) < params_["limit"]:
                 # offset and limit isn't respected if we're
                 # querying for specific values
@@ -800,25 +821,10 @@ class Client:
             request_kwargs=request_kwargs,
         )
 
-    def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
-        """Load child runs for a given run.
-
-        Parameters
-        ----------
-        run : Run
-            The run to load child runs for.
-
-        Returns
-        -------
-        Run
-            The run with loaded child runs.
-
-        Raises
-        ------
-        LangSmithError
-            If a child run has no parent.
-        """
-        child_runs = self.list_runs(id=run.child_run_ids)
+    @staticmethod
+    def _construct_child_tree(
+        run: ls_schemas.Run, child_runs: Iterable[ls_schemas.Run]
+    ):
         treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
             list
         )
@@ -836,6 +842,14 @@ class Client:
         for run_id, children in treemap.items():
             runs[run_id].child_runs = children
         return run
+
+    def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
+        child_runs = self.list_runs(id=run.child_run_ids)
+        return self._construct_child_tree(run, child_runs)
+
+    async def _aload_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
+        child_runs = await self.alist_runs(id=run.child_run_ids)
+        return self._construct_child_tree(run, child_runs)
 
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
@@ -882,6 +896,47 @@ class Client:
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
+
+    def _prepare_list_runs(
+        self,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        run_type: Optional[str] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        execution_order: Optional[int] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+        error: Optional[bool] = None,
+        run_ids: Optional[List[ID_TYPE]] = None,
+        **kwargs: Any,
+    ):
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = self.read_project(project_name=project_name).id
+        query_params: Dict[str, Any] = {
+            "session": project_id,
+            "run_type": run_type,
+            **kwargs,
+        }
+        if reference_example_id is not None:
+            query_params["reference_example"] = reference_example_id
+        if query is not None:
+            query_params["query"] = query
+        if filter is not None:
+            query_params["filter"] = filter
+        if execution_order is not None:
+            query_params["execution_order"] = execution_order
+        if parent_run_id is not None:
+            query_params["parent_run"] = parent_run_id
+        if start_time is not None:
+            query_params["start_time"] = start_time.isoformat()
+        if error is not None:
+            query_params["error"] = error
+        if run_ids is not None:
+            query_params["id"] = run_ids
 
     def list_runs(
         self,
@@ -935,35 +990,94 @@ class Client:
         Run
             The runs.
         """
-        if project_name is not None:
-            if project_id is not None:
-                raise ValueError("Only one of project_id or project_name may be given")
-            project_id = self.read_project(project_name=project_name).id
-        query_params: Dict[str, Any] = {
-            "session": project_id,
-            "run_type": run_type,
+        query_params = self._prepare_list_runs(
+            project_id=project_id,
+            project_name=project_name,
+            run_type=run_type,
+            reference_example_id=reference_example_id,
+            query=query,
+            filter=filter,
+            execution_order=execution_order,
+            parent_run_id=parent_run_id,
+            start_time=start_time,
+            error=error,
+            run_ids=run_ids,
             **kwargs,
-        }
-        if reference_example_id is not None:
-            query_params["reference_example"] = reference_example_id
-        if query is not None:
-            query_params["query"] = query
-        if filter is not None:
-            query_params["filter"] = filter
-        if execution_order is not None:
-            query_params["execution_order"] = execution_order
-        if parent_run_id is not None:
-            query_params["parent_run"] = parent_run_id
-        if start_time is not None:
-            query_params["start_time"] = start_time.isoformat()
-        if error is not None:
-            query_params["error"] = error
-        if run_ids is not None:
-            query_params["id"] = run_ids
+        )
         yield from (
             ls_schemas.Run(**run, _host_url=self._host_url)
             for run in self._get_paginated_list("/runs", params=query_params)
         )
+
+    async def alist_runs(
+        self,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        run_type: Optional[str] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        execution_order: Optional[int] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+        error: Optional[bool] = None,
+        run_ids: Optional[List[ID_TYPE]] = None,
+        **kwargs: Any,
+    ) -> Iterator[ls_schemas.Run]:
+        """List runs from the LangSmith API.
+
+        Parameters
+        ----------
+        project_id : UUID or None, default=None
+            The ID of the project to filter by.
+        project_name : str or None, default=None
+            The name of the project to filter by.
+        run_type : str or None, default=None
+            The type of the runs to filter by.
+        reference_example_id : UUID or None, default=None
+            The ID of the reference example to filter by.
+        query : str or None, default=None
+            The query string to filter by.
+        filter : str or None, default=None
+            The filter string to filter by.
+        execution_order : int or None, default=None
+            The execution order to filter by. Execution order is the position
+            of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
+        parent_run_id : UUID or None, default=None
+            The ID of the parent run to filter by.
+        start_time : datetime or None, default=None
+            The start time to filter by.
+        error : bool or None, default=None
+            Whether to filter by error status.
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields
+        ------
+        Run
+            The runs.
+        """
+        query_params = self._prepare_list_runs(
+            project_id=project_id,
+            project_name=project_name,
+            run_type=run_type,
+            reference_example_id=reference_example_id,
+            query=query,
+            filter=filter,
+            execution_order=execution_order,
+            parent_run_id=parent_run_id,
+            start_time=start_time,
+            error=error,
+            run_ids=run_ids,
+            **kwargs,
+        )
+        runs = await self._aget_paginated_list("/runs", params=query_params)
+        for run in runs:
+            yield ls_schemas.Run(**run, _host_url=self._host_url)
 
     def get_run_url(
         self,
