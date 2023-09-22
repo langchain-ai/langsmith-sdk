@@ -331,10 +331,10 @@ def trace(
             name=name,
             run_type=run_type,
             extra=extra_outer,
-            executor=executor,
-            project_name=project_name_,
             inputs=inputs or {},
             tags=tags_,
+            executor=executor,
+            project_name=project_name_,
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)

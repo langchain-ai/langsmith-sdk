@@ -6,21 +6,12 @@ import os
 import warnings
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, Set
 from uuid import UUID, uuid4
 
-try:
-    from pydantic.v1 import (  # type: ignore[import]
-        Field,
-        PrivateAttr,
-        root_validator,
-        validator,
-    )
-except ImportError:
-    from pydantic import Field, PrivateAttr, root_validator, validator
-
 from langsmith.client import ID_TYPE, Client
-from langsmith.schemas import RunBase
+from langsmith.schemas import ID_TYPE, RunBase, _coerce_req_uuid
+from langsmith.utils import get_runtime_environment
 
 logger = logging.getLogger(__name__)
 
@@ -33,65 +24,71 @@ def _make_thread_pool() -> ThreadPoolExecutor:
 class RunTree(RunBase):
     """Run Schema with back-references for posting runs."""
 
-    name: str
-    id: UUID = Field(default_factory=uuid4)
-    start_time: datetime = Field(default_factory=datetime.utcnow)
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    child_runs: List[RunTree] = Field(
-        default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
-    )
-    session_name: str = Field(
-        default_factory=lambda: os.environ.get(
-            # TODO: Deprecate LANGCHAIN_SESSION
-            "LANGCHAIN_PROJECT",
-            os.environ.get("LANGCHAIN_SESSION", "default"),
-        ),
-        alias="project_name",
-    )
-    session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    execution_order: int = 1
-    child_execution_order: int = Field(default=1, exclude=True)
-    extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=Client, exclude=True)
-    executor: ThreadPoolExecutor = Field(
-        default_factory=_make_thread_pool, exclude=True
-    )
-    _futures: List[Future] = PrivateAttr(default_factory=list)
-
-    class Config:
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-
-    @validator("executor", pre=True)
-    def validate_executor(cls, v: Optional[ThreadPoolExecutor]) -> ThreadPoolExecutor:
-        """Ensure the executor is running."""
-        if v is None:
-            return _make_thread_pool()
-        if v._shutdown:
+    def __init__(
+        self,
+        *,
+        name: str,
+        id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime] = None,
+        parent_run: Optional[RunTree] = None,
+        child_runs: Optional[List[RunTree]] = None,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+        execution_order: int = 1,
+        child_execution_order: Optional[int] = None,
+        extra: Optional[Dict] = None,
+        client: Optional[Client] = None,
+        executor: Optional[ThreadPoolExecutor] = None,
+        **kwargs: Any,
+    ):
+        _session_name = kwargs.pop("session_name", None)
+        _session_id = kwargs.pop("session_id", None)
+        _parent_run_id = kwargs.pop("parent_run_id", None)
+        super().__init__(name=name, **kwargs)
+        self.id = _coerce_req_uuid(id) if id else uuid4()
+        self.start_time = start_time if start_time else datetime.utcnow()
+        self.child_runs = child_runs if child_runs else []
+        self.session_name = (
+            project_name
+            if project_name
+            else (
+                _session_name
+                if _session_name
+                else os.environ.get(
+                    "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_SESSION", "default")
+                )
+            )
+        )
+        self.session_id = project_id or _session_id
+        self.execution_order = execution_order
+        self.extra = extra if extra else {}
+        self.child_execution_order = child_execution_order or self.execution_order
+        self.parent_run = parent_run
+        self._client = client if client else Client()
+        self._executor = executor if executor else _make_thread_pool()
+        self._futures: List[Future] = []
+        if not self._executor or self._executor._shutdown:
             raise ValueError("Executor has been shutdown.")
-        return v
+        serialized: Optional[dict] = self.serialized
+        if not serialized:
+            self.serialized = {"name": self.name}
+        if self.parent_run is not None:
+            self.parent_run_id = self.parent_run.id
+        elif _parent_run_id is not None:
+            self.parent_run_id = _parent_run_id
+        runtime = self.extra.setdefault("runtime", {})
+        runtime.update(get_runtime_environment())
+        self._ended = False
 
-    @validator("client", pre=True)
-    def validate_client(cls, v: Optional[Client]) -> Client:
-        """Ensure the client is specified."""
-        if v is None:
-            return Client()
-        return v
+    @property
+    def project_name(self) -> str:
+        """Alias for session_name."""
+        return self.session_name
 
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if "serialized" not in values:
-            values["serialized"] = {"name": values["name"]}
-        if "execution_order" not in values:
-            values["execution_order"] = 1
-        if "child_execution_order" not in values:
-            values["child_execution_order"] = values["execution_order"]
-        if values.get("parent_run") is not None:
-            values["parent_run_id"] = values["parent_run"].id
-        cast(dict, values.setdefault("extra", {}))
-        return values
+    @property
+    def project_id(self) -> Optional[ID_TYPE]:
+        """Alias for session_id."""
+        return self.session_id
 
     def end(
         self,
@@ -106,7 +103,7 @@ class RunTree(RunBase):
             self.outputs = outputs
         if error is not None:
             self.error = error
-        if self.parent_run:
+        if self.parent_run is not None:
             self.parent_run.child_execution_order = max(
                 self.parent_run.child_execution_order,
                 self.child_execution_order,
@@ -147,13 +144,30 @@ class RunTree(RunBase):
             child_execution_order=execution_order,
             extra=extra or {},
             parent_run=self,
-            session_name=self.session_name,
-            client=self.client,
-            executor=self.executor,
+            project_name=self.project_name,
+            client=self._client,
+            executor=self._executor,
             tags=tags,
         )
         self.child_runs.append(run)
         return run
+
+    def dict(
+        self, exclude: Optional[Set[str]] = None, exclude_none: bool = False
+    ) -> Dict:
+        """Return a dictionary representation of the run tree."""
+        exclude = exclude or set()
+        exclude.update()
+        run_dict = super().dict(exclude=exclude, exclude_none=exclude_none)
+        if "child_runs" in run_dict:
+            # If we are posting a nested run tree, parent_run_id is redundant
+            exclude.add("parent_run_id")
+            run_dict["child_runs"] = [
+                run.dict(exclude=exclude, exclude_none=exclude_none)
+                for run in run_dict["child_runs"]
+            ]
+        return run_dict
+
 
     def _execute(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         try:

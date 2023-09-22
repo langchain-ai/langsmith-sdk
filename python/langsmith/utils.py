@@ -1,9 +1,14 @@
 """Generic utility functions."""
+from __future__ import annotations
+
 import enum
 import functools
+import json
 import logging
 import os
 import subprocess
+from copy import copy, deepcopy
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
 
 import requests
@@ -27,6 +32,63 @@ class LangSmithError(Exception):
 
 class LangSmithConnectionError(Exception):
     """Couldn't connect to the LangSmith API."""
+
+
+class DictMixin(dict):
+    def __setattr__(self, k: str, v: Any) -> None:
+        if k[0] == "_" or k in self.__dict__:
+            return super().__setattr__(k, v)
+        self[k] = v
+        return None
+
+    def __getattr__(self, k: Any) -> Any:
+        try:
+            return self[k]
+        except KeyError as err:
+            raise AttributeError(*err.args)
+
+    def __delattr__(self, k: Any) -> None:
+        if k[0] == "_" or k in self.__dict__:
+            return super().__delattr__(k)
+        else:
+            del self[k]
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        serialized = json.dumps(self, indent=2, default=serialize_json)
+        return f"{self.__class__.__name__}({serialized})"
+
+    def copy(self, deep: bool = False) -> DictMixin:
+        if deep:
+            return deepcopy(self)
+        else:
+            return copy(self)
+
+
+def serialize_json(obj: Any) -> str:
+    """Serialize an object to JSON.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize.
+
+    Returns
+    -------
+    str
+        The serialized JSON string.
+
+    Raises
+    ------
+    TypeError
+        If the object type is not serializable.
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    else:
+        return str(obj)
 
 
 def tracing_is_enabled() -> bool:

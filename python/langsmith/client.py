@@ -1126,15 +1126,15 @@ class Client:
         Dataset
             The created dataset.
         """
-        dataset = ls_schemas.DatasetCreate(
-            name=dataset_name,
-            description=description,
-            data_type=data_type,
-        )
+        data = {
+            "name": dataset_name,
+            "description": description,
+            "data_type": data_type,
+        }
         response = self.session.post(
             self.api_url + "/datasets",
             headers=self._headers,
-            data=dataset.json(),
+            data=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
@@ -1476,9 +1476,10 @@ class Client:
             data["created_at"] = created_at.isoformat()
         if example_id:
             data["id"] = example_id
-        example = ls_schemas.ExampleCreate(**data)
         response = self.session.post(
-            f"{self.api_url}/examples", headers=self._headers, data=example.json()
+            f"{self.api_url}/examples",
+            headers=self._headers,
+            data=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -1563,15 +1564,15 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
-        example = ls_schemas.ExampleUpdate(
-            inputs=inputs,
-            outputs=outputs,
-            dataset_id=dataset_id,
-        )
+        example = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
         response = self.session.patch(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
-            data=example.json(exclude_none=True),
+            data=json.dumps(example, default=serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -1807,9 +1808,7 @@ class Client:
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
         if feedback_source_type == ls_schemas.FeedbackSourceType.API:
-            feedback_source: ls_schemas.FeedbackSourceBase = (
                 ls_schemas.APIFeedbackSource(metadata=source_info)
-            )
         elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
             feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
         else:
