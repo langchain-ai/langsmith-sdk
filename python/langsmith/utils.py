@@ -6,7 +6,7 @@ import os
 import subprocess
 from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
 
-import requests
+import httpx
 
 from langsmith import schemas as ls_schemas
 
@@ -65,11 +65,11 @@ def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     return decorator
 
 
-def raise_for_status_with_text(response: requests.Response) -> None:
+def raise_for_status_with_text(response: httpx.Response) -> None:
     """Raise an error with the response text."""
     try:
         response.raise_for_status()
-    except requests.HTTPError as e:
+    except httpx.HTTPError as e:
         raise ValueError(str(e), response.text) from e
 
 

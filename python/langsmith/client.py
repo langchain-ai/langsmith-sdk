@@ -17,6 +17,7 @@ import weakref
 from typing import (
     TYPE_CHECKING,
     Any,
+    AsyncGenerator,
     AsyncIterator,
     Callable,
     DefaultDict,
@@ -189,13 +190,19 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
 
 @contextlib.contextmanager
 def _request_error_handler(request_method: str, url: str):
-    handler_state = {}
+    handler_state: dict = {}
     try:
         yield handler_state
+    except httpx.ConnectError as e:
+        raise ls_utils.LangSmithConnectionError(
+            f"Connection error caused failure to {request_method} {url}"
+            "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+            f" {e}"
+        ) from e
     except httpx.HTTPError as e:
         if (
             handler_state.get("response") is not None
-            and handler_state.get("response").status_code == 500
+            and getattr(handler_state.get("response"), "status_code") == 500
         ):
             raise ls_utils.LangSmithAPIError(
                 f"Server error caused failure to {request_method} {url} in"
@@ -205,12 +212,7 @@ def _request_error_handler(request_method: str, url: str):
             raise ls_utils.LangSmithUserError(
                 f"Failed to {request_method} {url} in LangSmith API. {e}"
             )
-    except httpx.ConnectionError as e:
-        raise ls_utils.LangSmithConnectionError(
-            f"Connection error caused failure to {request_method} {url}"
-            "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-            f" {e}"
-        ) from e
+
     except ValueError as e:
         args = list(e.args)
         msg = args[1] if len(args) > 1 else ""
@@ -343,21 +345,27 @@ class Client:
             headers["x-api-key"] = self.api_key
         return headers
 
+    @staticmethod
+    def _filter_params(request_kwargs: dict) -> dict:
+        if "params" in request_kwargs:
+            params = request_kwargs["params"]
+            if params is not None:
+                params = {k: v for k, v in params.items() if v is not None}
+            request_kwargs = {
+                **request_kwargs,
+                "params": params,
+            }
+        return request_kwargs
+
     def request_with_retries(
         self,
         request_method: str,
         url: str,
-        request_kwargs: Mapping,
-        filter_null_params: bool = True,
+        request_kwargs: dict,
     ) -> httpx.Response:
         """Send a request with retries."""
         with _request_error_handler(request_method, url) as handler_state:
-            if filter_null_params and "params" in request_kwargs:
-                params = request_kwargs["params"]
-                if params is not None:
-                    request_kwargs["params"] = {
-                        k: v for k, v in params.items() if v is not None
-                    }
+            request_kwargs = self._filter_params(request_kwargs)
             response = self._client.request(request_method, url, **request_kwargs)
             handler_state["response"] = response
             ls_utils.raise_for_status_with_text(response)
@@ -367,17 +375,11 @@ class Client:
         self,
         request_method: str,
         url: str,
-        request_kwargs: Mapping,
-        filter_null_params: bool = True,
+        request_kwargs: dict,
     ) -> httpx.Response:
         """Send an async request with retries."""
         with _request_error_handler(request_method, url) as handler_state:
-            if filter_null_params and "params" in request_kwargs:
-                params = request_kwargs["params"]
-                if params is not None:
-                    request_kwargs["params"] = {
-                        k: v for k, v in params.items() if v is not None
-                    }
+            request_kwargs = self._filter_params(request_kwargs)
             response = await self._aclient.request(
                 request_method, url, **request_kwargs
             )
@@ -587,7 +589,7 @@ class Client:
         *,
         execution_order: Optional[int] = None,
         **kwargs: Any,
-    ) -> None:
+    ) -> dict:
         project_name = kwargs.pop(
             "project_name",
             kwargs.pop(
@@ -823,7 +825,7 @@ class Client:
         )
 
     @staticmethod
-    def _construct_child_tree(
+    def _postprocess_load_child_runs(
         run: ls_schemas.Run, child_runs: Iterable[ls_schemas.Run]
     ):
         treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
@@ -846,11 +848,11 @@ class Client:
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         child_runs = self.list_runs(id=run.child_run_ids)
-        return self._construct_child_tree(run, child_runs)
+        return self._postprocess_load_child_runs(run, child_runs)
 
     async def _aload_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
-        child_runs = await self.alist_runs(id=run.child_run_ids)
-        return self._construct_child_tree(run, child_runs)
+        child_runs = [run async for run in self.alist_runs(id=run.child_run_ids)]
+        return self._postprocess_load_child_runs(run, child_runs)
 
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
@@ -892,16 +894,15 @@ class Client:
         Run
             The run.
         """
-        response = await self._get_with_retries(f"/runs/{run_id}")
+        response = await self._aget_with_retries(f"/runs/{run_id}")
         run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
         if load_child_runs and run.child_run_ids:
-            run = self._load_child_runs(run)
+            run = await self._aload_child_runs(run)
         return run
 
     def _prepare_list_runs(
         self,
         project_id: Optional[ID_TYPE] = None,
-        project_name: Optional[str] = None,
         run_type: Optional[str] = None,
         reference_example_id: Optional[ID_TYPE] = None,
         query: Optional[str] = None,
@@ -912,11 +913,7 @@ class Client:
         error: Optional[bool] = None,
         run_ids: Optional[List[ID_TYPE]] = None,
         **kwargs: Any,
-    ):
-        if project_name is not None:
-            if project_id is not None:
-                raise ValueError("Only one of project_id or project_name may be given")
-            project_id = self.read_project(project_name=project_name).id
+    ) -> Dict[str, Any]:
         query_params: Dict[str, Any] = {
             "session": project_id,
             "run_type": run_type,
@@ -938,6 +935,7 @@ class Client:
             query_params["error"] = error
         if run_ids is not None:
             query_params["id"] = run_ids
+        return query_params
 
     def list_runs(
         self,
@@ -991,6 +989,10 @@ class Client:
         Run
             The runs.
         """
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = self.read_project(project_name=project_name).id
         query_params = self._prepare_list_runs(
             project_id=project_id,
             project_name=project_name,
@@ -1025,7 +1027,7 @@ class Client:
         error: Optional[bool] = None,
         run_ids: Optional[List[ID_TYPE]] = None,
         **kwargs: Any,
-    ) -> Iterator[ls_schemas.Run]:
+    ) -> AsyncGenerator[ls_schemas.Run, None]:
         """List runs from the LangSmith API.
 
         Parameters
@@ -1062,9 +1064,12 @@ class Client:
         Run
             The runs.
         """
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = (await self.aread_project(project_name=project_name)).id
         query_params = self._prepare_list_runs(
             project_id=project_id,
-            project_name=project_name,
             run_type=run_type,
             reference_example_id=reference_example_id,
             query=query,
@@ -1076,8 +1081,8 @@ class Client:
             run_ids=run_ids,
             **kwargs,
         )
-        runs = await self._aget_paginated_list("/runs", params=query_params)
-        for run in runs:
+        runs = self._aget_paginated_list("/runs", params=query_params)
+        async for run in runs:
             yield ls_schemas.Run(**run, _host_url=self._host_url)
 
     def get_run_url(
@@ -1120,6 +1125,46 @@ class Client:
             f"r/{run.id}?poll=true"
         )
 
+    async def aget_run_url(
+        self,
+        *,
+        run: ls_schemas.RunBase,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> str:
+        """Get the URL for a run.
+
+        Parameters
+        ----------
+        run : Run
+            The run.
+        project_name : str or None, default=None
+            The name of the project.
+        project_id : UUID or None, default=None
+            The ID of the project.
+
+        Returns
+        -------
+        str
+            The URL for the run.
+        """
+        if hasattr(run, "session_id") and run.session_id is not None:
+            session_id = run.session_id
+        elif project_id is not None:
+            session_id = project_id
+        elif project_name is not None:
+            session_id = (await self.aread_project(project_name=project_name)).id
+        else:
+            project_name = os.environ.get(
+                "LANGCHAIN_PROJECT",
+                "default",
+            )
+            session_id = (await self.aread_project(project_name=project_name)).id
+        return (
+            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id}/"
+            f"r/{run.id}?poll=true"
+        )
+
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run."""
         data = {
@@ -1134,6 +1179,31 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
+
+    async def ashare_run(
+        self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None
+    ) -> str:
+        """Get a share link for a run."""
+        data = {
+            "run_id": str(run_id),
+            "share_token": share_id or str(uuid.uuid4()),
+        }
+        response = await self._aclient.put(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+            json=data,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        share_token = response.json()["share_token"]
+        return f"{self._host_url}/public/{share_token}/r"
+
+    async def aunshare_run(self, run_id: ID_TYPE) -> None:
+        """Delete share link for a run."""
+        response = await self._aclient.delete(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run."""
@@ -1154,12 +1224,23 @@ class Client:
             return None
         return f"{self._host_url}/public/{result['share_token']}/r"
 
+    async def aread_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
+        response = await self._aclient.get(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        result = response.json()
+        if result is None or "share_token" not in result:
+            return None
+        return f"{self._host_url}/public/{result['share_token']}/r"
+
     def run_is_shared(self, run_id: ID_TYPE) -> bool:
         """Get share state for a run."""
         link = self.read_run_shared_link(run_id)
         return link is not None
 
-    def create_project(
+    def _prepare_create_project(
         self,
         project_name: str,
         *,
@@ -1195,13 +1276,100 @@ class Client:
             params["upsert"] = True
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
+        return {
+            "url": endpoint,
+            "headers": self._headers,
+            "data": json.dumps(body, default=_serialize_json),
+        }
+
+    def create_project(
+        self,
+        project_name: str,
+        *,
+        project_extra: Optional[dict] = None,
+        upsert: bool = False,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.TracerSession:
+        """Create a project on the LangSmith API.
+
+        Parameters
+        ----------
+        project_name : str
+            The name of the project.
+        project_extra : dict or None, default=None
+            Additional project information.
+        upsert : bool, default=False
+            Whether to update the project if it already exists.
+        reference_dataset_id: UUID or None, default=None
+            The ID of the reference dataset to associate with the project.
+
+        Returns
+        -------
+        TracerSession
+            The created project.
+        """
+        request_kwargs = self._prepare_create_project(
+            project_name,
+            project_extra=project_extra,
+            upsert=upsert,
+            reference_dataset_id=reference_dataset_id,
+        )
         response = self._client.post(
-            endpoint,
-            headers=self._headers,
-            data=json.dumps(body, default=_serialize_json),
+            **request_kwargs,
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
+
+    async def acreate_project(
+        self,
+        project_name: str,
+        *,
+        project_extra: Optional[dict] = None,
+        upsert: bool = False,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.TracerSession:
+        """Create a project on the LangSmith API.
+
+        Parameters
+        ----------
+        project_name : str
+            The name of the project.
+        project_extra : dict or None, default=None
+            Additional project information.
+        upsert : bool, default=False
+            Whether to update the project if it already exists.
+        reference_dataset_id: UUID or None, default=None
+            The ID of the reference dataset to associate with the project.
+
+        Returns
+        -------
+        TracerSession
+            The created project.
+        """
+        request_kwargs = self._prepare_create_project(
+            project_name,
+            project_extra=project_extra,
+            upsert=upsert,
+            reference_dataset_id=reference_dataset_id,
+        )
+        response = await self._aclient.post(
+            **request_kwargs,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
+
+    async def _aget_tenant_id(self) -> uuid.UUID:
+        if self._tenant_id is not None:
+            return self._tenant_id
+        response = await self._aget_with_retries("/sessions", params={"limit": 1})
+        result = response.json()
+        if isinstance(result, list):
+            tracer_session = ls_schemas.TracerSessionResult(
+                **result[0], _host_url=self._host_url
+            )
+            self._tenant_id = tracer_session.tenant_id
+            return self._tenant_id
+        raise ls_utils.LangSmithError("No projects found")
 
     def _get_tenant_id(self) -> uuid.UUID:
         if self._tenant_id is not None:
@@ -1216,7 +1384,32 @@ class Client:
             return self._tenant_id
         raise ls_utils.LangSmithError("No projects found")
 
-    @ls_utils.xor_args(("project_id", "project_name"))
+    def _prepare_read_project(
+        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+    ) -> dict:
+        path = "/sessions"
+        params: Dict[str, Any] = {"limit": 1}
+        if project_id is not None:
+            path += f"/{project_id}"
+        elif project_name is not None:
+            params["name"] = project_name
+        else:
+            raise ValueError("Must provide project_name or project_id")
+        return {
+            "path": path,
+            "params": params,
+        }
+
+    def _postprocess_read_project(
+        self, result: Union[dict, list], project_name: Optional[str]
+    ):
+        if isinstance(result, list):
+            if len(result) == 0:
+                project_name = " " + (project_name or "")
+                raise ls_utils.LangSmithError(f"Project{project_name} not found")
+            return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
+        return ls_schemas.TracerSessionResult(**result, _host_url=self._host_url)
+
     def read_project(
         self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
     ) -> ls_schemas.TracerSessionResult:
@@ -1235,23 +1428,37 @@ class Client:
         TracerSessionResult
             The project.
         """
-        path = "/sessions"
-        params: Dict[str, Any] = {"limit": 1}
-        if project_id is not None:
-            path += f"/{project_id}"
-        elif project_name is not None:
-            params["name"] = project_name
-        else:
-            raise ValueError("Must provide project_name or project_id")
-        response = self._get_with_retries(path, params=params)
-        result = response.json()
-        if isinstance(result, list):
-            if len(result) == 0:
-                raise ls_utils.LangSmithError(f"Project {project_name} not found")
-            return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
-        return ls_schemas.TracerSessionResult(
-            **response.json(), _host_url=self._host_url
+        get_args = self._prepare_read_project(
+            project_id=project_id, project_name=project_name
         )
+        response = self._get_with_retries(**get_args)
+        result = response.json()
+        return self._postprocess_read_project(result, project_name)
+
+    async def aread_project(
+        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+    ) -> ls_schemas.TracerSessionResult:
+        """Read a project from the LangSmith API.
+
+        Parameters
+        ----------
+        project_id : str or None, default=None
+            The ID of the project to read.
+        project_name : str or None, default=None
+            The name of the project to read.
+                Note: Only one of project_id or project_name may be given.
+
+        Returns
+        -------
+        TracerSessionResult
+            The project.
+        """
+        get_args = self._prepare_read_project(
+            project_id=project_id, project_name=project_name
+        )
+        response = await self._aget_with_retries(**get_args)
+        result = response.json()
+        return self._postprocess_read_project(result, project_name)
 
     def list_projects(
         self,
@@ -1979,7 +2186,7 @@ class Client:
         source_info = source_info or {}
         if evaluation_result.evaluator_info:
             source_info = {**evaluation_result.evaluator_info, **source_info}
-        self.create_feedback(
+        await self.acreate_feedback(
             run_.id,
             evaluation_result.key,
             score=evaluation_result.score,
@@ -2007,7 +2214,7 @@ class Client:
         ] = ls_schemas.FeedbackSourceType.API,
         source_run_id: Optional[ID_TYPE] = None,
         feedback_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.Feedback:
+    ) -> dict:
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
         if feedback_source_type == ls_schemas.FeedbackSourceType.API:
@@ -2167,6 +2374,30 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Feedback(**feedback_args["feedback"].dict())
 
+    def _prepare_update_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> dict:
+        feedback_update: Dict[str, Any] = {}
+        if score is not None:
+            feedback_update["score"] = score
+        if value is not None:
+            feedback_update["value"] = value
+        if correction is not None:
+            feedback_update["correction"] = correction
+        if comment is not None:
+            feedback_update["comment"] = comment
+        return {
+            "url": self.api_url + f"/feedback/{feedback_id}",
+            "headers": {**self._headers, "Content-Type": "application/json"},
+            "data": json.dumps(feedback_update, default=_serialize_json),
+        }
+
     def update_feedback(
         self,
         feedback_id: ID_TYPE,
@@ -2191,20 +2422,49 @@ class Client:
         comment : str or None, default=None
             The comment to update the feedback with.
         """
-        feedback_update: Dict[str, Any] = {}
-        if score is not None:
-            feedback_update["score"] = score
-        if value is not None:
-            feedback_update["value"] = value
-        if correction is not None:
-            feedback_update["correction"] = correction
-        if comment is not None:
-            feedback_update["comment"] = comment
-        response = self._client.patch(
-            self.api_url + f"/feedback/{feedback_id}",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(feedback_update, default=_serialize_json),
+        feedback_update = self._prepare_update_feedback(
+            feedback_id,
+            score=score,
+            value=value,
+            correction=correction,
+            comment=comment,
         )
+        response = self._client.patch(**feedback_update)
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Feedback(**response.json())
+
+    async def aupdate_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> ls_schemas.Feedback:
+        """Update a feedback in the LangSmith API.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to update.
+        score : float or int or bool or None, default=None
+            The score to update the feedback with.
+        value : float or int or bool or str or dict or None, default=None
+            The value to update the feedback with.
+        correction : dict or None, default=None
+            The correction to update the feedback with.
+        comment : str or None, default=None
+            The comment to update the feedback with.
+        """
+        feedback_update = self._prepare_update_feedback(
+            feedback_id,
+            score=score,
+            value=value,
+            correction=correction,
+            comment=comment,
+        )
+        response = await self._aclient.patch(**feedback_update)
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Feedback(**response.json())
 
