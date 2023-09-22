@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import concurrent
 import datetime
 import functools
 import importlib
@@ -36,7 +37,7 @@ from urllib3.util import Retry
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.evaluation.evaluator import RunEvaluator
+from langsmith.evaluation import evaluator as ls_evaluator
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -223,6 +224,8 @@ class Client:
         "timeout_ms",
         "session",
         "_get_data_type_cached",
+        "_web_url",
+        "_tenant_id",
     ]
 
     def __init__(
@@ -232,6 +235,7 @@ class Client:
         api_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
         timeout_ms: Optional[int] = None,
+        web_url: Optional[str] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -247,6 +251,9 @@ class Client:
             Retry configuration for the HTTPAdapter.
         timeout_ms : int or None, default=None
             Timeout in milliseconds for the HTTPAdapter.
+        web_url : str or None, default=None
+            URL for the LangSmith web app. Default is auto-inferred from
+            the ENDPOINT.
 
         Raises
         ------
@@ -258,6 +265,8 @@ class Client:
         _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 7000
+        self._web_url = web_url
+        self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
         self.session = requests.Session()
         weakref.finalize(self, close_session, self.session)
@@ -294,7 +303,9 @@ class Client:
     @property
     def _host_url(self) -> str:
         """The web host url."""
-        if _is_localhost(self.api_url):
+        if self._web_url:
+            link = self._web_url
+        elif _is_localhost(self.api_url):
             link = "http://localhost"
         elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
             link = "https://dev.smith.langchain.com"
@@ -595,7 +606,7 @@ class Client:
         inputs : Dict[str, Any]
             The input values for the run.
         run_type : str
-            The type of the run, such as  such as tool, chain, llm, retriever,
+            The type of the run, such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
         execution_order : int or None, default=None
             The position of the run in the full trace's execution sequence.
@@ -719,7 +730,11 @@ class Client:
             list
         )
         runs: Dict[uuid.UUID, ls_schemas.Run] = {}
-        for child_run in sorted(child_runs, key=lambda r: r.execution_order):
+        for child_run in sorted(
+            # TODO: Remove execution_order once it's no longer used
+            child_runs,
+            key=lambda r: r.dotted_order or str(r.execution_order),
+        ):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
             treemap[child_run.parent_run_id].append(child_run)
@@ -766,8 +781,6 @@ class Client:
         start_time: Optional[datetime.datetime] = None,
         error: Optional[bool] = None,
         run_ids: Optional[List[ID_TYPE]] = None,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
@@ -798,10 +811,6 @@ class Client:
             Whether to filter by error status.
         run_ids : List[str or UUID] or None, default=None
             The IDs of the runs to filter by.
-        limit : int or None, default=None
-            The maximum number of runs to return.
-        offset : int or None, default=None
-            The number of runs to skip.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -835,13 +844,49 @@ class Client:
             query_params["error"] = error
         if run_ids is not None:
             query_params["id"] = run_ids
-        if limit is not None:
-            query_params["limit"] = limit
-        if offset is not None:
-            query_params["offset"] = offset
         yield from (
             ls_schemas.Run(**run, _host_url=self._host_url)
             for run in self._get_paginated_list("/runs", params=query_params)
+        )
+
+    def get_run_url(
+        self,
+        *,
+        run: ls_schemas.RunBase,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> str:
+        """Get the URL for a run.
+
+        Parameters
+        ----------
+        run : Run
+            The run.
+        project_name : str or None, default=None
+            The name of the project.
+        project_id : UUID or None, default=None
+            The ID of the project.
+
+        Returns
+        -------
+        str
+            The URL for the run.
+        """
+        if hasattr(run, "session_id") and run.session_id is not None:
+            session_id = run.session_id
+        elif project_id is not None:
+            session_id = project_id
+        elif project_name is not None:
+            session_id = self.read_project(project_name=project_name).id
+        else:
+            project_name = os.environ.get(
+                "LANGCHAIN_PROJECT",
+                "default",
+            )
+            session_id = self.read_project(project_name=project_name).id
+        return (
+            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id}/"
+            f"r/{run.id}?poll=true"
         )
 
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
@@ -889,6 +934,7 @@ class Client:
         *,
         project_extra: Optional[dict] = None,
         upsert: bool = False,
+        reference_dataset_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
 
@@ -900,6 +946,8 @@ class Client:
             Additional project information.
         upsert : bool, default=False
             Whether to update the project if it already exists.
+        reference_dataset_id: UUID or None, default=None
+            The ID of the reference dataset to associate with the project.
 
         Returns
         -------
@@ -907,20 +955,35 @@ class Client:
             The created project.
         """
         endpoint = f"{self.api_url}/sessions"
-        body = {
+        body: Dict[str, Any] = {
             "name": project_name,
             "extra": project_extra,
         }
         params = {}
         if upsert:
             params["upsert"] = True
+        if reference_dataset_id is not None:
+            body["reference_dataset_id"] = reference_dataset_id
         response = self.session.post(
             endpoint,
             headers=self._headers,
-            json=body,
+            data=json.dumps(body, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
+
+    def _get_tenant_id(self) -> uuid.UUID:
+        if self._tenant_id is not None:
+            return self._tenant_id
+        response = self._get_with_retries("/sessions", params={"limit": 1})
+        result = response.json()
+        if isinstance(result, list):
+            tracer_session = ls_schemas.TracerSessionResult(
+                **result[0], _host_url=self._host_url
+            )
+            self._tenant_id = tracer_session.tenant_id
+            return self._tenant_id
+        raise ls_utils.LangSmithError("No projects found")
 
     @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
@@ -1313,6 +1376,57 @@ class Client:
             created_at=created_at,
         )
 
+    def create_examples(
+        self,
+        *,
+        inputs: Sequence[Mapping[str, Any]],
+        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        max_concurrency: int = 10,
+    ) -> None:
+        """Create examples in a dataset.
+
+        Parameters
+        ----------
+        inputs : Sequence[Mapping[str, Any]]
+            The input values for the examples.
+        outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
+            The output values for the examples.
+        dataset_id : Optional[ID_TYPE], default=None
+            The ID of the dataset to create the examples in.
+        dataset_name : Optional[str], default=None
+            The name of the dataset to create the examples in.
+        max_concurrency : int, default=10
+            The maximum number of concurrent requests to make.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If both `dataset_id` and `dataset_name` are `None`.
+        """
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be provided.")
+
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+
+        max_concurrency = min(max_concurrency, len(inputs))
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_concurrency
+        ) as executor:
+            for input_data, output_data in zip(inputs, outputs or [None] * len(inputs)):
+                executor.submit(
+                    self.create_example,
+                    inputs=input_data,
+                    outputs=output_data,
+                    dataset_id=dataset_id,
+                )
+
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
         self,
@@ -1321,6 +1435,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
@@ -1340,6 +1455,9 @@ class Client:
             The creation timestamp of the example.
         outputs : Mapping[str, Any] or None, default=None
             The output values for the example.
+        exemple_id : UUID or None, default=None
+            The ID of the example to create. If not provided, a new
+            example will be created.
 
         Returns
         -------
@@ -1356,6 +1474,8 @@ class Client:
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
+        if example_id:
+            data["id"] = example_id
         response = self.session.post(
             f"{self.api_url}/examples",
             headers=self._headers,
@@ -1414,8 +1534,8 @@ class Client:
         if example_ids is not None:
             params["id"] = example_ids
         yield from (
-            ls_schemas.Example(**dataset)
-            for dataset in self._get_paginated_list("/examples", params=params)
+            ls_schemas.Example(**example)
+            for example in self._get_paginated_list("/examples", params=params)
         )
 
     def update_example(
@@ -1535,14 +1655,14 @@ class Client:
     def evaluate_run(
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
-        evaluator: RunEvaluator,
+        evaluator: ls_evaluator.RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
         load_child_runs: bool = False,
-    ) -> ls_schemas.Feedback:
+    ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run.
 
         Parameters
@@ -1567,36 +1687,37 @@ class Client:
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        feedback_result = evaluator.evaluate_run(
+        evaluation_result = evaluator.evaluate_run(
             run_,
             example=reference_example_,
         )
         source_info = source_info or {}
-        if feedback_result.evaluator_info:
-            source_info = {**feedback_result.evaluator_info, **source_info}
-        return self.create_feedback(
+        if evaluation_result.evaluator_info:
+            source_info = {**evaluation_result.evaluator_info, **source_info}
+        self.create_feedback(
             run_.id,
-            feedback_result.key,
-            score=feedback_result.score,
-            value=feedback_result.value,
-            comment=feedback_result.comment,
-            correction=feedback_result.correction,
+            evaluation_result.key,
+            score=evaluation_result.score,
+            value=evaluation_result.value,
+            comment=evaluation_result.comment,
+            correction=evaluation_result.correction,
             source_info=source_info,
-            source_run_id=feedback_result.source_run_id,
+            source_run_id=evaluation_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
+        return evaluation_result
 
     async def aevaluate_run(
         self,
         run: Union[ls_schemas.Run, str, uuid.UUID],
-        evaluator: RunEvaluator,
+        evaluator: ls_evaluator.RunEvaluator,
         *,
         source_info: Optional[Dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
         load_child_runs: bool = False,
-    ) -> ls_schemas.Feedback:
+    ) -> ls_evaluator.EvaluationResult:
         """Evaluate a run asynchronously.
 
         Parameters
@@ -1616,29 +1737,30 @@ class Client:
 
         Returns
         -------
-        Feedback
-            The feedback created by the evaluation.
+        EvaluationResult
+            The evaluation result object created by the evaluation.
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        feedback_result = await evaluator.aevaluate_run(
+        evaluation_result = await evaluator.aevaluate_run(
             run_,
             example=reference_example_,
         )
         source_info = source_info or {}
-        if feedback_result.evaluator_info:
-            source_info = {**feedback_result.evaluator_info, **source_info}
-        return self.create_feedback(
+        if evaluation_result.evaluator_info:
+            source_info = {**evaluation_result.evaluator_info, **source_info}
+        self.create_feedback(
             run_.id,
-            feedback_result.key,
-            score=feedback_result.score,
-            value=feedback_result.value,
-            comment=feedback_result.comment,
-            correction=feedback_result.correction,
+            evaluation_result.key,
+            score=evaluation_result.score,
+            value=evaluation_result.value,
+            comment=evaluation_result.comment,
+            correction=evaluation_result.correction,
             source_info=source_info,
-            source_run_id=feedback_result.source_run_id,
+            source_run_id=evaluation_result.source_run_id,
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
+        return evaluation_result
 
     def create_feedback(
         self,
@@ -1654,6 +1776,7 @@ class Client:
             ls_schemas.FeedbackSourceType, str
         ] = ls_schemas.FeedbackSourceType.API,
         source_run_id: Optional[ID_TYPE] = None,
+        feedback_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
 
@@ -1678,11 +1801,9 @@ class Client:
                 or API.
         source_run_id : str or UUID or None, default=None,
             The ID of the run that generated this feedback, if a "model" type.
-
-        Returns
-        -------
-        Feedback
-            The created feedback.
+        feedback_id : str or UUID or None, default=None
+            The ID of the feedback to create. If not provided, a random UUID will be
+            generated.
         """
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
@@ -1698,7 +1819,7 @@ class Client:
         if source_run_id is not None and "__run" not in feedback_source.metadata:
             feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
         feedback = ls_schemas.FeedbackCreate(
-            id=uuid.uuid4(),
+            id=feedback_id or uuid.uuid4(),
             run_id=run_id,
             key=key,
             score=score,
@@ -1706,6 +1827,8 @@ class Client:
             correction=correction,
             comment=comment,
             feedback_source=feedback_source,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            modified_at=datetime.datetime.now(datetime.timezone.utc),
         )
         response = self.session.post(
             self.api_url + "/feedback",
@@ -1713,7 +1836,7 @@ class Client:
             data=feedback.json(exclude_none=True),
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Feedback(**response.json())
+        return ls_schemas.Feedback(**feedback.dict())
 
     def update_feedback(
         self,
@@ -1738,11 +1861,6 @@ class Client:
             The correction to update the feedback with.
         comment : str or None, default=None
             The comment to update the feedback with.
-
-        Returns
-        -------
-        Feedback
-            The updated feedback.
         """
         feedback_update: Dict[str, Any] = {}
         if score is not None:
@@ -1972,6 +2090,7 @@ class Client:
         llm_or_chain_factory: Any,
         *,
         evaluation: Optional[Any] = None,
+        concurrency_level: int = 5,
         project_name: Optional[str] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
@@ -1988,6 +2107,7 @@ class Client:
                 independent calls on each example without carrying over state.
             evaluation: Configuration for evaluators to run on the
                 results of the chain
+            concurrency_level: The number of tasks to execute concurrently.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             verbose: Whether to print progress.
@@ -2090,6 +2210,7 @@ class Client:
         return _run_on_dataset(
             dataset_name=dataset_name,
             llm_or_chain_factory=llm_or_chain_factory,
+            concurrency_level=concurrency_level,
             client=self,
             evaluation=evaluation,
             project_name=project_name,

@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
-from uuid import UUID
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Protocol, Set, Union, runtime_checkable
 from uuid import UUID, uuid4
 
-from langsmith.utils import DictMixin
-
 from typing_extensions import Literal
+
+from langsmith.utils import DictMixin
 
 SCORE_TYPE = Union[bool, int, float, None]
 VALUE_TYPE = Union[Dict, bool, int, float, str, None]
@@ -284,20 +282,13 @@ class Run(RunBase):
         child_run_ids: Optional[List[ID_TYPE]] = None,
         feedback_stats: Optional[Dict[str, Any]] = None,
         app_path: Optional[str] = None,
-        manifest_id: Optional[UUID] = None
-        """Unique ID of the serialized object for this run."""
-        status: Optional[str] = None
-        """Status of the run (e.g., 'success')."""
-        prompt_tokens: Optional[int] = None
-        """Number of tokens used for the prompt."""
-        completion_tokens: Optional[int] = None
-        """Number of tokens generated as output."""
-        total_tokens: Optional[int] = None
-        """Total tokens for prompt and completion."""
-        first_token_time: Optional[datetime] = None
-        """Time the first token was processed."""
-        parent_run_ids: Optional[List[UUID]] = None
-        """List of parent run IDs."""
+        manifest_id: Optional[UUID] = None,
+        status: Optional[str] = None,
+        prompt_tokens: Optional[int] = None,
+        completion_tokens: Optional[int] = None,
+        total_tokens: Optional[int] = None,
+        first_token_time: Optional[datetime] = None,
+        parent_run_ids: Optional[List[UUID]] = None,
         **kwargs: Any,
     ) -> None:
         """Initialize Run.
@@ -341,6 +332,21 @@ class Run(RunBase):
         self.feedback_stats = feedback_stats
         self.app_path = app_path
         self._host_url = kwargs.get("_host_url")
+        self._manifest_id: Optional[UUID] = manifest_id
+        self._status: Optional[str] = status
+        self._prompt_tokens: Optional[int] = prompt_tokens
+        self._completion_tokens: Optional[int] = completion_tokens
+        self._total_tokens: Optional[int] = total_tokens
+        self._manifest_id: Optional[UUID] = manifest_id
+        self._first_token_time: Optional[datetime] = (
+            datetime.fromisoformat(first_token_time) if first_token_time else None
+        )
+        self._parent_run_ids: Optional[List[UUID]] = (
+            [_coerce_req_uuid(_uid) for _uid in parent_run_ids]
+            if parent_run_ids
+            else None
+        )
+        self._trace_id: Optional[UUID] = _coerce_uuid(kwargs.get("trace_id"))
 
     def dict(
         self, exclude: Optional[Set[str]] = None, exclude_none: bool = False
