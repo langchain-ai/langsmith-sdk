@@ -7,6 +7,7 @@ from io import BytesIO
 from unittest import mock
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from langsmith.client import (
@@ -15,6 +16,7 @@ from langsmith.client import (
     _get_api_url,
     _is_langchain_hosted,
     _is_localhost,
+    close_async_client,
 )
 from langsmith.schemas import Example
 from langsmith.utils import LangSmithUserError
@@ -53,8 +55,8 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client_no_key._headers == {}
 
 
-@mock.patch("langsmith.client.requests.Session")
-def test_upload_csv(mock_session_cls: mock.Mock) -> None:
+@mock.patch("langsmith.client.httpx.Client")
+def test_upload_csv(mock_client_cls: mock.Mock) -> None:
     dataset_id = str(uuid.uuid4())
     example_1 = Example(
         id=str(uuid.uuid4()),
@@ -79,9 +81,9 @@ def test_upload_csv(mock_session_cls: mock.Mock) -> None:
         "created_at": _CREATED_AT,
         "examples": [example_1, example_2],
     }
-    mock_session = mock.Mock()
-    mock_session.post.return_value = mock_response
-    mock_session_cls.return_value = mock_session
+    mock__client = mock.Mock()
+    mock__client.post.return_value = mock_response
+    mock_client_cls.return_value = mock__client
 
     client = Client(
         api_url="http://localhost:1984",
@@ -174,9 +176,9 @@ def test_create_run_unicode():
         "qux": "나는\u3000밥을\u3000먹었습니다.",
         "는\u3000밥": "나는\u3000밥을\u3000먹었습니다.",
     }
-    session = mock.Mock()
-    session.request = mock.Mock()
-    with patch.object(client, "session", session):
+    _client = mock.Mock()
+    _client.request = mock.Mock()
+    with patch.object(client, "_client", _client):
         id_ = uuid.uuid4()
         client.create_run(
             "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
@@ -187,7 +189,7 @@ def test_create_run_unicode():
 @pytest.mark.parametrize("source_type", ["api", "model"])
 def test_create_feedback_string_source_type(source_type: str):
     client = Client(api_url="http://localhost:1984", api_key="123")
-    session = mock.Mock()
+    _client = mock.Mock()
     request_object = mock.Mock()
     request_object.json.return_value = {
         "id": uuid.uuid4(),
@@ -196,11 +198,26 @@ def test_create_feedback_string_source_type(source_type: str):
         "modified_at": _CREATED_AT,
         "run_id": uuid.uuid4(),
     }
-    session.post.return_value = request_object
-    with patch.object(client, "session", session):
+    _client.post.return_value = request_object
+    with patch.object(client, "_client", _client):
         id_ = uuid.uuid4()
         client.create_feedback(
             id_,
             key="Foo",
             feedback_source_type=source_type,
         )
+
+
+@pytest.mark.asyncio
+async def test_close_async_client() -> None:
+    async with httpx.AsyncClient() as client:
+        close_async_client(client)
+        assert client.is_closed
+
+
+@pytest.mark.asyncio
+async def test_close_async_client_in_event_loop() -> None:
+    async with httpx.AsyncClient() as client:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, close_async_client, client)
+        assert client.is_closed

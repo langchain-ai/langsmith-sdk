@@ -20,6 +20,7 @@ from typing import (
     AsyncGenerator,
     AsyncIterator,
     Callable,
+    Coroutine,
     DefaultDict,
     Dict,
     Iterable,
@@ -129,7 +130,44 @@ def close_client(client: httpx.Client) -> None:
 
 def close_async_client(client: httpx.AsyncClient) -> None:
     logger.debug("Closing Client._aclient")
-    asyncio.run(client.aclose())
+    coro = client.aclose()
+    try:
+        # Raises RuntimeError if there is no current event loop.
+        asyncio.get_running_loop()
+        loop_running = True
+    except RuntimeError:
+        loop_running = False
+
+    if loop_running:
+        # If we try to submit this coroutine to the running loop
+        # we end up in a deadlock, as we'd have gotten here from a
+        # running coroutine, which we cannot interrupt to run this one.
+        # The solution is to create a new loop in a new thread.
+        with concurrent.futures.ThreadPoolExecutor(1) as executor:
+            executor.submit(_run_coros, coro).result()
+    else:
+        _run_coros(coro)
+
+
+def _run_coros(coro: Coroutine) -> None:
+    if hasattr(asyncio, "Runner"):
+        # Python 3.11+
+        # Run the coroutines in a new event loop, taking care to
+        # - install signal handlers
+        # - run pending tasks scheduled by `coros`
+        # - close asyncgens and executors
+        # - close the loop
+        with asyncio.Runner() as runner:
+            # Run the coroutine, get the result
+            runner.run(coro)
+
+            # Run pending tasks scheduled by coros until they are all done
+            while pending := asyncio.all_tasks(runner.get_loop()):
+                runner.run(asyncio.wait(pending))
+    else:
+        # Before Python 3.11 we need to run each coroutine in a new event loop
+        # as the Runner api is not available.
+        asyncio.run(coro)
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
@@ -1247,7 +1285,7 @@ class Client:
         project_extra: Optional[dict] = None,
         upsert: bool = False,
         reference_dataset_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.TracerSession:
+    ) -> dict:
         """Create a project on the LangSmith API.
 
         Parameters
