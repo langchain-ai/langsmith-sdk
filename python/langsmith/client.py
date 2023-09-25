@@ -152,6 +152,8 @@ def close_async_client(client: httpx.AsyncClient) -> None:
         else:
             _run_coro(coro)
     except RuntimeError as e:
+        # Race condition: the loop was closed before we could submit the
+        # coroutine to it.
         logger.debug("Failed to close Client._aclient: %s", e)
 
 
