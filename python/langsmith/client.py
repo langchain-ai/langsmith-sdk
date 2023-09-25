@@ -236,6 +236,7 @@ class Client:
         retry_config: Optional[Retry] = None,
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
+        preprocessors: Optional[List[Callable[[dict], dict]]] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -254,7 +255,12 @@ class Client:
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
-
+        preprocessors : List[Callable[[dict], dict]] or None, default=None
+            A list of preprocessors to apply to the post or patch operations of
+            run creation for all runs.The preprocessors should be functions that
+            take a dictionary and return a dictionary. The preprocessors are
+            useful for things like redactions or transformations of
+            the data to be logged to LangSmith.
         Raises
         ------
         LangSmithUserError
@@ -278,6 +284,7 @@ class Client:
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
+        self._preprocessors = preprocessors or []
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -595,6 +602,7 @@ class Client:
         run_type: str,
         *,
         execution_order: Optional[int] = None,
+        outputs: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -611,6 +619,7 @@ class Client:
         execution_order : int or None, default=None
             The position of the run in the full trace's execution sequence.
                 All root run traces have execution_order 1.
+        outputs : Dict[str, Any] or None, default=None
         **kwargs : Any
             Additional keyword arguments.
 
@@ -630,6 +639,7 @@ class Client:
                 ),
             ),
         )
+        outputs = outputs or {}
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -640,6 +650,9 @@ class Client:
         }
         if "outputs" in run_create:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        if self._preprocessors:
+            for preprocessor in self._preprocessors:
+                run_create = preprocessor(run_create)
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
         runtime_env = ls_env.get_runtime_and_metrics()
@@ -697,6 +710,9 @@ class Client:
             data["outputs"] = _hide_outputs(outputs)
         if events is not None:
             data["events"] = events
+        if self._preprocessors:
+            for preprocessor in self._preprocessors:
+                data = preprocessor(data)
         self.request_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
