@@ -226,6 +226,7 @@ class Client:
         "_get_data_type_cached",
         "_web_url",
         "_tenant_id",
+        "_preprocessors",
     ]
 
     def __init__(
