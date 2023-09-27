@@ -1150,7 +1150,7 @@ export class Client {
       correction?: object | null;
       comment?: string | null;
     }
-  ): Promise<Feedback> {
+  ): Promise<void> {
     const feedbackUpdate: FeedbackUpdate = {};
     if (score !== undefined && score !== null) {
       feedbackUpdate["score"] = score;
@@ -1174,7 +1174,7 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    return response.json();
+    await raiseForStatus(response, "update feedback");
   }
 
   public async readFeedback(feedbackId: string): Promise<Feedback> {

@@ -1,11 +1,13 @@
 import asyncio
 import os
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Generator, Optional
 
 import pytest
 
+from langsmith import utils as ls_utils
 from langsmith.client import Client
 from langsmith.run_helpers import trace, traceable
 from langsmith.run_trees import RunTree
@@ -46,7 +48,13 @@ def test_nested_runs(
 
     my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    for _ in range(5):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 3
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(1)
     assert len(runs) == 3
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
@@ -57,7 +65,10 @@ def test_nested_runs(
     assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
     assert runs_dict["my_llm_run"].run_type == "llm"
     assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
-    langchain_client.delete_project(project_name=project_name)
+    try:
+        langchain_client.delete_project(project_name=project_name)
+    except Exception:
+        pass
 
 
 @pytest.mark.asyncio
@@ -90,7 +101,13 @@ async def test_nested_async_runs(langchain_client: Client):
 
     await my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    for _ in range(5):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 4
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(1)
     assert len(runs) == 4
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
@@ -159,7 +176,13 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
 
     await my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    for _ in range(5):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 17
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(1)
     assert len(runs) == 17
     assert sum([run.run_type == "llm" for run in runs]) == 8
     assert sum([run.name == "async_llm" for run in runs]) == 6
@@ -182,7 +205,10 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
             assert run.parent_run_id in name_to_ids_map["my_chain_run"]
         if run.name == "my_chain_run":
             assert run.parent_run_id is None
-    langchain_client.delete_project(project_name=project_name)
+    try:
+        langchain_client.delete_project(project_name=project_name)
+    except Exception:
+        pass
 
 
 @pytest.mark.asyncio
@@ -208,7 +234,11 @@ async def test_context_manager(langchain_client: Client) -> None:
             await asyncio.gather(*runs)
         run_tree.end(outputs={"End val": "my_context2"})
     executor.shutdown(wait=True)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    for _ in range(5):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 8
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(2)
     assert len(runs) == 8
-    # Assert quuux adn corge are both children of my_context3
-    langchain_client.delete_project(project_name=project_name)
