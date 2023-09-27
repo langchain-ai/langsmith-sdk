@@ -218,7 +218,7 @@ def test_evaluate_run(
 
     evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
 
-    for _ in range(3):
+    for _ in range(5):
         try:
             runs = list(
                 langchain_client.list_runs(

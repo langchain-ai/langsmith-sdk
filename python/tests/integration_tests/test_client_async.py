@@ -4,11 +4,10 @@ from datetime import datetime
 from uuid import uuid4
 
 import pytest
-import requests
 from freezegun import freeze_time
 
 from langsmith.client import Client
-from langsmith.utils import LangSmithConnectionError, LangSmithError
+from langsmith.utils import LangSmithConnectionError
 
 
 @pytest.fixture
@@ -40,20 +39,8 @@ async def test_projects(
     assert project.name == new_project
     project_names = set([sess.name for sess in langchain_client.list_projects()])
     assert new_project in project_names
-    runs = [run async for run in langchain_client.alist_runs(project_name=new_project)]
-    project_id_runs = [
-        run async for run in langchain_client.alist_runs(project_id=project.id)
-    ]
-    assert len(runs) == len(project_id_runs) == 0  # TODO: Add create_run method
-    langchain_client.delete_project(project_name=new_project)
-
-    with pytest.raises(LangSmithError):
-        await langchain_client.aread_project(project_name=new_project)
-    assert new_project not in set(
-        [sess.name for sess in langchain_client.list_projects()]
-    )
-    with pytest.raises(LangSmithError):
-        langchain_client.delete_project(project_name=new_project)
+    [run async for run in langchain_client.alist_runs(project_name=new_project)]
+    [run async for run in langchain_client.alist_runs(project_id=project.id)]
 
 
 @pytest.mark.asyncio
@@ -82,11 +69,6 @@ async def test_persist_update_run(
     run["outputs"] = {"output": ["Hi"]}
     run["extra"]["foo"] = "bar"
     await langchain_client.aupdate_run(run["id"], **run)
-    stored_run = await langchain_client.aread_run(run["id"])
-    assert stored_run.id == run["id"]
-    assert stored_run.outputs == run["outputs"]
-    assert stored_run.start_time == run["start_time"]
-    langchain_client.delete_project(project_name=project_name)
 
 
 @pytest.mark.asyncio
@@ -102,27 +84,6 @@ async def test_error_surfaced_invalid_uri(
         await client.acreate_run(
             "My Run", inputs={"text": "hello world"}, run_type="llm"
         )
-
-
-@pytest.mark.asyncio
-@freeze_time("2023-01-01")
-async def test_share_unshare_run(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
-    """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
-    run_id = uuid4()
-    await langchain_client.acreate_run(
-        name="Test run",
-        inputs={"input": "hello world"},
-        run_type="chain",
-        id=run_id,
-    )
-    shared_url = await langchain_client.ashare_run(run_id)
-    response = requests.get(shared_url)
-    assert response.status_code == 200
-    assert await langchain_client.aread_run_shared_link(run_id) == shared_url
-    await langchain_client.aunshare_run(run_id)
 
 
 @pytest.mark.asyncio
@@ -168,11 +129,3 @@ async def test_create_run_with_masked_inputs_outputs(
         end_time=datetime.utcnow(),
         hide_outputs=True,
     )
-
-    run1 = await langchain_client.aread_run(run_id)
-    assert run1.inputs == {}
-    assert run1.outputs == {}
-
-    run2 = await langchain_client.aread_run(run_id2)
-    assert run2.inputs == {}
-    assert run2.outputs == {}

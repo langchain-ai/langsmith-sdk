@@ -36,6 +36,14 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import httpx
+from tenacity import (
+    AsyncRetrying,
+    Retrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
@@ -114,6 +122,16 @@ def _serialize_json(obj: Any) -> str:
         return obj.isoformat()
     else:
         return str(obj)
+
+
+def _get_default_retry_config() -> dict:
+    return {
+        "stop": stop_after_attempt(3),
+        "wait": wait_exponential_jitter(initial=0.5),
+        # Retry only on certain status codes ([502, 503, 504, 408, 425, 429])
+        "retry": retry_if_exception_type(ls_utils.LangSmithRetryableError),
+        "before_sleep": before_sleep_log(logger, logging.DEBUG),
+    }
 
 
 def close_client(client: httpx.Client) -> None:
@@ -237,26 +255,31 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
 @contextlib.contextmanager
 def _request_error_handler(request_method: str, url: str):
     handler_state: dict = {}
+    retry_statuses = [502, 503, 504, 408, 425, 429]
     try:
         yield handler_state
     except httpx.ConnectError as e:
         raise ls_utils.LangSmithConnectionError(
             f"Connection error caused failure to {request_method} {url}"
             "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-            f" {e}"
+            f" {repr(e)}"
         ) from e
     except httpx.HTTPError as e:
-        if (
-            handler_state.get("response") is not None
-            and getattr(handler_state.get("response"), "status_code") == 500
-        ):
+        status_code = getattr(handler_state.get("response"), "status_code", None)
+        if status_code in retry_statuses:
+            raise ls_utils.LangSmithRetryableError(
+                f"Retryable error ({status_code}) when trying to"
+                f" {request_method} {url} in"
+                f" LangSmith API. {repr(e)}"
+            )
+        elif status_code == 500:
             raise ls_utils.LangSmithAPIError(
                 f"Server error caused failure to {request_method} {url} in"
-                f" LangSmith API. {e}"
+                f" LangSmith API. {repr(e)}"
             )
         else:
             raise ls_utils.LangSmithUserError(
-                f"Failed to {request_method} {url} in LangSmith API. {e}"
+                f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
             )
 
     except ValueError as e:
@@ -282,6 +305,7 @@ class Client:
         "_get_data_type_cached",
         "_web_url",
         "_tenant_id",
+        "_retry_config",
     ]
 
     def __init__(
@@ -291,6 +315,7 @@ class Client:
         api_key: Optional[str] = None,
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
+        retry_config: Optional[dict] = None,
         httpx_client_config: Optional[dict] = None,
         async_httpx_client_config: Optional[dict] = None,
     ) -> None:
@@ -309,8 +334,12 @@ class Client:
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
+        retry_config : dict or None, default=None
+            Configuration for the tenacity retries.
         httpx_client_config : dict or None, default=None
             Additional configuration for the httpx client.
+        async_httpx_client_config : dict or None, default=None
+            Additional configuration for the async httpx client.
 
         Raises
         ------
@@ -326,15 +355,7 @@ class Client:
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a sync + async client and register a finalizer to close
         httpx_client_config = httpx_client_config or {}
-        async_httpx_client_config = (
-            async_httpx_client_config or httpx_client_config.copy()
-        )
-        if "transport" not in httpx_client_config:
-            httpx_client_config["transport"] = httpx.HTTPTransport(
-                retries=3  # TODO: Use tenacity?
-            )
-        if "transport" not in async_httpx_client_config:
-            async_httpx_client_config["transport"] = httpx.AsyncHTTPTransport(retries=3)
+        async_httpx_client_config = async_httpx_client_config or {}
         self._client = httpx.Client(**httpx_client_config)
         weakref.finalize(self, close_client, self._client)
         self._aclient = httpx.AsyncClient(**async_httpx_client_config)
@@ -342,6 +363,7 @@ class Client:
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
+        self._retry_config = retry_config or _get_default_retry_config()
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -403,35 +425,55 @@ class Client:
             }
         return request_kwargs
 
+    def _sync_retrying(self, **kwargs: Any) -> Retrying:
+        return Retrying(**self._retry_config, **kwargs)
+
+    def _async_retrying(self, **kwargs: Any) -> AsyncRetrying:
+        return AsyncRetrying(**self._retry_config, **kwargs)
+
     def request_with_retries(
         self,
         request_method: str,
         url: str,
-        request_kwargs: dict,
+        **request_kwargs: Any,
     ) -> httpx.Response:
         """Send a request with retries."""
-        with _request_error_handler(request_method, url) as handler_state:
-            request_kwargs = self._filter_params(request_kwargs)
-            response = self._client.request(request_method, url, **request_kwargs)
-            handler_state["response"] = response
-            ls_utils.raise_for_status_with_text(response)
-            return response
+        request_kwargs = self._filter_params(request_kwargs)
+        request_kwargs["headers"] = {
+            **self._headers,
+            **request_kwargs.get("headers", {}),
+        }
+        for attempt in self._sync_retrying(reraise=True):
+            with attempt:
+                with _request_error_handler(request_method, url) as handler_state:
+                    response = self._client.request(
+                        request_method, url, **request_kwargs
+                    )
+                    handler_state["response"] = response
+                    ls_utils.raise_for_status_with_text(response)
+        return response
 
     async def arequest_with_retries(
         self,
         request_method: str,
         url: str,
-        request_kwargs: dict,
+        **request_kwargs: Any,
     ) -> httpx.Response:
         """Send an async request with retries."""
-        with _request_error_handler(request_method, url) as handler_state:
-            request_kwargs = self._filter_params(request_kwargs)
-            response = await self._aclient.request(
-                request_method, url, **request_kwargs
-            )
-            handler_state["response"] = response
-            ls_utils.raise_for_status_with_text(response)
-            return response
+        request_kwargs = self._filter_params(request_kwargs)
+        request_kwargs["headers"] = {
+            **self._headers,
+            **request_kwargs.get("headers", {}),
+        }
+        async for attempt in self._async_retrying(reraise=True):
+            with attempt:
+                with _request_error_handler(request_method, url) as handler_state:
+                    response = await self._aclient.request(
+                        request_method, url, **request_kwargs
+                    )
+                    handler_state["response"] = response
+                    ls_utils.raise_for_status_with_text(response)
+        return response
 
     def _get_with_retries(
         self, path: str, params: Optional[Dict[str, Any]] = None
@@ -440,11 +482,8 @@ class Client:
         return self.request_with_retries(
             "get",
             f"{self.api_url}{path}",
-            request_kwargs={
-                "params": params,
-                "headers": self._headers,
-                "timeout": self.timeout_ms / 1000,
-            },
+            params=params,
+            timeout=self.timeout_ms / 1000,
         )
 
     async def _aget_with_retries(
@@ -454,11 +493,8 @@ class Client:
         return await self.arequest_with_retries(
             "get",
             f"{self.api_url}{path}",
-            request_kwargs={
-                "params": params,
-                "headers": self._headers,
-                "timeout": self.timeout_ms / 1000,
-            },
+            params=params,
+            timeout=self.timeout_ms / 1000,
         )
 
     def _get_paginated_list(
@@ -603,15 +639,17 @@ class Client:
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
-                response = self._client.post(
-                    self.api_url + "/datasets/upload",
+                response = self.request_with_retries(
+                    "POST",
+                    f"{self.api_url}/datasets/upload",
                     headers=self._headers,
                     data=data,
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
-            response = self._client.post(
-                self.api_url + "/datasets/upload",
+            response = self.request_with_retries(
+                "POST",
+                f"{self.api_url}/datasets/upload",
                 headers=self._headers,
                 data=data,
                 files={"file": csv_file},
@@ -709,7 +747,7 @@ class Client:
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs",
-            request_kwargs=request_kwargs,
+            **request_kwargs,
         )
 
     async def acreate_run(
@@ -753,7 +791,7 @@ class Client:
         await self.arequest_with_retries(
             "post",
             f"{self.api_url}/runs",
-            request_kwargs=request_kwargs,
+            **request_kwargs,
         )
 
     def _prepare_update_run(
@@ -824,7 +862,7 @@ class Client:
         self.request_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
-            request_kwargs=request_kwargs,
+            **request_kwargs,
         )
 
     async def aupdate_run(
@@ -867,7 +905,7 @@ class Client:
         await self.arequest_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
-            request_kwargs=request_kwargs,
+            **request_kwargs,
         )
 
     @staticmethod
@@ -1260,9 +1298,8 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
-        response = self._client.get(
-            f"{self.api_url}/runs/{run_id}/share",
-            headers=self._headers,
+        response = self._get_with_retries(
+            f"/runs/{run_id}/share",
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -1271,9 +1308,8 @@ class Client:
         return f"{self._host_url}/public/{result['share_token']}/r"
 
     async def aread_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
-        response = await self._aclient.get(
-            f"{self.api_url}/runs/{run_id}/share",
-            headers=self._headers,
+        response = await self._aget_with_retries(
+            f"/runs/{run_id}/share",
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -1323,8 +1359,8 @@ class Client:
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
         return {
+            "request_method": "post",
             "url": endpoint,
-            "headers": self._headers,
             "content": json.dumps(body, default=_serialize_json),
         }
 
@@ -1360,7 +1396,7 @@ class Client:
             upsert=upsert,
             reference_dataset_id=reference_dataset_id,
         )
-        response = self._client.post(
+        response = self.request_with_retries(
             **request_kwargs,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1398,7 +1434,7 @@ class Client:
             upsert=upsert,
             reference_dataset_id=reference_dataset_id,
         )
-        response = await self._aclient.post(
+        response = await self.arequest_with_retries(
             **request_kwargs,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1705,15 +1741,51 @@ class Client:
         Dataset
             The created dataset.
         """
-        dataset = ls_schemas.DatasetCreate(
-            name=dataset_name,
-            description=description,
-            data_type=data_type,
+        dataset = {
+            "name": dataset_name,
+            "description": description,
+            "data_type": data_type,
+        }
+        response = self.request_with_retries(
+            "POST",
+            f"{self.api_url}/datasets",
+            content=json.dumps(dataset, default=_serialize_json),
         )
-        response = self._client.post(
-            self.api_url + "/datasets",
-            headers=self._headers,
-            content=dataset.json(),
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
+
+    async def acreate_dataset(
+        self,
+        dataset_name: str,
+        *,
+        description: Optional[str] = None,
+        data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
+    ) -> ls_schemas.Dataset:
+        """Create a dataset in the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset.
+        description : str or None, default=None
+            The description of the dataset.
+        data_type : DataType or None, default=DataType.kv
+            The data type of the dataset.
+
+        Returns
+        -------
+        Dataset
+            The created dataset.
+        """
+        dataset = {
+            "name": dataset_name,
+            "description": description,
+            "data_type": data_type,
+        }
+        response = await self.arequest_with_retries(
+            "POST",
+            f"{self.api_url}/datasets",
+            content=json.dumps(dataset, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
@@ -2114,9 +2186,9 @@ class Client:
             outputs=outputs,
             example_id=example_id,
         )
-        response = self._client.post(
+        response = self.request_with_retries(
+            "POST",
             f"{self.api_url}/examples",
-            headers=self._headers,
             content=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2169,9 +2241,9 @@ class Client:
             outputs=outputs,
             example_id=example_id,
         )
-        response = await self._aclient.post(
+        response = await self.arequest_with_retries(
+            "POST",
             f"{self.api_url}/examples",
-            headers=self._headers,
             content=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2193,6 +2265,37 @@ class Client:
         """
         response = self._get_with_retries(f"/examples/{example_id}")
         return ls_schemas.Example(**response.json())
+
+    async def aread_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
+        """Read an example from the LangSmith API.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to read.
+
+        Returns
+        -------
+        Example
+            The example.
+        """
+        response = await self._aget_with_retries(f"/examples/{example_id}")
+        return ls_schemas.Example(**response.json())
+
+    def _prepare_list_examples(
+        self,
+        dataset_id: ID_TYPE,
+        example_ids: Optional[List[ID_TYPE]] = None,
+    ) -> dict:
+        params: Dict[str, Any] = {}
+        if dataset_id is not None:
+            params["dataset"] = dataset_id
+
+        else:
+            pass
+        if example_ids is not None:
+            params["id"] = example_ids
+        return params
 
     def list_examples(
         self,
@@ -2216,24 +2319,56 @@ class Client:
         Example
             The examples.
         """
-        params: Dict[str, Any] = {}
-        if dataset_id is not None:
-            params["dataset"] = dataset_id
-        elif dataset_name is not None:
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide either dataset_id or dataset_name")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-            params["dataset"] = dataset_id
-        else:
-            pass
-        if example_ids is not None:
-            params["id"] = example_ids
+        params = self._prepare_list_examples(
+            dataset_id=dataset_id,
+            example_ids=example_ids,
+        )
         yield from (
             ls_schemas.Example(**example)
             for example in self._get_paginated_list("/examples", params=params)
         )
 
+    async def alist_examples(
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        example_ids: Optional[List[ID_TYPE]] = None,
+    ) -> Iterator[ls_schemas.Example]:
+        """Retrieve the example rows of the specified dataset.
+
+        Parameters
+        ----------
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to filter by.
+        dataset_name : str or None, default=None
+            The name of the dataset to filter by.
+        example_ids : List[UUID] or None, default=None
+            The IDs of the examples to filter by.
+
+        Yields
+        ------
+        Example
+            The examples.
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide either dataset_id or dataset_name")
+            dataset_id = (await self.aread_dataset(dataset_name=dataset_name)).id
+        params = self._prepare_list_examples(
+            dataset_id=dataset_id,
+            example_ids=example_ids,
+        )
+        all_examples = self._aget_paginated_list("/examples", **params)
+        async for example in all_examples:
+            yield ls_schemas.Example(**example)
+
     def update_example(
         self,
-        example_id: str,
+        example_id: ID_TYPE,
         *,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
@@ -2257,15 +2392,54 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
-        example = ls_schemas.ExampleUpdate(
-            inputs=inputs,
-            outputs=outputs,
-            dataset_id=dataset_id,
-        )
-        response = self._client.patch(
+        example = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
+        response = self.request_with_retries(
+            "patch",
             f"{self.api_url}/examples/{example_id}",
-            headers=self._headers,
-            content=example.json(exclude_none=True),
+            content=json.dumps(example, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    async def aupdate_example(
+        self,
+        example_id: ID_TYPE,
+        *,
+        inputs: Optional[Dict[str, Any]] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+    ) -> Dict[str, Any]:
+        """Update a specific example.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to update.
+        inputs : Dict[str, Any] or None, default=None
+            The input values to update.
+        outputs : Mapping[str, Any] or None, default=None
+            The output values to update.
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to update.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The updated example.
+        """
+        example = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
+        response = await self._arequest_with_retries(
+            "patch",
+            f"{self.api_url}/examples/{example_id}",
+            content=json.dumps(example, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -2279,6 +2453,20 @@ class Client:
             The ID of the example to delete.
         """
         response = self._client.delete(
+            f"{self.api_url}/examples/{example_id}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def adelete_example(self, example_id: ID_TYPE) -> None:
+        """Delete an example by ID.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to delete.
+        """
+        response = await self._aclient.delete(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
         )
@@ -2561,8 +2749,9 @@ class Client:
             source_run_id=source_run_id,
             feedback_id=feedback_id,
         )
-        response = self._client.post(
-            self.api_url + "/feedback",
+        response = self.request_with_retries(
+            "POST",
+            f"{self.api_url}/feedback",
             **feedback_args["post_args"],
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2623,8 +2812,9 @@ class Client:
             source_run_id=source_run_id,
             feedback_id=feedback_id,
         )
-        response = await self._aclient.post(
-            self.api_url + "/feedback",
+        response = await self.arequest_with_retries(
+            "POST",
+            f"{self.api_url}/feedback",
             **feedback_args["post_args"],
         )
         ls_utils.raise_for_status_with_text(response)
