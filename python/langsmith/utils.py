@@ -17,6 +17,10 @@ class LangSmithAPIError(Exception):
     """An error occurred while communicating with the LangSmith API."""
 
 
+class LangSmithRetryableError(BaseException):
+    """An error from the server that we can retry on."""
+
+
 class LangSmithUserError(Exception):
     """An error occurred while communicating with the LangSmith API."""
 
