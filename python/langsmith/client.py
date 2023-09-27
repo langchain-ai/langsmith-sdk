@@ -2337,7 +2337,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         example_ids: Optional[List[ID_TYPE]] = None,
-    ) -> Iterator[ls_schemas.Example]:
+    ) -> AsyncGenerator[ls_schemas.Example, None]:
         """Retrieve the example rows of the specified dataset.
 
         Parameters
@@ -2436,7 +2436,7 @@ class Client:
             "outputs": outputs,
             "dataset_id": dataset_id,
         }
-        response = await self._arequest_with_retries(
+        response = await self.arequest_with_retries(
             "patch",
             f"{self.api_url}/examples/{example_id}",
             content=json.dumps(example, default=_serialize_json),
