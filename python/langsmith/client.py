@@ -1718,7 +1718,25 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
 
-    @ls_utils.xor_args(("dataset_name", "dataset_id"))
+    def _prepare_read_dataset(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+    ):
+        path = "/datasets"
+        params: Dict[str, Any] = {"limit": 1}
+        if dataset_id is not None:
+            path += f"/{dataset_id}"
+        elif dataset_name is not None:
+            params["name"] = dataset_name
+        else:
+            raise ValueError("Must provide dataset_name or dataset_id")
+        return {
+            "path": path,
+            "params": params,
+        }
+
     def read_dataset(
         self,
         *,
@@ -1739,18 +1757,43 @@ class Client:
         Dataset
             The dataset.
         """
-        path = "/datasets"
-        params: Dict[str, Any] = {"limit": 1}
-        if dataset_id is not None:
-            path += f"/{dataset_id}"
-        elif dataset_name is not None:
-            params["name"] = dataset_name
-        else:
-            raise ValueError("Must provide dataset_name or dataset_id")
-        response = self._get_with_retries(
-            path,
-            params=params,
+        data = self._prepare_read_dataset(
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
         )
+        response = self._get_with_retries(**data)
+        result = response.json()
+        if isinstance(result, list):
+            if len(result) == 0:
+                raise ls_utils.LangSmithError(f"Dataset {dataset_name} not found")
+            return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
+        return ls_schemas.Dataset(**result, _host_url=self._host_url)
+
+    async def aread_dataset(
+        self,
+        *,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.Dataset:
+        """Read a dataset from the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_name : str or None, default=None
+            The name of the dataset to read.
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to read.
+
+        Returns
+        -------
+        Dataset
+            The dataset.
+        """
+        data = self._prepare_read_dataset(
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
+        )
+        response = await self._aget_with_retries(**data)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
@@ -2006,7 +2049,25 @@ class Client:
                     dataset_id=dataset_id,
                 )
 
-    @ls_utils.xor_args(("dataset_id", "dataset_name"))
+    def _prepare_create_example(
+        self,
+        inputs: Mapping[str, Any],
+        dataset_id: ID_TYPE,
+        created_at: Optional[datetime.datetime] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        example_id: Optional[ID_TYPE] = None,
+    ) -> dict:
+        data = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
+        if created_at:
+            data["created_at"] = created_at.isoformat()
+        if example_id:
+            data["id"] = example_id
+        return data
+
     def create_example(
         self,
         inputs: Mapping[str, Any],
@@ -2046,18 +2107,72 @@ class Client:
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        data = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "dataset_id": dataset_id,
-        }
-        if created_at:
-            data["created_at"] = created_at.isoformat()
-        if example_id:
-            data["id"] = example_id
-        example = ls_schemas.ExampleCreate(**data)
+        data = self._prepare_create_example(
+            inputs,
+            dataset_id,
+            created_at=created_at,
+            outputs=outputs,
+            example_id=example_id,
+        )
         response = self._client.post(
-            f"{self.api_url}/examples", headers=self._headers, content=example.json()
+            f"{self.api_url}/examples",
+            headers=self._headers,
+            content=json.dumps(data, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        result = response.json()
+        return ls_schemas.Example(**result)
+
+    async def acreate_example(
+        self,
+        inputs: Mapping[str, Any],
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        example_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.Example:
+        """Create a dataset example in the LangSmith API.
+
+        Examples are rows in a dataset, containing the inputs
+        and expected outputs (or other reference information)
+        for a model or chain.
+
+        Parameters
+        ----------
+        inputs : Mapping[str, Any]
+            The input values for the example.
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to create the example in.
+        dataset_name : str or None, default=None
+            The name of the dataset to create the example in.
+        created_at : datetime or None, default=None
+            The creation timestamp of the example.
+        outputs : Mapping[str, Any] or None, default=None
+            The output values for the example.
+        exemple_id : UUID or None, default=None
+            The ID of the example to create. If not provided, a new
+            example will be created.
+
+        Returns
+        -------
+        Example
+            The created example.
+        """
+        if dataset_id is None:
+            dataset_id = (await self.aread_dataset(dataset_name=dataset_name)).id
+
+        data = self._prepare_create_example(
+            inputs,
+            dataset_id,
+            created_at=created_at,
+            outputs=outputs,
+            example_id=example_id,
+        )
+        response = await self._aclient.post(
+            f"{self.api_url}/examples",
+            headers=self._headers,
+            content=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -2572,7 +2687,6 @@ class Client:
         )
         response = self._client.patch(**feedback_update)
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Feedback(**response.json())
 
     async def aupdate_feedback(
         self,
@@ -2582,7 +2696,7 @@ class Client:
         value: Union[float, int, bool, str, dict, None] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
-    ) -> ls_schemas.Feedback:
+    ) -> None:
         """Update a feedback in the LangSmith API.
 
         Parameters
