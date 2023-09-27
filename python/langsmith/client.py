@@ -2547,7 +2547,7 @@ class Client:
         value: Union[float, int, bool, str, dict, None] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
-    ) -> ls_schemas.Feedback:
+    ) -> None:
         """Update a feedback in the LangSmith API.
 
         Parameters
@@ -2607,7 +2607,6 @@ class Client:
         )
         response = await self._aclient.patch(**feedback_update)
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Feedback(**response.json())
 
     def read_feedback(self, feedback_id: ID_TYPE) -> ls_schemas.Feedback:
         """Read a feedback from the LangSmith API.
