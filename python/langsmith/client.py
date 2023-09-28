@@ -3187,7 +3187,9 @@ class Client:
             )
         """  # noqa: E501
         try:
-            from langchain.smith import arun_on_dataset as _arun_on_dataset
+            from langchain.smith import (
+                arun_on_dataset as _arun_on_dataset,  # type: ignore[import]
+            )
         except ImportError:
             raise ImportError(
                 "The client.arun_on_dataset function requires the langchain"
@@ -3322,7 +3324,9 @@ class Client:
             )
         """  # noqa: E501
         try:
-            from langchain.smith import run_on_dataset as _run_on_dataset
+            from langchain.smith import (
+                run_on_dataset as _run_on_dataset,  # type: ignore[import]
+            )
         except ImportError:
             raise ImportError(
                 "The client.run_on_dataset function requires the langchain"
