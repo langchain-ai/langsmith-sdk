@@ -1,5 +1,6 @@
 """Test the LangSmith client."""
 import asyncio
+import gc
 import os
 import uuid
 from datetime import datetime
@@ -81,8 +82,8 @@ def test_upload_csv(mock_client_cls: mock.Mock) -> None:
         "created_at": _CREATED_AT,
         "examples": [example_1, example_2],
     }
-    mock__client = mock.Mock()
-    mock__client.post.return_value = mock_response
+    mock__client = mock.Mock(name="_mock_client")
+    mock__client.request.return_value = mock_response
     mock_client_cls.return_value = mock__client
 
     client = Client(
@@ -208,23 +209,20 @@ def test_create_feedback_string_source_type(source_type: str):
         )
 
 
-async def main():
-    async with httpx.AsyncClient() as client:
-        close_async_client(client)
-        assert client.is_closed
+@pytest.mark.asyncio
+async def test_close_async_client_in_event_loop() -> None:
+    gc.collect()
+    client = httpx.AsyncClient()
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, close_async_client, client)
+    assert client.is_closed
+    await client.aclose()
 
 
-# asyncio.run(main())
-# @pytest.mark.asyncio
-# async def test_close_async_client() -> None:
-#     async with httpx.AsyncClient() as client:
-#         close_async_client(client)
-#         assert client.is_closed
-
-
-# @pytest.mark.asyncio
-# async def test_close_async_client_in_event_loop() -> None:
-#     async with httpx.AsyncClient() as client:
-#         loop = asyncio.get_event_loop()
-#         await loop.run_in_executor(None, close_async_client, client)
-#         assert client.is_closed
+@pytest.mark.asyncio
+async def test_close_async_client() -> None:
+    gc.collect()
+    client = httpx.AsyncClient()
+    close_async_client(client)
+    assert client.is_closed
+    await client.aclose()
