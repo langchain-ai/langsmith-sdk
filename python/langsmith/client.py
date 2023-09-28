@@ -928,6 +928,21 @@ class Client:
         link = self.read_run_shared_link(run_id)
         return link is not None
 
+    def list_shared_runs(
+        self, share_token: str, run_ids: Optional[List[str]] = None
+    ) -> List[ls_schemas.Run]:
+        """Get shared runs."""
+        params = {"id": run_ids, "share_token": share_token}
+        response = self.session.get(
+            f"{self.api_url}/public/{share_token}/runs",
+            headers=self._headers,
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return [
+            ls_schemas.Run(**run, _host_url=self._host_url) for run in response.json()
+        ]
+
     def create_project(
         self,
         project_name: str,
