@@ -153,7 +153,7 @@ def close_async_client(client: httpx.AsyncClient) -> None:
         return
     try:
         with concurrent.futures.ThreadPoolExecutor(1) as executor:
-            executor.submit(_close_client_in_new_thread, client).result(timeout=10)
+            executor.submit(lambda: asyncio.run(client.aclose())).result(timeout=10)
     except concurrent.futures.TimeoutError:
         logger.error("Timeout while trying to close async client")
     except RuntimeError as e:
@@ -161,17 +161,6 @@ def close_async_client(client: httpx.AsyncClient) -> None:
             logger.debug("Skipping client cleanup during interpreter shutdown")
         else:
             raise
-
-
-def _close_client_in_new_thread(client: httpx.AsyncClient) -> None:
-    new_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(new_loop)
-    try:
-        new_loop.run_until_complete(client.aclose())
-    except Exception as e:
-        logger.error(f"Failed to close async client: {e}")
-    finally:
-        new_loop.close()
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
@@ -1919,7 +1908,7 @@ class Client:
             dataset_name=dataset_name,
             dataset_name_contains=dataset_name_contains,
         )
-        res = await self._aget_paginated_list("/datasets", params=params)
+        res = self._aget_paginated_list("/datasets", params=params)
         async for dataset in res:
             yield ls_schemas.Dataset(**dataset, _host_url=self._host_url)
 
