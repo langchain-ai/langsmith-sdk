@@ -157,10 +157,7 @@ def close_async_client(client: httpx.AsyncClient) -> None:
     except concurrent.futures.TimeoutError:
         logger.error("Timeout while trying to close async client")
     except RuntimeError as e:
-        if "interpreter shutdown" in str(e):
-            logger.debug("Skipping client cleanup during interpreter shutdown")
-        else:
-            raise
+        logger.warning("Error while trying to close async client: %s", e)
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
@@ -3195,8 +3192,8 @@ class Client:
             )
         """  # noqa: E501
         try:
-            from langchain.smith import (
-                arun_on_dataset as _arun_on_dataset,  # type: ignore[import]
+            from langchain.smith import (  # type: ignore[import]
+                arun_on_dataset as _arun_on_dataset,
             )
         except ImportError:
             raise ImportError(
@@ -3332,8 +3329,8 @@ class Client:
             )
         """  # noqa: E501
         try:
-            from langchain.smith import (
-                run_on_dataset as _run_on_dataset,  # type: ignore[import]
+            from langchain.smith import (  # type: ignore[import]
+                run_on_dataset as _run_on_dataset,
             )
         except ImportError:
             raise ImportError(
