@@ -82,7 +82,7 @@ class DatasetBase(BaseModel):
 
     name: str
     description: Optional[str] = None
-    data_type: Optional[DataType] = None
+    data_type: DataType = DataType.kv
 
     class Config:
         frozen = True

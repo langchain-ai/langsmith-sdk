@@ -1,11 +1,12 @@
 """The LangSmith Client."""
 from __future__ import annotations
 
+import asyncio
 import collections
 import concurrent
+import contextlib
 import datetime
 import functools
-import importlib
 import io
 import json
 import logging
@@ -16,9 +17,12 @@ import weakref
 from typing import (
     TYPE_CHECKING,
     Any,
+    AsyncGenerator,
+    AsyncIterator,
     Callable,
     DefaultDict,
     Dict,
+    Iterable,
     Iterator,
     List,
     Mapping,
@@ -30,9 +34,15 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import requests
-from requests import adapters as requests_adapters
-from urllib3.util import Retry
+import httpx
+from tenacity import (
+    AsyncRetrying,
+    Retrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
@@ -89,38 +99,6 @@ def _is_langchain_hosted(url: str) -> bool:
 ID_TYPE = Union[uuid.UUID, str]
 
 
-def _default_retry_config() -> Retry:
-    """Get the default retry configuration.
-
-    If urllib3 version is 1.26 or greater, retry on all methods.
-
-    Returns
-    -------
-    Retry
-        The default retry configuration.
-    """
-    retry_params = dict(
-        total=3,
-        status_forcelist=[502, 503, 504, 408, 425, 429],
-        backoff_factor=0.5,
-        # Sadly urllib3 1.x doesn't support backoff_jitter
-        raise_on_redirect=False,
-        raise_on_status=False,
-    )
-
-    # the `allowed_methods` keyword is not available in urllib3 < 1.26
-
-    # check to see if urllib3 version is 1.26 or greater
-    urllib3_version = importlib.metadata.version("urllib3")
-    use_allowed_methods = tuple(map(int, urllib3_version.split("."))) >= (1, 26)
-
-    if use_allowed_methods:
-        # Retry on all methods
-        retry_params["allowed_methods"] = None
-
-    return Retry(**retry_params)  # type: ignore
-
-
 def _serialize_json(obj: Any) -> str:
     """Serialize an object to JSON.
 
@@ -145,16 +123,41 @@ def _serialize_json(obj: Any) -> str:
         return str(obj)
 
 
-def close_session(session: requests.Session) -> None:
+def _get_default_retry_config() -> dict:
+    return {
+        "stop": stop_after_attempt(3),
+        "wait": wait_exponential_jitter(initial=0.5),
+        # Retry only on certain status codes ([502, 503, 504, 408, 425, 429])
+        "retry": retry_if_exception_type(ls_utils.LangSmithRetryableError),
+        "before_sleep": before_sleep_log(logger, logging.DEBUG),
+    }
+
+
+def close_client(client: httpx.Client) -> None:
     """Close the session.
 
     Parameters
     ----------
-    session : Session
-        The session to close.
+    client : client
+        The httpx client to close.
     """
-    logger.debug("Closing Client.session")
-    session.close()
+    if client.is_closed:
+        return
+    logger.debug("Closing Client._client")
+    client.close()
+
+
+def close_async_client(client: httpx.AsyncClient) -> None:
+    logger.debug("Closing Client._aclient")
+    if client.is_closed:
+        return
+    try:
+        with concurrent.futures.ThreadPoolExecutor(1) as executor:
+            executor.submit(lambda: asyncio.run(client.aclose())).result(timeout=10)
+    except concurrent.futures.TimeoutError:
+        logger.error("Timeout while trying to close async client")
+    except RuntimeError as e:
+        logger.warning("Error while trying to close async client: %s", e)
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
@@ -213,6 +216,46 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     return outputs
 
 
+@contextlib.contextmanager
+def _request_error_handler(request_method: str, url: str):
+    handler_state: dict = {}
+    retry_statuses = [502, 503, 504, 408, 425, 429]
+    try:
+        yield handler_state
+    except httpx.ConnectError as e:
+        raise ls_utils.LangSmithConnectionError(
+            f"Connection error caused failure to {request_method} {url}"
+            "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+            f" {repr(e)}"
+        ) from e
+    except httpx.HTTPError as e:
+        status_code = getattr(handler_state.get("response"), "status_code", None)
+        if status_code in retry_statuses:
+            raise ls_utils.LangSmithRetryableError(
+                f"Retryable error ({status_code}) when trying to"
+                f" {request_method} {url} in"
+                f" LangSmith API. {repr(e)}"
+            )
+        elif status_code == 500:
+            raise ls_utils.LangSmithAPIError(
+                f"Server error caused failure to {request_method} {url} in"
+                f" LangSmith API. {repr(e)}"
+            )
+        else:
+            raise ls_utils.LangSmithUserError(
+                f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
+            )
+
+    except ValueError as e:
+        args = list(e.args)
+        msg = args[1] if len(args) > 1 else ""
+        msg = msg.replace("session", "session (project)")
+        emsg = "\n".join([args[0]] + [msg] + args[2:])
+        raise ls_utils.LangSmithError(
+            f"Failed to {request_method} {url} in LangSmith API. {emsg}"
+        ) from e
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -220,12 +263,13 @@ class Client:
         "__weakref__",
         "api_url",
         "api_key",
-        "retry_config",
         "timeout_ms",
-        "session",
+        "_client",
+        "_aclient",
         "_get_data_type_cached",
         "_web_url",
         "_tenant_id",
+        "_retry_config",
     ]
 
     def __init__(
@@ -233,9 +277,11 @@ class Client:
         api_url: Optional[str] = None,
         *,
         api_key: Optional[str] = None,
-        retry_config: Optional[Retry] = None,
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
+        retry_config: Optional[dict] = None,
+        httpx_client_config: Optional[dict] = None,
+        async_httpx_client_config: Optional[dict] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -247,13 +293,17 @@ class Client:
         api_key : str or None, default=None
             API key for the LangSmith API. Defaults to the LANGCHAIN_API_KEY
             environment variable.
-        retry_config : Retry or None, default=None
-            Retry configuration for the HTTPAdapter.
         timeout_ms : int or None, default=None
             Timeout in milliseconds for the HTTPAdapter.
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
+        retry_config : dict or None, default=None
+            Configuration for the tenacity retries.
+        httpx_client_config : dict or None, default=None
+            Additional configuration for the httpx client.
+        async_httpx_client_config : dict or None, default=None
+            Additional configuration for the async httpx client.
 
         Raises
         ------
@@ -263,21 +313,21 @@ class Client:
         self.api_key = _get_api_key(api_key)
         self.api_url = _get_api_url(api_url, self.api_key)
         _validate_api_key_if_hosted(self.api_url, self.api_key)
-        self.retry_config = retry_config or _default_retry_config()
-        self.timeout_ms = timeout_ms or 7000
+        httpx_client_config
+        self.timeout_ms = timeout_ms or 7_000
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
-        # Create a session and register a finalizer to close it
-        self.session = requests.Session()
-        weakref.finalize(self, close_session, self.session)
-
-        # Mount the HTTPAdapter with the retry configuration
-        adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
+        # Create a sync + async client and register a finalizer to close
+        httpx_client_config = httpx_client_config or {}
+        async_httpx_client_config = async_httpx_client_config or {}
+        self._client = httpx.Client(**httpx_client_config)
+        weakref.finalize(self, close_client, self._client)
+        self._aclient = httpx.AsyncClient(**async_httpx_client_config)
+        weakref.finalize(self, close_async_client, self._aclient)
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
+        self._retry_config = retry_config or _get_default_retry_config()
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -327,125 +377,93 @@ class Client:
             headers["x-api-key"] = self.api_key
         return headers
 
+    @staticmethod
+    def _filter_params(request_kwargs: dict) -> dict:
+        if "params" in request_kwargs:
+            params = request_kwargs["params"]
+            if params is not None:
+                params = {k: v for k, v in params.items() if v is not None}
+            request_kwargs = {
+                **request_kwargs,
+                "params": params,
+            }
+        return request_kwargs
+
+    def _sync_retrying(self, **kwargs: Any) -> Retrying:
+        return Retrying(**self._retry_config, **kwargs)
+
+    def _async_retrying(self, **kwargs: Any) -> AsyncRetrying:
+        return AsyncRetrying(**self._retry_config, **kwargs)
+
     def request_with_retries(
         self,
         request_method: str,
         url: str,
-        request_kwargs: Mapping,
-    ) -> requests.Response:
-        """Send a request with retries.
+        **request_kwargs: Any,
+    ) -> httpx.Response:
+        """Send a request with retries."""
+        request_kwargs = self._filter_params(request_kwargs)
+        request_kwargs["headers"] = {
+            **self._headers,
+            **request_kwargs.get("headers", {}),
+        }
+        for attempt in self._sync_retrying(reraise=True):
+            with attempt:
+                with _request_error_handler(request_method, url) as handler_state:
+                    response = self._client.request(
+                        request_method, url, **request_kwargs
+                    )
+                    handler_state["response"] = response
+                    ls_utils.raise_for_status_with_text(response)
+        return response
 
-        Parameters
-        ----------
-        request_method : str
-            The HTTP request method.
-        url : str
-            The URL to send the request to.
-        request_kwargs : Mapping
-            Additional request parameters.
-
-        Returns
-        -------
-        Response
-            The response object.
-
-        Raises
-        ------
-        LangSmithAPIError
-            If a server error occurs.
-        LangSmithUserError
-            If the request fails.
-        LangSmithConnectionError
-            If a connection error occurs.
-        LangSmithError
-            If the request fails.
-        """
-        try:
-            response = self.session.request(
-                request_method, url, stream=False, **request_kwargs
-            )
-            ls_utils.raise_for_status_with_text(response)
-            return response
-        except requests.HTTPError as e:
-            if response is not None and response.status_code == 500:
-                raise ls_utils.LangSmithAPIError(
-                    f"Server error caused failure to {request_method} {url} in"
-                    f" LangSmith API. {e}"
-                )
-            else:
-                raise ls_utils.LangSmithUserError(
-                    f"Failed to {request_method} {url} in LangSmith API. {e}"
-                )
-        except requests.ConnectionError as e:
-            raise ls_utils.LangSmithConnectionError(
-                f"Connection error caused failure to {request_method} {url}"
-                "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-                f" {e}"
-            ) from e
-        except ValueError as e:
-            args = list(e.args)
-            msg = args[1] if len(args) > 1 else ""
-            msg = msg.replace("session", "session (project)")
-            emsg = "\n".join([args[0]] + [msg] + args[2:])
-            raise ls_utils.LangSmithError(
-                f"Failed to {request_method} {url} in LangSmith API. {emsg}"
-            ) from e
+    async def arequest_with_retries(
+        self,
+        request_method: str,
+        url: str,
+        **request_kwargs: Any,
+    ) -> httpx.Response:
+        """Send an async request with retries."""
+        request_kwargs = self._filter_params(request_kwargs)
+        request_kwargs["headers"] = {
+            **self._headers,
+            **request_kwargs.get("headers", {}),
+        }
+        async for attempt in self._async_retrying(reraise=True):
+            with attempt:
+                with _request_error_handler(request_method, url) as handler_state:
+                    response = await self._aclient.request(
+                        request_method, url, **request_kwargs
+                    )
+                    handler_state["response"] = response
+                    ls_utils.raise_for_status_with_text(response)
+        return response
 
     def _get_with_retries(
         self, path: str, params: Optional[Dict[str, Any]] = None
-    ) -> requests.Response:
-        """Send a GET request with retries.
-
-        Parameters
-        ----------
-        path : str
-            The path of the request URL.
-        params : Dict[str, Any] or None, default=None
-            The query parameters.
-
-        Returns
-        -------
-        Response
-            The response object.
-
-        Raises
-        ------
-        LangSmithAPIError
-            If a server error occurs.
-        LangSmithUserError
-            If the request fails.
-        LangSmithConnectionError
-            If a connection error occurs.
-        LangSmithError
-            If the request fails.
-        """
+    ) -> httpx.Response:
+        """Send a GET request with retries."""
         return self.request_with_retries(
             "get",
             f"{self.api_url}{path}",
-            request_kwargs={
-                "params": params,
-                "headers": self._headers,
-                "timeout": self.timeout_ms / 1000,
-            },
+            params=params,
+            timeout=self.timeout_ms / 1000,
+        )
+
+    async def _aget_with_retries(
+        self, path: str, params: Optional[Dict[str, Any]] = None
+    ) -> httpx.Response:
+        """Send a GET request with retries."""
+        return await self.arequest_with_retries(
+            "get",
+            f"{self.api_url}{path}",
+            params=params,
+            timeout=self.timeout_ms / 1000,
         )
 
     def _get_paginated_list(
         self, path: str, *, params: Optional[dict] = None
     ) -> Iterator[dict]:
-        """Get a paginated list of items.
-
-        Parameters
-        ----------
-        path : str
-            The path of the request URL.
-        params : dict or None, default=None
-            The query parameters.
-
-        Yields
-        ------
-        dict
-            The items in the paginated list.
-        """
         params_ = params.copy() if params else {}
         offset = params_.get("offset", 0)
         params_["limit"] = params_.get("limit", 100)
@@ -457,6 +475,27 @@ class Client:
             if not items:
                 break
             yield from items
+            if len(items) < params_["limit"]:
+                # offset and limit isn't respected if we're
+                # querying for specific values
+                break
+            offset += len(items)
+
+    async def _aget_paginated_list(
+        self, path: str, *, params: Optional[dict] = None
+    ) -> AsyncIterator[dict]:
+        params_ = params.copy() if params else {}
+        offset = params_.get("offset", 0)
+        params_["limit"] = params_.get("limit", 100)
+        while True:
+            params_["offset"] = offset
+            response = await self._aget_with_retries(path, params=params_)
+            items = response.json()
+
+            if not items:
+                break
+            for item in items:
+                yield item
             if len(items) < params_["limit"]:
                 # offset and limit isn't respected if we're
                 # querying for specific values
@@ -564,15 +603,17 @@ class Client:
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
-                response = self.session.post(
-                    self.api_url + "/datasets/upload",
+                response = self.request_with_retries(
+                    "POST",
+                    f"{self.api_url}/datasets/upload",
                     headers=self._headers,
                     data=data,
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
-            response = self.session.post(
-                self.api_url + "/datasets/upload",
+            response = self.request_with_retries(
+                "POST",
+                f"{self.api_url}/datasets/upload",
                 headers=self._headers,
                 data=data,
                 files={"file": csv_file},
@@ -587,6 +628,47 @@ class Client:
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
         return ls_schemas.Dataset(**result, _host_url=self._host_url)
+
+    def _prepare_run_create(
+        self,
+        name: str,
+        inputs: Dict[str, Any],
+        run_type: str,
+        *,
+        execution_order: Optional[int] = None,
+        **kwargs: Any,
+    ) -> dict:
+        project_name = kwargs.pop(
+            "project_name",
+            kwargs.pop(
+                "session_name",
+                os.environ.get(
+                    # TODO: Deprecate LANGCHAIN_SESSION
+                    "LANGCHAIN_PROJECT",
+                    os.environ.get("LANGCHAIN_SESSION", "default"),
+                ),
+            ),
+        )
+        run_create = {
+            **kwargs,
+            "session_name": project_name,
+            "name": name,
+            "inputs": _hide_inputs(inputs),
+            "run_type": run_type,
+            "execution_order": execution_order if execution_order is not None else 1,
+        }
+        if "outputs" in run_create:
+            run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        run_extra = cast(dict, run_create.setdefault("extra", {}))
+        runtime = run_extra.setdefault("runtime", {})
+        runtime_env = ls_env.get_runtime_and_metrics()
+        run_extra["runtime"] = {**runtime_env, **runtime}
+        headers = {**self._headers, "Accept": "application/json"}
+        return {
+            "content": json.dumps(run_create, default=_serialize_json),
+            "headers": headers,
+            "timeout": self.timeout_ms / 1000,
+        }
 
     def create_run(
         self,
@@ -619,41 +701,90 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
-        project_name = kwargs.pop(
-            "project_name",
-            kwargs.pop(
-                "session_name",
-                os.environ.get(
-                    # TODO: Deprecate LANGCHAIN_SESSION
-                    "LANGCHAIN_PROJECT",
-                    os.environ.get("LANGCHAIN_SESSION", "default"),
-                ),
-            ),
-        )
-        run_create = {
+        request_kwargs = self._prepare_run_create(
+            name,
+            inputs,
+            run_type,
+            execution_order=execution_order,
             **kwargs,
-            "session_name": project_name,
-            "name": name,
-            "inputs": _hide_inputs(inputs),
-            "run_type": run_type,
-            "execution_order": execution_order if execution_order is not None else 1,
-        }
-        if "outputs" in run_create:
-            run_create["outputs"] = _hide_outputs(run_create["outputs"])
-        run_extra = cast(dict, run_create.setdefault("extra", {}))
-        runtime = run_extra.setdefault("runtime", {})
-        runtime_env = ls_env.get_runtime_and_metrics()
-        run_extra["runtime"] = {**runtime_env, **runtime}
-        headers = {**self._headers, "Accept": "application/json"}
+        )
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs",
-            request_kwargs={
-                "data": json.dumps(run_create, default=_serialize_json),
-                "headers": headers,
-                "timeout": self.timeout_ms / 1000,
-            },
+            **request_kwargs,
         )
+
+    async def acreate_run(
+        self,
+        name: str,
+        inputs: Dict[str, Any],
+        run_type: str,
+        *,
+        execution_order: Optional[int] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Persist a run to the LangSmith API.
+
+        Parameters
+        ----------
+        name : str
+            The name of the run.
+        inputs : Dict[str, Any]
+            The input values for the run.
+        run_type : str
+            The type of the run, such as tool, chain, llm, retriever,
+            embedding, prompt, or parser.
+        execution_order : int or None, default=None
+            The position of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Raises
+        ------
+        LangSmithUserError
+            If the API key is not provided when using the hosted service.
+        """
+        request_kwargs = self._prepare_run_create(
+            name,
+            inputs,
+            run_type,
+            execution_order=execution_order,
+            **kwargs,
+        )
+        await self.arequest_with_retries(
+            "post",
+            f"{self.api_url}/runs",
+            **request_kwargs,
+        )
+
+    def _prepare_update_run(
+        self,
+        *,
+        end_time: Optional[datetime.datetime] = None,
+        error: Optional[str] = None,
+        inputs: Optional[Dict] = None,
+        outputs: Optional[Dict] = None,
+        events: Optional[Sequence[dict]] = None,
+        **kwargs: Any,
+    ) -> dict:
+        headers = {**self._headers, "Accept": "application/json"}
+        data: Dict[str, Any] = {}
+        if end_time is not None:
+            data["end_time"] = end_time.isoformat()
+        if error is not None:
+            data["error"] = error
+        if inputs is not None:
+            data["inputs"] = _hide_inputs(inputs)
+        if outputs is not None:
+            data["outputs"] = _hide_outputs(outputs)
+        if events is not None:
+            data["events"] = events
+        return {
+            "content": json.dumps(data, default=_serialize_json),
+            "headers": headers,
+            "timeout": self.timeout_ms / 1000,
+        }
 
     def update_run(
         self,
@@ -685,47 +816,66 @@ class Client:
         **kwargs : Any
             Kwargs are ignored.
         """
-        headers = {**self._headers, "Accept": "application/json"}
-        data: Dict[str, Any] = {}
-        if end_time is not None:
-            data["end_time"] = end_time.isoformat()
-        if error is not None:
-            data["error"] = error
-        if inputs is not None:
-            data["inputs"] = _hide_inputs(inputs)
-        if outputs is not None:
-            data["outputs"] = _hide_outputs(outputs)
-        if events is not None:
-            data["events"] = events
+        request_kwargs = self._prepare_update_run(
+            end_time=end_time,
+            error=error,
+            inputs=inputs,
+            outputs=outputs,
+            events=events,
+        )
         self.request_with_retries(
             "patch",
             f"{self.api_url}/runs/{run_id}",
-            request_kwargs={
-                "data": json.dumps(data, default=_serialize_json),
-                "headers": headers,
-                "timeout": self.timeout_ms / 1000,
-            },
+            **request_kwargs,
         )
 
-    def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
-        """Load child runs for a given run.
+    async def aupdate_run(
+        self,
+        run_id: ID_TYPE,
+        *,
+        end_time: Optional[datetime.datetime] = None,
+        error: Optional[str] = None,
+        inputs: Optional[Dict] = None,
+        outputs: Optional[Dict] = None,
+        events: Optional[Sequence[dict]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Update a run in the LangSmith API.
 
         Parameters
         ----------
-        run : Run
-            The run to load child runs for.
-
-        Returns
-        -------
-        Run
-            The run with loaded child runs.
-
-        Raises
-        ------
-        LangSmithError
-            If a child run has no parent.
+        run_id : str or UUID
+            The ID of the run to update.
+        end_time : datetime or None
+            The end time of the run.
+        error : str or None, default=None
+            The error message of the run.
+        inputs : Dict or None, default=None
+            The input values for the run.
+        outputs : Dict or None, default=None
+            The output values for the run.
+        events : Sequence[dict] or None, default=None
+            The events for the run.
+        **kwargs : Any
+            Kwargs are ignored.
         """
-        child_runs = self.list_runs(id=run.child_run_ids)
+        request_kwargs = self._prepare_update_run(
+            end_time=end_time,
+            error=error,
+            inputs=inputs,
+            outputs=outputs,
+            events=events,
+        )
+        await self.arequest_with_retries(
+            "patch",
+            f"{self.api_url}/runs/{run_id}",
+            **request_kwargs,
+        )
+
+    @staticmethod
+    def _postprocess_load_child_runs(
+        run: ls_schemas.Run, child_runs: Iterable[ls_schemas.Run]
+    ):
         treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
             list
         )
@@ -743,6 +893,14 @@ class Client:
         for run_id, children in treemap.items():
             runs[run_id].child_runs = children
         return run
+
+    def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
+        child_runs = self.list_runs(id=run.child_run_ids)
+        return self._postprocess_load_child_runs(run, child_runs)
+
+    async def _aload_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
+        child_runs = [run async for run in self.alist_runs(id=run.child_run_ids)]
+        return self._postprocess_load_child_runs(run, child_runs)
 
     def read_run(
         self, run_id: ID_TYPE, load_child_runs: bool = False
@@ -766,6 +924,66 @@ class Client:
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
+
+    async def aread_run(
+        self, run_id: ID_TYPE, load_child_runs: bool = False
+    ) -> ls_schemas.Run:
+        """Read a run from the LangSmith API.
+
+        Parameters
+        ----------
+        run_id : str or UUID
+            The ID of the run to read.
+        load_child_runs : bool, default=False
+            Whether to load nested child runs.
+
+        Returns
+        -------
+        Run
+            The run.
+        """
+        response = await self._aget_with_retries(f"/runs/{run_id}")
+        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
+        if load_child_runs and run.child_run_ids:
+            run = await self._aload_child_runs(run)
+        return run
+
+    def _prepare_list_runs(
+        self,
+        project_id: Optional[ID_TYPE] = None,
+        run_type: Optional[str] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        execution_order: Optional[int] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+        error: Optional[bool] = None,
+        run_ids: Optional[List[ID_TYPE]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        query_params: Dict[str, Any] = {
+            "session": project_id,
+            "run_type": run_type,
+            **kwargs,
+        }
+        if reference_example_id is not None:
+            query_params["reference_example"] = reference_example_id
+        if query is not None:
+            query_params["query"] = query
+        if filter is not None:
+            query_params["filter"] = filter
+        if execution_order is not None:
+            query_params["execution_order"] = execution_order
+        if parent_run_id is not None:
+            query_params["parent_run"] = parent_run_id
+        if start_time is not None:
+            query_params["start_time"] = start_time.isoformat()
+        if error is not None:
+            query_params["error"] = error
+        if run_ids is not None:
+            query_params["id"] = run_ids
+        return query_params
 
     def list_runs(
         self,
@@ -823,31 +1041,97 @@ class Client:
             if project_id is not None:
                 raise ValueError("Only one of project_id or project_name may be given")
             project_id = self.read_project(project_name=project_name).id
-        query_params: Dict[str, Any] = {
-            "session": project_id,
-            "run_type": run_type,
+        query_params = self._prepare_list_runs(
+            project_id=project_id,
+            project_name=project_name,
+            run_type=run_type,
+            reference_example_id=reference_example_id,
+            query=query,
+            filter=filter,
+            execution_order=execution_order,
+            parent_run_id=parent_run_id,
+            start_time=start_time,
+            error=error,
+            run_ids=run_ids,
             **kwargs,
-        }
-        if reference_example_id is not None:
-            query_params["reference_example"] = reference_example_id
-        if query is not None:
-            query_params["query"] = query
-        if filter is not None:
-            query_params["filter"] = filter
-        if execution_order is not None:
-            query_params["execution_order"] = execution_order
-        if parent_run_id is not None:
-            query_params["parent_run"] = parent_run_id
-        if start_time is not None:
-            query_params["start_time"] = start_time.isoformat()
-        if error is not None:
-            query_params["error"] = error
-        if run_ids is not None:
-            query_params["id"] = run_ids
+        )
         yield from (
             ls_schemas.Run(**run, _host_url=self._host_url)
             for run in self._get_paginated_list("/runs", params=query_params)
         )
+
+    async def alist_runs(
+        self,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        run_type: Optional[str] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        execution_order: Optional[int] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+        error: Optional[bool] = None,
+        run_ids: Optional[List[ID_TYPE]] = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[ls_schemas.Run, None]:
+        """List runs from the LangSmith API.
+
+        Parameters
+        ----------
+        project_id : UUID or None, default=None
+            The ID of the project to filter by.
+        project_name : str or None, default=None
+            The name of the project to filter by.
+        run_type : str or None, default=None
+            The type of the runs to filter by.
+        reference_example_id : UUID or None, default=None
+            The ID of the reference example to filter by.
+        query : str or None, default=None
+            The query string to filter by.
+        filter : str or None, default=None
+            The filter string to filter by.
+        execution_order : int or None, default=None
+            The execution order to filter by. Execution order is the position
+            of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
+        parent_run_id : UUID or None, default=None
+            The ID of the parent run to filter by.
+        start_time : datetime or None, default=None
+            The start time to filter by.
+        error : bool or None, default=None
+            Whether to filter by error status.
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields
+        ------
+        Run
+            The runs.
+        """
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = (await self.aread_project(project_name=project_name)).id
+        query_params = self._prepare_list_runs(
+            project_id=project_id,
+            run_type=run_type,
+            reference_example_id=reference_example_id,
+            query=query,
+            filter=filter,
+            execution_order=execution_order,
+            parent_run_id=parent_run_id,
+            start_time=start_time,
+            error=error,
+            run_ids=run_ids,
+            **kwargs,
+        )
+        runs = self._aget_paginated_list("/runs", params=query_params)
+        async for run in runs:
+            yield ls_schemas.Run(**run, _host_url=self._host_url)
 
     def get_run_url(
         self,
@@ -889,13 +1173,54 @@ class Client:
             f"r/{run.id}?poll=true"
         )
 
+    async def aget_run_url(
+        self,
+        *,
+        run: ls_schemas.RunBase,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> str:
+        """Get the URL for a run.
+
+        Parameters
+        ----------
+        run : Run
+            The run.
+        project_name : str or None, default=None
+            The name of the project.
+        project_id : UUID or None, default=None
+            The ID of the project.
+
+        Returns
+        -------
+        str
+            The URL for the run.
+        """
+        if hasattr(run, "session_id") and run.session_id is not None:
+            session_id = run.session_id
+        elif project_id is not None:
+            session_id = project_id
+        elif project_name is not None:
+            session_id = (await self.aread_project(project_name=project_name)).id
+        else:
+            project_name = os.environ.get(
+                "LANGCHAIN_PROJECT",
+                "default",
+            )
+            session_id = (await self.aread_project(project_name=project_name)).id
+        return (
+            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id}/"
+            f"r/{run.id}?poll=true"
+        )
+
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run."""
         data = {
             "run_id": str(run_id),
             "share_token": share_id or str(uuid.uuid4()),
         }
-        response = self.session.put(
+        response = self.request_with_retries(
+            "put",
             f"{self.api_url}/runs/{run_id}/share",
             headers=self._headers,
             json=data,
@@ -904,18 +1229,52 @@ class Client:
         share_token = response.json()["share_token"]
         return f"{self._host_url}/public/{share_token}/r"
 
+    async def ashare_run(
+        self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None
+    ) -> str:
+        """Get a share link for a run."""
+        data = {
+            "run_id": str(run_id),
+            "share_token": share_id or str(uuid.uuid4()),
+        }
+        response = await self._aclient.put(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+            json=data,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        share_token = response.json()["share_token"]
+        return f"{self._host_url}/public/{share_token}/r"
+
+    async def aunshare_run(self, run_id: ID_TYPE) -> None:
+        """Delete share link for a run."""
+        response = await self._aclient.delete(
+            f"{self.api_url}/runs/{run_id}/share",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run."""
-        response = self.session.delete(
+        response = self._client.delete(
             f"{self.api_url}/runs/{run_id}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
 
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
-        response = self.session.get(
-            f"{self.api_url}/runs/{run_id}/share",
-            headers=self._headers,
+        response = self._get_with_retries(
+            f"/runs/{run_id}/share",
+        )
+        ls_utils.raise_for_status_with_text(response)
+        result = response.json()
+        if result is None or "share_token" not in result:
+            return None
+        return f"{self._host_url}/public/{result['share_token']}/r"
+
+    async def aread_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
+        response = await self._aget_with_retries(
+            f"/runs/{run_id}/share",
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -928,14 +1287,14 @@ class Client:
         link = self.read_run_shared_link(run_id)
         return link is not None
 
-    def create_project(
+    def _prepare_create_project(
         self,
         project_name: str,
         *,
         project_extra: Optional[dict] = None,
         upsert: bool = False,
         reference_dataset_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.TracerSession:
+    ) -> dict:
         """Create a project on the LangSmith API.
 
         Parameters
@@ -964,13 +1323,100 @@ class Client:
             params["upsert"] = True
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
-        response = self.session.post(
-            endpoint,
-            headers=self._headers,
-            data=json.dumps(body, default=_serialize_json),
+        return {
+            "request_method": "post",
+            "url": endpoint,
+            "content": json.dumps(body, default=_serialize_json),
+        }
+
+    def create_project(
+        self,
+        project_name: str,
+        *,
+        project_extra: Optional[dict] = None,
+        upsert: bool = False,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.TracerSession:
+        """Create a project on the LangSmith API.
+
+        Parameters
+        ----------
+        project_name : str
+            The name of the project.
+        project_extra : dict or None, default=None
+            Additional project information.
+        upsert : bool, default=False
+            Whether to update the project if it already exists.
+        reference_dataset_id: UUID or None, default=None
+            The ID of the reference dataset to associate with the project.
+
+        Returns
+        -------
+        TracerSession
+            The created project.
+        """
+        request_kwargs = self._prepare_create_project(
+            project_name,
+            project_extra=project_extra,
+            upsert=upsert,
+            reference_dataset_id=reference_dataset_id,
+        )
+        response = self.request_with_retries(
+            **request_kwargs,
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
+
+    async def acreate_project(
+        self,
+        project_name: str,
+        *,
+        project_extra: Optional[dict] = None,
+        upsert: bool = False,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.TracerSession:
+        """Create a project on the LangSmith API.
+
+        Parameters
+        ----------
+        project_name : str
+            The name of the project.
+        project_extra : dict or None, default=None
+            Additional project information.
+        upsert : bool, default=False
+            Whether to update the project if it already exists.
+        reference_dataset_id: UUID or None, default=None
+            The ID of the reference dataset to associate with the project.
+
+        Returns
+        -------
+        TracerSession
+            The created project.
+        """
+        request_kwargs = self._prepare_create_project(
+            project_name,
+            project_extra=project_extra,
+            upsert=upsert,
+            reference_dataset_id=reference_dataset_id,
+        )
+        response = await self.arequest_with_retries(
+            **request_kwargs,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
+
+    async def _aget_tenant_id(self) -> uuid.UUID:
+        if self._tenant_id is not None:
+            return self._tenant_id
+        response = await self._aget_with_retries("/sessions", params={"limit": 1})
+        result = response.json()
+        if isinstance(result, list):
+            tracer_session = ls_schemas.TracerSessionResult(
+                **result[0], _host_url=self._host_url
+            )
+            self._tenant_id = tracer_session.tenant_id
+            return self._tenant_id
+        raise ls_utils.LangSmithError("No projects found")
 
     def _get_tenant_id(self) -> uuid.UUID:
         if self._tenant_id is not None:
@@ -985,7 +1431,32 @@ class Client:
             return self._tenant_id
         raise ls_utils.LangSmithError("No projects found")
 
-    @ls_utils.xor_args(("project_id", "project_name"))
+    def _prepare_read_project(
+        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+    ) -> dict:
+        path = "/sessions"
+        params: Dict[str, Any] = {"limit": 1}
+        if project_id is not None:
+            path += f"/{project_id}"
+        elif project_name is not None:
+            params["name"] = project_name
+        else:
+            raise ValueError("Must provide project_name or project_id")
+        return {
+            "path": path,
+            "params": params,
+        }
+
+    def _postprocess_read_project(
+        self, result: Union[dict, list], project_name: Optional[str]
+    ):
+        if isinstance(result, list):
+            if len(result) == 0:
+                project_name = " " + (project_name or "")
+                raise ls_utils.LangSmithError(f"Project{project_name} not found")
+            return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
+        return ls_schemas.TracerSessionResult(**result, _host_url=self._host_url)
+
     def read_project(
         self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
     ) -> ls_schemas.TracerSessionResult:
@@ -1004,23 +1475,69 @@ class Client:
         TracerSessionResult
             The project.
         """
-        path = "/sessions"
-        params: Dict[str, Any] = {"limit": 1}
-        if project_id is not None:
-            path += f"/{project_id}"
-        elif project_name is not None:
-            params["name"] = project_name
-        else:
-            raise ValueError("Must provide project_name or project_id")
-        response = self._get_with_retries(path, params=params)
-        result = response.json()
-        if isinstance(result, list):
-            if len(result) == 0:
-                raise ls_utils.LangSmithError(f"Project {project_name} not found")
-            return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
-        return ls_schemas.TracerSessionResult(
-            **response.json(), _host_url=self._host_url
+        get_args = self._prepare_read_project(
+            project_id=project_id, project_name=project_name
         )
+        response = self._get_with_retries(**get_args)
+        result = response.json()
+        return self._postprocess_read_project(result, project_name)
+
+    async def aread_project(
+        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+    ) -> ls_schemas.TracerSessionResult:
+        """Read a project from the LangSmith API.
+
+        Parameters
+        ----------
+        project_id : str or None, default=None
+            The ID of the project to read.
+        project_name : str or None, default=None
+            The name of the project to read.
+                Note: Only one of project_id or project_name may be given.
+
+        Returns
+        -------
+        TracerSessionResult
+            The project.
+        """
+        get_args = self._prepare_read_project(
+            project_id=project_id, project_name=project_name
+        )
+        response = await self._aget_with_retries(**get_args)
+        result = response.json()
+        return self._postprocess_read_project(result, project_name)
+
+    def _prepare_list_projects(
+        self,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+        reference_dataset_name: Optional[str] = None,
+        reference_free: Optional[bool] = None,
+    ) -> dict:
+        params: Dict[str, Any] = {}
+        if project_ids is not None:
+            params["id"] = project_ids
+        if name is not None:
+            params["name"] = name
+        if name_contains is not None:
+            params["name_contains"] = name_contains
+        if reference_dataset_id is not None:
+            if reference_dataset_name is not None:
+                raise ValueError(
+                    "Only one of reference_dataset_id or"
+                    " reference_dataset_name may be given"
+                )
+            params["reference_dataset"] = reference_dataset_id
+        elif reference_dataset_name is not None:
+            reference_dataset_id = self.read_dataset(
+                dataset_name=reference_dataset_name
+            ).id
+            params["reference_dataset"] = reference_dataset_id
+        if reference_free is not None:
+            params["reference_free"] = reference_free
+        return {"path": "/sessions", "params": params}
 
     def list_projects(
         self,
@@ -1054,35 +1571,69 @@ class Client:
         TracerSession
             The projects.
         """
-        params: Dict[str, Any] = {}
-        if project_ids is not None:
-            params["id"] = project_ids
-        if name is not None:
-            params["name"] = name
-        if name_contains is not None:
-            params["name_contains"] = name_contains
-        if reference_dataset_id is not None:
-            if reference_dataset_name is not None:
-                raise ValueError(
-                    "Only one of reference_dataset_id or"
-                    " reference_dataset_name may be given"
-                )
-            params["reference_dataset"] = reference_dataset_id
-        elif reference_dataset_name is not None:
-            reference_dataset_id = self.read_dataset(
-                dataset_name=reference_dataset_name
-            ).id
-            params["reference_dataset"] = reference_dataset_id
-        if reference_free is not None:
-            params["reference_free"] = reference_free
+        get_list_kwargs = self._prepare_list_projects(
+            project_ids=project_ids,
+            name=name,
+            name_contains=name_contains,
+            reference_dataset_id=reference_dataset_id,
+            reference_dataset_name=reference_dataset_name,
+            reference_free=reference_free,
+        )
         yield from (
             ls_schemas.TracerSession(**project, _host_url=self._host_url)
-            for project in self._get_paginated_list("/sessions", params=params)
+            for project in self._get_paginated_list(**get_list_kwargs)
         )
 
-    @ls_utils.xor_args(("project_name", "project_id"))
-    def delete_project(
-        self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
+    async def alist_projects(
+        self,
+        *,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        reference_dataset_id: Optional[ID_TYPE] = None,
+        reference_dataset_name: Optional[str] = None,
+        reference_free: Optional[bool] = None,
+    ) -> AsyncGenerator[ls_schemas.TracerSession, None]:
+        """
+        List projects from the LangSmith API.
+
+        Parameters
+        ----------
+        project_ids : Optional[List[ID_TYPE]], optional
+            A list of project IDs to filter by, by default None
+        name : Optional[str], optional
+            The name of the project to filter by, by default None
+        name_contains : Optional[str], optional
+            A string to search for in the project name, by default None
+        reference_dataset_id : Optional[List[ID_TYPE]], optional
+            A dataset ID to filter by, by default None
+        reference_dataset_name : Optional[str], optional
+            The name of the reference dataset to filter by, by default None
+        reference_free : Optional[bool], optional
+            Whether to filter for only projects not associated with a dataset.
+
+        Yields
+        ------
+        TracerSession
+            The projects.
+        """
+        get_list_kwargs = self._prepare_list_projects(
+            project_ids=project_ids,
+            name=name,
+            name_contains=name_contains,
+            reference_dataset_id=reference_dataset_id,
+            reference_dataset_name=reference_dataset_name,
+            reference_free=reference_free,
+        )
+        projects = self._aget_paginated_list(**get_list_kwargs)
+        async for project in projects:
+            yield ls_schemas.TracerSession(**project, _host_url=self._host_url)
+
+    async def adelete_project(
+        self,
+        *,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
     ) -> None:
         """Delete a project from LangSmith.
 
@@ -1094,10 +1645,39 @@ class Client:
             The ID of the project to delete.
         """
         if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
+            project_id = (await self.aread_project(project_name=project_name)).id
+        elif project_id is None:
+            raise ValueError("Must provide project_name or project_id")
+        response = self._client.delete(
+            self.api_url + f"/sessions/{project_id}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def delete_project(
+        self,
+        *,
+        project_name: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+    ) -> None:
+        """Delete a project from LangSmith.
+
+        Parameters
+        ----------
+        project_name : str or None, default=None
+            The name of the project to delete.
+        project_id : str or None, default=None
+            The ID of the project to delete.
+        """
+        if project_name is not None:
+            if project_id is not None:
+                raise ValueError("Only one of project_id or project_name may be given")
             project_id = str(self.read_project(project_name=project_name).id)
         elif project_id is None:
             raise ValueError("Must provide project_name or project_id")
-        response = self.session.delete(
+        response = self._client.delete(
             self.api_url + f"/sessions/{project_id}",
             headers=self._headers,
         )
@@ -1126,20 +1706,74 @@ class Client:
         Dataset
             The created dataset.
         """
-        dataset = ls_schemas.DatasetCreate(
-            name=dataset_name,
-            description=description,
-            data_type=data_type,
-        )
-        response = self.session.post(
-            self.api_url + "/datasets",
-            headers=self._headers,
-            data=dataset.json(),
+        dataset = {
+            "name": dataset_name,
+            "description": description,
+            "data_type": data_type,
+        }
+        response = self.request_with_retries(
+            "POST",
+            f"{self.api_url}/datasets",
+            content=json.dumps(dataset, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
 
-    @ls_utils.xor_args(("dataset_name", "dataset_id"))
+    async def acreate_dataset(
+        self,
+        dataset_name: str,
+        *,
+        description: Optional[str] = None,
+        data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
+    ) -> ls_schemas.Dataset:
+        """Create a dataset in the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset.
+        description : str or None, default=None
+            The description of the dataset.
+        data_type : DataType or None, default=DataType.kv
+            The data type of the dataset.
+
+        Returns
+        -------
+        Dataset
+            The created dataset.
+        """
+        dataset = {
+            "name": dataset_name,
+            "description": description,
+            "data_type": data_type,
+        }
+        response = await self.arequest_with_retries(
+            "POST",
+            f"{self.api_url}/datasets",
+            content=json.dumps(dataset, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
+
+    def _prepare_read_dataset(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+    ):
+        path = "/datasets"
+        params: Dict[str, Any] = {"limit": 1}
+        if dataset_id is not None:
+            path += f"/{dataset_id}"
+        elif dataset_name is not None:
+            params["name"] = dataset_name
+        else:
+            raise ValueError("Must provide dataset_name or dataset_id")
+        return {
+            "path": path,
+            "params": params,
+        }
+
     def read_dataset(
         self,
         *,
@@ -1160,24 +1794,69 @@ class Client:
         Dataset
             The dataset.
         """
-        path = "/datasets"
-        params: Dict[str, Any] = {"limit": 1}
-        if dataset_id is not None:
-            path += f"/{dataset_id}"
-        elif dataset_name is not None:
-            params["name"] = dataset_name
-        else:
-            raise ValueError("Must provide dataset_name or dataset_id")
-        response = self._get_with_retries(
-            path,
-            params=params,
+        data = self._prepare_read_dataset(
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
         )
+        response = self._get_with_retries(**data)
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
                 raise ls_utils.LangSmithError(f"Dataset {dataset_name} not found")
             return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
         return ls_schemas.Dataset(**result, _host_url=self._host_url)
+
+    async def aread_dataset(
+        self,
+        *,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.Dataset:
+        """Read a dataset from the LangSmith API.
+
+        Parameters
+        ----------
+        dataset_name : str or None, default=None
+            The name of the dataset to read.
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to read.
+
+        Returns
+        -------
+        Dataset
+            The dataset.
+        """
+        data = self._prepare_read_dataset(
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
+        )
+        response = await self._aget_with_retries(**data)
+        result = response.json()
+        if isinstance(result, list):
+            if len(result) == 0:
+                raise ls_utils.LangSmithError(f"Dataset {dataset_name} not found")
+            return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
+        return ls_schemas.Dataset(**result, _host_url=self._host_url)
+
+    def _prepare_list_datasets(
+        self,
+        *,
+        dataset_ids: Optional[List[ID_TYPE]] = None,
+        data_type: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        dataset_name_contains: Optional[str] = None,
+    ) -> dict:
+        params: Dict[str, Any] = {}
+        if dataset_ids is not None:
+            params["id"] = dataset_ids
+        if data_type is not None:
+            params["data_type"] = data_type
+        if dataset_name is not None:
+            params["name"] = dataset_name
+        if dataset_name_contains is not None:
+            params["name_contains"] = dataset_name_contains
+
+        return params
 
     def list_datasets(
         self,
@@ -1194,20 +1873,41 @@ class Client:
         Dataset
             The datasets.
         """
-        params: Dict[str, Any] = {}
-        if dataset_ids is not None:
-            params["id"] = dataset_ids
-        if data_type is not None:
-            params["data_type"] = data_type
-        if dataset_name is not None:
-            params["name"] = dataset_name
-        if dataset_name_contains is not None:
-            params["name_contains"] = dataset_name_contains
-
+        params = self._prepare_list_datasets(
+            dataset_ids=dataset_ids,
+            data_type=data_type,
+            dataset_name=dataset_name,
+            dataset_name_contains=dataset_name_contains,
+        )
         yield from (
             ls_schemas.Dataset(**dataset, _host_url=self._host_url)
             for dataset in self._get_paginated_list("/datasets", params=params)
         )
+
+    async def alist_datasets(
+        self,
+        *,
+        dataset_ids: Optional[List[ID_TYPE]] = None,
+        data_type: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+        dataset_name_contains: Optional[str] = None,
+    ) -> AsyncGenerator[ls_schemas.Dataset, None]:
+        """List the datasets on the LangSmith API.
+
+        Yields
+        ------
+        Dataset
+            The datasets.
+        """
+        params = self._prepare_list_datasets(
+            dataset_ids=dataset_ids,
+            data_type=data_type,
+            dataset_name=dataset_name,
+            dataset_name_contains=dataset_name_contains,
+        )
+        res = self._aget_paginated_list("/datasets", params=params)
+        async for dataset in res:
+            yield ls_schemas.Dataset(**dataset, _host_url=self._host_url)
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def delete_dataset(
@@ -1229,7 +1929,7 @@ class Client:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
-        response = self.session.delete(
+        response = self._client.delete(
             f"{self.api_url}/datasets/{dataset_id}",
             headers=self._headers,
         )
@@ -1427,7 +2127,25 @@ class Client:
                     dataset_id=dataset_id,
                 )
 
-    @ls_utils.xor_args(("dataset_id", "dataset_name"))
+    def _prepare_create_example(
+        self,
+        inputs: Mapping[str, Any],
+        dataset_id: ID_TYPE,
+        created_at: Optional[datetime.datetime] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        example_id: Optional[ID_TYPE] = None,
+    ) -> dict:
+        data = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
+        if created_at:
+            data["created_at"] = created_at.isoformat()
+        if example_id:
+            data["id"] = example_id
+        return data
+
     def create_example(
         self,
         inputs: Mapping[str, Any],
@@ -1467,18 +2185,72 @@ class Client:
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        data = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "dataset_id": dataset_id,
-        }
-        if created_at:
-            data["created_at"] = created_at.isoformat()
-        if example_id:
-            data["id"] = example_id
-        example = ls_schemas.ExampleCreate(**data)
-        response = self.session.post(
-            f"{self.api_url}/examples", headers=self._headers, data=example.json()
+        data = self._prepare_create_example(
+            inputs,
+            dataset_id,
+            created_at=created_at,
+            outputs=outputs,
+            example_id=example_id,
+        )
+        response = self.request_with_retries(
+            "POST",
+            f"{self.api_url}/examples",
+            content=json.dumps(data, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        result = response.json()
+        return ls_schemas.Example(**result)
+
+    async def acreate_example(
+        self,
+        inputs: Mapping[str, Any],
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        example_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.Example:
+        """Create a dataset example in the LangSmith API.
+
+        Examples are rows in a dataset, containing the inputs
+        and expected outputs (or other reference information)
+        for a model or chain.
+
+        Parameters
+        ----------
+        inputs : Mapping[str, Any]
+            The input values for the example.
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to create the example in.
+        dataset_name : str or None, default=None
+            The name of the dataset to create the example in.
+        created_at : datetime or None, default=None
+            The creation timestamp of the example.
+        outputs : Mapping[str, Any] or None, default=None
+            The output values for the example.
+        exemple_id : UUID or None, default=None
+            The ID of the example to create. If not provided, a new
+            example will be created.
+
+        Returns
+        -------
+        Example
+            The created example.
+        """
+        if dataset_id is None:
+            dataset_id = (await self.aread_dataset(dataset_name=dataset_name)).id
+
+        data = self._prepare_create_example(
+            inputs,
+            dataset_id,
+            created_at=created_at,
+            outputs=outputs,
+            example_id=example_id,
+        )
+        response = await self.arequest_with_retries(
+            "POST",
+            f"{self.api_url}/examples",
+            content=json.dumps(data, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -1499,6 +2271,37 @@ class Client:
         """
         response = self._get_with_retries(f"/examples/{example_id}")
         return ls_schemas.Example(**response.json())
+
+    async def aread_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
+        """Read an example from the LangSmith API.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to read.
+
+        Returns
+        -------
+        Example
+            The example.
+        """
+        response = await self._aget_with_retries(f"/examples/{example_id}")
+        return ls_schemas.Example(**response.json())
+
+    def _prepare_list_examples(
+        self,
+        dataset_id: ID_TYPE,
+        example_ids: Optional[List[ID_TYPE]] = None,
+    ) -> dict:
+        params: Dict[str, Any] = {}
+        if dataset_id is not None:
+            params["dataset"] = dataset_id
+
+        else:
+            pass
+        if example_ids is not None:
+            params["id"] = example_ids
+        return params
 
     def list_examples(
         self,
@@ -1522,24 +2325,56 @@ class Client:
         Example
             The examples.
         """
-        params: Dict[str, Any] = {}
-        if dataset_id is not None:
-            params["dataset"] = dataset_id
-        elif dataset_name is not None:
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide either dataset_id or dataset_name")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-            params["dataset"] = dataset_id
-        else:
-            pass
-        if example_ids is not None:
-            params["id"] = example_ids
+        params = self._prepare_list_examples(
+            dataset_id=dataset_id,
+            example_ids=example_ids,
+        )
         yield from (
             ls_schemas.Example(**example)
             for example in self._get_paginated_list("/examples", params=params)
         )
 
+    async def alist_examples(
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        example_ids: Optional[List[ID_TYPE]] = None,
+    ) -> AsyncGenerator[ls_schemas.Example, None]:
+        """Retrieve the example rows of the specified dataset.
+
+        Parameters
+        ----------
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to filter by.
+        dataset_name : str or None, default=None
+            The name of the dataset to filter by.
+        example_ids : List[UUID] or None, default=None
+            The IDs of the examples to filter by.
+
+        Yields
+        ------
+        Example
+            The examples.
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide either dataset_id or dataset_name")
+            dataset_id = (await self.aread_dataset(dataset_name=dataset_name)).id
+        params = self._prepare_list_examples(
+            dataset_id=dataset_id,
+            example_ids=example_ids,
+        )
+        all_examples = self._aget_paginated_list("/examples", **params)
+        async for example in all_examples:
+            yield ls_schemas.Example(**example)
+
     def update_example(
         self,
-        example_id: str,
+        example_id: ID_TYPE,
         *,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
@@ -1563,15 +2398,54 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
-        example = ls_schemas.ExampleUpdate(
-            inputs=inputs,
-            outputs=outputs,
-            dataset_id=dataset_id,
-        )
-        response = self.session.patch(
+        example = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
+        response = self.request_with_retries(
+            "patch",
             f"{self.api_url}/examples/{example_id}",
-            headers=self._headers,
-            data=example.json(exclude_none=True),
+            content=json.dumps(example, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    async def aupdate_example(
+        self,
+        example_id: ID_TYPE,
+        *,
+        inputs: Optional[Dict[str, Any]] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+    ) -> Dict[str, Any]:
+        """Update a specific example.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to update.
+        inputs : Dict[str, Any] or None, default=None
+            The input values to update.
+        outputs : Mapping[str, Any] or None, default=None
+            The output values to update.
+        dataset_id : UUID or None, default=None
+            The ID of the dataset to update.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The updated example.
+        """
+        example = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "dataset_id": dataset_id,
+        }
+        response = await self.arequest_with_retries(
+            "patch",
+            f"{self.api_url}/examples/{example_id}",
+            content=json.dumps(example, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -1584,7 +2458,21 @@ class Client:
         example_id : str or UUID
             The ID of the example to delete.
         """
-        response = self.session.delete(
+        response = self._client.delete(
+            f"{self.api_url}/examples/{example_id}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def adelete_example(self, example_id: ID_TYPE) -> None:
+        """Delete an example by ID.
+
+        Parameters
+        ----------
+        example_id : str or UUID
+            The ID of the example to delete.
+        """
+        response = await self._aclient.delete(
             f"{self.api_url}/examples/{example_id}",
             headers=self._headers,
         )
@@ -1748,7 +2636,7 @@ class Client:
         source_info = source_info or {}
         if evaluation_result.evaluator_info:
             source_info = {**evaluation_result.evaluator_info, **source_info}
-        self.create_feedback(
+        await self.acreate_feedback(
             run_.id,
             evaluation_result.key,
             score=evaluation_result.score,
@@ -1760,6 +2648,57 @@ class Client:
             feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
         return evaluation_result
+
+    def _prepare_create_feedback(
+        self,
+        run_id: ID_TYPE,
+        key: str,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+        source_info: Optional[Dict[str, Any]] = None,
+        feedback_source_type: Union[
+            ls_schemas.FeedbackSourceType, str
+        ] = ls_schemas.FeedbackSourceType.API,
+        source_run_id: Optional[ID_TYPE] = None,
+        feedback_id: Optional[ID_TYPE] = None,
+    ) -> dict:
+        if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
+            feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
+        if feedback_source_type == ls_schemas.FeedbackSourceType.API:
+            feedback_source: ls_schemas.FeedbackSourceBase = (
+                ls_schemas.APIFeedbackSource(metadata=source_info)
+            )
+        elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
+            feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
+        else:
+            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
+        feedback_source.metadata = (
+            feedback_source.metadata if feedback_source.metadata is not None else {}
+        )
+        if source_run_id is not None and "__run" not in feedback_source.metadata:
+            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
+        feedback = ls_schemas.FeedbackCreate(
+            id=feedback_id or uuid.uuid4(),
+            run_id=run_id,
+            key=key,
+            score=score,
+            value=value,
+            correction=correction,
+            comment=comment,
+            feedback_source=feedback_source,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            modified_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        return {
+            "post_args": {
+                "headers": {**self._headers, "Content-Type": "application/json"},
+                "content": feedback.json(exclude_none=True),
+            },
+            "feedback": feedback,
+        }
 
     def create_feedback(
         self,
@@ -1804,40 +2743,112 @@ class Client:
             The ID of the feedback to create. If not provided, a random UUID will be
             generated.
         """
-        if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
-            feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
-        if feedback_source_type == ls_schemas.FeedbackSourceType.API:
-            feedback_source: ls_schemas.FeedbackSourceBase = (
-                ls_schemas.APIFeedbackSource(metadata=source_info)
-            )
-        elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
-            feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
-        else:
-            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
-        feedback_source.metadata = (
-            feedback_source.metadata if feedback_source.metadata is not None else {}
-        )
-        if source_run_id is not None and "__run" not in feedback_source.metadata:
-            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
-        feedback = ls_schemas.FeedbackCreate(
-            id=feedback_id or uuid.uuid4(),
-            run_id=run_id,
-            key=key,
+        feedback_args = self._prepare_create_feedback(
+            run_id,
+            key,
             score=score,
             value=value,
             correction=correction,
             comment=comment,
-            feedback_source=feedback_source,
-            created_at=datetime.datetime.now(datetime.timezone.utc),
-            modified_at=datetime.datetime.now(datetime.timezone.utc),
+            source_info=source_info,
+            feedback_source_type=feedback_source_type,
+            source_run_id=source_run_id,
+            feedback_id=feedback_id,
         )
-        response = self.session.post(
-            self.api_url + "/feedback",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=feedback.json(exclude_none=True),
+        response = self.request_with_retries(
+            "POST",
+            f"{self.api_url}/feedback",
+            **feedback_args["post_args"],
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Feedback(**feedback.dict())
+        return ls_schemas.Feedback(**feedback_args["feedback"].dict())
+
+    async def acreate_feedback(
+        self,
+        run_id: ID_TYPE,
+        key: str,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+        source_info: Optional[Dict[str, Any]] = None,
+        feedback_source_type: Union[
+            ls_schemas.FeedbackSourceType, str
+        ] = ls_schemas.FeedbackSourceType.API,
+        source_run_id: Optional[ID_TYPE] = None,
+        feedback_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.Feedback:
+        """Create a feedback in the LangSmith API.
+
+        Parameters
+        ----------
+        run_id : str or UUID
+            The ID of the run to provide feedback on.
+        key : str
+            The name of the metric, tag, or 'aspect' this feedback is about.
+        score : float or int or bool or None, default=None
+            The score to rate this run on the metric or aspect.
+        value : float or int or bool or str or dict or None, default=None
+            The display value or non-numeric value for this feedback.
+        correction : dict or None, default=None
+            The proper ground truth for this run.
+        comment : str or None, default=None
+            A comment about this feedback.
+        source_info : Dict[str, Any] or None, default=None
+            Information about the source of this feedback.
+        feedback_source_type : FeedbackSourceType or str, default=FeedbackSourceType.API
+            The type of feedback source, such as model (for model-generated feedback)
+                or API.
+        source_run_id : str or UUID or None, default=None,
+            The ID of the run that generated this feedback, if a "model" type.
+        feedback_id : str or UUID or None, default=None
+            The ID of the feedback to create. If not provided, a random UUID will be
+            generated.
+        """
+        feedback_args = self._prepare_create_feedback(
+            run_id,
+            key,
+            score=score,
+            value=value,
+            correction=correction,
+            comment=comment,
+            source_info=source_info,
+            feedback_source_type=feedback_source_type,
+            source_run_id=source_run_id,
+            feedback_id=feedback_id,
+        )
+        response = await self.arequest_with_retries(
+            "POST",
+            f"{self.api_url}/feedback",
+            **feedback_args["post_args"],
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Feedback(**feedback_args["feedback"].dict())
+
+    def _prepare_update_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> dict:
+        feedback_update: Dict[str, Any] = {}
+        if score is not None:
+            feedback_update["score"] = score
+        if value is not None:
+            feedback_update["value"] = value
+        if correction is not None:
+            feedback_update["correction"] = correction
+        if comment is not None:
+            feedback_update["comment"] = comment
+        return {
+            "url": self.api_url + f"/feedback/{feedback_id}",
+            "headers": {**self._headers, "Content-Type": "application/json"},
+            "content": json.dumps(feedback_update, default=_serialize_json),
+        }
 
     def update_feedback(
         self,
@@ -1863,20 +2874,48 @@ class Client:
         comment : str or None, default=None
             The comment to update the feedback with.
         """
-        feedback_update: Dict[str, Any] = {}
-        if score is not None:
-            feedback_update["score"] = score
-        if value is not None:
-            feedback_update["value"] = value
-        if correction is not None:
-            feedback_update["correction"] = correction
-        if comment is not None:
-            feedback_update["comment"] = comment
-        response = self.session.patch(
-            self.api_url + f"/feedback/{feedback_id}",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(feedback_update, default=_serialize_json),
+        feedback_update = self._prepare_update_feedback(
+            feedback_id,
+            score=score,
+            value=value,
+            correction=correction,
+            comment=comment,
         )
+        response = self._client.patch(**feedback_update)
+        ls_utils.raise_for_status_with_text(response)
+
+    async def aupdate_feedback(
+        self,
+        feedback_id: ID_TYPE,
+        *,
+        score: Union[float, int, bool, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+    ) -> None:
+        """Update a feedback in the LangSmith API.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to update.
+        score : float or int or bool or None, default=None
+            The score to update the feedback with.
+        value : float or int or bool or str or dict or None, default=None
+            The value to update the feedback with.
+        correction : dict or None, default=None
+            The correction to update the feedback with.
+        comment : str or None, default=None
+            The comment to update the feedback with.
+        """
+        feedback_update = self._prepare_update_feedback(
+            feedback_id,
+            score=score,
+            value=value,
+            correction=correction,
+            comment=comment,
+        )
+        response = await self._aclient.patch(**feedback_update)
         ls_utils.raise_for_status_with_text(response)
 
     def read_feedback(self, feedback_id: ID_TYPE) -> ls_schemas.Feedback:
@@ -1894,6 +2933,43 @@ class Client:
         """
         response = self._get_with_retries(f"/feedback/{feedback_id}")
         return ls_schemas.Feedback(**response.json())
+
+    async def aread_feedback(self, feedback_id: ID_TYPE) -> ls_schemas.Feedback:
+        """Read a feedback from the LangSmith API.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to read.
+
+        Returns
+        -------
+        Feedback
+            The feedback.
+        """
+        response = await self._aget_with_retries(f"/feedback/{feedback_id}")
+        return ls_schemas.Feedback(**response.json())
+
+    def _prepare_list_feedback(
+        self,
+        *,
+        run_ids: Optional[Sequence[ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
+        **kwargs: Any,
+    ) -> dict:
+        params: dict = {
+            "run": run_ids,
+            **kwargs,
+        }
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if feedback_source_type is not None:
+            params["source"] = feedback_source_type
+        return {
+            "path": "/feedback",
+            "params": params,
+        }
 
     def list_feedback(
         self,
@@ -1923,18 +2999,54 @@ class Client:
         Feedback
             The feedback objects.
         """
-        params: dict = {
-            "run": run_ids,
+        feedback_args = self._prepare_list_feedback(
+            run_ids=run_ids,
+            feedback_key=feedback_key,
+            feedback_source_type=feedback_source_type,
             **kwargs,
-        }
-        if feedback_key is not None:
-            params["key"] = feedback_key
-        if feedback_source_type is not None:
-            params["source"] = feedback_source_type
+        )
         yield from (
             ls_schemas.Feedback(**feedback)
-            for feedback in self._get_paginated_list("/feedback", params=params)
+            for feedback in self._get_paginated_list(**feedback_args)
         )
+
+    async def alist_feedback(
+        self,
+        *,
+        run_ids: Optional[Sequence[ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[ls_schemas.Feedback, None]:
+        """List the feedback objects on the LangSmith API.
+
+        Parameters
+        ----------
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        feedback_key: List[str] or None, default=None
+            The feedback key(s) to filter by. Example: 'correctness'
+            The query performs a union of all feedback keys.
+        feedback_source_type: List[FeedbackSourceType] or None, default=None
+            The type of feedback source, such as model
+            (for model-generated feedback) or API.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields
+        ------
+        Feedback
+            The feedback objects.
+        """
+        feedback_args = self._prepare_list_feedback(
+            run_ids=run_ids,
+            feedback_key=feedback_key,
+            feedback_source_type=feedback_source_type,
+            **kwargs,
+        )
+        all_feedback = self._aget_paginated_list(**feedback_args)
+        async for feedback in all_feedback:
+            yield ls_schemas.Feedback(**feedback)
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID.
@@ -1944,7 +3056,21 @@ class Client:
         feedback_id : str or UUID
             The ID of the feedback to delete.
         """
-        response = self.session.delete(
+        response = self._client.delete(
+            f"{self.api_url}/feedback/{feedback_id}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def adelete_feedback(self, feedback_id: ID_TYPE) -> None:
+        """Delete a feedback by ID.
+
+        Parameters
+        ----------
+        feedback_id : str or UUID
+            The ID of the feedback to delete.
+        """
+        response = await self._aclient.delete(
             f"{self.api_url}/feedback/{feedback_id}",
             headers=self._headers,
         )
@@ -2066,7 +3192,9 @@ class Client:
             )
         """  # noqa: E501
         try:
-            from langchain.smith import arun_on_dataset as _arun_on_dataset
+            from langchain.smith import (  # type: ignore[import]
+                arun_on_dataset as _arun_on_dataset,
+            )
         except ImportError:
             raise ImportError(
                 "The client.arun_on_dataset function requires the langchain"
@@ -2201,7 +3329,9 @@ class Client:
             )
         """  # noqa: E501
         try:
-            from langchain.smith import run_on_dataset as _run_on_dataset
+            from langchain.smith import (  # type: ignore[import]
+                run_on_dataset as _run_on_dataset,
+            )
         except ImportError:
             raise ImportError(
                 "The client.run_on_dataset function requires the langchain"
