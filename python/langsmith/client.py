@@ -164,13 +164,14 @@ def close_async_client(client: httpx.AsyncClient) -> None:
 
 
 def _close_client_in_new_thread(client: httpx.AsyncClient) -> None:
-    with asyncio.Runner() as runner:
-        # Run the coroutine, get the result
-        runner.run(client.aclose())
-
-        # Run pending tasks scheduled by coro until they are all done
-        while pending := asyncio.all_tasks(runner.get_loop()):
-            runner.run(asyncio.wait(pending))
+    new_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(new_loop)
+    try:
+        new_loop.run_until_complete(client.aclose())
+    except Exception as e:
+        logger.error(f"Failed to close async client: {e}")
+    finally:
+        new_loop.close()
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
