@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Generator, List, Literal, Mapping, Optional, Union, cast
 
-import requests
+import httpx
 
 from langsmith import env as ls_env
 from langsmith import utils as ls_utils
@@ -67,10 +67,10 @@ def get_ngrok_url(auth_token: Optional[str]) -> str:
     """Get the ngrok URL for the LangSmith server."""
     ngrok_url = "http://localhost:4040/api/tunnels"
     try:
-        response = requests.get(ngrok_url)
+        response = httpx.get(ngrok_url)
         response.raise_for_status()
         exposed_url = response.json()["tunnels"][0]["public_url"]
-    except requests.exceptions.HTTPError:
+    except httpx.HTTPError:
         raise ValueError("Could not connect to ngrok console.")
     except (KeyError, IndexError):
         message = "ngrok failed to start correctly. "
