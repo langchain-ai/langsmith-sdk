@@ -1255,7 +1255,8 @@ class Client:
             "run_id": str(run_id),
             "share_token": share_id or str(uuid.uuid4()),
         }
-        response = self._client.put(
+        response = self.request_with_retries(
+            "put",
             f"{self.api_url}/runs/{run_id}/share",
             headers=self._headers,
             json=data,
