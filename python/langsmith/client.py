@@ -20,7 +20,6 @@ from typing import (
     AsyncGenerator,
     AsyncIterator,
     Callable,
-    Coroutine,
     DefaultDict,
     Dict,
     Iterable,
@@ -152,48 +151,26 @@ def close_async_client(client: httpx.AsyncClient) -> None:
     logger.debug("Closing Client._aclient")
     if client.is_closed:
         return
-    coro = client.aclose()
     try:
-        # Raises RuntimeError if there is no current event loop.
-        asyncio.get_running_loop()
-        loop_running = True
-    except RuntimeError:
-        loop_running = False
-    try:
-        if loop_running:
-            # If we try to submit this coroutine to the running loop
-            # we end up in a deadlock, as we'd have gotten here from a
-            # running coroutine, which we cannot interrupt to run this one.
-            # The solution is to create a new loop in a new thread.
-            with concurrent.futures.ThreadPoolExecutor(1) as executor:
-                executor.submit(_run_coro, coro).result()
-        else:
-            _run_coro(coro)
+        with concurrent.futures.ThreadPoolExecutor(1) as executor:
+            executor.submit(_close_client_in_new_thread, client).result(timeout=10)
+    except concurrent.futures.TimeoutError:
+        logger.error("Timeout while trying to close async client")
     except RuntimeError as e:
-        # Race condition: the loop was closed before we could submit the
-        # coroutine to it.
-        logger.debug("Failed to close Client._aclient: %s", e)
+        if "interpreter shutdown" in str(e):
+            logger.debug("Skipping client cleanup during interpreter shutdown")
+        else:
+            raise
 
 
-def _run_coro(coro: Coroutine) -> None:
-    if hasattr(asyncio, "Runner"):
-        # Python 3.11+
-        # Run the coroutines in a new event loop, taking care to
-        # - install signal handlers
-        # - run pending tasks scheduled by `coros`
-        # - close asyncgens and executors
-        # - close the loop
-        with asyncio.Runner() as runner:
-            # Run the coroutine, get the result
-            runner.run(coro)
+def _close_client_in_new_thread(client: httpx.AsyncClient) -> None:
+    with asyncio.Runner() as runner:
+        # Run the coroutine, get the result
+        runner.run(client.aclose())
 
-            # Run pending tasks scheduled by coros until they are all done
-            while pending := asyncio.all_tasks(runner.get_loop()):
-                runner.run(asyncio.wait(pending))
-    else:
-        # Before Python 3.11 we need to run each coroutine in a new event loop
-        # as the Runner api is not available.
-        asyncio.run(coro)
+        # Run pending tasks scheduled by coro until they are all done
+        while pending := asyncio.all_tasks(runner.get_loop()):
+            runner.run(asyncio.wait(pending))
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
