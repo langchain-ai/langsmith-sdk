@@ -545,6 +545,35 @@ export class Client {
     return `${this.getHostUrl()}/public/${result["share_token"]}/r`;
   }
 
+  public async listSharedRuns(
+    shareToken: string,
+    {
+      runIds,
+    }: {
+      runIds?: string[];
+    } = {}
+  ): Promise<Run[]> {
+    const queryParams = new URLSearchParams({
+      share_token: shareToken,
+    });
+    if (runIds !== undefined) {
+      for (const runId of runIds) {
+        queryParams.append("id", runId);
+      }
+    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    const runs = await response.json();
+    return runs as Run[];
+  }
+
   public async createProject({
     projectName,
     projectExtra,
