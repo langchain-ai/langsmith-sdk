@@ -367,11 +367,20 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             return response
         except requests.HTTPError as e:
-            if response is not None and response.status_code == 500:
-                raise ls_utils.LangSmithAPIError(
-                    f"Server error caused failure to {request_method} {url} in"
-                    f" LangSmith API. {e}"
-                )
+            if response is not None:
+                if response.status_code == 500:
+                    raise ls_utils.LangSmithAPIError(
+                        f"Server error caused failure to {request_method} {url} in"
+                        f" LangSmith API. {e}"
+                    )
+                elif response.status_code == 429:
+                    raise ls_utils.LangSmithRateLimitError(
+                        f"Rate limit exceeded for {url}. {e}"
+                    )
+                elif response is not None and response.status_code == 401:
+                    raise ls_utils.LangSmithAuthError(
+                        f"Authentication failed for {url}. {e}"
+                    )
             else:
                 raise ls_utils.LangSmithUserError(
                     f"Failed to {request_method} {url} in LangSmith API. {e}"
@@ -382,7 +391,7 @@ class Client:
                 "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
                 f" {e}"
             ) from e
-        except ValueError as e:
+        except Exception as e:
             args = list(e.args)
             msg = args[1] if len(args) > 1 else ""
             msg = msg.replace("session", "session (project)")
@@ -1846,12 +1855,17 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
         )
-        response = self.session.post(
+        self.request_with_retries(
+            "POST",
             self.api_url + "/feedback",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=feedback.json(exclude_none=True),
+            request_kwargs={
+                "data": json.dumps(
+                    feedback.dict(exclude_none=True), default=_serialize_json
+                ),
+                "headers": {**self._headers, "Content-Type": "application/json"},
+                "timeout": self.timeout_ms / 1000,
+            },
         )
-        ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Feedback(**feedback.dict())
 
     def update_feedback(
