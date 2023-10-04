@@ -942,6 +942,87 @@ class Client:
         return [
             ls_schemas.Run(**run, _host_url=self._host_url) for run in response.json()
         ]
+    
+    def read_dataset_shared_schema(
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+    ) -> ls_schemas.DatasetShareSchema:
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be given")
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        response = self.session.get(
+            f"{self.api_url}/datasets/{dataset_id}/share",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        share_schema = ls_schemas.DatasetShareSchema(**response.json())
+        share_schema["url"] = f"{self._host_url}/public/{share_schema['share_token']}/d"
+        return share_schema
+
+    def share_dataset(
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+    ) -> ls_schemas.DatasetShareSchema:
+        """Get a share link for a dataset."""
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be given")
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        data = {
+            "dataset_id": str(dataset_id),
+        }
+        response = self.session.put(
+            f"{self.api_url}/datasets/{dataset_id}/share",
+            headers=self._headers,
+            json=data,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        share_schema = ls_schemas.DatasetShareSchema(**response.json())
+        share_schema["url"] = f"{self._host_url}/public/{share_schema['share_token']}/d"
+        return share_schema
+
+    def unshare_dataset(self, dataset_id: ID_TYPE) -> None:
+        """Delete share link for a dataset."""
+        response = self.session.delete(
+            f"{self.api_url}/datasets/{dataset_id}/share",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def read_shared_dataset(
+        self,
+        share_token: str,
+    ) -> ls_schemas.Dataset:
+        """Get shared datasets."""
+        params = {"share_token": share_token}
+        response = self.session.get(
+            f"{self.api_url}/public/{share_token}/datasets",
+            headers=self._headers,
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Dataset(**response.json()[0], _host_url=self._host_url)
+
+    def list_shared_examples(
+        self, share_token: str, *, example_ids: Optional[List[ID_TYPE]] = None
+    ) -> List[ls_schemas.Example]:
+        """Get shared examples."""
+        params = {"id": example_ids, "share_token": share_token}
+        response = self.session.get(
+            f"{self.api_url}/public/{share_token}/examples",
+            headers=self._headers,
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return [
+            ls_schemas.Example(**dataset, _host_url=self._host_url)
+            for dataset in response.json()
+        ]
 
     def create_project(
         self,
