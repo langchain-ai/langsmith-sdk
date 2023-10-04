@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, TypedDict, Union, runtime_checkable
 from uuid import UUID
 
 try:
@@ -101,6 +101,9 @@ class Dataset(DatasetBase):
     id: UUID
     created_at: datetime
     modified_at: Optional[datetime] = Field(default=None)
+    example_count: int
+    session_count: Optional[int] = None
+    last_session_start_time: Optional[datetime] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
 
     def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
@@ -381,3 +384,9 @@ class BaseMessageLike(Protocol):
     @property
     def type(self) -> str:
         """Type of the Message, used for serialization."""
+
+
+class DatasetShareSchema(TypedDict, total=False):
+    dataset_id: UUID
+    share_token: UUID
+    url: str
