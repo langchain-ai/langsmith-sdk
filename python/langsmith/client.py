@@ -236,6 +236,7 @@ class Client:
         retry_config: Optional[Retry] = None,
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
+        session: Optional[requests.Session] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -254,6 +255,9 @@ class Client:
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
+        session: requests.Session or None, default=None
+            The session to use for requests. If None, a new session will be
+            created.
 
         Raises
         ------
@@ -268,7 +272,7 @@ class Client:
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
-        self.session = requests.Session()
+        self.session = session if session else requests.Session()
         weakref.finalize(self, close_session, self.session)
 
         # Mount the HTTPAdapter with the retry configuration
