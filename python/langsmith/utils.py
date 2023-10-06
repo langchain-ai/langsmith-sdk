@@ -21,6 +21,14 @@ class LangSmithUserError(Exception):
     """An error occurred while communicating with the LangSmith API."""
 
 
+class LangSmithRateLimitError(Exception):
+    """You have exceeded the rate limit for the LangSmith API."""
+
+
+class LangSmithAuthError(Exception):
+    """Couldn't authenticate with the LangSmith API."""
+
+
 class LangSmithError(Exception):
     """An error occurred while communicating with the LangSmith API."""
 
@@ -70,7 +78,7 @@ def raise_for_status_with_text(response: requests.Response) -> None:
     try:
         response.raise_for_status()
     except requests.HTTPError as e:
-        raise ValueError(str(e), response.text) from e
+        raise requests.HTTPError(str(e), response.text) from e
 
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
