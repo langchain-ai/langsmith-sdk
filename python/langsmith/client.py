@@ -375,25 +375,30 @@ class Client:
                 if response.status_code == 500:
                     raise ls_utils.LangSmithAPIError(
                         f"Server error caused failure to {request_method} {url} in"
-                        f" LangSmith API. {e}"
+                        f" LangSmith API. {repr(e)}"
                     )
                 elif response.status_code == 429:
                     raise ls_utils.LangSmithRateLimitError(
-                        f"Rate limit exceeded for {url}. {e}"
+                        f"Rate limit exceeded for {url}. {repr(e)}"
                     )
                 elif response is not None and response.status_code == 401:
                     raise ls_utils.LangSmithAuthError(
-                        f"Authentication failed for {url}. {e}"
+                        f"Authentication failed for {url}. {repr(e)}"
                     )
+                else:
+                    raise ls_utils.LangSmithError(
+                        f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
+                    )
+
             else:
                 raise ls_utils.LangSmithUserError(
-                    f"Failed to {request_method} {url} in LangSmith API. {e}"
+                    f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
                 )
         except requests.ConnectionError as e:
             raise ls_utils.LangSmithConnectionError(
                 f"Connection error caused failure to {request_method} {url}"
                 "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-                f" {e}"
+                f" {repr(e)}"
             ) from e
         except Exception as e:
             args = list(e.args)
