@@ -1212,6 +1212,37 @@ class Client:
             return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
         return ls_schemas.Dataset(**result, _host_url=self._host_url)
 
+    def read_dataset_openai_finetuning(
+        self, dataset_id: Optional[str] = None, *, dataset_name: Optional[str] = None
+    ) -> list:
+        """
+        Download a dataset in OpenAI Jsonl format and load it as a list of dicts.
+
+        Parameters
+        ----------
+        dataset_id : str
+            The ID of the dataset to download.
+        dataset_name : str
+            The name of the dataset to download.
+
+        Returns
+        -------
+        list
+            The dataset loaded as a list of dicts.
+        """
+        path = "/datasets"
+        if dataset_id is not None:
+            pass
+        elif dataset_name is not None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        else:
+            raise ValueError("Must provide dataset_name or dataset_id")
+        response = self._get_with_retries(
+            f"{path}/{dataset_id}/openai_ft",
+        )
+        dataset = [json.loads(line) for line in response.text.strip().split("\n")]
+        return dataset
+
     def list_datasets(
         self,
         *,

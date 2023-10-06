@@ -1,12 +1,15 @@
 import * as uuid from "uuid";
+
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
+  DataType,
   Dataset,
   Example,
   ExampleCreate,
   ExampleUpdate,
   Feedback,
   KVMap,
+  LangChainBaseMessage,
   Run,
   RunCreate,
   RunUpdate,
@@ -14,14 +17,13 @@ import {
   TracerSession,
   TracerSessionResult,
   ValueType,
-  DataType,
-  LangChainBaseMessage,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
   isLangChainMessage,
 } from "./utils/messages.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
+
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface ClientConfig {
@@ -235,10 +237,10 @@ export class Client {
     return headers;
   }
 
-  private async _get<T>(
+  private async _getResponse(
     path: string,
     queryParams?: URLSearchParams
-  ): Promise<T> {
+  ): Promise<Response> {
     const paramsString = queryParams?.toString() ?? "";
     const url = `${this.apiUrl}${path}?${paramsString}`;
     const response = await this.caller.call(fetch, url, {
@@ -251,6 +253,14 @@ export class Client {
         `Failed to fetch ${path}: ${response.status} ${response.statusText}`
       );
     }
+    return response;
+  }
+
+  private async _get<T>(
+    path: string,
+    queryParams?: URLSearchParams
+  ): Promise<T> {
+    const response = await this._getResponse(path, queryParams);
     return response.json() as T;
   }
   private async *_getPaginated<T>(
@@ -858,6 +868,30 @@ export class Client {
       result = response as Dataset;
     }
     return result;
+  }
+
+  public async readDatasetOpenaiFinetuning({
+    datasetId,
+    datasetName,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+  }): Promise<any[]> {
+    let path = "/datasets";
+    if (datasetId !== undefined) {
+      // do nothing
+    } else if (datasetName !== undefined) {
+      datasetId = (await this.readDataset({ datasetName })).id;
+    } else {
+      throw new Error("Must provide datasetName or datasetId");
+    }
+    const response = await this._getResponse(`${path}/${datasetId}/openai_ft`);
+    const datasetText = await response.text();
+    const dataset = datasetText
+      .trim()
+      .split("\n")
+      .map((line: string) => JSON.parse(line));
+    return dataset;
   }
 
   public async *listDatasets({
