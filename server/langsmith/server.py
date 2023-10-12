@@ -3,7 +3,7 @@
 # ```python
 from flask import Flask, request, jsonify
 
-app = Flask(__name)
+app = Flask(__name__)
 
 # Sample data for demonstration purposes
 runs = []
@@ -26,8 +26,9 @@ def update_run(run_id):
             return jsonify(run), 200
     return jsonify({"error": "Run not found"}), 404
 
-if __name__ == '__main__':
-    app.run(debug=True)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0",debug=True)
 # ```
 
 # In this example:
