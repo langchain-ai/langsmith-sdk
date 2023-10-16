@@ -877,7 +877,7 @@ export class Client {
     datasetId?: string;
     datasetName?: string;
   }): Promise<any[]> {
-    let path = "/datasets";
+    const path = "/datasets";
     if (datasetId !== undefined) {
       // do nothing
     } else if (datasetName !== undefined) {
