@@ -584,14 +584,14 @@ class Client:
                 file_ = {"file": f}
                 response = self.session.post(
                     self.api_url + "/datasets/upload",
-                    headers={**self._headers, "Content-Type": "application/json"},
+                    headers=self._headers,
                     data=data,
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
             response = self.session.post(
                 self.api_url + "/datasets/upload",
-                headers={**self._headers, "Content-Type": "application/json"},
+                headers=self._headers,
                 data=data,
                 files={"file": csv_file},
             )
