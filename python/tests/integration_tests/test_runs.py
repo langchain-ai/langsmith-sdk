@@ -3,7 +3,7 @@ import os
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from typing import Generator, Optional
+from typing import AsyncGenerator, Generator, Optional
 
 import pytest
 
@@ -242,3 +242,175 @@ async def test_context_manager(langchain_client: Client) -> None:
         except (ls_utils.LangSmithError, AssertionError):
             time.sleep(2)
     assert len(runs) == 8
+
+
+def test_sync_generator(langchain_client: Client):
+    project_name = "__My Tracer Project - test_sync_generator"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
+
+    @traceable(run_type="chain")
+    def my_generator(num: int) -> Generator[str, None, None]:
+        for i in range(num):
+            yield f"Yielded {i}"
+
+    results = list(my_generator(5, langsmith_extra=dict(project_name=project_name)))
+    assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
+
+    for _ in range(8):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 1
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(2)
+    runs = list(langchain_client.list_runs(project_name=project_name))
+    run = runs[0]
+    assert run.run_type == "chain"
+    assert run.name == "my_generator"
+    assert run.outputs == {
+        "output": ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
+    }
+
+    langchain_client.delete_project(project_name=project_name)
+
+
+def test_sync_generator_reduce_fn(langchain_client: Client):
+    project_name = "__My Tracer Project - test_sync_generator_reduce_fn"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
+
+    def reduce_fn(outputs: list) -> dict:
+        return {"my_output": " ".join(outputs)}
+
+    @traceable(run_type="chain", reduce_fn=reduce_fn)
+    def my_generator(num: int) -> Generator[str, None, None]:
+        for i in range(num):
+            yield f"Yielded {i}"
+
+    results = list(my_generator(5, langsmith_extra=dict(project_name=project_name)))
+    assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
+
+    for _ in range(8):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 1
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(2)
+    runs = list(langchain_client.list_runs(project_name=project_name))
+    run = runs[0]
+    assert run.run_type == "chain"
+    assert run.name == "my_generator"
+    assert run.outputs == {
+        "my_output": " ".join(
+            ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
+        )
+    }
+
+    langchain_client.delete_project(project_name=project_name)
+
+
+@pytest.mark.asyncio
+async def test_async_generator(langchain_client: Client):
+    project_name = "__My Tracer Project - test_async_generator"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
+
+    @traceable(run_type="chain")
+    async def my_async_generator(num: int) -> AsyncGenerator[str, None]:
+        for i in range(num):
+            await asyncio.sleep(0.1)
+            yield f"Async yielded {i}"
+
+    results = [
+        item
+        async for item in my_async_generator(
+            5, langsmith_extra=dict(project_name=project_name)
+        )
+    ]
+    assert results == [
+        "Async yielded 0",
+        "Async yielded 1",
+        "Async yielded 2",
+        "Async yielded 3",
+        "Async yielded 4",
+    ]
+
+    for _ in range(8):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 1
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(2)
+    runs = list(langchain_client.list_runs(project_name=project_name))
+    run = runs[0]
+    assert run.run_type == "chain"
+    assert run.name == "my_async_generator"
+    assert run.outputs == {
+        "output": [
+            "Async yielded 0",
+            "Async yielded 1",
+            "Async yielded 2",
+            "Async yielded 3",
+            "Async yielded 4",
+        ]
+    }
+
+    langchain_client.delete_project(project_name=project_name)
+
+
+@pytest.mark.asyncio
+async def test_async_generator_reduce_fn(langchain_client: Client):
+    project_name = "__My Tracer Project - test_async_generator_reduce_fn"
+    if project_name in [project.name for project in langchain_client.list_projects()]:
+        langchain_client.delete_project(project_name=project_name)
+
+    def reduce_fn(outputs: list) -> dict:
+        return {"my_output": " ".join(outputs)}
+
+    @traceable(run_type="chain", reduce_fn=reduce_fn)
+    async def my_async_generator(num: int) -> AsyncGenerator[str, None]:
+        for i in range(num):
+            await asyncio.sleep(0.1)
+            yield f"Async yielded {i}"
+
+    results = [
+        item
+        async for item in my_async_generator(
+            5, langsmith_extra=dict(project_name=project_name)
+        )
+    ]
+    assert results == [
+        "Async yielded 0",
+        "Async yielded 1",
+        "Async yielded 2",
+        "Async yielded 3",
+        "Async yielded 4",
+    ]
+
+    for _ in range(8):
+        try:
+            runs = list(langchain_client.list_runs(project_name=project_name))
+            assert len(runs) == 1
+            break
+        except (ls_utils.LangSmithError, AssertionError):
+            time.sleep(2)
+    runs = list(langchain_client.list_runs(project_name=project_name))
+    run = runs[0]
+    assert run.run_type == "chain"
+    assert run.name == "my_async_generator"
+    assert run.outputs == {
+        "my_output": " ".join(
+            [
+                "Async yielded 0",
+                "Async yielded 1",
+                "Async yielded 2",
+                "Async yielded 3",
+                "Async yielded 4",
+            ]
+        )
+    }
+
+    langchain_client.delete_project(project_name=project_name)
