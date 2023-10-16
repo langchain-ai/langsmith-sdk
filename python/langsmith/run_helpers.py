@@ -283,11 +283,11 @@ def traceable(
             results: List[Any] = []
             try:
                 if func_accepts_parent_run:
-                    async_gen_result = await func(
+                    async_gen_result = func(
                         *args, run_tree=run_container["new_run"], **kwargs
                     )
                 else:
-                    async_gen_result = await func(*args, **kwargs)
+                    async_gen_result = func(*args, **kwargs)
                 async for item in async_gen_result:
                     results.append(item)
                     yield item
