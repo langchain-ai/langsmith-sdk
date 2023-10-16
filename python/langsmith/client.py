@@ -584,14 +584,14 @@ class Client:
                 file_ = {"file": f}
                 response = self.session.post(
                     self.api_url + "/datasets/upload",
-                    headers=self._headers,
+                    headers={**self._headers, "Content-Type": "application/json"},
                     data=data,
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
             response = self.session.post(
                 self.api_url + "/datasets/upload",
-                headers=self._headers,
+                headers={**self._headers, "Content-Type": "application/json"},
                 data=data,
                 files={"file": csv_file},
             )
@@ -662,7 +662,11 @@ class Client:
         runtime = run_extra.setdefault("runtime", {})
         runtime_env = ls_env.get_runtime_and_metrics()
         run_extra["runtime"] = {**runtime_env, **runtime}
-        headers = {**self._headers, "Accept": "application/json"}
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs",
@@ -703,7 +707,11 @@ class Client:
         **kwargs : Any
             Kwargs are ignored.
         """
-        headers = {**self._headers, "Accept": "application/json"}
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
         data: Dict[str, Any] = {}
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
@@ -999,7 +1007,7 @@ class Client:
             body["reference_dataset_id"] = reference_dataset_id
         response = self.session.post(
             endpoint,
-            headers=self._headers,
+            headers={**self._headers, "Content-Type": "application/json"},
             data=json.dumps(body, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1166,7 +1174,7 @@ class Client:
         )
         response = self.session.post(
             self.api_url + "/datasets",
-            headers=self._headers,
+            headers={**self._headers, "Content-Type": "application/json"},
             data=dataset.json(),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1542,7 +1550,9 @@ class Client:
             data["id"] = example_id
         example = ls_schemas.ExampleCreate(**data)
         response = self.session.post(
-            f"{self.api_url}/examples", headers=self._headers, data=example.json()
+            f"{self.api_url}/examples",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=example.json(),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -1634,7 +1644,7 @@ class Client:
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{example_id}",
-            headers=self._headers,
+            headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(exclude_none=True),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1902,7 +1912,11 @@ class Client:
                 "data": json.dumps(
                     feedback.dict(exclude_none=True), default=_serialize_json
                 ),
-                "headers": {**self._headers, "Content-Type": "application/json"},
+                "headers": {
+                    **self._headers,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
                 "timeout": self.timeout_ms / 1000,
             },
         )
