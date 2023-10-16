@@ -30,13 +30,17 @@ def poll_runs_until_count(
     count: int,
     max_retries: int = 10,
     sleep_time: int = 2,
+    require_success: bool = True,
 ):
     retries = 0
     while retries < max_retries:
         try:
             runs = list(langchain_client.list_runs(project_name=project_name))
             if len(runs) == count:
-                return runs
+                if not require_success or all(
+                    [run.status == "success" for run in runs]
+                ):
+                    return runs
         except ls_utils.LangSmithError:
             pass
         time.sleep(sleep_time)
@@ -215,10 +219,6 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
             assert run.parent_run_id in name_to_ids_map["my_chain_run"]
         if run.name == "my_chain_run":
             assert run.parent_run_id is None
-    try:
-        langchain_client.delete_project(project_name=project_name)
-    except Exception:
-        pass
 
 
 @pytest.mark.asyncio
@@ -245,10 +245,12 @@ async def test_context_manager(langchain_client: Client) -> None:
         run_tree.end(outputs={"End val": "my_context2"})
     executor.shutdown(wait=True)
     poll_runs_until_count(langchain_client, project_name, 8)
+    runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 8
 
 
-def test_sync_generator(langchain_client: Client):
+@pytest.mark.asyncio
+async def test_sync_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
@@ -260,7 +262,7 @@ def test_sync_generator(langchain_client: Client):
 
     results = list(my_generator(5, langsmith_extra=dict(project_name=project_name)))
     assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
-    poll_runs_until_count(langchain_client, project_name, 1)
+    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
     runs = list(langchain_client.list_runs(project_name=project_name))
     run = runs[0]
     assert run.run_type == "chain"
@@ -269,10 +271,9 @@ def test_sync_generator(langchain_client: Client):
         "output": ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
     }
 
-    langchain_client.delete_project(project_name=project_name)
 
-
-def test_sync_generator_reduce_fn(langchain_client: Client):
+@pytest.mark.asyncio
+async def test_sync_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator_reduce_fn"
     if project_name in [project.name for project in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
@@ -287,7 +288,7 @@ def test_sync_generator_reduce_fn(langchain_client: Client):
 
     results = list(my_generator(5, langsmith_extra=dict(project_name=project_name)))
     assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
-    poll_runs_until_count(langchain_client, project_name, 1)
+    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
     runs = list(langchain_client.list_runs(project_name=project_name))
     run = runs[0]
     assert run.run_type == "chain"
@@ -297,8 +298,6 @@ def test_sync_generator_reduce_fn(langchain_client: Client):
             ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
         )
     }
-
-    langchain_client.delete_project(project_name=project_name)
 
 
 @pytest.mark.asyncio
@@ -326,7 +325,7 @@ async def test_async_generator(langchain_client: Client):
         "Async yielded 3",
         "Async yielded 4",
     ]
-    poll_runs_until_count(langchain_client, project_name, 1)
+    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
     runs = list(langchain_client.list_runs(project_name=project_name))
     run = runs[0]
     assert run.run_type == "chain"
@@ -340,8 +339,6 @@ async def test_async_generator(langchain_client: Client):
             "Async yielded 4",
         ]
     }
-
-    langchain_client.delete_project(project_name=project_name)
 
 
 @pytest.mark.asyncio
@@ -373,7 +370,7 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
         "Async yielded 4",
     ]
 
-    poll_runs_until_count(langchain_client, project_name, 1)
+    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
     runs = list(langchain_client.list_runs(project_name=project_name))
     run = runs[0]
     assert run.run_type == "chain"
@@ -389,5 +386,3 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
             ]
         )
     }
-
-    langchain_client.delete_project(project_name=project_name)
