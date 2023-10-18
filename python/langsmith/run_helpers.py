@@ -287,7 +287,14 @@ def traceable(
                         *args, run_tree=run_container["new_run"], **kwargs
                     )
                 else:
+                    # TODO: Nesting is ambiguous if a nested traceable function is only
+                    # called mid-generation. Need to explicitly accept run_tree to get
+                    # around this.
                     async_gen_result = func(*args, **kwargs)
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
                 async for item in async_gen_result:
                     results.append(item)
                     yield item
@@ -398,7 +405,14 @@ def traceable(
                         *args, run_tree=run_container["new_run"], **kwargs
                     )
                 else:
+                    # TODO: Nesting is ambiguous if a nested traceable function is only
+                    # called mid-generation. Need to explicitly accept run_tree to get
+                    # around this.
                     generator_result = func(*args, **kwargs)
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
                 for item in generator_result:
                     results.append(item)
                     yield item
