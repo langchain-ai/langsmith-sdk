@@ -406,6 +406,14 @@ def main() -> None:
         " OPENAI_API_KEY environment variable. If neither are provided,"
         " some features of LangSmith will not be available.",
     )
+    server_start_parser.add_argument(
+        "--langsmith-license-key",
+        default=os.getenv("LANGSMITH_LICENSE_KEY"),
+        help="The LangSmith license key to use for LangSmith."
+        " If not provided, the LangSmith License Key will be read from the"
+        " LANGSMITH_LICENSE_KEY environment variable. If neither are provided,"
+        " the Langsmith application will not spin up.",
+    )
     server_start_parser.set_defaults(
         func=lambda args: server_command.start(
             expose=args.expose,
