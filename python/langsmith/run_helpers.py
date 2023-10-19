@@ -8,7 +8,17 @@ import os
 import traceback
 import uuid
 from concurrent import futures
-from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, TypedDict
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Mapping,
+    Optional,
+    TypedDict,
+)
 
 from langsmith import client, run_trees, utils
 
@@ -168,8 +178,29 @@ def traceable(
     tags: Optional[List[str]] = None,
     client: Optional[client.Client] = None,
     extra: Optional[Dict] = None,
+    reduce_fn: Optional[Callable] = None,
 ) -> Callable:
-    """Decorator for creating or adding a run to a run tree."""
+    """Decorator for creating or adding a run to a run tree.
+
+    Args:
+        run_type: The type of run to create. Examples: llm, chain, tool, prompt,
+            retriever, etc. Defaults to "chain".
+        name: The name of the run. Defaults to the function name.
+        executor: The thread pool executor to use for the run. Defaults to None,
+            which will use the default executor.
+        metadata: The metadata to add to the run. Defaults to None.
+        tags: The tags to add to the run. Defaults to None.
+        client: The client to use for logging the run to LangSmith. Defaults to
+            None, which will use the default client.
+        extra: Any additional info to be injected into the run's 'extra' field.
+            Metadata are stored in a field within the extra dict. Defaults to None.
+        reduce_fn: A function to reduce the output of the function if the function
+            returns a generator. Defaults to None, which means the values will be
+                logged as a list. Note: if the iterator is never exhausted (e.g.
+                the function returns an infinite generator), this will never be
+                called, and the run itself will be stuck in a pending state.
+
+    """
     extra_outer = extra or {}
 
     def decorator(func: Callable):
@@ -228,6 +259,72 @@ def traceable(
             return function_result
 
         @functools.wraps(func)
+        async def async_generator_wrapper(
+            *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
+        ) -> AsyncGenerator:
+            run_container = _setup_run(
+                func,
+                run_type=run_type,
+                langsmith_extra=langsmith_extra,
+                extra_outer=extra_outer,
+                name=name,
+                executor=executor,
+                metadata=metadata,
+                tags=tags,
+                client=client,
+                args=args,
+                kwargs=kwargs,
+            )
+            _PROJECT_NAME.set(run_container["project_name"])
+            _PARENT_RUN_TREE.set(run_container["new_run"])
+            func_accepts_parent_run = (
+                inspect.signature(func).parameters.get("run_tree", None) is not None
+            )
+            results: List[Any] = []
+            try:
+                if func_accepts_parent_run:
+                    async_gen_result = func(
+                        *args, run_tree=run_container["new_run"], **kwargs
+                    )
+                else:
+                    # TODO: Nesting is ambiguous if a nested traceable function is only
+                    # called mid-generation. Need to explicitly accept run_tree to get
+                    # around this.
+                    async_gen_result = func(*args, **kwargs)
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
+                async for item in async_gen_result:
+                    results.append(item)
+                    yield item
+            except (BaseException, Exception, KeyboardInterrupt) as e:
+                stacktrace = traceback.format_exc()
+                run_container["new_run"].end(error=stacktrace)
+                run_container["new_run"].patch()
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
+                raise e
+            if results:
+                if reduce_fn:
+                    try:
+                        function_result = reduce_fn(results)
+                    except Exception as e:
+                        logger.error(e)
+                        function_result = results
+                else:
+                    function_result = results
+            else:
+                function_result = None
+            if isinstance(function_result, dict):
+                run_container["new_run"].end(outputs=function_result)
+            else:
+                run_container["new_run"].end(outputs={"output": function_result})
+            run_container["new_run"].patch()
+
+        @functools.wraps(func)
         def wrapper(
             *args: Any,
             langsmith_extra: Optional[LangSmithExtra] = None,
@@ -279,8 +376,78 @@ def traceable(
             run_container["new_run"].patch()
             return function_result
 
-        if inspect.iscoroutinefunction(func):
+        @functools.wraps(func)
+        def generator_wrapper(
+            *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
+        ) -> Any:
+            run_container = _setup_run(
+                func,
+                run_type=run_type,
+                langsmith_extra=langsmith_extra,
+                extra_outer=extra_outer,
+                name=name,
+                executor=executor,
+                metadata=metadata,
+                tags=tags,
+                client=client,
+                args=args,
+                kwargs=kwargs,
+            )
+            _PROJECT_NAME.set(run_container["project_name"])
+            _PARENT_RUN_TREE.set(run_container["new_run"])
+            func_accepts_parent_run = (
+                inspect.signature(func).parameters.get("run_tree", None) is not None
+            )
+            results: List[Any] = []
+            try:
+                if func_accepts_parent_run:
+                    generator_result = func(
+                        *args, run_tree=run_container["new_run"], **kwargs
+                    )
+                else:
+                    # TODO: Nesting is ambiguous if a nested traceable function is only
+                    # called mid-generation. Need to explicitly accept run_tree to get
+                    # around this.
+                    generator_result = func(*args, **kwargs)
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
+                for item in generator_result:
+                    results.append(item)
+                    yield item
+            except (BaseException, Exception, KeyboardInterrupt) as e:
+                stacktrace = traceback.format_exc()
+                run_container["new_run"].end(error=stacktrace)
+                run_container["new_run"].patch()
+                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
+                raise e
+            if results:
+                if reduce_fn:
+                    try:
+                        function_result = reduce_fn(results)
+                    except Exception as e:
+                        logger.error(e)
+                        function_result = results
+                else:
+                    function_result = results
+            else:
+                function_result = None
+            if isinstance(function_result, dict) or function_result is None:
+                run_container["new_run"].end(outputs=function_result)
+            else:
+                run_container["new_run"].end(outputs={"output": function_result})
+            run_container["new_run"].patch()
+
+        if inspect.isasyncgenfunction(func):
+            return async_generator_wrapper
+        elif inspect.iscoroutinefunction(func):
             return async_wrapper
+        elif inspect.isgeneratorfunction(func):
+            return generator_wrapper
         else:
             return wrapper
 
