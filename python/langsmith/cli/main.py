@@ -262,6 +262,7 @@ class LangSmithCommand:
         auth_token: Optional[str] = None,
         stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
         openai_api_key: Optional[str] = None,
+        langsmith_license_key: str
     ) -> None:
         """Run the LangSmith server locally.
 
@@ -275,6 +276,10 @@ class LangSmithCommand:
                 If not provided, the OpenAI API Key will be read from the
                 OPENAI_API_KEY environment variable. If neither are provided,
                 some features of LangSmith will not be available.
+            langsmith_license_key: The LangSmith license key to use for LangSmith
+                If not provided, the LangSmith license key will be read from the
+                LANGSMITH_LICENSE_KEY environment variable. If neither are provided,
+                Langsmith will not start up.
         """
         if stage == "dev":
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "dev-"
@@ -282,6 +287,8 @@ class LangSmithCommand:
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
+        if langsmith_license_key is not None:
+            os.environ["LANGSMITH_LICENSE_KEY"] = langsmith_license_key
         self.pull(stage=stage)
         if expose:
             self._start_and_expose(auth_token=auth_token, stage=stage)
@@ -420,6 +427,7 @@ def main() -> None:
             auth_token=args.ngrok_authtoken,
             stage=args.stage,
             openai_api_key=args.openai_api_key,
+            langsmith_license_key=args.langsmith_license_key,
         )
     )
 

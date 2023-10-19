@@ -2071,6 +2071,7 @@ class Client:
             resulting model outputs.
 
         For the synchronous version, see client.run_on_dataset.
+        For the synchronous version, see client.run_on_dataset.
 
         Examples
         --------
