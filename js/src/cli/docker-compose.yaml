@@ -16,6 +16,7 @@ services:
       - LANGCHAIN_ENV=local_docker
       - LOG_LEVEL=warning
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
     ports:
       - 1984:1984
     depends_on:
@@ -26,6 +27,7 @@ services:
     environment:
       - LANGCHAIN_ENV=local_docker
       - LOG_LEVEL=warning
+      - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
     entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker --connection-class lc_database.queue.connection.RedisRetry --job-class lc_database.queue.job.AsyncJob"
   langchain-hub:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:latest
@@ -33,6 +35,7 @@ services:
       - PORT=1985
       - LANGCHAIN_ENV=local_docker
       - LOG_LEVEL=warning
+      - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
     ports:
       - 1985:1985
     depends_on:
