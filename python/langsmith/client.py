@@ -236,6 +236,7 @@ class Client:
         retry_config: Optional[Retry] = None,
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
+        session: Optional[requests.Session] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -254,6 +255,9 @@ class Client:
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
+        session: requests.Session or None, default=None
+            The session to use for requests. If None, a new session will be
+            created.
 
         Raises
         ------
@@ -268,7 +272,7 @@ class Client:
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
-        self.session = requests.Session()
+        self.session = session if session else requests.Session()
         weakref.finalize(self, close_session, self.session)
 
         # Mount the HTTPAdapter with the retry configuration
@@ -367,22 +371,36 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             return response
         except requests.HTTPError as e:
-            if response is not None and response.status_code == 500:
-                raise ls_utils.LangSmithAPIError(
-                    f"Server error caused failure to {request_method} {url} in"
-                    f" LangSmith API. {e}"
-                )
+            if response is not None:
+                if response.status_code == 500:
+                    raise ls_utils.LangSmithAPIError(
+                        f"Server error caused failure to {request_method} {url} in"
+                        f" LangSmith API. {repr(e)}"
+                    )
+                elif response.status_code == 429:
+                    raise ls_utils.LangSmithRateLimitError(
+                        f"Rate limit exceeded for {url}. {repr(e)}"
+                    )
+                elif response is not None and response.status_code == 401:
+                    raise ls_utils.LangSmithAuthError(
+                        f"Authentication failed for {url}. {repr(e)}"
+                    )
+                else:
+                    raise ls_utils.LangSmithError(
+                        f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
+                    )
+
             else:
                 raise ls_utils.LangSmithUserError(
-                    f"Failed to {request_method} {url} in LangSmith API. {e}"
+                    f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
                 )
         except requests.ConnectionError as e:
             raise ls_utils.LangSmithConnectionError(
                 f"Connection error caused failure to {request_method} {url}"
                 "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-                f" {e}"
+                f" {repr(e)}"
             ) from e
-        except ValueError as e:
+        except Exception as e:
             args = list(e.args)
             msg = args[1] if len(args) > 1 else ""
             msg = msg.replace("session", "session (project)")
@@ -644,7 +662,11 @@ class Client:
         runtime = run_extra.setdefault("runtime", {})
         runtime_env = ls_env.get_runtime_and_metrics()
         run_extra["runtime"] = {**runtime_env, **runtime}
-        headers = {**self._headers, "Accept": "application/json"}
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs",
@@ -685,7 +707,11 @@ class Client:
         **kwargs : Any
             Kwargs are ignored.
         """
-        headers = {**self._headers, "Accept": "application/json"}
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
         data: Dict[str, Any] = {}
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
@@ -1083,7 +1109,7 @@ class Client:
             body["reference_dataset_id"] = reference_dataset_id
         response = self.session.post(
             endpoint,
-            headers=self._headers,
+            headers={**self._headers, "Content-Type": "application/json"},
             data=json.dumps(body, default=_serialize_json),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1250,7 +1276,7 @@ class Client:
         )
         response = self.session.post(
             self.api_url + "/datasets",
-            headers=self._headers,
+            headers={**self._headers, "Content-Type": "application/json"},
             data=dataset.json(),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1295,6 +1321,37 @@ class Client:
                 raise ls_utils.LangSmithError(f"Dataset {dataset_name} not found")
             return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
         return ls_schemas.Dataset(**result, _host_url=self._host_url)
+
+    def read_dataset_openai_finetuning(
+        self, dataset_id: Optional[str] = None, *, dataset_name: Optional[str] = None
+    ) -> list:
+        """
+        Download a dataset in OpenAI Jsonl format and load it as a list of dicts.
+
+        Parameters
+        ----------
+        dataset_id : str
+            The ID of the dataset to download.
+        dataset_name : str
+            The name of the dataset to download.
+
+        Returns
+        -------
+        list
+            The dataset loaded as a list of dicts.
+        """
+        path = "/datasets"
+        if dataset_id is not None:
+            pass
+        elif dataset_name is not None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        else:
+            raise ValueError("Must provide dataset_name or dataset_id")
+        response = self._get_with_retries(
+            f"{path}/{dataset_id}/openai_ft",
+        )
+        dataset = [json.loads(line) for line in response.text.strip().split("\n")]
+        return dataset
 
     def list_datasets(
         self,
@@ -1595,7 +1652,9 @@ class Client:
             data["id"] = example_id
         example = ls_schemas.ExampleCreate(**data)
         response = self.session.post(
-            f"{self.api_url}/examples", headers=self._headers, data=example.json()
+            f"{self.api_url}/examples",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=example.json(),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -1687,7 +1746,7 @@ class Client:
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{example_id}",
-            headers=self._headers,
+            headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(exclude_none=True),
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1948,12 +2007,21 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
         )
-        response = self.session.post(
+        self.request_with_retries(
+            "POST",
             self.api_url + "/feedback",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=feedback.json(exclude_none=True),
+            request_kwargs={
+                "data": json.dumps(
+                    feedback.dict(exclude_none=True), default=_serialize_json
+                ),
+                "headers": {
+                    **self._headers,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                "timeout": self.timeout_ms / 1000,
+            },
         )
-        ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Feedback(**feedback.dict())
 
     def update_feedback(

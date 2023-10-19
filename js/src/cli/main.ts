@@ -1,13 +1,15 @@
+import * as child_process from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as util from "util";
-import { Command } from "commander";
-import * as child_process from "child_process";
+
 import {
   getLangChainEnvVars,
   getRuntimeEnvironment,
   setEnvironmentVariable,
 } from "../utils/env.js";
+
+import { Command } from "commander";
 import { spawn } from "child_process";
 
 const currentFileName = __filename;
@@ -330,6 +332,12 @@ const startCommand = new Command("start")
       " from the OPENAI_API_KEY environment variable. If neither are provided," +
       " some features of LangSmith will not be available."
   )
+  .option(
+    "--langsmith-license-key <langsmithLicenseKey>",
+    "The LangSmith license key to use for LangSmith. If not provided, the LangSmith" +
+      " License Key will be read from the LANGSMITH_LICENSE_KEY environment variable." +
+      " If neither are provided, the Langsmith application will not spin up."
+  )
   .action(async (args) => {
     const smith = await SmithCommand.create();
     if (args.stage === "dev") {
@@ -339,6 +347,9 @@ const startCommand = new Command("start")
     }
     if (args.openaiApiKey) {
       setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
+    }
+    if (args.langsmithLicenseKey) {
+      setEnvironmentVariable("LANGSMITH_LICENSE_KEY", args.langsmithLicenseKey);
     }
     await smith.pull({ stage: args.stage });
     if (args.expose) {
