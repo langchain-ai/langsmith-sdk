@@ -262,7 +262,7 @@ class LangSmithCommand:
         auth_token: Optional[str] = None,
         stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
         openai_api_key: Optional[str] = None,
-        langsmith_license_key: str
+        langsmith_license_key: str,
     ) -> None:
         """Run the LangSmith server locally.
 
