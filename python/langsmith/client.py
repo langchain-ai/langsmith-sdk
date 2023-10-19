@@ -1028,6 +1028,23 @@ class Client:
             for dataset in response.json()
         ]
 
+    def list_shared_projects(
+        self,
+        *,
+        dataset_share_token: Optional[str] = None,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+    ) -> Iterator[ls_schemas.TracerSession]:
+        params = {"id": project_ids, "name": name, "name_contains": name_contains}
+        yield from [
+            ls_schemas.TracerSession(**dataset, _host_url=self._host_url)
+            for dataset in self._get_paginated_list(
+                f"/public/{dataset_share_token}/datasets/sessions",
+                params=params,
+            )
+        ]
+
     def create_project(
         self,
         project_name: str,
