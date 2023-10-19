@@ -110,7 +110,7 @@ class Dataset(DatasetBase):
     id: UUID
     created_at: datetime
     modified_at: Optional[datetime] = Field(default=None)
-    example_count: int
+    example_count: Optional[int] = None
     session_count: Optional[int] = None
     last_session_start_time: Optional[datetime] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
