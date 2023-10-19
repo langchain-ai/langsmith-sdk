@@ -212,6 +212,11 @@ export interface Dataset extends BaseDataset {
   created_at: string;
   modified_at: string;
 }
+export interface DatasetShareSchema {
+  dataset_id: string;
+  share_token: string;
+  url: string;
+}
 
 export interface FeedbackSourceBase {
   type: string;

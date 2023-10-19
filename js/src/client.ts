@@ -4,6 +4,7 @@ import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   DataType,
   Dataset,
+  DatasetShareSchema,
   Example,
   ExampleCreate,
   ExampleUpdate,
@@ -23,7 +24,7 @@ import {
   isLangChainMessage,
 } from "./utils/messages.js";
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
-import { DatasetShareSchema, Dataset } from "./types";
+
 import { RunEvaluator } from "./evaluation/evaluator.js";
 
 interface ClientConfig {
@@ -648,19 +649,17 @@ export class Client {
   }
 
   public async readSharedDataset(shareToken: string): Promise<Dataset> {
-    const params = { share_token: shareToken };
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/public/${shareToken}/datasets`,
       {
         method: "GET",
         headers: this.headers,
-        params,
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
     const dataset = await response.json();
-    return new Dataset(dataset[0], this.getHostUrl());
+    return dataset as Dataset;
   }
 
   public async createProject({

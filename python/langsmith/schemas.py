@@ -3,7 +3,16 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, TypedDict, Union, runtime_checkable
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    TypedDict,
+    Union,
+    runtime_checkable,
+)
 from uuid import UUID
 
 try:
