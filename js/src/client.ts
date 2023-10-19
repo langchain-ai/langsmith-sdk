@@ -4,6 +4,7 @@ import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   DataType,
   Dataset,
+  DatasetShareSchema,
   Example,
   ExampleCreate,
   ExampleUpdate,
@@ -582,6 +583,91 @@ export class Client {
     );
     const runs = await response.json();
     return runs as Run[];
+  }
+
+  public async readDatasetSharedSchema(
+    datasetId?: string,
+    datasetName?: string
+  ): Promise<DatasetShareSchema> {
+    if (!datasetId && !datasetName) {
+      throw new Error("Either datasetId or datasetName must be given");
+    }
+    if (!datasetId) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId = dataset.id;
+    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId}/share`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    const shareSchema = await response.json();
+    shareSchema.url = `${this.getHostUrl()}/public/${
+      shareSchema.share_token
+    }/d`;
+    return shareSchema as DatasetShareSchema;
+  }
+
+  public async shareDataset(
+    datasetId?: string,
+    datasetName?: string
+  ): Promise<DatasetShareSchema> {
+    if (!datasetId && !datasetName) {
+      throw new Error("Either datasetId or datasetName must be given");
+    }
+    if (!datasetId) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId = dataset.id;
+    }
+    const data = {
+      dataset_id: datasetId,
+    };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId}/share`,
+      {
+        method: "PUT",
+        headers: this.headers,
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    const shareSchema = await response.json();
+    shareSchema.url = `${this.getHostUrl()}/public/${
+      shareSchema.share_token
+    }/d`;
+    return shareSchema as DatasetShareSchema;
+  }
+
+  public async unshareDataset(datasetId: string): Promise<void> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId}/share`,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    await raiseForStatus(response, "unshare dataset");
+  }
+
+  public async readSharedDataset(shareToken: string): Promise<Dataset> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/public/${shareToken}/datasets`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    const dataset = await response.json();
+    return dataset as Dataset;
   }
 
   public async createProject({
