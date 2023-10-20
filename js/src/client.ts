@@ -1254,7 +1254,7 @@ export class Client {
       feedbackSourceType?: FeedbackSourceType;
       sourceRunId?: string;
       feedbackId?: string;
-      eager: boolean;
+      eager?: boolean;
     }
   ): Promise<Feedback> {
     const feedback_source: feedback_source = {
