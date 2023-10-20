@@ -1244,6 +1244,7 @@ export class Client {
       feedbackSourceType = "api",
       sourceRunId,
       feedbackId,
+      eager = false,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -1253,6 +1254,7 @@ export class Client {
       feedbackSourceType?: FeedbackSourceType;
       sourceRunId?: string;
       feedbackId?: string;
+      eager: boolean;
     }
   ): Promise<Feedback> {
     const feedback_source: feedback_source = {
@@ -1276,7 +1278,8 @@ export class Client {
       comment,
       feedback_source: feedback_source,
     };
-    const response = await this.caller.call(fetch, `${this.apiUrl}/feedback`, {
+    const url = `${this.apiUrl}/feedback` + (eager ? "/eager" : "");
+    const response = await this.caller.call(fetch, url, {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(feedback),

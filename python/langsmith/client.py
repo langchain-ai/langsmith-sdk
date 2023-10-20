@@ -1054,6 +1054,23 @@ class Client:
             for dataset in response.json()
         ]
 
+    def list_shared_projects(
+        self,
+        *,
+        dataset_share_token: Optional[str] = None,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+    ) -> Iterator[ls_schemas.TracerSession]:
+        params = {"id": project_ids, "name": name, "name_contains": name_contains}
+        yield from [
+            ls_schemas.TracerSession(**dataset, _host_url=self._host_url)
+            for dataset in self._get_paginated_list(
+                f"/public/{dataset_share_token}/datasets/sessions",
+                params=params,
+            )
+        ]
+
     def create_project(
         self,
         project_name: str,
@@ -1935,6 +1952,7 @@ class Client:
         ] = ls_schemas.FeedbackSourceType.API,
         source_run_id: Optional[ID_TYPE] = None,
         feedback_id: Optional[ID_TYPE] = None,
+        eager: bool = False,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
 
@@ -1962,6 +1980,11 @@ class Client:
         feedback_id : str or UUID or None, default=None
             The ID of the feedback to create. If not provided, a random UUID will be
             generated.
+        eager : bool, default=False
+            Whether to skip the write queue when creating the feedback. This means
+            that the feedback will be immediately available for reading, but may
+            cause the write to fail if the API is under heavy load, since the target
+            run_id may have not been created yet.
         """
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
@@ -1992,7 +2015,7 @@ class Client:
         )
         self.request_with_retries(
             "POST",
-            self.api_url + "/feedback",
+            self.api_url + "/feedback" + ("/eager" if eager else ""),
             request_kwargs={
                 "data": json.dumps(
                     feedback.dict(exclude_none=True), default=_serialize_json
