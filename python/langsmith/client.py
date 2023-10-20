@@ -10,7 +10,9 @@ import io
 import json
 import logging
 import os
+import random
 import socket
+import time
 import uuid
 import weakref
 from typing import (
@@ -25,6 +27,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     Union,
     cast,
 )
@@ -336,6 +339,8 @@ class Client:
         request_method: str,
         url: str,
         request_kwargs: Mapping,
+        stop_after_attempt: int = 1,
+        retry_on: Optional[Sequence[Type[BaseException]]] = None,
     ) -> requests.Response:
         """Send a request with retries.
 
@@ -364,79 +369,73 @@ class Client:
         LangSmithError
             If the request fails.
         """
-        try:
-            response = self.session.request(
-                request_method, url, stream=False, **request_kwargs
-            )
-            ls_utils.raise_for_status_with_text(response)
-            return response
-        except requests.HTTPError as e:
-            if response is not None:
-                if response.status_code == 500:
-                    raise ls_utils.LangSmithAPIError(
-                        f"Server error caused failure to {request_method} {url} in"
-                        f" LangSmith API. {repr(e)}"
+        for idx in range(stop_after_attempt):
+            try:
+                try:
+                    response = self.session.request(
+                        request_method, url, stream=False, **request_kwargs
                     )
-                elif response.status_code == 429:
-                    raise ls_utils.LangSmithRateLimitError(
-                        f"Rate limit exceeded for {url}. {repr(e)}"
-                    )
-                elif response is not None and response.status_code == 401:
-                    raise ls_utils.LangSmithAuthError(
-                        f"Authentication failed for {url}. {repr(e)}"
-                    )
-                else:
-                    raise ls_utils.LangSmithError(
-                        f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
-                    )
+                    ls_utils.raise_for_status_with_text(response)
+                    return response
+                except requests.HTTPError as e:
+                    if response is not None:
+                        if response.status_code == 500:
+                            raise ls_utils.LangSmithAPIError(
+                                f"Server error caused failure to {request_method}"
+                                f" {url} in"
+                                f" LangSmith API. {repr(e)}"
+                            )
+                        elif response.status_code == 429:
+                            raise ls_utils.LangSmithRateLimitError(
+                                f"Rate limit exceeded for {url}. {repr(e)}"
+                            )
+                        elif response.status_code == 401:
+                            raise ls_utils.LangSmithAuthError(
+                                f"Authentication failed for {url}. {repr(e)}"
+                            )
+                        elif response.status_code == 404:
+                            raise ls_utils.LangSmithNotFoundError(
+                                f"Resource not found for {url}. {repr(e)}"
+                            )
+                        else:
+                            raise ls_utils.LangSmithError(
+                                f"Failed to {request_method} {url} in LangSmith"
+                                f" API. {repr(e)}"
+                            )
 
-            else:
-                raise ls_utils.LangSmithUserError(
-                    f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
-                )
-        except requests.ConnectionError as e:
-            raise ls_utils.LangSmithConnectionError(
-                f"Connection error caused failure to {request_method} {url}"
-                "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-                f" {repr(e)}"
-            ) from e
-        except Exception as e:
-            args = list(e.args)
-            msg = args[1] if len(args) > 1 else ""
-            msg = msg.replace("session", "session (project)")
-            emsg = "\n".join([args[0]] + [msg] + args[2:])
-            raise ls_utils.LangSmithError(
-                f"Failed to {request_method} {url} in LangSmith API. {emsg}"
-            ) from e
+                    else:
+                        raise ls_utils.LangSmithUserError(
+                            f"Failed to {request_method} {url} in LangSmith API."
+                            f" {repr(e)}"
+                        )
+                except requests.ConnectionError as e:
+                    raise ls_utils.LangSmithConnectionError(
+                        f"Connection error caused failure to {request_method} {url}"
+                        "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+                        f" {repr(e)}"
+                    ) from e
+                except Exception as e:
+                    args = list(e.args)
+                    msg = args[1] if len(args) > 1 else ""
+                    msg = msg.replace("session", "session (project)")
+                    emsg = "\n".join([args[0]] + [msg] + args[2:])
+                    raise ls_utils.LangSmithError(
+                        f"Failed to {request_method} {url} in LangSmith API. {emsg}"
+                    ) from e
+            except tuple(retry_on or []):
+                if idx + 1 == stop_after_attempt:
+                    raise
+                sleep_time = 2**idx + (random.random() * 0.5)
+                time.sleep(sleep_time)
+                continue
+
+        raise ls_utils.LangSmithError(
+            f"Failed to {request_method} {url} in LangSmith API."
+        )
 
     def _get_with_retries(
         self, path: str, params: Optional[Dict[str, Any]] = None
     ) -> requests.Response:
-        """Send a GET request with retries.
-
-        Parameters
-        ----------
-        path : str
-            The path of the request URL.
-        params : Dict[str, Any] or None, default=None
-            The query parameters.
-
-        Returns
-        -------
-        Response
-            The response object.
-
-        Raises
-        ------
-        LangSmithAPIError
-            If a server error occurs.
-        LangSmithUserError
-            If the request fails.
-        LangSmithConnectionError
-            If a connection error occurs.
-        LangSmithError
-            If the request fails.
-        """
         return self.request_with_retries(
             "get",
             f"{self.api_url}{path}",
@@ -1953,6 +1952,7 @@ class Client:
         source_run_id: Optional[ID_TYPE] = None,
         feedback_id: Optional[ID_TYPE] = None,
         eager: bool = False,
+        stop_after_attempt: int = 10,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
 
@@ -1985,6 +1985,8 @@ class Client:
             that the feedback will be immediately available for reading, but may
             cause the write to fail if the API is under heavy load, since the target
             run_id may have not been created yet.
+        stop_after_attempt : int, default=10
+            The number of times to retry the request before giving up.
         """
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
@@ -2027,6 +2029,8 @@ class Client:
                 },
                 "timeout": self.timeout_ms / 1000,
             },
+            stop_after_attempt=stop_after_attempt,
+            retry_on=(ls_utils.LangSmithNotFoundError,),
         )
         return ls_schemas.Feedback(**feedback.dict())
 
