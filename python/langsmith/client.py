@@ -954,19 +954,98 @@ class Client:
         return link is not None
 
     def list_shared_runs(
-        self, share_token: str, run_ids: Optional[List[str]] = None
-    ) -> List[ls_schemas.Run]:
-        """Get shared runs."""
-        params = {"id": run_ids, "share_token": share_token}
-        response = self.session.get(
-            f"{self.api_url}/public/{share_token}/runs",
-            headers=self._headers,
-            params=params,
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return [
-            ls_schemas.Run(**run, _host_url=self._host_url) for run in response.json()
-        ]
+        self,
+        *,
+        share_token: Optional[str] = None,
+        dataset_share_token: Optional[str] = None,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+        run_type: Optional[str] = None,
+        reference_example_id: Optional[ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        execution_order: Optional[int] = None,
+        parent_run_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+        error: Optional[bool] = None,
+        run_ids: Optional[List[ID_TYPE]] = None,
+        **kwargs: Any,
+    ) -> Iterator[ls_schemas.Run]:
+        """List runs from the LangSmith API.
+
+        Parameters
+        ----------
+        share_token : str or None, default=None
+            The share token for accessing an individual trace.
+        dataset_share_token : str or None, default=None
+            The share token for accessing runs made on a
+            public/shared dataset.
+        project_id : UUID or None, default=None
+            The ID of the project to filter by.
+        run_type : str or None, default=None
+            The type of the runs to filter by.
+        reference_example_id : UUID or None, default=None
+            The ID of the reference example to filter by.
+        query : str or None, default=None
+            The query string to filter by.
+        filter : str or None, default=None
+            The filter string to filter by.
+        execution_order : int or None, default=None
+            The execution order to filter by. Execution order is the position
+            of the run in the full trace's execution sequence.
+                All root run traces have execution_order 1.
+        parent_run_id : UUID or None, default=None
+            The ID of the parent run to filter by.
+        start_time : datetime or None, default=None
+            The start time to filter by.
+        error : bool or None, default=None
+            Whether to filter by error status.
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields
+        ------
+        Run
+            The runs.
+        """
+        if share_token is not None:
+            params = {"id": run_ids, "share_token": share_token}
+            response = self.session.get(
+                f"{self.api_url}/public/{share_token}/runs",
+                headers=self._headers,
+                params=params,
+            )
+            ls_utils.raise_for_status_with_text(response)
+            yield from [
+                ls_schemas.Run(**run, _host_url=self._host_url)
+                for run in response.json()
+            ]
+        elif dataset_share_token is not None:
+            query_params: Dict[str, Any] = {
+                "session": project_id,
+                "run_type": run_type,
+                "reference_example_id": reference_example_id,
+                "query": query,
+                "filter": filter,
+                "execution_order": execution_order,
+                "parent_run_id": parent_run_id,
+                "error": error,
+                "id": run_ids,
+                **kwargs,
+            }
+            if start_time is not None:
+                query_params["start_time"] = start_time.isoformat()
+            yield from [
+                ls_schemas.Run(**run, _host_url=self._host_url)
+                for run in self._get_paginated_list(
+                    f"/public/{dataset_share_token}/datasets/runs",
+                    params=query_params,
+                )
+            ]
+        else:
+            raise ValueError("Either share_token or dataset_share_token must be given")
 
     def read_dataset_shared_schema(
         self,
