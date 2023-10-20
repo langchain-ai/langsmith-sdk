@@ -29,6 +29,10 @@ class LangSmithAuthError(Exception):
     """Couldn't authenticate with the LangSmith API."""
 
 
+class LangSmithNotFoundError(Exception):
+    """Couldn't find the requested resource."""
+
+
 class LangSmithError(Exception):
     """An error occurred while communicating with the LangSmith API."""
 
