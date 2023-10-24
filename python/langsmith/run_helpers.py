@@ -455,7 +455,7 @@ def traceable(
             selected_wrapper = generator_wrapper
         else:
             selected_wrapper = wrapper
-        selected_wrapper.__langsmith_traceable__ = True
+        setattr(selected_wrapper, "__langsmith_traceable__", True)
         return selected_wrapper
 
     decorator._my_decorator_applied = True
