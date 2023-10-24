@@ -448,7 +448,7 @@ def traceable(
             run_container["new_run"].patch()
 
         if inspect.isasyncgenfunction(func):
-            selected_wrapper = async_generator_wrapper
+            selected_wrapper: Callable = async_generator_wrapper
         elif inspect.iscoroutinefunction(func):
             selected_wrapper = async_wrapper
         elif inspect.isgeneratorfunction(func):
@@ -458,7 +458,6 @@ def traceable(
         setattr(selected_wrapper, "__langsmith_traceable__", True)
         return selected_wrapper
 
-    decorator._my_decorator_applied = True
     return decorator
 
 
