@@ -37,7 +37,7 @@ def get_run_tree_context() -> Optional[run_trees.RunTree]:
 
 
 def is_traceable_function(func: Callable) -> bool:
-    """Check if a function is traceable."""
+    """Check if a function is @traceable decorated."""
     return getattr(func, "__langsmith_traceable__", False)
 
 
