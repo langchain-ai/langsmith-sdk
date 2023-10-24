@@ -36,6 +36,11 @@ def get_run_tree_context() -> Optional[run_trees.RunTree]:
     return _PARENT_RUN_TREE.get()
 
 
+def is_traceable_function(func: Callable) -> bool:
+    """Check if a function is @traceable decorated."""
+    return getattr(func, "__langsmith_traceable__", False)
+
+
 def _get_inputs(
     signature: inspect.Signature, *args: Any, **kwargs: Any
 ) -> Dict[str, Any]:
@@ -443,13 +448,15 @@ def traceable(
             run_container["new_run"].patch()
 
         if inspect.isasyncgenfunction(func):
-            return async_generator_wrapper
+            selected_wrapper: Callable = async_generator_wrapper
         elif inspect.iscoroutinefunction(func):
-            return async_wrapper
+            selected_wrapper = async_wrapper
         elif inspect.isgeneratorfunction(func):
-            return generator_wrapper
+            selected_wrapper = generator_wrapper
         else:
-            return wrapper
+            selected_wrapper = wrapper
+        setattr(selected_wrapper, "__langsmith_traceable__", True)
+        return selected_wrapper
 
     return decorator
 
