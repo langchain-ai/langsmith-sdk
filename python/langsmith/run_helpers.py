@@ -581,7 +581,10 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             "You can install it with `pip install langchain`."
         ) from e
     if not is_traceable_function(traceable_fn):
-        fn_src = inspect.getsource(traceable_fn)
+        try:
+            fn_src = inspect.getsource(traceable_fn)
+        except Exception:
+            fn_src = "<source unavailable>"
         raise ValueError(
             f"as_runnable expects a function wrapped by the LangSmith"
             f" @traceable decorator. Got {traceable_fn} defined as:\n{fn_src}"
