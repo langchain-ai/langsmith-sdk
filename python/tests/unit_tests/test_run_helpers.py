@@ -145,6 +145,25 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
     }
 
 
+def test_traceable_iterator() -> None:
+    @traceable()
+    def my_iterator_fn(a, b, d):
+        for i in range(a + b + d):
+            yield i
+
+    assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.asyncio
+async def test_traceable_async_iterator() -> None:
+    @traceable()
+    async def my_iterator_fn(a, b, d):
+        for i in range(a + b + d):
+            yield i
+
+    assert [i async for i in my_iterator_fn(1, 2, 3)] == [0, 1, 2, 3, 4, 5]
+
+
 def test_as_runnable() -> None:
     @traceable()
     def my_function(a, b, d):
