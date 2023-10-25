@@ -222,7 +222,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function"""
-
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -251,10 +251,10 @@ def traceable(
             except Exception as e:
                 run_container["new_run"].end(error=str(e))
                 run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 raise e
-            _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+            _PARENT_RUN_TREE.set(context_run)
             _PROJECT_NAME.set(run_container["outer_project"])
             if isinstance(function_result, dict):
                 run_container["new_run"].end(outputs=function_result)
@@ -267,6 +267,7 @@ def traceable(
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -296,7 +297,7 @@ def traceable(
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
                     async_gen_result = func(*args, **kwargs)
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
@@ -307,7 +308,7 @@ def traceable(
                 stacktrace = traceback.format_exc()
                 run_container["new_run"].end(error=stacktrace)
                 run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
@@ -336,6 +337,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -365,12 +367,12 @@ def traceable(
                 stacktrace = traceback.format_exc()
                 run_container["new_run"].end(error=stacktrace)
                 run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
                 raise e
-            _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+            _PARENT_RUN_TREE.set(context_run)
             _PROJECT_NAME.set(run_container["outer_project"])
             _TAGS.set(run_container["outer_tags"])
             _METADATA.set(run_container["outer_metadata"])
@@ -385,6 +387,7 @@ def traceable(
         def generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -414,7 +417,7 @@ def traceable(
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
                     generator_result = func(*args, **kwargs)
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
@@ -425,7 +428,7 @@ def traceable(
                 stacktrace = traceback.format_exc()
                 run_container["new_run"].end(error=stacktrace)
                 run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
@@ -519,15 +522,12 @@ def trace(
         tb = traceback.format_exc()
         new_run.end(error=tb)
         new_run.patch()
+        raise e
+    finally:
         _PARENT_RUN_TREE.set(parent_run_)
         _PROJECT_NAME.set(outer_project)
         _TAGS.set(outer_tags)
         _METADATA.set(outer_metadata)
-        raise e
-    _PARENT_RUN_TREE.set(parent_run_)
-    _PROJECT_NAME.set(outer_project)
-    _TAGS.set(outer_tags)
-    _METADATA.set(outer_metadata)
     if new_run.end_time is None:
         # User didn't call end() on the run, so we'll do it for them
         new_run.end()
