@@ -1,7 +1,9 @@
 import inspect
 from typing import Any
 
-from langsmith.run_helpers import _get_inputs
+import pytest
+
+from langsmith.run_helpers import _get_inputs, as_runnable, traceable
 
 
 def test__get_inputs_with_no_args() -> None:
@@ -141,3 +143,72 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
         "e": 5,
         "other_kwargs": {"f": 6},
     }
+
+
+def test_traceable_iterator() -> None:
+    @traceable()
+    def my_iterator_fn(a, b, d):
+        for i in range(a + b + d):
+            yield i
+
+    assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.asyncio
+async def test_traceable_async_iterator() -> None:
+    @traceable()
+    async def my_iterator_fn(a, b, d):
+        for i in range(a + b + d):
+            yield i
+
+    assert [i async for i in my_iterator_fn(1, 2, 3)] == [0, 1, 2, 3, 4, 5]
+
+
+def test_as_runnable() -> None:
+    @traceable()
+    def my_function(a, b, d):
+        return a + b + d
+
+    runnable = as_runnable(my_function)
+    assert runnable.invoke({"a": 1, "b": 2, "d": 3}) == 6
+
+
+def test_as_runnable_batch() -> None:
+    @traceable()
+    def my_function(a, b, d):
+        return a + b + d
+
+    runnable = as_runnable(my_function)
+    assert runnable.batch(
+        [
+            {"a": 1, "b": 2, "d": 3},
+            {"a": 1, "b": 2, "d": 4},
+        ]
+    ) == [6, 7]
+
+
+@pytest.mark.asyncio
+async def test_as_runnable_async() -> None:
+    @traceable()
+    async def my_function(a, b, d):
+        return a + b + d
+
+    runnable = as_runnable(my_function)
+    result = await runnable.ainvoke({"a": 1, "b": 2, "d": 3})
+    assert result == 6
+
+
+@pytest.mark.asyncio
+async def test_as_runnable_async_batch() -> None:
+    @traceable()
+    async def my_function(a, b, d):
+        return a + b + d
+
+    runnable = as_runnable(my_function)
+    result = await runnable.abatch(
+        [
+            {"a": 1, "b": 2, "d": 3},
+            {"a": 1, "b": 2, "d": 4},
+        ]
+    )
+    assert result == [6, 7]
