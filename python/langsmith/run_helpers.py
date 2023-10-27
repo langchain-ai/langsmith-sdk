@@ -98,12 +98,13 @@ def _container_end(
     error: Optional[str] = None,
 ):
     """End the run."""
-    if container.get("new_run") is None:
+    run_tree = container.get("new_run")
+    if run_tree is None:
         # Tracing disabled
         return
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
-    container["new_run"].end(outputs=outputs_, error=error)
-    container["new_run"].patch()
+    run_tree.end(outputs=outputs_, error=error)
+    run_tree.patch()
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
@@ -131,11 +132,7 @@ def _setup_run(
     outer_project = _PROJECT_NAME.get() or os.environ.get(
         "LANGCHAIN_PROJECT", os.environ.get("LANGCHAIN_PROJECT", "default")
     )
-    langsmith_extra = (
-        LangSmithExtra(**langsmith_extra)
-        if isinstance(langsmith_extra, dict)
-        else LangSmithExtra()
-    )
+    langsmith_extra = langsmith_extra or LangSmithExtra()
     parent_run_ = langsmith_extra.get("run_tree") or _PARENT_RUN_TREE.get()
     if not parent_run_ and not utils.tracing_is_enabled():
         utils.log_once(
