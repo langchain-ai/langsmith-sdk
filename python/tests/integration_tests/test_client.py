@@ -150,12 +150,12 @@ def test_persist_update_run(
     run["outputs"] = {"output": ["Hi"]}
     run["extra"]["foo"] = "bar"
     langchain_client.update_run(run["id"], **run)
-    for _ in range(3):
+    for _ in range(5):
         try:
             stored_run = langchain_client.read_run(run["id"])
             break
         except LangSmithError:
-            time.sleep(1)
+            time.sleep(2)
 
     assert stored_run.id == run["id"]
     assert stored_run.outputs == run["outputs"]
@@ -217,8 +217,8 @@ def test_evaluate_run(
         return dict(score=score, value=value)
 
     evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
-
-    for _ in range(3):
+    runs = None
+    for _ in range(5):
         try:
             runs = list(
                 langchain_client.list_runs(
@@ -229,8 +229,8 @@ def test_evaluate_run(
             )
             break
         except LangSmithError:
-            time.sleep(1)
-
+            time.sleep(2)
+    assert runs is not None
     all_eval_results: List[EvaluationResult] = []
     for run in runs:
         all_eval_results.append(langchain_client.evaluate_run(run, evaluator))
