@@ -128,7 +128,11 @@ def test_async_methods():
         assert sync_method in sync_methods
         sync_args = set(Client.__dict__[sync_method].__code__.co_varnames)
         async_args = set(Client.__dict__[async_method].__code__.co_varnames)
-        assert sync_args.issubset(async_args)
+        extra_args = sync_args - async_args
+        assert not extra_args, (
+            f"Extra args for {async_method} "
+            f"(compared to {sync_method}): {extra_args}"
+        )
 
 
 def test_get_api_key():
