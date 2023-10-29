@@ -1868,8 +1868,13 @@ class Client:
         source_info = source_info or {}
         if evaluation_result.evaluator_info:
             source_info = {**evaluation_result.evaluator_info, **source_info}
+        run_id_ = (
+            evaluation_result.target_run_id
+            if evaluation_result.target_run_id
+            else run_.id
+        )
         self.create_feedback(
-            run_.id,
+            run_id_,
             evaluation_result.key,
             score=evaluation_result.score,
             value=evaluation_result.value,

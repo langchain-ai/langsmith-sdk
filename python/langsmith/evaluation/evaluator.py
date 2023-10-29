@@ -27,6 +27,12 @@ class EvaluationResult(BaseModel):
     evaluator_info: Dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
     source_run_id: Optional[Union[uuid.UUID, str]] = None
+    """The ID of the trace of the evaluator itself."""
+    target_run_id: Optional[Union[uuid.UUID, str]] = None
+    """The ID of the trace this evaluation is applied to.
+    
+    If none provided, the evaluation feedback is applied to the
+    root trace being tested."""
 
     class Config:
         """Pydantic model configuration."""
