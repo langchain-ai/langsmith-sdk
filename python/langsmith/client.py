@@ -1826,6 +1826,21 @@ class Client:
             reference_example_ = None
         return reference_example_
 
+    def _select_eval_results(
+        self,
+        results: Union[ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults],
+    ) -> List[ls_evaluator.EvaluationResult]:
+        if isinstance(results, ls_evaluator.EvaluationResult):
+            results_ = [results]
+        elif isinstance(results, dict) and "results" in results:
+            results_ = cast(List[ls_evaluator.EvaluationResult], results["results"])
+        else:
+            raise TypeError(
+                f"Invalid evaluation result type {type(results)}."
+                " Expected EvaluationResult or EvaluationResults."
+            )
+        return results_
+
     def evaluate_run(
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
@@ -1861,25 +1876,44 @@ class Client:
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        evaluation_result = evaluator.evaluate_run(
+        evaluator_response = evaluator.evaluate_run(
             run_,
             example=reference_example_,
         )
-        source_info = source_info or {}
-        if evaluation_result.evaluator_info:
-            source_info = {**evaluation_result.evaluator_info, **source_info}
-        self.create_feedback(
-            run_.id,
-            evaluation_result.key,
-            score=evaluation_result.score,
-            value=evaluation_result.value,
-            comment=evaluation_result.comment,
-            correction=evaluation_result.correction,
+        results = self._log_evaluation_feedback(
+            evaluator_response,
+            run_,
             source_info=source_info,
-            source_run_id=evaluation_result.source_run_id,
-            feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
-        return evaluation_result
+        # TODO: Return all results
+        return results[0]
+
+    def _log_evaluation_feedback(
+        self,
+        evaluator_response: Union[
+            ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults
+        ],
+        run: ls_schemas.Run,
+        source_info: Optional[Dict[str, Any]] = None,
+    ) -> List[ls_evaluator.EvaluationResult]:
+        results = self._select_eval_results(evaluator_response)
+        for res in results:
+            source_info_ = source_info or {}
+            if res.evaluator_info:
+                source_info_ = {**res.evaluator_info, **source_info_}
+            run_id_ = res.target_run_id if res.target_run_id else run.id
+            self.create_feedback(
+                run_id_,
+                res.key,
+                score=res.score,
+                value=res.value,
+                comment=res.comment,
+                correction=res.correction,
+                source_info=source_info_,
+                source_run_id=res.source_run_id,
+                feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
+            )
+        return results
 
     async def aevaluate_run(
         self,
@@ -1916,25 +1950,17 @@ class Client:
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        evaluation_result = await evaluator.aevaluate_run(
+        evaluator_response = await evaluator.aevaluate_run(
             run_,
             example=reference_example_,
         )
-        source_info = source_info or {}
-        if evaluation_result.evaluator_info:
-            source_info = {**evaluation_result.evaluator_info, **source_info}
-        self.create_feedback(
-            run_.id,
-            evaluation_result.key,
-            score=evaluation_result.score,
-            value=evaluation_result.value,
-            comment=evaluation_result.comment,
-            correction=evaluation_result.correction,
+        # TODO: Return all results and use async API
+        results = self._log_evaluation_feedback(
+            evaluator_response,
+            run_,
             source_info=source_info,
-            source_run_id=evaluation_result.source_run_id,
-            feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
-        return evaluation_result
+        return results[0]
 
     def create_feedback(
         self,
