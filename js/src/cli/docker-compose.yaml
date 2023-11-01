@@ -3,7 +3,7 @@ services:
   langchain-playground:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-playground:latest
   langchain-frontend:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend-dynamic:latest
     ports:
       - 80:80
     depends_on:
