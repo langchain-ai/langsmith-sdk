@@ -1,4 +1,6 @@
 """Decorator for creating a run tree from functions."""
+from __future__ import annotations
+
 import contextlib
 import contextvars
 import functools
@@ -9,8 +11,10 @@ import traceback
 import uuid
 from concurrent import futures
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncGenerator,
+    Awaitable,
     Callable,
     Dict,
     Generator,
@@ -18,9 +22,13 @@ from typing import (
     Mapping,
     Optional,
     TypedDict,
+    cast,
 )
 
 from langsmith import client, run_trees, utils
+
+if TYPE_CHECKING:
+    from langchain.schema.runnable import Runnable
 
 logger = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
@@ -34,6 +42,11 @@ _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", defaul
 def get_run_tree_context() -> Optional[run_trees.RunTree]:
     """Get the current run tree context."""
     return _PARENT_RUN_TREE.get()
+
+
+def is_traceable_function(func: Callable) -> bool:
+    """Check if a function is @traceable decorated."""
+    return getattr(func, "__langsmith_traceable__", False)
 
 
 def _get_inputs(
@@ -72,11 +85,26 @@ class LangSmithExtra(TypedDict, total=False):
 class _TraceableContainer(TypedDict, total=False):
     """Typed response when initializing a run a traceable."""
 
-    new_run: run_trees.RunTree
+    new_run: Optional[run_trees.RunTree]
     project_name: Optional[str]
     outer_project: Optional[str]
     outer_metadata: Optional[Dict[str, Any]]
     outer_tags: Optional[List[str]]
+
+
+def _container_end(
+    container: _TraceableContainer,
+    outputs: Optional[Any] = None,
+    error: Optional[str] = None,
+):
+    """End the run."""
+    run_tree = container.get("new_run")
+    if run_tree is None:
+        # Tracing disabled
+        return
+    outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
+    run_tree.end(outputs=outputs_, error=error)
+    run_tree.patch()
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
@@ -106,6 +134,19 @@ def _setup_run(
     )
     langsmith_extra = langsmith_extra or LangSmithExtra()
     parent_run_ = langsmith_extra.get("run_tree") or _PARENT_RUN_TREE.get()
+    if not parent_run_ and not utils.tracing_is_enabled():
+        utils.log_once(
+            logging.DEBUG, "LangSmith tracing is disabled, returning original function."
+        )
+        return _TraceableContainer(
+            new_run=None,
+            project_name=outer_project,
+            outer_project=outer_project,
+            outer_metadata=None,
+            outer_tags=None,
+        )
+    # Else either the env var is set OR a parent run was explicitly set,
+    # which occurs in the `as_runnable()` flow
     project_name_ = langsmith_extra.get("project_name", outer_project)
     signature = inspect.signature(func)
     name_ = name or func.__name__
@@ -159,14 +200,18 @@ def _setup_run(
             executor=executor,
             client=client_,
         )
+
     new_run.post()
-    return _TraceableContainer(
+    response_container = _TraceableContainer(
         new_run=new_run,
         project_name=project_name_,
         outer_project=outer_project,
         outer_metadata=outer_metadata,
         outer_tags=outer_tags,
     )
+    _PROJECT_NAME.set(response_container["project_name"])
+    _PARENT_RUN_TREE.set(response_container["new_run"])
+    return response_container
 
 
 def traceable(
@@ -204,12 +249,6 @@ def traceable(
     extra_outer = extra or {}
 
     def decorator(func: Callable):
-        if not utils.tracing_is_enabled():
-            utils.log_once(
-                logging.DEBUG, "Tracing is disabled, returning original function"
-            )
-            return func
-
         @functools.wraps(func)
         async def async_wrapper(
             *args: Any,
@@ -217,7 +256,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function"""
-
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -231,8 +270,6 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-            _PROJECT_NAME.set(run_container["project_name"])
-            _PARENT_RUN_TREE.set(run_container["new_run"])
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -244,24 +281,22 @@ def traceable(
                 else:
                     function_result = await func(*args, **kwargs)
             except Exception as e:
-                run_container["new_run"].end(error=str(e))
-                run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
+                stacktrace = traceback.format_exc()
+                _container_end(run_container, error=stacktrace)
                 raise e
-            _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
-            _PROJECT_NAME.set(run_container["outer_project"])
-            if isinstance(function_result, dict):
-                run_container["new_run"].end(outputs=function_result)
-            else:
-                run_container["new_run"].end(outputs={"output": function_result})
-            run_container["new_run"].patch()
+            finally:
+                _PARENT_RUN_TREE.set(context_run)
+                _PROJECT_NAME.set(run_container["outer_project"])
+                _TAGS.set(run_container["outer_tags"])
+                _METADATA.set(run_container["outer_metadata"])
+            _container_end(run_container, outputs=function_result)
             return function_result
 
         @functools.wraps(func)
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -275,8 +310,6 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-            _PROJECT_NAME.set(run_container["project_name"])
-            _PARENT_RUN_TREE.set(run_container["new_run"])
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -291,22 +324,22 @@ def traceable(
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
                     async_gen_result = func(*args, **kwargs)
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
                 async for item in async_gen_result:
                     results.append(item)
                     yield item
-            except (BaseException, Exception, KeyboardInterrupt) as e:
+            except BaseException as e:
                 stacktrace = traceback.format_exc()
-                run_container["new_run"].end(error=stacktrace)
-                run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _container_end(run_container, error=stacktrace)
+                raise e
+            finally:
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
-                raise e
             if results:
                 if reduce_fn:
                     try:
@@ -318,11 +351,7 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            if isinstance(function_result, dict):
-                run_container["new_run"].end(outputs=function_result)
-            else:
-                run_container["new_run"].end(outputs={"output": function_result})
-            run_container["new_run"].patch()
+            _container_end(run_container, outputs=function_result)
 
         @functools.wraps(func)
         def wrapper(
@@ -331,6 +360,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -344,8 +374,6 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-            _PROJECT_NAME.set(run_container["project_name"])
-            _PARENT_RUN_TREE.set(run_container["new_run"])
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -356,30 +384,23 @@ def traceable(
                     )
                 else:
                     function_result = func(*args, **kwargs)
-            except (BaseException, Exception, KeyboardInterrupt) as e:
+            except BaseException as e:
                 stacktrace = traceback.format_exc()
-                run_container["new_run"].end(error=stacktrace)
-                run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _container_end(run_container, error=stacktrace)
+                raise e
+            finally:
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
-                raise e
-            _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
-            _PROJECT_NAME.set(run_container["outer_project"])
-            _TAGS.set(run_container["outer_tags"])
-            _METADATA.set(run_container["outer_metadata"])
-            if isinstance(function_result, dict):
-                run_container["new_run"].end(outputs=function_result)
-            else:
-                run_container["new_run"].end(outputs={"output": function_result})
-            run_container["new_run"].patch()
+            _container_end(run_container, outputs=function_result)
             return function_result
 
         @functools.wraps(func)
         def generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
+            context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
                 run_type=run_type,
@@ -393,8 +414,7 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-            _PROJECT_NAME.set(run_container["project_name"])
-            _PARENT_RUN_TREE.set(run_container["new_run"])
+
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -409,22 +429,18 @@ def traceable(
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
                     generator_result = func(*args, **kwargs)
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
-                _TAGS.set(run_container["outer_tags"])
-                _METADATA.set(run_container["outer_metadata"])
                 for item in generator_result:
                     results.append(item)
                     yield item
-            except (BaseException, Exception, KeyboardInterrupt) as e:
+            except BaseException as e:
                 stacktrace = traceback.format_exc()
-                run_container["new_run"].end(error=stacktrace)
-                run_container["new_run"].patch()
-                _PARENT_RUN_TREE.set(run_container["new_run"].parent_run)
+                _container_end(run_container, error=stacktrace)
+                raise e
+            finally:
+                _PARENT_RUN_TREE.set(context_run)
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
-                raise e
             if results:
                 if reduce_fn:
                     try:
@@ -436,20 +452,18 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            if isinstance(function_result, dict) or function_result is None:
-                run_container["new_run"].end(outputs=function_result)
-            else:
-                run_container["new_run"].end(outputs={"output": function_result})
-            run_container["new_run"].patch()
+            _container_end(run_container, outputs=function_result)
 
         if inspect.isasyncgenfunction(func):
-            return async_generator_wrapper
+            selected_wrapper: Callable = async_generator_wrapper
         elif inspect.iscoroutinefunction(func):
-            return async_wrapper
+            selected_wrapper = async_wrapper
         elif inspect.isgeneratorfunction(func):
-            return generator_wrapper
+            selected_wrapper = generator_wrapper
         else:
-            return wrapper
+            selected_wrapper = wrapper
+        setattr(selected_wrapper, "__langsmith_traceable__", True)
+        return selected_wrapper
 
     return decorator
 
@@ -512,16 +526,139 @@ def trace(
         tb = traceback.format_exc()
         new_run.end(error=tb)
         new_run.patch()
+        raise e
+    finally:
         _PARENT_RUN_TREE.set(parent_run_)
         _PROJECT_NAME.set(outer_project)
         _TAGS.set(outer_tags)
         _METADATA.set(outer_metadata)
-        raise e
-    _PARENT_RUN_TREE.set(parent_run_)
-    _PROJECT_NAME.set(outer_project)
-    _TAGS.set(outer_tags)
-    _METADATA.set(outer_metadata)
     if new_run.end_time is None:
         # User didn't call end() on the run, so we'll do it for them
         new_run.end()
     new_run.patch()
+
+
+def as_runnable(traceable_fn: Callable) -> Runnable:
+    try:
+        from langchain.callbacks.manager import (
+            AsyncCallbackManager,
+            CallbackManager,
+        )
+        from langchain.callbacks.tracers.langchain import LangChainTracer
+        from langchain.schema.runnable import RunnableConfig, RunnableLambda
+        from langchain.schema.runnable.utils import Input, Output
+    except ImportError as e:
+        raise ImportError(
+            "as_runnable requires langchain to be installed. "
+            "You can install it with `pip install langchain`."
+        ) from e
+    if not is_traceable_function(traceable_fn):
+        try:
+            fn_src = inspect.getsource(traceable_fn)
+        except Exception:
+            fn_src = "<source unavailable>"
+        raise ValueError(
+            f"as_runnable expects a function wrapped by the LangSmith"
+            f" @traceable decorator. Got {traceable_fn} defined as:\n{fn_src}"
+        )
+
+    class RunnableTraceable(RunnableLambda):
+        """RunnableTraceable converts a @traceable decorated function
+        to a Runnable in a way that hands off the LangSmith tracing context.
+        """
+
+        def __init__(
+            self,
+            func: Callable,
+            afunc: Optional[Callable[..., Awaitable[Output]]] = None,
+        ) -> None:
+            wrapped: Optional[Callable[[Input], Output]] = None
+            awrapped = self._wrap_async(afunc)
+            if inspect.iscoroutinefunction(func):
+                if awrapped is not None:
+                    raise TypeError(
+                        "Func was provided as a coroutine function, but afunc was "
+                        "also provided. If providing both, func should be a regular "
+                        "function to avoid ambiguity."
+                    )
+                wrapped = cast(Callable[[Input], Output], self._wrap_async(func))
+            elif is_traceable_function(func):
+                wrapped = cast(Callable[[Input], Output], self._wrap_sync(func))
+            if wrapped is None:
+                raise ValueError(
+                    f"{self.__class__.__name__} expects a function wrapped by"
+                    " the LangSmith"
+                    f" @traceable decorator. Got {func}"
+                )
+
+            super().__init__(
+                wrapped,
+                cast(
+                    Optional[Callable[[Input], Awaitable[Output]]],
+                    awrapped,
+                ),
+            )
+
+        @staticmethod
+        def _configure_run_tree(callback_manager: Any) -> Optional[run_trees.RunTree]:
+            run_tree: Optional[run_trees.RunTree] = None
+            if isinstance(callback_manager, (CallbackManager, AsyncCallbackManager)):
+                lc_tracers = [
+                    handler
+                    for handler in callback_manager.handlers
+                    if isinstance(handler, LangChainTracer)
+                ]
+                if lc_tracers:
+                    lc_tracer = lc_tracers[0]
+                    run_tree = run_trees.RunTree(
+                        id=callback_manager.parent_run_id,
+                        session_name=lc_tracer.project_name,
+                        name="Wrapping",
+                        run_type="chain",
+                        inputs={},
+                        tags=callback_manager.tags,
+                        extra={"metadata": callback_manager.metadata},
+                    )
+            return run_tree
+
+        @staticmethod
+        def _wrap_sync(
+            func: Callable[..., Output]
+        ) -> Callable[[Input, RunnableConfig], Output]:
+            """Wrap a synchronous function to make it asynchronous."""
+
+            def wrap_traceable(inputs: dict, config: RunnableConfig) -> Any:
+                run_tree = RunnableTraceable._configure_run_tree(
+                    config.get("callbacks")
+                )
+                return func(**inputs, langsmith_extra={"run_tree": run_tree})
+
+            return cast(Callable[[Input, RunnableConfig], Output], wrap_traceable)
+
+        @staticmethod
+        def _wrap_async(
+            afunc: Optional[Callable[..., Awaitable[Output]]]
+        ) -> Optional[Callable[[Input, RunnableConfig], Awaitable[Output]]]:
+            """Wrap an async function to make it synchronous."""
+
+            if afunc is None:
+                return None
+
+            if not is_traceable_function(afunc):
+                raise ValueError(
+                    "RunnableTraceable expects a function wrapped by the LangSmith"
+                    f" @traceable decorator. Got {afunc}"
+                )
+            afunc_ = cast(Callable[..., Awaitable[Output]], afunc)
+
+            async def awrap_traceable(inputs: dict, config: RunnableConfig) -> Any:
+                run_tree = RunnableTraceable._configure_run_tree(
+                    config.get("callbacks")
+                )
+                return await afunc_(**inputs, langsmith_extra={"run_tree": run_tree})
+
+            return cast(
+                Callable[[Input, RunnableConfig], Awaitable[Output]], awrap_traceable
+            )
+
+    return RunnableTraceable(traceable_fn)
