@@ -12,6 +12,7 @@ lint:
 	poetry run black . --check
 
 format:
+	poetry run ruff format
 	poetry run ruff --fix .
 	poetry run black .
 

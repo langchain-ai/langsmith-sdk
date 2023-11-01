@@ -10,7 +10,9 @@ import io
 import json
 import logging
 import os
+import random
 import socket
+import time
 import uuid
 import weakref
 from typing import (
@@ -25,6 +27,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     Union,
     cast,
 )
@@ -336,6 +339,8 @@ class Client:
         request_method: str,
         url: str,
         request_kwargs: Mapping,
+        stop_after_attempt: int = 1,
+        retry_on: Optional[Sequence[Type[BaseException]]] = None,
     ) -> requests.Response:
         """Send a request with retries.
 
@@ -364,79 +369,73 @@ class Client:
         LangSmithError
             If the request fails.
         """
-        try:
-            response = self.session.request(
-                request_method, url, stream=False, **request_kwargs
-            )
-            ls_utils.raise_for_status_with_text(response)
-            return response
-        except requests.HTTPError as e:
-            if response is not None:
-                if response.status_code == 500:
-                    raise ls_utils.LangSmithAPIError(
-                        f"Server error caused failure to {request_method} {url} in"
-                        f" LangSmith API. {repr(e)}"
+        for idx in range(stop_after_attempt):
+            try:
+                try:
+                    response = self.session.request(
+                        request_method, url, stream=False, **request_kwargs
                     )
-                elif response.status_code == 429:
-                    raise ls_utils.LangSmithRateLimitError(
-                        f"Rate limit exceeded for {url}. {repr(e)}"
-                    )
-                elif response is not None and response.status_code == 401:
-                    raise ls_utils.LangSmithAuthError(
-                        f"Authentication failed for {url}. {repr(e)}"
-                    )
-                else:
-                    raise ls_utils.LangSmithError(
-                        f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
-                    )
+                    ls_utils.raise_for_status_with_text(response)
+                    return response
+                except requests.HTTPError as e:
+                    if response is not None:
+                        if response.status_code == 500:
+                            raise ls_utils.LangSmithAPIError(
+                                f"Server error caused failure to {request_method}"
+                                f" {url} in"
+                                f" LangSmith API. {repr(e)}"
+                            )
+                        elif response.status_code == 429:
+                            raise ls_utils.LangSmithRateLimitError(
+                                f"Rate limit exceeded for {url}. {repr(e)}"
+                            )
+                        elif response.status_code == 401:
+                            raise ls_utils.LangSmithAuthError(
+                                f"Authentication failed for {url}. {repr(e)}"
+                            )
+                        elif response.status_code == 404:
+                            raise ls_utils.LangSmithNotFoundError(
+                                f"Resource not found for {url}. {repr(e)}"
+                            )
+                        else:
+                            raise ls_utils.LangSmithError(
+                                f"Failed to {request_method} {url} in LangSmith"
+                                f" API. {repr(e)}"
+                            )
 
-            else:
-                raise ls_utils.LangSmithUserError(
-                    f"Failed to {request_method} {url} in LangSmith API. {repr(e)}"
-                )
-        except requests.ConnectionError as e:
-            raise ls_utils.LangSmithConnectionError(
-                f"Connection error caused failure to {request_method} {url}"
-                "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
-                f" {repr(e)}"
-            ) from e
-        except Exception as e:
-            args = list(e.args)
-            msg = args[1] if len(args) > 1 else ""
-            msg = msg.replace("session", "session (project)")
-            emsg = "\n".join([args[0]] + [msg] + args[2:])
-            raise ls_utils.LangSmithError(
-                f"Failed to {request_method} {url} in LangSmith API. {emsg}"
-            ) from e
+                    else:
+                        raise ls_utils.LangSmithUserError(
+                            f"Failed to {request_method} {url} in LangSmith API."
+                            f" {repr(e)}"
+                        )
+                except requests.ConnectionError as e:
+                    raise ls_utils.LangSmithConnectionError(
+                        f"Connection error caused failure to {request_method} {url}"
+                        "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+                        f" {repr(e)}"
+                    ) from e
+                except Exception as e:
+                    args = list(e.args)
+                    msg = args[1] if len(args) > 1 else ""
+                    msg = msg.replace("session", "session (project)")
+                    emsg = "\n".join([args[0]] + [msg] + args[2:])
+                    raise ls_utils.LangSmithError(
+                        f"Failed to {request_method} {url} in LangSmith API. {emsg}"
+                    ) from e
+            except tuple(retry_on or []):
+                if idx + 1 == stop_after_attempt:
+                    raise
+                sleep_time = 2**idx + (random.random() * 0.5)
+                time.sleep(sleep_time)
+                continue
+
+        raise ls_utils.LangSmithError(
+            f"Failed to {request_method} {url} in LangSmith API."
+        )
 
     def _get_with_retries(
         self, path: str, params: Optional[Dict[str, Any]] = None
     ) -> requests.Response:
-        """Send a GET request with retries.
-
-        Parameters
-        ----------
-        path : str
-            The path of the request URL.
-        params : Dict[str, Any] or None, default=None
-            The query parameters.
-
-        Returns
-        -------
-        Response
-            The response object.
-
-        Raises
-        ------
-        LangSmithAPIError
-            If a server error occurs.
-        LangSmithUserError
-            If the request fails.
-        LangSmithConnectionError
-            If a connection error occurs.
-        LangSmithError
-            If the request fails.
-        """
         return self.request_with_retries(
             "get",
             f"{self.api_url}{path}",
@@ -967,6 +966,108 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return [
             ls_schemas.Run(**run, _host_url=self._host_url) for run in response.json()
+        ]
+
+    def read_dataset_shared_schema(
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+    ) -> ls_schemas.DatasetShareSchema:
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be given")
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        response = self.session.get(
+            f"{self.api_url}/datasets/{dataset_id}/share",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        d = response.json()
+        return cast(
+            ls_schemas.DatasetShareSchema,
+            {**d, "url": f"{self._host_url}/public/{d['share_token']}/d"},
+        )
+
+    def share_dataset(
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
+    ) -> ls_schemas.DatasetShareSchema:
+        """Get a share link for a dataset."""
+        if dataset_id is None and dataset_name is None:
+            raise ValueError("Either dataset_id or dataset_name must be given")
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        data = {
+            "dataset_id": str(dataset_id),
+        }
+        response = self.session.put(
+            f"{self.api_url}/datasets/{dataset_id}/share",
+            headers=self._headers,
+            json=data,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        d: dict = response.json()
+        return cast(
+            ls_schemas.DatasetShareSchema,
+            {**d, "url": f"{self._host_url}/public/{d['share_token']}/d"},
+        )
+
+    def unshare_dataset(self, dataset_id: ID_TYPE) -> None:
+        """Delete share link for a dataset."""
+        response = self.session.delete(
+            f"{self.api_url}/datasets/{dataset_id}/share",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def read_shared_dataset(
+        self,
+        share_token: str,
+    ) -> ls_schemas.Dataset:
+        """Get shared datasets."""
+        response = self.session.get(
+            f"{self.api_url}/public/{share_token}/datasets",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
+
+    def list_shared_examples(
+        self, share_token: str, *, example_ids: Optional[List[ID_TYPE]] = None
+    ) -> List[ls_schemas.Example]:
+        """Get shared examples."""
+        params = {}
+        if example_ids is not None:
+            params["id"] = [str(id) for id in example_ids]
+        response = self.session.get(
+            f"{self.api_url}/public/{share_token}/examples",
+            headers=self._headers,
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return [
+            ls_schemas.Example(**dataset, _host_url=self._host_url)
+            for dataset in response.json()
+        ]
+
+    def list_shared_projects(
+        self,
+        *,
+        dataset_share_token: Optional[str] = None,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+    ) -> Iterator[ls_schemas.TracerSession]:
+        params = {"id": project_ids, "name": name, "name_contains": name_contains}
+        yield from [
+            ls_schemas.TracerSession(**dataset, _host_url=self._host_url)
+            for dataset in self._get_paginated_list(
+                f"/public/{dataset_share_token}/datasets/sessions",
+                params=params,
+            )
         ]
 
     def create_project(
@@ -1725,6 +1826,21 @@ class Client:
             reference_example_ = None
         return reference_example_
 
+    def _select_eval_results(
+        self,
+        results: Union[ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults],
+    ) -> List[ls_evaluator.EvaluationResult]:
+        if isinstance(results, ls_evaluator.EvaluationResult):
+            results_ = [results]
+        elif isinstance(results, dict) and "results" in results:
+            results_ = cast(List[ls_evaluator.EvaluationResult], results["results"])
+        else:
+            raise TypeError(
+                f"Invalid evaluation result type {type(results)}."
+                " Expected EvaluationResult or EvaluationResults."
+            )
+        return results_
+
     def evaluate_run(
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
@@ -1760,25 +1876,44 @@ class Client:
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        evaluation_result = evaluator.evaluate_run(
+        evaluator_response = evaluator.evaluate_run(
             run_,
             example=reference_example_,
         )
-        source_info = source_info or {}
-        if evaluation_result.evaluator_info:
-            source_info = {**evaluation_result.evaluator_info, **source_info}
-        self.create_feedback(
-            run_.id,
-            evaluation_result.key,
-            score=evaluation_result.score,
-            value=evaluation_result.value,
-            comment=evaluation_result.comment,
-            correction=evaluation_result.correction,
+        results = self._log_evaluation_feedback(
+            evaluator_response,
+            run_,
             source_info=source_info,
-            source_run_id=evaluation_result.source_run_id,
-            feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
-        return evaluation_result
+        # TODO: Return all results
+        return results[0]
+
+    def _log_evaluation_feedback(
+        self,
+        evaluator_response: Union[
+            ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults
+        ],
+        run: ls_schemas.Run,
+        source_info: Optional[Dict[str, Any]] = None,
+    ) -> List[ls_evaluator.EvaluationResult]:
+        results = self._select_eval_results(evaluator_response)
+        for res in results:
+            source_info_ = source_info or {}
+            if res.evaluator_info:
+                source_info_ = {**res.evaluator_info, **source_info_}
+            run_id_ = res.target_run_id if res.target_run_id else run.id
+            self.create_feedback(
+                run_id_,
+                res.key,
+                score=res.score,
+                value=res.value,
+                comment=res.comment,
+                correction=res.correction,
+                source_info=source_info_,
+                source_run_id=res.source_run_id,
+                feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
+            )
+        return results
 
     async def aevaluate_run(
         self,
@@ -1815,25 +1950,17 @@ class Client:
         """
         run_ = self._resolve_run_id(run, load_child_runs=load_child_runs)
         reference_example_ = self._resolve_example_id(reference_example, run_)
-        evaluation_result = await evaluator.aevaluate_run(
+        evaluator_response = await evaluator.aevaluate_run(
             run_,
             example=reference_example_,
         )
-        source_info = source_info or {}
-        if evaluation_result.evaluator_info:
-            source_info = {**evaluation_result.evaluator_info, **source_info}
-        self.create_feedback(
-            run_.id,
-            evaluation_result.key,
-            score=evaluation_result.score,
-            value=evaluation_result.value,
-            comment=evaluation_result.comment,
-            correction=evaluation_result.correction,
+        # TODO: Return all results and use async API
+        results = self._log_evaluation_feedback(
+            evaluator_response,
+            run_,
             source_info=source_info,
-            source_run_id=evaluation_result.source_run_id,
-            feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
         )
-        return evaluation_result
+        return results[0]
 
     def create_feedback(
         self,
@@ -1850,6 +1977,8 @@ class Client:
         ] = ls_schemas.FeedbackSourceType.API,
         source_run_id: Optional[ID_TYPE] = None,
         feedback_id: Optional[ID_TYPE] = None,
+        eager: bool = False,
+        stop_after_attempt: int = 10,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
 
@@ -1877,6 +2006,13 @@ class Client:
         feedback_id : str or UUID or None, default=None
             The ID of the feedback to create. If not provided, a random UUID will be
             generated.
+        eager : bool, default=False
+            Whether to skip the write queue when creating the feedback. This means
+            that the feedback will be immediately available for reading, but may
+            cause the write to fail if the API is under heavy load, since the target
+            run_id may have not been created yet.
+        stop_after_attempt : int, default=10
+            The number of times to retry the request before giving up.
         """
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
@@ -1907,7 +2043,7 @@ class Client:
         )
         self.request_with_retries(
             "POST",
-            self.api_url + "/feedback",
+            self.api_url + "/feedback" + ("/eager" if eager else ""),
             request_kwargs={
                 "data": json.dumps(
                     feedback.dict(exclude_none=True), default=_serialize_json
@@ -1919,6 +2055,8 @@ class Client:
                 },
                 "timeout": self.timeout_ms / 1000,
             },
+            stop_after_attempt=stop_after_attempt,
+            retry_on=(ls_utils.LangSmithNotFoundError,),
         )
         return ls_schemas.Feedback(**feedback.dict())
 

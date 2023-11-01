@@ -211,6 +211,14 @@ export interface Dataset extends BaseDataset {
   id: string;
   created_at: string;
   modified_at: string;
+  example_count?: number;
+  session_count?: number;
+  last_session_start_time?: number;
+}
+export interface DatasetShareSchema {
+  dataset_id: string;
+  share_token: string;
+  url: string;
 }
 
 export interface FeedbackSourceBase {
