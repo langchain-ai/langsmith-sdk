@@ -330,6 +330,12 @@ const startCommand = new Command("start")
       " from the OPENAI_API_KEY environment variable. If neither are provided," +
       " some features of LangSmith will not be available."
   )
+  .option(
+    "--langsmith-license-key <langsmithLicenseKey>",
+    "The LangSmith license key to use for LangSmith. If not provided," +
+    " the LangSmith license key will be read from the LANGSMITH_LICENSE_KEY" +
+    " environment variable. If neither are provided, Langsmith will not start up."
+  )
   .action(async (args) => {
     const smith = await SmithCommand.create();
     if (args.stage === "dev") {
@@ -339,6 +345,9 @@ const startCommand = new Command("start")
     }
     if (args.openaiApiKey) {
       setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
+    }
+    if (args.langsmithLicenseKey) {
+      setEnvironmentVariable("LANGSMITH_LICENSE_KEY", args.langsmithLicenseKey);
     }
     await smith.pull({ stage: args.stage });
     if (args.expose) {
