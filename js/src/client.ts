@@ -166,6 +166,13 @@ function hideOutputs(outputs: KVMap): KVMap {
   }
   return outputs;
 }
+
+function assertUuid(str: string): void {
+  if (!uuid.validate(str)) {
+    throw new Error(`Invalid UUID: ${str}`);
+  }
+}
+
 export class Client {
   private apiKey?: string;
 
@@ -331,6 +338,7 @@ export class Client {
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+    assertUuid(runId);
     if (run.inputs) {
       run.inputs = hideInputs(run.inputs);
     }
@@ -356,6 +364,7 @@ export class Client {
     runId: string,
     { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false }
   ): Promise<Run> {
+    assertUuid(runId);
     let run = await this._get<Run>(`/runs/${runId}`);
     if (loadChildRuns && run.child_run_ids) {
       run = await this._loadChildRuns(run);
@@ -509,6 +518,7 @@ export class Client {
       run_id: runId,
       share_token: shareId || uuid.v4(),
     };
+    assertUuid(runId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/runs/${runId}/share`,
@@ -527,6 +537,7 @@ export class Client {
   }
 
   public async unshareRun(runId: string): Promise<void> {
+    assertUuid(runId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/runs/${runId}/share`,
@@ -540,6 +551,7 @@ export class Client {
   }
 
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
+    assertUuid(runId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/runs/${runId}/share`,
@@ -572,6 +584,7 @@ export class Client {
         queryParams.append("id", runId);
       }
     }
+    assertUuid(shareToken);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
@@ -596,6 +609,7 @@ export class Client {
       const dataset = await this.readDataset({ datasetName });
       datasetId = dataset.id;
     }
+    assertUuid(datasetId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/datasets/${datasetId}/share`,
@@ -626,6 +640,7 @@ export class Client {
     const data = {
       dataset_id: datasetId,
     };
+    assertUuid(datasetId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/datasets/${datasetId}/share`,
@@ -644,6 +659,7 @@ export class Client {
   }
 
   public async unshareDataset(datasetId: string): Promise<void> {
+    assertUuid(datasetId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/datasets/${datasetId}/share`,
@@ -657,6 +673,7 @@ export class Client {
   }
 
   public async readSharedDataset(shareToken: string): Promise<Dataset> {
+    assertUuid(shareToken);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/public/${shareToken}/datasets`,
@@ -719,6 +736,7 @@ export class Client {
     if (projectId !== undefined && projectName !== undefined) {
       throw new Error("Must provide either projectName or projectId, not both");
     } else if (projectId !== undefined) {
+      assertUuid(projectId);
       path += `/${projectId}`;
     } else if (projectName !== undefined) {
       params.append("name", projectName);
@@ -822,6 +840,7 @@ export class Client {
     } else {
       projectId_ = projectId;
     }
+    assertUuid(projectId_);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/sessions/${projectId_}`,
@@ -935,6 +954,7 @@ export class Client {
     if (datasetId !== undefined && datasetName !== undefined) {
       throw new Error("Must provide either datasetName or datasetId, not both");
     } else if (datasetId !== undefined) {
+      assertUuid(datasetId);
       path += `/${datasetId}`;
     } else if (datasetName !== undefined) {
       params.append("name", datasetName);
@@ -1030,6 +1050,7 @@ export class Client {
       datasetId_ = dataset.id;
     }
     if (datasetId_ !== undefined) {
+      assertUuid(datasetId_);
       path += `/${datasetId_}`;
     } else {
       throw new Error("Must provide datasetName or datasetId");
@@ -1118,6 +1139,7 @@ export class Client {
   }
 
   public async readExample(exampleId: string): Promise<Example> {
+    assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
     return await this._get<Example>(path);
   }
@@ -1157,6 +1179,7 @@ export class Client {
   }
 
   public async deleteExample(exampleId: string): Promise<void> {
+    assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
@@ -1175,6 +1198,7 @@ export class Client {
     exampleId: string,
     update: ExampleUpdate
   ): Promise<object> {
+    assertUuid(exampleId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/examples/${exampleId}`,
@@ -1268,6 +1292,12 @@ export class Client {
     ) {
       feedback_source.metadata["__run"] = { run_id: sourceRunId };
     }
+    if (
+      feedback_source?.metadata !== undefined &&
+      feedback_source.metadata["__run"]?.run_id !== undefined
+    ) {
+      assertUuid(feedback_source.metadata["__run"].run_id);
+    }
     const feedback: FeedbackCreate = {
       id: feedbackId ?? uuid.v4(),
       run_id: runId,
@@ -1316,6 +1346,7 @@ export class Client {
     if (comment !== undefined && comment !== null) {
       feedbackUpdate["comment"] = comment;
     }
+    assertUuid(feedbackId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/feedback/${feedbackId}`,
@@ -1330,12 +1361,14 @@ export class Client {
   }
 
   public async readFeedback(feedbackId: string): Promise<Feedback> {
+    assertUuid(feedbackId);
     const path = `/feedback/${feedbackId}`;
     const response = await this._get<Feedback>(path);
     return response;
   }
 
   public async deleteFeedback(feedbackId: string): Promise<void> {
+    assertUuid(feedbackId);
     const path = `/feedback/${feedbackId}`;
     const response = await this.caller.call(fetch, this.apiUrl + path, {
       method: "DELETE",
