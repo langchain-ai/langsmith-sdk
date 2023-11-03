@@ -216,6 +216,10 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     return outputs
 
 
+def _as_uuid(value: ID_TYPE) -> uuid.UUID:
+    return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -724,7 +728,7 @@ class Client:
             data["events"] = events
         self.request_with_retries(
             "patch",
-            f"{self.api_url}/runs/{run_id}",
+            f"{self.api_url}/runs/{_as_uuid(run_id)}",
             request_kwargs={
                 "data": json.dumps(data, default=_serialize_json),
                 "headers": headers,
@@ -786,7 +790,7 @@ class Client:
         Run
             The run.
         """
-        response = self._get_with_retries(f"/runs/{run_id}")
+        response = self._get_with_retries(f"/runs/{_as_uuid(run_id)}")
         run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
@@ -910,18 +914,19 @@ class Client:
             )
             session_id = self.read_project(project_name=project_name).id
         return (
-            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id}/"
+            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{_as_uuid(session_id)}/"
             f"r/{run.id}?poll=true"
         )
 
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run."""
+        run_id_ = _as_uuid(run_id)
         data = {
-            "run_id": str(run_id),
+            "run_id": str(run_id_),
             "share_token": share_id or str(uuid.uuid4()),
         }
         response = self.session.put(
-            f"{self.api_url}/runs/{run_id}/share",
+            f"{self.api_url}/runs/{run_id_}/share",
             headers=self._headers,
             json=data,
         )
@@ -932,14 +937,14 @@ class Client:
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run."""
         response = self.session.delete(
-            f"{self.api_url}/runs/{run_id}/share",
+            f"{self.api_url}/runs/{_as_uuid(run_id)}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
 
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
         response = self.session.get(
-            f"{self.api_url}/runs/{run_id}/share",
+            f"{self.api_url}/runs/{_as_uuid(run_id)}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -950,16 +955,16 @@ class Client:
 
     def run_is_shared(self, run_id: ID_TYPE) -> bool:
         """Get share state for a run."""
-        link = self.read_run_shared_link(run_id)
+        link = self.read_run_shared_link(_as_uuid(run_id))
         return link is not None
 
     def list_shared_runs(
-        self, share_token: str, run_ids: Optional[List[str]] = None
+        self, share_token: ID_TYPE, run_ids: Optional[List[str]] = None
     ) -> List[ls_schemas.Run]:
         """Get shared runs."""
-        params = {"id": run_ids, "share_token": share_token}
+        params = {"id": run_ids, "share_token": str(share_token)}
         response = self.session.get(
-            f"{self.api_url}/public/{share_token}/runs",
+            f"{self.api_url}/public/{_as_uuid(share_token)}/runs",
             headers=self._headers,
             params=params,
         )
@@ -979,14 +984,14 @@ class Client:
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         response = self.session.get(
-            f"{self.api_url}/datasets/{dataset_id}/share",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
         d = response.json()
         return cast(
             ls_schemas.DatasetShareSchema,
-            {**d, "url": f"{self._host_url}/public/{d['share_token']}/d"},
+            {**d, "url": f"{self._host_url}/public/{_as_uuid(d['share_token'])}/d"},
         )
 
     def share_dataset(
@@ -1004,7 +1009,7 @@ class Client:
             "dataset_id": str(dataset_id),
         }
         response = self.session.put(
-            f"{self.api_url}/datasets/{dataset_id}/share",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}/share",
             headers=self._headers,
             json=data,
         )
@@ -1018,7 +1023,7 @@ class Client:
     def unshare_dataset(self, dataset_id: ID_TYPE) -> None:
         """Delete share link for a dataset."""
         response = self.session.delete(
-            f"{self.api_url}/datasets/{dataset_id}/share",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1029,7 +1034,7 @@ class Client:
     ) -> ls_schemas.Dataset:
         """Get shared datasets."""
         response = self.session.get(
-            f"{self.api_url}/public/{share_token}/datasets",
+            f"{self.api_url}/public/{_as_uuid(share_token)}/datasets",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1043,7 +1048,7 @@ class Client:
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
         response = self.session.get(
-            f"{self.api_url}/public/{share_token}/examples",
+            f"{self.api_url}/public/{_as_uuid(share_token)}/examples",
             headers=self._headers,
             params=params,
         )
@@ -1056,7 +1061,7 @@ class Client:
     def list_shared_projects(
         self,
         *,
-        dataset_share_token: Optional[str] = None,
+        dataset_share_token: str,
         project_ids: Optional[List[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
@@ -1065,7 +1070,7 @@ class Client:
         yield from [
             ls_schemas.TracerSession(**dataset, _host_url=self._host_url)
             for dataset in self._get_paginated_list(
-                f"/public/{dataset_share_token}/datasets/sessions",
+                f"/public/{_as_uuid(dataset_share_token)}/datasets/sessions",
                 params=params,
             )
         ]
@@ -1149,7 +1154,7 @@ class Client:
         path = "/sessions"
         params: Dict[str, Any] = {"limit": 1}
         if project_id is not None:
-            path += f"/{project_id}"
+            path += f"/{_as_uuid(project_id)}"
         elif project_name is not None:
             params["name"] = project_name
         else:
@@ -1240,7 +1245,7 @@ class Client:
         elif project_id is None:
             raise ValueError("Must provide project_name or project_id")
         response = self.session.delete(
-            self.api_url + f"/sessions/{project_id}",
+            self.api_url + f"/sessions/{_as_uuid(project_id)}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1305,7 +1310,7 @@ class Client:
         path = "/datasets"
         params: Dict[str, Any] = {"limit": 1}
         if dataset_id is not None:
-            path += f"/{dataset_id}"
+            path += f"/{_as_uuid(dataset_id)}"
         elif dataset_name is not None:
             params["name"] = dataset_name
         else:
@@ -1347,7 +1352,7 @@ class Client:
         else:
             raise ValueError("Must provide dataset_name or dataset_id")
         response = self._get_with_retries(
-            f"{path}/{dataset_id}/openai_ft",
+            f"{path}/{_as_uuid(dataset_id)}/openai_ft",
         )
         dataset = [json.loads(line) for line in response.text.strip().split("\n")]
         return dataset
@@ -1403,7 +1408,7 @@ class Client:
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
         response = self.session.delete(
-            f"{self.api_url}/datasets/{dataset_id}",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1672,7 +1677,7 @@ class Client:
         Example
             The example.
         """
-        response = self._get_with_retries(f"/examples/{example_id}")
+        response = self._get_with_retries(f"/examples/{_as_uuid(example_id)}")
         return ls_schemas.Example(**response.json())
 
     def list_examples(
@@ -1744,7 +1749,7 @@ class Client:
             dataset_id=dataset_id,
         )
         response = self.session.patch(
-            f"{self.api_url}/examples/{example_id}",
+            f"{self.api_url}/examples/{_as_uuid(example_id)}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(exclude_none=True),
         )
@@ -1760,7 +1765,7 @@ class Client:
             The ID of the example to delete.
         """
         response = self.session.delete(
-            f"{self.api_url}/examples/{example_id}",
+            f"{self.api_url}/examples/{_as_uuid(example_id)}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2094,7 +2099,7 @@ class Client:
         if comment is not None:
             feedback_update["comment"] = comment
         response = self.session.patch(
-            self.api_url + f"/feedback/{feedback_id}",
+            self.api_url + f"/feedback/{_as_uuid(feedback_id)}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=json.dumps(feedback_update, default=_serialize_json),
         )
@@ -2113,7 +2118,7 @@ class Client:
         Feedback
             The feedback.
         """
-        response = self._get_with_retries(f"/feedback/{feedback_id}")
+        response = self._get_with_retries(f"/feedback/{_as_uuid(feedback_id)}")
         return ls_schemas.Feedback(**response.json())
 
     def list_feedback(
@@ -2166,7 +2171,7 @@ class Client:
             The ID of the feedback to delete.
         """
         response = self.session.delete(
-            f"{self.api_url}/feedback/{feedback_id}",
+            f"{self.api_url}/feedback/{_as_uuid(feedback_id)}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)

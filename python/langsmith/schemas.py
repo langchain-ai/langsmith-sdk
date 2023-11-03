@@ -399,3 +399,6 @@ class DatasetShareSchema(TypedDict, total=False):
     dataset_id: UUID
     share_token: UUID
     url: str
+
+
+Example.update_forward_refs()
