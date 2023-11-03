@@ -1,9 +1,11 @@
-import { Client } from "../client.js";
-import { RunTree, RunTreeConfig } from "../run_trees.js";
-import { StringEvaluator } from "../evaluation/string_evaluator.js";
 import { Dataset, Feedback, Run } from "../schemas.js";
+import { FunctionMessage, HumanMessage } from "langchain/schema";
+import { RunTree, RunTreeConfig } from "../run_trees.js";
+
+import { Client } from "../client.js";
+import { StringEvaluator } from "../evaluation/string_evaluator.js";
 import { v4 as uuidv4 } from "uuid";
-import { HumanMessage, FunctionMessage } from "langchain/schema";
+
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const item of iterable) {
