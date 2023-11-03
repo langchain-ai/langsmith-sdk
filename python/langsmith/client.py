@@ -2034,6 +2034,11 @@ class Client:
         )
         if source_run_id is not None and "__run" not in feedback_source.metadata:
             feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
+        if feedback_source.metadata and "__run" in feedback_source.metadata:
+            # Validate that the linked run ID is a valid UUID
+            feedback_source.metadata["__run"]["run_id"] = str(
+                _as_uuid(feedback_source.metadata["__run"]["run_id"])
+            )
         feedback = ls_schemas.FeedbackCreate(
             id=feedback_id or uuid.uuid4(),
             run_id=run_id,
