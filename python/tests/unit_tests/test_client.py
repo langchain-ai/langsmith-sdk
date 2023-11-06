@@ -1,13 +1,16 @@
 """Test the LangSmith client."""
 import asyncio
+import json
 import os
 import uuid
 from datetime import datetime
 from io import BytesIO
+from typing import Optional
 from unittest import mock
 from unittest.mock import patch
 
 import pytest
+from pydantic import BaseModel
 
 from langsmith.client import (
     Client,
@@ -15,6 +18,7 @@ from langsmith.client import (
     _get_api_url,
     _is_langchain_hosted,
     _is_localhost,
+    _serialize_json,
 )
 from langsmith.schemas import Example
 from langsmith.utils import LangSmithUserError
@@ -208,3 +212,37 @@ def test_create_feedback_string_source_type(source_type: str):
             key="Foo",
             feedback_source_type=source_type,
         )
+
+
+def test_pydantic_serialize():
+    """Test that pydantic objects can be serialized."""
+    test_uuid = uuid.uuid4()
+    test_time = datetime.now()
+
+    class ChildPydantic(BaseModel):
+        uid: uuid.UUID
+
+    class MyPydantic(BaseModel):
+        foo: str
+        uid: uuid.UUID
+        tim: datetime
+        ex: Optional[str] = None
+        child: Optional[ChildPydantic] = None
+
+    obj = MyPydantic(
+        foo="bar", uid=test_uuid, tim=test_time, child=ChildPydantic(uid=test_uuid)
+    )
+    res = json.loads(json.dumps(obj, default=_serialize_json))
+    expected = {
+        "foo": "bar",
+        "uid": str(test_uuid),
+        "tim": test_time.isoformat(),
+        "child": {
+            "uid": str(test_uuid),
+        },
+    }
+    assert res == expected
+
+    obj2 = {"output": obj}
+    res2 = json.loads(json.dumps(obj2, default=_serialize_json))
+    assert res2 == {"output": expected}
