@@ -144,7 +144,7 @@ def _serialize_json(obj: Any) -> Union[str, dict]:
     """
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
-    
+
     elif hasattr(obj, "model_dump_json") and callable(obj.model_dump_json):
         # Base models, V2
         try:
