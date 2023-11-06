@@ -2036,7 +2036,7 @@ class Client:
             feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
         if feedback_source.metadata and "__run" in feedback_source.metadata:
             # Validate that the linked run ID is a valid UUID
-            # Run info may be a base model or dict..
+            # Run info may be a base model or dict.
             _run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
             if hasattr(_run_meta, "dict") and callable(_run_meta):
                 _run_meta = _run_meta.dict()
