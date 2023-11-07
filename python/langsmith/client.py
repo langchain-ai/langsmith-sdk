@@ -46,6 +46,8 @@ if TYPE_CHECKING:
     import pandas as pd
 
 logger = logging.getLogger(__name__)
+# Filter the Connection pool is full warnings from urllib3
+logging.getLogger("urllib3.connectionpool").addFilter(ls_utils.FilterPoolFullWarning())
 
 
 def _is_localhost(url: str) -> bool:

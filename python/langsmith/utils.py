@@ -250,3 +250,13 @@ def is_base_message_like(obj: object) -> bool:
             hasattr(obj, "type") and isinstance(getattr(obj, "type"), str),
         ]
     )
+
+
+class FilterPoolFullWarning(logging.Filter):
+    """Filter urrllib3 warnings logged when the connection pool isn't reused."""
+
+    def filter(self, record) -> bool:
+        """urllib3.connectionpool:Connection pool is full, discarding connection: ..."""
+        return (
+            "Connection pool is full, discarding connection" not in record.getMessage()
+        )
