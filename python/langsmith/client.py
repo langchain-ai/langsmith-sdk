@@ -657,12 +657,18 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
-        project_name_opt_from_args = kwargs.pop(
-            "project_name", kwargs.pop("session_name", None)
+        project_name = kwargs.pop(
+            "project_name", 
+            kwargs.pop(
+                "session_name", 
+                # if the project is not provided, use the environment's project
+                ls_utils.get_tracer_project()
+            )
         )
-        project_name = project_name_opt_from_args or ls_utils.get_tracer_project()
         run_create = {
             **kwargs,
+            # We have to cast this since get_tracer_project can return None even
+            # though it won't, since we don't pass in return_default_value=False
             "session_name": project_name,
             "name": name,
             "inputs": _hide_inputs(inputs),
