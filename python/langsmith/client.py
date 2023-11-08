@@ -658,12 +658,12 @@ class Client:
             If the API key is not provided when using the hosted service.
         """
         project_name = kwargs.pop(
-            "project_name", 
+            "project_name",
             kwargs.pop(
-                "session_name", 
+                "session_name",
                 # if the project is not provided, use the environment's project
-                ls_utils.get_tracer_project()
-            )
+                ls_utils.get_tracer_project(),
+            ),
         )
         run_create = {
             **kwargs,
