@@ -657,17 +657,11 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
-        project_name = kwargs.pop(
+        project_name_opt_from_args = kwargs.pop(
             "project_name",
-            kwargs.pop(
-                "session_name",
-                os.environ.get(
-                    # TODO: Deprecate LANGCHAIN_SESSION
-                    "LANGCHAIN_PROJECT",
-                    os.environ.get("LANGCHAIN_SESSION", "default"),
-                ),
-            ),
+            kwargs.pop("session_name", None)
         )
+        project_name = project_name_opt_from_args or ls_utils.get_tracer_project()
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -925,10 +919,7 @@ class Client:
         elif project_name is not None:
             session_id = self.read_project(project_name=project_name).id
         else:
-            project_name = os.environ.get(
-                "LANGCHAIN_PROJECT",
-                "default",
-            )
+            project_name = ls_utils.get_tracer_project()
             session_id = self.read_project(project_name=project_name).id
         return (
             f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{_as_uuid(session_id)}/"
