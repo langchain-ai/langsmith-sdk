@@ -19,6 +19,7 @@ try:
 except ImportError:
     from pydantic import Field, PrivateAttr, root_validator, validator
 
+from langsmith import utils
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import RunBase
 
@@ -42,11 +43,7 @@ class RunTree(RunBase):
         exclude={"__all__": {"parent_run_id"}},
     )
     session_name: str = Field(
-        default_factory=lambda: os.environ.get(
-            # TODO: Deprecate LANGCHAIN_SESSION
-            "LANGCHAIN_PROJECT",
-            os.environ.get("LANGCHAIN_SESSION", "default"),
-        ),
+        default_factory=lambda: utils.get_tracer_project(),
         alias="project_name",
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
