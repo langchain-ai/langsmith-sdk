@@ -263,7 +263,7 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
         os.environ.get(
             "LANGCHAIN_PROJECT",
             os.environ.get(
-                # This is the legacy name for a LANGCHAIN_PROJECT, so we it
+                # This is the legacy name for a LANGCHAIN_PROJECT, so it
                 # has lower precedence than LANGCHAIN_PROJECT
                 "LANGCHAIN_SESSION",
                 "default" if return_default_value else None,

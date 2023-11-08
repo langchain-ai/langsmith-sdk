@@ -667,8 +667,6 @@ class Client:
         )
         run_create = {
             **kwargs,
-            # We have to cast this since get_tracer_project can return None even
-            # though it won't, since we don't pass in return_default_value=False
             "session_name": project_name,
             "name": name,
             "inputs": _hide_inputs(inputs),
