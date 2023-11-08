@@ -661,11 +661,8 @@ class Client:
             "project_name",
             kwargs.pop(
                 "session_name",
-                os.environ.get(
-                    # TODO: Deprecate LANGCHAIN_SESSION
-                    "LANGCHAIN_PROJECT",
-                    os.environ.get("LANGCHAIN_SESSION", "default"),
-                ),
+                # if the project is not provided, use the environment's project
+                ls_utils.get_tracer_project(),
             ),
         )
         run_create = {
@@ -925,10 +922,7 @@ class Client:
         elif project_name is not None:
             session_id = self.read_project(project_name=project_name).id
         else:
-            project_name = os.environ.get(
-                "LANGCHAIN_PROJECT",
-                "default",
-            )
+            project_name = ls_utils.get_tracer_project()
             session_id = self.read_project(project_name=project_name).id
         return (
             f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{_as_uuid(session_id)}/"

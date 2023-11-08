@@ -4,7 +4,7 @@ import functools
 import logging
 import os
 import subprocess
-from typing import Any, Callable, Dict, List, Mapping, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import requests
 
@@ -249,6 +249,26 @@ def is_base_message_like(obj: object) -> bool:
             isinstance(getattr(obj, "additional_kwargs", None), dict),
             hasattr(obj, "type") and isinstance(getattr(obj, "type"), str),
         ]
+    )
+
+
+def get_tracer_project(return_default_value=True) -> Optional[str]:
+    """Get the project name for a LangSmith tracer."""
+    return os.environ.get(
+        # Hosted LangServe projects get precedence over all other defaults.
+        # This is to make sure that we always use the associated project
+        # for a hosted langserve deployment even if the customer sets some
+        # other project name in their environment.
+        "HOSTED_LANGSERVE_PROJECT_NAME",
+        os.environ.get(
+            "LANGCHAIN_PROJECT",
+            os.environ.get(
+                # This is the legacy name for a LANGCHAIN_PROJECT, so it
+                # has lower precedence than LANGCHAIN_PROJECT
+                "LANGCHAIN_SESSION",
+                "default" if return_default_value else None,
+            ),
+        ),
     )
 
 

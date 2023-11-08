@@ -28,6 +28,7 @@ langsmith = "langsmith.cli.main:main"
 python = ">=3.8.1,<4.0"
 pydantic = ">=1,<3"
 requests = "^2"
+pytest-subtests = "^0.11.0"
 
 
 [tool.poetry.group.dev.dependencies]
