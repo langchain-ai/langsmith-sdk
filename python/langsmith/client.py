@@ -658,8 +658,7 @@ class Client:
             If the API key is not provided when using the hosted service.
         """
         project_name_opt_from_args = kwargs.pop(
-            "project_name",
-            kwargs.pop("session_name", None)
+            "project_name", kwargs.pop("session_name", None)
         )
         project_name = project_name_opt_from_args or ls_utils.get_tracer_project()
         run_create = {

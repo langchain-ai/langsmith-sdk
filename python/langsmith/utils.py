@@ -251,6 +251,7 @@ def is_base_message_like(obj: object) -> bool:
         ]
     )
 
+
 def get_tracer_project(return_default_value=True) -> Optional[str]:
     """Get the project name for a LangSmith tracer."""
     return os.environ.get(
