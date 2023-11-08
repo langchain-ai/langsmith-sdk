@@ -6,7 +6,6 @@ import contextvars
 import functools
 import inspect
 import logging
-import os
 import traceback
 import uuid
 from concurrent import futures
