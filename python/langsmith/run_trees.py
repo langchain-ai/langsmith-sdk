@@ -158,9 +158,25 @@ class RunTree(RunBase):
             logger.exception(e)
             raise e
 
+    def _get_dicts_safe(self):
+        try:
+            return self.dict(exclude={"child_runs"}, exclude_none=True)
+        except TypeError:
+            # Things like generators cannot be copied
+            self_dict = self.dict(
+                exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
+            )
+            if self.inputs:
+                # shallow copy
+                self_dict["inputs"] = self.inputs.copy()
+            if self.outputs:
+                # shallow copy
+                self_dict["outputs"] = self.outputs.copy()
+            return self_dict
+
     def post(self, exclude_child_runs: bool = True) -> Future:
         """Post the run tree to the API asynchronously."""
-        kwargs = self.dict(exclude={"child_runs"}, exclude_none=True)
+        kwargs = self._get_dicts_safe()
         self._futures.append(
             self.executor.submit(
                 self._execute,
