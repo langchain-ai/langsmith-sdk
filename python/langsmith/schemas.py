@@ -25,7 +25,7 @@ try:
         StrictInt,
     )
 except ImportError:
-    from pydantic import (
+    from pydantic import (  # type: ignore[assignment]
         BaseModel,
         Field,
         PrivateAttr,

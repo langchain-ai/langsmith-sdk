@@ -136,7 +136,7 @@ def _serialize_json(obj: Any) -> Union[str, dict]:
             return json.loads(obj.model_dump_json(exclude_none=True))
         except Exception:
             logger.debug(f"Failed to serialize obj of type {type(obj)} to JSON")
-            return repr(obj)
+            return str(obj)
     elif hasattr(obj, "json") and callable(obj.json):
         # Base models, V1
         try:
@@ -1157,7 +1157,7 @@ class Client:
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ls_utils.LangSmithError(f"Project {project_name} not found")
+                raise ls_utils.LangSmithNotFoundError(f"Project {project_name} not found")
             return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
         return ls_schemas.TracerSessionResult(
             **response.json(), _host_url=self._host_url
@@ -1316,7 +1316,7 @@ class Client:
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ls_utils.LangSmithError(f"Dataset {dataset_name} not found")
+                raise ls_utils.LangSmithNotFoundError(f"Dataset {dataset_name} not found")
             return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
         return ls_schemas.Dataset(**result, _host_url=self._host_url)
 
