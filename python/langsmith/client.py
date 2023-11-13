@@ -1280,7 +1280,11 @@ class Client:
             data=dataset.json(),
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
+        return ls_schemas.Dataset(
+            **response.json(),
+            _host_url=self._host_url,
+            _tenant_id=self._get_tenant_id(),
+        )
 
     def has_dataset(
         self, *, dataset_name: Optional[str] = None, dataset_id: Optional[str] = None
@@ -1344,8 +1348,12 @@ class Client:
                 raise ls_utils.LangSmithNotFoundError(
                     f"Dataset {dataset_name} not found"
                 )
-            return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
-        return ls_schemas.Dataset(**result, _host_url=self._host_url)
+            return ls_schemas.Dataset(
+                **result[0], _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            )
+        return ls_schemas.Dataset(
+            **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+        )
 
     def read_dataset_openai_finetuning(
         self, dataset_id: Optional[str] = None, *, dataset_name: Optional[str] = None
