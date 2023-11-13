@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 from abc import abstractmethod
-from typing import Dict, Optional, TypedDict, Union, List
+from typing import Dict, List, Optional, TypedDict, Union
 
 try:
     from pydantic.v1 import BaseModel, Field  # type: ignore[import]
