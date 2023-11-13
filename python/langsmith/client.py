@@ -127,23 +127,6 @@ def _default_retry_config() -> Retry:
 
 
 def _serialize_json(obj: Any) -> Union[str, dict]:
-    """Serialize an object to JSON.
-
-    Parameters
-    ----------
-    obj : Any
-        The object to serialize.
-
-    Returns
-    -------
-    str
-        The serialized JSON string.
-
-    Raises
-    ------
-    TypeError
-        If the object type is not serializable.
-    """
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
 
@@ -152,15 +135,15 @@ def _serialize_json(obj: Any) -> Union[str, dict]:
         try:
             return json.loads(obj.model_dump_json(exclude_none=True))
         except Exception:
-            logger.warning(f"Failed to serialize obj of type {type(obj)} to JSON")
-            return str(obj)
+            logger.debug(f"Failed to serialize obj of type {type(obj)} to JSON")
+            return repr(obj)
     elif hasattr(obj, "json") and callable(obj.json):
         # Base models, V1
         try:
             return json.loads(obj.json(exclude_none=True))
         except Exception:
-            logger.warning(f"Failed to json serialize {type(obj)} to JSON")
-            return str(obj)
+            logger.debug(f"Failed to json serialize {type(obj)} to JSON")
+            return repr(obj)
     else:
         return str(obj)
 
