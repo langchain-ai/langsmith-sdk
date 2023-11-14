@@ -13,31 +13,31 @@ from langsmith import schemas as ls_schemas
 _LOGGER = logging.getLogger(__name__)
 
 
-class LangSmithAPIError(Exception):
-    """An error occurred while communicating with the LangSmith API."""
-
-
-class LangSmithUserError(Exception):
-    """An error occurred while communicating with the LangSmith API."""
-
-
-class LangSmithRateLimitError(Exception):
-    """You have exceeded the rate limit for the LangSmith API."""
-
-
-class LangSmithAuthError(Exception):
-    """Couldn't authenticate with the LangSmith API."""
-
-
-class LangSmithNotFoundError(Exception):
-    """Couldn't find the requested resource."""
-
-
 class LangSmithError(Exception):
     """An error occurred while communicating with the LangSmith API."""
 
 
-class LangSmithConnectionError(Exception):
+class LangSmithAPIError(LangSmithError):
+    """Internal server error while communicating with LangSmith."""
+
+
+class LangSmithUserError(LangSmithError):
+    """User error caused an exception when communicating with LangSmith."""
+
+
+class LangSmithRateLimitError(LangSmithError):
+    """You have exceeded the rate limit for the LangSmith API."""
+
+
+class LangSmithAuthError(LangSmithError):
+    """Couldn't authenticate with the LangSmith API."""
+
+
+class LangSmithNotFoundError(LangSmithError):
+    """Couldn't find the requested resource."""
+
+
+class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
