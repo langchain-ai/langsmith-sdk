@@ -119,7 +119,7 @@ class Dataset(DatasetBase):
     def __init__(
         self,
         _host_url: Optional[str] = None,
-        _tenant_id: Optional[Union[str, UUID]] = None,
+        _tenant_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
         """Initialize a Dataset object."""
@@ -132,7 +132,7 @@ class Dataset(DatasetBase):
         """URL of this run within the app."""
         if self._host_url:
             if self._tenant_id:
-                return f"{self._host_url}/o/{self._tenant_id}/datasets/{self.id}"
+                return f"{self._host_url}/o/{str(self._tenant_id)}/datasets/{self.id}"
             return f"{self._host_url}/datasets/{self.id}"
         return None
 
