@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.0.63"
+version = "0.0.64"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -35,6 +35,7 @@ pytest = "^7.3.1"
 black = "^23.3.0"
 mypy = "^1.3.0"
 ruff = "^0.0.270"
+pydantic = ">=1,<2"
 types-requests = "^2.31.0.1"
 pandas-stubs = "^2.0.1.230501"
 types-pyyaml = "^6.0.12.10"

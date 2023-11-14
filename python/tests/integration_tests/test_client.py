@@ -16,7 +16,11 @@ from langsmith.client import Client
 from langsmith.evaluation import EvaluationResult, StringEvaluator
 from langsmith.run_trees import RunTree
 from langsmith.schemas import DataType
-from langsmith.utils import LangSmithConnectionError, LangSmithError
+from langsmith.utils import (
+    LangSmithConnectionError,
+    LangSmithError,
+    LangSmithNotFoundError,
+)
 
 
 @pytest.fixture
@@ -228,7 +232,7 @@ def test_evaluate_run(
                 )
             )
             break
-        except LangSmithError:
+        except LangSmithNotFoundError:
             time.sleep(2)
     assert runs is not None
     all_eval_results: List[EvaluationResult] = []

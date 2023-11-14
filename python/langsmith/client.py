@@ -127,23 +127,6 @@ def _default_retry_config() -> Retry:
 
 
 def _serialize_json(obj: Any) -> Union[str, dict]:
-    """Serialize an object to JSON.
-
-    Parameters
-    ----------
-    obj : Any
-        The object to serialize.
-
-    Returns
-    -------
-    str
-        The serialized JSON string.
-
-    Raises
-    ------
-    TypeError
-        If the object type is not serializable.
-    """
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
 
@@ -152,15 +135,15 @@ def _serialize_json(obj: Any) -> Union[str, dict]:
         try:
             return json.loads(obj.model_dump_json(exclude_none=True))
         except Exception:
-            logger.warning(f"Failed to serialize obj of type {type(obj)} to JSON")
+            logger.debug(f"Failed to serialize obj of type {type(obj)} to JSON")
             return str(obj)
     elif hasattr(obj, "json") and callable(obj.json):
         # Base models, V1
         try:
             return json.loads(obj.json(exclude_none=True))
         except Exception:
-            logger.warning(f"Failed to json serialize {type(obj)} to JSON")
-            return str(obj)
+            logger.debug(f"Failed to json serialize {type(obj)} to JSON")
+            return repr(obj)
     else:
         return str(obj)
 
@@ -1174,7 +1157,9 @@ class Client:
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ls_utils.LangSmithError(f"Project {project_name} not found")
+                raise ls_utils.LangSmithNotFoundError(
+                    f"Project {project_name} not found"
+                )
             return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
         return ls_schemas.TracerSessionResult(
             **response.json(), _host_url=self._host_url
@@ -1295,7 +1280,34 @@ class Client:
             data=dataset.json(),
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
+        return ls_schemas.Dataset(
+            **response.json(),
+            _host_url=self._host_url,
+            _tenant_id=self._get_tenant_id(),
+        )
+
+    def has_dataset(
+        self, *, dataset_name: Optional[str] = None, dataset_id: Optional[str] = None
+    ) -> bool:
+        """Check whether a dataset exists in your tenant.
+
+        Parameters
+        ----------
+        dataset_name : str or None, default=None
+            The name of the dataset to check.
+        dataset_id : str or None, default=None
+            The ID of the dataset to check.
+
+        Returns
+        -------
+        bool
+            Whether the dataset exists.
+        """
+        try:
+            self.read_dataset(dataset_name=dataset_name, dataset_id=dataset_id)
+            return True
+        except ls_utils.LangSmithNotFoundError:
+            return False
 
     @ls_utils.xor_args(("dataset_name", "dataset_id"))
     def read_dataset(
@@ -1333,9 +1345,15 @@ class Client:
         result = response.json()
         if isinstance(result, list):
             if len(result) == 0:
-                raise ls_utils.LangSmithError(f"Dataset {dataset_name} not found")
-            return ls_schemas.Dataset(**result[0], _host_url=self._host_url)
-        return ls_schemas.Dataset(**result, _host_url=self._host_url)
+                raise ls_utils.LangSmithNotFoundError(
+                    f"Dataset {dataset_name} not found"
+                )
+            return ls_schemas.Dataset(
+                **result[0], _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            )
+        return ls_schemas.Dataset(
+            **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+        )
 
     def read_dataset_openai_finetuning(
         self, dataset_id: Optional[str] = None, *, dataset_name: Optional[str] = None
