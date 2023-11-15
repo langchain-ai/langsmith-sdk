@@ -1,7 +1,8 @@
 import asyncio
 import uuid
 from abc import abstractmethod
-from typing import Dict, List, Optional, TypedDict, Union
+from functools import wraps
+from typing import Callable, Dict, List, Optional, TypedDict, Union
 
 try:
     from pydantic.v1 import BaseModel, Field  # type: ignore[import]
@@ -64,3 +65,30 @@ class RunEvaluator:
         return await asyncio.get_running_loop().run_in_executor(
             None, self.evaluate_run, run, example
         )
+
+
+class RunEvaluatorImpl(RunEvaluator):
+    def __init__(
+        self,
+        func: Callable[
+            [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults]
+        ],
+    ):
+        self.func = func
+
+    def evaluate_run(
+        self, run: Run, example: Optional[Example] = None
+    ) -> Union[EvaluationResult, EvaluationResults]:
+        return self.func(run, example)
+
+    def __call__(
+        self, run: Run, example: Optional[Example] = None
+    ) -> Union[EvaluationResult, EvaluationResults]:
+        return self.evaluate_run(run, example)
+
+
+def run_evaluator(
+    func: Callable[[Run, Optional[Example]], Union[EvaluationResult, EvaluationResults]]
+):
+    """Decorator to create a run evaluator from a function."""
+    return RunEvaluatorImpl(func)
