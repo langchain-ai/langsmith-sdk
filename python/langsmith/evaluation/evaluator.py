@@ -8,6 +8,8 @@ try:
 except ImportError:
     from pydantic import BaseModel, Field
 
+from functools import wraps
+
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
 
@@ -66,23 +68,67 @@ class RunEvaluator:
         )
 
 
-class RunEvaluatorImpl(RunEvaluator):
+class DynamicRunEvaluator(RunEvaluator):
+    """
+    A dynamic evaluator that wraps a function and transforms it into a `RunEvaluator`.
+
+    This class is designed to be used with the `@run_evaluator` decorator, allowing
+    functions that take a `Run` and an optional `Example` as arguments, and return
+    an `EvaluationResult` or `EvaluationResults`, to be used as instances of `RunEvaluator`.
+
+    Attributes:
+        func (Callable): The function that is wrapped by this evaluator.
+    """  # noqa: E501
+
     def __init__(
         self,
         func: Callable[
             [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults]
         ],
     ):
+        """
+        Initialize the DynamicRunEvaluator with a given function.
+
+        Args:
+            func (Callable): A function that takes a `Run` and an optional `Example` as
+            arguments, and returns an `EvaluationResult` or `EvaluationResults`.
+        """
+        wraps(func)(self)
         self.func = func
 
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
+        """
+        Evaluate a run using the wrapped function.
+
+        This method directly invokes the wrapped function with the provided arguments.
+
+        Args:
+            run (Run): The run to be evaluated.
+            example (Optional[Example]): An optional example to be used in the evaluation.
+
+        Returns:
+            Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
+        """  # noqa: E501
         return self.func(run, example)
 
     def __call__(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
+        """
+        Make the evaluator callable, allowing it to be used like a function.
+
+        This method enables the evaluator instance to be called directly, forwarding the
+        call to `evaluate_run`.
+
+        Args:
+            run (Run): The run to be evaluated.
+            example (Optional[Example]): An optional example to be used in the evaluation.
+
+        Returns:
+            Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
+        """  # noqa: E501
         return self.evaluate_run(run, example)
 
 
@@ -90,4 +136,4 @@ def run_evaluator(
     func: Callable[[Run, Optional[Example]], Union[EvaluationResult, EvaluationResults]]
 ):
     """Decorator to create a run evaluator from a function."""
-    return RunEvaluatorImpl(func)
+    return DynamicRunEvaluator(func)
