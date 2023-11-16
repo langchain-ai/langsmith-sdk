@@ -158,7 +158,11 @@ def _setup_run(
     metadata_.update(metadata or {})
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
-    inputs = _get_inputs(signature, *args, **kwargs)
+    try:
+        inputs = _get_inputs(signature, *args, **kwargs)
+    except TypeError as e:
+        logger.debug(f"Failed to infer inputs for {name_}: {e}")
+        inputs = {"args": args, "kwargs": kwargs}
     outer_tags = _TAGS.get()
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     _TAGS.set(tags_)
