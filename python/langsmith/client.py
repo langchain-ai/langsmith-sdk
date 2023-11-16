@@ -1714,6 +1714,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         example_ids: Optional[List[ID_TYPE]] = None,
+        inline_s3_urls: bool = True,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
 
@@ -1741,7 +1742,7 @@ class Client:
             pass
         if example_ids is not None:
             params["id"] = example_ids
-        params["inline_s3_urls"] = True
+        params["inline_s3_urls"] = inline_s3_urls
         yield from (
             ls_schemas.Example(**example)
             for example in self._get_paginated_list("/examples", params=params)
