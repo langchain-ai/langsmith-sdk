@@ -1741,6 +1741,7 @@ class Client:
             pass
         if example_ids is not None:
             params["id"] = example_ids
+        params["inline_s3_urls"] = True
         yield from (
             ls_schemas.Example(**example)
             for example in self._get_paginated_list("/examples", params=params)
