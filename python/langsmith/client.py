@@ -1059,11 +1059,11 @@ class Client:
         project_ids: Optional[List[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
-    ) -> Iterator[ls_schemas.TracerSession]:
+    ) -> Iterator[ls_schemas.TracerSessionResult]:
         params = {"id": project_ids, "name": name, "name_contains": name_contains}
         yield from [
-            ls_schemas.TracerSession(**dataset, _host_url=self._host_url)
-            for dataset in self._get_paginated_list(
+            ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
+            for project in self._get_paginated_list(
                 f"/public/{_as_uuid(dataset_share_token)}/datasets/sessions",
                 params=params,
             )
@@ -1165,6 +1165,72 @@ class Client:
             **response.json(), _host_url=self._host_url
         )
 
+    def get_test_results(
+        self,
+        *,
+        project_id: Optional[ID_TYPE] = None,
+        project_name: Optional[str] = None,
+    ) -> "pd.DataFrame":
+        """Read the record-level information from a test project into a Pandas DF.
+
+        Note: this will fetch whatever data exists in the DB. Results are not
+        immediately available in the DB upon evaluation run completion.
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe containing the test results.
+        """
+        import pandas as pd  # type: ignore
+
+        runs = self.list_runs(
+            project_id=project_id, project_name=project_name, execution_order=1
+        )
+        results = []
+        example_ids = []
+        for r in runs:
+            row = {
+                "example_id": r.reference_example_id,
+                **{f"input.{k}": v for k, v in r.inputs.items()},
+                **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
+            }
+            if r.feedback_stats:
+                for k, v in r.feedback_stats.items():
+                    row[f"feedback.{k}"] = v.get("avg")
+            row.update(
+                {
+                    "execution_time": (r.end_time - r.start_time).total_seconds()
+                    if r.end_time
+                    else None,
+                    "error": r.error,
+                    "id": r.id,
+                }
+            )
+            if r.reference_example_id:
+                example_ids.append(r.reference_example_id)
+            results.append(row)
+        result = pd.DataFrame(results).set_index("example_id")
+        batch_size = 100
+        example_outputs = []
+        for batch in [
+            example_ids[i : i + batch_size]
+            for i in range(0, len(example_ids), batch_size)
+        ]:
+            for example in self.list_examples(example_ids=batch):
+                example_outputs.append(
+                    {
+                        "example_id": example.id,
+                        **{
+                            f"reference.{k}": v
+                            for k, v in (example.outputs or {}).items()
+                        },
+                    }
+                )
+        if example_outputs:
+            df = pd.DataFrame(example_outputs).set_index("example_id")
+            return df.merge(result, left_index=True, right_index=True)
+        return result
+
     def list_projects(
         self,
         project_ids: Optional[List[ID_TYPE]] = None,
@@ -1219,7 +1285,7 @@ class Client:
         if reference_free is not None:
             params["reference_free"] = reference_free
         yield from (
-            ls_schemas.TracerSession(**project, _host_url=self._host_url)
+            ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
             for project in self._get_paginated_list("/sessions", params=params)
         )
 
@@ -1713,7 +1779,7 @@ class Client:
         self,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        example_ids: Optional[List[ID_TYPE]] = None,
+        example_ids: Optional[Sequence[ID_TYPE]] = None,
         inline_s3_urls: bool = True,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -2226,6 +2292,7 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
+        project_metadata: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
@@ -2243,6 +2310,7 @@ class Client:
             concurrency_level: The number of async tasks to run concurrently.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
+            project_metadata: Optional metadata to store with the project.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
@@ -2360,6 +2428,7 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
+        project_metadata: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
@@ -2378,6 +2447,7 @@ class Client:
             concurrency_level: The number of tasks to execute concurrently.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
+            project_metadata: Metadata to store with the project.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
