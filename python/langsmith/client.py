@@ -1165,6 +1165,47 @@ class Client:
             **response.json(), _host_url=self._host_url
         )
 
+    def get_test_results(
+        self,
+        project_id: Optional[ID_TYPE] = None,
+        *,
+        project_name: Optional[str] = None,
+    ) -> "pd.DataFrame":
+        """Read the record-level information from a test project into a Pandas DF.
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe containing the test results.
+        """
+        import pandas as pd  # type: ignore
+
+        runs = self.list_runs(
+            project_id=project_id, project_name=project_name, execution_order=1
+        )
+        results = []
+        for r in runs:
+            row = {
+                "example_id": r.reference_example_id,
+                **{f"input.{k}": v for k, v in r.inputs.items()},
+                **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
+            }
+            if r.reference_example_id is not None:
+                example_outputs = self.read_example(r.reference_example_id).outputs
+                for k, v in (example_outputs or {}).items():
+                    row[f"reference.{k}"] = v
+            if r.feedback_stats:
+                for k, v in r.feedback_stats.items():
+                    row[f"feedback.{k}"] = v.get("avg")
+            execution_time = (
+                (r.end_time - r.start_time).total_seconds() if r.end_time else None
+            )
+            row["execution_time"] = execution_time
+            row["error"] = r.error
+            row["id"] = r.id
+            results.append(row)
+        return pd.DataFrame(results).set_index("example_id")
+
     def list_projects(
         self,
         project_ids: Optional[List[ID_TYPE]] = None,
