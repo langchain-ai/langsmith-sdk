@@ -1168,7 +1168,6 @@ class Client:
     def get_test_results(
         self,
         project_id: Optional[ID_TYPE] = None,
-        *,
         project_name: Optional[str] = None,
     ) -> "pd.DataFrame":
         """Read the record-level information from a test project into a Pandas DF.
