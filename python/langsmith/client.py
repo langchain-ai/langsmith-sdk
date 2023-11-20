@@ -1206,21 +1206,30 @@ class Client:
                     "id": r.id,
                 }
             )
-            example_ids.append(r.reference_example_id)
+            if r.reference_example_id:
+                example_ids.append(r.reference_example_id)
             results.append(row)
+        result = pd.DataFrame(results).set_index("example_id")
         batch_size = 100
-        ix = 0
+        example_outputs = []
         for batch in [
             example_ids[i : i + batch_size]
             for i in range(0, len(example_ids), batch_size)
         ]:
             for example in self.list_examples(example_ids=batch):
-                results[ix].update(
-                    {f"reference.{k}": v for k, v in (example.outputs or {}).items()}
+                example_outputs.append(
+                    {
+                        "example_id": example.id,
+                        **{
+                            f"reference.{k}": v
+                            for k, v in (example.outputs or {}).items()
+                        },
+                    }
                 )
-                ix += 1
-
-        return pd.DataFrame(results).set_index("example_id")
+        if example_outputs:
+            df = pd.DataFrame(example_outputs).set_index("example_id")
+            return df.merge(result, left_index=True, right_index=True)
+        return result
 
     def list_projects(
         self,
@@ -1770,7 +1779,7 @@ class Client:
         self,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        example_ids: Optional[List[ID_TYPE]] = None,
+        example_ids: Optional[Sequence[ID_TYPE]] = None,
         inline_s3_urls: bool = True,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
