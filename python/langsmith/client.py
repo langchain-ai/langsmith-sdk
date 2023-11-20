@@ -2283,6 +2283,7 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
+        project_metadata: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
@@ -2300,6 +2301,7 @@ class Client:
             concurrency_level: The number of async tasks to run concurrently.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
+            project_metadata: Optional metadata to store with the project.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
@@ -2417,6 +2419,7 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
+        project_metadata: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
@@ -2435,6 +2438,7 @@ class Client:
             concurrency_level: The number of tasks to execute concurrently.
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
+            project_metadata: Metadata to store with the project.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
