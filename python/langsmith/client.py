@@ -1059,11 +1059,11 @@ class Client:
         project_ids: Optional[List[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
-    ) -> Iterator[ls_schemas.TracerSession]:
+    ) -> Iterator[ls_schemas.TracerSessionResult]:
         params = {"id": project_ids, "name": name, "name_contains": name_contains}
         yield from [
-            ls_schemas.TracerSession(**dataset, _host_url=self._host_url)
-            for dataset in self._get_paginated_list(
+            ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
+            for project in self._get_paginated_list(
                 f"/public/{_as_uuid(dataset_share_token)}/datasets/sessions",
                 params=params,
             )
@@ -1219,7 +1219,7 @@ class Client:
         if reference_free is not None:
             params["reference_free"] = reference_free
         yield from (
-            ls_schemas.TracerSession(**project, _host_url=self._host_url)
+            ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
             for project in self._get_paginated_list("/sessions", params=params)
         )
 
