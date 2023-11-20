@@ -1186,26 +1186,39 @@ class Client:
             project_id=project_id, project_name=project_name, execution_order=1
         )
         results = []
+        example_ids = []
         for r in runs:
             row = {
                 "example_id": r.reference_example_id,
                 **{f"input.{k}": v for k, v in r.inputs.items()},
                 **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
             }
-            if r.reference_example_id is not None:
-                example_outputs = self.read_example(r.reference_example_id).outputs
-                for k, v in (example_outputs or {}).items():
-                    row[f"reference.{k}"] = v
             if r.feedback_stats:
                 for k, v in r.feedback_stats.items():
                     row[f"feedback.{k}"] = v.get("avg")
-            execution_time = (
-                (r.end_time - r.start_time).total_seconds() if r.end_time else None
+            row.update(
+                {
+                    "execution_time": (r.end_time - r.start_time).total_seconds()
+                    if r.end_time
+                    else None,
+                    "error": r.error,
+                    "id": r.id,
+                }
             )
-            row["execution_time"] = execution_time
-            row["error"] = r.error
-            row["id"] = r.id
+            example_ids.append(r.reference_example_id)
             results.append(row)
+        batch_size = 100
+        ix = 0
+        for batch in [
+            example_ids[i : i + batch_size]
+            for i in range(0, len(example_ids), batch_size)
+        ]:
+            for example in self.list_examples(example_ids=batch):
+                results[ix].update(
+                    {f"reference.{k}": v for k, v in (example.outputs or {}).items()}
+                )
+                ix += 1
+
         return pd.DataFrame(results).set_index("example_id")
 
     def list_projects(
