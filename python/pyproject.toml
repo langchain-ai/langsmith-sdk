@@ -61,3 +61,6 @@ select = [
 [tool.mypy]
 ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

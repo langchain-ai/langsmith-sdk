@@ -1,8 +1,6 @@
 import inspect
 from typing import Any
 
-import pytest
-
 from langsmith.run_helpers import _get_inputs, as_runnable, traceable
 
 
@@ -154,7 +152,6 @@ def test_traceable_iterator() -> None:
     assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
 
 
-@pytest.mark.asyncio
 async def test_traceable_async_iterator() -> None:
     @traceable()
     async def my_iterator_fn(a, b, d):
@@ -187,7 +184,6 @@ def test_as_runnable_batch() -> None:
     ) == [6, 7]
 
 
-@pytest.mark.asyncio
 async def test_as_runnable_async() -> None:
     @traceable()
     async def my_function(a, b, d):
@@ -198,7 +194,6 @@ async def test_as_runnable_async() -> None:
     assert result == 6
 
 
-@pytest.mark.asyncio
 async def test_as_runnable_async_batch() -> None:
     @traceable()
     async def my_function(a, b, d):
