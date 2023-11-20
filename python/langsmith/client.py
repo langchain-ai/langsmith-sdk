@@ -1173,6 +1173,9 @@ class Client:
     ) -> "pd.DataFrame":
         """Read the record-level information from a test project into a Pandas DF.
 
+        Note: this will fetch whatever data exists in the DB. Results are not
+        immediately available in the DB upon evaluation run completion.
+
         Returns
         -------
         pd.DataFrame
