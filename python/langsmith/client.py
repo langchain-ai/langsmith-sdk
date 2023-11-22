@@ -1189,7 +1189,7 @@ class Client:
         results = []
         example_ids = []
         for r in runs:
-            row = {
+            row: dict = {
                 "example_id": r.reference_example_id,
                 **{f"input.{k}": v for k, v in r.inputs.items()},
                 **{f"outputs.{k}": v for k, v in (r.outputs or {}).items()},
