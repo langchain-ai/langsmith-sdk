@@ -1,7 +1,6 @@
 """Decorator for creating a run tree from functions."""
 from __future__ import annotations
 
-import collections.abc
 import contextlib
 import contextvars
 import functools
@@ -22,7 +21,6 @@ from typing import (
     Mapping,
     Optional,
     TypedDict,
-    Union,
     cast,
 )
 
@@ -541,17 +539,17 @@ def trace(
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
     try:
-        from langchain_core.callbacks.manager import (
+        from langchain.callbacks.manager import (
             AsyncCallbackManager,
             CallbackManager,
         )
-        from langchain_core.runnables import RunnableConfig, RunnableLambda
-        from langchain_core.runnables.utils import Input, Output
-        from langchain_core.tracers import LangChainTracer
+        from langchain.callbacks.tracers.langchain import LangChainTracer
+        from langchain.schema.runnable import RunnableConfig, RunnableLambda
+        from langchain.schema.runnable.utils import Input, Output
     except ImportError as e:
         raise ImportError(
-            "as_runnable requires langchain-core to be installed. "
-            "You can install it with `pip install langchain-core`."
+            "as_runnable requires langchain to be installed. "
+            "You can install it with `pip install langchain`."
         ) from e
     if not is_traceable_function(traceable_fn):
         try:
@@ -628,15 +626,11 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         ) -> Callable[[Input, RunnableConfig], Output]:
             """Wrap a synchronous function to make it asynchronous."""
 
-            def wrap_traceable(inputs: Union[dict, Any], config: RunnableConfig) -> Any:
+            def wrap_traceable(inputs: dict, config: RunnableConfig) -> Any:
                 run_tree = RunnableTraceable._configure_run_tree(
                     config.get("callbacks")
                 )
-                if isinstance(inputs, collections.abc.Mapping):
-                    inputs = cast(Dict, inputs)
-                    return func(**inputs, langsmith_extra={"run_tree": run_tree})
-                else:
-                    return func(inputs, langsmith_extra={"run_tree": run_tree})
+                return func(**inputs, langsmith_extra={"run_tree": run_tree})
 
             return cast(Callable[[Input, RunnableConfig], Output], wrap_traceable)
 
