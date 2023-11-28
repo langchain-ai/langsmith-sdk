@@ -1073,8 +1073,10 @@ class Client:
         self,
         project_name: str,
         *,
-        project_extra: Optional[dict] = None,
+        description: Optional[str] = None,
+        metadata: Optional[dict] = None,
         upsert: bool = False,
+        project_extra: Optional[dict] = None,
         reference_dataset_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
@@ -1085,6 +1087,10 @@ class Client:
             The name of the project.
         project_extra : dict or None, default=None
             Additional project information.
+        metadata: dict or None, default=None
+            Additional metadata to associate with the project.
+        description : str or None, default=None
+            The description of the project.
         upsert : bool, default=False
             Whether to update the project if it already exists.
         reference_dataset_id: UUID or None, default=None
@@ -1096,9 +1102,13 @@ class Client:
             The created project.
         """
         endpoint = f"{self.api_url}/sessions"
+        extra = project_extra
+        if metadata:
+            extra = {**(extra or {}), "metadata": metadata}
         body: Dict[str, Any] = {
             "name": project_name,
-            "extra": project_extra,
+            "extra": extra,
+            "description": description,
         }
         params = {}
         if upsert:
@@ -1106,6 +1116,55 @@ class Client:
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
         response = self.session.post(
+            endpoint,
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=json.dumps(body, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
+
+    def update_project(
+        self,
+        project_id: ID_TYPE,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[dict] = None,
+        project_extra: Optional[dict] = None,
+        end_time: Optional[datetime.datetime] = None,
+    ) -> ls_schemas.TracerSession:
+        """Update a LangSmith project.
+
+        Parameters
+        ----------
+        project_id : UUID
+            The ID of the project to update.
+        name : str or None, default=None
+            The new name to give the project. This is only valid if the project
+            has been assigned an end_time, meaning it has been completed/closed.
+        description : str or None, default=None
+            The new description to give the project.
+        metadata: dict or None, default=None
+
+        project_extra : dict or None, default=None
+            Additional project information.
+
+        Returns
+        -------
+        TracerSession
+            The updated project.
+        """
+        endpoint = f"{self.api_url}/sessions/{_as_uuid(project_id)}"
+        extra = project_extra
+        if metadata:
+            extra = {**(extra or {}), "metadata": metadata}
+        body: Dict[str, Any] = {
+            "name": name,
+            "extra": extra,
+            "description": description,
+            "end_time": end_time.isoformat() if end_time else None,
+        }
+        response = self.session.patch(
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
             data=json.dumps(body, default=_serialize_json),
