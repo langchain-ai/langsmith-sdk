@@ -203,8 +203,6 @@ class RunBase(BaseModel):
 class Run(RunBase):
     """Run schema when loading from the DB."""
 
-    execution_order: int
-    """The execution order of the run within a run trace."""
     session_id: Optional[UUID] = None
     """The project ID this run belongs to."""
     child_run_ids: Optional[List[UUID]] = None
@@ -244,6 +242,8 @@ class Run(RunBase):
         - 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155649Z809ed3a2-0172-4f4d-8a02-a64e9b7a0f8a
         - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
     """  # noqa: E501
+    execution_order: Optional[int] = None
+    """The execution order of the run within a run trace."""
     _host_url: Optional[str] = PrivateAttr(default=None)
 
     def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
