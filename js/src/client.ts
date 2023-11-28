@@ -689,24 +689,31 @@ export class Client {
 
   public async createProject({
     projectName,
-    projectExtra,
-    upsert,
-    referenceDatasetId,
+    description = null,
+    metadata = null,
+    upsert = false,
+    projectExtra = null,
+    referenceDatasetId = null,
   }: {
     projectName: string;
-    projectExtra?: object;
+    description?: string | null;
+    metadata?: Record<string, any> | null;
     upsert?: boolean;
-    referenceDatasetId?: string;
+    projectExtra?: Record<string, any> | null;
+    referenceDatasetId?: string | null;
   }): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
-    const body: Record<string, object | string> = {
-      name: projectName,
-    };
-    if (projectExtra !== undefined) {
-      body["extra"] = projectExtra;
+    const extra: Record<string, any> = projectExtra || {};
+    if (metadata) {
+      extra["metadata"] = metadata;
     }
-    if (referenceDatasetId !== undefined) {
+    const body: Record<string, any> = {
+      name: projectName,
+      extra,
+      description,
+    };
+    if (referenceDatasetId !== null) {
       body["reference_dataset_id"] = referenceDatasetId;
     }
     const response = await this.caller.call(fetch, endpoint, {
@@ -719,6 +726,48 @@ export class Client {
     if (!response.ok) {
       throw new Error(
         `Failed to create session ${projectName}: ${response.status} ${response.statusText}`
+      );
+    }
+    return result as TracerSession;
+  }
+
+  public async updateProject(
+    projectId: string,
+    {
+      name = null,
+      description = null,
+      metadata = null,
+      projectExtra = null,
+      endTime = null,
+    }: {
+      name?: string | null;
+      description?: string | null;
+      metadata?: Record<string, any> | null;
+      projectExtra?: Record<string, any> | null;
+      endTime?: string | null;
+    }
+  ): Promise<TracerSession> {
+    const endpoint = `${this.apiUrl}/sessions/${projectId}`;
+    let extra = projectExtra;
+    if (metadata) {
+      extra = { ...(extra || {}), metadata };
+    }
+    const body: Record<string, any> = {
+      name,
+      extra,
+      description,
+      end_time: endTime ? new Date(endTime).toISOString() : null,
+    };
+    const response = await this.caller.call(fetch, endpoint, {
+      method: "PATCH",
+      headers: { ...this.headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.timeout_ms),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update project ${projectId}: ${response.status} ${response.statusText}`
       );
     }
     return result as TracerSession;
