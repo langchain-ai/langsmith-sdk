@@ -111,7 +111,7 @@ export interface Run extends BaseRun {
   id: string;
 
   /** Defines the sequence in which the run was executed. */
-  execution_order: number;
+  execution_order?: number;
 
   /** The ID of the project that owns this run. */
   session_id?: string;
