@@ -318,6 +318,8 @@ class Client:
             link = self._web_url
         elif _is_localhost(self.api_url):
             link = "http://localhost"
+        elif "/api" in self.api_url:
+            link = self.api_url.replace("/api", "")
         elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
             link = "https://dev.smith.langchain.com"
         else:
