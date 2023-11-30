@@ -230,7 +230,7 @@ export class Client {
       return "http://localhost";
     } else if (this.apiUrl.includes("/api")) {
       this.webUrl = this.apiUrl.replace("/api", "");
-      return this.webUrl
+      return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
       this.webUrl = "https://dev.smith.langchain.com";
       return "https://dev.smith.langchain.com";
