@@ -1816,7 +1816,9 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
-        return ls_schemas.Example(**result)
+        return ls_schemas.Example(
+            **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+        )
 
     def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
         """Read an example from the LangSmith API.
@@ -1832,7 +1834,11 @@ class Client:
             The example.
         """
         response = self._get_with_retries(f"/examples/{_as_uuid(example_id)}")
-        return ls_schemas.Example(**response.json())
+        return ls_schemas.Example(
+            **response.json(),
+            _host_url=self._host_url,
+            _tenant_id=self._get_tenant_id(),
+        )
 
     def list_examples(
         self,
@@ -1869,7 +1875,9 @@ class Client:
             params["id"] = example_ids
         params["inline_s3_urls"] = inline_s3_urls
         yield from (
-            ls_schemas.Example(**example)
+            ls_schemas.Example(
+                **example, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            )
             for example in self._get_paginated_list("/examples", params=params)
         )
 
@@ -1980,7 +1988,9 @@ class Client:
         elif isinstance(example, ls_schemas.Example):
             reference_example_ = example
         elif isinstance(example, dict):
-            reference_example_ = ls_schemas.Example(**example)
+            reference_example_ = ls_schemas.Example(
+                **example, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            )
         elif run.reference_example_id is not None:
             reference_example_ = self.read_example(run.reference_example_id)
         else:
