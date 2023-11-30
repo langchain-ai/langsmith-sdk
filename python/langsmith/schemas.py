@@ -259,6 +259,15 @@ class Run(RunBase):
         return None
 
 
+class RunWithAnnotationQueueInfo(RunBase):
+    """Run schema with annotation queue info."""
+
+    last_reviewed_time: Optional[datetime] = None
+    """The last time this run was reviewed."""
+    added_at: Optional[datetime] = None
+    """The time this run was added to the queue."""
+
+
 class FeedbackSourceBase(BaseModel):
     type: str
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -408,6 +417,15 @@ class DatasetShareSchema(TypedDict, total=False):
     dataset_id: UUID
     share_token: UUID
     url: str
+
+
+class AnnotationQueue(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    tenant_id: UUID
 
 
 Example.update_forward_refs()

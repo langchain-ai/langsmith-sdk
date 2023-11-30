@@ -2343,6 +2343,99 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    # Annotation Queue API
+
+    def list_annotation_queues(
+        self,
+        *,
+        queue_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+    ) -> Iterator[ls_schemas.AnnotationQueue]:
+        params: dict = {
+            "ids": [_as_uuid(id_) for id_ in queue_ids]
+            if queue_ids is not None
+            else None,
+            "name": name,
+            "name_contains": name_contains,
+        }
+        yield from (
+            ls_schemas.AnnotationQueue(**queue)
+            for queue in self._get_paginated_list("/annotation-queues", params=params)
+        )
+
+    def create_annotation_queue(
+        self,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        queue_id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.AnnotationQueue:
+        body = {
+            "name": name,
+            "description": description,
+            "id": queue_id,
+        }
+        response = self.request_with_retries(
+            "post",
+            f"{self.api_url}/annotation-queues",
+            {
+                "json": {k: v for k, v in body.items() if v is not None},
+                "headers": self._headers,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.AnnotationQueue(**response.json())
+
+    def read_annotation_queue(self, queue_id: ID_TYPE) -> ls_schemas.AnnotationQueue:
+        # TODO: Replace when actual endpoint is added
+        return next(self.list_annotation_queues(queue_ids=[queue_id]))
+
+    def update_annotation_queue(
+        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+    ) -> None:
+        response = self.request_with_retries(
+            "patch",
+            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id)}",
+            {
+                "json": {
+                    "name": name,
+                    "description": description,
+                },
+                "headers": self._headers,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def delete_annotation_queue(self, queue_id: ID_TYPE) -> None:
+        response = self.session.delete(
+            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id)}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def add_runs_to_annotation_queue(
+        self, queue_id: ID_TYPE, *, run_ids: List[ID_TYPE]
+    ) -> None:
+        response = self.request_with_retries(
+            "post",
+            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id)}/runs",
+            {
+                "json": [str(_as_uuid(id_)) for id_ in run_ids],
+                "headers": self._headers,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def list_runs_from_annotation_queue(
+        self, queue_id: ID_TYPE
+    ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
+        path = f"/annotation-queues/{_as_uuid(queue_id)}/runs"
+        yield from (
+            ls_schemas.RunWithAnnotationQueueInfo(**run)
+            for run in self._get_paginated_list(path, params={"headers": self._headers})
+        )
+
     async def arun_on_dataset(
         self,
         dataset_name: str,
@@ -2474,6 +2567,7 @@ class Client:
             evaluation=evaluation,
             concurrency_level=concurrency_level,
             project_name=project_name,
+            project_metadata=project_metadata,
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
@@ -2611,6 +2705,7 @@ class Client:
             client=self,
             evaluation=evaluation,
             project_name=project_name,
+            project_metadata=project_metadata,
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
