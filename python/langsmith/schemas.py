@@ -65,6 +65,29 @@ class Example(ExampleBase):
     created_at: datetime
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
+    _host_url: Optional[str] = PrivateAttr(default=None)
+    _tenant_id: Optional[UUID] = PrivateAttr(default=None)
+
+    def __init__(
+        self,
+        _host_url: Optional[str] = None,
+        _tenant_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize a Dataset object."""
+        super().__init__(**kwargs)
+        self._host_url = _host_url
+        self._tenant_id = _tenant_id
+
+    @property
+    def url(self) -> Optional[str]:
+        """URL of this run within the app."""
+        if self._host_url:
+            path = f"/datasets/{self.dataset_id}/e/{self.id}"
+            if self._tenant_id:
+                return f"{self._host_url}/o/{str(self._tenant_id)}{path}"
+            return f"{self._host_url}{path}"
+        return None
 
 
 class ExampleUpdate(BaseModel):
@@ -259,6 +282,15 @@ class Run(RunBase):
         return None
 
 
+class RunWithAnnotationQueueInfo(RunBase):
+    """Run schema with annotation queue info."""
+
+    last_reviewed_time: Optional[datetime] = None
+    """The last time this run was reviewed."""
+    added_at: Optional[datetime] = None
+    """The time this run was added to the queue."""
+
+
 class FeedbackSourceBase(BaseModel):
     type: str
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -408,6 +440,15 @@ class DatasetShareSchema(TypedDict, total=False):
     dataset_id: UUID
     share_token: UUID
     url: str
+
+
+class AnnotationQueue(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    tenant_id: UUID
 
 
 Example.update_forward_refs()
