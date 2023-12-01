@@ -247,3 +247,24 @@ def test_pydantic_serialize():
     obj2 = {"output": obj}
     res2 = json.loads(json.dumps(obj2, default=_serialize_json))
     assert res2 == {"output": expected}
+
+
+def test_host_url() -> None:
+    client = Client(api_url="https://api.foobar.com/api", api_key="API_KEY")
+    assert client._host_url == "https://api.foobar.com"
+
+    client = Client(
+        api_url="https://api.langsmith.com",
+        api_key="API_KEY",
+        web_url="https://web.langsmith.com",
+    )
+    assert client._host_url == "https://web.langsmith.com"
+
+    client = Client(api_url="http://localhost:8000", api_key="API_KEY")
+    assert client._host_url == "http://localhost"
+
+    client = Client(api_url="https://dev.api.smith.langchain.com", api_key="API_KEY")
+    assert client._host_url == "https://dev.smith.langchain.com"
+
+    client = Client(api_url="https://api.smith.langchain.com", api_key="API_KEY")
+    assert client._host_url == "https://smith.langchain.com"
