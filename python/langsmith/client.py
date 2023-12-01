@@ -1039,7 +1039,6 @@ class Client:
         return ls_schemas.Dataset(
             **response.json(),
             _host_url=self._host_url,
-            _tenant_id=self._get_tenant_id(),
         )
 
     def list_shared_examples(
