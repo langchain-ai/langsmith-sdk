@@ -4,9 +4,9 @@ from abc import abstractmethod
 from typing import Callable, Dict, List, Optional, TypedDict, Union
 
 try:
-    from pydantic.v1 import BaseModel, Field  # type: ignore[import]
+    from pydantic.v1 import BaseModel, Field, ValidationError  # type: ignore[import]
 except ImportError:
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, ValidationError
 
 from functools import wraps
 
@@ -96,6 +96,34 @@ class DynamicRunEvaluator(RunEvaluator):
         wraps(func)(self)
         self.func = func
 
+    @staticmethod
+    def _coerce_evaluation_result(
+        result: Union[EvaluationResult, dict]
+    ) -> EvaluationResult:
+        if isinstance(result, EvaluationResult):
+            return result
+        try:
+            return EvaluationResult(**result)
+        except ValidationError as e:
+            EvaluationResult.schema().validate(result)
+            raise ValidationError(
+                "Expected an EvaluationResult object, or dict with a metric"
+                f" 'key' and optional 'score'; got {result}"
+            ) from e
+
+    @staticmethod
+    def _coerce_evaluation_results(
+        results: Union[dict, EvaluationResults],
+    ) -> Union[EvaluationResult, EvaluationResults]:
+        if "results" in results:
+            cp = results.copy()
+            cp["results"] = [
+                DynamicRunEvaluator._coerce_evaluation_result(r)
+                for r in results["results"]
+            ]
+            return EvaluationResults(**cp)
+        return DynamicRunEvaluator._coerce_evaluation_result(results)
+
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -111,7 +139,14 @@ class DynamicRunEvaluator(RunEvaluator):
         Returns:
             Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
         """  # noqa: E501
-        return self.func(run, example)
+        result = self.func(run, example)
+        if isinstance(result, EvaluationResult):
+            return result
+        if not isinstance(result, dict):
+            raise ValueError(
+                f"Expected a dict, EvaluationResult, or EvaluationResults, got {result}"
+            )
+        return self._coerce_evaluation_results(result)
 
     def __call__(
         self, run: Run, example: Optional[Example] = None
@@ -133,7 +168,9 @@ class DynamicRunEvaluator(RunEvaluator):
 
 
 def run_evaluator(
-    func: Callable[[Run, Optional[Example]], Union[EvaluationResult, EvaluationResults]]
+    func: Callable[
+        [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults, dict]
+    ],
 ):
     """Decorator to create a run evaluator from a function."""
     return DynamicRunEvaluator(func)
