@@ -91,6 +91,7 @@ def test_upload_csv(mock_session_cls: mock.Mock) -> None:
         api_url="http://localhost:1984",
         api_key="123",
     )
+    client._tenant_id = uuid.uuid4()
     csv_file = ("test.csv", BytesIO(b"input,output\n1,2\n3,4\n"))
 
     dataset = client.upload_csv(
