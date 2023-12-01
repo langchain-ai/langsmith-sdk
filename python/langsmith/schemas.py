@@ -138,22 +138,27 @@ class Dataset(DatasetBase):
     last_session_start_time: Optional[datetime] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
+    _public_path: Optional[str] = PrivateAttr(default=None)
 
     def __init__(
         self,
         _host_url: Optional[str] = None,
         _tenant_id: Optional[UUID] = None,
+        _public_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Initialize a Dataset object."""
         super().__init__(**kwargs)
         self._host_url = _host_url
         self._tenant_id = _tenant_id
+        self._public_path = _public_path
 
     @property
     def url(self) -> Optional[str]:
         """URL of this run within the app."""
         if self._host_url:
+            if self._public_path:
+                return f"{self._host_url}{self._public_path}"
             if self._tenant_id:
                 return f"{self._host_url}/o/{str(self._tenant_id)}/datasets/{self.id}"
             return f"{self._host_url}/datasets/{self.id}"
