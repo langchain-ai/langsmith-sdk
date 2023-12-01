@@ -98,14 +98,13 @@ class DynamicRunEvaluator(RunEvaluator):
 
     @staticmethod
     def _coerce_evaluation_result(
-        result: Union[EvaluationResult, dict]
+        result: Union[EvaluationResult, dict, EvaluationResults]
     ) -> EvaluationResult:
         if isinstance(result, EvaluationResult):
             return result
         try:
             return EvaluationResult(**result)
         except ValidationError as e:
-            EvaluationResult.schema().validate(result)
             raise ValidationError(
                 "Expected an EvaluationResult object, or dict with a metric"
                 f" 'key' and optional 'score'; got {result}"
