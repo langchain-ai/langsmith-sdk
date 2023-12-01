@@ -316,14 +316,17 @@ class Client:
         """The web host url."""
         if self._web_url:
             link = self._web_url
-        elif _is_localhost(self.api_url):
-            link = "http://localhost"
-        elif "/api" in self.api_url:
-            link = self.api_url.replace("/api", "")
-        elif "dev" in self.api_url.split(".", maxsplit=1)[0]:
-            link = "https://dev.smith.langchain.com"
         else:
-            link = "https://smith.langchain.com"
+            parsed_url = urllib_parse.urlparse(self.api_url)
+            if _is_localhost(self.api_url):
+                link = "http://localhost"
+            elif parsed_url.path.endswith("/api"):
+                new_path = parsed_url.path.rsplit("/api", 1)[0]
+                link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
+            elif parsed_url.netloc.startswith("dev."):
+                link = "https://dev.smith.langchain.com"
+            else:
+                link = "https://smith.langchain.com"
         return link
 
     @property
@@ -1039,6 +1042,7 @@ class Client:
         return ls_schemas.Dataset(
             **response.json(),
             _host_url=self._host_url,
+            _public_path=f"/public/{share_token}/d",
         )
 
     def list_shared_examples(
