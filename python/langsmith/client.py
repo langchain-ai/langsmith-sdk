@@ -609,7 +609,9 @@ class Client:
             file_name = csv_file if isinstance(csv_file, str) else csv_file[0]
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
-        return ls_schemas.Dataset(**result, _host_url=self._host_url)
+        return ls_schemas.Dataset(
+            **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+        )
 
     def create_run(
         self,
@@ -1034,7 +1036,11 @@ class Client:
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Dataset(**response.json(), _host_url=self._host_url)
+        return ls_schemas.Dataset(
+            **response.json(),
+            _host_url=self._host_url,
+            _tenant_id=self._get_tenant_id(),
+        )
 
     def list_shared_examples(
         self, share_token: str, *, example_ids: Optional[List[ID_TYPE]] = None
@@ -1539,7 +1545,9 @@ class Client:
             params["name_contains"] = dataset_name_contains
 
         yield from (
-            ls_schemas.Dataset(**dataset, _host_url=self._host_url)
+            ls_schemas.Dataset(
+                **dataset, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            )
             for dataset in self._get_paginated_list("/datasets", params=params)
         )
 

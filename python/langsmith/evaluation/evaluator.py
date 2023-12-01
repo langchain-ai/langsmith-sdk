@@ -83,7 +83,7 @@ class DynamicRunEvaluator(RunEvaluator):
     def __init__(
         self,
         func: Callable[
-            [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults]
+            [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults, dict]
         ],
     ):
         """
