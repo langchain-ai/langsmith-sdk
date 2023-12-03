@@ -31,17 +31,6 @@ jobs:
           cache: "poetry"
       - name: Build project for distribution
         run: cd python && poetry build
-      # JS Build
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
-      - name: Install dependencies
-        run: cd js && yarn install --immutable
-      - name: Build
-        run: cd js && yarn run build
       - name: Check Version
         id: check-version
         run: |
@@ -61,8 +50,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: "python/dist"
-      - name: Publish package to NPM
-        run: |
-          cd js
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          yarn publish --non-interactive
