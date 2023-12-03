@@ -1298,8 +1298,9 @@ class Client:
                 )
         if example_outputs:
             df = pd.DataFrame(example_outputs).set_index("example_id")
-            return df.merge(result, left_index=True, right_index=True)
-        return result
+            result = df.merge(result, left_index=True, right_index=True)
+        # Flatten dict columns into dot syntax for easier access
+        return pd.json_normalize(result.to_dict(orient="records"))
 
     def list_projects(
         self,

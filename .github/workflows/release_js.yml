@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "js/package.json"
+  workflow_dispatch:
+
+jobs:
+  if_release:
+    # Disallow publishing from branches that aren't `main`.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v3
+      # JS Build
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: cd js && yarn install --immutable
+      - name: Build
+        run: cd js && yarn run build
+      - name: Publish package to NPM
+        run: |
+          cd js
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          yarn publish --non-interactive
