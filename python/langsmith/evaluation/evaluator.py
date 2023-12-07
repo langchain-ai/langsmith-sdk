@@ -96,13 +96,14 @@ class DynamicRunEvaluator(RunEvaluator):
         wraps(func)(self)
         self.func = func
 
-    @staticmethod
     def _coerce_evaluation_result(
-        result: Union[EvaluationResult, dict, EvaluationResults]
+        self, result: Union[EvaluationResult, dict, EvaluationResults]
     ) -> EvaluationResult:
         if isinstance(result, EvaluationResult):
             return result
         try:
+            if "key" not in result:
+                result["key"] = self.func.__name__
             return EvaluationResult(**result)
         except ValidationError as e:
             raise ValidationError(
@@ -110,9 +111,8 @@ class DynamicRunEvaluator(RunEvaluator):
                 f" 'key' and optional 'score'; got {result}"
             ) from e
 
-    @staticmethod
     def _coerce_evaluation_results(
-        results: Union[dict, EvaluationResults],
+        self, results: Union[dict, EvaluationResults],
     ) -> Union[EvaluationResult, EvaluationResults]:
         if "results" in results:
             cp = results.copy()
