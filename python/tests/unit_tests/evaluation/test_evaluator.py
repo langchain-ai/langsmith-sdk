@@ -37,6 +37,7 @@ def test_run_evaluator_decorator(run_1: Run, example_1: Example):
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
 
     result = sample_evaluator.evaluate_run(run_1, example_1)
+    assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
 
@@ -49,6 +50,7 @@ def test_run_evaluator_decorator_dict(run_1: Run, example_1: Example):
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
 
     result = sample_evaluator.evaluate_run(run_1, example_1)
+    assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
 
@@ -61,6 +63,7 @@ def test_run_evaluator_decorator_dict_no_key(run_1: Run, example_1: Example):
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
 
     result = sample_evaluator.evaluate_run(run_1, example_1)
+    assert isinstance(result, EvaluationResult)
     assert result.key == "sample_evaluator"
     assert result.score == 1.0
 
@@ -73,6 +76,7 @@ def test_run_evaluator_decorator_dict_with_comment(run_1: Run, example_1: Exampl
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
 
     result = sample_evaluator.evaluate_run(run_1, example_1)
+    assert isinstance(result, EvaluationResult)
     assert result.key == "sample_evaluator"
     assert result.score == 1.0
     assert result.comment == "test"
@@ -80,7 +84,7 @@ def test_run_evaluator_decorator_dict_with_comment(run_1: Run, example_1: Exampl
 
 def test_run_evaluator_decorator_multi_return(run_1: Run, example_1: Example):
     @run_evaluator
-    def sample_evaluator(run: Run, example: Optional[Example]) -> EvaluationResult:
+    def sample_evaluator(run: Run, example: Optional[Example]) -> dict:
         return {
             "results": [
                 {"key": "test", "score": 1.0},
@@ -91,6 +95,7 @@ def test_run_evaluator_decorator_multi_return(run_1: Run, example_1: Example):
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
 
     result = sample_evaluator.evaluate_run(run_1, example_1)
+    assert not isinstance(result, EvaluationResult)
     assert "results" in result
     assert len(result["results"]) == 2
     assert result["results"][0].key == "test"
@@ -101,7 +106,7 @@ def test_run_evaluator_decorator_multi_return(run_1: Run, example_1: Example):
 
 def test_run_evaluator_decorator_multi_return_no_key(run_1: Run, example_1: Example):
     @run_evaluator
-    def sample_evaluator(run: Run, example: Optional[Example]) -> EvaluationResult:
+    def sample_evaluator(run: Run, example: Optional[Example]) -> dict:
         return {
             "results": [
                 {"score": 1.0},
@@ -129,6 +134,7 @@ def test_run_evaluator_decorator_return_multi_evaluation_result(
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
 
     result = sample_evaluator.evaluate_run(run_1, example_1)
+    assert not isinstance(result, EvaluationResult)
     assert "results" in result
     assert len(result["results"]) == 2
     assert result["results"][0].key == "test"

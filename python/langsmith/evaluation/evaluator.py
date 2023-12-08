@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 from abc import abstractmethod
-from typing import Callable, Dict, List, Optional, TypedDict, Union
+from typing import Callable, Dict, List, Optional, TypedDict, Union, cast
 
 try:
     from pydantic.v1 import BaseModel, Field, ValidationError  # type: ignore[import]
@@ -98,7 +98,7 @@ class DynamicRunEvaluator(RunEvaluator):
 
     def _coerce_evaluation_result(
         self,
-        result: Union[EvaluationResult, dict, EvaluationResults],
+        result: Union[EvaluationResult, dict],
         allow_no_key: bool = False,
     ) -> EvaluationResult:
         if isinstance(result, EvaluationResult):
@@ -124,7 +124,8 @@ class DynamicRunEvaluator(RunEvaluator):
                 self._coerce_evaluation_result(r) for r in results["results"]
             ]
             return EvaluationResults(**cp)
-        return self._coerce_evaluation_result(results, allow_no_key=True)
+
+        return self._coerce_evaluation_result(cast(dict, results), allow_no_key=True)
 
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
