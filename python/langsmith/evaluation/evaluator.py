@@ -97,31 +97,34 @@ class DynamicRunEvaluator(RunEvaluator):
         self.func = func
 
     def _coerce_evaluation_result(
-        self, result: Union[EvaluationResult, dict, EvaluationResults]
+        self,
+        result: Union[EvaluationResult, dict, EvaluationResults],
+        allow_no_key: bool = False,
     ) -> EvaluationResult:
         if isinstance(result, EvaluationResult):
             return result
         try:
             if "key" not in result:
-                result["key"] = self.func.__name__
+                if allow_no_key:
+                    result["key"] = self.func.__name__
             return EvaluationResult(**result)
         except ValidationError as e:
-            raise ValidationError(
+            raise ValueError(
                 "Expected an EvaluationResult object, or dict with a metric"
                 f" 'key' and optional 'score'; got {result}"
             ) from e
 
     def _coerce_evaluation_results(
-        self, results: Union[dict, EvaluationResults],
+        self,
+        results: Union[dict, EvaluationResults],
     ) -> Union[EvaluationResult, EvaluationResults]:
         if "results" in results:
             cp = results.copy()
             cp["results"] = [
-                DynamicRunEvaluator._coerce_evaluation_result(r)
-                for r in results["results"]
+                self._coerce_evaluation_result(r) for r in results["results"]
             ]
             return EvaluationResults(**cp)
-        return DynamicRunEvaluator._coerce_evaluation_result(results)
+        return self._coerce_evaluation_result(results, allow_no_key=True)
 
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
