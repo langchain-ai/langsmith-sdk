@@ -216,8 +216,13 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     return outputs
 
 
-def _as_uuid(value: ID_TYPE) -> uuid.UUID:
-    return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
+def _as_uuid(value: ID_TYPE, var: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
+    except ValueError as e:
+        raise ls_utils.LangSmithUserError(
+            f"{var} must be a valid UUID or UUID string. Got {value}"
+        ) from e
 
 
 class Client:
@@ -732,7 +737,7 @@ class Client:
             data["events"] = events
         self.request_with_retries(
             "patch",
-            f"{self.api_url}/runs/{_as_uuid(run_id)}",
+            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}",
             request_kwargs={
                 "data": json.dumps(data, default=_serialize_json),
                 "headers": headers,
@@ -794,7 +799,7 @@ class Client:
         Run
             The run.
         """
-        response = self._get_with_retries(f"/runs/{_as_uuid(run_id)}")
+        response = self._get_with_retries(f"/runs/{_as_uuid(run_id, 'run_id')}")
         run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
@@ -914,14 +919,15 @@ class Client:
         else:
             project_name = ls_utils.get_tracer_project()
             session_id = self.read_project(project_name=project_name).id
+        session_id_ = _as_uuid(session_id, "session_id")
         return (
-            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{_as_uuid(session_id)}/"
+            f"{self._host_url}/o/{self._get_tenant_id()}/projects/p/{session_id_}/"
             f"r/{run.id}?poll=true"
         )
 
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run."""
-        run_id_ = _as_uuid(run_id)
+        run_id_ = _as_uuid(run_id, "run_id")
         data = {
             "run_id": str(run_id_),
             "share_token": share_id or str(uuid.uuid4()),
@@ -938,14 +944,14 @@ class Client:
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run."""
         response = self.session.delete(
-            f"{self.api_url}/runs/{_as_uuid(run_id)}/share",
+            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
 
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
         response = self.session.get(
-            f"{self.api_url}/runs/{_as_uuid(run_id)}/share",
+            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -956,7 +962,7 @@ class Client:
 
     def run_is_shared(self, run_id: ID_TYPE) -> bool:
         """Get share state for a run."""
-        link = self.read_run_shared_link(_as_uuid(run_id))
+        link = self.read_run_shared_link(_as_uuid(run_id, "run_id"))
         return link is not None
 
     def list_shared_runs(
@@ -965,7 +971,7 @@ class Client:
         """Get shared runs."""
         params = {"id": run_ids, "share_token": str(share_token)}
         response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token)}/runs",
+            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/runs",
             headers=self._headers,
             params=params,
         )
@@ -985,14 +991,18 @@ class Client:
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         response = self.session.get(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}/share",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
         d = response.json()
         return cast(
             ls_schemas.DatasetShareSchema,
-            {**d, "url": f"{self._host_url}/public/{_as_uuid(d['share_token'])}/d"},
+            {
+                **d,
+                "url": f"{self._host_url}/public/"
+                f"{_as_uuid(d['share_token'], 'response.share_token')}/d",
+            },
         )
 
     def share_dataset(
@@ -1010,7 +1020,7 @@ class Client:
             "dataset_id": str(dataset_id),
         }
         response = self.session.put(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}/share",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
             json=data,
         )
@@ -1024,7 +1034,7 @@ class Client:
     def unshare_dataset(self, dataset_id: ID_TYPE) -> None:
         """Delete share link for a dataset."""
         response = self.session.delete(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}/share",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1035,7 +1045,7 @@ class Client:
     ) -> ls_schemas.Dataset:
         """Get shared datasets."""
         response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token)}/datasets",
+            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/datasets",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1053,7 +1063,7 @@ class Client:
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
         response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token)}/examples",
+            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/examples",
             headers=self._headers,
             params=params,
         )
@@ -1072,10 +1082,11 @@ class Client:
         name_contains: Optional[str] = None,
     ) -> Iterator[ls_schemas.TracerSessionResult]:
         params = {"id": project_ids, "name": name, "name_contains": name_contains}
+        share_token = _as_uuid(dataset_share_token, "dataset_share_token")
         yield from [
             ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
             for project in self._get_paginated_list(
-                f"/public/{_as_uuid(dataset_share_token)}/datasets/sessions",
+                f"/public/{share_token}/datasets/sessions",
                 params=params,
             )
         ]
@@ -1165,7 +1176,7 @@ class Client:
         TracerSession
             The updated project.
         """
-        endpoint = f"{self.api_url}/sessions/{_as_uuid(project_id)}"
+        endpoint = f"{self.api_url}/sessions/{_as_uuid(project_id, 'project_id')}"
         extra = project_extra
         if metadata:
             extra = {**(extra or {}), "metadata": metadata}
@@ -1218,7 +1229,7 @@ class Client:
         path = "/sessions"
         params: Dict[str, Any] = {"limit": 1}
         if project_id is not None:
-            path += f"/{_as_uuid(project_id)}"
+            path += f"/{_as_uuid(project_id, 'project_id')}"
         elif project_name is not None:
             params["name"] = project_name
         else:
@@ -1378,7 +1389,7 @@ class Client:
         elif project_id is None:
             raise ValueError("Must provide project_name or project_id")
         response = self.session.delete(
-            self.api_url + f"/sessions/{_as_uuid(project_id)}",
+            self.api_url + f"/sessions/{_as_uuid(project_id, 'project_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1470,7 +1481,7 @@ class Client:
         path = "/datasets"
         params: Dict[str, Any] = {"limit": 1}
         if dataset_id is not None:
-            path += f"/{_as_uuid(dataset_id)}"
+            path += f"/{_as_uuid(dataset_id, 'dataset_id')}"
         elif dataset_name is not None:
             params["name"] = dataset_name
         else:
@@ -1518,7 +1529,7 @@ class Client:
         else:
             raise ValueError("Must provide dataset_name or dataset_id")
         response = self._get_with_retries(
-            f"{path}/{_as_uuid(dataset_id)}/openai_ft",
+            f"{path}/{_as_uuid(dataset_id, 'dataset_id')}/openai_ft",
         )
         dataset = [json.loads(line) for line in response.text.strip().split("\n")]
         return dataset
@@ -1576,7 +1587,7 @@ class Client:
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
         response = self.session.delete(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id)}",
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1847,7 +1858,9 @@ class Client:
         Example
             The example.
         """
-        response = self._get_with_retries(f"/examples/{_as_uuid(example_id)}")
+        response = self._get_with_retries(
+            f"/examples/{_as_uuid(example_id, 'example_id')}",
+        )
         return ls_schemas.Example(
             **response.json(),
             _host_url=self._host_url,
@@ -1927,7 +1940,7 @@ class Client:
             dataset_id=dataset_id,
         )
         response = self.session.patch(
-            f"{self.api_url}/examples/{_as_uuid(example_id)}",
+            f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(exclude_none=True),
         )
@@ -1943,7 +1956,7 @@ class Client:
             The ID of the example to delete.
         """
         response = self.session.delete(
-            f"{self.api_url}/examples/{_as_uuid(example_id)}",
+            f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2222,7 +2235,10 @@ class Client:
                 _run_meta = _run_meta.dict()
             if "run_id" in _run_meta:
                 _run_meta["run_id"] = str(
-                    _as_uuid(feedback_source.metadata["__run"]["run_id"])
+                    _as_uuid(
+                        feedback_source.metadata["__run"]["run_id"],
+                        "feedback_source.metadata['__run']['run_id']",
+                    )
                 )
             feedback_source.metadata["__run"] = _run_meta
         feedback = ls_schemas.FeedbackCreate(
@@ -2290,7 +2306,7 @@ class Client:
         if comment is not None:
             feedback_update["comment"] = comment
         response = self.session.patch(
-            self.api_url + f"/feedback/{_as_uuid(feedback_id)}",
+            self.api_url + f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=json.dumps(feedback_update, default=_serialize_json),
         )
@@ -2309,7 +2325,9 @@ class Client:
         Feedback
             The feedback.
         """
-        response = self._get_with_retries(f"/feedback/{_as_uuid(feedback_id)}")
+        response = self._get_with_retries(
+            f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
+        )
         return ls_schemas.Feedback(**response.json())
 
     def list_feedback(
@@ -2362,7 +2380,7 @@ class Client:
             The ID of the feedback to delete.
         """
         response = self.session.delete(
-            f"{self.api_url}/feedback/{_as_uuid(feedback_id)}",
+            f"{self.api_url}/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2377,7 +2395,7 @@ class Client:
         name_contains: Optional[str] = None,
     ) -> Iterator[ls_schemas.AnnotationQueue]:
         params: dict = {
-            "ids": [_as_uuid(id_) for id_ in queue_ids]
+            "ids": [_as_uuid(id_, f"queue_ids[{i}]") for i, id_ in enumerate(queue_ids)]
             if queue_ids is not None
             else None,
             "name": name,
@@ -2420,7 +2438,7 @@ class Client:
     ) -> None:
         response = self.request_with_retries(
             "patch",
-            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id)}",
+            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
             {
                 "json": {
                     "name": name,
@@ -2433,7 +2451,7 @@ class Client:
 
     def delete_annotation_queue(self, queue_id: ID_TYPE) -> None:
         response = self.session.delete(
-            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id)}",
+            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2443,9 +2461,11 @@ class Client:
     ) -> None:
         response = self.request_with_retries(
             "post",
-            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id)}/runs",
+            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs",
             {
-                "json": [str(_as_uuid(id_)) for id_ in run_ids],
+                "json": [
+                    str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
+                ],
                 "headers": self._headers,
             },
         )
@@ -2454,7 +2474,7 @@ class Client:
     def list_runs_from_annotation_queue(
         self, queue_id: ID_TYPE
     ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
-        path = f"/annotation-queues/{_as_uuid(queue_id)}/runs"
+        path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
         yield from (
             ls_schemas.RunWithAnnotationQueueInfo(**run)
             for run in self._get_paginated_list(path, params={"headers": self._headers})
