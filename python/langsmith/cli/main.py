@@ -2,13 +2,9 @@ import argparse
 import json
 import logging
 import os
-import shutil
 import subprocess
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Generator, List, Literal, Mapping, Optional, Union, cast
-
-import requests
+from typing import Dict, List, Literal, Mapping, Optional, Union, cast
 
 from langsmith import env as ls_env
 from langsmith import utils as ls_utils
@@ -49,85 +45,13 @@ def pprint_services(services_status: List[Mapping[str, Union[str, List[str]]]]) 
         ports_str = service.get("PublishedPorts", "")
         service_message.append(service_str + state_str + ports_str)
 
-    langchain_endpoint: str = "http://localhost:1984"
-    used_ngrok = any(["ngrok" in service["Service"] for service in services])
-    if used_ngrok:
-        langchain_endpoint = get_ngrok_url(auth_token=None)
-
     service_message.append(
         "\nTo connect, set the following environment variables"
         " in your LangChain application:"
         "\nLANGCHAIN_TRACING_V2=true"
-        f"\nLANGCHAIN_ENDPOINT={langchain_endpoint}"
+        "\nLANGCHAIN_ENDPOINT=http://localhost:80/api"
     )
     logger.info("\n".join(service_message))
-
-
-def get_ngrok_url(auth_token: Optional[str]) -> str:
-    """Get the ngrok URL for the LangSmith server."""
-    ngrok_url = "http://localhost:4040/api/tunnels"
-    try:
-        response = requests.get(ngrok_url)
-        response.raise_for_status()
-        exposed_url = response.json()["tunnels"][0]["public_url"]
-    except requests.exceptions.HTTPError:
-        raise ValueError("Could not connect to ngrok console.")
-    except (KeyError, IndexError):
-        message = "ngrok failed to start correctly. "
-        if auth_token is not None:
-            message += "Please check that your authtoken is correct."
-        raise ValueError(message)
-    return exposed_url
-
-
-def _dumps_yaml(config: dict, depth: int = 0) -> str:
-    """Dump a dictionary to a YAML string without using any imports.
-
-    We can assume it's all strings, ints, or dictionaries, up to 3 layers deep
-    """
-    lines = []
-    prefix = "  " * depth
-    for key, value in config.items():
-        if isinstance(value, dict):
-            lines.append(f"{prefix}{key}:")
-            lines.append(_dumps_yaml(value, depth + 1))
-        else:
-            lines.append(f"{prefix}{key}: {value}")
-    return "\n".join(lines)
-
-
-@contextmanager
-def create_ngrok_config(
-    auth_token: Optional[str] = None,
-) -> Generator[Path, None, None]:
-    """Create the ngrok configuration file."""
-    config_path = _DIR / "ngrok_config.yaml"
-    if config_path.exists():
-        # If there was an error in a prior run, it's possible
-        # Docker made this a directory instead of a file
-        if config_path.is_dir():
-            shutil.rmtree(config_path)
-        else:
-            config_path.unlink()
-    ngrok_config = {
-        "tunnels": {
-            "langchain": {
-                "proto": "http",
-                "addr": "langchain-backend:1984",
-            }
-        },
-        "version": "2",
-        "region": "us",
-    }
-    if auth_token is not None:
-        ngrok_config["authtoken"] = auth_token
-    config_path = _DIR / "ngrok_config.yaml"
-    with config_path.open("w") as f:
-        s = _dumps_yaml(ngrok_config)
-        f.write(s)
-    yield config_path
-    # Delete the config file after use
-    config_path.unlink(missing_ok=True)
 
 
 class LangSmithCommand:
@@ -137,13 +61,6 @@ class LangSmithCommand:
         self.docker_compose_file = (
             Path(__file__).absolute().parent / "docker-compose.yaml"
         )
-        self.docker_compose_dev_file = (
-            Path(__file__).absolute().parent / "docker-compose.dev.yaml"
-        )
-        self.docker_compose_beta_file = (
-            Path(__file__).absolute().parent / "docker-compose.beta.yaml"
-        )
-        self.ngrok_path = Path(__file__).absolute().parent / "docker-compose.ngrok.yaml"
 
     @property
     def docker_compose_command(self) -> List[str]:
@@ -155,20 +72,12 @@ class LangSmithCommand:
         except FileNotFoundError:
             pass
 
-    def _start_local(
-        self, stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod"
-    ) -> None:
+    def _start_local(self) -> None:
         command = [
             *self.docker_compose_command,
             "-f",
             str(self.docker_compose_file),
         ]
-        if stage == "dev":
-            command.append("-f")
-            command.append(str(self.docker_compose_dev_file))
-        elif stage == "beta":
-            command.append("-f")
-            command.append(str(self.docker_compose_beta_file))
         subprocess.run(
             [
                 *command,
@@ -178,7 +87,7 @@ class LangSmithCommand:
             ]
         )
         logger.info(
-            "LangSmith server is running at http://localhost:1984.\n"
+            "LangSmith server is running at http://localhost:80/api.\n"
             "To view the app, navigate your browser to http://localhost:80"
             "\n\nTo connect your LangChain application to the server"
             " locally,\nset the following environment variable"
@@ -186,55 +95,14 @@ class LangSmithCommand:
         )
 
         logger.info("\tLANGCHAIN_TRACING_V2=true")
-        self._open_browser("http://localhost")
-
-    def _start_and_expose(
-        self,
-        auth_token: Optional[str],
-        stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]],
-    ) -> None:
-        with create_ngrok_config(auth_token=auth_token):
-            command = [
-                *self.docker_compose_command,
-                "-f",
-                str(self.docker_compose_file),
-                "-f",
-                str(self.ngrok_path),
-            ]
-            if stage == "dev":
-                command.append("-f")
-                command.append(str(self.docker_compose_dev_file))
-            elif stage == "beta":
-                command.append("-f")
-                command.append(str(self.docker_compose_beta_file))
-
-            subprocess.run(
-                [
-                    *command,
-                    "up",
-                    "--quiet-pull",
-                    "--wait",
-                ]
-            )
-        logger.info(
-            "ngrok is running. You can view the dashboard at http://0.0.0.0:4040"
-        )
-        ngrok_url = get_ngrok_url(auth_token)
-        logger.info(
-            "LangSmith server is running at http://localhost:1984."
-            "\nTo view the app, navigate your browser to http://localhost:80"
-            " To connect remotely, set the following environment"
-            " variable when running your LangChain application."
-        )
-        logger.info("\tLANGCHAIN_TRACING_V2=true")
-        logger.info(f"\tLANGCHAIN_ENDPOINT={ngrok_url}")
-        self._open_browser("http://0.0.0.0:4040")
+        logger.info("\tLANGCHAIN_ENDPOINT=http://localhost:80/api\n")
         self._open_browser("http://localhost")
 
     def pull(
         self,
         *,
         stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
+        version: str = "latest",
     ) -> None:
         """Pull the latest LangSmith images.
 
@@ -246,6 +114,7 @@ class LangSmithCommand:
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "dev-"
         elif stage == "beta":
             os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
+        os.environ["_LANGSMITH_IMAGE_VERSION"] = version
         subprocess.run(
             [
                 *self.docker_compose_command,
@@ -258,11 +127,10 @@ class LangSmithCommand:
     def start(
         self,
         *,
-        expose: bool = False,
-        auth_token: Optional[str] = None,
         stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
         openai_api_key: Optional[str] = None,
         langsmith_license_key: str,
+        version: str = "latest",
     ) -> None:
         """Run the LangSmith server locally.
 
@@ -281,19 +149,12 @@ class LangSmithCommand:
                 LANGSMITH_LICENSE_KEY environment variable. If neither are provided,
                 Langsmith will not start up.
         """
-        if stage == "dev":
-            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "dev-"
-        elif stage == "beta":
-            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
         if langsmith_license_key is not None:
             os.environ["LANGSMITH_LICENSE_KEY"] = langsmith_license_key
-        self.pull(stage=stage)
-        if expose:
-            self._start_and_expose(auth_token=auth_token, stage=stage)
-        else:
-            self._start_local(stage=stage)
+        self.pull(stage=stage, version=version)
+        self._start_local()
 
     def stop(self, clear_volumes: bool = False) -> None:
         """Stop the LangSmith server."""
@@ -301,8 +162,6 @@ class LangSmithCommand:
             *self.docker_compose_command,
             "-f",
             str(self.docker_compose_file),
-            "-f",
-            str(self.ngrok_path),
             "down",
         ]
         if clear_volumes:
@@ -325,8 +184,6 @@ class LangSmithCommand:
                 *self.docker_compose_command,
                 "-f",
                 str(self.docker_compose_file),
-                "-f",
-                str(self.ngrok_path),
                 "logs",
             ]
         )
@@ -389,17 +246,6 @@ def main() -> None:
         "start", description="Start the LangSmith server."
     )
     server_start_parser.add_argument(
-        "--expose",
-        action="store_true",
-        help="Expose the server to the internet using ngrok.",
-    )
-    server_start_parser.add_argument(
-        "--ngrok-authtoken",
-        default=os.getenv("NGROK_AUTHTOKEN"),
-        help="The ngrok authtoken to use (visible in the ngrok dashboard)."
-        " If not provided, ngrok server session length will be restricted.",
-    )
-    server_start_parser.add_argument(
         "--stage",
         default="prod",
         choices=["prod", "dev", "beta"],
@@ -421,13 +267,20 @@ def main() -> None:
         " LANGSMITH_LICENSE_KEY environment variable. If neither are provided,"
         " the Langsmith application will not spin up.",
     )
+    server_start_parser.add_argument(
+        "--version",
+        default="latest",
+        help="The LangSmith version to use for LangSmith. Defaults to latest."
+        " We recommend pegging this to the latest static version available at"
+        " https://hub.docker.com/repository/docker/langchain/langchainplus-backend"
+        " if you are using Langsmith in production.",
+    )
     server_start_parser.set_defaults(
         func=lambda args: server_command.start(
-            expose=args.expose,
-            auth_token=args.ngrok_authtoken,
             stage=args.stage,
             openai_api_key=args.openai_api_key,
             langsmith_license_key=args.langsmith_license_key,
+            version=args.version,
         )
     )
 
@@ -452,8 +305,16 @@ def main() -> None:
         choices=["prod", "dev", "beta"],
         help="Which stage of LangSmith images to pull.",
     )
+    server_pull_parser.add_argument(
+        "--version",
+        default="latest",
+        help="The LangSmith version to use for LangSmith. Defaults to latest."
+        " We recommend pegging this to the latest static version available at"
+        " https://hub.docker.com/repository/docker/langchain/langchainplus-backend"
+        " if you are using Langsmith in production.",
+    )
     server_pull_parser.set_defaults(
-        func=lambda args: server_command.pull(stage=args.stage)
+        func=lambda args: server_command.pull(stage=args.stage, version=args.version)
     )
     server_logs_parser = subparsers.add_parser(
         "logs", description="Show the LangSmith server logs."

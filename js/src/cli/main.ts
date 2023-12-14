@@ -1,5 +1,4 @@
 import * as child_process from "child_process";
-import * as fs from "fs";
 import * as path from "path";
 import * as util from "util";
 
@@ -13,8 +12,6 @@ import { Command } from "commander";
 import { spawn } from "child_process";
 
 const currentFileName = __filename;
-const currentDirName = __dirname;
-
 const program = new Command();
 
 async function getDockerComposeCommand(): Promise<string[]> {
@@ -69,89 +66,24 @@ async function pprintServices(servicesStatus: any[]) {
     serviceMessage.push(serviceStr + stateStr + portsStr);
   }
 
-  let langchainEndpoint = "http://localhost:1984";
-  const usedNgrok = services.some((service) =>
-    service["Service"].includes("ngrok")
-  );
-  if (usedNgrok) {
-    langchainEndpoint = await getNgrokUrl();
-  }
-
   serviceMessage.push(
     "\nTo connect, set the following environment variables" +
       " in your LangChain application:" +
       "\nLANGCHAIN_TRACING_V2=true" +
-      `\nLANGCHAIN_ENDPOINT=${langchainEndpoint}`
+      `\nLANGCHAIN_ENDPOINT=http://localhost:80/api`
   );
   console.info(serviceMessage.join("\n"));
-}
-
-async function getNgrokUrl(): Promise<string> {
-  const ngrokUrl = "http://localhost:4040/api/tunnels";
-  try {
-    // const response = await axios.get(ngrokUrl);
-    const response = await fetch(ngrokUrl);
-    if (response.status !== 200) {
-      throw new Error(
-        `Could not connect to ngrok console. ${response.status}, ${response.statusText}`
-      );
-    }
-    const result = await response.json();
-    const exposedUrl = result["tunnels"][0]["public_url"];
-    return exposedUrl;
-  } catch (error) {
-    throw new Error(`Could not connect to ngrok console. ${error}`);
-  }
-}
-
-async function createNgrokConfig(authToken: string | null): Promise<string> {
-  const configPath = path.join(currentDirName, "ngrok_config.yaml");
-  // Check if is a directory
-  if (fs.existsSync(configPath) && fs.lstatSync(configPath).isDirectory()) {
-    fs.rmdirSync(configPath, { recursive: true });
-  } else if (fs.existsSync(configPath)) {
-    fs.unlinkSync(configPath);
-  }
-  let ngrokConfig = `
-region: us
-tunnels:
-  langchain:
-    addr: langchain-backend:1984
-    proto: http
-version: '2'
-`;
-
-  if (authToken !== null) {
-    ngrokConfig += `authtoken: ${authToken}`;
-  }
-  fs.writeFileSync(configPath, ngrokConfig);
-  return configPath;
 }
 
 class SmithCommand {
   dockerComposeCommand: string[] = [];
   dockerComposeFile = "";
-  dockerComposeDevFile = "";
-  dockerComposeBetaFile = "";
-  ngrokPath = "";
 
   constructor({ dockerComposeCommand }: { dockerComposeCommand: string[] }) {
     this.dockerComposeCommand = dockerComposeCommand;
     this.dockerComposeFile = path.join(
       path.dirname(currentFileName),
       "docker-compose.yaml"
-    );
-    this.dockerComposeDevFile = path.join(
-      path.dirname(currentFileName),
-      "docker-compose.dev.yaml"
-    );
-    this.dockerComposeBetaFile = path.join(
-      path.dirname(currentFileName),
-      "docker-compose.beta.yaml"
-    );
-    this.ngrokPath = path.join(
-      path.dirname(currentFileName),
-      "docker-compose.ngrok.yaml"
     );
   }
 
@@ -183,12 +115,13 @@ class SmithCommand {
     return new SmithCommand({ dockerComposeCommand });
   }
 
-  async pull({ stage = "prod" }) {
+  async pull({ stage = "prod", version = "latest" }) {
     if (stage === "dev") {
       setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "dev-");
     } else if (stage === "beta") {
       setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }
+    setEnvironmentVariable("_LANGSMITH_IMAGE_VERSION", version);
 
     const command = [
       ...this.dockerComposeCommand,
@@ -199,18 +132,12 @@ class SmithCommand {
     await this.executeCommand(command);
   }
 
-  async startLocal(stage = "prod") {
+  async startLocal() {
     const command = [
       ...this.dockerComposeCommand,
       "-f",
       this.dockerComposeFile,
     ];
-
-    if (stage === "dev") {
-      command.push("-f", this.dockerComposeDevFile);
-    } else if (stage === "beta") {
-      command.push("-f", this.dockerComposeBetaFile);
-    }
 
     command.push("up", "--quiet-pull", "--wait");
     await this.executeCommand(command);
@@ -224,42 +151,7 @@ class SmithCommand {
     );
 
     console.info("\tLANGCHAIN_TRACING_V2=true");
-  }
-
-  async startAndExpose(ngrokAuthToken: string | null, stage = "prod") {
-    const configPath = await createNgrokConfig(ngrokAuthToken);
-    const command = [
-      ...this.dockerComposeCommand,
-      "-f",
-      this.dockerComposeFile,
-      "-f",
-      this.ngrokPath,
-    ];
-
-    if (stage === "dev") {
-      command.push("-f", this.dockerComposeDevFile);
-    } else if (stage === "beta") {
-      command.push("-f", this.dockerComposeBetaFile);
-    }
-
-    command.push("up", "--quiet-pull", "--wait");
-    await this.executeCommand(command);
-
-    console.info(
-      "ngrok is running. You can view the dashboard at http://0.0.0.0:4040"
-    );
-    const ngrokUrl = await getNgrokUrl();
-    console.info(
-      "LangSmith server is running at http://localhost:1984." +
-        "To view the app, navigate your browser to http://localhost:80" +
-        "\n\nTo connect your LangChain application to the server" +
-        " remotely, set the following environment variable" +
-        " when running your LangChain application."
-    );
-    console.info("\tLANGCHAIN_TRACING_V2=true");
-    console.info(`\tLANGCHAIN_ENDPOINT=${ngrokUrl}`);
-
-    fs.unlinkSync(configPath);
+    console.info("\tLANGCHAIN_ENDPOINT=http://localhost:80/api");
   }
 
   async stop() {
@@ -267,8 +159,6 @@ class SmithCommand {
       ...this.dockerComposeCommand,
       "-f",
       this.dockerComposeFile,
-      "-f",
-      this.ngrokPath,
       "down",
     ];
     await this.executeCommand(command);
@@ -315,14 +205,6 @@ class SmithCommand {
 const startCommand = new Command("start")
   .description("Start the LangSmith server")
   .option(
-    "--expose",
-    "Expose the server to the internet via ngrok (requires ngrok to be installed)"
-  )
-  .option(
-    "--ngrok-authtoken <ngrokAuthtoken>",
-    "Your ngrok auth token. If this is set, --expose is implied."
-  )
-  .option(
     "--stage <stage>",
     "Which version of LangSmith to run. Options: prod, dev, beta (default: prod)"
   )
@@ -338,25 +220,23 @@ const startCommand = new Command("start")
       " License Key will be read from the LANGSMITH_LICENSE_KEY environment variable." +
       " If neither are provided, the Langsmith application will not spin up."
   )
+  .option(
+    "--version <version>",
+    "The LangSmith version to use for LangSmith. Defaults to latest." +
+      " We recommend pegging this to the latest static version available at" +
+      " https://hub.docker.com/repository/docker/langchain/langchainplus-backend" +
+      " if you are using Langsmith in production."
+  )
   .action(async (args) => {
     const smith = await SmithCommand.create();
-    if (args.stage === "dev") {
-      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "dev-");
-    } else if (args.stage === "beta") {
-      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
-    }
     if (args.openaiApiKey) {
       setEnvironmentVariable("OPENAI_API_KEY", args.openaiApiKey);
     }
     if (args.langsmithLicenseKey) {
       setEnvironmentVariable("LANGSMITH_LICENSE_KEY", args.langsmithLicenseKey);
     }
-    await smith.pull({ stage: args.stage });
-    if (args.expose) {
-      await smith.startAndExpose(args.ngrokAuthtoken, args.stage);
-    } else {
-      await smith.startLocal(args.stage);
-    }
+    await smith.pull({ stage: args.stage, version: args.version });
+    await smith.startLocal();
   });
 
 const stopCommand = new Command("stop")
@@ -372,14 +252,16 @@ const pullCommand = new Command("pull")
     "--stage <stage>",
     "Which version of LangSmith to pull. Options: prod, dev, beta (default: prod)"
   )
+  .option(
+    "--version <version>",
+    "The LangSmith version to use for LangSmith. Defaults to latest." +
+      " We recommend pegging this to the latest static version available at" +
+      " https://hub.docker.com/repository/docker/langchain/langchainplus-backend" +
+      " if you are using Langsmith in production."
+  )
   .action(async (args) => {
     const smith = await SmithCommand.create();
-    if (args.stage === "dev") {
-      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "dev-");
-    } else if (args.stage === "beta") {
-      setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
-    }
-    await smith.pull({ stage: args.stage });
+    await smith.pull({ stage: args.stage, version: args.version });
   });
 
 const statusCommand = new Command("status")
