@@ -115,14 +115,13 @@ class SmithCommand {
     return new SmithCommand({ dockerComposeCommand });
   }
 
-  async pull({ stage = "prod", version = "latest"  }) {
+  async pull({ stage = "prod", version = "latest" }) {
     if (stage === "dev") {
       setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "dev-");
     } else if (stage === "beta") {
       setEnvironmentVariable("_LANGSMITH_IMAGE_PREFIX", "rc-");
     }
-    setEnvironmentVariable("_LANGSMITH_IMAGE_VERSION", version)
-
+    setEnvironmentVariable("_LANGSMITH_IMAGE_VERSION", version);
 
     const command = [
       ...this.dockerComposeCommand,
@@ -223,10 +222,10 @@ const startCommand = new Command("start")
   )
   .option(
     "--version <version>",
-"The LangSmith version to use for LangSmith. Defaults to latest." +
-        " We recommend pegging this to the latest static version available at" +
-        " https://hub.docker.com/repository/docker/langchain/langchainplus-backend" +
-        " if you are using Langsmith in production."
+    "The LangSmith version to use for LangSmith. Defaults to latest." +
+      " We recommend pegging this to the latest static version available at" +
+      " https://hub.docker.com/repository/docker/langchain/langchainplus-backend" +
+      " if you are using Langsmith in production."
   )
   .action(async (args) => {
     const smith = await SmithCommand.create();
@@ -255,10 +254,10 @@ const pullCommand = new Command("pull")
   )
   .option(
     "--version <version>",
-"The LangSmith version to use for LangSmith. Defaults to latest." +
-        " We recommend pegging this to the latest static version available at" +
-        " https://hub.docker.com/repository/docker/langchain/langchainplus-backend" +
-        " if you are using Langsmith in production."
+    "The LangSmith version to use for LangSmith. Defaults to latest." +
+      " We recommend pegging this to the latest static version available at" +
+      " https://hub.docker.com/repository/docker/langchain/langchainplus-backend" +
+      " if you are using Langsmith in production."
   )
   .action(async (args) => {
     const smith = await SmithCommand.create();
