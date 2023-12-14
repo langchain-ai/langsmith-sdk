@@ -162,7 +162,7 @@ class LangSmithCommand:
             *self.docker_compose_command,
             "-f",
             str(self.docker_compose_file),
-            "down"
+            "down",
         ]
         if clear_volumes:
             confirm = input(
