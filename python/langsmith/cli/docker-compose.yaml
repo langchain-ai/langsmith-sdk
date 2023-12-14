@@ -1,11 +1,11 @@
 version: "3"
 services:
   langchain-playground:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-playground:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-playground:${_LANGSMITH_IMAGE_VERSION-:latest}
     ports:
       - 3001:3001
   langchain-frontend:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend-dynamic:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend-dynamic:${_LANGSMITH_IMAGE_VERSION-:latest}
     ports:
       - 80:80
     volumes:
@@ -15,7 +15,7 @@ services:
       - langchain-playground
       - langchain-hub
   langchain-backend:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION-:latest}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
@@ -28,14 +28,14 @@ services:
       - langchain-db
       - langchain-redis
   langchain-queue:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION-:latest}
     environment:
       - LANGCHAIN_ENV=local_docker
       - LOG_LEVEL=warning
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
     entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker --connection-class lc_database.queue.connection.RedisRetry --job-class lc_database.queue.job.AsyncJob"
   langchain-hub:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:latest
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:${_LANGSMITH_IMAGE_VERSION-:latest}
     environment:
       - PORT=1985
       - LANGCHAIN_ENV=local_docker
