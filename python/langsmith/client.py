@@ -494,6 +494,55 @@ class Client:
                 break
             offset += len(items)
 
+    def _get_cursor_paginated_list(
+        self,
+        path: str,
+        *,
+        body: Optional[dict] = None,
+        request_method: str = "post",
+        data_key: str = "runs",
+    ) -> Iterator[dict]:
+        """Get a cursor paginated list of items.
+
+        Parameters
+        ----------
+        path : str
+            The path of the request URL.
+        body : dict or None, default=None
+            The query body.
+        request_method : str, default="post"
+            The HTTP request method.
+        data_key : str, default="runs"
+
+        Yields
+        ------
+        dict
+            The items in the paginated list.
+        """
+        params_ = body.copy() if body else {}
+        while True:
+            response = self.request_with_retries(
+                request_method,
+                f"{self.api_url}{path}",
+                request_kwargs={
+                    "data": json.dumps(params_, default=_serialize_json),
+                    "headers": self._headers,
+                    "timeout": self.timeout_ms / 1000,
+                },
+            )
+            response_body = response.json()
+            if not response_body:
+                break
+            if not response_body.get(data_key):
+                break
+            yield from response_body[data_key]
+            cursors = response_body.get("cursors")
+            if not cursors:
+                break
+            if not cursors.get("next"):
+                break
+            params_["cursor"] = cursors["next"]
+
     def upload_dataframe(
         self,
         df: pd.DataFrame,
@@ -861,30 +910,27 @@ class Client:
             if project_id is not None:
                 raise ValueError("Only one of project_id or project_name may be given")
             project_id = self.read_project(project_name=project_name).id
-        query_params: Dict[str, Any] = {
-            "session": project_id,
+        body_query: Dict[str, Any] = {
+            "session": [project_id] if project_id else None,
             "run_type": run_type,
+            "reference_example": [reference_example_id]
+            if reference_example_id
+            else None,
+            "query": query,
+            "filter": filter,
+            "execution_order": execution_order,
+            "parent_run": parent_run_id,
+            "start_time": start_time.isoformat() if start_time else None,
+            "error": error,
+            "id": run_ids,
             **kwargs,
         }
-        if reference_example_id is not None:
-            query_params["reference_example"] = reference_example_id
-        if query is not None:
-            query_params["query"] = query
-        if filter is not None:
-            query_params["filter"] = filter
-        if execution_order is not None:
-            query_params["execution_order"] = execution_order
-        if parent_run_id is not None:
-            query_params["parent_run"] = parent_run_id
-        if start_time is not None:
-            query_params["start_time"] = start_time.isoformat()
-        if error is not None:
-            query_params["error"] = error
-        if run_ids is not None:
-            query_params["id"] = run_ids
+        body_query = {k: v for k, v in body_query.items() if v is not None}
         yield from (
             ls_schemas.Run(**run, _host_url=self._host_url)
-            for run in self._get_paginated_list("/runs", params=query_params)
+            for run in self._get_cursor_paginated_list(
+                "/runs/query", body=body_query, request_method="post"
+            )
         )
 
     def get_run_url(
