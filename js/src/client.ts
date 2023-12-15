@@ -46,7 +46,6 @@ interface ListRunsParams {
   error?: boolean;
   id?: string[];
   limit?: number;
-  offset?: number;
   query?: string;
   filter?: string;
 }
@@ -308,6 +307,38 @@ export class Client {
       offset += items.length;
     }
   }
+  private async *_getCursorPaginatedList<T>(
+    path: string,
+    body: Record<string, any> | null = null,
+    requestMethod: string = "POST",
+    dataKey: string = "runs"
+  ): AsyncIterable<T[]> {
+    let bodyParams = body ? { ...body } : {};
+    while (true) {
+      const response = await this.caller.call(fetch, `${this.apiUrl}${path}`, {
+        method: requestMethod,
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        body: JSON.stringify(bodyParams),
+      });
+      const responseBody = await response.json();
+      if (!responseBody) {
+        break;
+      }
+      if (!responseBody[dataKey]) {
+        break;
+      }
+      yield responseBody[dataKey];
+      const cursors = responseBody.cursors;
+      if (!cursors) {
+        break;
+      }
+      if (!cursors.next) {
+        break;
+      }
+      bodyParams.cursor = cursors.next;
+    }
+  }
 
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
@@ -456,12 +487,10 @@ export class Client {
     runType,
     error,
     id,
-    limit,
-    offset,
     query,
     filter,
+    limit,
   }: ListRunsParams): AsyncIterable<Run> {
-    const queryParams = new URLSearchParams();
     let projectId_ = projectId;
     if (projectName) {
       if (projectId) {
@@ -469,46 +498,21 @@ export class Client {
       }
       projectId_ = (await this.readProject({ projectName })).id;
     }
-    if (projectId_) {
-      queryParams.append("session", projectId_);
-    }
-    if (parentRunId) {
-      queryParams.append("parent_run", parentRunId);
-    }
-    if (referenceExampleId) {
-      queryParams.append("reference_example", referenceExampleId);
-    }
-    if (startTime) {
-      queryParams.append("start_time", startTime.toISOString());
-    }
-    if (executionOrder) {
-      queryParams.append("execution_order", executionOrder.toString());
-    }
-    if (runType) {
-      queryParams.append("run_type", runType);
-    }
-    if (error !== undefined) {
-      queryParams.append("error", error.toString());
-    }
-    if (id !== undefined) {
-      for (const id_ of id) {
-        queryParams.append("id", id_);
-      }
-    }
-    if (limit !== undefined) {
-      queryParams.append("limit", limit.toString());
-    }
-    if (offset !== undefined) {
-      queryParams.append("offset", offset.toString());
-    }
-    if (query !== undefined) {
-      queryParams.append("query", query);
-    }
-    if (filter !== undefined) {
-      queryParams.append("filter", filter);
-    }
+    const body = {
+      session: projectId_ ? [projectId_] : null,
+      run_type: runType,
+      reference_example: referenceExampleId,
+      query,
+      filter,
+      execution_order: executionOrder,
+      parent_run: parentRunId ? [parentRunId] : null,
+      start_time: startTime ? startTime.toISOString() : null,
+      error,
+      id,
+      limit,
+    };
 
-    for await (const runs of this._getPaginated<Run>("/runs", queryParams)) {
+    for await (const runs of this._getCursorPaginatedList<Run>("/runs", body)) {
       yield* runs;
     }
   }
