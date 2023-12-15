@@ -46,7 +46,6 @@ interface ListRunsParams {
   error?: boolean;
   id?: string[];
   limit?: number;
-  offset?: number;
   query?: string;
   filter?: string;
 }
@@ -490,6 +489,7 @@ export class Client {
     id,
     query,
     filter,
+    limit,
   }: ListRunsParams): AsyncIterable<Run> {
     let projectId_ = projectId;
     if (projectName) {
@@ -509,6 +509,7 @@ export class Client {
       start_time: startTime ? startTime.toISOString() : null,
       error,
       id,
+      limit,
     };
 
     for await (const runs of this._getCursorPaginatedList<Run>("/runs", body)) {
