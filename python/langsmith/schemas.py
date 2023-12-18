@@ -379,6 +379,10 @@ class TracerSession(BaseModel):
     """The ID of the project."""
     start_time: datetime = Field(default_factory=datetime.utcnow)
     """The time the project was created."""
+    end_time: Optional[datetime] = None
+    """The time the project was ended."""
+    description: Optional[str] = None
+    """The description of the project."""
     name: Optional[str] = None
     """The name of the session."""
     extra: Optional[Dict[str, Any]] = None
