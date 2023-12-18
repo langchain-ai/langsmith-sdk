@@ -403,6 +403,24 @@ class TracerSession(BaseModel):
         if self._host_url:
             return f"{self._host_url}/o/{self.tenant_id}/projects/p/{self.id}"
         return None
+    
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        if self.extra is None or "metadata" not in self.extra:
+            return {}
+        return self.extra["metadata"]
+    
+    @property
+    def tags(self) -> List[str]:
+        """Retrieve the tags (if any)."""
+        if self.extra is None or "tags" not in self.extra:
+            return []
+        return self.extra["tags"]
+    
+    def _repr_html_(self) -> str:
+        """HTML representation of the session."""
+        return f"<a href='{self.url}'>{self.name}</a>"
 
 
 class TracerSessionResult(TracerSession):
