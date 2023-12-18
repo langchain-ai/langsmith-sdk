@@ -1,7 +1,15 @@
 export interface TracerSession {
+  // The ID of the tenant, or organization
   tenant_id: string;
+  // The ID of the project (alias for session)
   id: string;
+  // The start time of the project
   start_time: number;
+  // The end time of the project
+  end_time?: number;
+  // A description of the project
+  description?: string;
+  // The name of the project
   name?: string;
 }
 
