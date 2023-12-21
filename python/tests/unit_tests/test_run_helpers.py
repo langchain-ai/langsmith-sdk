@@ -1,7 +1,13 @@
+import functools
 import inspect
 from typing import Any
 
-from langsmith.run_helpers import _get_inputs, as_runnable, traceable
+from langsmith.run_helpers import (
+    _get_inputs,
+    as_runnable,
+    is_traceable_function,
+    traceable,
+)
 
 
 def test__get_inputs_with_no_args() -> None:
@@ -207,3 +213,45 @@ async def test_as_runnable_async_batch() -> None:
         ]
     )
     assert result == [6, 7]
+
+
+def test_is_traceable_function() -> None:
+    @traceable()
+    def my_function(a: int, b: int, d: int) -> int:
+        return a + b + d
+
+    assert is_traceable_function(my_function)
+
+
+def test_is_traceable_partial_function() -> None:
+    @traceable()
+    def my_function(a: int, b: int, d: int) -> int:
+        return a + b + d
+
+    partial_function = functools.partial(my_function, 1, 2)
+
+    assert is_traceable_function(partial_function)
+
+
+def test_is_not_traceable_function() -> None:
+    def my_function(a: int, b: int, d: int) -> int:
+        return a + b + d
+
+    assert not is_traceable_function(my_function)
+
+
+def test_is_traceable_class_call() -> None:
+    class Foo:
+        @traceable()
+        def __call__(self, a: int, b: int) -> None:
+            pass
+
+    assert is_traceable_function(Foo())
+
+
+def test_is_not_traceable_class_call() -> None:
+    class Foo:
+        def __call__(self, a: int, b: int) -> None:
+            pass
+
+    assert not is_traceable_function(Foo())
