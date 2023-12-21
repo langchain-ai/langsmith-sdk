@@ -43,12 +43,16 @@ def get_run_tree_context() -> Optional[run_trees.RunTree]:
     return _PARENT_RUN_TREE.get()
 
 
+def _is_traceable_function(func: Callable) -> bool:
+    return getattr(func, "__langsmith_traceable__", False)
+
+
 def is_traceable_function(func: Callable) -> bool:
     """Check if a function is @traceable decorated."""
     return (
-        getattr(func, "__langsmith_traceable__", False)
-        or (isinstance(func, functools.partial) and is_traceable_function(func.func))
-        or (hasattr(func, "__call__") and is_traceable_function(func.__call__))
+        _is_traceable_function(func)
+        or (isinstance(func, functools.partial) and _is_traceable_function(func.func))
+        or (hasattr(func, "__call__") and _is_traceable_function(func.__call__))
     )
 
 
