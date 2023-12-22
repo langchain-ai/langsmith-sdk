@@ -71,6 +71,25 @@ def _is_localhost(url: str) -> bool:
         return False
 
 
+def _parse_token_or_url(url_or_token: str, api_url: str) -> Tuple[str, str]:
+    """Parse a public dataset URL or share token."""
+    try:
+        uuid.UUID(url_or_token)
+        return api_url, url_or_token
+    except ValueError:
+        pass
+
+    # Then it's a URL
+    parsed_url = urllib_parse.urlparse(url_or_token)
+    # Extract the UUID from the path
+    path_parts = parsed_url.path.split("/")
+    if len(path_parts) >= 2:
+        token_uuid = path_parts[-2]
+    else:
+        raise ls_utils.LangSmithUserError(f"Invalid public dataset URL: {url_or_token}")
+    return api_url, token_uuid
+
+
 def _is_langchain_hosted(url: str) -> bool:
     """Check if the URL is langchain hosted.
 
@@ -1637,6 +1656,70 @@ class Client:
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
+
+    def clone_public_dataset(
+        self,
+        token_or_url: str,
+        *,
+        source_api_url: Optional[str] = None,
+        dataset_name: Optional[str] = None,
+    ) -> None:
+        """Clone a public dataset to your own langsmith tenant.
+
+        This operation is idempotent. If you already have a dataset with the given name,
+        this function will do nothing.
+
+        Args:
+            token_or_url (str): The token of the public dataset to clone.
+            source_api_url: The URL of the langsmith server where the data is hosted.
+                Defaults to the API URL of your current client.
+            dataset_name (str): The name of the dataset to create in your tenant.
+                Defaults to the name of the public dataset.
+
+        """
+        source_api_url = source_api_url or self.api_url
+        source_api_url, token_uuid = _parse_token_or_url(token_or_url, source_api_url)
+        source_client = Client(
+            # Placeholder API key not needed anymore in most cases, but
+            # some private deployments may have API key-based rate limiting
+            # that would cause this to fail if we provide no value.
+            api_url=source_api_url,
+            api_key="placeholder",
+        )
+        ds = source_client.read_shared_dataset(token_uuid)
+        dataset_name = dataset_name or ds.name
+        if self.has_dataset(dataset_name=dataset_name):
+            logger.info(
+                f"Dataset {dataset_name} already exists in your tenant. Skipping."
+            )
+            return
+        try:
+            # Fetch examples first
+            examples = list(source_client.list_shared_examples(token_uuid))
+            dataset = self.create_dataset(
+                dataset_name=dataset_name,
+                description=ds.description,
+                data_type=ds.data_type or ls_schemas.DataType.kv,
+            )
+            try:
+                self.create_examples(
+                    inputs=[e.inputs for e in examples],
+                    outputs=[e.outputs for e in examples],
+                    dataset_id=dataset.id,
+                )
+            except BaseException as e:
+                # Let's not do automatic clean up for now in case there might be
+                # some other reasons why create_examples fails (i.e., not network issue
+                # or keyboard interrupt).
+                # The risk is that this is an existing dataset that has valid examples
+                # populated from another source so we don't want to delete it.
+                logger.error(
+                    f"An error occurred while creating dataset {dataset_name}. "
+                    "You should delete it manually."
+                )
+                raise e
+        finally:
+            del source_client
 
     def _get_data_type(self, dataset_id: ID_TYPE) -> ls_schemas.DataType:
         dataset = self.read_dataset(dataset_id=dataset_id)
