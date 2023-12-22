@@ -71,7 +71,7 @@ def _is_localhost(url: str) -> bool:
         return False
 
 
-def _parse_token_or_url(url_or_token: str, api_url: str) -> Tuple[str, Optional[str]]:
+def _parse_token_or_url(url_or_token: str, api_url: str) -> Tuple[str, str]:
     """Parse a public dataset URL or share token."""
     try:
         uuid.UUID(url_or_token)
@@ -83,7 +83,10 @@ def _parse_token_or_url(url_or_token: str, api_url: str) -> Tuple[str, Optional[
     parsed_url = urllib_parse.urlparse(url_or_token)
     # Extract the UUID from the path
     path_parts = parsed_url.path.split("/")
-    token_uuid = path_parts[-2] if len(path_parts) >= 2 else None
+    if len(path_parts) >= 2:
+        token_uuid = path_parts[-2]
+    else:
+        raise ls_utils.LangSmithUserError(f"Invalid public dataset URL: {url_or_token}")
     return api_url, token_uuid
 
 
@@ -1696,7 +1699,7 @@ class Client:
             dataset = self.create_dataset(
                 dataset_name=dataset_name,
                 description=ds.description,
-                data_type=ds.data_type,
+                data_type=ds.data_type or ls_schemas.DataType.kv,
             )
             try:
                 self.create_examples(
