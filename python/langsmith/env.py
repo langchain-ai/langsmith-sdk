@@ -1,5 +1,6 @@
 """Environment information."""
 import functools
+import logging
 import os
 import platform
 import subprocess
@@ -14,6 +15,7 @@ try:
     _PSUTIL_AVAILABLE = True
 except ImportError:
     _PSUTIL_AVAILABLE = False
+logger = logging.getLogger(__name__)
 
 
 def get_runtime_and_metrics() -> dict:
@@ -23,31 +25,39 @@ def get_runtime_and_metrics() -> dict:
 
 def get_system_metrics() -> Dict[str, Union[float, dict]]:
     """Get CPU and other performance metrics."""
+    global _PSUTIL_AVAILABLE
     if not _PSUTIL_AVAILABLE:
         return {}
-    process = psutil.Process(os.getpid())
-    metrics: Dict[str, Union[float, dict]] = {}
+    try:
+        process = psutil.Process(os.getpid())
+        metrics: Dict[str, Union[float, dict]] = {}
 
-    with process.oneshot():
-        mem_info = process.memory_info()
-        metrics["thread_count"] = float(process.num_threads())
-        metrics["mem"] = {
-            "rss": float(mem_info.rss),
-        }
-        ctx_switches = process.num_ctx_switches()
-        cpu_times = process.cpu_times()
-        metrics["cpu"] = {
-            "time": {
-                "sys": cpu_times.system,
-                "user": cpu_times.user,
-            },
-            "ctx_switches": {
-                "voluntary": float(ctx_switches.voluntary),
-                "involuntary": float(ctx_switches.involuntary),
-            },
-            "percent": process.cpu_percent(),
-        }
-    return metrics
+        with process.oneshot():
+            mem_info = process.memory_info()
+            metrics["thread_count"] = float(process.num_threads())
+            metrics["mem"] = {
+                "rss": float(mem_info.rss),
+            }
+            ctx_switches = process.num_ctx_switches()
+            cpu_times = process.cpu_times()
+            metrics["cpu"] = {
+                "time": {
+                    "sys": cpu_times.system,
+                    "user": cpu_times.user,
+                },
+                "ctx_switches": {
+                    "voluntary": float(ctx_switches.voluntary),
+                    "involuntary": float(ctx_switches.involuntary),
+                },
+                "percent": process.cpu_percent(),
+            }
+        return metrics
+    except Exception as e:
+        # If psutil is installed but not compatible with the build,
+        # we'll just cease further attempts to use it.
+        _PSUTIL_AVAILABLE = False
+        logger.debug("Failed to get system metrics: %s", e)
+        return {}
 
 
 @functools.lru_cache(maxsize=1)
