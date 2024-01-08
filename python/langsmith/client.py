@@ -689,6 +689,26 @@ class Client:
             **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
         )
 
+    def _hide_run_io(
+        self, run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict]
+    ) -> dict:
+        if hasattr(run, "dict") and callable(getattr(run, "dict")):
+            run_create = run.dict()  # type: ignore
+        else:
+            run_create = cast(dict, run)
+        if "inputs" in run_create:
+            run_create["inputs"] = _hide_inputs(run_create["inputs"])
+        if "outputs" in run_create:
+            run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        return run_create
+
+    def _insert_runtime_env(self, runs: Sequence[dict]) -> None:
+        runtime_env = ls_env.get_runtime_and_metrics()
+        for run_create in runs:
+            run_extra = cast(dict, run_create.setdefault("extra", {}))
+            runtime = run_extra.setdefault("runtime", {})
+            run_extra["runtime"] = {**runtime_env, **runtime}
+
     def create_run(
         self,
         name: str,
@@ -696,6 +716,7 @@ class Client:
         run_type: str,
         *,
         execution_order: Optional[int] = None,
+        project_name: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -720,28 +741,22 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
-        project_name = kwargs.pop(
-            "project_name",
-            kwargs.pop(
-                "session_name",
-                # if the project is not provided, use the environment's project
-                ls_utils.get_tracer_project(),
-            ),
+        project_name = project_name or kwargs.pop(
+            "session_name",
+            # if the project is not provided, use the environment's project
+            ls_utils.get_tracer_project(),
         )
         run_create = {
             **kwargs,
             "session_name": project_name,
             "name": name,
-            "inputs": _hide_inputs(inputs),
+            "inputs": inputs,
             "run_type": run_type,
             "execution_order": execution_order if execution_order is not None else 1,
         }
-        if "outputs" in run_create:
-            run_create["outputs"] = _hide_outputs(run_create["outputs"])
-        run_extra = cast(dict, run_create.setdefault("extra", {}))
-        runtime = run_extra.setdefault("runtime", {})
-        runtime_env = ls_env.get_runtime_and_metrics()
-        run_extra["runtime"] = {**runtime_env, **runtime}
+
+        run_create = self._hide_run_io(run_create)
+        self._insert_runtime_env([run_create])
         headers = {
             **self._headers,
             "Accept": "application/json",
@@ -752,6 +767,39 @@ class Client:
             f"{self.api_url}/runs",
             request_kwargs={
                 "data": json.dumps(run_create, default=_serialize_json),
+                "headers": headers,
+                "timeout": self.timeout_ms / 1000,
+            },
+        )
+
+    def batch_upsert_runs(
+        self,
+        create: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
+        ] = None,
+        update: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
+        ] = None,
+    ):
+        if not create and not update:
+            return
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+        body = {
+            "create": [self._hide_run_io(run) for run in create or []],
+            "update": [self._hide_run_io(run) for run in update or []],
+        }
+        self._insert_runtime_env(body["create"])
+
+        self.request_with_retries(
+            "post",
+            f"{self.api_url}/runs/batch",
+            request_kwargs={
+                "data": json.dumps(body, default=_serialize_json),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },

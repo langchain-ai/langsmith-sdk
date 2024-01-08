@@ -25,7 +25,7 @@ from langsmith.utils import (
 
 @pytest.fixture
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     return Client()
 
 
@@ -40,7 +40,7 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
         )
     assert new_project not in project_names
 
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     langchain_client.create_project(
         project_name=new_project,
         project_extra={"evaluator": "THE EVALUATOR"},
@@ -134,7 +134,7 @@ def test_persist_update_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test the persist and update methods work as expected."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     project_name = "__test_persist_update_run"
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
@@ -172,7 +172,7 @@ def test_evaluate_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     project_name = "__test_evaluate_run"
     dataset_name = "__test_evaluate_run_dataset"
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
@@ -255,7 +255,7 @@ def test_create_project(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test the project creation"""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     try:
         langchain_client.read_project(project_name="__test_create_project")
         langchain_client.delete_project(project_name="__test_create_project")
@@ -272,7 +272,7 @@ def test_create_dataset(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     dataset_name = "__test_create_dataset"
     if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
         langchain_client.delete_dataset(dataset_name=dataset_name)
