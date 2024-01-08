@@ -17,11 +17,15 @@ from typing import (
     Callable,
     Dict,
     Generator,
+    Generic,
     List,
     Mapping,
     Optional,
+    Protocol,
     TypedDict,
+    TypeVar,
     cast,
+    runtime_checkable,
 )
 
 from langsmith import client, run_trees, utils
@@ -223,6 +227,20 @@ def _setup_run(
     return response_container
 
 
+R = TypeVar("R", covariant=True)
+
+
+@runtime_checkable
+class SupportsLangsmithExtra(Protocol, Generic[R]):
+    def __call__(
+        self,
+        *args: Any,
+        langsmith_extra: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> R:
+        ...
+
+
 def traceable(
     run_type: str = "chain",
     *,
@@ -233,7 +251,7 @@ def traceable(
     client: Optional[client.Client] = None,
     extra: Optional[Dict] = None,
     reduce_fn: Optional[Callable] = None,
-) -> Callable:
+) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
     """Decorator for creating or adding a run to a run tree.
 
     Args:
