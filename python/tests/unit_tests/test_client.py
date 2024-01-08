@@ -106,7 +106,7 @@ def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     assert dataset.description == "Test dataset"
 
 
-def test_async_methods():
+def test_async_methods() -> None:
     """For every method defined on the Client, if there is a
 
     corresponding async method, then the async method args should be a
@@ -140,7 +140,7 @@ def test_async_methods():
         )
 
 
-def test_get_api_key():
+def test_get_api_key() -> None:
     assert _get_api_key("provided_api_key") == "provided_api_key"
     assert _get_api_key("'provided_api_key'") == "provided_api_key"
     assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
@@ -155,7 +155,7 @@ def test_get_api_key():
     assert _get_api_key(" ") is None
 
 
-def test_get_api_url():
+def test_get_api_url() -> None:
     assert _get_api_url("http://provided.url", "api_key") == "http://provided.url"
 
     with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
@@ -174,7 +174,7 @@ def test_get_api_url():
         _get_api_url(" ", "api_key")
 
 
-def test_create_run_unicode():
+def test_create_run_unicode() -> None:
     client = Client(api_url="http://localhost:1984", api_key="123")
     inputs = {
         "foo": "これは私の友達です",
@@ -194,7 +194,7 @@ def test_create_run_unicode():
 
 
 @pytest.mark.parametrize("source_type", ["api", "model"])
-def test_create_feedback_string_source_type(source_type: str):
+def test_create_feedback_string_source_type(source_type: str) -> None:
     client = Client(api_url="http://localhost:1984", api_key="123")
     session = mock.Mock()
     request_object = mock.Mock()
@@ -215,7 +215,7 @@ def test_create_feedback_string_source_type(source_type: str):
         )
 
 
-def test_pydantic_serialize():
+def test_pydantic_serialize() -> None:
     """Test that pydantic objects can be serialized."""
     test_uuid = uuid.uuid4()
     test_time = datetime.now()
