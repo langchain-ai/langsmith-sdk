@@ -16,7 +16,7 @@ from langsmith.run_trees import RunTree
 @pytest.fixture
 def langchain_client() -> Generator[Client, None, None]:
     original = os.environ.get("LANGCHAIN_ENDPOINT")
-    os.environ["LANGCHAIN_ENDPOINT"] = "http://localhost:1984"
+    os.environ["LANGCHAIN_ENDPOINT"] = "http://api.smith.langchain.com"
     yield Client()
     if original is None:
         os.environ.pop("LANGCHAIN_ENDPOINT")
