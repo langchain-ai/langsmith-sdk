@@ -25,7 +25,7 @@ from langsmith.utils import (
 
 @pytest.fixture
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
     return Client()
 
 
@@ -40,7 +40,7 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
         )
     assert new_project not in project_names
 
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
     langchain_client.create_project(
         project_name=new_project,
         project_extra={"evaluator": "THE EVALUATOR"},
@@ -424,6 +424,43 @@ def test_create_chat_example(
             },
         },
     }
-
-    # Delete dataset
     langchain_client.delete_dataset(dataset_id=dataset.id)
+    
+
+@pytest.mark.freeze_time("2023-01-01")
+def test_batch_ingest_runs(langchain_client: Client) -> None:
+    trace_id = uuid4()
+    trace_id_2 = uuid4()
+    runs_to_create = [
+        {
+            "name": "run 1",
+            "run_type": "chain",
+            "dotted_order": str(trace_id),
+            "trace_id": str(trace_id),
+            "inputs": {"input1": 1, "input2": 2},
+            "outputs": {"output1": 3, "output2": 4},
+        },
+        {
+            "name": "run 2",
+            "run_type": "chain",
+            "dotted_order": str(trace_id_2),
+            "trace_id": str(trace_id_2),
+            "inputs": {"input1": 5, "input2": 6},
+            "outputs": {"output1": 7, "output2": 8},
+        },
+    ]
+    langchain_client.batch_ingest_runs(create=runs_to_create)
+
+    runs = list(langchain_client.list_runs())
+    assert len(runs) == 2
+
+    assert runs[0].dotted_order == "1"
+    assert runs[0].trace_id == "123"
+    assert runs[0].inputs == {"input1": 1, "input2": 2}
+    assert runs[0].outputs == {"output1": 3, "output2": 4}
+
+    assert runs[1].dotted_order == "2"
+    assert runs[1].trace_id == "456"
+    assert runs[1].inputs == {"input1": 5, "input2": 6}
+    assert runs[1].outputs == {"output1": 7, "output2": 8}
+    
