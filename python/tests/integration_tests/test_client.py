@@ -4,7 +4,7 @@ import os
 import random
 import string
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import uuid4
 
@@ -25,7 +25,7 @@ from langsmith.utils import (
 
 @pytest.fixture
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     return Client()
 
 
@@ -40,7 +40,7 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
         )
     assert new_project not in project_names
 
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     langchain_client.create_project(
         project_name=new_project,
         project_extra={"evaluator": "THE EVALUATOR"},
@@ -425,42 +425,66 @@ def test_create_chat_example(
         },
     }
     langchain_client.delete_dataset(dataset_id=dataset.id)
-    
 
-@pytest.mark.freeze_time("2023-01-01")
+
+@freeze_time("2023-01-01")
 def test_batch_ingest_runs(langchain_client: Client) -> None:
+    _session = "__test_batch_ingest_runs"
     trace_id = uuid4()
-    trace_id_2 = uuid4()
+    run_id_2 = uuid4()
+    current_time = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    later_time = (datetime.utcnow() + timedelta(seconds=1)).strftime("%Y%m%dT%H%M%S%fZ")
     runs_to_create = [
         {
+            "id": str(trace_id),
+            "session_name": _session,
             "name": "run 1",
             "run_type": "chain",
-            "dotted_order": str(trace_id),
+            "dotted_order": f"{current_time}{str(trace_id)}",
             "trace_id": str(trace_id),
             "inputs": {"input1": 1, "input2": 2},
             "outputs": {"output1": 3, "output2": 4},
         },
         {
+            "id": str(run_id_2),
+            "session_name": _session,
             "name": "run 2",
             "run_type": "chain",
-            "dotted_order": str(trace_id_2),
-            "trace_id": str(trace_id_2),
+            "dotted_order": f"{current_time}{str(trace_id)}."
+            f"{later_time}{str(run_id_2)}",
+            "trace_id": str(trace_id),
+            "parent_run_id": str(trace_id),
             "inputs": {"input1": 5, "input2": 6},
             "outputs": {"output1": 7, "output2": 8},
         },
     ]
     langchain_client.batch_ingest_runs(create=runs_to_create)
-
-    runs = list(langchain_client.list_runs())
+    runs = []
+    wait = 2
+    for _ in range(5):
+        try:
+            runs = list(langchain_client.list_runs(project_name=_session))
+            if len(runs) == 2:
+                break
+            raise LangSmithError("Runs not created yet")
+        except LangSmithError:
+            time.sleep(wait)
+            wait += 4
+    else:
+        raise ValueError("Runs not created in time")
+    assert len(runs) == 2
+    # Write all the assertions here
+    runs = sorted(runs, key=lambda x: x.dotted_order)
     assert len(runs) == 2
 
-    assert runs[0].dotted_order == "1"
-    assert runs[0].trace_id == "123"
-    assert runs[0].inputs == {"input1": 1, "input2": 2}
-    assert runs[0].outputs == {"output1": 3, "output2": 4}
+    # Assert inputs and outputs of run 1
+    run1 = runs[0]
+    assert run1.inputs == {"input1": 1, "input2": 2}
+    assert run1.outputs == {"output1": 3, "output2": 4}
 
-    assert runs[1].dotted_order == "2"
-    assert runs[1].trace_id == "456"
-    assert runs[1].inputs == {"input1": 5, "input2": 6}
-    assert runs[1].outputs == {"output1": 7, "output2": 8}
-    
+    # Assert inputs and outputs of run 2
+    run2 = runs[1]
+    assert run2.inputs == {"input1": 5, "input2": 6}
+    assert run2.outputs == {"output1": 7, "output2": 8}
+
+    langchain_client.delete_project(project_name=_session)
