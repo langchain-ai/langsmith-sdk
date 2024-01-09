@@ -317,9 +317,9 @@ export class Client {
     while (true) {
       const response = await this.caller.call(fetch, `${this.apiUrl}${path}`, {
         method: requestMethod,
-        headers: this.headers,
+        headers: { ...this.headers, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
-        body: JSON.stringify(bodyParams),
+        body: JSON.stringify(body),
       });
       const responseBody = await response.json();
       if (!responseBody) {
