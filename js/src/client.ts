@@ -319,7 +319,7 @@ export class Client {
         method: requestMethod,
         headers: { ...this.headers, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
-        body: JSON.stringify(bodyParams),
+        body: JSON.stringify(body),
       });
       const responseBody = await response.json();
       if (!responseBody) {
