@@ -773,59 +773,59 @@ class Client:
         )
 
     def batch_ingest_runs(
-            self,
-            create: Optional[
-                Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
-            ] = None,
-            update: Optional[
-                Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
-            ] = None,
-        ):
-            """
-            Batch ingest/upsert multiple runs in the Langsmith system.
+        self,
+        create: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
+        ] = None,
+        update: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
+        ] = None,
+    ):
+        """
+        Batch ingest/upsert multiple runs in the Langsmith system.
 
-            Args:
-                create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
-                    A sequence of `Run` objects or equivalent dictionaries representing
-                    runs to be created / posted.
-                update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
-                    A sequence of `Run` objects or equivalent dictionaries representing
-                    runs that have already been created and should be updated / patched.
+        Args:
+            create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs to be created / posted.
+            update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs that have already been created and should be updated / patched.
 
-            Returns:
-                None: If both `create` and `update` are None.
-            
-            Raises:
-                LangsmithAPIError: If there is an error in the API request.
+        Returns:
+            None: If both `create` and `update` are None.
 
-            Note:
-                - The run objects MUST contain the dotted_order and trace_id fields
-                    to be accepted by the API.
-            """
-            
-            if not create and not update:
-                return
-            headers = {
-                **self._headers,
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            }
+        Raises:
+            LangsmithAPIError: If there is an error in the API request.
 
-            body = {
-                "post": [self._hide_run_io(run) for run in create or []],
-                "patch": [self._hide_run_io(run) for run in update or []],
-            }
-            self._insert_runtime_env(body["post"])
+        Note:
+            - The run objects MUST contain the dotted_order and trace_id fields
+                to be accepted by the API.
+        """
 
-            self.request_with_retries(
-                "post",
-                f"{self.api_url}/runs/batch",
-                request_kwargs={
-                    "data": json.dumps(body, default=_serialize_json),
-                    "headers": headers,
-                    "timeout": self.timeout_ms / 1000,
-                },
-            )
+        if not create and not update:
+            return
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+        body = {
+            "post": [self._hide_run_io(run) for run in create or []],
+            "patch": [self._hide_run_io(run) for run in update or []],
+        }
+        self._insert_runtime_env(body["post"])
+
+        self.request_with_retries(
+            "post",
+            f"{self.api_url}/runs/batch",
+            request_kwargs={
+                "data": json.dumps(body, default=_serialize_json),
+                "headers": headers,
+                "timeout": self.timeout_ms / 1000,
+            },
+        )
 
     def update_run(
         self,
