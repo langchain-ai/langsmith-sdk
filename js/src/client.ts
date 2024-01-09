@@ -512,7 +512,10 @@ export class Client {
       limit,
     };
 
-    for await (const runs of this._getCursorPaginatedList<Run>("/runs", body)) {
+    for await (const runs of this._getCursorPaginatedList<Run>(
+      "/runs/query",
+      body
+    )) {
       yield* runs;
     }
   }
