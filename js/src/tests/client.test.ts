@@ -97,13 +97,17 @@ describe("Client", () => {
     it("should return 'https://dev.smith.langchain.com' if apiUrl contains 'dev'", () => {
       const client = new Client({
         apiUrl: "https://dev.smith.langchain.com/api",
+        apiKey: "test-api-key",
       });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://dev.smith.langchain.com");
     });
 
     it("should return 'https://smith.langchain.com' for any other apiUrl", () => {
-      const client = new Client({ apiUrl: "https://smith.langchain.com/api" });
+      const client = new Client({
+        apiUrl: "https://smith.langchain.com/api",
+        apiKey: "test-api-key",
+      });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://smith.langchain.com");
     });

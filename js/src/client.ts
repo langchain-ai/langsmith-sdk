@@ -204,7 +204,7 @@ export class Client {
     const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
     const apiUrl =
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
-      (apiKey ? "https://api.smith.langchain.com" : "http://localhost:1984");
+      "https://api.smith.langchain.com";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,

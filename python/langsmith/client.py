@@ -215,7 +215,7 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
         if api_url is not None
         else os.getenv(
             "LANGCHAIN_ENDPOINT",
-            "https://api.smith.langchain.com" if api_key else "http://localhost:1984",
+            "https://api.smith.langchain.com",
         )
     )
     if not _api_url.strip():
@@ -275,7 +275,7 @@ class Client:
         ----------
         api_url : str or None, default=None
             URL for the LangSmith API. Defaults to the LANGCHAIN_ENDPOINT
-            environment variable or http://localhost:1984 if not set.
+            environment variable or https://api.smith.langchain.com if not set.
         api_key : str or None, default=None
             API key for the LangSmith API. Defaults to the LANGCHAIN_API_KEY
             environment variable.
