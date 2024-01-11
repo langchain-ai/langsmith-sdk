@@ -165,7 +165,7 @@ def test_get_api_url() -> None:
         assert _get_api_url(None, "api_key") == "https://api.smith.langchain.com"
 
     with patch.dict(os.environ, {}, clear=True):
-        assert _get_api_url(None, None) == "http://localhost:1984"
+        assert _get_api_url(None, None) == "https://api.smith.langchain.com"
 
     with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None, None) == "http://env.url"
