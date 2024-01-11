@@ -74,4 +74,38 @@ describe("Client", () => {
       );
     });
   });
+
+  describe("getHostUrl", () => {
+    it("should return the webUrl if it exists", () => {
+      const client = new Client({ webUrl: "http://example.com" });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("http://example.com");
+    });
+
+    it("should return 'http://localhost' if apiUrl is localhost", () => {
+      const client = new Client({ apiUrl: "http://localhost/api" });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("http://localhost");
+    });
+
+    it("should return the webUrl without '/api' if apiUrl contains '/api'", () => {
+      const client = new Client({ webUrl: "https://example.com" });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://example.com");
+    });
+
+    it("should return 'https://dev.smith.langchain.com' if apiUrl contains 'dev'", () => {
+      const client = new Client({
+        apiUrl: "https://dev.smith.langchain.com/api",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://dev.smith.langchain.com");
+    });
+
+    it("should return 'https://smith.langchain.com' for any other apiUrl", () => {
+      const client = new Client({ apiUrl: "https://smith.langchain.com/api" });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://smith.langchain.com");
+    });
+  });
 });

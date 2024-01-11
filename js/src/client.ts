@@ -313,10 +313,10 @@ export class Client {
   private async *_getCursorPaginatedList<T>(
     path: string,
     body: Record<string, any> | null = null,
-    requestMethod: string = "POST",
-    dataKey: string = "runs"
+    requestMethod = "POST",
+    dataKey = "runs"
   ): AsyncIterable<T[]> {
-    let bodyParams = body ? { ...body } : {};
+    const bodyParams = body ? { ...body } : {};
     while (true) {
       const response = await this.caller.call(fetch, `${this.apiUrl}${path}`, {
         method: requestMethod,
