@@ -4,7 +4,7 @@ import { Client } from "../client.js";
 describe("Client", () => {
   describe("createLLMExample", () => {
     it("should create an example with the given input and generation", async () => {
-      const client = new Client();
+      const client = new Client({ apiKey: "test-api-key" });
       const createExampleSpy = jest
         .spyOn(client, "createExample")
         .mockResolvedValue({
@@ -32,7 +32,7 @@ describe("Client", () => {
 
   describe("createChatExample", () => {
     it("should convert LangChainBaseMessage objects to examples", async () => {
-      const client = new Client();
+      const client = new Client({ apiKey: "test-api-key" });
       const createExampleSpy = jest
         .spyOn(client, "createExample")
         .mockResolvedValue({
@@ -77,7 +77,10 @@ describe("Client", () => {
 
   describe("getHostUrl", () => {
     it("should return the webUrl if it exists", () => {
-      const client = new Client({ webUrl: "http://example.com" });
+      const client = new Client({
+        webUrl: "http://example.com",
+        apiKey: "test-api-key",
+      });
       const result = (client as any).getHostUrl();
       expect(result).toBe("http://example.com");
     });
@@ -89,7 +92,10 @@ describe("Client", () => {
     });
 
     it("should return the webUrl without '/api' if apiUrl contains '/api'", () => {
-      const client = new Client({ webUrl: "https://example.com" });
+      const client = new Client({
+        webUrl: "https://example.com",
+        apiKey: "test-api-key",
+      });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://example.com");
     });
