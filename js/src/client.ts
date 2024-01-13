@@ -1286,7 +1286,12 @@ export class Client {
     {
       sourceInfo,
       loadChildRuns,
-    }: { sourceInfo?: KVMap; loadChildRuns: boolean } = { loadChildRuns: false }
+      referenceExample,
+    }: {
+      sourceInfo?: KVMap;
+      loadChildRuns: boolean;
+      referenceExample?: Example;
+    } = { loadChildRuns: false }
   ): Promise<Feedback> {
     let run_: Run;
     if (typeof run === "string") {
@@ -1296,7 +1301,6 @@ export class Client {
     } else {
       throw new Error(`Invalid run type: ${typeof run}`);
     }
-    let referenceExample: Example | undefined = undefined;
     if (
       run_.reference_example_id !== null &&
       run_.reference_example_id !== undefined
@@ -1308,13 +1312,15 @@ export class Client {
     if (feedbackResult.evaluatorInfo) {
       sourceInfo_ = { ...sourceInfo_, ...feedbackResult.evaluatorInfo };
     }
-    return await this.createFeedback(run_.id, feedbackResult.key, {
-      score: feedbackResult.score,
-      value: feedbackResult.value,
-      comment: feedbackResult.comment,
-      correction: feedbackResult.correction,
+    const runId = feedbackResult.targetRunId ?? run_.id;
+    return await this.createFeedback(runId, feedbackResult.key, {
+      score: feedbackResult?.score,
+      value: feedbackResult?.value,
+      comment: feedbackResult?.comment,
+      correction: feedbackResult?.correction,
       sourceInfo: sourceInfo_,
       feedbackSourceType: "model",
+      sourceRunId: feedbackResult?.sourceRunId,
     });
   }
 
