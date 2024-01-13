@@ -399,7 +399,7 @@ export class Client {
 
   public async readRun(
     runId: string,
-    { loadChildRuns }: { loadChildRuns: boolean } = { loadChildRuns: false }
+    { loadChildRuns }: { loadChildRuns?: boolean } = { loadChildRuns: false }
   ): Promise<Run> {
     assertUuid(runId);
     let run = await this._get<Run>(`/runs/${runId}`);
@@ -1289,7 +1289,7 @@ export class Client {
       referenceExample,
     }: {
       sourceInfo?: KVMap;
-      loadChildRuns: boolean;
+      loadChildRuns?: boolean;
       referenceExample?: Example;
     } = { loadChildRuns: false }
   ): Promise<Feedback> {
