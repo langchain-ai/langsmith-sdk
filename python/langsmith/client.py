@@ -36,7 +36,7 @@ from urllib import parse as urllib_parse
 import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
-
+import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -362,7 +362,7 @@ class Client:
         Dict[str, str]
             The headers for the API request.
         """
-        headers = {}
+        headers = {"User-Agent": f"langsmith-py/{langsmith.__version__}"}
         if self.api_key:
             headers["x-api-key"] = self.api_key
         return headers

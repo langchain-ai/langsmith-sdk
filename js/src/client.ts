@@ -243,7 +243,9 @@ export class Client {
   }
 
   private get headers(): { [header: string]: string } {
-    const headers: { [header: string]: string } = {};
+    const headers: { [header: string]: string } = {
+      "User-Agent": "langsmith-js",
+    };
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
     }
