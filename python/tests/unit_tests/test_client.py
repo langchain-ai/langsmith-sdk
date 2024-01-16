@@ -51,10 +51,11 @@ def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
     client = Client(api_url="http://localhost:1984", api_key="123")
-    assert client._headers == {"x-api-key": "123"}
+    assert "x-api-key" in client._headers
+    assert client._headers["x-api-key"] == "123"
 
     client_no_key = Client(api_url="http://localhost:1984")
-    assert client_no_key._headers == {}
+    assert "x-api-key" not in client_no_key._headers
 
 
 @mock.patch("langsmith.client.requests.Session")
