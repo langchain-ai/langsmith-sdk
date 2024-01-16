@@ -1,4 +1,5 @@
 // Inlined from https://github.com/flexdinesh/browser-or-node
+import { __version__ } from "../index.js";
 declare global {
   const Deno:
     | {
@@ -8,6 +9,8 @@ declare global {
       }
     | undefined;
 }
+
+let globalEnv: string;
 
 export const isBrowser = () =>
   typeof window !== "undefined" && typeof window.document !== "undefined";
@@ -35,27 +38,31 @@ export const isNode = () =>
   !isDeno();
 
 export const getEnv = () => {
-  let env: string;
+  if (globalEnv) {
+    return globalEnv;
+  }
   if (isBrowser()) {
-    env = "browser";
+    globalEnv = "browser";
   } else if (isNode()) {
-    env = "node";
+    globalEnv = "node";
   } else if (isWebWorker()) {
-    env = "webworker";
+    globalEnv = "webworker";
   } else if (isJsDom()) {
-    env = "jsdom";
+    globalEnv = "jsdom";
   } else if (isDeno()) {
-    env = "deno";
+    globalEnv = "deno";
   } else {
-    env = "other";
+    globalEnv = "other";
   }
 
-  return env;
+  return globalEnv;
 };
 
 export type RuntimeEnvironment = {
   library: string;
   libraryVersion?: string;
+  sdk: string;
+  sdk_version: string;
   runtime: string;
   runtimeVersion?: string;
 };
@@ -66,10 +73,11 @@ export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
   if (runtimeEnvironment === undefined) {
     const env = getEnv();
     const releaseEnv = getShas();
-
     runtimeEnvironment = {
       library: "langsmith",
       runtime: env,
+      sdk: "langsmith-js",
+      sdk_version: __version__,
       ...releaseEnv,
     };
   }
