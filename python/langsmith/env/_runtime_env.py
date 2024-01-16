@@ -68,6 +68,7 @@ def get_runtime_environment() -> dict:
 
     shas = get_release_shas()
     return {
+        "sdk": "langsmith-py",
         "sdk_version": __version__,
         "library": "langsmith",
         "platform": platform.platform(),

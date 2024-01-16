@@ -26,6 +26,7 @@ import {
 import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
 
 import { RunEvaluator } from "./evaluation/evaluator.js";
+import { __version__ } from "./index.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -244,7 +245,7 @@ export class Client {
 
   private get headers(): { [header: string]: string } {
     const headers: { [header: string]: string } = {
-      "User-Agent": "langsmith-js",
+      "User-Agent": `langsmith-js/${__version__}`,
     };
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
