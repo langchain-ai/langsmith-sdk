@@ -155,10 +155,20 @@ def get_langchain_env_vars() -> dict:
 
 
 @functools.lru_cache(maxsize=1)
-def get_langchain_env_vars_escaped() -> dict:
+def get_langchain_env_var_metadata() -> dict:
     """Retrieve the langchain environment variables."""
-    env_vars = get_langchain_env_vars()
-    return {f"__{k}": v for k, v in env_vars.items()}
+    excluded = {
+        "LANGCHAIN_API_KEY",
+        "LANGCHAIN_ENDPOINT",
+        "LANGCHAIN_TRACING_V2",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    }
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if k.startswith("LANGCHAIN_") and k not in excluded and "key" not in k.lower()
+    }
 
 
 @functools.lru_cache(maxsize=1)

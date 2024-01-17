@@ -743,7 +743,7 @@ class Client:
         runtime = run_extra.setdefault("runtime", {})
         metadata: dict = run_extra.setdefault("metadata", {})
         runtime_env = ls_env.get_runtime_and_metrics()
-        langchain_metadata = ls_env.get_langchain_env_vars_escaped()
+        langchain_metadata = ls_env.get_langchain_env_var_metadata()
         metadata.update(**langchain_metadata)
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {
