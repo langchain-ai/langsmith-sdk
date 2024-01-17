@@ -741,7 +741,10 @@ class Client:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
         run_extra = cast(dict, run_create.setdefault("extra", {}))
         runtime = run_extra.setdefault("runtime", {})
+        metadata: dict = run_extra.setdefault("metadata", {})
         runtime_env = ls_env.get_runtime_and_metrics()
+        langchain_metadata = ls_env.get_langchain_env_vars_escaped()
+        metadata.update(**langchain_metadata)
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {
             **self._headers,

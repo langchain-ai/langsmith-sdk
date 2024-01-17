@@ -155,6 +155,13 @@ def get_langchain_env_vars() -> dict:
 
 
 @functools.lru_cache(maxsize=1)
+def get_langchain_env_vars_escaped() -> dict:
+    """Retrieve the langchain environment variables."""
+    env_vars = get_langchain_env_vars()
+    return {f"__{k}": v for k, v in env_vars.items()}
+
+
+@functools.lru_cache(maxsize=1)
 def get_release_shas() -> Dict[str, str]:
     common_release_envs = [
         "VERCEL_GIT_COMMIT_SHA",
