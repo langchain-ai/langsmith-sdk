@@ -94,10 +94,11 @@ from typing import List, Optional, Tuple
 import openai
 from langsmith import traceable
 
+openai_client = openai.Client()
 
 @traceable(run_type="llm")
 def call_openai(data: List[dict], model: str = "gpt-3.5-turbo", temperature: float = 0.0):
-    return openai.ChatCompletion.create(
+    return openai_client.chat.completion.create(
         model=model,
         messages=data,
         temperature=temperature,
