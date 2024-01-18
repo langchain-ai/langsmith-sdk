@@ -172,8 +172,8 @@ def get_langchain_env_var_metadata() -> dict:
     env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)
     if env_revision_id:
         langchain_metadata["revision_id"] = env_revision_id
-    else:
-        langchain_metadata["revision_id"] = _get_default_revision_id()
+    elif default_revision_id := _get_default_revision_id():
+        langchain_metadata["revision_id"] = default_revision_id
 
     return langchain_metadata
 
