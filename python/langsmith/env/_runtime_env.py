@@ -167,7 +167,11 @@ def get_langchain_env_var_metadata() -> dict:
     langchain_metadata = {
         k: v
         for k, v in os.environ.items()
-        if k.startswith("LANGCHAIN_") and k not in excluded and "key" not in k.lower()
+        if k.startswith("LANGCHAIN_")
+        and k not in excluded
+        and "key" not in k.lower()
+        and "secret" not in k.lower()
+        and "token" not in k.lower()
     }
     env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)
     if env_revision_id:
