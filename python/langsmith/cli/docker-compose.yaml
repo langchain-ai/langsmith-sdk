@@ -1,4 +1,4 @@
-version: "3"
+version: "4"
 services:
   langchain-playground:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-playground:${_LANGSMITH_IMAGE_VERSION:-latest}
@@ -25,6 +25,7 @@ services:
     depends_on:
       - langchain-db
       - langchain-redis
+      - clickhouse-setup
   langchain-queue:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
     environment:
@@ -67,6 +68,27 @@ services:
       - 63791:6379
     volumes:
       - langchain-redis-data:/data
+  langchain-clickhouse:
+    image: clickhouse/clickhouse-server:23.9
+    user: "101:101"
+    restart: always
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=password
+    volumes:
+      - langchain-clickhouse-data:/var/lib/clickhouse
+      - ./users.xml:/etc/clickhouse-server/users.d/users.xml
+    ports:
+      - 8124:8123
+      - 9001:9000
+  clickhouse-setup:
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
+    depends_on:
+      - langchain-clickhouse
+    restart: "no"
+    entrypoint: [ "bash", "-c", "sleep 60 && migrate -source file://clickhouse/migrations -database 'clickhouse://langchain-clickhouse:9000?username=default&password=password&database=default&x-multi-statement=true&x-migrations-table-engine=MergeTree' up"]
 volumes:
   langchain-db-data:
   langchain-redis-data:
+  langchain-clickhouse-data:
