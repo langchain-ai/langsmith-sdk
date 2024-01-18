@@ -155,6 +155,23 @@ def get_langchain_env_vars() -> dict:
 
 
 @functools.lru_cache(maxsize=1)
+def get_langchain_env_var_metadata() -> dict:
+    """Retrieve the langchain environment variables."""
+    excluded = {
+        "LANGCHAIN_API_KEY",
+        "LANGCHAIN_ENDPOINT",
+        "LANGCHAIN_TRACING_V2",
+        "LANGCHAIN_PROJECT",
+        "LANGCHAIN_SESSION",
+    }
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if k.startswith("LANGCHAIN_") and k not in excluded and "key" not in k.lower()
+    }
+
+
+@functools.lru_cache(maxsize=1)
 def get_release_shas() -> Dict[str, str]:
     common_release_envs = [
         "VERCEL_GIT_COMMIT_SHA",
