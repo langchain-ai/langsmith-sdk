@@ -57,13 +57,13 @@ os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 If the environment variables are correctly set, your application will automatically connect to the LangSmith platform.
 
 ```python
-from langchain.chat_models import ChatOpenAI
+from langchain_core.runnables import chain
 
-chat = ChatOpenAI()
-response = chat.predict(
-    "Translate this sentence from English to French. I love programming."
-)
-print(response)
+@chain
+def add_val(x: dict) -> dict:
+    return {"val": x["val"] + 1}
+
+add_val({"val": 1})
 ```
 
 ### Logging Traces Outside LangChain
