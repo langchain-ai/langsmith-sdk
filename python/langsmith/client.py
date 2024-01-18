@@ -2645,6 +2645,8 @@ class Client:
                 your model needs to deserialize more complex schema or if your dataset
                 has inputs with keys that differ from what is expected by your chain
                 or agent.
+            revision_id: Optional revision identifier to assign this test run to
+                track the performance of different versions of your system.
 
         Returns:
             A dictionary containing the run's project name and the
@@ -2785,6 +2787,8 @@ class Client:
                 your model needs to deserialize more complex schema or if your dataset
                 has inputs with keys that differ from what is expected by your chain
                 or agent.
+            revision_id: Optional revision identifier to assign this test run to
+                track the performance of different versions of your system.
 
         Returns:
             A dictionary containing the run's project name and the resulting model outputs.
