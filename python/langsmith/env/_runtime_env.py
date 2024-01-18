@@ -164,11 +164,35 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
     }
-    return {
+    langchain_metadata = {
         k: v
         for k, v in os.environ.items()
         if k.startswith("LANGCHAIN_") and k not in excluded and "key" not in k.lower()
     }
+    env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)
+    if env_revision_id:
+        langchain_metadata["revision_id"] = env_revision_id
+    else:
+        langchain_metadata["revision_id"] = _get_default_revision_id()
+
+    return langchain_metadata
+
+
+@functools.lru_cache(maxsize=1)
+def _get_default_revision_id() -> Optional[str]:
+    """Get the default revision ID based on `git describe`."""
+    import subprocess
+
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "describe", "--tags", "--dirty"], stderr=subprocess.DEVNULL
+            )
+            .strip()
+            .decode()
+        )
+    except Exception:
+        return None
 
 
 @functools.lru_cache(maxsize=1)
