@@ -7,6 +7,7 @@ import subprocess
 from typing import Dict, List, Optional, Union
 
 from langsmith.utils import get_docker_compose_command
+from langsmith.env._git import exec_git
 
 try:
     # psutil is an optional dependency
@@ -164,11 +165,31 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
     }
-    return {
+    langchain_metadata = {
         k: v
         for k, v in os.environ.items()
-        if k.startswith("LANGCHAIN_") and k not in excluded and "key" not in k.lower()
+        if k.startswith("LANGCHAIN_")
+        and k not in excluded
+        and "key" not in k.lower()
+        and "secret" not in k.lower()
+        and "token" not in k.lower()
     }
+    env_revision_id = langchain_metadata.pop("LANGCHAIN_REVISION_ID", None)
+    if env_revision_id:
+        langchain_metadata["revision_id"] = env_revision_id
+    elif default_revision_id := _get_default_revision_id():
+        langchain_metadata["revision_id"] = default_revision_id
+
+    return langchain_metadata
+
+
+@functools.lru_cache(maxsize=1)
+def _get_default_revision_id() -> Optional[str]:
+    """Get the default revision ID based on `git describe`."""
+    try:
+        return exec_git(["describe", "--tags", "--dirty"])
+    except BaseException:
+        return None
 
 
 @functools.lru_cache(maxsize=1)
