@@ -7,6 +7,7 @@ import subprocess
 from typing import Dict, List, Optional, Union
 
 from langsmith.utils import get_docker_compose_command
+from langsmith.env._git import exec_git
 
 try:
     # psutil is an optional dependency
@@ -188,14 +189,8 @@ def _get_default_revision_id() -> Optional[str]:
     import subprocess
 
     try:
-        return (
-            subprocess.check_output(
-                ["git", "describe", "--tags", "--dirty"], stderr=subprocess.DEVNULL
-            )
-            .strip()
-            .decode()
-        )
-    except Exception:
+        return exec_git(["describe", "--tags", "--dirty"])
+    except BaseException:
         return None
 
 

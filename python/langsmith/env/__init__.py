@@ -1,5 +1,5 @@
 """Utilities to get information about the runtime environment."""
-from langsmith.env._git import get_git_info
+from langsmith.env._git import get_git_info, exec_git
 from langsmith.env._runtime_env import (
     get_docker_compose_command,
     get_docker_compose_version,
@@ -27,4 +27,5 @@ __all__ = [
     "get_runtime_environment",
     "get_system_metrics",
     "get_git_info",
+    "exec_git",
 ]
