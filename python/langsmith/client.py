@@ -2622,6 +2622,7 @@ class Client:
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
+        revision_identifier: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Asynchronously run the Chain or language model on a dataset
@@ -2745,6 +2746,7 @@ class Client:
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
+            revision_identifier=revision_identifier,
         )
 
     def run_on_dataset(
@@ -2759,6 +2761,7 @@ class Client:
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
+        revision_identifier: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the Chain or language model on a dataset and store traces
@@ -2883,4 +2886,5 @@ class Client:
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
+            revision_identifier=revision_identifier,
         )
