@@ -186,8 +186,6 @@ def get_langchain_env_var_metadata() -> dict:
 @functools.lru_cache(maxsize=1)
 def _get_default_revision_id() -> Optional[str]:
     """Get the default revision ID based on `git describe`."""
-    import subprocess
-
     try:
         return exec_git(["describe", "--tags", "--dirty"])
     except BaseException:

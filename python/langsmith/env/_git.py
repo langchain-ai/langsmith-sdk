@@ -17,7 +17,7 @@ def exec_git(command: List[str]) -> Optional[str]:
         return subprocess.check_output(
             ["git"] + command, encoding="utf-8", stderr=subprocess.DEVNULL
         ).strip()
-    except (FileNotFoundError, subprocess.CalledProcessError, BaseException):
+    except BaseException:
         return None
 
 
