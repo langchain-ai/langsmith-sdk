@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel
 
+import langsmith.env as ls_env
 from langsmith.client import (
     Client,
     _get_api_key,
@@ -51,10 +52,11 @@ def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
     client = Client(api_url="http://localhost:1984", api_key="123")
-    assert client._headers == {"x-api-key": "123"}
+    assert "x-api-key" in client._headers
+    assert client._headers["x-api-key"] == "123"
 
     client_no_key = Client(api_url="http://localhost:1984")
-    assert client_no_key._headers == {}
+    assert "x-api-key" not in client_no_key._headers
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -165,7 +167,7 @@ def test_get_api_url() -> None:
         assert _get_api_url(None, "api_key") == "https://api.smith.langchain.com"
 
     with patch.dict(os.environ, {}, clear=True):
-        assert _get_api_url(None, None) == "http://localhost:1984"
+        assert _get_api_url(None, None) == "https://api.smith.langchain.com"
 
     with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None, None) == "http://env.url"
@@ -191,6 +193,32 @@ def test_create_run_unicode() -> None:
             "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
         )
         client.update_run(id_, status="completed")
+
+
+def test_create_run_includes_langchain_env_var_metadata() -> None:
+    client = Client(api_url="http://localhost:1984", api_key="123")
+    inputs = {
+        "foo": "これは私の友達です",
+        "bar": "این یک کتاب است",
+        "baz": "😊🌺🎉💻🚀🌈🍕🏄‍♂️🎁🐶🌟🏖️👍🚲🎈",
+        "qux": "나는\u3000밥을\u3000먹었습니다.",
+        "는\u3000밥": "나는\u3000밥을\u3000먹었습니다.",
+    }
+    session = mock.Mock()
+    session.request = mock.Mock()
+    # Set the environment variables just for this test
+    with patch.dict(os.environ, {"LANGCHAIN_REVISION": "abcd2234"}):
+        # Clear the cache to ensure the environment variables are re-read
+        ls_env.get_langchain_env_var_metadata.cache_clear()
+        with patch.object(client, "session", session):
+            id_ = uuid.uuid4()
+            client.create_run(
+                "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
+            )
+            # Check the posted value in the request
+            posted_value = json.loads(session.request.call_args[1]["data"])
+            assert posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"] == "abcd2234"
+            assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
 
 
 @pytest.mark.parametrize("source_type", ["api", "model"])

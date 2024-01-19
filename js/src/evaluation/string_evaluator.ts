@@ -6,7 +6,7 @@ export interface GradingFunctionResult {
   score?: ScoreType;
   value?: ValueType;
   comment?: string;
-  correction?: object;
+  correction?: Record<string, unknown>;
 }
 
 export interface GradingFunctionParams {

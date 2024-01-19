@@ -1,4 +1,4 @@
-name: Release
+name: JS Release
 
 on:
   push:
@@ -29,6 +29,8 @@ jobs:
         run: cd js && yarn install --immutable
       - name: Build
         run: cd js && yarn run build
+      - name: Check version
+        run: cd js && yarn run check-version
       - name: Publish package to NPM
         run: |
           cd js
