@@ -119,7 +119,6 @@ export function getLangChainEnvVars(): Record<string, string> {
 
 /**
  * Retrieves the LangChain-specific metadata from the current runtime environment.
- * Sensitive keys (containing the word "key", "token", or "secret") have their values redacted for security.
  *
  * @returns {Record<string, string>}
  *  - A record of LangChain-specific metadata environment variables.
