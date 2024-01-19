@@ -86,7 +86,7 @@ export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
 
 /**
  * Retrieves the LangChain-specific environment variables from the current runtime environment.
- * Sensitive keys (containing the word "key") have their values redacted for security.
+ * Sensitive keys (containing the word "key", "token", or "secret") have their values redacted for security.
  *
  * @returns {Record<string, string>}
  *  - A record of LangChain-specific environment variables.
@@ -102,10 +102,62 @@ export function getLangChainEnvVars(): Record<string, string> {
   }
 
   for (const key in envVars) {
-    if (key.toLowerCase().includes("key") && typeof envVars[key] === "string") {
+    if (
+      (key.toLowerCase().includes("key") ||
+        key.toLowerCase().includes("secret") ||
+        key.toLowerCase().includes("token")) &&
+      typeof envVars[key] === "string"
+    ) {
       const value = envVars[key];
       envVars[key] =
         value.slice(0, 2) + "*".repeat(value.length - 4) + value.slice(-2);
+    }
+  }
+
+  return envVars;
+}
+
+/**
+ * Retrieves the LangChain-specific metadata from the current runtime environment.
+ * Sensitive keys (containing the word "key", "token", or "secret") have their values redacted for security.
+ *
+ * @returns {Record<string, string>}
+ *  - A record of LangChain-specific metadata environment variables.
+ */
+export function getLangChainEnvVarsMetadata(): Record<string, string> {
+  const allEnvVars = getEnvironmentVariables() || {};
+  const envVars: Record<string, string> = {};
+  const excluded = [
+    "LANGCHAIN_API_KEY",
+    "LANGCHAIN_ENDPOINT",
+    "LANGCHAIN_TRACING_V2",
+    "LANGCHAIN_PROJECT",
+    "LANGCHAIN_SESSION",
+  ];
+
+  for (const [key, value] of Object.entries(allEnvVars)) {
+    if (
+      key.startsWith("LANGCHAIN_") &&
+      typeof value === "string" &&
+      !excluded.includes(key)
+    ) {
+      envVars[key] = value;
+    }
+  }
+
+  for (const key in envVars) {
+    if (
+      (key.toLowerCase().includes("key") ||
+        key.toLowerCase().includes("secret") ||
+        key.toLowerCase().includes("token")) &&
+      typeof envVars[key] === "string"
+    ) {
+      const value = envVars[key];
+      envVars[key] =
+        value.slice(0, 2) + "*".repeat(value.length - 4) + value.slice(-2);
+    } else if (key === "LANGCHAIN_REVISION_ID") {
+      envVars["revision_id"] = envVars[key];
+      delete envVars[key];
     }
   }
 
@@ -128,7 +180,7 @@ export function getEnvironmentVariables(): Record<string, string> | undefined {
     // eslint-disable-next-line no-process-env
     if (typeof process !== "undefined" && process.env) {
       // eslint-disable-next-line no-process-env
-      Object.entries(process.env).reduce(
+      return Object.entries(process.env).reduce(
         (acc: { [key: string]: string }, [key, value]) => {
           acc[key] = String(value);
           return acc;
@@ -136,7 +188,6 @@ export function getEnvironmentVariables(): Record<string, string> | undefined {
         {}
       );
     }
-
     // For browsers and other environments, we may not have direct access to env variables
     // Return undefined or any other fallback as required.
     return undefined;
