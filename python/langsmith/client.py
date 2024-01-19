@@ -21,6 +21,7 @@ from typing import (
     Callable,
     DefaultDict,
     Dict,
+    Iterable,
     Iterator,
     List,
     Mapping,
@@ -202,6 +203,25 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
             )
 
 
+def _get_tracing_sampling_rate() -> float | None:
+    """Get the tracing sampling rate.
+
+    Returns
+    -------
+    float
+        The tracing sampling rate.
+    """
+    sampling_rate_str = os.getenv("LANGCHAIN_TRACING_SAMPLING_RATE")
+    if sampling_rate_str is None:
+        return None
+    sampling_rate = float(sampling_rate_str)
+    if sampling_rate < 0 or sampling_rate > 1:
+        raise ls_utils.LangSmithUserError(
+            "LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set"
+        )
+    return sampling_rate
+
+
 def _get_api_key(api_key: Optional[str]) -> Optional[str]:
     api_key = api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
     if api_key is None or not api_key.strip():
@@ -257,6 +277,8 @@ class Client:
         "_get_data_type_cached",
         "_web_url",
         "_tenant_id",
+        "tracing_sample_rate",
+        "_sampled_post_uuids",
     ]
 
     def __init__(
@@ -295,6 +317,8 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
+        self.tracing_sample_rate = _get_tracing_sampling_rate()
+        self._sampled_post_uuids = set()
         self.api_key = _get_api_key(api_key)
         self.api_url = _get_api_url(api_url, self.api_key)
         _validate_api_key_if_hosted(self.api_url, self.api_key)
@@ -709,6 +733,27 @@ class Client:
             runtime = run_extra.setdefault("runtime", {})
             run_extra["runtime"] = {**runtime_env, **runtime}
 
+    def _filter_for_sampling(
+        self, runs: Iterable[dict], *, patch: bool = False
+    ) -> list[dict]:
+        if self.tracing_sample_rate is None:
+            return runs
+
+        if patch:
+            sampled = []
+            for run in runs:
+                if run["id"] in self._sampled_post_uuids:
+                    sampled.append(run)
+                    self._sampled_post_uuids.remove(run["id"])
+            return sampled
+        else:
+            sampled = []
+            for run in runs:
+                if random.random() < self.tracing_sample_rate:
+                    sampled.append(run)
+                    self._sampled_post_uuids.add(run["id"])
+            return sampled
+
     def create_run(
         self,
         name: str,
@@ -762,15 +807,16 @@ class Client:
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
-        self.request_with_retries(
-            "post",
-            f"{self.api_url}/runs",
-            request_kwargs={
-                "data": json.dumps(run_create, default=_serialize_json),
-                "headers": headers,
-                "timeout": self.timeout_ms / 1000,
-            },
-        )
+        if self._filter_for_sampling([run_create]):
+            self.request_with_retries(
+                "post",
+                f"{self.api_url}/runs",
+                request_kwargs={
+                    "data": json.dumps(run_create, default=_serialize_json),
+                    "headers": headers,
+                    "timeout": self.timeout_ms / 1000,
+                },
+            )
 
     def batch_ingest_runs(
         self,
@@ -812,9 +858,15 @@ class Client:
         }
 
         body = {
-            "post": [self._hide_run_io(run) for run in create or []],
-            "patch": [self._hide_run_io(run) for run in update or []],
+            "post": self._filter_for_sampling(
+                self._hide_run_io(run) for run in create or []
+            ),
+            "patch": self._filter_for_sampling(
+                (self._hide_run_io(run) for run in update or []), patch=True
+            ),
         }
+        if not body["post"] and not body["patch"]:
+            return
         self._insert_runtime_env(body["post"])
 
         self.request_with_retries(
@@ -873,15 +925,16 @@ class Client:
             data["outputs"] = _hide_outputs(outputs)
         if events is not None:
             data["events"] = events
-        self.request_with_retries(
-            "patch",
-            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}",
-            request_kwargs={
-                "data": json.dumps(data, default=_serialize_json),
-                "headers": headers,
-                "timeout": self.timeout_ms / 1000,
-            },
-        )
+        if self._filter_for_sampling([data]):
+            self.request_with_retries(
+                "patch",
+                f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}",
+                request_kwargs={
+                    "data": json.dumps(data, default=_serialize_json),
+                    "headers": headers,
+                    "timeout": self.timeout_ms / 1000,
+                },
+            )
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
