@@ -3,6 +3,9 @@
 tests:
 	poetry run pytest tests/unit_tests
 
+tests_watch:
+	poetry run ptw --now . -- -vv -x  tests/unit_tests
+
 integration_tests:
 	poetry run pytest tests/integration_tests
 
