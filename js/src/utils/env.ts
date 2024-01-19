@@ -139,25 +139,16 @@ export function getLangChainEnvVarsMetadata(): Record<string, string> {
     if (
       key.startsWith("LANGCHAIN_") &&
       typeof value === "string" &&
-      !excluded.includes(key)
+      !excluded.includes(key) &&
+      !key.toLowerCase().includes("key") &&
+      !key.toLowerCase().includes("secret") &&
+      !key.toLowerCase().includes("token")
     ) {
-      envVars[key] = value;
-    }
-  }
-
-  for (const key in envVars) {
-    if (
-      (key.toLowerCase().includes("key") ||
-        key.toLowerCase().includes("secret") ||
-        key.toLowerCase().includes("token")) &&
-      typeof envVars[key] === "string"
-    ) {
-      const value = envVars[key];
-      envVars[key] =
-        value.slice(0, 2) + "*".repeat(value.length - 4) + value.slice(-2);
-    } else if (key === "LANGCHAIN_REVISION_ID") {
-      envVars["revision_id"] = envVars[key];
-      delete envVars[key];
+      if (key === "LANGCHAIN_REVISION_ID") {
+        envVars["revision_id"] = value;
+      } else {
+        envVars[key] = value;
+      }
     }
   }
 
