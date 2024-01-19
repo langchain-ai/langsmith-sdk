@@ -318,7 +318,7 @@ class Client:
             If the API key is not provided when using the hosted service.
         """
         self.tracing_sample_rate = _get_tracing_sampling_rate()
-        self._sampled_post_uuids = set()
+        self._sampled_post_uuids: set[uuid.UUID] = set()
         self.api_key = _get_api_key(api_key)
         self.api_url = _get_api_url(api_url, self.api_key)
         _validate_api_key_if_hosted(self.api_url, self.api_key)
@@ -737,7 +737,7 @@ class Client:
         self, runs: Iterable[dict], *, patch: bool = False
     ) -> list[dict]:
         if self.tracing_sample_rate is None:
-            return runs
+            return list(runs)
 
         if patch:
             sampled = []
