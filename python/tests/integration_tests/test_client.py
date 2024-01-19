@@ -455,10 +455,19 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             "trace_id": str(trace_id),
             "parent_run_id": str(trace_id),
             "inputs": {"input1": 5, "input2": 6},
+        },
+    ]
+    runs_to_update = [
+        {
+            "id": str(run_id_2),
+            "dotted_order": f"{current_time}{str(trace_id)}."
+            f"{later_time}{str(run_id_2)}",
+            "trace_id": str(trace_id),
+            "parent_run_id": str(trace_id),
             "outputs": {"output1": 7, "output2": 8},
         },
     ]
-    langchain_client.batch_ingest_runs(create=runs_to_create)
+    langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
     runs = []
     wait = 2
     for _ in range(5):

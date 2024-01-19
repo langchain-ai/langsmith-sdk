@@ -713,7 +713,7 @@ class Client:
             **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
         )
 
-    def _hide_run_io(
+    def _run_transform(
         self, run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict]
     ) -> dict:
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
@@ -800,7 +800,7 @@ class Client:
             "execution_order": execution_order if execution_order is not None else 1,
         }
 
-        run_create = self._hide_run_io(run_create)
+        run_create = self._run_transform(run_create)
         self._insert_runtime_env([run_create])
         headers = {
             **self._headers,
@@ -851,22 +851,29 @@ class Client:
 
         if not create and not update:
             return
-        headers = {
-            **self._headers,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-
+        # transform and convert to dicts
+        create_dicts = [self._run_transform(run) for run in create or []]
+        update_dicts = [self._run_transform(run) for run in update or []]
+        # combine post and patch dicts where possible
+        if update_dicts and create_dicts:
+            create_by_id = {run["id"]: run for run in create_dicts}
+            standalone_updates: list[dict] = []
+            for run in update_dicts:
+                if run["id"] in create_by_id:
+                    create_by_id[run["id"]].update(
+                        {k: v for k, v in run.items() if v is not None}
+                    )
+                else:
+                    standalone_updates.append(run)
+            update_dicts = standalone_updates
+        # filter out runs that are not sampled
         body = {
-            "post": self._filter_for_sampling(
-                self._hide_run_io(run) for run in create or []
-            ),
-            "patch": self._filter_for_sampling(
-                (self._hide_run_io(run) for run in update or []), patch=True
-            ),
+            "post": self._filter_for_sampling(create_dicts),
+            "patch": self._filter_for_sampling(update_dicts, patch=True),
         }
         if not body["post"] and not body["patch"]:
             return
+
         self._insert_runtime_env(body["post"])
 
         self.request_with_retries(
@@ -874,8 +881,12 @@ class Client:
             f"{self.api_url}/runs/batch",
             request_kwargs={
                 "data": json.dumps(body, default=_serialize_json),
-                "headers": headers,
                 "timeout": self.timeout_ms / 1000,
+                "headers": {
+                    **self._headers,
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
             },
         )
 
