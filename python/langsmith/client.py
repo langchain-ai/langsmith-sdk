@@ -38,6 +38,7 @@ import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
 
+import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -235,7 +236,7 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
         if api_url is not None
         else os.getenv(
             "LANGCHAIN_ENDPOINT",
-            "https://api.smith.langchain.com" if api_key else "http://localhost:1984",
+            "https://api.smith.langchain.com",
         )
     )
     if not _api_url.strip():
@@ -297,7 +298,7 @@ class Client:
         ----------
         api_url : str or None, default=None
             URL for the LangSmith API. Defaults to the LANGCHAIN_ENDPOINT
-            environment variable or http://localhost:1984 if not set.
+            environment variable or https://api.smith.langchain.com if not set.
         api_key : str or None, default=None
             API key for the LangSmith API. Defaults to the LANGCHAIN_API_KEY
             environment variable.
@@ -386,7 +387,7 @@ class Client:
         Dict[str, str]
             The headers for the API request.
         """
-        headers = {}
+        headers = {"User-Agent": f"langsmith-py/{langsmith.__version__}"}
         if self.api_key:
             headers["x-api-key"] = self.api_key
         return headers
@@ -730,8 +731,15 @@ class Client:
         runtime_env = ls_env.get_runtime_and_metrics()
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
-            runtime = run_extra.setdefault("runtime", {})
+            # update runtime
+            runtime: dict = run_extra.setdefault("runtime", {})
             run_extra["runtime"] = {**runtime_env, **runtime}
+            # update metadata
+            metadata: dict = run_extra.setdefault("metadata", {})
+            langchain_metadata = ls_env.get_langchain_env_var_metadata()
+            metadata.update(
+                {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            )
 
     def _filter_for_sampling(
         self, runs: Iterable[dict], *, patch: bool = False
@@ -2755,6 +2763,7 @@ class Client:
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
+        revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Asynchronously run the Chain or language model on a dataset
@@ -2777,6 +2786,8 @@ class Client:
                 your model needs to deserialize more complex schema or if your dataset
                 has inputs with keys that differ from what is expected by your chain
                 or agent.
+            revision_id: Optional revision identifier to assign this test run to
+                track the performance of different versions of your system.
 
         Returns:
             A dictionary containing the run's project name and the
@@ -2878,6 +2889,7 @@ class Client:
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
+            revision_id=revision_id,
         )
 
     def run_on_dataset(
@@ -2892,6 +2904,7 @@ class Client:
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
+        revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the Chain or language model on a dataset and store traces
@@ -2915,6 +2928,8 @@ class Client:
                 your model needs to deserialize more complex schema or if your dataset
                 has inputs with keys that differ from what is expected by your chain
                 or agent.
+            revision_id: Optional revision identifier to assign this test run to
+                track the performance of different versions of your system.
 
         Returns:
             A dictionary containing the run's project name and the resulting model outputs.
@@ -3016,4 +3031,5 @@ class Client:
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
+            revision_id=revision_id,
         )

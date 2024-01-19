@@ -23,9 +23,14 @@ import {
   convertLangChainMessageToExample,
   isLangChainMessage,
 } from "./utils/messages.js";
-import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
+import {
+  getEnvironmentVariable,
+  getLangChainEnvVarsMetadata,
+  getRuntimeEnvironment,
+} from "./utils/env.js";
 
 import { RunEvaluator } from "./evaluation/evaluator.js";
+import { __version__ } from "./index.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -98,6 +103,7 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  revision_id?: string;
 }
 
 interface projectOptions {
@@ -204,7 +210,7 @@ export class Client {
     const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
     const apiUrl =
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
-      (apiKey ? "https://api.smith.langchain.com" : "http://localhost:1984");
+      "https://api.smith.langchain.com";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
@@ -227,7 +233,10 @@ export class Client {
     } else if (isLocalhost(this.apiUrl)) {
       this.webUrl = "http://localhost";
       return "http://localhost";
-    } else if (this.apiUrl.includes("/api")) {
+    } else if (
+      this.apiUrl.includes("/api") &&
+      !this.apiUrl.split(".", 1)[0].endsWith("api")
+    ) {
       this.webUrl = this.apiUrl.replace("/api", "");
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
@@ -240,7 +249,9 @@ export class Client {
   }
 
   private get headers(): { [header: string]: string } {
-    const headers: { [header: string]: string } = {};
+    const headers: { [header: string]: string } = {
+      "User-Agent": `langsmith-js/${__version__}`,
+    };
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
     }
@@ -310,14 +321,14 @@ export class Client {
   private async *_getCursorPaginatedList<T>(
     path: string,
     body: Record<string, any> | null = null,
-    requestMethod: string = "POST",
-    dataKey: string = "runs"
+    requestMethod = "POST",
+    dataKey = "runs"
   ): AsyncIterable<T[]> {
-    let bodyParams = body ? { ...body } : {};
+    const bodyParams = body ? { ...body } : {};
     while (true) {
       const response = await this.caller.call(fetch, `${this.apiUrl}${path}`, {
         method: requestMethod,
-        headers: this.headers,
+        headers: { ...this.headers, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         body: JSON.stringify(bodyParams),
       });
@@ -343,7 +354,9 @@ export class Client {
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const extra = run.extra ?? {};
+    const metadata = extra.metadata;
     const runtimeEnv = await getRuntimeEnvironment();
+    const envVars = getLangChainEnvVarsMetadata();
     const session_name = run.project_name;
     delete run.project_name;
     const runCreate: RunCreate = {
@@ -354,6 +367,13 @@ export class Client {
         runtime: {
           ...runtimeEnv,
           ...extra.runtime,
+        },
+        metadata: {
+          ...envVars,
+          ...(envVars.revision_id || run.revision_id
+            ? { revision_id: run.revision_id ?? envVars.revision_id }
+            : {}),
+          ...metadata,
         },
       },
     };
@@ -512,7 +532,10 @@ export class Client {
       limit,
     };
 
-    for await (const runs of this._getCursorPaginatedList<Run>("/runs", body)) {
+    for await (const runs of this._getCursorPaginatedList<Run>(
+      "/runs/query",
+      body
+    )) {
       yield* runs;
     }
   }
@@ -1280,7 +1303,12 @@ export class Client {
     {
       sourceInfo,
       loadChildRuns,
-    }: { sourceInfo?: KVMap; loadChildRuns: boolean } = { loadChildRuns: false }
+      referenceExample,
+    }: {
+      sourceInfo?: KVMap;
+      loadChildRuns: boolean;
+      referenceExample?: Example;
+    } = { loadChildRuns: false }
   ): Promise<Feedback> {
     let run_: Run;
     if (typeof run === "string") {
@@ -1290,7 +1318,6 @@ export class Client {
     } else {
       throw new Error(`Invalid run type: ${typeof run}`);
     }
-    let referenceExample: Example | undefined = undefined;
     if (
       run_.reference_example_id !== null &&
       run_.reference_example_id !== undefined
@@ -1302,13 +1329,15 @@ export class Client {
     if (feedbackResult.evaluatorInfo) {
       sourceInfo_ = { ...sourceInfo_, ...feedbackResult.evaluatorInfo };
     }
-    return await this.createFeedback(run_.id, feedbackResult.key, {
-      score: feedbackResult.score,
-      value: feedbackResult.value,
-      comment: feedbackResult.comment,
-      correction: feedbackResult.correction,
+    const runId = feedbackResult.targetRunId ?? run_.id;
+    return await this.createFeedback(runId, feedbackResult.key, {
+      score: feedbackResult?.score,
+      value: feedbackResult?.value,
+      comment: feedbackResult?.comment,
+      correction: feedbackResult?.correction,
       sourceInfo: sourceInfo_,
       feedbackSourceType: "model",
+      sourceRunId: feedbackResult?.sourceRunId,
     });
   }
 
