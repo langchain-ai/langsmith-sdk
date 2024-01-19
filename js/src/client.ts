@@ -23,7 +23,11 @@ import {
   convertLangChainMessageToExample,
   isLangChainMessage,
 } from "./utils/messages.js";
-import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
+import {
+  getEnvironmentVariable,
+  getLangChainEnvVarsMetadata,
+  getRuntimeEnvironment,
+} from "./utils/env.js";
 
 import { RunEvaluator } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
@@ -99,6 +103,7 @@ interface CreateRunParams {
   child_runs?: RunCreate[];
   parent_run_id?: string;
   project_name?: string;
+  revision_id?: string;
 }
 
 interface projectOptions {
@@ -349,7 +354,9 @@ export class Client {
   public async createRun(run: CreateRunParams): Promise<void> {
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const extra = run.extra ?? {};
+    const metadata = extra.metadata;
     const runtimeEnv = await getRuntimeEnvironment();
+    const envVars = getLangChainEnvVarsMetadata();
     const session_name = run.project_name;
     delete run.project_name;
     const runCreate: RunCreate = {
@@ -360,6 +367,13 @@ export class Client {
         runtime: {
           ...runtimeEnv,
           ...extra.runtime,
+        },
+        metadata: {
+          ...envVars,
+          ...(envVars.revision_id || run.revision_id
+            ? { revision_id: run.revision_id ?? envVars.revision_id }
+            : {}),
+          ...metadata,
         },
       },
     };

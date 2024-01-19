@@ -507,6 +507,56 @@ test("Test create run with masked inputs/outputs", async () => {
   expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
 }, 10000);
 
+test("Test create run with revision id", async () => {
+  const langchainClient = new Client({
+    apiUrl: "http://localhost:1984",
+  });
+  // eslint-disable-next-line no-process-env
+  process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
+  // eslint-disable-next-line no-process-env
+  process.env.LANGCHAIN_API_KEY = "fake_api_key";
+  // eslint-disable-next-line no-process-env
+  process.env.LANGCHAIN_OTHER_KEY = "test_other_key";
+  const projectName = "__test_create_run_with_revision_id";
+  const projects = langchainClient.listProjects();
+  for await (const project of projects) {
+    if (project.name === projectName) {
+      await langchainClient.deleteProject({ projectName });
+    }
+  }
+  const runId = "0cc29488-3b1b-4151-9476-30b5c1b24883";
+  await langchainClient.createRun({
+    id: runId,
+    project_name: projectName,
+    name: "test_run",
+    run_type: "llm",
+    inputs: { prompt: "hello world" },
+    outputs: { generation: "hi there" },
+    start_time: new Date().getTime(),
+    end_time: new Date().getTime(),
+  });
+
+  const runId2 = "82f19ed3-256f-4571-a078-2ccf11d0eba3";
+  await langchainClient.createRun({
+    id: runId2,
+    project_name: projectName,
+    name: "test_run_2",
+    run_type: "llm",
+    inputs: { messages: "hello world 2" },
+    start_time: new Date().getTime(),
+    revision_id: "different_revision_id",
+  });
+
+  const run1 = await langchainClient.readRun(runId);
+  expect(run1.extra?.metadata?.revision_id).toEqual("test_revision_id");
+  expect(run1.extra?.metadata.LANGCHAIN_OTHER_KEY).toEqual("test_other_key");
+  expect(run1.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
+  const run2 = await langchainClient.readRun(runId2);
+  expect(run2.extra?.metadata?.revision_id).toEqual("different_revision_id");
+  expect(run2.extra?.metadata.LANGCHAIN_OTHER_KEY).toEqual("test_other_key");
+  expect(run2.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
+}, 10000);
+
 describe("createChatExample", () => {
   it("should convert LangChainBaseMessage objects to examples", async () => {
     const langchainClient = new Client({
