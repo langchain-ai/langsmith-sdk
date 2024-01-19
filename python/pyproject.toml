@@ -45,6 +45,7 @@ types-psutil = "^5.9.5.16"
 psutil = "^5.9.5"
 freezegun = "^1.2.2"
 pytest-subtests = "^0.11.0"
+pytest-watcher = "^0.3.4"
 
 
 [build-system]
