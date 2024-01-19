@@ -23,9 +23,13 @@ services:
     ports:
       - 1984:1984
     depends_on:
-      - langchain-db
-      - langchain-redis
-      - clickhouse-setup
+      langchain-db:
+        condition: service_healthy
+      langchain-redis:
+        condition: service_healthy
+      clickhouse-setup:
+        condition: service_completed_successfully
+    restart: always
   langchain-queue:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
     environment:
@@ -33,6 +37,14 @@ services:
       - LOG_LEVEL=warning
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
     entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker --connection-class lc_database.queue.connection.RedisRetry --job-class lc_database.queue.job.AsyncJob"
+    depends_on:
+      langchain-db:
+        condition: service_healthy
+      langchain-redis:
+        condition: service_healthy
+      clickhouse-setup:
+        condition: service_completed_successfully
+    restart: always
   langchain-hub:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
     environment:
@@ -62,12 +74,22 @@ services:
       - langchain-db-data:/var/lib/postgresql/data
     ports:
       - 5433:5432
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   langchain-redis:
     image: redis:7
     ports:
       - 63791:6379
     volumes:
       - langchain-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   langchain-clickhouse:
     image: clickhouse/clickhouse-server:23.9
     user: "101:101"
@@ -82,12 +104,23 @@ services:
     ports:
       - 8124:8123
       - 9001:9000
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   clickhouse-setup:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
     depends_on:
-      - langchain-clickhouse
+      langchain-clickhouse:
+        condition: service_healthy
     restart: "no"
-    entrypoint: [ "bash", "-c", "sleep 60 && migrate -source file://clickhouse/migrations -database 'clickhouse://langchain-clickhouse:9000?username=default&password=password&database=default&x-multi-statement=true&x-migrations-table-engine=MergeTree' up"]
+    entrypoint:
+      [
+        "bash",
+        "-c",
+        "migrate -source file://clickhouse/migrations -database 'clickhouse://langchain-clickhouse:9000?username=default&password=password&database=default&x-multi-statement=true&x-migrations-table-engine=MergeTree' up",
+      ]
 volumes:
   langchain-db-data:
   langchain-redis-data:
