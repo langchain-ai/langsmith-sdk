@@ -200,6 +200,7 @@ export interface Example extends BaseExample {
   id: string;
   created_at: string;
   modified_at: string;
+  source_run_id?: string;
   runs: Run[];
 }
 

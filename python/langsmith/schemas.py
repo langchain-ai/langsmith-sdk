@@ -65,6 +65,7 @@ class Example(ExampleBase):
     created_at: datetime
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
+    source_run_id: Optional[UUID] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
 

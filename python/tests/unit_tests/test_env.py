@@ -6,6 +6,7 @@ _EXPECTED = [
     "get_docker_compose_version",
     "get_docker_environment",
     "get_docker_version",
+    "get_langchain_env_var_metadata",
     "get_langchain_env_vars",
     "get_langchain_environment",
     "get_release_shas",
