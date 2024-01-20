@@ -5,7 +5,7 @@ import random
 import string
 import time
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, cast
 from uuid import uuid4
 
 import pytest
@@ -483,7 +483,7 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
         raise ValueError("Runs not created in time")
     assert len(runs) == 2
     # Write all the assertions here
-    runs = sorted(runs, key=lambda x: x.dotted_order)
+    runs = sorted(runs, key=lambda x: cast(str, x.dotted_order))
     assert len(runs) == 2
 
     # Assert inputs and outputs of run 1

@@ -722,6 +722,8 @@ class Client:
             run_create = run.dict()  # type: ignore
         else:
             run_create = cast(dict, run)
+        if isinstance(run["id"], str):
+            run["id"] = uuid.UUID(run["id"])
         if "inputs" in run_create:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
         if "outputs" in run_create:
@@ -830,10 +832,10 @@ class Client:
     def batch_ingest_runs(
         self,
         create: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
         ] = None,
         update: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
         ] = None,
     ):
         """
