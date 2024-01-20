@@ -1,8 +1,11 @@
 """Test the LangSmith client."""
 import asyncio
+import gc
 import json
 import os
+import time
 import uuid
+import weakref
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -193,6 +196,31 @@ def test_create_run_unicode() -> None:
             "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
         )
         client.update_run(id_, status="completed")
+
+
+class CallTracker:
+    def __init__(self) -> None:
+        self.counter = 0
+
+    def __call__(self, *args: object, **kwargs: object) -> None:
+        self.counter += 1
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_client_gc(auto_batch_tracing: bool) -> None:
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    del client
+    time.sleep(1)  # Give the background thread time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])

@@ -13,6 +13,7 @@ import os
 import random
 import signal
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -347,7 +348,7 @@ class Client:
 
             signal.signal(signal.SIGINT, functools.partial(signal_exit, exit_event))
             threading.Thread(
-                target=_tracing_thread_func, args=(self, exit_event)
+                target=_tracing_thread_func, args=(weakref.ref(self), exit_event)
             ).start()
         else:
             self.tracing_queue = None
@@ -3085,34 +3086,54 @@ class Client:
         )
 
 
-def _tracing_thread_func(client: Client, exit_event: threading.Event) -> None:
+def _tracing_thread_drain_queue(
+    tracing_queue: Queue, limit: Optional[int] = None
+) -> List[Tuple[str, dict]]:
+    next_batch: List[Tuple[str, dict]] = []
+    try:
+        while item := tracing_queue.get(block=True, timeout=0.25):
+            next_batch.append(item)
+            if limit and len(next_batch) >= limit:
+                break
+    except Empty:
+        pass
+    return next_batch
+
+
+def _tracing_thread_handle_batch(
+    client: Client, tracing_queue: Queue, batch: List[Tuple[str, dict]]
+) -> None:
+    create = [item[1] for item in batch if item[0] == "create"]
+    update = [item[1] for item in batch if item[0] == "update"]
+    try:
+        client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+    finally:
+        for _ in batch:
+            tracing_queue.task_done()
+
+
+def _tracing_thread_func(
+    client_ref: weakref.ref[Client], exit_event: threading.Event
+) -> None:
+    client = client_ref()
+    if client is None:
+        return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
 
-    def drain_queue(limit: Optional[int] = None) -> List[Tuple[str, dict]]:
-        next_batch: List[Tuple[str, dict]] = []
-        try:
-            while item := tracing_queue.get(block=True, timeout=0.25):
-                next_batch.append(item)
-                if limit and len(next_batch) >= limit:
-                    break
-        except Empty:
-            pass
-        return next_batch
+    # loop until
+    while (
+        # we receive a signal to exit
+        not exit_event.is_set()
+        # or the main thread dies
+        and threading.main_thread().is_alive()
+        # or we're the only remaining reference to the client
+        and sys.getrefcount(client) > 3
+        # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
+    ):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, 100):
+            _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
-    def handle_batch(batch: List[Tuple[str, dict]]) -> None:
-        create = [item[1] for item in batch if item[0] == "create"]
-        update = [item[1] for item in batch if item[0] == "update"]
-        try:
-            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
-        finally:
-            for _ in batch:
-                tracing_queue.task_done()
-
-    # loop until we receive a signal to exit or the main thread dies
-    while not exit_event.is_set() and threading.main_thread().is_alive():
-        if next_batch := drain_queue(100):
-            handle_batch(next_batch)
     # drain the queue on exit
-    if next_batch := drain_queue():
-        handle_batch(next_batch)
+    if next_batch := _tracing_thread_drain_queue(tracing_queue):
+        _tracing_thread_handle_batch(client, tracing_queue, next_batch)
