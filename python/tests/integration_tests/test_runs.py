@@ -72,13 +72,15 @@ def test_nested_runs(
 
     my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
-    for _ in range(5):
+    for _ in range(15):
         try:
             runs = list(langchain_client.list_runs(project_name=project_name))
             assert len(runs) == 3
             break
         except (ls_utils.LangSmithError, AssertionError):
             time.sleep(1)
+    else:
+        raise AssertionError("Failed to get runs after 15 attempts.")
     assert len(runs) == 3
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
