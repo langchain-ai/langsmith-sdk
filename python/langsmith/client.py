@@ -217,7 +217,8 @@ def _get_tracing_sampling_rate() -> float | None:
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
-            "LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set"
+            "LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set."
+            f" Got: {sampling_rate}"
         )
     return sampling_rate
 
