@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import random
-import signal
 import socket
 import sys
 import threading
@@ -185,10 +184,6 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
-def signal_exit(event: threading.Event, signum: int, frame: Any) -> None:
-    event.set()
-
-
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """Verify API key is provided if url not localhost.
 
@@ -344,11 +339,12 @@ class Client:
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[Queue] = Queue()
-            exit_event = threading.Event()
 
-            signal.signal(signal.SIGINT, functools.partial(signal_exit, exit_event))
             threading.Thread(
-                target=_tracing_thread_func, args=(weakref.ref(self), exit_event)
+                target=_tracing_thread_func,
+                # arg must be a weakref to self to avoid the Thread object
+                # preventing garbage collection of the Client object
+                args=(weakref.ref(self),),
             ).start()
         else:
             self.tracing_queue = None
@@ -835,6 +831,7 @@ class Client:
             return
         if (
             self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
@@ -866,6 +863,7 @@ class Client:
         update: Optional[
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
         ] = None,
+        *,
         pre_sampled: bool = False,
     ):
         """
@@ -878,6 +876,9 @@ class Client:
             update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
                 A sequence of `Run` objects or equivalent dictionaries representing
                 runs that have already been created and should be updated / patched.
+            pre_sampled (bool, optional): Whether the runs have already been subject
+                to sampling, and therefore should not be sampled again.
+                Defaults to False.
 
         Returns:
             None: If both `create` and `update` are None.
@@ -907,6 +908,16 @@ class Client:
                 else:
                     standalone_updates.append(run)
             update_dicts = standalone_updates
+        for run in create_dicts:
+            if not run.get("trace_id") or not run.get("dotted_order"):
+                raise ls_utils.LangSmithUserError(
+                    "Batch ingest requires trace_id and dotted_order to be set."
+                )
+        for run in update_dicts:
+            if not run.get("trace_id") or not run.get("dotted_order"):
+                raise ls_utils.LangSmithUserError(
+                    "Batch ingest requires trace_id and dotted_order to be set."
+                )
         # filter out runs that are not sampled
         if pre_sampled:
             body = {
@@ -991,6 +1002,7 @@ class Client:
             data["events"] = events
         if (
             self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
         ):
@@ -3112,9 +3124,7 @@ def _tracing_thread_handle_batch(
             tracing_queue.task_done()
 
 
-def _tracing_thread_func(
-    client_ref: weakref.ref[Client], exit_event: threading.Event
-) -> None:
+def _tracing_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
         return
@@ -3123,10 +3133,8 @@ def _tracing_thread_func(
 
     # loop until
     while (
-        # we receive a signal to exit
-        not exit_event.is_set()
-        # or the main thread dies
-        and threading.main_thread().is_alive()
+        # the main thread dies
+        threading.main_thread().is_alive()
         # or we're the only remaining reference to the client
         and sys.getrefcount(client) > 3
         # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
