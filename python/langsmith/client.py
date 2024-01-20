@@ -986,6 +986,7 @@ class Client:
         data: Dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "trace_id": kwargs.pop("trace_id", None),
+            "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),
         }
         if not self._filter_for_sampling([data], patch=True):
