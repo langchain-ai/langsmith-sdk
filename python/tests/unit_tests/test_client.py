@@ -195,8 +195,15 @@ def test_create_run_unicode() -> None:
         client.update_run(id_, status="completed")
 
 
-def test_create_run_includes_langchain_env_var_metadata() -> None:
-    client = Client(api_url="http://localhost:1984", api_key="123")
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_create_run_includes_langchain_env_var_metadata(
+    auto_batch_tracing: bool
+) -> None:
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+    )
     inputs = {
         "foo": "これは私の友達です",
         "bar": "این یک کتاب است",
@@ -212,13 +219,32 @@ def test_create_run_includes_langchain_env_var_metadata() -> None:
         ls_env.get_langchain_env_var_metadata.cache_clear()
         with patch.object(client, "session", session):
             id_ = uuid.uuid4()
+            start_time = datetime.now()
             client.create_run(
-                "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
+                "my_run",
+                inputs=inputs,
+                run_type="llm",
+                execution_order=1,
+                id=id_,
+                trace_id=id_,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
+                start_time=start_time,
             )
+            if auto_batch_tracing:
+                client.tracing_queue.join()
             # Check the posted value in the request
             posted_value = json.loads(session.request.call_args[1]["data"])
-            assert posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"] == "abcd2234"
-            assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
+            if not auto_batch_tracing:
+                assert (
+                    posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"]
+                    == "abcd2234"
+                )
+                assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
+            else:
+                assert (
+                    posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
+                    == "abcd2234"
+                )
 
 
 @pytest.mark.parametrize("source_type", ["api", "model"])
