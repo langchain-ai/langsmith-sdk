@@ -197,7 +197,7 @@ def test_create_run_unicode() -> None:
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 def test_create_run_includes_langchain_env_var_metadata(
-    auto_batch_tracing: bool
+    auto_batch_tracing: bool,
 ) -> None:
     client = Client(
         api_url="http://localhost:1984",
@@ -230,8 +230,8 @@ def test_create_run_includes_langchain_env_var_metadata(
                 dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
                 start_time=start_time,
             )
-            if auto_batch_tracing:
-                client.tracing_queue.join()
+            if tracing_queue := client.tracing_queue:
+                tracing_queue.join()
             # Check the posted value in the request
             posted_value = json.loads(session.request.call_args[1]["data"])
             if not auto_batch_tracing:

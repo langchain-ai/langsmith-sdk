@@ -184,6 +184,10 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
+def signal_exit(event: threading.Event, signum: int, frame: Any) -> None:
+    event.set()
+
+
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """Verify API key is provided if url not localhost.
 
@@ -285,7 +289,6 @@ class Client:
         "tracing_sample_rate",
         "_sampled_post_uuids",
         "tracing_queue",
-        "tracing_thread",
     ]
 
     def __init__(
@@ -339,20 +342,15 @@ class Client:
         weakref.finalize(self, close_session, self.session)
         # Initialize auto batching
         if auto_batch_tracing:
-            self.tracing_queue: Queue = Queue()
+            self.tracing_queue: Optional[Queue] = Queue()
             exit_event = threading.Event()
 
-            def signal_exit(signum: int, frame: Any) -> None:
-                exit_event.set()
-
-            signal.signal(signal.SIGINT, signal_exit)
-            self.tracing_thread = threading.Thread(
-                target=self._tracing_thread_func, args=(exit_event,)
-            )
-            self.tracing_thread.start()
+            signal.signal(signal.SIGINT, functools.partial(signal_exit, exit_event))
+            threading.Thread(
+                target=_tracing_thread_func, args=(self, exit_event)
+            ).start()
         else:
             self.tracing_queue = None
-            self.tracing_thread = None
 
         # Mount the HTTPAdapter with the retry configuration
         adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
@@ -361,35 +359,6 @@ class Client:
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
-
-    def _tracing_thread_func(self, exit_event: threading.Event) -> None:
-        def drain_queue(limit: Optional[int] = None) -> List[Tuple[str, dict]]:
-            next_batch: List[Tuple[str, dict]] = []
-            try:
-                while item := self.tracing_queue.get(block=True, timeout=0.25):
-                    next_batch.append(item)
-                    if limit and len(next_batch) >= limit:
-                        break
-            except Empty:
-                pass
-            return next_batch
-
-        def handle_batch(batch: List[Tuple[str, dict]]) -> None:
-            create = [item[1] for item in batch if item[0] == "create"]
-            update = [item[1] for item in batch if item[0] == "update"]
-            try:
-                self.batch_ingest_runs(create=create, update=update, pre_sampled=True)
-            finally:
-                for _ in batch:
-                    self.tracing_queue.task_done()
-
-        # loop until we receive a signal to exit or the main thread dies
-        while not exit_event.is_set() and threading.main_thread().is_alive():
-            if next_batch := drain_queue(100):
-                handle_batch(next_batch)
-        # drain the queue on exit
-        if next_batch := drain_queue():
-            handle_batch(next_batch)
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -3114,3 +3083,36 @@ class Client:
             input_mapper=input_mapper,
             revision_id=revision_id,
         )
+
+
+def _tracing_thread_func(client: Client, exit_event: threading.Event) -> None:
+    tracing_queue = client.tracing_queue
+    assert tracing_queue is not None
+
+    def drain_queue(limit: Optional[int] = None) -> List[Tuple[str, dict]]:
+        next_batch: List[Tuple[str, dict]] = []
+        try:
+            while item := tracing_queue.get(block=True, timeout=0.25):
+                next_batch.append(item)
+                if limit and len(next_batch) >= limit:
+                    break
+        except Empty:
+            pass
+        return next_batch
+
+    def handle_batch(batch: List[Tuple[str, dict]]) -> None:
+        create = [item[1] for item in batch if item[0] == "create"]
+        update = [item[1] for item in batch if item[0] == "update"]
+        try:
+            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+        finally:
+            for _ in batch:
+                tracing_queue.task_done()
+
+    # loop until we receive a signal to exit or the main thread dies
+    while not exit_event.is_set() and threading.main_thread().is_alive():
+        if next_batch := drain_queue(100):
+            handle_batch(next_batch)
+    # drain the queue on exit
+    if next_batch := drain_queue():
+        handle_batch(next_batch)
