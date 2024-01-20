@@ -38,6 +38,7 @@ import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
 
+import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -236,7 +237,7 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
         if api_url is not None
         else os.getenv(
             "LANGCHAIN_ENDPOINT",
-            "https://api.smith.langchain.com" if api_key else "http://localhost:1984",
+            "https://api.smith.langchain.com",
         )
     )
     if not _api_url.strip():
@@ -298,7 +299,7 @@ class Client:
         ----------
         api_url : str or None, default=None
             URL for the LangSmith API. Defaults to the LANGCHAIN_ENDPOINT
-            environment variable or http://localhost:1984 if not set.
+            environment variable or https://api.smith.langchain.com if not set.
         api_key : str or None, default=None
             API key for the LangSmith API. Defaults to the LANGCHAIN_API_KEY
             environment variable.
@@ -387,7 +388,7 @@ class Client:
         Dict[str, str]
             The headers for the API request.
         """
-        headers = {}
+        headers = {"User-Agent": f"langsmith-py/{langsmith.__version__}"}
         if self.api_key:
             headers["x-api-key"] = self.api_key
         return headers
@@ -714,7 +715,7 @@ class Client:
             **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
         )
 
-    def _hide_run_io(
+    def _run_transform(
         self, run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict]
     ) -> dict:
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
@@ -731,8 +732,15 @@ class Client:
         runtime_env = ls_env.get_runtime_and_metrics()
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
-            runtime = run_extra.setdefault("runtime", {})
+            # update runtime
+            runtime: dict = run_extra.setdefault("runtime", {})
             run_extra["runtime"] = {**runtime_env, **runtime}
+            # update metadata
+            metadata: dict = run_extra.setdefault("metadata", {})
+            langchain_metadata = ls_env.get_langchain_env_var_metadata()
+            metadata.update(
+                {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            )
 
     def _filter_for_sampling(
         self, runs: Iterable[dict], *, patch: bool = False
@@ -801,7 +809,7 @@ class Client:
             "execution_order": execution_order if execution_order is not None else 1,
         }
 
-        run_create = self._hide_run_io(run_create)
+        run_create = self._run_transform(run_create)
         self._insert_runtime_env([run_create])
         headers = {
             **self._headers,
@@ -852,22 +860,29 @@ class Client:
 
         if not create and not update:
             return
-        headers = {
-            **self._headers,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-
+        # transform and convert to dicts
+        create_dicts = [self._run_transform(run) for run in create or []]
+        update_dicts = [self._run_transform(run) for run in update or []]
+        # combine post and patch dicts where possible
+        if update_dicts and create_dicts:
+            create_by_id = {run["id"]: run for run in create_dicts}
+            standalone_updates: list[dict] = []
+            for run in update_dicts:
+                if run["id"] in create_by_id:
+                    create_by_id[run["id"]].update(
+                        {k: v for k, v in run.items() if v is not None}
+                    )
+                else:
+                    standalone_updates.append(run)
+            update_dicts = standalone_updates
+        # filter out runs that are not sampled
         body = {
-            "post": self._filter_for_sampling(
-                self._hide_run_io(run) for run in create or []
-            ),
-            "patch": self._filter_for_sampling(
-                (self._hide_run_io(run) for run in update or []), patch=True
-            ),
+            "post": self._filter_for_sampling(create_dicts),
+            "patch": self._filter_for_sampling(update_dicts, patch=True),
         }
         if not body["post"] and not body["patch"]:
             return
+
         self._insert_runtime_env(body["post"])
 
         self.request_with_retries(
@@ -875,8 +890,12 @@ class Client:
             f"{self.api_url}/runs/batch",
             request_kwargs={
                 "data": json.dumps(body, default=_serialize_json),
-                "headers": headers,
                 "timeout": self.timeout_ms / 1000,
+                "headers": {
+                    **self._headers,
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
             },
         )
 
@@ -2745,6 +2764,7 @@ class Client:
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
+        revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Asynchronously run the Chain or language model on a dataset
@@ -2767,6 +2787,8 @@ class Client:
                 your model needs to deserialize more complex schema or if your dataset
                 has inputs with keys that differ from what is expected by your chain
                 or agent.
+            revision_id: Optional revision identifier to assign this test run to
+                track the performance of different versions of your system.
 
         Returns:
             A dictionary containing the run's project name and the
@@ -2868,6 +2890,7 @@ class Client:
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
+            revision_id=revision_id,
         )
 
     def run_on_dataset(
@@ -2882,6 +2905,7 @@ class Client:
         verbose: bool = False,
         tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
+        revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the Chain or language model on a dataset and store traces
@@ -2905,6 +2929,8 @@ class Client:
                 your model needs to deserialize more complex schema or if your dataset
                 has inputs with keys that differ from what is expected by your chain
                 or agent.
+            revision_id: Optional revision identifier to assign this test run to
+                track the performance of different versions of your system.
 
         Returns:
             A dictionary containing the run's project name and the resulting model outputs.
@@ -3006,4 +3032,5 @@ class Client:
             verbose=verbose,
             tags=tags,
             input_mapper=input_mapper,
+            revision_id=revision_id,
         )

@@ -104,5 +104,7 @@ jobs:
         run: yarn install --immutable
       - name: Build
         run: yarn run build
+      - name: Check version
+        run: yarn run check-version
       - name: Test
         run: yarn run test
