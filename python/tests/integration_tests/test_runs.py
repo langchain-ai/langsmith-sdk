@@ -80,7 +80,7 @@ def test_nested_runs(
         except (ls_utils.LangSmithError, AssertionError):
             time.sleep(1)
     else:
-        raise AssertionError("Failed to get runs after 5 attempts.")
+        raise AssertionError("Failed to get runs after 15 attempts.")
     assert len(runs) == 3
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
