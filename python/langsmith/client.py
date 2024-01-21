@@ -3156,5 +3156,5 @@ def _tracing_thread_func(client_ref: weakref.ref[Client]) -> None:
             _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
     # drain the queue on exit
-    if next_batch := _tracing_thread_drain_queue(tracing_queue):
+    while next_batch := _tracing_thread_drain_queue(tracing_queue, 100):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
