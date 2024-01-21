@@ -17,7 +17,8 @@ import threading
 import time
 import uuid
 import weakref
-from queue import Empty, Queue
+from dataclasses import dataclass, field
+from queue import Empty, PriorityQueue, Queue
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -269,6 +270,13 @@ def _as_uuid(value: ID_TYPE, var: str) -> uuid.UUID:
         ) from e
 
 
+@dataclass(order=True)
+class TracingQueueItem:
+    priority: str
+    action: str
+    item: Any = field(compare=False)
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -338,7 +346,7 @@ class Client:
         weakref.finalize(self, close_session, self.session)
         # Initialize auto batching
         if auto_batch_tracing:
-            self.tracing_queue: Optional[Queue] = Queue()
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
                 target=_tracing_thread_func,
@@ -835,7 +843,9 @@ class Client:
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            return self.tracing_queue.put(("create", run_create))
+            return self.tracing_queue.put(
+                TracingQueueItem(run_create["dotted_order"], "create", run_create)
+            )
 
         run_create = self._run_transform(run_create)
         self._insert_runtime_env([run_create])
@@ -1007,7 +1017,9 @@ class Client:
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
         ):
-            return self.tracing_queue.put(("update", data))
+            return self.tracing_queue.put(
+                TracingQueueItem(data["dotted_order"], "update", data)
+            )
 
         self.request_with_retries(
             "patch",
@@ -3101,8 +3113,8 @@ class Client:
 
 def _tracing_thread_drain_queue(
     tracing_queue: Queue, limit: Optional[int] = None
-) -> List[Tuple[str, dict]]:
-    next_batch: List[Tuple[str, dict]] = []
+) -> List[TracingQueueItem]:
+    next_batch: List[TracingQueueItem] = []
     try:
         while item := tracing_queue.get(block=True, timeout=0.25):
             next_batch.append(item)
@@ -3114,10 +3126,10 @@ def _tracing_thread_drain_queue(
 
 
 def _tracing_thread_handle_batch(
-    client: Client, tracing_queue: Queue, batch: List[Tuple[str, dict]]
+    client: Client, tracing_queue: Queue, batch: List[TracingQueueItem]
 ) -> None:
-    create = [item[1] for item in batch if item[0] == "create"]
-    update = [item[1] for item in batch if item[0] == "update"]
+    create = [it.item for it in batch if it.action == "create"]
+    update = [it.item for it in batch if it.action == "update"]
     try:
         client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     finally:
@@ -3140,7 +3152,7 @@ def _tracing_thread_func(client_ref: weakref.ref[Client]) -> None:
         and sys.getrefcount(client) > 3
         # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, 250):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, 100):
             _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
     # drain the queue on exit
