@@ -453,6 +453,10 @@ class Client:
         LangSmithError
             If the request fails.
         """
+        retry_on_ = tuple(
+            *(retry_on or []),
+            *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
+        )
         for idx in range(stop_after_attempt):
             try:
                 try:
@@ -506,7 +510,7 @@ class Client:
                     raise ls_utils.LangSmithError(
                         f"Failed to {request_method} {url} in LangSmith API. {emsg}"
                     ) from e
-            except tuple(retry_on or []):
+            except retry_on_:
                 if idx + 1 == stop_after_attempt:
                     raise
                 sleep_time = 2**idx + (random.random() * 0.5)
