@@ -453,7 +453,8 @@ class Client:
         LangSmithError
             If the request fails.
         """
-        retry_on_ = tuple(
+
+        retry_on_: Tuple[Type[BaseException], ...] = (
             *(retry_on or []),
             *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
         )
