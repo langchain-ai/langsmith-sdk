@@ -10,12 +10,15 @@ from datetime import datetime
 from io import BytesIO
 from typing import Optional
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 from pydantic import BaseModel
+from requests import HTTPError
 
 import langsmith.env as ls_env
+import langsmith.utils as ls_utils
 from langsmith.client import (
     Client,
     _get_api_key,
@@ -25,7 +28,6 @@ from langsmith.client import (
     _serialize_json,
 )
 from langsmith.schemas import Example
-from langsmith.utils import LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -45,7 +47,7 @@ def test__is_langchain_hosted() -> None:
 
 def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    with pytest.raises(LangSmithUserError, match="API key must be provided"):
+    with pytest.raises(ls_utils.LangSmithUserError, match="API key must be provided"):
         Client(api_url="https://api.smith.langchain.com")
     client = Client(api_url="http://localhost:1984")
     assert client.api_url == "http://localhost:1984"
@@ -175,7 +177,7 @@ def test_get_api_url() -> None:
     with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None, None) == "http://env.url"
 
-    with pytest.raises(LangSmithUserError):
+    with pytest.raises(ls_utils.LangSmithUserError):
         _get_api_url(" ", "api_key")
 
 
@@ -350,3 +352,68 @@ def test_host_url() -> None:
 
     client = Client(api_url="https://api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://smith.langchain.com"
+
+
+@patch("langsmith.client.time.sleep")
+def test_retry_on_connection_error(mock_sleep):
+    client = Client(api_key="test")
+    with patch.object(client, "session") as mock_session:
+        mock_session.request.side_effect = requests.ConnectionError()
+
+        with pytest.raises(ls_utils.LangSmithConnectionError):
+            client.request_with_retries(
+                "GET", "https://test.url", {}, stop_after_attempt=2
+            )
+        assert mock_session.request.call_count == 2
+
+
+@patch("langsmith.client.time.sleep")
+def test_http_status_500_handling(mock_sleep):
+    client = Client(api_key="test")
+    with patch.object(client, "session") as mock_session:
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = HTTPError()
+        mock_session.request.return_value = mock_response
+
+        with pytest.raises(ls_utils.LangSmithAPIError):
+            client.request_with_retries(
+                "GET", "https://test.url", {}, stop_after_attempt=2
+            )
+        assert mock_session.request.call_count == 2
+
+
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_http_status_429_handling(mock_raise_for_status):
+    client = Client(api_key="test")
+    with patch.object(client, "session") as mock_session:
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_session.request.return_value = mock_response
+        mock_raise_for_status.side_effect = HTTPError()
+        with pytest.raises(ls_utils.LangSmithRateLimitError):
+            client.request_with_retries("GET", "https://test.url", {})
+
+
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_http_status_401_handling(mock_raise_for_status):
+    client = Client(api_key="test")
+    with patch.object(client, "session") as mock_session:
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_session.request.return_value = mock_response
+        mock_raise_for_status.side_effect = HTTPError()
+        with pytest.raises(ls_utils.LangSmithAuthError):
+            client.request_with_retries("GET", "https://test.url", {})
+
+
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_http_status_404_handling(mock_raise_for_status):
+    client = Client(api_key="test")
+    with patch.object(client, "session") as mock_session:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_session.request.return_value = mock_response
+        mock_raise_for_status.side_effect = HTTPError()
+        with pytest.raises(ls_utils.LangSmithNotFoundError):
+            client.request_with_retries("GET", "https://test.url", {})
