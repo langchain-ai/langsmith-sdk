@@ -425,6 +425,7 @@ class Client:
         request_kwargs: Mapping,
         stop_after_attempt: int = 1,
         retry_on: Optional[Sequence[Type[BaseException]]] = None,
+        to_ignore: Optional[Sequence[Type[BaseException]]] = None,
     ) -> requests.Response:
         """Send a request with retries.
 
@@ -436,6 +437,13 @@ class Client:
             The URL to send the request to.
         request_kwargs : Mapping
             Additional request parameters.
+        stop_after_attempt : int, default=1
+            The number of attempts to make.
+        retry_on : Sequence[Type[BaseException]] or None, default=None
+            The exceptions to retry on. In addition to:
+            [LangSmithConnectionError, LangSmithAPIError].
+        to_ignore : Sequence[Type[BaseException]] or None, default=None
+            The exceptions to ignore / pass on.
 
         Returns
         -------
@@ -458,6 +466,8 @@ class Client:
             *(retry_on or []),
             *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
         )
+        to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
+        response = None
         for idx in range(stop_after_attempt):
             try:
                 try:
@@ -486,6 +496,10 @@ class Client:
                             raise ls_utils.LangSmithNotFoundError(
                                 f"Resource not found for {url}. {repr(e)}"
                             )
+                        elif response.status_code == 409:
+                            raise ls_utils.LangSmithConflictError(
+                                f"Conflict for {url}. {repr(e)}"
+                            )
                         else:
                             raise ls_utils.LangSmithError(
                                 f"Failed to {request_method} {url} in LangSmith"
@@ -511,6 +525,11 @@ class Client:
                     raise ls_utils.LangSmithError(
                         f"Failed to {request_method} {url} in LangSmith API. {emsg}"
                     ) from e
+            except to_ignore_ as e:
+                if response is not None:
+                    logger.debug("Passing on exception %s", e)
+                    return response
+                # Else we still raise an error
             except retry_on_:
                 if idx + 1 == stop_after_attempt:
                     raise
@@ -868,6 +887,7 @@ class Client:
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
+            to_ignore=(ls_utils.LangSmithConflictError,),
         )
 
     def batch_ingest_runs(
@@ -961,6 +981,7 @@ class Client:
                     "Content-Type": "application/json",
                 },
             },
+            to_ignore=(ls_utils.LangSmithConflictError,),
         )
 
     def update_run(
