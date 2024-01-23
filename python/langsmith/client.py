@@ -747,6 +747,8 @@ class Client:
         metadata.update(
             {k: v for k, v in langchain_metadata.items() if k not in metadata}
         )
+        if "revision_id" in kwargs:
+            metadata["revision_id"] = kwargs["revision_id"]
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {
             **self._headers,
