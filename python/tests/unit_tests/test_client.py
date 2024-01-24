@@ -383,6 +383,26 @@ def test_http_status_500_handling(mock_sleep):
         assert mock_session.request.call_count == 2
 
 
+@patch("langsmith.client.time.sleep")
+def test_pass_on_409_handling(mock_sleep):
+    client = Client(api_key="test")
+    with patch.object(client, "session") as mock_session:
+        mock_response = MagicMock()
+        mock_response.status_code = 409
+        mock_response.raise_for_status.side_effect = HTTPError()
+        mock_session.request.return_value = mock_response
+
+        response = client.request_with_retries(
+            "GET",
+            "https://test.url",
+            {},
+            stop_after_attempt=5,
+            to_ignore=[ls_utils.LangSmithConflictError],
+        )
+        assert mock_session.request.call_count == 1
+        assert response == mock_response
+
+
 @patch("langsmith.client.ls_utils.raise_for_status_with_text")
 def test_http_status_429_handling(mock_raise_for_status):
     client = Client(api_key="test")
