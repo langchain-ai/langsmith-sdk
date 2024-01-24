@@ -198,7 +198,7 @@ export class Client {
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     this.validateApiKeyIfHosted();
-    this.timeout_ms = config.timeout_ms ?? 4000;
+    this.timeout_ms = config.timeout_ms ?? 12_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
