@@ -729,6 +729,7 @@ class Client:
                 ls_utils.get_tracer_project(),
             ),
         )
+        revision_id = kwargs.pop("revision_id", None)
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -747,8 +748,8 @@ class Client:
         metadata.update(
             {k: v for k, v in langchain_metadata.items() if k not in metadata}
         )
-        if "revision_id" in kwargs:
-            metadata["revision_id"] = kwargs["revision_id"]
+        if revision_id is not None:
+            metadata["revision_id"] = revision_id
         run_extra["runtime"] = {**runtime_env, **runtime}
         headers = {
             **self._headers,
