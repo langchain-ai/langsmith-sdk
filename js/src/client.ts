@@ -38,6 +38,8 @@ interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
+  hideInputs?: boolean;
+  hideOutputs?: boolean;
 }
 
 interface ListRunsParams {
@@ -158,20 +160,6 @@ function trimQuotes(str?: string): string | undefined {
     .replace(/^'(.*)'$/, "$1");
 }
 
-function hideInputs(inputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true") {
-    return {};
-  }
-  return inputs;
-}
-
-function hideOutputs(outputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true") {
-    return {};
-  }
-  return outputs;
-}
-
 function assertUuid(str: string): void {
   if (!uuid.validate(str)) {
     throw new Error(`Invalid UUID: ${str}`);
@@ -191,6 +179,10 @@ export class Client {
 
   private _tenantId: string | null = null;
 
+  private hideInputs?: boolean;
+
+  private hideOutputs?: boolean;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -200,21 +192,31 @@ export class Client {
     this.validateApiKeyIfHosted();
     this.timeout_ms = config.timeout_ms ?? 4000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
+    this.hideOutputs = config.hideOutputs ?? defaultConfig.hideOutputs;
   }
 
   public static getDefaultClientConfig(): {
     apiUrl: string;
     apiKey?: string;
     webUrl?: string;
+    hideInputs?: boolean;
+    hideOutputs?: boolean;
   } {
     const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
     const apiUrl =
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
       "https://api.smith.langchain.com";
+    const hideInputs =
+      getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true";
+    const hideOutputs =
+      getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
       webUrl: undefined,
+      hideInputs: hideInputs,
+      hideOutputs: hideOutputs,
     };
   }
 
@@ -256,6 +258,20 @@ export class Client {
       headers["x-api-key"] = `${this.apiKey}`;
     }
     return headers;
+  }
+
+  private processInputs(inputs: KVMap): KVMap {
+    if (this.hideInputs) {
+      return {};
+    }
+    return inputs;
+  }
+
+  private processOutputs(outputs: KVMap): KVMap {
+    if (this.hideOutputs) {
+      return {};
+    }
+    return outputs;
   }
 
   private async _getResponse(
@@ -377,9 +393,9 @@ export class Client {
         },
       },
     };
-    runCreate.inputs = hideInputs(runCreate.inputs);
+    runCreate.inputs = this.processInputs(runCreate.inputs);
     if (runCreate.outputs) {
-      runCreate.outputs = hideOutputs(runCreate.outputs);
+      runCreate.outputs = this.processOutputs(runCreate.outputs);
     }
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
@@ -394,11 +410,11 @@ export class Client {
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
-      run.inputs = hideInputs(run.inputs);
+      run.inputs = this.processInputs(run.inputs);
     }
 
     if (run.outputs) {
-      run.outputs = hideOutputs(run.outputs);
+      run.outputs = this.processOutputs(run.outputs);
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
