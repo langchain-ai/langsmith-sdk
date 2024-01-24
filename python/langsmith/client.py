@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import collections
-import concurrent
 import datetime
 import functools
 import importlib
@@ -1875,7 +1874,7 @@ class Client:
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        max_concurrency: int = 10,
+        **kwargs: Any,
     ) -> None:
         """Create examples in a dataset.
 
@@ -1889,8 +1888,6 @@ class Client:
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
             The name of the dataset to create the examples in.
-        max_concurrency : int, default=10
-            The maximum number of concurrent requests to make.
 
         Returns
         -------
@@ -1906,18 +1903,21 @@ class Client:
 
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        examples = [
+            {
+                "inputs": in_,
+                "outputs": out_,
+                "dataset_id": dataset_id,
+            }
+            for in_, out_ in zip(inputs, outputs or [None] * len(inputs))
+        ]
 
-        max_concurrency = min(max_concurrency, len(inputs))
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_concurrency
-        ) as executor:
-            for input_data, output_data in zip(inputs, outputs or [None] * len(inputs)):
-                executor.submit(
-                    self.create_example,
-                    inputs=input_data,
-                    outputs=output_data,
-                    dataset_id=dataset_id,
-                )
+        response = self.session.post(
+            f"{self.api_url}/examples/bulk",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=json.dumps(examples, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
