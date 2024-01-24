@@ -338,7 +338,7 @@ class Client:
         self.api_url = _get_api_url(api_url, self.api_key)
         _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
-        self.timeout_ms = timeout_ms or 10000
+        self.timeout_ms = timeout_ms or 12_000
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
