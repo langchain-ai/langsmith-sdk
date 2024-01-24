@@ -193,7 +193,7 @@ export interface RunUpdate {
 
 export interface ExampleCreate extends BaseExample {
   id?: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface Example extends BaseExample {

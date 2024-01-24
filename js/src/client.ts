@@ -198,7 +198,7 @@ export class Client {
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     this.validateApiKeyIfHosted();
-    this.timeout_ms = config.timeout_ms ?? 4000;
+    this.timeout_ms = config.timeout_ms ?? 12_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
   }
 
@@ -1167,7 +1167,7 @@ export class Client {
       dataset_id: datasetId_,
       inputs,
       outputs,
-      created_at: createdAt_.toISOString(),
+      created_at: createdAt_?.toISOString(),
       id: exampleId,
     };
 
@@ -1186,6 +1186,63 @@ export class Client {
 
     const result = await response.json();
     return result as Example;
+  }
+
+  public async createExamples(props: {
+    inputs: Array<KVMap>;
+    outputs?: Array<KVMap>;
+    sourceRunIds?: Array<string>;
+    exampleIds?: Array<string>;
+    datasetId?: string;
+    datasetName?: string;
+  }): Promise<Example[]> {
+    const {
+      inputs,
+      outputs,
+      sourceRunIds,
+      exampleIds,
+      datasetId,
+      datasetName,
+    } = props;
+    let datasetId_ = datasetId;
+    if (datasetId_ === undefined && datasetName === undefined) {
+      throw new Error("Must provide either datasetName or datasetId");
+    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId_ === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    }
+
+    const formattedExamples = inputs.map((input, idx) => {
+      return {
+        dataset_id: datasetId_,
+        inputs: input,
+        outputs: outputs ? outputs[idx] : undefined,
+        id: exampleIds ? exampleIds[idx] : undefined,
+        source_run_id: sourceRunIds ? sourceRunIds[idx] : undefined,
+      };
+    });
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/examples/bulk`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(formattedExamples),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create examples: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+    return result as Example[];
   }
 
   public async createLLMExample(
