@@ -3170,6 +3170,10 @@ def _tracing_thread_handle_batch(
             tracing_queue.task_done()
 
 
+_AUTO_SCALE_UP_QSIZE_TRIGGER = 1000
+_AUTO_SCALE_UP_NTHREADS_LIMIT = 16
+
+
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
@@ -3190,7 +3194,10 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         for thread in sub_threads:
             if not thread.is_alive():
                 sub_threads.remove(thread)
-        if tracing_queue.qsize() > 1000:
+        if (
+            len(sub_threads) < _AUTO_SCALE_UP_NTHREADS_LIMIT
+            and tracing_queue.qsize() > _AUTO_SCALE_UP_QSIZE_TRIGGER
+        ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func, args=(weakref.ref(client),)
             )
