@@ -209,7 +209,7 @@ class CallTracker:
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
-def test_client_gc(auto_batch_tracing: bool) -> None:
+def test_client_gc_empty(auto_batch_tracing: bool) -> None:
     client = Client(
         api_url="http://localhost:1984",
         api_key="123",
@@ -223,6 +223,122 @@ def test_client_gc(auto_batch_tracing: bool) -> None:
     time.sleep(1)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_client_gc(auto_batch_tracing: bool) -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    for _ in range(10):
+        id = uuid.uuid4()
+        client.create_run(
+            "my_run",
+            inputs={},
+            run_type="llm",
+            execution_order=1,
+            id=id,
+            trace_id=id,
+            dotted_order=id,
+        )
+
+    if auto_batch_tracing:
+        assert client.tracing_queue
+        client.tracing_queue.join()
+
+        request_calls = [call for call in session.request.mock_calls if call.args]
+        assert len(request_calls) == 1
+        for call in request_calls:
+            assert call.args[0] == "post"
+            assert call.args[1] == "http://localhost:1984/runs/batch"
+    else:
+        request_calls = [call for call in session.request.mock_calls if call.args]
+        assert len(request_calls) == 10
+        for call in request_calls:
+            assert call.args[0] == "post"
+            assert call.args[1] == "http://localhost:1984/runs"
+
+    del client
+    time.sleep(1)  # Give the background thread time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    # because no trace_id/dotted_order provided, auto batch is disabled
+    for _ in range(10):
+        client.create_run(
+            "my_run", inputs={}, run_type="llm", execution_order=1, id=uuid.uuid4()
+        )
+    request_calls = [call for call in session.request.mock_calls if call.args]
+    assert len(request_calls) == 10
+    for call in request_calls:
+        assert call.args[0] == "post"
+        assert call.args[1] == "http://localhost:1984/runs"
+
+    del client
+    time.sleep(1)  # Give the background thread time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+
+def test_client_gc_after_autoscale() -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    tracing_queue = client.tracing_queue
+    assert tracing_queue is not None
+
+    for _ in range(50_000):
+        id = uuid.uuid4()
+        client.create_run(
+            "my_run",
+            inputs={},
+            run_type="llm",
+            execution_order=1,
+            id=id,
+            trace_id=id,
+            dotted_order=id,
+        )
+
+    del client
+    tracing_queue.join()
+    time.sleep(2)  # Give the background threads time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+    request_calls = [call for call in session.request.mock_calls if call.args]
+    assert len(request_calls) >= 500 and len(request_calls) <= 550
+    for call in request_calls:
+        assert call.args[0] == "post"
+        assert call.args[1] == "http://localhost:1984/runs/batch"
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
