@@ -60,6 +60,13 @@ def is_traceable_function(func: Callable) -> bool:
     )
 
 
+def is_async(func: Callable) -> bool:
+    """Inspect function or wrapped function to see if it is async."""
+    return inspect.iscoroutinefunction(func) or (
+        hasattr(func, "__wrapped__") and inspect.iscoroutinefunction(func.__wrapped__)
+    )
+
+
 def _get_inputs(
     signature: inspect.Signature, *args: Any, **kwargs: Any
 ) -> Dict[str, Any]:
@@ -483,9 +490,12 @@ def traceable(
 
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper
-        elif inspect.iscoroutinefunction(func):
-            selected_wrapper = async_wrapper
-        elif inspect.isgeneratorfunction(func):
+        elif is_async(func):
+            if reduce_fn:
+                selected_wrapper = async_generator_wrapper
+            else:
+                selected_wrapper = async_wrapper
+        elif reduce_fn or inspect.isgeneratorfunction(func):
             selected_wrapper = generator_wrapper
         else:
             selected_wrapper = wrapper
@@ -599,7 +609,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         ) -> None:
             wrapped: Optional[Callable[[Input], Output]] = None
             awrapped = self._wrap_async(afunc)
-            if inspect.iscoroutinefunction(func):
+            if is_async(func):
                 if awrapped is not None:
                     raise TypeError(
                         "Func was provided as a coroutine function, but afunc was "
