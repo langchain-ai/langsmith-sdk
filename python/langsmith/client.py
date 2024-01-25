@@ -3180,7 +3180,6 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         and sys.getrefcount(client) > 3 + len(sub_threads)
         # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     ):
-        print("im looping", tracing_queue.qsize())
         for thread in sub_threads:
             if not thread.is_alive():
                 sub_threads.remove(thread)
