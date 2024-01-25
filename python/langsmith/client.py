@@ -3172,6 +3172,7 @@ def _tracing_thread_handle_batch(
 
 _AUTO_SCALE_UP_QSIZE_TRIGGER = 1000
 _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
+_AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
@@ -3225,7 +3226,7 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
         # the main thread dies
         threading.main_thread().is_alive()
         # or we've seen the queue empty 4 times in a row
-        and seen_successive_empty_queues < 5
+        and seen_successive_empty_queues <= _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue):
             seen_successive_empty_queues = 0
