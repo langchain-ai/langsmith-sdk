@@ -3143,13 +3143,13 @@ def _tracing_thread_drain_queue(
     next_batch: List[TracingQueueItem] = []
     try:
         # wait 250ms for the first item, then
-        # - drain the queue with a 10ms block timeout
+        # - drain the queue with a 50ms block timeout
         # - stop draining if we hit the limit
         # shorter drain timeout is used instead of non-blocking calls to
         # avoid creating too many small batches
         if item := tracing_queue.get(block=block, timeout=0.25):
             next_batch.append(item)
-        while item := tracing_queue.get(block=block, timeout=0.01):
+        while item := tracing_queue.get(block=block, timeout=0.05):
             next_batch.append(item)
             if limit and len(next_batch) >= limit:
                 break
