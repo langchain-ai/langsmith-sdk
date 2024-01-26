@@ -191,7 +191,7 @@ function assertUuid(str: string): void {
 function prepareRunCreateOrUpdateInputs(run: RunCreate): RunCreate;
 function prepareRunCreateOrUpdateInputs(run: RunUpdate): RunUpdate;
 function prepareRunCreateOrUpdateInputs(run: RunCreate | RunUpdate) {
-  let runParams = { ...run };
+  const runParams = { ...run };
   if (runParams.inputs !== undefined) {
     runParams.inputs = hideInputs(runParams.inputs);
   }
@@ -445,8 +445,8 @@ export class Client {
     }
 
     if (patch) {
-      let sampled = [];
-      for (let run of runs) {
+      const sampled = [];
+      for (const run of runs) {
         if (this.sampledPostUuids.has(run.id)) {
           sampled.push(run);
           this.sampledPostUuids.delete(run.id);
@@ -454,8 +454,8 @@ export class Client {
       }
       return sampled;
     } else {
-      let sampled = [];
-      for (let run of runs) {
+      const sampled = [];
+      for (const run of runs) {
         if (Math.random() < this.tracingSampleRate) {
           sampled.push(run);
           this.sampledPostUuids.add(run.id);
@@ -505,12 +505,12 @@ export class Client {
     if (this.pendingAutoBatchedRuns.length > 0) {
       if (!this.autoBatchTimeout) {
         this.autoBatchTimeout = setTimeout(
-          this.triggerAutoBatchSend,
+          () => void this.triggerAutoBatchSend,
           this.autoBatchInitialDelayMs
         );
       } else {
         this.autoBatchTimeout = setTimeout(
-          this.triggerAutoBatchSend,
+          () => void this.triggerAutoBatchSend,
           this.autoBatchAggregationDelayMs
         );
       }
