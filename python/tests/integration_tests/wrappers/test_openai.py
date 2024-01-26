@@ -1,4 +1,4 @@
-# mypy: disable-error-code="attr-defined, union-attr, arg-type"
+# mypy: disable-error-code="attr-defined, union-attr, arg-type, call-overload"
 import time
 from unittest import mock
 

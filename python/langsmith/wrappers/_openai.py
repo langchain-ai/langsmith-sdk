@@ -84,7 +84,7 @@ def patch_openai(client: C) -> C:
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create, "ChatOpenAI", _reduce_chat
     )
-    client.completions.create = _get_wrapper(
+    client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create, "OpenAI", _reduce_completions
-    )  # type: ignore[method-assign]
+    )
     return client
