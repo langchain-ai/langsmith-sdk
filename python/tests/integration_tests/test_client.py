@@ -168,6 +168,7 @@ def test_persist_update_run(
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
+        assert stored_run.extra
         assert stored_run.extra["metadata"]["revision_id"] == str(revision_id)
     finally:
         langchain_client.delete_project(project_name=project_name)
