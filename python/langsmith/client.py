@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import collections
-import concurrent
 import datetime
 import functools
 import importlib
@@ -304,7 +303,7 @@ class Client:
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
-        auto_batch_tracing: bool = True,
+        auto_batch_tracing: bool = False,
     ) -> None:
         """Initialize a Client instance.
 
@@ -764,14 +763,17 @@ class Client:
             **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
         )
 
+    @staticmethod
     def _run_transform(
-        self, run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict]
+        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict]
     ) -> dict:
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create = run.dict()  # type: ignore
         else:
             run_create = cast(dict, run)
-        if isinstance(run["id"], str):
+        if "id" not in run_create:
+            run_create["id"] = uuid.uuid4()
+        elif isinstance(run["id"], str):
             run["id"] = uuid.UUID(run["id"])
         if "inputs" in run_create:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
@@ -779,7 +781,8 @@ class Client:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
         return run_create
 
-    def _insert_runtime_env(self, runs: Sequence[dict]) -> None:
+    @staticmethod
+    def _insert_runtime_env(runs: Sequence[dict]) -> None:
         runtime_env = ls_env.get_runtime_and_metrics()
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
@@ -851,6 +854,7 @@ class Client:
             # if the project is not provided, use the environment's project
             ls_utils.get_tracer_project(),
         )
+        revision_id = kwargs.pop("revision_id", None)
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -861,6 +865,12 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
+
+        run_create = self._run_transform(run_create)
+        self._insert_runtime_env([run_create])
+
+        if revision_id is not None:
+            run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
@@ -871,8 +881,6 @@ class Client:
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
 
-        run_create = self._run_transform(run_create)
-        self._insert_runtime_env([run_create])
         headers = {
             **self._headers,
             "Accept": "application/json",
@@ -2113,7 +2121,7 @@ class Client:
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
-        max_concurrency: int = 10,
+        **kwargs: Any,
     ) -> None:
         """Create examples in a dataset.
 
@@ -2127,8 +2135,6 @@ class Client:
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
             The name of the dataset to create the examples in.
-        max_concurrency : int, default=10
-            The maximum number of concurrent requests to make.
 
         Returns
         -------
@@ -2144,18 +2150,21 @@ class Client:
 
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        examples = [
+            {
+                "inputs": in_,
+                "outputs": out_,
+                "dataset_id": dataset_id,
+            }
+            for in_, out_ in zip(inputs, outputs or [None] * len(inputs))
+        ]
 
-        max_concurrency = min(max_concurrency, len(inputs))
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_concurrency
-        ) as executor:
-            for input_data, output_data in zip(inputs, outputs or [None] * len(inputs)):
-                executor.submit(
-                    self.create_example,
-                    inputs=input_data,
-                    outputs=output_data,
-                    dataset_id=dataset_id,
-                )
+        response = self.session.post(
+            f"{self.api_url}/examples/bulk",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=json.dumps(examples, default=_serialize_json),
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(

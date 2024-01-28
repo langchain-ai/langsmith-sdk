@@ -11,9 +11,7 @@ async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
 
 test("Test post and patch run", async () => {
   const projectName = `__test_run_tree`;
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+  const langchainClient = new Client({});
   const projects = await toArray(langchainClient.listProjects());
   if (projects.map((project) => project.name).includes(projectName)) {
     await langchainClient.deleteProject({ projectName });

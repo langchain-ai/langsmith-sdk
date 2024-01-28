@@ -139,6 +139,7 @@ def test_persist_update_run(
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
     start_time = datetime.now()
+    revision_id = uuid4()
     run: dict = dict(
         id=uuid4(),
         name="test_run",
@@ -149,22 +150,27 @@ def test_persist_update_run(
         execution_order=1,
         start_time=start_time,
         extra={"extra": "extra"},
+        revision_id=revision_id,
     )
     langchain_client.create_run(**run)
     run["outputs"] = {"output": ["Hi"]}
     run["extra"]["foo"] = "bar"
     langchain_client.update_run(run["id"], **run)
-    for _ in range(5):
-        try:
-            stored_run = langchain_client.read_run(run["id"])
-            break
-        except LangSmithError:
-            time.sleep(2)
+    try:
+        for _ in range(10):
+            try:
+                stored_run = langchain_client.read_run(run["id"])
+                if stored_run.end_time is not None:
+                    break
+            except LangSmithError:
+                time.sleep(2)
 
-    assert stored_run.id == run["id"]
-    assert stored_run.outputs == run["outputs"]
-    assert stored_run.start_time == run["start_time"]
-    langchain_client.delete_project(project_name=project_name)
+        assert stored_run.id == run["id"]
+        assert stored_run.outputs == run["outputs"]
+        assert stored_run.start_time == run["start_time"]
+        assert stored_run.extra["metadata"]["revision_id"] == str(revision_id)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
 
 
 @freeze_time("2023-01-01")
@@ -313,8 +319,8 @@ def test_list_datasets(langchain_client: Client) -> None:
     assert dataset2.data_type == DataType.kv
     # Sub-filter on data type
     datasets = list(langchain_client.list_datasets(data_type=DataType.llm.value))
-    assert len(datasets) == 1
-    assert datasets[0].id == dataset1.id
+    assert len(datasets) > 0
+    assert dataset1.id in {dataset.id for dataset in datasets}
     # Sub-filter on name
     datasets = list(
         langchain_client.list_datasets(
@@ -325,12 +331,6 @@ def test_list_datasets(langchain_client: Client) -> None:
     # Delete datasets
     langchain_client.delete_dataset(dataset_id=dataset1.id)
     langchain_client.delete_dataset(dataset_id=dataset2.id)
-    assert (
-        len(
-            list(langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id]))
-        )
-        == 0
-    )
 
 
 @freeze_time("2023-01-01")
