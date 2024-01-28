@@ -12,15 +12,20 @@ import logging
 import os
 import random
 import socket
+import sys
+import threading
 import time
 import uuid
 import weakref
+from dataclasses import dataclass, field
+from queue import Empty, PriorityQueue, Queue
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
     DefaultDict,
     Dict,
+    Iterable,
     Iterator,
     List,
     Mapping,
@@ -221,6 +226,26 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
             )
 
 
+def _get_tracing_sampling_rate() -> float | None:
+    """Get the tracing sampling rate.
+
+    Returns
+    -------
+    float
+        The tracing sampling rate.
+    """
+    sampling_rate_str = os.getenv("LANGCHAIN_TRACING_SAMPLING_RATE")
+    if sampling_rate_str is None:
+        return None
+    sampling_rate = float(sampling_rate_str)
+    if sampling_rate < 0 or sampling_rate > 1:
+        raise ls_utils.LangSmithUserError(
+            "LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set."
+            f" Got: {sampling_rate}"
+        )
+    return sampling_rate
+
+
 def _get_api_key(api_key: Optional[str]) -> Optional[str]:
     api_key = api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
     if api_key is None or not api_key.strip():
@@ -263,6 +288,13 @@ def _as_uuid(value: ID_TYPE, var: str) -> uuid.UUID:
         ) from e
 
 
+@dataclass(order=True)
+class TracingQueueItem:
+    priority: str
+    action: str
+    item: Any = field(compare=False)
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -276,6 +308,9 @@ class Client:
         "_get_data_type_cached",
         "_web_url",
         "_tenant_id",
+        "tracing_sample_rate",
+        "_sampled_post_uuids",
+        "tracing_queue",
     ]
 
     def __init__(
@@ -287,6 +322,7 @@ class Client:
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
+        auto_batch_tracing: bool = False,
     ) -> None:
         """Initialize a Client instance.
 
@@ -314,16 +350,30 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
+        self.tracing_sample_rate = _get_tracing_sampling_rate()
+        self._sampled_post_uuids: set[uuid.UUID] = set()
         self.api_key = _get_api_key(api_key)
         self.api_url = _get_api_url(api_url, self.api_key)
         _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
-        self.timeout_ms = timeout_ms or 7000
+        self.timeout_ms = timeout_ms or 10000
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
         self.session = session if session else requests.Session()
         weakref.finalize(self, close_session, self.session)
+        # Initialize auto batching
+        if auto_batch_tracing:
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
+
+            threading.Thread(
+                target=_tracing_thread_func,
+                # arg must be a weakref to self to avoid the Thread object
+                # preventing garbage collection of the Client object
+                args=(weakref.ref(self),),
+            ).start()
+        else:
+            self.tracing_queue = None
 
         # Mount the HTTPAdapter with the retry configuration
         adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
@@ -393,6 +443,7 @@ class Client:
         request_kwargs: Mapping,
         stop_after_attempt: int = 1,
         retry_on: Optional[Sequence[Type[BaseException]]] = None,
+        to_ignore: Optional[Sequence[Type[BaseException]]] = None,
     ) -> requests.Response:
         """Send a request with retries.
 
@@ -404,6 +455,13 @@ class Client:
             The URL to send the request to.
         request_kwargs : Mapping
             Additional request parameters.
+        stop_after_attempt : int, default=1
+            The number of attempts to make.
+        retry_on : Sequence[Type[BaseException]] or None, default=None
+            The exceptions to retry on. In addition to:
+            [LangSmithConnectionError, LangSmithAPIError].
+        to_ignore : Sequence[Type[BaseException]] or None, default=None
+            The exceptions to ignore / pass on.
 
         Returns
         -------
@@ -421,6 +479,13 @@ class Client:
         LangSmithError
             If the request fails.
         """
+
+        retry_on_: Tuple[Type[BaseException], ...] = (
+            *(retry_on or []),
+            *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
+        )
+        to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
+        response = None
         for idx in range(stop_after_attempt):
             try:
                 try:
@@ -449,6 +514,10 @@ class Client:
                             raise ls_utils.LangSmithNotFoundError(
                                 f"Resource not found for {url}. {repr(e)}"
                             )
+                        elif response.status_code == 409:
+                            raise ls_utils.LangSmithConflictError(
+                                f"Conflict for {url}. {repr(e)}"
+                            )
                         else:
                             raise ls_utils.LangSmithError(
                                 f"Failed to {request_method} {url} in LangSmith"
@@ -474,7 +543,12 @@ class Client:
                     raise ls_utils.LangSmithError(
                         f"Failed to {request_method} {url} in LangSmith API. {emsg}"
                     ) from e
-            except tuple(retry_on or []):
+            except to_ignore_ as e:
+                if response is not None:
+                    logger.debug("Passing on exception %s", e)
+                    return response
+                # Else we still raise an error
+            except retry_on_:
                 if idx + 1 == stop_after_attempt:
                     raise
                 sleep_time = 2**idx + (random.random() * 0.5)
@@ -708,6 +782,60 @@ class Client:
             **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
         )
 
+    @staticmethod
+    def _run_transform(
+        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict]
+    ) -> dict:
+        if hasattr(run, "dict") and callable(getattr(run, "dict")):
+            run_create = run.dict()  # type: ignore
+        else:
+            run_create = cast(dict, run)
+        if "id" not in run_create:
+            run_create["id"] = uuid.uuid4()
+        elif isinstance(run["id"], str):
+            run["id"] = uuid.UUID(run["id"])
+        if "inputs" in run_create:
+            run_create["inputs"] = _hide_inputs(run_create["inputs"])
+        if "outputs" in run_create:
+            run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        return run_create
+
+    @staticmethod
+    def _insert_runtime_env(runs: Sequence[dict]) -> None:
+        runtime_env = ls_env.get_runtime_and_metrics()
+        for run_create in runs:
+            run_extra = cast(dict, run_create.setdefault("extra", {}))
+            # update runtime
+            runtime: dict = run_extra.setdefault("runtime", {})
+            run_extra["runtime"] = {**runtime_env, **runtime}
+            # update metadata
+            metadata: dict = run_extra.setdefault("metadata", {})
+            langchain_metadata = ls_env.get_langchain_env_var_metadata()
+            metadata.update(
+                {k: v for k, v in langchain_metadata.items() if k not in metadata}
+            )
+
+    def _filter_for_sampling(
+        self, runs: Iterable[dict], *, patch: bool = False
+    ) -> list[dict]:
+        if self.tracing_sample_rate is None:
+            return list(runs)
+
+        if patch:
+            sampled = []
+            for run in runs:
+                if run["id"] in self._sampled_post_uuids:
+                    sampled.append(run)
+                    self._sampled_post_uuids.remove(run["id"])
+            return sampled
+        else:
+            sampled = []
+            for run in runs:
+                if random.random() < self.tracing_sample_rate:
+                    sampled.append(run)
+                    self._sampled_post_uuids.add(run["id"])
+            return sampled
+
     def create_run(
         self,
         name: str,
@@ -715,6 +843,7 @@ class Client:
         run_type: str,
         *,
         execution_order: Optional[int] = None,
+        project_name: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -739,41 +868,44 @@ class Client:
         LangSmithUserError
             If the API key is not provided when using the hosted service.
         """
-        project_name = kwargs.pop(
-            "project_name",
-            kwargs.pop(
-                "session_name",
-                # if the project is not provided, use the environment's project
-                ls_utils.get_tracer_project(),
-            ),
+        project_name = project_name or kwargs.pop(
+            "session_name",
+            # if the project is not provided, use the environment's project
+            ls_utils.get_tracer_project(),
         )
         revision_id = kwargs.pop("revision_id", None)
         run_create = {
             **kwargs,
             "session_name": project_name,
             "name": name,
-            "inputs": _hide_inputs(inputs),
+            "inputs": inputs,
             "run_type": run_type,
             "execution_order": execution_order if execution_order is not None else 1,
         }
-        if "outputs" in run_create:
-            run_create["outputs"] = _hide_outputs(run_create["outputs"])
-        run_extra = cast(dict, run_create.setdefault("extra", {}))
-        runtime = run_extra.setdefault("runtime", {})
-        metadata: dict = run_extra.setdefault("metadata", {})
-        runtime_env = ls_env.get_runtime_and_metrics()
-        langchain_metadata = ls_env.get_langchain_env_var_metadata()
-        metadata.update(
-            {k: v for k, v in langchain_metadata.items() if k not in metadata}
-        )
+        if not self._filter_for_sampling([run_create]):
+            return
+
+        run_create = self._run_transform(run_create)
+        self._insert_runtime_env([run_create])
+
         if revision_id is not None:
-            metadata["revision_id"] = revision_id
-        run_extra["runtime"] = {**runtime_env, **runtime}
+            run_create["extra"]["metadata"]["revision_id"] = revision_id
+        if (
+            self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
+            and run_create.get("trace_id") is not None
+            and run_create.get("dotted_order") is not None
+        ):
+            return self.tracing_queue.put(
+                TracingQueueItem(run_create["dotted_order"], "create", run_create)
+            )
+
         headers = {
             **self._headers,
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs",
@@ -782,6 +914,101 @@ class Client:
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
+            to_ignore=(ls_utils.LangSmithConflictError,),
+        )
+
+    def batch_ingest_runs(
+        self,
+        create: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        update: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        *,
+        pre_sampled: bool = False,
+    ):
+        """
+        Batch ingest/upsert multiple runs in the Langsmith system.
+
+        Args:
+            create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs to be created / posted.
+            update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs that have already been created and should be updated / patched.
+            pre_sampled (bool, optional): Whether the runs have already been subject
+                to sampling, and therefore should not be sampled again.
+                Defaults to False.
+
+        Returns:
+            None: If both `create` and `update` are None.
+
+        Raises:
+            LangsmithAPIError: If there is an error in the API request.
+
+        Note:
+            - The run objects MUST contain the dotted_order and trace_id fields
+                to be accepted by the API.
+        """
+
+        if not create and not update:
+            return
+        # transform and convert to dicts
+        create_dicts = [self._run_transform(run) for run in create or []]
+        update_dicts = [self._run_transform(run) for run in update or []]
+        # combine post and patch dicts where possible
+        if update_dicts and create_dicts:
+            create_by_id = {run["id"]: run for run in create_dicts}
+            standalone_updates: list[dict] = []
+            for run in update_dicts:
+                if run["id"] in create_by_id:
+                    create_by_id[run["id"]].update(
+                        {k: v for k, v in run.items() if v is not None}
+                    )
+                else:
+                    standalone_updates.append(run)
+            update_dicts = standalone_updates
+        for run in create_dicts:
+            if not run.get("trace_id") or not run.get("dotted_order"):
+                raise ls_utils.LangSmithUserError(
+                    "Batch ingest requires trace_id and dotted_order to be set."
+                )
+        for run in update_dicts:
+            if not run.get("trace_id") or not run.get("dotted_order"):
+                raise ls_utils.LangSmithUserError(
+                    "Batch ingest requires trace_id and dotted_order to be set."
+                )
+        # filter out runs that are not sampled
+        if pre_sampled:
+            body = {
+                "post": create_dicts,
+                "patch": update_dicts,
+            }
+        else:
+            body = {
+                "post": self._filter_for_sampling(create_dicts),
+                "patch": self._filter_for_sampling(update_dicts, patch=True),
+            }
+        if not body["post"] and not body["patch"]:
+            return
+
+        self._insert_runtime_env(body["post"])
+
+        self.request_with_retries(
+            "post",
+            f"{self.api_url}/runs/batch",
+            request_kwargs={
+                "data": json.dumps(body, default=_serialize_json),
+                "timeout": self.timeout_ms / 1000,
+                "headers": {
+                    **self._headers,
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+            },
+            to_ignore=(ls_utils.LangSmithConflictError,),
         )
 
     def update_run(
@@ -819,7 +1046,14 @@ class Client:
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
-        data: Dict[str, Any] = {}
+        data: Dict[str, Any] = {
+            "id": _as_uuid(run_id, "run_id"),
+            "trace_id": kwargs.pop("trace_id", None),
+            "parent_run_id": kwargs.pop("parent_run_id", None),
+            "dotted_order": kwargs.pop("dotted_order", None),
+        }
+        if not self._filter_for_sampling([data], patch=True):
+            return
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
         if error is not None:
@@ -830,9 +1064,19 @@ class Client:
             data["outputs"] = _hide_outputs(outputs)
         if events is not None:
             data["events"] = events
+        if (
+            self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
+            and data["trace_id"] is not None
+            and data["dotted_order"] is not None
+        ):
+            return self.tracing_queue.put(
+                TracingQueueItem(data["dotted_order"], "update", data)
+            )
+
         self.request_with_retries(
             "patch",
-            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}",
+            f"{self.api_url}/runs/{data['id']}",
             request_kwargs={
                 "data": json.dumps(data, default=_serialize_json),
                 "headers": headers,
@@ -2919,3 +3163,52 @@ class Client:
             input_mapper=input_mapper,
             revision_id=revision_id,
         )
+
+
+def _tracing_thread_drain_queue(
+    tracing_queue: Queue, limit: Optional[int] = None
+) -> List[TracingQueueItem]:
+    next_batch: List[TracingQueueItem] = []
+    try:
+        while item := tracing_queue.get(block=True, timeout=0.25):
+            next_batch.append(item)
+            if limit and len(next_batch) >= limit:
+                break
+    except Empty:
+        pass
+    return next_batch
+
+
+def _tracing_thread_handle_batch(
+    client: Client, tracing_queue: Queue, batch: List[TracingQueueItem]
+) -> None:
+    create = [it.item for it in batch if it.action == "create"]
+    update = [it.item for it in batch if it.action == "update"]
+    try:
+        client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+    finally:
+        for _ in batch:
+            tracing_queue.task_done()
+
+
+def _tracing_thread_func(client_ref: weakref.ref[Client]) -> None:
+    client = client_ref()
+    if client is None:
+        return
+    tracing_queue = client.tracing_queue
+    assert tracing_queue is not None
+
+    # loop until
+    while (
+        # the main thread dies
+        threading.main_thread().is_alive()
+        # or we're the only remaining reference to the client
+        and sys.getrefcount(client) > 3
+        # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
+    ):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, 100):
+            _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+
+    # drain the queue on exit
+    while next_batch := _tracing_thread_drain_queue(tracing_queue, 100):
+        _tracing_thread_handle_batch(client, tracing_queue, next_batch)
