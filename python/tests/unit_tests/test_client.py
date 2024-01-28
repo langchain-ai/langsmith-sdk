@@ -7,10 +7,11 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from io import BytesIO
-from typing import Optional
+from typing import NamedTuple, Optional
 from unittest import mock
 from unittest.mock import patch
 
+import attr
 import dataclasses_json
 import pytest
 from pydantic import BaseModel
@@ -302,6 +303,9 @@ def test_serialize_json() -> None:
         foo: str
         bar: int
 
+        def something(self) -> None:
+            pass
+
     class MyEnum(str, Enum):
         FOO = "foo"
         BAR = "bar"
@@ -311,6 +315,11 @@ def test_serialize_json() -> None:
     class Person:
         name: str
 
+    @attr.dataclass
+    class AttrDict:
+        foo: str = attr.ib()
+        bar: int
+
     uid = uuid.uuid4()
     current_time = datetime.now()
 
@@ -319,6 +328,10 @@ def test_serialize_json() -> None:
 
         def __init__(self) -> None:
             self.person = Person(name="foo")
+
+    class MyNamedTuple(NamedTuple):
+        foo: str
+        bar: int
 
     to_serialize = {
         "uid": uid,
@@ -335,6 +348,8 @@ def test_serialize_json() -> None:
         "an_int": 1,
         "a_float": 1.1,
         "nested_class": NestedClass(),
+        "attr_dict": AttrDict(foo="foo", bar=1),
+        "named_tuple": MyNamedTuple(foo="foo", bar=1),
     }
 
     res = json.loads(json.dumps(to_serialize, default=_serialize_json))
@@ -353,6 +368,8 @@ def test_serialize_json() -> None:
         "an_int": 1,
         "a_float": 1.1,
         "nested_class": {"person": {"name": "foo"}},
+        "attr_dict": {"foo": "foo", "bar": 1},
+        "named_tuple": ["foo", 1],
     }
     assert res == expected
 
