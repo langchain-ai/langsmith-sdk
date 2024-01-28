@@ -308,6 +308,7 @@ def test_client_gc_after_autoscale() -> None:
         api_url="http://localhost:1984",
         api_key="123",
         session=session,
+        auto_batch_tracing=True,
     )
     tracker = CallTracker()
     weakref.finalize(client, tracker)
