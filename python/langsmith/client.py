@@ -771,7 +771,9 @@ class Client:
             run_create = run.dict()  # type: ignore
         else:
             run_create = cast(dict, run)
-        if isinstance(run["id"], str):
+        if "id" not in run_create:
+            run_create["id"] = uuid.uuid4()
+        elif isinstance(run["id"], str):
             run["id"] = uuid.UUID(run["id"])
         if "inputs" in run_create:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
