@@ -1,5 +1,6 @@
 """Test the LangSmith client."""
 import asyncio
+import dataclasses
 import gc
 import json
 import os
@@ -7,11 +8,14 @@ import time
 import uuid
 import weakref
 from datetime import datetime
+from enum import Enum
 from io import BytesIO
-from typing import Optional
+from typing import NamedTuple, Optional
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
+import attr
+import dataclasses_json
 import pytest
 import requests
 from pydantic import BaseModel
@@ -209,7 +213,7 @@ class CallTracker:
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
-def test_client_gc(auto_batch_tracing: bool) -> None:
+def test_client_gc_empty(auto_batch_tracing: bool) -> None:
     client = Client(
         api_url="http://localhost:1984",
         api_key="123",
@@ -223,6 +227,123 @@ def test_client_gc(auto_batch_tracing: bool) -> None:
     time.sleep(1)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_client_gc(auto_batch_tracing: bool) -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    for _ in range(10):
+        id = uuid.uuid4()
+        client.create_run(
+            "my_run",
+            inputs={},
+            run_type="llm",
+            execution_order=1,
+            id=id,
+            trace_id=id,
+            dotted_order=id,
+        )
+
+    if auto_batch_tracing:
+        assert client.tracing_queue
+        client.tracing_queue.join()
+
+        request_calls = [call for call in session.request.mock_calls if call.args]
+        assert len(request_calls) == 1
+        for call in request_calls:
+            assert call.args[0] == "post"
+            assert call.args[1] == "http://localhost:1984/runs/batch"
+    else:
+        request_calls = [call for call in session.request.mock_calls if call.args]
+        assert len(request_calls) == 10
+        for call in request_calls:
+            assert call.args[0] == "post"
+            assert call.args[1] == "http://localhost:1984/runs"
+
+    del client
+    time.sleep(1)  # Give the background thread time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    # because no trace_id/dotted_order provided, auto batch is disabled
+    for _ in range(10):
+        client.create_run(
+            "my_run", inputs={}, run_type="llm", execution_order=1, id=uuid.uuid4()
+        )
+    request_calls = [call for call in session.request.mock_calls if call.args]
+    assert len(request_calls) == 10
+    for call in request_calls:
+        assert call.args[0] == "post"
+        assert call.args[1] == "http://localhost:1984/runs"
+
+    del client
+    time.sleep(1)  # Give the background thread time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+
+def test_client_gc_after_autoscale() -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        auto_batch_tracing=True,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    tracing_queue = client.tracing_queue
+    assert tracing_queue is not None
+
+    for _ in range(50_000):
+        id = uuid.uuid4()
+        client.create_run(
+            "my_run",
+            inputs={},
+            run_type="llm",
+            execution_order=1,
+            id=id,
+            trace_id=id,
+            dotted_order=id,
+        )
+
+    del client
+    tracing_queue.join()
+    time.sleep(2)  # Give the background threads time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+    request_calls = [call for call in session.request.mock_calls if call.args]
+    assert len(request_calls) >= 500 and len(request_calls) <= 550
+    for call in request_calls:
+        assert call.args[0] == "post"
+        assert call.args[1] == "http://localhost:1984/runs/batch"
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
@@ -331,6 +452,99 @@ def test_pydantic_serialize() -> None:
     obj2 = {"output": obj}
     res2 = json.loads(json.dumps(obj2, default=_serialize_json))
     assert res2 == {"output": expected}
+
+
+def test_serialize_json() -> None:
+    class MyClass:
+        def __init__(self, x: int) -> None:
+            self.x = x
+            self.y = "y"
+
+    class MyClassWithSlots:
+        __slots__ = ["x", "y"]
+
+        def __init__(self, x: int) -> None:
+            self.x = x
+            self.y = "y"
+
+    class MyPydantic(BaseModel):
+        foo: str
+        bar: int
+
+    @dataclasses.dataclass
+    class MyDataclass:
+        foo: str
+        bar: int
+
+        def something(self) -> None:
+            pass
+
+    class MyEnum(str, Enum):
+        FOO = "foo"
+        BAR = "bar"
+
+    @dataclasses_json.dataclass_json
+    @dataclasses.dataclass
+    class Person:
+        name: str
+
+    @attr.dataclass
+    class AttrDict:
+        foo: str = attr.ib()
+        bar: int
+
+    uid = uuid.uuid4()
+    current_time = datetime.now()
+
+    class NestedClass:
+        __slots__ = ["person"]
+
+        def __init__(self) -> None:
+            self.person = Person(name="foo")
+
+    class MyNamedTuple(NamedTuple):
+        foo: str
+        bar: int
+
+    to_serialize = {
+        "uid": uid,
+        "time": current_time,
+        "my_class": MyClass(1),
+        "my_slotted_class": MyClassWithSlots(1),
+        "my_dataclass": MyDataclass("foo", 1),
+        "my_enum": MyEnum.FOO,
+        "my_pydantic": MyPydantic(foo="foo", bar=1),
+        "person": Person(name="foo"),
+        "a_bool": True,
+        "a_none": None,
+        "a_str": "foo",
+        "an_int": 1,
+        "a_float": 1.1,
+        "nested_class": NestedClass(),
+        "attr_dict": AttrDict(foo="foo", bar=1),
+        "named_tuple": MyNamedTuple(foo="foo", bar=1),
+    }
+
+    res = json.loads(json.dumps(to_serialize, default=_serialize_json))
+    expected = {
+        "uid": str(uid),
+        "time": current_time.isoformat(),
+        "my_class": {"x": 1, "y": "y"},
+        "my_slotted_class": {"x": 1, "y": "y"},
+        "my_dataclass": {"foo": "foo", "bar": 1},
+        "my_enum": "foo",
+        "my_pydantic": {"foo": "foo", "bar": 1},
+        "person": {"name": "foo"},
+        "a_bool": True,
+        "a_none": None,
+        "a_str": "foo",
+        "an_int": 1,
+        "a_float": 1.1,
+        "nested_class": {"person": {"name": "foo"}},
+        "attr_dict": {"foo": "foo", "bar": 1},
+        "named_tuple": ["foo", 1],
+    }
+    assert res == expected
 
 
 def test_host_url() -> None:
