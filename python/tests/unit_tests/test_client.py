@@ -1,14 +1,17 @@
 """Test the LangSmith client."""
 import asyncio
+import dataclasses
 import json
 import os
 import uuid
 from datetime import datetime
+from enum import Enum
 from io import BytesIO
 from typing import Optional
 from unittest import mock
 from unittest.mock import patch
 
+import dataclasses_json
 import pytest
 from pydantic import BaseModel
 
@@ -275,6 +278,83 @@ def test_pydantic_serialize() -> None:
     obj2 = {"output": obj}
     res2 = json.loads(json.dumps(obj2, default=_serialize_json))
     assert res2 == {"output": expected}
+
+
+def test_serialize_json() -> None:
+    class MyClass:
+        def __init__(self, x: int) -> None:
+            self.x = x
+            self.y = "y"
+
+    class MyClassWithSlots:
+        __slots__ = ["x", "y"]
+
+        def __init__(self, x: int) -> None:
+            self.x = x
+            self.y = "y"
+
+    class MyPydantic(BaseModel):
+        foo: str
+        bar: int
+
+    @dataclasses.dataclass
+    class MyDataclass:
+        foo: str
+        bar: int
+
+    class MyEnum(str, Enum):
+        FOO = "foo"
+        BAR = "bar"
+
+    @dataclasses_json.dataclass_json
+    @dataclasses.dataclass
+    class Person:
+        name: str
+
+    uid = uuid.uuid4()
+    current_time = datetime.now()
+
+    class NestedClass:
+        __slots__ = ["person"]
+
+        def __init__(self) -> None:
+            self.person = Person(name="foo")
+
+    to_serialize = {
+        "uid": uid,
+        "time": current_time,
+        "my_class": MyClass(1),
+        "my_slotted_class": MyClassWithSlots(1),
+        "my_dataclass": MyDataclass("foo", 1),
+        "my_enum": MyEnum.FOO,
+        "my_pydantic": MyPydantic(foo="foo", bar=1),
+        "person": Person(name="foo"),
+        "a_bool": True,
+        "a_none": None,
+        "a_str": "foo",
+        "an_int": 1,
+        "a_float": 1.1,
+        "nested_class": NestedClass(),
+    }
+
+    res = json.loads(json.dumps(to_serialize, default=_serialize_json))
+    expected = {
+        "uid": str(uid),
+        "time": current_time.isoformat(),
+        "my_class": {"x": 1, "y": "y"},
+        "my_slotted_class": {"x": 1, "y": "y"},
+        "my_dataclass": {"foo": "foo", "bar": 1},
+        "my_enum": "foo",
+        "my_pydantic": {"foo": "foo", "bar": 1},
+        "person": {"name": "foo"},
+        "a_bool": True,
+        "a_none": None,
+        "a_str": "foo",
+        "an_int": 1,
+        "a_float": 1.1,
+        "nested_class": {"person": {"name": "foo"}},
+    }
+    assert res == expected
 
 
 def test_host_url() -> None:

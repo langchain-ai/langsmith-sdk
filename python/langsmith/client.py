@@ -145,26 +145,41 @@ def _default_retry_config() -> Retry:
     return Retry(**retry_params)  # type: ignore
 
 
-def _serialize_json(obj: Any) -> Union[str, dict]:
-    if isinstance(obj, datetime.datetime):
-        return obj.isoformat()
+def _serialize_json(obj: Any) -> Any:
+    if obj is None:
+        return None
 
-    elif hasattr(obj, "model_dump_json") and callable(obj.model_dump_json):
-        # Base models, V2
-        try:
-            return json.loads(obj.model_dump_json(exclude_none=True))
-        except Exception:
-            logger.debug(f"Failed to serialize obj of type {type(obj)} to JSON")
-            return str(obj)
-    elif hasattr(obj, "json") and callable(obj.json):
-        # Base models, V1
-        try:
-            return json.loads(obj.json(exclude_none=True))
-        except Exception:
-            logger.debug(f"Failed to json serialize {type(obj)} to JSON")
-            return repr(obj)
-    else:
-        return str(obj)
+    basic_types = (bool, int, float, str, datetime.datetime, uuid.UUID)
+    if isinstance(obj, basic_types):
+        return obj.isoformat() if isinstance(obj, datetime.datetime) else str(obj)
+
+    serialization_methods = [
+        ("model_dump_json", True),  # Base models, V2
+        ("json", True),  # Base models, V1
+        ("to_json", False),  # dataclass_json
+        ("dict", False),  # dataclass
+    ]
+
+    for attr, exclude_none in serialization_methods:
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            try:
+                method = getattr(obj, attr)
+                json_str = (
+                    method(exclude_none=exclude_none) if exclude_none else method()
+                )
+                return json.loads(json_str)
+            except Exception as e:
+                logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
+                return repr(obj)
+
+    try:
+        if hasattr(obj, "__slots__"):
+            return {slot: getattr(obj, slot) for slot in obj.__slots__}
+        else:
+            return vars(obj)
+    except Exception as e:
+        logger.debug(f"Failed to serialize {type(obj)} to JSON using vars: {e}")
+        return repr(obj)
 
 
 def close_session(session: requests.Session) -> None:
