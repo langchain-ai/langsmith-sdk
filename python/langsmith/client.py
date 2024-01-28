@@ -367,7 +367,7 @@ class Client:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
-                target=_tracing_thread_func,
+                target=_tracing_control_thread_func,
                 # arg must be a weakref to self to avoid the Thread object
                 # preventing garbage collection of the Client object
                 args=(weakref.ref(self),),
@@ -3166,11 +3166,18 @@ class Client:
 
 
 def _tracing_thread_drain_queue(
-    tracing_queue: Queue, limit: Optional[int] = None
+    tracing_queue: Queue, limit: int = 100, block: bool = True
 ) -> List[TracingQueueItem]:
     next_batch: List[TracingQueueItem] = []
     try:
-        while item := tracing_queue.get(block=True, timeout=0.25):
+        # wait 250ms for the first item, then
+        # - drain the queue with a 50ms block timeout
+        # - stop draining if we hit the limit
+        # shorter drain timeout is used instead of non-blocking calls to
+        # avoid creating too many small batches
+        if item := tracing_queue.get(block=block, timeout=0.25):
+            next_batch.append(item)
+        while item := tracing_queue.get(block=block, timeout=0.05):
             next_batch.append(item)
             if limit and len(next_batch) >= limit:
                 break
@@ -3191,24 +3198,70 @@ def _tracing_thread_handle_batch(
             tracing_queue.task_done()
 
 
-def _tracing_thread_func(client_ref: weakref.ref[Client]) -> None:
+_AUTO_SCALE_UP_QSIZE_TRIGGER = 1000
+_AUTO_SCALE_UP_NTHREADS_LIMIT = 16
+_AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
+
+
+def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
 
+    sub_threads: List[threading.Thread] = []
+
     # loop until
     while (
         # the main thread dies
         threading.main_thread().is_alive()
         # or we're the only remaining reference to the client
-        and sys.getrefcount(client) > 3
+        and sys.getrefcount(client) > 3 + len(sub_threads)
         # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, 100):
+        for thread in sub_threads:
+            if not thread.is_alive():
+                sub_threads.remove(thread)
+        if (
+            len(sub_threads) < _AUTO_SCALE_UP_NTHREADS_LIMIT
+            and tracing_queue.qsize() > _AUTO_SCALE_UP_QSIZE_TRIGGER
+        ):
+            new_thread = threading.Thread(
+                target=_tracing_sub_thread_func, args=(weakref.ref(client),)
+            )
+            sub_threads.append(new_thread)
+            new_thread.start()
+        if next_batch := _tracing_thread_drain_queue(tracing_queue):
             _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
     # drain the queue on exit
-    while next_batch := _tracing_thread_drain_queue(tracing_queue, 100):
+    while next_batch := _tracing_thread_drain_queue(tracing_queue, block=False):
+        _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+
+
+def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
+    client = client_ref()
+    if client is None:
+        return
+    tracing_queue = client.tracing_queue
+    assert tracing_queue is not None
+
+    seen_successive_empty_queues = 0
+
+    # loop until
+    while (
+        # the main thread dies
+        threading.main_thread().is_alive()
+        # or we've seen the queue empty 4 times in a row
+        and seen_successive_empty_queues <= _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
+    ):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue):
+            seen_successive_empty_queues = 0
+            _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+        else:
+            seen_successive_empty_queues += 1
+
+    # drain the queue on exit
+    while next_batch := _tracing_thread_drain_queue(tracing_queue, block=False):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
