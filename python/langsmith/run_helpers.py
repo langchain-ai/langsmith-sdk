@@ -24,6 +24,7 @@ from typing import (
     Protocol,
     TypedDict,
     TypeVar,
+    Union,
     cast,
     overload,
     runtime_checkable,
@@ -267,7 +268,7 @@ def traceable(
 def traceable(
     *args: Any,
     **kwargs: Any,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
+) -> Union[Callable, Callable[[Callable], Callable]]:
     """Decorator for creating or adding a run to a run tree.
 
     Args:
