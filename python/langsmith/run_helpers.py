@@ -24,7 +24,9 @@ from typing import (
     Protocol,
     TypedDict,
     TypeVar,
+    Union,
     cast,
+    overload,
     runtime_checkable,
 )
 
@@ -248,6 +250,14 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
         ...
 
 
+@overload
+def traceable(
+    func: Callable[..., R],
+) -> Callable[..., R]:
+    ...
+
+
+@overload
 def traceable(
     run_type: str = "chain",
     *,
@@ -259,6 +269,13 @@ def traceable(
     extra: Optional[Dict] = None,
     reduce_fn: Optional[Callable] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
+    ...
+
+
+def traceable(
+    *args: Any,
+    **kwargs: Any,
+) -> Union[Callable, Callable[[Callable], Callable]]:
     """Decorator for creating or adding a run to a run tree.
 
     Args:
@@ -271,8 +288,6 @@ def traceable(
         tags: The tags to add to the run. Defaults to None.
         client: The client to use for logging the run to LangSmith. Defaults to
             None, which will use the default client.
-        extra: Any additional info to be injected into the run's 'extra' field.
-            Metadata are stored in a field within the extra dict. Defaults to None.
         reduce_fn: A function to reduce the output of the function if the function
             returns a generator. Defaults to None, which means the values will be
                 logged as a list. Note: if the iterator is never exhausted (e.g.
@@ -280,7 +295,18 @@ def traceable(
                 called, and the run itself will be stuck in a pending state.
 
     """
-    extra_outer = extra or {}
+    run_type = (
+        args[0]
+        if args and isinstance(args[0], str)
+        else (kwargs.get("run_type") or "chain")
+    )
+    extra_outer = kwargs.get("extra") or {}
+    name = kwargs.get("name")
+    executor = kwargs.get("executor")
+    metadata = kwargs.get("metadata")
+    tags = kwargs.get("tags")
+    client = kwargs.get("client")
+    reduce_fn = kwargs.get("reduce_fn")
 
     def decorator(func: Callable):
         @functools.wraps(func)
@@ -505,6 +531,11 @@ def traceable(
         setattr(selected_wrapper, "__langsmith_traceable__", True)
         return selected_wrapper
 
+    # If the decorator is called with no arguments, then it's being used as a
+    # decorator, so we return the decorator function
+    if len(args) == 1 and callable(args[0]) and not kwargs:
+        return decorator(args[0])
+    # Else it's being used as a decorator factory, so we return the decorator
     return decorator
 
 
