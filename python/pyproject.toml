@@ -47,6 +47,9 @@ freezegun = "^1.2.2"
 pytest-subtests = "^0.11.0"
 pytest-watcher = "^0.3.4"
 
+[tool.poetry.group.lint.dependencies]
+openai = "^1.10"
+
 
 [build-system]
 requires = ["poetry-core"]

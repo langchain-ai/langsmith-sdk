@@ -52,7 +52,7 @@ jobs:
       - name: Install poetry
         run: pipx install poetry==$POETRY_VERSION
       - name: Install dependencies
-        run: poetry install
+        run: poetry install --with dev,lint
       - name: Analysing the code with our lint
         run: make lint
 
