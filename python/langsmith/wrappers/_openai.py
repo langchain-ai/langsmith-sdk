@@ -71,7 +71,7 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
     return acreate if run_helpers.is_async(original_create) else create
 
 
-def patch_openai(client: C) -> C:
+def wrap_openai(client: C) -> C:
     """Patch the OpenAI client to make it traceable.
 
     Args:

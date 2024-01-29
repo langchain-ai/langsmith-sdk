@@ -1,3 +1,3 @@
-from langsmith.wrappers._openai import patch_openai
+from langsmith.wrappers._openai import wrap_openai
 
-__all__ = ["patch_openai"]
+__all__ = ["wrap_openai"]

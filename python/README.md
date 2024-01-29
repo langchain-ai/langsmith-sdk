@@ -13,12 +13,12 @@ Then trace:
 
 ```python
 import openai
-from langsmith.tracing import trace_openai
+from langsmith.wrappers import wrap_openai
 
-client = trace_openai(openai.Client())
+client = wrap_openai(openai.Client())
 
 client.chat.completions.create(
-    messages=[{"role": "user", "content": "Hello, world"}], 
+    messages=[{"role": "user", "content": "Hello, world"}],
     model="gpt-3.5-turbo"
 )
 ```
@@ -95,7 +95,7 @@ os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 
 2. **Log traces**
 
-The easiest way to log traces using the SDK is via the `@traceable` decorator. Below is an example. 
+The easiest way to log traces using the SDK is via the `@traceable` decorator. Below is an example.
 
 ```python
 from datetime import datetime
@@ -103,9 +103,9 @@ from typing import List, Optional, Tuple
 
 import openai
 from langsmith import traceable
-from langsmith.tracing import trace_openai
+from langsmith.wrappers import wrap_openai
 
-client = trace_openai(openai.Client())
+client = wrap_openai(openai.Client())
 
 @traceable
 def argument_generator(query: str, additional_description: str = "") -> str:
@@ -118,12 +118,12 @@ def argument_generator(query: str, additional_description: str = "") -> str:
         ]
     ).choices[0].message.content
 
-    
+
 
 @traceable
 def argument_chain(query: str, additional_description: str = "") -> str:
     argument = argument_generator(query, additional_description)
-    # ... Do other processing or call other functions... 
+    # ... Do other processing or call other functions...
     return argument
 
 argument_chain("Why is blue better than orange?")

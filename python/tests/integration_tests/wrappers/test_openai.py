@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from langsmith.wrappers import patch_openai
+from langsmith.wrappers import wrap_openai
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -13,7 +13,7 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
     import openai  # noqa
 
     original_client = openai.Client()
-    patched_client = patch_openai(openai.Client())
+    patched_client = wrap_openai(openai.Client())
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = original_client.chat.completions.create(
         messages=messages,  # noqa: [arg-type]
@@ -52,7 +52,7 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
     import openai  # noqa
 
     original_client = openai.AsyncClient()
-    patched_client = patch_openai(openai.AsyncClient())
+    patched_client = wrap_openai(openai.AsyncClient())
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = await original_client.chat.completions.create(
         messages=messages, stream=stream, temperature=0, seed=42, model="gpt-3.5-turbo"
@@ -87,7 +87,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
     import openai
 
     original_client = openai.Client()
-    patched_client = patch_openai(openai.Client())
+    patched_client = wrap_openai(openai.Client())
     prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
     original = original_client.completions.create(
         model="gpt-3.5-turbo-instruct",
@@ -128,7 +128,7 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
     import openai
 
     original_client = openai.AsyncClient()
-    patched_client = patch_openai(openai.AsyncClient())
+    patched_client = wrap_openai(openai.AsyncClient())
     prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
     original = await original_client.completions.create(
         model="gpt-3.5-turbo-instruct",
