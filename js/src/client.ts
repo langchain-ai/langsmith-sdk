@@ -93,7 +93,7 @@ interface CreateRunParams {
   run_type: string;
   execution_order?: number;
   id?: string;
-  start_time?: number;
+  start_time: number;
   end_time?: number;
   extra?: KVMap;
   error?: string;
