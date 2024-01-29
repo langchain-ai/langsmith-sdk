@@ -345,7 +345,7 @@ def test_create_run_with_masked_inputs_outputs(
         if project.name == project_name:
             langchain_client.delete_project(project_name=project_name)
 
-    run_id = "8bac165f-470e-4bf8-baa0-15f2de4cc706"
+    run_id = uuid4()
     langchain_client.create_run(
         id=run_id,
         project_name=project_name,
@@ -359,7 +359,7 @@ def test_create_run_with_masked_inputs_outputs(
         hide_outputs=True,
     )
 
-    run_id2 = "8bac165f-490e-4bf8-baa0-15f2de4cc707"
+    run_id2 = uuid4()
     langchain_client.create_run(
         id=run_id2,
         project_name=project_name,
