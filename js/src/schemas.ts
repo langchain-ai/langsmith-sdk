@@ -175,6 +175,7 @@ export interface Run extends BaseRun {
 }
 
 export interface RunCreate extends BaseRun {
+  start_time: number;
   child_runs?: this[];
   session_name?: string;
 }
