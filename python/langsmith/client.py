@@ -322,7 +322,7 @@ class Client:
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
-        auto_batch_tracing: bool = False,
+        auto_batch_tracing: bool = True,
     ) -> None:
         """Initialize a Client instance.
 
