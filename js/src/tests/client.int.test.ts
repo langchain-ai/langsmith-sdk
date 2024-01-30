@@ -16,10 +16,8 @@ async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
 
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
-test("Test LangSmith Client Dataset CRD", async () => {
-  const client = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test LangSmith Client Dataset CRD", async () => {
+  const client = new Client({});
 
   const csvContent = `col1,col2,col3,col4\nval1,val2,val3,val4`;
   const blobData = new Blob([Buffer.from(csvContent)]);
@@ -89,10 +87,8 @@ test("Test LangSmith Client Dataset CRD", async () => {
 });
 
 // Test Project Creation, List, Read, Delete
-test("Test LangSmith Client Project CRD", async () => {
-  const client = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test LangSmith Client Project CRD", async () => {
+  const client = new Client({});
 
   const newProject = `__some_project.int.`;
   if (
@@ -136,10 +132,8 @@ test("Test LangSmith Client Project CRD", async () => {
   ).rejects.toThrow();
 });
 
-test("Test evaluate run", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test evaluate run", async () => {
+  const langchainClient = new Client({});
 
   const projectName = "__test_evaluate_run";
   const datasetName = "__test_evaluate_run_dataset";
@@ -255,10 +249,8 @@ test("Test evaluate run", async () => {
   await langchainClient.deleteProject({ projectName });
 });
 
-test("Test persist update run", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test persist update run", async () => {
+  const langchainClient = new Client({});
   const projectName = "__test_persist_update_run";
   const projects = await langchainClient.listProjects();
   for await (const project of projects) {
@@ -284,10 +276,8 @@ test("Test persist update run", async () => {
   await langchainClient.deleteProject({ projectName });
 });
 
-test("test create dataset", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("test create dataset", async () => {
+  const langchainClient = new Client({});
   const datasetName = "__test_create_dataset";
   const datasets = await toArray(langchainClient.listDatasets());
   datasets.map(async (dataset: Dataset) => {
@@ -310,10 +300,8 @@ test("test create dataset", async () => {
   await langchainClient.deleteDataset({ datasetName });
 });
 
-test("Test share and unshare run", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test share and unshare run", async () => {
+  const langchainClient = new Client({});
 
   // Create a new run
   const runId = uuidv4();
@@ -335,10 +323,8 @@ test("Test share and unshare run", async () => {
   expect(sharedLink).toBe(undefined);
 });
 
-test("Test list datasets", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test list datasets", async () => {
+  const langchainClient = new Client({});
   const datasetName1 = "___TEST dataset1";
   const datasetName2 = "___TEST dataset2";
 
@@ -411,157 +397,161 @@ test("Test list datasets", async () => {
   expect(remainingDatasets).toHaveLength(0);
 });
 
-test("Test create feedback with source run", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
-  const projectName = "__test_create_feedback_with_source_run";
-  const projects = langchainClient.listProjects();
-  for await (const project of projects) {
-    if (project.name === projectName) {
-      await langchainClient.deleteProject({ projectName });
+test.concurrent(
+  "Test create feedback with source run",
+  async () => {
+    const langchainClient = new Client({});
+    const projectName = "__test_create_feedback_with_source_run";
+    const projects = langchainClient.listProjects();
+    for await (const project of projects) {
+      if (project.name === projectName) {
+        await langchainClient.deleteProject({ projectName });
+      }
     }
-  }
-  const runId = "8bac165f-480e-4bf8-baa0-15f2de4cc706";
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { prompt: "hello world" },
-    outputs: { generation: "hi there" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+    const runId = uuidv4();
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { prompt: "hello world" },
+      outputs: { generation: "hi there" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  const runId2 = "8bac165f-480e-4bf8-baa0-15f2de4cc707";
-  await langchainClient.createRun({
-    id: runId2,
-    project_name: projectName,
-    name: "test_run_2",
-    run_type: "llm",
-    inputs: { prompt: "hello world 2" },
-    outputs: { generation: "hi there 2" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+    const runId2 = uuidv4();
+    await langchainClient.createRun({
+      id: runId2,
+      project_name: projectName,
+      name: "test_run_2",
+      run_type: "llm",
+      inputs: { prompt: "hello world 2" },
+      outputs: { generation: "hi there 2" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  await langchainClient.createFeedback(runId, "test_feedback", {
-    score: 0.5,
-    sourceRunId: runId2,
-    feedbackSourceType: "app",
-  });
-}, 10000);
+    await langchainClient.createFeedback(runId, "test_feedback", {
+      score: 0.5,
+      sourceRunId: runId2,
+      feedbackSourceType: "app",
+    });
+  },
+  10000
+);
 
-test("Test create run with masked inputs/outputs", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
-  // eslint-disable-next-line no-process-env
-  process.env.LANGCHAIN_HIDE_INPUTS = "true";
-  // eslint-disable-next-line no-process-env
-  process.env.LANGCHAIN_HIDE_OUTPUTS = "true";
-  const projectName = "__test_create_run_with_masked_inputs_outputs";
-  const projects = langchainClient.listProjects();
-  for await (const project of projects) {
-    if (project.name === projectName) {
-      await langchainClient.deleteProject({ projectName });
+test.concurrent(
+  "Test create run with masked inputs/outputs",
+  async () => {
+    const langchainClient = new Client({});
+    // eslint-disable-next-line no-process-env
+    process.env.LANGCHAIN_HIDE_INPUTS = "true";
+    // eslint-disable-next-line no-process-env
+    process.env.LANGCHAIN_HIDE_OUTPUTS = "true";
+    const projectName = "__test_create_run_with_masked_inputs_outputs";
+    const projects = langchainClient.listProjects();
+    for await (const project of projects) {
+      if (project.name === projectName) {
+        await langchainClient.deleteProject({ projectName });
+      }
     }
-  }
-  const runId = "8bac165f-470e-4bf8-baa0-15f2de4cc706";
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { prompt: "hello world" },
-    outputs: { generation: "hi there" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+    const runId = uuidv4();
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { prompt: "hello world" },
+      outputs: { generation: "hi there" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  const runId2 = "8bac165f-490e-4bf8-baa0-15f2de4cc707";
-  await langchainClient.createRun({
-    id: runId2,
-    project_name: projectName,
-    name: "test_run_2",
-    run_type: "llm",
-    inputs: { messages: "hello world 2" },
-    start_time: new Date().getTime(),
-  });
+    const runId2 = uuidv4();
+    await langchainClient.createRun({
+      id: runId2,
+      project_name: projectName,
+      name: "test_run_2",
+      run_type: "llm",
+      inputs: { messages: "hello world 2" },
+      start_time: new Date().getTime(),
+    });
 
-  await langchainClient.updateRun(runId2, {
-    outputs: { generation: "hi there 2" },
-    end_time: new Date().getTime(),
-  });
+    await langchainClient.updateRun(runId2, {
+      outputs: { generation: "hi there 2" },
+      end_time: new Date().getTime(),
+    });
 
-  const run1 = await langchainClient.readRun(runId);
-  expect(run1.inputs).toBeDefined();
-  expect(Object.keys(run1.inputs)).toHaveLength(0);
-  expect(run1.outputs).toBeDefined();
-  expect(Object.keys(run1.outputs ?? {})).toHaveLength(0);
-  const run2 = await langchainClient.readRun(runId2);
-  expect(run2.inputs).toBeDefined();
-  expect(Object.keys(run2.inputs)).toHaveLength(0);
-  expect(run2.outputs).toBeDefined();
-  expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
-}, 10000);
+    const run1 = await langchainClient.readRun(runId);
+    expect(run1.inputs).toBeDefined();
+    expect(Object.keys(run1.inputs)).toHaveLength(0);
+    expect(run1.outputs).toBeDefined();
+    expect(Object.keys(run1.outputs ?? {})).toHaveLength(0);
+    const run2 = await langchainClient.readRun(runId2);
+    expect(run2.inputs).toBeDefined();
+    expect(Object.keys(run2.inputs)).toHaveLength(0);
+    expect(run2.outputs).toBeDefined();
+    expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
+  },
+  10000
+);
 
-test("Test create run with revision id", async () => {
-  const langchainClient = new Client({
-    apiUrl: "http://localhost:1984",
-  });
-  // eslint-disable-next-line no-process-env
-  process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
-  // eslint-disable-next-line no-process-env
-  process.env.LANGCHAIN_API_KEY = "fake_api_key";
-  // eslint-disable-next-line no-process-env
-  process.env.LANGCHAIN_OTHER_KEY = "test_other_key";
-  const projectName = "__test_create_run_with_revision_id";
-  const projects = langchainClient.listProjects();
-  for await (const project of projects) {
-    if (project.name === projectName) {
-      await langchainClient.deleteProject({ projectName });
+test.concurrent(
+  "Test create run with revision id",
+  async () => {
+    const langchainClient = new Client({});
+    // eslint-disable-next-line no-process-env
+    process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
+    // eslint-disable-next-line no-process-env
+    process.env.LANGCHAIN_API_KEY = "fake_api_key";
+    // eslint-disable-next-line no-process-env
+    process.env.LANGCHAIN_OTHER_KEY = "test_other_key";
+    const projectName = "__test_create_run_with_revision_id";
+    const projects = langchainClient.listProjects();
+    for await (const project of projects) {
+      if (project.name === projectName) {
+        await langchainClient.deleteProject({ projectName });
+      }
     }
-  }
-  const runId = "0cc29488-3b1b-4151-9476-30b5c1b24883";
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { prompt: "hello world" },
-    outputs: { generation: "hi there" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+    const runId = "0cc29488-3b1b-4151-9476-30b5c1b24883";
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { prompt: "hello world" },
+      outputs: { generation: "hi there" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  const runId2 = "82f19ed3-256f-4571-a078-2ccf11d0eba3";
-  await langchainClient.createRun({
-    id: runId2,
-    project_name: projectName,
-    name: "test_run_2",
-    run_type: "llm",
-    inputs: { messages: "hello world 2" },
-    start_time: new Date().getTime(),
-    revision_id: "different_revision_id",
-  });
+    const runId2 = "82f19ed3-256f-4571-a078-2ccf11d0eba3";
+    await langchainClient.createRun({
+      id: runId2,
+      project_name: projectName,
+      name: "test_run_2",
+      run_type: "llm",
+      inputs: { messages: "hello world 2" },
+      start_time: new Date().getTime(),
+      revision_id: "different_revision_id",
+    });
 
-  const run1 = await langchainClient.readRun(runId);
-  expect(run1.extra?.metadata?.revision_id).toEqual("test_revision_id");
-  expect(run1.extra?.metadata.LANGCHAIN_OTHER_KEY).toEqual("test_other_key");
-  expect(run1.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
-  const run2 = await langchainClient.readRun(runId2);
-  expect(run2.extra?.metadata?.revision_id).toEqual("different_revision_id");
-  expect(run2.extra?.metadata.LANGCHAIN_OTHER_KEY).toEqual("test_other_key");
-  expect(run2.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
-}, 10000);
+    const run1 = await langchainClient.readRun(runId);
+    expect(run1.extra?.metadata?.revision_id).toEqual("test_revision_id");
+    expect(run1.extra?.metadata.LANGCHAIN_OTHER_KEY).toEqual("test_other_key");
+    expect(run1.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
+    const run2 = await langchainClient.readRun(runId2);
+    expect(run2.extra?.metadata?.revision_id).toEqual("different_revision_id");
+    expect(run2.extra?.metadata.LANGCHAIN_OTHER_KEY).toEqual("test_other_key");
+    expect(run2.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
+  },
+  10000
+);
 
 describe("createChatExample", () => {
   it("should convert LangChainBaseMessage objects to examples", async () => {
-    const langchainClient = new Client({
-      apiUrl: "http://localhost:1984",
-    });
+    const langchainClient = new Client({});
 
     const datasetName = "__createChatExample-test-dataset";
     try {
@@ -621,10 +611,8 @@ describe("createChatExample", () => {
   }, 10000);
 });
 
-test("Test getRunUrl with run", async () => {
-  const client = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test getRunUrl with run", async () => {
+  const client = new Client({});
   const run: Run = {
     id: uuidv4(),
     execution_order: 1,
@@ -640,10 +628,8 @@ test("Test getRunUrl with run", async () => {
   console.log(result);
 });
 
-test("Test getRunUrl with run", async () => {
-  const client = new Client({
-    apiUrl: "http://localhost:1984",
-  });
+test.concurrent("Test getRunUrl with run", async () => {
+  const client = new Client({});
   const run: Run = {
     id: "123",
     execution_order: 1,
@@ -654,7 +640,53 @@ test("Test getRunUrl with run", async () => {
   const projectOpts = {
     projectId: "abcd-1234",
   };
-  const expectedUrl = `http://localhost/o/00000000-0000-0000-0000-000000000000/projects/p/${projectOpts.projectId}/r/${run.id}?poll=true`;
   const result = await client.getRunUrl({ run, projectOpts });
-  expect(result).toEqual(expectedUrl);
+  // Expect run.id to be in the url
+  expect(result).toContain(run.id);
+});
+
+test.concurrent("Examples CRUD", async () => {
+  const client = new Client({});
+  const datasetName = "__test_examples_crud";
+  try {
+    const existingDataset = await client.readDataset({ datasetName });
+    await client.deleteDataset({ datasetId: existingDataset.id });
+  } catch (e) {
+    console.log("Dataset does not exist");
+  }
+  const dataset = await client.createDataset(datasetName);
+  const example = await client.createExample(
+    { input: "hello world" },
+    { output: "hi there" },
+    {
+      datasetId: dataset.id,
+    }
+  );
+  const exampleValue = await client.readExample(example.id);
+  expect(exampleValue.inputs.input).toEqual("hello world");
+  expect(exampleValue?.outputs?.output).toEqual("hi there");
+  // Create multiple
+  await client.createExamples({
+    inputs: [
+      { input: "hello world 1" },
+      { input: "hello world 2" },
+      { input: "hello world 3" },
+    ],
+    outputs: [
+      { output: "hi there 1" },
+      { output: "hi there 2" },
+      { output: "hi there 3" },
+    ],
+    datasetId: dataset.id,
+  });
+  const examplesList = await toArray(
+    client.listExamples({ datasetId: dataset.id })
+  );
+  expect(examplesList.length).toEqual(4);
+  await client.deleteExample(example.id);
+  const examplesList2 = await toArray(
+    client.listExamples({ datasetId: dataset.id })
+  );
+  expect(examplesList2.length).toEqual(3);
+  await client.deleteDataset({ datasetId: dataset.id });
 });

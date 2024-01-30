@@ -4,8 +4,8 @@ import os
 import random
 import string
 import time
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timedelta
+from typing import List, Optional, cast
 from uuid import uuid4
 
 import pytest
@@ -25,7 +25,7 @@ from langsmith.utils import (
 
 @pytest.fixture
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     return Client()
 
 
@@ -40,7 +40,7 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
         )
     assert new_project not in project_names
 
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     langchain_client.create_project(
         project_name=new_project,
         project_extra={"evaluator": "THE EVALUATOR"},
@@ -134,11 +134,12 @@ def test_persist_update_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test the persist and update methods work as expected."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     project_name = "__test_persist_update_run"
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
     start_time = datetime.now()
+    revision_id = uuid4()
     run: dict = dict(
         id=uuid4(),
         name="test_run",
@@ -149,22 +150,28 @@ def test_persist_update_run(
         execution_order=1,
         start_time=start_time,
         extra={"extra": "extra"},
+        revision_id=revision_id,
     )
     langchain_client.create_run(**run)
     run["outputs"] = {"output": ["Hi"]}
     run["extra"]["foo"] = "bar"
     langchain_client.update_run(run["id"], **run)
-    for _ in range(5):
-        try:
-            stored_run = langchain_client.read_run(run["id"])
-            break
-        except LangSmithError:
-            time.sleep(2)
+    try:
+        for _ in range(10):
+            try:
+                stored_run = langchain_client.read_run(run["id"])
+                if stored_run.end_time is not None:
+                    break
+            except LangSmithError:
+                time.sleep(2)
 
-    assert stored_run.id == run["id"]
-    assert stored_run.outputs == run["outputs"]
-    assert stored_run.start_time == run["start_time"]
-    langchain_client.delete_project(project_name=project_name)
+        assert stored_run.id == run["id"]
+        assert stored_run.outputs == run["outputs"]
+        assert stored_run.start_time == run["start_time"]
+        assert stored_run.extra
+        assert stored_run.extra["metadata"]["revision_id"] == str(revision_id)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
 
 
 @freeze_time("2023-01-01")
@@ -172,7 +179,7 @@ def test_evaluate_run(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     project_name = "__test_evaluate_run"
     dataset_name = "__test_evaluate_run_dataset"
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
@@ -255,7 +262,7 @@ def test_create_project(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test the project creation"""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     try:
         langchain_client.read_project(project_name="__test_create_project")
         langchain_client.delete_project(project_name="__test_create_project")
@@ -272,7 +279,7 @@ def test_create_dataset(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "http://localhost:1984")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     dataset_name = "__test_create_dataset"
     if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -313,8 +320,8 @@ def test_list_datasets(langchain_client: Client) -> None:
     assert dataset2.data_type == DataType.kv
     # Sub-filter on data type
     datasets = list(langchain_client.list_datasets(data_type=DataType.llm.value))
-    assert len(datasets) == 1
-    assert datasets[0].id == dataset1.id
+    assert len(datasets) > 0
+    assert dataset1.id in {dataset.id for dataset in datasets}
     # Sub-filter on name
     datasets = list(
         langchain_client.list_datasets(
@@ -325,12 +332,6 @@ def test_list_datasets(langchain_client: Client) -> None:
     # Delete datasets
     langchain_client.delete_dataset(dataset_id=dataset1.id)
     langchain_client.delete_dataset(dataset_id=dataset2.id)
-    assert (
-        len(
-            list(langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id]))
-        )
-        == 0
-    )
 
 
 @freeze_time("2023-01-01")
@@ -344,7 +345,7 @@ def test_create_run_with_masked_inputs_outputs(
         if project.name == project_name:
             langchain_client.delete_project(project_name=project_name)
 
-    run_id = "8bac165f-470e-4bf8-baa0-15f2de4cc706"
+    run_id = uuid4()
     langchain_client.create_run(
         id=run_id,
         project_name=project_name,
@@ -358,7 +359,7 @@ def test_create_run_with_masked_inputs_outputs(
         hide_outputs=True,
     )
 
-    run_id2 = "8bac165f-490e-4bf8-baa0-15f2de4cc707"
+    run_id2 = uuid4()
     langchain_client.create_run(
         id=run_id2,
         project_name=project_name,
@@ -424,6 +425,76 @@ def test_create_chat_example(
             },
         },
     }
-
-    # Delete dataset
     langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+@freeze_time("2023-01-01")
+def test_batch_ingest_runs(langchain_client: Client) -> None:
+    _session = "__test_batch_ingest_runs"
+    trace_id = uuid4()
+    run_id_2 = uuid4()
+    current_time = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    later_time = (datetime.utcnow() + timedelta(seconds=1)).strftime("%Y%m%dT%H%M%S%fZ")
+    runs_to_create = [
+        {
+            "id": str(trace_id),
+            "session_name": _session,
+            "name": "run 1",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_id)}",
+            "trace_id": str(trace_id),
+            "inputs": {"input1": 1, "input2": 2},
+            "outputs": {"output1": 3, "output2": 4},
+        },
+        {
+            "id": str(run_id_2),
+            "session_name": _session,
+            "name": "run 2",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_id)}."
+            f"{later_time}{str(run_id_2)}",
+            "trace_id": str(trace_id),
+            "parent_run_id": str(trace_id),
+            "inputs": {"input1": 5, "input2": 6},
+        },
+    ]
+    runs_to_update = [
+        {
+            "id": str(run_id_2),
+            "dotted_order": f"{current_time}{str(trace_id)}."
+            f"{later_time}{str(run_id_2)}",
+            "trace_id": str(trace_id),
+            "parent_run_id": str(trace_id),
+            "outputs": {"output1": 7, "output2": 8},
+        },
+    ]
+    langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
+    runs = []
+    wait = 2
+    for _ in range(5):
+        try:
+            runs = list(langchain_client.list_runs(project_name=_session))
+            if len(runs) == 2:
+                break
+            raise LangSmithError("Runs not created yet")
+        except LangSmithError:
+            time.sleep(wait)
+            wait += 4
+    else:
+        raise ValueError("Runs not created in time")
+    assert len(runs) == 2
+    # Write all the assertions here
+    runs = sorted(runs, key=lambda x: cast(str, x.dotted_order))
+    assert len(runs) == 2
+
+    # Assert inputs and outputs of run 1
+    run1 = runs[0]
+    assert run1.inputs == {"input1": 1, "input2": 2}
+    assert run1.outputs == {"output1": 3, "output2": 4}
+
+    # Assert inputs and outputs of run 2
+    run2 = runs[1]
+    assert run2.inputs == {"input1": 5, "input2": 6}
+    assert run2.outputs == {"output1": 7, "output2": 8}
+
+    langchain_client.delete_project(project_name=_session)

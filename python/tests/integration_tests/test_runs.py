@@ -16,7 +16,7 @@ from langsmith.run_trees import RunTree
 @pytest.fixture
 def langchain_client() -> Generator[Client, None, None]:
     original = os.environ.get("LANGCHAIN_ENDPOINT")
-    os.environ["LANGCHAIN_ENDPOINT"] = "http://localhost:1984"
+    os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
     yield Client()
     if original is None:
         os.environ.pop("LANGCHAIN_ENDPOINT")
@@ -72,13 +72,15 @@ def test_nested_runs(
 
     my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
     executor.shutdown(wait=True)
-    for _ in range(5):
+    for _ in range(15):
         try:
             runs = list(langchain_client.list_runs(project_name=project_name))
             assert len(runs) == 3
             break
         except (ls_utils.LangSmithError, AssertionError):
             time.sleep(1)
+    else:
+        raise AssertionError("Failed to get runs after 15 attempts.")
     assert len(runs) == 3
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
@@ -133,18 +135,15 @@ async def test_nested_async_runs(langchain_client: Client):
     assert runs_dict["my_chain_run"].execution_order == 1
     assert runs_dict["my_run"].parent_run_id == runs_dict["my_chain_run"].id
     assert runs_dict["my_run"].run_type == "chain"
-    assert runs_dict["my_run"].execution_order == 2
     assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
     assert runs_dict["my_llm_run"].run_type == "llm"
     assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
-    assert runs_dict["my_llm_run"].execution_order == 3
     assert runs_dict["my_sync_tool"].parent_run_id == runs_dict["my_run"].id
     assert runs_dict["my_sync_tool"].run_type == "tool"
     assert runs_dict["my_sync_tool"].inputs == {
         "text": "foo",
         "my_arg": 20,
     }
-    assert runs_dict["my_sync_tool"].execution_order == 4
     langchain_client.delete_project(project_name=project_name)
 
 

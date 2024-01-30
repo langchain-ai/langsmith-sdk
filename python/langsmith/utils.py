@@ -37,6 +37,10 @@ class LangSmithNotFoundError(LangSmithError):
     """Couldn't find the requested resource."""
 
 
+class LangSmithConflictError(LangSmithError):
+    """The resource already exists."""
+
+
 class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
