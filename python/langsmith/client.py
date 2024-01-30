@@ -784,7 +784,7 @@ class Client:
 
     @staticmethod
     def _run_transform(
-        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict]
+        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
     ) -> dict:
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create = run.dict()  # type: ignore
@@ -3193,6 +3193,10 @@ def _tracing_thread_handle_batch(
     update = [it.item for it in batch if it.action == "update"]
     try:
         client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+    except Exception:
+        # exceptions are logged elsewhere, but we need to make sure the
+        # background thread continues to run
+        pass
     finally:
         for _ in batch:
             tracing_queue.task_done()
