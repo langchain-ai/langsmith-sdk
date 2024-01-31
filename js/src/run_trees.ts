@@ -17,8 +17,6 @@ export interface RunTreeConfig {
   run_type: string;
   id?: string;
   project_name?: string;
-  execution_order?: number;
-  child_execution_order?: number;
   parent_run?: RunTree;
   child_runs?: RunTree[];
   start_time?: number;
@@ -39,8 +37,6 @@ export class RunTree implements BaseRun {
   project_name: string;
   parent_run?: RunTree;
   child_runs: RunTree[];
-  execution_order: number;
-  child_execution_order: number;
   start_time: number;
   end_time?: number;
   extra: KVMap;
@@ -83,8 +79,6 @@ export class RunTree implements BaseRun {
         getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
         "default",
       child_runs: [],
-      execution_order: 1,
-      child_execution_order: 1,
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
       api_key: getEnvironmentVariable("LANGCHAIN_API_KEY"),
@@ -103,8 +97,6 @@ export class RunTree implements BaseRun {
       parent_run: this,
       project_name: this.project_name,
       client: this.client,
-      execution_order: this.child_execution_order + 1,
-      child_execution_order: this.child_execution_order + 1,
     });
 
     this.child_runs.push(child);
@@ -119,13 +111,6 @@ export class RunTree implements BaseRun {
     this.outputs = outputs;
     this.error = error;
     this.end_time = endTime;
-
-    if (this.parent_run) {
-      this.parent_run.child_execution_order = Math.max(
-        this.parent_run.child_execution_order,
-        this.child_execution_order
-      );
-    }
   }
 
   private async _convertToCreate(
@@ -163,7 +148,6 @@ export class RunTree implements BaseRun {
       run_type: run.run_type,
       reference_example_id: run.reference_example_id,
       extra: runExtra,
-      execution_order: run.execution_order,
       serialized: run.serialized,
       error: run.error,
       inputs: run.inputs,

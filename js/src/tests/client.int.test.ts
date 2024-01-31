@@ -615,7 +615,6 @@ test.concurrent("Test getRunUrl with run", async () => {
   const client = new Client({});
   const run: Run = {
     id: uuidv4(),
-    execution_order: 1,
     name: "foo",
     run_type: "llm",
     inputs: { input: "hello world" },
@@ -632,7 +631,6 @@ test.concurrent("Test getRunUrl with run", async () => {
   const client = new Client({});
   const run: Run = {
     id: "123",
-    execution_order: 1,
     name: "foo",
     run_type: "llm",
     inputs: { input: "hello world" },
