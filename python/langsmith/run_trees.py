@@ -46,8 +46,6 @@ class RunTree(RunBase):
         alias="project_name",
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    execution_order: int = 1
-    child_execution_order: int = Field(default=1, exclude=True)
     extra: Dict = Field(default_factory=dict)
     client: Client = Field(default_factory=Client, exclude=True)
     executor: ThreadPoolExecutor = Field(
@@ -84,10 +82,6 @@ class RunTree(RunBase):
         """Assign name to the run."""
         if "serialized" not in values:
             values["serialized"] = {"name": values["name"]}
-        if "execution_order" not in values:
-            values["execution_order"] = 1
-        if "child_execution_order" not in values:
-            values["child_execution_order"] = values["execution_order"]
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
         if "id" not in values:
@@ -131,11 +125,6 @@ class RunTree(RunBase):
             self.outputs = outputs
         if error is not None:
             self.error = error
-        if self.parent_run:
-            self.parent_run.child_execution_order = max(
-                self.parent_run.child_execution_order,
-                self.child_execution_order,
-            )
 
     def create_child(
         self,
@@ -154,8 +143,6 @@ class RunTree(RunBase):
         extra: Optional[Dict] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
-        execution_order = self.child_execution_order + 1
-        self.child_execution_order += 1
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
@@ -168,8 +155,6 @@ class RunTree(RunBase):
             reference_example_id=reference_example_id,
             start_time=start_time or datetime.utcnow(),
             end_time=end_time,
-            execution_order=execution_order,
-            child_execution_order=execution_order,
             extra=extra or {},
             parent_run=self,
             session_name=self.session_name,

@@ -842,7 +842,6 @@ class Client:
         inputs: Dict[str, Any],
         run_type: str,
         *,
-        execution_order: Optional[int] = None,
         project_name: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
@@ -857,9 +856,6 @@ class Client:
         run_type : str
             The type of the run, such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
-        execution_order : int or None, default=None
-            The position of the run in the full trace's execution sequence.
-                All root run traces have execution_order 1.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -880,7 +876,6 @@ class Client:
             "name": name,
             "inputs": inputs,
             "run_type": run_type,
-            "execution_order": execution_order if execution_order is not None else 1,
         }
         if not self._filter_for_sampling([run_create]):
             return
@@ -1108,9 +1103,8 @@ class Client:
         )
         runs: Dict[uuid.UUID, ls_schemas.Run] = {}
         for child_run in sorted(
-            # TODO: Remove execution_order once it's no longer used
             child_runs,
-            key=lambda r: r.dotted_order or str(r.execution_order),
+            key=lambda r: r.dotted_order,
         ):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")

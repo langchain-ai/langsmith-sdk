@@ -198,9 +198,7 @@ def test_create_run_unicode() -> None:
     session.request = mock.Mock()
     with patch.object(client, "session", session):
         id_ = uuid.uuid4()
-        client.create_run(
-            "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
-        )
+        client.create_run("my_run", inputs=inputs, run_type="llm", id=id_)
         client.update_run(id_, status="completed")
 
 
@@ -248,7 +246,6 @@ def test_client_gc(auto_batch_tracing: bool) -> None:
             "my_run",
             inputs={},
             run_type="llm",
-            execution_order=1,
             id=id,
             trace_id=id,
             dotted_order=id,
@@ -291,9 +288,7 @@ def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
 
     # because no trace_id/dotted_order provided, auto batch is disabled
     for _ in range(10):
-        client.create_run(
-            "my_run", inputs={}, run_type="llm", execution_order=1, id=uuid.uuid4()
-        )
+        client.create_run("my_run", inputs={}, run_type="llm", id=uuid.uuid4())
     request_calls = [call for call in session.request.mock_calls if call.args]
     assert len(request_calls) == 10
     for call in request_calls:
@@ -327,7 +322,6 @@ def test_client_gc_after_autoscale() -> None:
             "my_run",
             inputs={},
             run_type="llm",
-            execution_order=1,
             id=id,
             trace_id=id,
             dotted_order=id,
@@ -375,7 +369,6 @@ def test_create_run_includes_langchain_env_var_metadata(
                 "my_run",
                 inputs=inputs,
                 run_type="llm",
-                execution_order=1,
                 id=id_,
                 trace_id=id_,
                 dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
