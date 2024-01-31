@@ -51,10 +51,29 @@ export class RunTree implements BaseRun {
   reference_example_id?: string;
   client: Client;
   events?: KVMap[] | undefined;
+  trace_id: string;
+  dotted_order: string;
 
   constructor(config: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
     Object.assign(this, { ...defaultConfig, ...config });
+    if (!this.trace_id) {
+      if (this.parent_run) {
+        this.trace_id = this.parent_run.trace_id;
+      } else {
+        this.trace_id = this.id;
+      }
+    }
+    if (!this.dotted_order) {
+      const currentDottedOrder =
+        new Date(this.start_time).toISOString() + this.id;
+      if (this.parent_run) {
+        this.dotted_order =
+          this.parent_run.dotted_order + "." + currentDottedOrder;
+      } else {
+        this.dotted_order = currentDottedOrder;
+      }
+    }
   }
   private static getDefaultConfig(): object {
     return {

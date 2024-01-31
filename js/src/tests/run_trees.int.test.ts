@@ -9,6 +9,21 @@ async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
+async function waitUntil(
+  condition: () => Promise<boolean>,
+  timeout: number,
+  interval: number
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (await condition()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+  throw new Error("Timeout");
+}
+
 test("Test post and patch run", async () => {
   const projectName = `__test_run_tree`;
   const langchainClient = new Client({});
@@ -27,6 +42,10 @@ test("Test post and patch run", async () => {
   };
 
   const parent_run = new RunTree(parentRunConfig);
+  expect(parent_run.trace_id).toEqual(parent_run.id);
+  expect(parent_run.dotted_order).toEqual(
+    new Date(parent_run.start_time).toISOString() + parent_run.id
+  );
   await parent_run.postRun();
 
   const child_llm_run = await parent_run.createChild({
@@ -34,6 +53,13 @@ test("Test post and patch run", async () => {
     run_type: "llm",
     inputs: { text: "hello world" },
   });
+  expect(child_llm_run.dotted_order).toEqual(
+    parent_run.dotted_order +
+      "." +
+      new Date(child_llm_run.start_time).toISOString() +
+      child_llm_run.id
+  );
+  expect(child_llm_run.trace_id).toEqual(parent_run.trace_id);
   await child_llm_run.postRun();
 
   const child_chain_run = await parent_run.createChild({
@@ -66,15 +92,17 @@ test("Test post and patch run", async () => {
   await parent_run.end({ output: ["Hi"] });
   await parent_run.patchRun();
 
+  await waitUntil(
+    async () => {
+      const runs = await toArray(langchainClient.listRuns({ projectName }));
+      return runs.length === 5;
+    },
+    30_000, // Wait up to 30 seconds
+    3000 // every 3 second
+  );
   const runs = await toArray(langchainClient.listRuns({ projectName }));
   expect(runs.length).toEqual(5);
   const runMap = new Map(runs.map((run) => [run.name, run]));
-  expect(runMap.get("parent_run")?.execution_order).toEqual(1);
-  expect(runMap.get("child_run")?.execution_order).toEqual(2);
-  expect(runMap.get("child_chain_run")?.execution_order).toEqual(2);
-  expect(runMap.get("grandchild_chain_run")?.execution_order).toEqual(3);
-  expect(runMap.get("child_tool_run")?.execution_order).toEqual(4);
-
   expect(runMap.get("child_run")?.parent_run_id).toEqual(
     runMap.get("parent_run")?.id
   );
