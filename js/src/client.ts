@@ -380,6 +380,7 @@ export class Client {
     if (runCreate.outputs) {
       runCreate.outputs = hideOutputs(runCreate.outputs);
     }
+    runCreate.start_time = run.start_time ?? Date.now();
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",

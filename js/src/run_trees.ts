@@ -12,6 +12,17 @@ function warnOnce(message: string): void {
   }
 }
 
+function stripNonAlphanumeric(input: string) {
+  return input.replace(/[-:.]/g, "");
+}
+
+export function convertToDottedOrderFormat(epoch: number, runId: string) {
+  return (
+    stripNonAlphanumeric(`${new Date(epoch).toISOString().slice(0, -1)}000Z`) +
+    runId
+  );
+}
+
 export interface RunTreeConfig {
   name: string;
   run_type: string;
@@ -61,8 +72,10 @@ export class RunTree implements BaseRun {
       }
     }
     if (!this.dotted_order) {
-      const currentDottedOrder =
-        new Date(this.start_time).toISOString() + this.id;
+      const currentDottedOrder = convertToDottedOrderFormat(
+        this.start_time,
+        this.id
+      );
       if (this.parent_run) {
         this.dotted_order =
           this.parent_run.dotted_order + "." + currentDottedOrder;
