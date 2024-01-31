@@ -257,9 +257,9 @@ class Run(RunBase):
     """Time the first token was processed."""
     parent_run_ids: Optional[List[UUID]] = None
     """List of parent run IDs."""
-    trace_id: Optional[UUID] = None
+    trace_id: UUID
     """Unique ID assigned to every run within this nested trace."""
-    dotted_order: Optional[str] = None
+    dotted_order: str = Field(default="")
     """Dotted order for the run.
 
     This is a string composed of {time}{run-uuid}.* so that a trace can be
@@ -275,8 +275,12 @@ class Run(RunBase):
 
     def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
         """Initialize a Run object."""
+        if not kwargs.get("trace_id"):
+            kwargs = {"trace_id": kwargs.get("id"), **kwargs}
         super().__init__(**kwargs)
         self._host_url = _host_url
+        if not self.dotted_order.strip():
+            self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
 
     @property
     def url(self) -> Optional[str]:
