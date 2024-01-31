@@ -4,7 +4,20 @@ import functools
 import logging
 import os
 import subprocess
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import requests
 
@@ -284,3 +297,44 @@ class FilterPoolFullWarning(logging.Filter):
         return (
             "Connection pool is full, discarding connection" not in record.getMessage()
         )
+
+
+T = TypeVar("T")
+_no_default = object()
+
+
+# https://github.com/python/cpython/blob/main/Lib/test/test_asyncgen.py#L54
+# before 3.10, the builtin anext() was not available
+def py_anext(
+    iterator: AsyncIterator[T], default: Union[T, Any] = _no_default
+) -> Awaitable[Union[T, None, Any]]:
+    """Pure-Python implementation of anext() for testing purposes.
+
+    Closely matches the builtin anext() C implementation.
+    Can be used to compare the built-in implementation of the inner
+    coroutines machinery to C-implementation of __anext__() and send()
+    or throw() on the returned generator.
+    """
+
+    try:
+        __anext__ = cast(
+            Callable[[AsyncIterator[T]], Awaitable[T]], type(iterator).__anext__
+        )
+    except AttributeError:
+        raise TypeError(f"{iterator!r} is not an async iterator")
+
+    if default is _no_default:
+        return __anext__(iterator)
+
+    async def anext_impl() -> Union[T, Any]:
+        try:
+            # The C code is way more low-level than this, as it implements
+            # all methods of the iterator protocol. In this implementation
+            # we're relying on higher-level coroutine concepts, but that's
+            # exactly what we want -- crosstest pure-Python high-level
+            # implementation and low-level C anext() iterators.
+            return await __anext__(iterator)
+        except StopAsyncIteration:
+            return default
+
+    return anext_impl()

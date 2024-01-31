@@ -380,17 +380,11 @@ def traceable(
                         *args, run_tree=run_container["new_run"], **kwargs
                     )
                 else:
-                    # TODO: Nesting is ambiguous if a nested traceable function is only
-                    # called mid-generation. Need to explicitly accept run_tree to get
-                    # around this.
                     async_gen_result = func(*args, **kwargs)
-                _PARENT_RUN_TREE.set(context_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
-                _TAGS.set(run_container["outer_tags"])
-                _METADATA.set(run_container["outer_metadata"])
                 # Can't iterate through if it's a coroutine
                 if inspect.iscoroutine(async_gen_result):
                     async_gen_result = await async_gen_result
+                utils.py_anext(async_gen_result) 
                 async for item in async_gen_result:
                     results.append(item)
                     yield item
