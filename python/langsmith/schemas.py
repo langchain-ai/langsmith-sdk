@@ -279,7 +279,7 @@ class Run(RunBase):
             kwargs = {"trace_id": kwargs.get("id"), **kwargs}
         super().__init__(**kwargs)
         self._host_url = _host_url
-        if not self.dotted_order.strip():
+        if not self.dotted_order.strip() and not self.parent_run_id:
             self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
 
     @property
