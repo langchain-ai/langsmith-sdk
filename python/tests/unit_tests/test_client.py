@@ -11,7 +11,7 @@ import weakref
 from datetime import datetime
 from enum import Enum
 from io import BytesIO
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -510,12 +510,15 @@ def test_serialize_json() -> None:
 
         def __repr__(self) -> str:
             return "SoCyclic"
+
     from playwright.sync_api import sync_playwright
+
     browser = sync_playwright().start().chromium.launch(headless=True, args=None)
+
     class CyclicClass2:
         def __init__(self) -> None:
-            self.cyclic = None
-            self.other = None
+            self.cyclic: Any = None
+            self.other: Any = None
             self.page = browser.new_page()
 
         def __repr__(self) -> str:
