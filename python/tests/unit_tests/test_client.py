@@ -4,6 +4,7 @@ import dataclasses
 import gc
 import json
 import os
+import threading
 import time
 import uuid
 import weakref
@@ -497,10 +498,11 @@ def test_serialize_json() -> None:
     current_time = datetime.now()
 
     class NestedClass:
-        __slots__ = ["person"]
+        __slots__ = ["person", "lock"]
 
         def __init__(self) -> None:
             self.person = Person(name="foo")
+            self.lock = threading.Lock()
 
     class MyNamedTuple(NamedTuple):
         foo: str
@@ -540,11 +542,19 @@ def test_serialize_json() -> None:
         "a_str": "foo",
         "an_int": 1,
         "a_float": 1.1,
-        "nested_class": {"person": {"name": "foo"}},
+        "nested_class": (
+            lambda val: val["person"] == {"name": "foo"}
+            and "_thread.lock object" in val.get("lock")
+        ),
         "attr_dict": {"foo": "foo", "bar": 1},
         "named_tuple": ["foo", 1],
     }
-    assert res == expected
+    assert set(expected) == set(res)
+    for k, v in expected.items():
+        if callable(v):
+            assert v(res[k])
+        else:
+            assert res[k] == v
 
 
 def test_host_url() -> None:
