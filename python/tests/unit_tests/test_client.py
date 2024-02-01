@@ -460,6 +460,11 @@ def test_serialize_json() -> None:
         def __init__(self, x: int) -> None:
             self.x = x
             self.y = "y"
+            self.a_list = [1, 2, 3]
+            self.a_tuple = (1, 2, 3)
+            self.a_set = {1, 2, 3}
+            self.a_dict = {"foo": "bar"}
+            self.my_bytes = b"foo"
 
     class MyClassWithSlots:
         __slots__ = ["x", "y"]
@@ -552,7 +557,15 @@ def test_serialize_json() -> None:
     expected = {
         "uid": str(uid),
         "time": current_time.isoformat(),
-        "my_class": {"x": 1, "y": "y"},
+        "my_class": {
+            "x": 1,
+            "y": "y",
+            "a_list": [1, 2, 3],
+            "a_tuple": [1, 2, 3],
+            "a_set": [1, 2, 3],
+            "a_dict": {"foo": "bar"},
+            "my_bytes": "foo",
+        },
         "my_slotted_class": {"x": 1, "y": "y"},
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
