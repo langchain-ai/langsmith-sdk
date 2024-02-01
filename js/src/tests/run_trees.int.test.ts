@@ -9,7 +9,7 @@ async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
-test("Test post and patch run", async () => {
+test.concurrent("Test post and patch run", async () => {
   const projectName = `__test_run_tree`;
   const langchainClient = new Client({});
   const projects = await toArray(langchainClient.listProjects());
