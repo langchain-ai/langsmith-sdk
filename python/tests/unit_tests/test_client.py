@@ -2,6 +2,7 @@
 import asyncio
 import dataclasses
 import gc
+import itertools
 import json
 import os
 import threading
@@ -466,6 +467,12 @@ def test_serialize_json() -> None:
             self.a_dict = {"foo": "bar"}
             self.my_bytes = b"foo"
 
+    class ClassWithTee:
+        def __init__(self) -> None:
+            tee_a, tee_b = itertools.tee(range(10))
+            self.tee_a = tee_a
+            self.tee_b = tee_b
+
     class MyClassWithSlots:
         __slots__ = ["x", "y"]
 
@@ -536,6 +543,7 @@ def test_serialize_json() -> None:
         "uid": uid,
         "time": current_time,
         "my_class": MyClass(1),
+        "class_with_tee": ClassWithTee(),
         "my_slotted_class": MyClassWithSlots(1),
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
@@ -566,6 +574,9 @@ def test_serialize_json() -> None:
             "a_dict": {"foo": "bar"},
             "my_bytes": "foo",
         },
+        "class_with_tee": lambda val: all(
+            ["_tee object" in val[key] for key in ["tee_a", "tee_b"]]
+        ),
         "my_slotted_class": {"x": 1, "y": "y"},
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
