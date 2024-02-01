@@ -514,7 +514,7 @@ def test_serialize_json() -> None:
 
         def __init__(self) -> None:
             self.person = Person(name="foo")
-            self.lock = threading.Lock()
+            self.lock = [threading.Lock()]
 
     class CyclicClass:
         def __init__(self) -> None:
@@ -589,7 +589,7 @@ def test_serialize_json() -> None:
         "a_float": 1.1,
         "nested_class": (
             lambda val: val["person"] == {"name": "foo"}
-            and "_thread.lock object" in val.get("lock")
+            and "_thread.lock object" in str(val.get("lock"))
         ),
         "attr_dict": {"foo": "foo", "bar": 1},
         "named_tuple": ["foo", 1],
