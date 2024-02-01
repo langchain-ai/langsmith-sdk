@@ -151,11 +151,19 @@ def _default_retry_config() -> Retry:
     return Retry(**retry_params)  # type: ignore
 
 
-def _serialize_json(obj: Any) -> Any:
+_PRIMITIVE_TYPES = (str, int, float, bool)
+_MAX_DEPTH = 3
+
+
+def _serialize_json(obj: Any, depth: int = 0) -> Any:
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
     if isinstance(obj, uuid.UUID):
         return str(obj)
+    if obj is None or isinstance(obj, _PRIMITIVE_TYPES):
+        return obj
+    if depth >= _MAX_DEPTH:
+        return repr(obj)
     try:
         serialization_methods = [
             ("model_dump_json", True),  # Pydantic V2
@@ -180,13 +188,20 @@ def _serialize_json(obj: Any) -> Any:
             return dataclasses.asdict(obj)
         try:
             if hasattr(obj, "__slots__"):
-                return {slot: getattr(obj, slot) for slot in obj.__slots__}
+                all_attrs = {slot: getattr(obj, slot, None) for slot in obj.__slots__}
+            elif hasattr(obj, "__dict__"):
+                all_attrs = vars(obj)
             else:
-                return vars(obj)
-        except Exception as e:
+                return repr(obj)
+            return {
+                # Avoid crashes on cycles
+                k: _serialize_json(v, depth + 1) if v is not obj else repr(v)
+                for k, v in all_attrs.items()
+            }
+        except BaseException as e:
             logger.debug(f"Failed to serialize {type(obj)} to JSON using vars: {e}")
             return repr(obj)
-    except Exception as e:
+    except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
 

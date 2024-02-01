@@ -504,6 +504,27 @@ def test_serialize_json() -> None:
             self.person = Person(name="foo")
             self.lock = threading.Lock()
 
+    class CyclicClass:
+        def __init__(self) -> None:
+            self.cyclic = self
+
+        def __repr__(self) -> str:
+            return "SoCyclic"
+    from playwright.sync_api import sync_playwright
+    browser = sync_playwright().start().chromium.launch(headless=True, args=None)
+    class CyclicClass2:
+        def __init__(self) -> None:
+            self.cyclic = None
+            self.other = None
+            self.page = browser.new_page()
+
+        def __repr__(self) -> str:
+            return "SoCyclic2"
+
+    cycle_2 = CyclicClass2()
+    cycle_2.cyclic = CyclicClass2()
+    cycle_2.cyclic.other = cycle_2
+
     class MyNamedTuple(NamedTuple):
         foo: str
         bar: int
@@ -525,6 +546,8 @@ def test_serialize_json() -> None:
         "nested_class": NestedClass(),
         "attr_dict": AttrDict(foo="foo", bar=1),
         "named_tuple": MyNamedTuple(foo="foo", bar=1),
+        "cyclic": CyclicClass(),
+        # "cyclic2": cycle_2,
     }
 
     res = json.loads(json.dumps(to_serialize, default=_serialize_json))
@@ -548,6 +571,9 @@ def test_serialize_json() -> None:
         ),
         "attr_dict": {"foo": "foo", "bar": 1},
         "named_tuple": ["foo", 1],
+        "cyclic": {"cyclic": "SoCyclic"},
+        # We don't really care about this case just want to not err
+        # "cyclic2": lambda _: True,
     }
     assert set(expected) == set(res)
     for k, v in expected.items():
