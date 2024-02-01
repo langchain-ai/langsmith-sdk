@@ -511,15 +511,10 @@ def test_serialize_json() -> None:
         def __repr__(self) -> str:
             return "SoCyclic"
 
-    from playwright.sync_api import sync_playwright
-
-    browser = sync_playwright().start().chromium.launch(headless=True, args=None)
-
     class CyclicClass2:
         def __init__(self) -> None:
             self.cyclic: Any = None
             self.other: Any = None
-            self.page = browser.new_page()
 
         def __repr__(self) -> str:
             return "SoCyclic2"
@@ -550,7 +545,7 @@ def test_serialize_json() -> None:
         "attr_dict": AttrDict(foo="foo", bar=1),
         "named_tuple": MyNamedTuple(foo="foo", bar=1),
         "cyclic": CyclicClass(),
-        # "cyclic2": cycle_2,
+        "cyclic2": cycle_2,
     }
 
     res = json.loads(json.dumps(to_serialize, default=_serialize_json))
@@ -576,7 +571,7 @@ def test_serialize_json() -> None:
         "named_tuple": ["foo", 1],
         "cyclic": {"cyclic": "SoCyclic"},
         # We don't really care about this case just want to not err
-        # "cyclic2": lambda _: True,
+        "cyclic2": lambda _: True,
     }
     assert set(expected) == set(res)
     for k, v in expected.items():
