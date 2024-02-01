@@ -31,6 +31,7 @@ from typing import (
 )
 
 from langsmith import client, run_trees, utils
+from langsmith._internal import aiter
 
 if TYPE_CHECKING:
     from langchain.schema.runnable import Runnable
@@ -373,7 +374,7 @@ def traceable(
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
-            results: List[Any] = []
+            for_tracing = None
             try:
                 if func_accepts_parent_run:
                     async_gen_result = func(
@@ -384,9 +385,11 @@ def traceable(
                 # Can't iterate through if it's a coroutine
                 if inspect.iscoroutine(async_gen_result):
                     async_gen_result = await async_gen_result
-                utils.py_anext(async_gen_result) 
+                for_tracing, async_gen_result = aiter.atee(async_gen_result)
+                # Get the first value
+                first = await aiter.py_anext(async_gen_result)
+                yield first
                 async for item in async_gen_result:
-                    results.append(item)
                     yield item
             except BaseException as e:
                 stacktrace = traceback.format_exc()
@@ -397,7 +400,8 @@ def traceable(
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
-            if results:
+            if for_tracing is not None:
+                results = list(for_tracing)
                 if reduce_fn:
                     try:
                         function_result = reduce_fn(results)
