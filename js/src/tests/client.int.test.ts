@@ -55,7 +55,11 @@ async function waitUntilRunFound(
       try {
         const run = await client.readRun(runId);
         if (checkOutputs) {
-          return run.outputs !== null && run.outputs !== undefined;
+          return (
+            run.outputs !== null &&
+            run.outputs !== undefined &&
+            Object.keys(run.outputs).length !== 0
+          );
         }
         return true;
       } catch (e) {
