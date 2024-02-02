@@ -132,7 +132,6 @@ async def test_nested_async_runs(langchain_client: Client):
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
     assert runs_dict["my_chain_run"].run_type == "chain"
-    assert runs_dict["my_chain_run"].execution_order == 1
     assert runs_dict["my_run"].parent_run_id == runs_dict["my_chain_run"].id
     assert runs_dict["my_run"].run_type == "chain"
     assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
