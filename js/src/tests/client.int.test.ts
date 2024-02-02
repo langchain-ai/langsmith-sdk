@@ -234,21 +234,26 @@ test.concurrent(
     expect(allFeedback.length).toEqual(1);
     await waitUntil(
       async () => {
-        const feedback = await langchainClient.readFeedback(allFeedback[0].id);
-        return feedback !== null && feedback !== undefined;
+        try {
+          const feedback = await langchainClient.readFeedback(
+            allFeedback[0].id
+          );
+          return feedback !== null && feedback !== undefined;
+        } catch (e) {
+          return false;
+        }
       },
       30_000,
       1_000
     );
 
-    const fetchedFeedback: Feedback[] = [];
-    for await (const feedback of langchainClient.listFeedback({
-      runIds: [run.id],
-      feedbackKeys: ["Jaccard"],
-      feedbackSourceTypes: ["model"],
-    })) {
-      fetchedFeedback.push(feedback);
-    }
+    const fetchedFeedback: Feedback[] = await toArray(
+      langchainClient.listFeedback({
+        runIds: [run.id],
+        feedbackKeys: ["Jaccard"],
+        feedbackSourceTypes: ["model"],
+      })
+    );
     expect(fetchedFeedback[0].id).toEqual(allFeedback[0].id);
     expect(fetchedFeedback[0].score).toEqual(
       jaccardChars(predicted, groundTruth)
