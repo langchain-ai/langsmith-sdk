@@ -1,4 +1,4 @@
-name: "Integration Tests"
+name: "Python Integration Tests"
 description: "Run integration tests"
 inputs:
   python-version:
@@ -23,7 +23,7 @@ runs:
         cache: "pip"
 
     - name: Install poetry
-      run: pipx install poetry==$POETRY_VERSION
+      run: pipx install poetry==1.4.2
       shell: bash
       working-directory: python
 
