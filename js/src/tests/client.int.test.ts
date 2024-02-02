@@ -250,7 +250,7 @@ test.concurrent(
     const fetchedFeedback: Feedback[] = await toArray(
       langchainClient.listFeedback({
         runIds: [run.id],
-        feedbackKeys: ["Jaccard"],
+        feedbackKeys: ["jaccard"],
         feedbackSourceTypes: ["model"],
       })
     );
