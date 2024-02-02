@@ -36,8 +36,3 @@ runs:
         LANGCHAIN_TRACING_V2: "true"
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-
-    - name: Run JS integration tests
-      run: yarn test:integration
-      shell: bash
-      working-directory: js
