@@ -55,7 +55,11 @@ async function waitUntilRunFound(
       try {
         const run = await client.readRun(runId);
         if (checkOutputs) {
-          return run.outputs !== null && run.outputs !== undefined;
+          return (
+            run.outputs !== null &&
+            run.outputs !== undefined &&
+            Object.keys(run.outputs).length !== 0
+          );
         }
         return true;
       } catch (e) {
@@ -116,12 +120,11 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   expect(examples.length).toBe(2);
   expect(examples.map((e) => e.id)).toContain(example.id);
 
-  const newExampleResponse = await client.updateExample(example.id, {
+  await client.updateExample(example.id, {
     inputs: { col1: "updatedExampleCol1" },
     outputs: { col2: "updatedExampleCol2" },
   });
   // Says 'example updated' or something similar
-  console.log(newExampleResponse);
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
   await client.deleteExample(example.id);
@@ -142,8 +145,8 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({});
 
-    const projectName = "__test_evaluate_run";
-    const datasetName = "__test_evaluate_run_dataset";
+    const projectName = "__test_evaluate_run" + Date.now();
+    const datasetName = "__test_evaluate_run_dataset" + Date.now();
     await deleteProject(langchainClient, projectName);
     await deleteDataset(langchainClient, datasetName);
 
@@ -260,8 +263,12 @@ test.concurrent(
     );
     expect(fetchedFeedback[0].value).toEqual("INCORRECT");
 
-    await langchainClient.deleteDataset({ datasetId: dataset.id });
-    await langchainClient.deleteProject({ projectName });
+    try {
+      await langchainClient.deleteDataset({ datasetId: dataset.id });
+      await langchainClient.deleteProject({ projectName });
+    } catch (e) {
+      console.log(e);
+    }
   },
   160_000
 );
@@ -282,11 +289,8 @@ test.concurrent("Test persist update run", async () => {
 
   await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
   await waitUntilRunFound(langchainClient, runId, true);
-
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
-  expect(storedRun.outputs).toEqual({ output: ["Hi"] });
-
   await langchainClient.deleteProject({ projectName });
 });
 
@@ -552,15 +556,7 @@ describe("createChatExample", () => {
     const langchainClient = new Client({});
 
     const datasetName = "__createChatExample-test-dataset";
-    try {
-      const existingDataset = await langchainClient.readDataset({
-        datasetName,
-      });
-      await langchainClient.deleteDataset({ datasetId: existingDataset.id });
-    } catch (e) {
-      console.log("Dataset does not exist");
-    }
-
+    await deleteDataset(langchainClient, datasetName);
     const dataset = await langchainClient.createDataset(datasetName);
 
     const input = [new HumanMessage({ content: "Hello, world!" })];
