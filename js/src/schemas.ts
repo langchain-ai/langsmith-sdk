@@ -70,9 +70,6 @@ export interface BaseRun {
   /** A human-readable name for the run. */
   name: string;
 
-  /** Defines the sequence in which the run was executed. */
-  execution_order?: number;
-
   /** The epoch time at which the run started, if available. */
   start_time?: number;
 
@@ -117,9 +114,6 @@ export interface BaseRun {
 export interface Run extends BaseRun {
   /** A unique identifier for the run, mandatory when loaded from DB. */
   id: string;
-
-  /** Defines the sequence in which the run was executed. */
-  execution_order?: number;
 
   /** The ID of the project that owns this run. */
   session_id?: string;

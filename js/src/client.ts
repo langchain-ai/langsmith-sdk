@@ -93,7 +93,6 @@ interface CreateRunParams {
   name: string;
   inputs: KVMap;
   run_type: string;
-  execution_order?: number;
   id?: string;
   start_time?: number;
   end_time?: number;
@@ -397,6 +396,7 @@ export class Client {
     if (runCreate.outputs) {
       runCreate.outputs = this.processOutputs(runCreate.outputs);
     }
+    runCreate.start_time = run.start_time ?? Date.now();
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
