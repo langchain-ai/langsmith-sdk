@@ -116,12 +116,11 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   expect(examples.length).toBe(2);
   expect(examples.map((e) => e.id)).toContain(example.id);
 
-  const newExampleResponse = await client.updateExample(example.id, {
+  await client.updateExample(example.id, {
     inputs: { col1: "updatedExampleCol1" },
     outputs: { col2: "updatedExampleCol2" },
   });
   // Says 'example updated' or something similar
-  console.log(newExampleResponse);
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
   await client.deleteExample(example.id);
@@ -142,8 +141,8 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({});
 
-    const projectName = "__test_evaluate_run";
-    const datasetName = "__test_evaluate_run_dataset";
+    const projectName = "__test_evaluate_run" + Date.now();
+    const datasetName = "__test_evaluate_run_dataset" + Date.now();
     await deleteProject(langchainClient, projectName);
     await deleteDataset(langchainClient, datasetName);
 
@@ -286,7 +285,6 @@ test.concurrent("Test persist update run", async () => {
 
   await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
   await waitUntilRunFound(langchainClient, runId, true);
-
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
   await langchainClient.deleteProject({ projectName });
