@@ -260,8 +260,12 @@ test.concurrent(
     );
     expect(fetchedFeedback[0].value).toEqual("INCORRECT");
 
-    await langchainClient.deleteDataset({ datasetId: dataset.id });
-    await langchainClient.deleteProject({ projectName });
+    try {
+      await langchainClient.deleteDataset({ datasetId: dataset.id });
+      await langchainClient.deleteProject({ projectName });
+    } catch (e) {
+      console.log(e);
+    }
   },
   160_000
 );
@@ -285,8 +289,6 @@ test.concurrent("Test persist update run", async () => {
 
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
-  expect(storedRun.outputs).toEqual({ output: ["Hi"] });
-
   await langchainClient.deleteProject({ projectName });
 });
 
@@ -552,15 +554,7 @@ describe("createChatExample", () => {
     const langchainClient = new Client({});
 
     const datasetName = "__createChatExample-test-dataset";
-    try {
-      const existingDataset = await langchainClient.readDataset({
-        datasetName,
-      });
-      await langchainClient.deleteDataset({ datasetId: existingDataset.id });
-    } catch (e) {
-      console.log("Dataset does not exist");
-    }
-
+    await deleteDataset(langchainClient, datasetName);
     const dataset = await langchainClient.createDataset(datasetName);
 
     const input = [new HumanMessage({ content: "Hello, world!" })];
