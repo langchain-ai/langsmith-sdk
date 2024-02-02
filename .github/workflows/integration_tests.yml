@@ -1,6 +1,9 @@
 name: Integration Tests CI
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -20,13 +23,11 @@ jobs:
       - name: Install poetry
         run: pipx install poetry==1.4.2
       - name: Install dependencies
-        run: poetry install
+        run: poetry install --with dev
       - name: Run Python integration tests
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
-          docker_username: ${{ secrets.DOCKER_USERNAME }}
-          docker_password: ${{ secrets.DOCKER_PASSWORD }}
 
   js_integration_test:
     name: JS Integration Test
@@ -48,5 +49,3 @@ jobs:
         uses: ./.github/actions/js-integration-tests
         with:
           node-version: 18.x
-          docker_username: ${{ secrets.DOCKER_USERNAME }}
-          docker_password: ${{ secrets.DOCKER_PASSWORD }}
