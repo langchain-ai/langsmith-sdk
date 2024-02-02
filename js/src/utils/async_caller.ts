@@ -10,6 +10,8 @@ const STATUS_NO_RETRY = [
   406, // Not Acceptable
   407, // Proxy Authentication Required
   408, // Request Timeout
+];
+const STATUS_IGNORE = [
   409, // Conflict
 ];
 
@@ -90,8 +92,12 @@ export class AsyncCaller {
               }
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const status = (error as any)?.response?.status;
-              if (status && STATUS_NO_RETRY.includes(+status)) {
-                throw error;
+              if (status) {
+                if (STATUS_NO_RETRY.includes(+status)) {
+                  throw error;
+                } else if (STATUS_IGNORE.includes(+status)) {
+                  return;
+                }
               }
             },
             retries: this.maxRetries,
