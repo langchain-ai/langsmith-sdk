@@ -147,7 +147,6 @@ def test_persist_update_run(
         inputs={"text": "hello world"},
         project_name=project_name,
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
-        execution_order=1,
         start_time=start_time,
         extra={"extra": "extra"},
         revision_id=revision_id,
