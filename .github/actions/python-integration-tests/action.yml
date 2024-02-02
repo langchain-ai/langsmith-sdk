@@ -1,9 +1,15 @@
-name: "Integration Tests"
+name: "Python Integration Tests"
 description: "Run integration tests"
 inputs:
   python-version:
     description: "Python version"
     required: true
+  langchain-api-key:
+    description: "Langchain"
+    required: true
+  openai-api-key:
+    description: "OpenAI API key"
+    required: false
 runs:
   using: "composite"
   steps:
@@ -17,7 +23,7 @@ runs:
         cache: "pip"
 
     - name: Install poetry
-      run: pipx install poetry==$POETRY_VERSION
+      run: pipx install poetry==1.4.2
       shell: bash
       working-directory: python
 
@@ -28,8 +34,9 @@ runs:
 
     - name: Run integration tests
       env:
-        LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
         LANGCHAIN_TRACING_V2: "true"
+        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
       run: make integration_tests
       shell: bash
       working-directory: python

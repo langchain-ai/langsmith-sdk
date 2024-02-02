@@ -7,6 +7,9 @@ tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests
 
 integration_tests:
+	poetry run pytest tests/integration_tests
+
+integration_tests_fast:
 	poetry run pytest -n auto tests/integration_tests
 
 lint:
