@@ -812,6 +812,8 @@ class Client:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
         if "outputs" in run_create:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        if not run_create.get("start_time"):
+            run_create["start_time"] = datetime.datetime.utcnow()
         return run_create
 
     @staticmethod

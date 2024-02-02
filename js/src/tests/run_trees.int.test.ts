@@ -24,7 +24,7 @@ async function waitUntil(
   throw new Error("Timeout");
 }
 
-test("Test post and patch run", async () => {
+test.concurrent("Test post and patch run", async () => {
   const projectName = `__test_run_tree`;
   const langchainClient = new Client({});
   const projects = await toArray(langchainClient.listProjects());
