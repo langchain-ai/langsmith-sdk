@@ -9,7 +9,6 @@ const STATUS_NO_RETRY = [
   405, // Method Not Allowed
   406, // Not Acceptable
   407, // Proxy Authentication Required
-  408, // Request Timeout
 ];
 const STATUS_IGNORE = [
   409, // Conflict
@@ -81,7 +80,6 @@ export class AsyncCaller {
             onFailedAttempt(error) {
               if (
                 error.message.startsWith("Cancel") ||
-                error.message.startsWith("TimeoutError") ||
                 error.message.startsWith("AbortError")
               ) {
                 throw error;
