@@ -28,6 +28,8 @@ jobs:
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
+          langchain-api-key: ${{ secrets.LANGCHAIN_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
   js_integration_test:
     name: JS Integration Test
@@ -49,3 +51,5 @@ jobs:
         uses: ./.github/actions/js-integration-tests
         with:
           node-version: 18.x
+          langchain-api-key: ${{ secrets.LANGCHAIN_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
