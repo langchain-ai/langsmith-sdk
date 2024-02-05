@@ -460,30 +460,30 @@ class Client:
     @property
     @ls_utils.ttl_cache(maxsize=1)
     def info(self) -> Optional[ls_schemas.LangSmithInfo]:
-            """Get the information about the LangSmith API.
+        """Get the information about the LangSmith API.
 
-            Returns
-            -------
-            Optional[ls_schemas.LangSmithInfo]
-                The information about the LangSmith API, or None if the API is
-                    not available.
-            """
-            try:
-                response = self.session.get(
-                    self.api_url + "/info",
-                    headers=self._headers,
-                    timeout=self.timeout_ms / 1000,
-                )
-                ls_utils.raise_for_status_with_text(response)
-                return ls_schemas.LangSmithInfo(**response.json())
-            except ls_utils.LangSmithNotFoundError:
-                self.tracing_queue = None
-                return None
-            except ls_utils.LangSmithAPIError as e:
-                # This will fail for on-prem instances that have
-                # not yet implemented the /info endpoint
-                logger.debug("Failed to get info: %s", e)
-                return None
+        Returns
+        -------
+        Optional[ls_schemas.LangSmithInfo]
+            The information about the LangSmith API, or None if the API is
+                not available.
+        """
+        try:
+            response = self.session.get(
+                self.api_url + "/info",
+                headers=self._headers,
+                timeout=self.timeout_ms / 1000,
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return ls_schemas.LangSmithInfo(**response.json())
+        except ls_utils.LangSmithNotFoundError:
+            self.tracing_queue = None
+            return None
+        except ls_utils.LangSmithAPIError as e:
+            # This will fail for on-prem instances that have
+            # not yet implemented the /info endpoint
+            logger.debug("Failed to get info: %s", e)
+            return None
 
     def request_with_retries(
         self,
