@@ -475,6 +475,9 @@ class Client:
             )
             ls_utils.raise_for_status_with_text(response)
             return ls_schemas.LangSmithInfo(**response.json())
+        except ls_utils.LangSmithNotFoundError:
+            self.tracing_queue = None
+            return None
         except ls_utils.LangSmithAPIError as e:
             # This will fail for on-prem instances that have
             # not yet implemented the /info endpoint
@@ -831,6 +834,15 @@ class Client:
     def _run_transform(
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
     ) -> dict:
+        """
+        Transforms the given run object into a dictionary representation.
+
+        Args:
+            run (Union[ls_schemas.Run, dict]): The run object to transform.
+
+        Returns:
+            dict: The transformed run object as a dictionary.
+        """
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create = run.dict()  # type: ignore
         else:
@@ -933,7 +945,8 @@ class Client:
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
-            self.tracing_queue is not None
+            self.info is not None  # Older versions don't support batch ingest
+            and self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
@@ -1107,7 +1120,8 @@ class Client:
         if events is not None:
             data["events"] = events
         if (
-            self.tracing_queue is not None
+            self.info is not None  # Older versions don't support batch ingest
+            and self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
@@ -3272,6 +3286,9 @@ def _get_ingest_config_var(client: Client, name: str, default: Any) -> Any:
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
+        return
+    client_info = client.info
+    if not client_info:
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
