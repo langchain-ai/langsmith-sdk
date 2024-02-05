@@ -1,15 +1,15 @@
-name: "Integration Tests"
+name: "Python Integration Tests"
 description: "Run integration tests"
 inputs:
   python-version:
     description: "Python version"
     required: true
-  docker_username:
-    description: "Docker username"
+  langchain-api-key:
+    description: "Langchain"
     required: true
-  docker_password:
-    description: "Docker password"
-    required: true
+  openai-api-key:
+    description: "OpenAI API key"
+    required: false
 runs:
   using: "composite"
   steps:
@@ -23,43 +23,20 @@ runs:
         cache: "pip"
 
     - name: Install poetry
-      run: pipx install poetry==$POETRY_VERSION
+      run: pipx install poetry==1.4.2
       shell: bash
       working-directory: python
 
     - name: Install dependencies
-      run: poetry install
+      run: poetry install --with dev
       shell: bash
       working-directory: python
 
-    - name: Log in to docker
-      uses: docker/login-action@v2
-      with:
-        username: ${{ inputs.docker_username }}
-        password: ${{ inputs.docker_password }}
-
     - name: Run integration tests
       env:
-        LANGCHAIN_ENDPOINT: http://127.0.0.1:1984
-      run: |
-        poetry run langsmith start --dev
-        poetry run langsmith status
-        sleep 5
-        counter=0
-        max_tries=20
-        while true; do
-          response=$(curl -f --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:1984/tenants || true)
-          if [ "$response" -eq 200 ]; then
-            echo "Service is up!"
-            break
-          fi
-          ((counter++))
-          if [ $counter -ge $max_tries ]; then
-            echo "Service did not start within the expected time."
-            exit 1
-          fi
-          sleep 3
-        done
-        make integration_tests
+        LANGCHAIN_TRACING_V2: "true"
+        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: make integration_tests
       shell: bash
       working-directory: python

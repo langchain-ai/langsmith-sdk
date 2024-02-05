@@ -9,6 +9,9 @@ tests_watch:
 integration_tests:
 	poetry run pytest tests/integration_tests
 
+integration_tests_fast:
+	poetry run pytest -n auto tests/integration_tests
+
 lint:
 	poetry run ruff .
 	poetry run mypy .

@@ -1,4 +1,5 @@
 """The LangSmith Client."""
+
 from __future__ import annotations
 
 import collections
@@ -151,12 +152,30 @@ def _default_retry_config() -> Retry:
     return Retry(**retry_params)  # type: ignore
 
 
-def _serialize_json(obj: Any) -> Any:
-    if isinstance(obj, datetime.datetime):
-        return obj.isoformat()
-    if isinstance(obj, uuid.UUID):
-        return str(obj)
+_PRIMITIVE_TYPES = (str, int, float, bool)
+_MAX_DEPTH = 2
+
+
+def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
+        if depth >= _MAX_DEPTH:
+            try:
+                return json.loads(json.dumps(obj))
+            except BaseException:
+                return repr(obj)
+        if isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        if obj is None or isinstance(obj, _PRIMITIVE_TYPES):
+            return obj
+        if isinstance(obj, bytes):
+            return obj.decode("utf-8")
+        if isinstance(obj, (set, list, tuple)):
+            return [_serialize_json(x, depth + 1) for x in list(obj)]
+        if isinstance(obj, dict):
+            return {k: _serialize_json(v, depth + 1) for k, v in obj.items()}
+
         serialization_methods = [
             ("model_dump_json", True),  # Pydantic V2
             ("json", True),  # Pydantic V1
@@ -178,15 +197,17 @@ def _serialize_json(obj: Any) -> Any:
         if dataclasses.is_dataclass(obj):
             # Regular dataclass
             return dataclasses.asdict(obj)
-        try:
-            if hasattr(obj, "__slots__"):
-                return {slot: getattr(obj, slot) for slot in obj.__slots__}
-            else:
-                return vars(obj)
-        except Exception as e:
-            logger.debug(f"Failed to serialize {type(obj)} to JSON using vars: {e}")
+        if hasattr(obj, "__slots__"):
+            all_attrs = {slot: getattr(obj, slot, None) for slot in obj.__slots__}
+        elif hasattr(obj, "__dict__"):
+            all_attrs = vars(obj)
+        else:
             return repr(obj)
-    except Exception as e:
+        return {
+            k: _serialize_json(v, depth=depth + 1) if v is not obj else repr(v)
+            for k, v in all_attrs.items()
+        }
+    except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
 
@@ -798,6 +819,8 @@ class Client:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
         if "outputs" in run_create:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        if not run_create.get("start_time"):
+            run_create["start_time"] = datetime.datetime.utcnow()
         return run_create
 
     @staticmethod
@@ -842,7 +865,6 @@ class Client:
         inputs: Dict[str, Any],
         run_type: str,
         *,
-        execution_order: Optional[int] = None,
         project_name: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
@@ -857,9 +879,6 @@ class Client:
         run_type : str
             The type of the run, such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
-        execution_order : int or None, default=None
-            The position of the run in the full trace's execution sequence.
-                All root run traces have execution_order 1.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -880,7 +899,6 @@ class Client:
             "name": name,
             "inputs": inputs,
             "run_type": run_type,
-            "execution_order": execution_order if execution_order is not None else 1,
         }
         if not self._filter_for_sampling([run_create]):
             return
@@ -1108,9 +1126,8 @@ class Client:
         )
         runs: Dict[uuid.UUID, ls_schemas.Run] = {}
         for child_run in sorted(
-            # TODO: Remove execution_order once it's no longer used
             child_runs,
-            key=lambda r: r.dotted_order or str(r.execution_order),
+            key=lambda r: r.dotted_order,
         ):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
@@ -1203,9 +1220,9 @@ class Client:
         body_query: Dict[str, Any] = {
             "session": [project_id] if project_id else None,
             "run_type": run_type,
-            "reference_example": [reference_example_id]
-            if reference_example_id
-            else None,
+            "reference_example": (
+                [reference_example_id] if reference_example_id else None
+            ),
             "query": query,
             "filter": filter,
             "execution_order": execution_order,
@@ -1616,9 +1633,11 @@ class Client:
                     row[f"feedback.{k}"] = v.get("avg")
             row.update(
                 {
-                    "execution_time": (r.end_time - r.start_time).total_seconds()
-                    if r.end_time
-                    else None,
+                    "execution_time": (
+                        (r.end_time - r.start_time).total_seconds()
+                        if r.end_time
+                        else None
+                    ),
                     "error": r.error,
                     "id": r.id,
                 }
@@ -2046,9 +2065,9 @@ class Client:
                 final_generations = cast(dict, generations)
         return self.create_example(
             inputs={"input": final_input},
-            outputs={"output": final_generations}
-            if final_generations is not None
-            else None,
+            outputs=(
+                {"output": final_generations} if final_generations is not None else None
+            ),
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             created_at=created_at,
@@ -2796,9 +2815,11 @@ class Client:
         name_contains: Optional[str] = None,
     ) -> Iterator[ls_schemas.AnnotationQueue]:
         params: dict = {
-            "ids": [_as_uuid(id_, f"queue_ids[{i}]") for i, id_ in enumerate(queue_ids)]
-            if queue_ids is not None
-            else None,
+            "ids": (
+                [_as_uuid(id_, f"queue_ids[{i}]") for i, id_ in enumerate(queue_ids)]
+                if queue_ids is not None
+                else None
+            ),
             "name": name,
             "name_contains": name_contains,
         }

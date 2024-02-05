@@ -130,11 +130,8 @@ def test_datasets(langchain_client: Client) -> None:
 
 
 @freeze_time("2023-01-01")
-def test_persist_update_run(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
+def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     project_name = "__test_persist_update_run"
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
@@ -147,7 +144,6 @@ def test_persist_update_run(
         inputs={"text": "hello world"},
         project_name=project_name,
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
-        execution_order=1,
         start_time=start_time,
         extra={"extra": "extra"},
         revision_id=revision_id,
@@ -163,7 +159,7 @@ def test_persist_update_run(
                 if stored_run.end_time is not None:
                     break
             except LangSmithError:
-                time.sleep(2)
+                time.sleep(3)
 
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
