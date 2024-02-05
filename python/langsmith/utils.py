@@ -1,9 +1,12 @@
 """Generic utility functions."""
+
 import enum
 import functools
 import logging
 import os
 import subprocess
+import threading
+import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import requests
@@ -284,3 +287,36 @@ class FilterPoolFullWarning(logging.Filter):
         return (
             "Connection pool is full, discarding connection" not in record.getMessage()
         )
+
+
+def ttl_cache(ttl_seconds: int, maxsize: Optional[int] = None) -> Callable:
+    """Cache function results for a specific time-to-live."""
+
+    def decorator(func: Callable) -> Callable:
+        cache: Dict[Tuple, Tuple] = {}
+        cache_lock = threading.RLock()
+
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            key = (args, frozenset(kwargs.items()))
+            with cache_lock:
+                if key in cache:
+                    result, timestamp = cache[key]
+                    if time.time() - timestamp < ttl_seconds:
+                        # Refresh the timestamp
+                        cache[key] = (result, time.time())
+                        return result
+            result = func(*args, **kwargs)
+            with cache_lock:
+                cache[key] = (result, time.time())
+
+                if maxsize is not None:
+                    if len(cache) > maxsize:
+                        oldest_key = min(cache, key=lambda k: cache[k][1])
+                        del cache[oldest_key]
+
+            return result
+
+        return wrapper
+
+    return decorator
