@@ -945,11 +945,12 @@ class Client:
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
-            self.info is not None  # Older versions don't support batch ingest
-            and self.tracing_queue is not None
+            self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
+            # Checked last since it makes a (cached) API call
+            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
@@ -1120,11 +1121,12 @@ class Client:
         if events is not None:
             data["events"] = events
         if (
-            self.info is not None  # Older versions don't support batch ingest
-            and self.tracing_queue is not None
+            self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
+            # Checked last since it makes an API call
+            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(data["dotted_order"], "update", data)
