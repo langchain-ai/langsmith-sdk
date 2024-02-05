@@ -105,6 +105,13 @@ export class RunTree implements BaseRun {
   }
 
   public async createChild(config: RunTreeConfig): Promise<RunTree> {
+    if (config.id == this.id) {
+      console.warn(
+        `Run ${config.name} id cannot be the same as parent run id.` +
+          "Defaulting to a random id."
+      );
+      config.id = uuid.v4();
+    }
     const child = new RunTree({
       ...config,
       parent_run: this,
