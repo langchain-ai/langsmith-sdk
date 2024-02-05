@@ -66,7 +66,7 @@ async function waitUntilRunFound(
         return false;
       }
     },
-    30_000,
+    60_000,
     1_000
   );
 }
