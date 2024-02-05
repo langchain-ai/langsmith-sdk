@@ -289,8 +289,10 @@ class FilterPoolFullWarning(logging.Filter):
         )
 
 
-def ttl_cache(ttl_seconds: int, maxsize: Optional[int] = None) -> Callable:
-    """Cache function results for a specific time-to-live."""
+def ttl_cache(
+    ttl_seconds: Optional[int] = None, maxsize: Optional[int] = None
+) -> Callable:
+    """LRU cache with an optional TTL."""
 
     def decorator(func: Callable) -> Callable:
         cache: Dict[Tuple, Tuple] = {}
@@ -302,7 +304,7 @@ def ttl_cache(ttl_seconds: int, maxsize: Optional[int] = None) -> Callable:
             with cache_lock:
                 if key in cache:
                     result, timestamp = cache[key]
-                    if time.time() - timestamp < ttl_seconds:
+                    if ttl_seconds is None or time.time() - timestamp < ttl_seconds:
                         # Refresh the timestamp
                         cache[key] = (result, time.time())
                         return result

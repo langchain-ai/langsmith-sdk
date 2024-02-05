@@ -458,7 +458,7 @@ class Client:
         return headers
 
     @property
-    @ls_utils.ttl_cache(ttl_seconds=60, maxsize=1)
+    @ls_utils.ttl_cache(maxsize=1)
     def info(self) -> Optional[ls_schemas.LangSmithInfo]:
         """Get the information about the LangSmith API.
 
