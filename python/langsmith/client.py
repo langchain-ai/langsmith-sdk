@@ -457,6 +457,28 @@ class Client:
             headers["x-api-key"] = self.api_key
         return headers
 
+    @property
+    @ls_utils.ttl_cache(maxsize=1)
+    def info(self) -> Optional[ls_schemas.LangSmithInfo]:
+        """Get the information about the LangSmith API.
+
+        Returns
+        -------
+        dict
+            The information about the LangSmith API.
+        """
+        try:
+            response = self.session.get(
+                self.api_url + "/info",
+                headers=self._headers,
+                timeout=self.timeout_ms / 1000,
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return ls_schemas.LangSmithInfo(**response.json())
+        except ls_utils.LangSmithAPIError as e:
+            logger.debug("Failed to get info: %s", e)
+            return None
+
     def request_with_retries(
         self,
         request_method: str,
