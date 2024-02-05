@@ -3250,6 +3250,20 @@ _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
+def _get_batch_ingest_config(client: Client) -> Dict[str, Any]:
+    info = client.info
+    if not info:
+        return {}
+    if not info.batch_ingest_config:
+        return {}
+    return info.batch_ingest_config
+
+
+def _get_ingest_config_var(client: Client, name: str, default: Any) -> Any:
+    config = _get_batch_ingest_config(client)
+    return config.get(name, default)
+
+
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
@@ -3270,9 +3284,10 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         for thread in sub_threads:
             if not thread.is_alive():
                 sub_threads.remove(thread)
-        if (
-            len(sub_threads) < _AUTO_SCALE_UP_NTHREADS_LIMIT
-            and tracing_queue.qsize() > _AUTO_SCALE_UP_QSIZE_TRIGGER
+        if len(sub_threads) < _get_ingest_config_var(
+            client, "scale_up_nthreads_limit", _AUTO_SCALE_UP_NTHREADS_LIMIT
+        ) and tracing_queue.qsize() > _get_ingest_config_var(
+            client, "scale_up_nqueue_limit", _AUTO_SCALE_UP_QSIZE_TRIGGER
         ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func, args=(weakref.ref(client),)
@@ -3301,7 +3316,10 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
         # the main thread dies
         threading.main_thread().is_alive()
         # or we've seen the queue empty 4 times in a row
-        and seen_successive_empty_queues <= _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
+        and seen_successive_empty_queues
+        <= _get_ingest_config_var(
+            client, "scale_down_nempty_trigger", _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
+        )
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue):
             seen_successive_empty_queues = 0
