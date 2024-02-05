@@ -1,3 +1,4 @@
+import time
 import unittest
 
 import pytest
@@ -71,3 +72,25 @@ class LangSmithProjectNameTest(unittest.TestCase):
                         else ls_utils.get_tracer_project(case.return_default_value)
                     )
                     self.assertEqual(project, case.expected_project_name)
+
+
+def test_ttl_cache():
+    test_function_val = 0
+
+    class MyClass:
+        @property
+        @ls_utils.ttl_cache(ttl_seconds=0.1)
+        def test_function(self):
+            nonlocal test_function_val
+            test_function_val += 1
+            return test_function_val
+
+    some_class = MyClass()
+    for _ in range(3):
+        assert some_class.test_function == 1
+    time.sleep(0.1)
+    for _ in range(3):
+        assert some_class.test_function == 2
+    time.sleep(0.1)
+    for _ in range(3):
+        assert some_class.test_function == 3
