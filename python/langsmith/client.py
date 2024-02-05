@@ -468,7 +468,11 @@ class Client:
             The information about the LangSmith API.
         """
         try:
-            response = self._get_with_retries("/info")
+            response = self.session.get(
+                self.api_url + "/info",
+                headers=self._headers,
+                timeout=self.timeout_ms / 1000,
+            )
             ls_utils.raise_for_status_with_text(response)
             return ls_schemas.LangSmithInfo(**response.json())
         except ls_utils.LangSmithAPIError as e:

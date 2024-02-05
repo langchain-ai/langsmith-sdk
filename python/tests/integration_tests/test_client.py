@@ -497,7 +497,8 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
 
 
 @freeze_time("2023-01-01")
-def test_get_info(langchain_client: Client) -> None:
+def test_get_info() -> None:
+    langchain_client = Client(api_key="not-a-real-key")
     info = langchain_client.info
     assert info
     assert info.version is not None
