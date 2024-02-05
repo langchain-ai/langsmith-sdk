@@ -458,7 +458,7 @@ class Client:
         return headers
 
     @property
-    @ls_utils.ttl_cache(maxsize=1)
+    @functools.lru_cache(maxsize=1)
     def info(self) -> Optional[ls_schemas.LangSmithInfo]:
         """Get the information about the LangSmith API.
 
@@ -477,11 +477,11 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             return ls_schemas.LangSmithInfo(**response.json())
         except ls_utils.LangSmithNotFoundError:
+            # This will fail for on-prem instances that have
+            # not yet implemented the /info endpoint
             self.tracing_queue = None
             return None
         except ls_utils.LangSmithAPIError as e:
-            # This will fail for on-prem instances that have
-            # not yet implemented the /info endpoint
             logger.debug("Failed to get info: %s", e)
             return None
 
