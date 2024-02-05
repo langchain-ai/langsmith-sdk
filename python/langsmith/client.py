@@ -476,6 +476,8 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             return ls_schemas.LangSmithInfo(**response.json())
         except ls_utils.LangSmithAPIError as e:
+            # This will fail for on-prem instances that have
+            # not yet implemented the /info endpoint
             logger.debug("Failed to get info: %s", e)
             return None
 
@@ -3251,12 +3253,15 @@ _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
 def _get_batch_ingest_config(client: Client) -> Dict[str, Any]:
-    info = client.info
-    if not info:
+    try:
+        info = client.info
+        if not info:
+            return {}
+        if not info.batch_ingest_config:
+            return {}
+        return info.batch_ingest_config
+    except BaseException:
         return {}
-    if not info.batch_ingest_config:
-        return {}
-    return info.batch_ingest_config
 
 
 def _get_ingest_config_var(client: Client, name: str, default: Any) -> Any:
