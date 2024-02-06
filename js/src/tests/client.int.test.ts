@@ -417,7 +417,7 @@ test.concurrent(
   90_000
 );
 
-test.only("Test create feedback with source run", async () => {
+test.concurrent("Test create feedback with source run", async () => {
   const langchainClient = new Client({ autoBatchTracing: false });
   const projectName = "__test_create_feedback_with_source_run";
   await deleteProject(langchainClient, projectName);
