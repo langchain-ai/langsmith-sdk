@@ -455,10 +455,6 @@ test.concurrent("Test create feedback with source run", async () => {
 test.concurrent(
   "Test create run with masked inputs/outputs",
   async () => {
-    // eslint-disable-next-line no-process-env
-    process.env.LANGCHAIN_HIDE_INPUTS = "true";
-    // eslint-disable-next-line no-process-env
-    process.env.LANGCHAIN_HIDE_OUTPUTS = "true";
     const langchainClient = new Client({
       hideInputs: true,
       hideOutputs: true,
