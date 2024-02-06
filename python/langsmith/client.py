@@ -3275,7 +3275,7 @@ _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
-def _get_batch_ingest_config(
+def _ensure_ingest_config(
     info: Optional[ls_schemas.LangSmithInfo],
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
@@ -3307,7 +3307,7 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
-    batch_ingest_config = _get_batch_ingest_config(client.info)
+    batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
@@ -3356,7 +3356,7 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
-    batch_ingest_config = _get_batch_ingest_config(client.info)
+    batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit = batch_ingest_config.get("size_limit", 100)
     seen_successive_empty_queues = 0
 
@@ -3366,9 +3366,7 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
         threading.main_thread().is_alive()
         # or we've seen the queue empty 4 times in a row
         and seen_successive_empty_queues
-        <= batch_ingest_config.get(
-            "scale_down_nempty_trigger", _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
-        )
+        <= batch_ingest_config["scale_down_nempty_trigger"]
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
