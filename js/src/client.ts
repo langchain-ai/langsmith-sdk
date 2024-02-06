@@ -822,9 +822,11 @@ export class Client {
   public async readProject({
     projectId,
     projectName,
+    includeStats,
   }: {
     projectId?: string;
     projectName?: string;
+    includeStats?: boolean;
   }): Promise<TracerSessionResult> {
     let path = "/sessions";
     const params = new URLSearchParams();
@@ -837,6 +839,9 @@ export class Client {
       params.append("name", projectName);
     } else {
       throw new Error("Must provide projectName or projectId");
+    }
+    if (includeStats !== undefined) {
+      params.append("include_stats", includeStats.toString());
     }
 
     const response = await this._get<TracerSession | TracerSession[]>(

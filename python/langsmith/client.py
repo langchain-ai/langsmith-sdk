@@ -909,6 +909,7 @@ class Client:
         run_type: str,
         *,
         project_name: Optional[str] = None,
+        revision_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -922,6 +923,8 @@ class Client:
         run_type : str
             The type of the run, such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
+        revision_id : ID_TYPE or None, default=None
+            The revision ID of the run.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -935,7 +938,6 @@ class Client:
             # if the project is not provided, use the environment's project
             ls_utils.get_tracer_project(),
         )
-        revision_id = kwargs.pop("revision_id", None)
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -1609,7 +1611,11 @@ class Client:
 
     @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
-        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+        self,
+        *,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        include_stats: bool = False,
     ) -> ls_schemas.TracerSessionResult:
         """Read a project from the LangSmith API.
 
@@ -1620,6 +1626,8 @@ class Client:
         project_name : str or None, default=None
             The name of the project to read.
                 Note: Only one of project_id or project_name may be given.
+        include_stats : bool, default=False
+            Whether to include a project's aggregate statistics in the response.
 
         Returns
         -------
@@ -1634,6 +1642,7 @@ class Client:
             params["name"] = project_name
         else:
             raise ValueError("Must provide project_name or project_id")
+        params["include_stats"] = include_stats
         response = self._get_with_retries(path, params=params)
         result = response.json()
         if isinstance(result, list):
