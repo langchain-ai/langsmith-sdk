@@ -9,11 +9,12 @@ from typing import (
     List,
     Optional,
     Protocol,
-    TypedDict,
     Union,
     runtime_checkable,
 )
 from uuid import UUID
+
+from typing_extensions import TypedDict
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
@@ -503,6 +504,23 @@ class AnnotationQueue(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     tenant_id: UUID
+
+
+class BatchIngestConfig(TypedDict, total=False):
+    scale_up_qsize_trigger: int
+    scale_up_nthreads_limit: int
+    scale_down_nempty_trigger: int
+    size_limit: int
+
+
+class LangSmithInfo(BaseModel):
+    """Information about the LangSmith server."""
+
+    version: str = ""
+    """The version of the LangSmith server."""
+    license_expiration_time: Optional[datetime] = None
+    """The time the license will expire."""
+    batch_ingest_config: Optional[BatchIngestConfig] = None
 
 
 Example.update_forward_refs()

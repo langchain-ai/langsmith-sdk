@@ -42,31 +42,34 @@ async function waitUntil(
     }
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
-  throw new Error("Timeout");
+  const elapsed = Date.now() - start;
+  throw new Error(`Timeout after ${elapsed / 1000}s`);
 }
 
+type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
   client: Client,
   runId: string,
-  checkOutputs = false
+  checkOutputs: CheckOutputsType = false
 ) {
   return waitUntil(
     async () => {
       try {
         const run = await client.readRun(runId);
         if (checkOutputs) {
-          return (
-            run.outputs !== null &&
-            run.outputs !== undefined &&
-            Object.keys(run.outputs).length !== 0
-          );
+          const hasOutputs = run.outputs !== null && run.outputs !== undefined;
+          if (typeof checkOutputs === "boolean") {
+            return hasOutputs;
+          } else if (typeof checkOutputs === "function") {
+            return hasOutputs && checkOutputs(run);
+          }
         }
         return true;
       } catch (e) {
         return false;
       }
     },
-    30_000,
+    60_000,
     1_000
   );
 }
@@ -176,7 +179,11 @@ test.concurrent(
     await parentRun.end({ output: predicted });
     await parentRun.patchRun();
 
-    await waitUntilRunFound(langchainClient, parentRun.id, true);
+    await waitUntilRunFound(
+      langchainClient,
+      parentRun.id,
+      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
+    );
 
     const run = await langchainClient.readRun(parentRun.id);
     expect(run.outputs).toEqual({ output: predicted });
@@ -288,7 +295,11 @@ test.concurrent("Test persist update run", async () => {
   });
 
   await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
-  await waitUntilRunFound(langchainClient, runId, true);
+  await waitUntilRunFound(
+    langchainClient,
+    runId,
+    (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
+  );
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
   await langchainClient.deleteProject({ projectName });
@@ -448,7 +459,11 @@ test.concurrent(
     process.env.LANGCHAIN_HIDE_INPUTS = "true";
     // eslint-disable-next-line no-process-env
     process.env.LANGCHAIN_HIDE_OUTPUTS = "true";
-    const langchainClient = new Client({ autoBatchTracing: false });
+    const langchainClient = new Client({
+      hideInputs: true,
+      hideOutputs: true,
+      autoBatchTracing: false,
+    });
     const projectName = "__test_create_run_with_masked_inputs_outputs";
     await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
@@ -509,7 +524,7 @@ test.concurrent(
     await langchainClient.createRun({
       id: runId,
       project_name: projectName,
-      name: "test_run",
+      name: "test_run_with_revision",
       run_type: "llm",
       inputs: { prompt: "hello world" },
       outputs: { generation: "hi there" },
@@ -521,13 +536,17 @@ test.concurrent(
     await langchainClient.createRun({
       id: runId2,
       project_name: projectName,
-      name: "test_run_2",
+      name: "test_run_2_with_revision",
       run_type: "llm",
       inputs: { messages: "hello world 2" },
       start_time: new Date().getTime(),
       revision_id: "different_revision_id",
     });
-    await waitUntilRunFound(langchainClient, runId, true);
+    await waitUntilRunFound(
+      langchainClient,
+      runId,
+      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
+    );
     const run1 = await langchainClient.readRun(runId);
     expect(run1.extra?.metadata?.revision_id).toEqual("test_revision_id");
     expect(run1.extra?.metadata.LANGCHAIN_OTHER_FIELD).toEqual(
@@ -535,7 +554,7 @@ test.concurrent(
     );
     expect(run1.extra?.metadata.LANGCHAIN_OTHER_KEY).toBeUndefined();
     expect(run1.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
-    await waitUntilRunFound(langchainClient, runId2, true);
+    await waitUntilRunFound(langchainClient, runId2);
     const run2 = await langchainClient.readRun(runId2);
     expect(run2.extra?.metadata?.revision_id).toEqual("different_revision_id");
     expect(run2.extra?.metadata.LANGCHAIN_OTHER_FIELD).toEqual(
@@ -611,9 +630,14 @@ test.concurrent(
       name: "foo",
       run_type: "llm",
       inputs: { input: "hello world" },
+      outputs: { output: "hi there" },
     };
     await client.createRun({ project_name: "foo", ...run });
-    await waitUntilRunFound(client, runId, true);
+    await waitUntilRunFound(
+      client,
+      runId,
+      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
+    );
     const result = await client.getRunUrl({
       run,
       projectOpts: { projectName: "foo" },

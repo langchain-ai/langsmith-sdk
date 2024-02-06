@@ -1,4 +1,5 @@
 """Generic utility functions."""
+
 import enum
 import functools
 import logging
