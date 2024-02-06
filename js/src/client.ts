@@ -636,7 +636,6 @@ export class Client {
       "Content-Type": "application/json",
       Accept: "application/json",
     };
-    console.log(JSON.stringify(body, null, 2));
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/runs/batch`,
@@ -1723,14 +1722,12 @@ export class Client {
       feedback_source: feedback_source,
     };
     const url = `${this.apiUrl}/feedback` + (eager ? "/eager" : "");
-    console.log(JSON.stringify(feedback, null, 2));
     const response = await this.caller.call(fetch, url, {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(feedback),
       signal: AbortSignal.timeout(this.timeout_ms),
     });
-    console.log(response);
     await raiseForStatus(response, "create feedback");
     return feedback as Feedback;
   }
