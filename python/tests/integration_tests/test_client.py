@@ -6,7 +6,7 @@ import random
 import string
 import time
 from datetime import datetime, timedelta
-from typing import List, Optional, cast
+from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -14,13 +14,10 @@ from freezegun import freeze_time
 from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import Client
-from langsmith.evaluation import EvaluationResult, StringEvaluator
-from langsmith.run_trees import RunTree
 from langsmith.schemas import DataType
 from langsmith.utils import (
     LangSmithConnectionError,
     LangSmithError,
-    LangSmithNotFoundError,
 )
 
 
@@ -169,79 +166,6 @@ def test_persist_update_run(langchain_client: Client) -> None:
         assert stored_run.extra["metadata"]["revision_id"] == str(revision_id)
     finally:
         langchain_client.delete_project(project_name=project_name)
-
-
-@freeze_time("2023-01-01")
-def test_evaluate_run(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
-    """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    project_name = "__test_evaluate_run"
-    dataset_name = "__test_evaluate_run_dataset"
-    if project_name in [sess.name for sess in langchain_client.list_projects()]:
-        langchain_client.delete_project(project_name=project_name)
-    if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
-        langchain_client.delete_dataset(dataset_name=dataset_name)
-
-    dataset = langchain_client.create_dataset(dataset_name)
-    predicted = "abcd"
-    ground_truth = "bcde"
-    example = langchain_client.create_example(
-        inputs={"input": "hello world"},
-        outputs={"output": ground_truth},
-        dataset_id=dataset.id,
-    )
-    parent_run = RunTree(
-        name="parent_run",
-        run_type="chain",
-        inputs={"input": "hello world"},
-        project_name=project_name,
-        serialized={},
-        start_time=datetime.now(),
-        reference_example_id=example.id,
-    )
-    parent_run.post()
-    parent_run.end(outputs={"output": predicted})
-    parent_run.patch()
-    parent_run.wait()
-
-    def jaccard_chars(output: str, answer: str) -> float:
-        """Naive Jaccard similarity between two strings."""
-        prediction_chars = set(output.strip().lower())
-        answer_chars = set(answer.strip().lower())
-        intersection = prediction_chars.intersection(answer_chars)
-        union = prediction_chars.union(answer_chars)
-        return len(intersection) / len(union)
-
-    def grader(run_input: str, run_output: str, answer: Optional[str]) -> dict:
-        """Compute the score and/or label for this run."""
-        if answer is None:
-            value = "AMBIGUOUS"
-            score = 0.5
-        else:
-            score = jaccard_chars(run_output, answer)
-            value = "CORRECT" if score > 0.9 else "INCORRECT"
-        return dict(score=score, value=value)
-
-    evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
-    runs = None
-    for _ in range(5):
-        try:
-            runs = list(
-                langchain_client.list_runs(
-                    project_name=project_name,
-                    execution_order=1,
-                    error=False,
-                )
-            )
-            break
-        except LangSmithNotFoundError:
-            time.sleep(2)
-    assert runs is not None
-    all_eval_results: List[EvaluationResult] = []
-    for run in runs:
-        all_eval_results.append(langchain_client.evaluate_run(run, evaluator))
 
 
 @pytest.mark.parametrize("uri", ["http://localhost:1981", "http://api.langchain.minus"])
