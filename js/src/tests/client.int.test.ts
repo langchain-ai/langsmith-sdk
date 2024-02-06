@@ -417,40 +417,44 @@ test.concurrent(
   90_000
 );
 
-test.concurrent("Test create feedback with source run", async () => {
-  const langchainClient = new Client({ autoBatchTracing: false });
-  const projectName = "__test_create_feedback_with_source_run";
-  await deleteProject(langchainClient, projectName);
-  const runId = uuidv4();
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { prompt: "hello world" },
-    outputs: { generation: "hi there" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+test.concurrent(
+  "Test create feedback with source run",
+  async () => {
+    const langchainClient = new Client({ autoBatchTracing: false });
+    const projectName = "__test_create_feedback_with_source_run";
+    await deleteProject(langchainClient, projectName);
+    const runId = uuidv4();
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { prompt: "hello world" },
+      outputs: { generation: "hi there" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  const runId2 = uuidv4();
-  await langchainClient.createRun({
-    id: runId2,
-    project_name: projectName,
-    name: "test_run_2",
-    run_type: "llm",
-    inputs: { prompt: "hello world 2" },
-    outputs: { generation: "hi there 2" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+    const runId2 = uuidv4();
+    await langchainClient.createRun({
+      id: runId2,
+      project_name: projectName,
+      name: "test_run_2",
+      run_type: "llm",
+      inputs: { prompt: "hello world 2" },
+      outputs: { generation: "hi there 2" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  await langchainClient.createFeedback(runId, "test_feedback", {
-    score: 0.5,
-    sourceRunId: runId2,
-    feedbackSourceType: "app",
-  });
-}, 90_000);
+    await langchainClient.createFeedback(runId, "test_feedback", {
+      score: 0.5,
+      sourceRunId: runId2,
+      feedbackSourceType: "app",
+    });
+  },
+  90_000
+);
 
 test.concurrent(
   "Test create run with masked inputs/outputs",
