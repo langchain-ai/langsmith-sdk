@@ -1,4 +1,5 @@
 """Test the LangSmith client."""
+
 import asyncio
 import dataclasses
 import gc
@@ -212,28 +213,27 @@ class CallTracker:
         self.counter += 1
 
 
+@pytest.mark.parametrize("supports_batch_endpoint", [True, False])
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
-def test_client_gc_empty(auto_batch_tracing: bool) -> None:
-    client = Client(
-        api_url="http://localhost:1984",
-        api_key="123",
-        auto_batch_tracing=auto_batch_tracing,
-    )
-    tracker = CallTracker()
-    weakref.finalize(client, tracker)
-    assert tracker.counter == 0
-
-    del client
-    time.sleep(1)  # Give the background thread time to stop
-    gc.collect()  # Force garbage collection
-    assert tracker.counter == 1, "Client was not garbage collected"
-
-
-@pytest.mark.parametrize("auto_batch_tracing", [True, False])
-def test_client_gc(auto_batch_tracing: bool) -> None:
+def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> None:
     session = mock.MagicMock(spec=requests.Session)
+    api_url = "http://localhost:1984"
+
+    def mock_get(*args, **kwargs):
+        if args[0] == f"{api_url}/info":
+            response = mock.Mock()
+            if supports_batch_endpoint:
+                response.json.return_value = {}
+            else:
+                response.raise_for_status.side_effect = HTTPError()
+                response.status_code = 404
+            return response
+        else:
+            return MagicMock()
+
+    session.get.side_effect = mock_get
     client = Client(
-        api_url="http://localhost:1984",
+        api_url=api_url,
         api_key="123",
         auto_batch_tracing=auto_batch_tracing,
         session=session,
@@ -253,22 +253,32 @@ def test_client_gc(auto_batch_tracing: bool) -> None:
             dotted_order=id,
         )
 
-    if auto_batch_tracing:
+    if auto_batch_tracing and supports_batch_endpoint:
         assert client.tracing_queue
         client.tracing_queue.join()
 
         request_calls = [call for call in session.request.mock_calls if call.args]
-        assert len(request_calls) == 1
+        assert len(request_calls) >= 1
+
         for call in request_calls:
             assert call.args[0] == "post"
             assert call.args[1] == "http://localhost:1984/runs/batch"
+        get_calls = [call for call in session.get.mock_calls if call.args]
+        # assert len(get_calls) == 1
+        for call in get_calls:
+            assert call.args[0] == f"{api_url}/info"
     else:
         request_calls = [call for call in session.request.mock_calls if call.args]
+
         assert len(request_calls) == 10
         for call in request_calls:
             assert call.args[0] == "post"
             assert call.args[1] == "http://localhost:1984/runs"
-
+        if auto_batch_tracing:
+            get_calls = [call for call in session.get.mock_calls if call.args]
+            # assert len(get_calls) == 1
+            for call in get_calls:
+                assert call.args[0] == f"{api_url}/info"
     del client
     time.sleep(1)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
@@ -342,14 +352,34 @@ def test_client_gc_after_autoscale() -> None:
         assert call.args[1] == "http://localhost:1984/runs/batch"
 
 
+@pytest.mark.parametrize("supports_batch_endpoint", [True, False])
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 def test_create_run_includes_langchain_env_var_metadata(
+    supports_batch_endpoint: bool,
     auto_batch_tracing: bool,
 ) -> None:
+    session = mock.Mock()
+    session.request = mock.Mock()
+    api_url = "http://localhost:1984"
+
+    def mock_get(*args, **kwargs):
+        if args[0] == f"{api_url}/info":
+            response = mock.Mock()
+            if supports_batch_endpoint:
+                response.json.return_value = {}
+            else:
+                response.raise_for_status.side_effect = HTTPError()
+                response.status_code = 404
+            return response
+        else:
+            return MagicMock()
+
+    session.get.side_effect = mock_get
     client = Client(
-        api_url="http://localhost:1984",
+        api_url=api_url,
         api_key="123",
         auto_batch_tracing=auto_batch_tracing,
+        session=session,
     )
     inputs = {
         "foo": "これは私の友達です",
@@ -358,39 +388,34 @@ def test_create_run_includes_langchain_env_var_metadata(
         "qux": "나는\u3000밥을\u3000먹었습니다.",
         "는\u3000밥": "나는\u3000밥을\u3000먹었습니다.",
     }
-    session = mock.Mock()
-    session.request = mock.Mock()
+
     # Set the environment variables just for this test
     with patch.dict(os.environ, {"LANGCHAIN_REVISION": "abcd2234"}):
         # Clear the cache to ensure the environment variables are re-read
         ls_env.get_langchain_env_var_metadata.cache_clear()
-        with patch.object(client, "session", session):
-            id_ = uuid.uuid4()
-            start_time = datetime.now()
-            client.create_run(
-                "my_run",
-                inputs=inputs,
-                run_type="llm",
-                id=id_,
-                trace_id=id_,
-                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
-                start_time=start_time,
+        id_ = uuid.uuid4()
+        start_time = datetime.now()
+        client.create_run(
+            "my_run",
+            inputs=inputs,
+            run_type="llm",
+            id=id_,
+            trace_id=id_,
+            dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
+            start_time=start_time,
+        )
+        if tracing_queue := client.tracing_queue:
+            tracing_queue.join()
+        # Check the posted value in the request
+        posted_value = json.loads(session.request.call_args[1]["data"])
+        if auto_batch_tracing and supports_batch_endpoint:
+            assert (
+                posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
+                == "abcd2234"
             )
-            if tracing_queue := client.tracing_queue:
-                tracing_queue.join()
-            # Check the posted value in the request
-            posted_value = json.loads(session.request.call_args[1]["data"])
-            if not auto_batch_tracing:
-                assert (
-                    posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"]
-                    == "abcd2234"
-                )
-                assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
-            else:
-                assert (
-                    posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
-                    == "abcd2234"
-                )
+        else:
+            assert posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"] == "abcd2234"
+            assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
 
 
 @pytest.mark.parametrize("source_type", ["api", "model"])

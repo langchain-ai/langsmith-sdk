@@ -1,4 +1,5 @@
 """LangSmith langchain_client Integration Tests."""
+
 import io
 import os
 import random
@@ -501,6 +502,6 @@ def test_get_info() -> None:
     langchain_client = Client(api_key="not-a-real-key")
     info = langchain_client.info
     assert info
-    assert info.version is not None
-    assert info.batch_ingest_config is not None
-    assert info.batch_ingest_config["size_limit"] > 0
+    assert info.version is not None  # type: ignore
+    assert info.batch_ingest_config is not None  # type: ignore
+    assert info.batch_ingest_config["size_limit"] > 0  # type: ignore

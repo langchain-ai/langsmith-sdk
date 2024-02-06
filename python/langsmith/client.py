@@ -458,7 +458,6 @@ class Client:
         return headers
 
     @property
-    @functools.lru_cache(maxsize=1)
     def info(self) -> Optional[ls_schemas.LangSmithInfo]:
         """Get the information about the LangSmith API.
 
@@ -468,21 +467,28 @@ class Client:
             The information about the LangSmith API, or None if the API is
                 not available.
         """
+        info = Client._get_info(self.session, self.api_url, self.timeout_ms)
+        if info is None and self.tracing_queue is not None:
+            self.tracing_queue = None
+        return cast(Optional[ls_schemas.LangSmithInfo], info)
+
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _get_info(
+        session: requests.Session, api_url: str, timeout_ms: int
+    ) -> Optional[ls_schemas.LangSmithInfo]:
         try:
-            response = self.session.get(
-                self.api_url + "/info",
-                headers=self._headers,
-                timeout=self.timeout_ms / 1000,
+            response = session.get(
+                api_url + "/info",
+                headers={"Accept": "application/json"},
+                timeout=timeout_ms / 1000,
             )
             ls_utils.raise_for_status_with_text(response)
             return ls_schemas.LangSmithInfo(**response.json())
-        except ls_utils.LangSmithNotFoundError:
-            # This will fail for on-prem instances that have
-            # not yet implemented the /info endpoint
-            self.tracing_queue = None
+        except requests.HTTPError:
             return None
-        except ls_utils.LangSmithAPIError as e:
-            logger.debug("Failed to get info: %s", e)
+        except BaseException as e:
+            logger.warning(f"Failed to get info from {api_url}: {repr(e)}")
             return None
 
     def request_with_retries(
@@ -3269,61 +3275,72 @@ _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
-def _get_batch_ingest_config(client: Client) -> Dict[str, Any]:
+def _get_batch_ingest_config(
+    info: Optional[ls_schemas.LangSmithInfo],
+) -> ls_schemas.BatchIngestConfig:
+    default_config = ls_schemas.BatchIngestConfig(
+        size_limit=100,
+        scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
+        scale_up_qsize_trigger=_AUTO_SCALE_UP_QSIZE_TRIGGER,
+        scale_down_nempty_trigger=_AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
+    )
+    if not info:
+        return default_config
     try:
-        info = client.info
-        if not info:
-            return {}
         if not info.batch_ingest_config:
-            return {}
+            return default_config
         return info.batch_ingest_config
     except BaseException:
-        return {}
-
-
-def _get_ingest_config_var(client: Client, name: str, default: Any) -> Any:
-    config = _get_batch_ingest_config(client)
-    return config.get(name, default)
+        return default_config
 
 
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
         return
-    client_info = client.info
-    if not client_info:
+    try:
+        if not client.info:
+            print(f"no info: {client.info}", file=sys.stderr, flush=True)
+            return
+    except BaseException as e:
+        logger.debug("Error in tracing control thread: %s", e)
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
+    batch_ingest_config = _get_batch_ingest_config(client.info)
+    size_limit: int = batch_ingest_config["size_limit"]
+    scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
+    scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
 
     sub_threads: List[threading.Thread] = []
+    # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
+    num_known_refs = 3
 
     # loop until
     while (
         # the main thread dies
         threading.main_thread().is_alive()
         # or we're the only remaining reference to the client
-        and sys.getrefcount(client) > 3 + len(sub_threads)
-        # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
+        and sys.getrefcount(client) > num_known_refs + len(sub_threads)
     ):
         for thread in sub_threads:
             if not thread.is_alive():
                 sub_threads.remove(thread)
-        if len(sub_threads) < _get_ingest_config_var(
-            client, "scale_up_nthreads_limit", _AUTO_SCALE_UP_NTHREADS_LIMIT
-        ) and tracing_queue.qsize() > _get_ingest_config_var(
-            client, "scale_up_nqueue_limit", _AUTO_SCALE_UP_QSIZE_TRIGGER
+        if (
+            len(sub_threads) < scale_up_nthreads_limit
+            and tracing_queue.qsize() > scale_up_qsize_trigger
         ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func, args=(weakref.ref(client),)
             )
             sub_threads.append(new_thread)
             new_thread.start()
-        if next_batch := _tracing_thread_drain_queue(tracing_queue):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             _tracing_thread_handle_batch(client, tracing_queue, next_batch)
-
     # drain the queue on exit
-    while next_batch := _tracing_thread_drain_queue(tracing_queue, block=False):
+    while next_batch := _tracing_thread_drain_queue(
+        tracing_queue, limit=size_limit, block=False
+    ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
 
@@ -3331,9 +3348,16 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
         return
+    try:
+        if not client.info:
+            return
+    except BaseException as e:
+        logger.debug("Error in tracing control thread: %s", e)
+        return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
-
+    batch_ingest_config = _get_batch_ingest_config(client.info)
+    size_limit = batch_ingest_config.get("size_limit", 100)
     seen_successive_empty_queues = 0
 
     # loop until
@@ -3342,16 +3366,18 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
         threading.main_thread().is_alive()
         # or we've seen the queue empty 4 times in a row
         and seen_successive_empty_queues
-        <= _get_ingest_config_var(
-            client, "scale_down_nempty_trigger", _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
+        <= batch_ingest_config.get(
+            "scale_down_nempty_trigger", _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
         )
     ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
             _tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
             seen_successive_empty_queues += 1
 
     # drain the queue on exit
-    while next_batch := _tracing_thread_drain_queue(tracing_queue, block=False):
+    while next_batch := _tracing_thread_drain_queue(
+        tracing_queue, limit=size_limit, block=False
+    ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
