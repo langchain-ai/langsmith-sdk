@@ -950,7 +950,7 @@ class Client:
         self._insert_runtime_env([run_create])
 
         if revision_id is not None:
-            run_create["extra"]["metadata"]["revision_id"] = revision_id
+            run_create["extra"]["metadata"]["nrevision_id"] = revision_id
         if (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
@@ -1609,7 +1609,11 @@ class Client:
 
     @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
-        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+        self,
+        *,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        include_stats: bool = False,
     ) -> ls_schemas.TracerSessionResult:
         """Read a project from the LangSmith API.
 
@@ -1620,6 +1624,8 @@ class Client:
         project_name : str or None, default=None
             The name of the project to read.
                 Note: Only one of project_id or project_name may be given.
+        include_stats : bool, default=False
+            Whether to include a project's aggregate statistics in the response.
 
         Returns
         -------
@@ -1634,6 +1640,7 @@ class Client:
             params["name"] = project_name
         else:
             raise ValueError("Must provide project_name or project_id")
+        params["include_stats"] = include_stats
         response = self._get_with_retries(path, params=params)
         result = response.json()
         if isinstance(result, list):
