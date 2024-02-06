@@ -909,6 +909,7 @@ class Client:
         run_type: str,
         *,
         project_name: Optional[str] = None,
+        revision_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -922,6 +923,8 @@ class Client:
         run_type : str
             The type of the run, such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
+        revision_id : ID_TYPE or None, default=None
+            The revision ID of the run.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -935,7 +938,6 @@ class Client:
             # if the project is not provided, use the environment's project
             ls_utils.get_tracer_project(),
         )
-        revision_id = kwargs.pop("revision_id", None)
         run_create = {
             **kwargs,
             "session_name": project_name,
@@ -950,7 +952,7 @@ class Client:
         self._insert_runtime_env([run_create])
 
         if revision_id is not None:
-            run_create["extra"]["metadata"]["nrevision_id"] = revision_id
+            run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
