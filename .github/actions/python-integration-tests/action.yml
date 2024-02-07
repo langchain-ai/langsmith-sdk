@@ -37,6 +37,6 @@ runs:
         LANGCHAIN_TRACING_V2: "true"
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-      run: make integration_tests
+      run: make integration_tests_fast
       shell: bash
       working-directory: python

@@ -7,10 +7,10 @@ tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests
 
 integration_tests:
-	poetry run pytest tests/integration_tests
+	poetry run pytest -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
 integration_tests_fast:
-	poetry run pytest -n auto tests/integration_tests
+	poetry run pytest -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
 lint:
 	poetry run ruff .
