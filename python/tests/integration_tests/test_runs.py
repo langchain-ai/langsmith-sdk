@@ -52,7 +52,7 @@ def test_nested_runs(
     langchain_client: Client,
 ):
     project_name = "__My Tracer Project - test_nested_runs"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     executor = ThreadPoolExecutor(max_workers=1)
@@ -100,7 +100,7 @@ def test_nested_runs(
 async def test_nested_async_runs(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
     executor = ThreadPoolExecutor(max_workers=1)
 
@@ -149,7 +149,7 @@ async def test_nested_async_runs(langchain_client: Client):
 async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs_with_threadpol"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="llm")
@@ -219,7 +219,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
 
 async def test_context_manager(langchain_client: Client) -> None:
     project_name = "__My Tracer Project - test_context_manager"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="llm")
@@ -246,7 +246,7 @@ async def test_context_manager(langchain_client: Client) -> None:
 
 async def test_sync_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="chain")
@@ -268,7 +268,7 @@ async def test_sync_generator(langchain_client: Client):
 
 async def test_sync_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator_reduce_fn"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     def reduce_fn(outputs: list) -> dict:
@@ -295,7 +295,7 @@ async def test_sync_generator_reduce_fn(langchain_client: Client):
 
 async def test_async_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="chain")
@@ -335,7 +335,7 @@ async def test_async_generator(langchain_client: Client):
 
 async def test_async_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator_reduce_fn"
-    if project_name in [project.name for project in langchain_client.list_projects()]:
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     def reduce_fn(outputs: list) -> dict:
