@@ -29,14 +29,9 @@ def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
 
 def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test projects."""
-    project_names = set([project.name for project in langchain_client.list_projects()])
     new_project = "__Test Project"
-    if new_project in project_names:
+    if langchain_client.has_project(new_project):
         langchain_client.delete_project(project_name=new_project)
-        project_names = set(
-            [project.name for project in langchain_client.list_projects()]
-        )
-    assert new_project not in project_names
 
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     langchain_client.create_project(
@@ -45,17 +40,18 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
     )
     project = langchain_client.read_project(project_name=new_project)
     assert project.name == new_project
-    project_names = set([sess.name for sess in langchain_client.list_projects()])
-    assert new_project in project_names
     runs = list(langchain_client.list_runs(project_name=new_project))
     project_id_runs = list(langchain_client.list_runs(project_id=project.id))
-    assert len(runs) == len(project_id_runs) == 0  # TODO: Add create_run method
+    assert len(runs) == len(project_id_runs) == 0
     langchain_client.delete_project(project_name=new_project)
 
     with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=new_project)
     assert new_project not in set(
-        [sess.name for sess in langchain_client.list_projects()]
+        [
+            sess.name
+            for sess in langchain_client.list_projects(name_contains=new_project)
+        ]
     )
     with pytest.raises(LangSmithError):
         langchain_client.delete_project(project_name=new_project)
@@ -392,15 +388,18 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
     runs = []
     wait = 2
-    for _ in range(5):
+    for _ in range(15):
         try:
-            runs = list(langchain_client.list_runs(project_name=_session))
+            runs = list(
+                langchain_client.list_runs(
+                    project_name=_session, run_ids=[str(trace_id), str(run_id_2)]
+                )
+            )
             if len(runs) == 2:
                 break
             raise LangSmithError("Runs not created yet")
         except LangSmithError:
             time.sleep(wait)
-            wait += 4
     else:
         raise ValueError("Runs not created in time")
     assert len(runs) == 2

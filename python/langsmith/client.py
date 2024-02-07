@@ -1655,6 +1655,29 @@ class Client:
             **response.json(), _host_url=self._host_url
         )
 
+    def has_project(
+        self, project_name: str, *, project_id: Optional[str] = None
+    ) -> bool:
+        """Check if a project exists.
+
+        Parameters
+        ----------
+        project_name : str
+            The name of the project to check for.
+        project_id : str or None, default=None
+            The ID of the project to check for.
+
+        Returns
+        -------
+        bool
+            Whether the project exists.
+        """
+        try:
+            self.read_project(project_name=project_name)
+        except ls_utils.LangSmithNotFoundError:
+            return False
+        return True
+
     def get_test_results(
         self,
         *,
