@@ -77,7 +77,7 @@ async function waitUntilRunFound(
 // Test Dataset Creation, List, Read, Delete + upload CSV
 // Test Example Creation, List, Read, Update, Delete
 test.concurrent("Test LangSmith Client Dataset CRD", async () => {
-  const client = new Client({});
+  const client = new Client({ autoBatchTracing: false });
 
   const csvContent = `col1,col2,col3,col4\nval1,val2,val3,val4`;
   const blobData = new Blob([Buffer.from(csvContent)]);
@@ -146,7 +146,7 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
 test.concurrent(
   "Test evaluate run",
   async () => {
-    const langchainClient = new Client({});
+    const langchainClient = new Client({ autoBatchTracing: false });
 
     const projectName = "__test_evaluate_run" + Date.now();
     const datasetName = "__test_evaluate_run_dataset" + Date.now();
@@ -281,7 +281,7 @@ test.concurrent(
 );
 
 test.concurrent("Test persist update run", async () => {
-  const langchainClient = new Client({});
+  const langchainClient = new Client({ autoBatchTracing: false });
   const projectName = "__test_persist_update_run";
   await deleteProject(langchainClient, projectName);
 
@@ -306,7 +306,7 @@ test.concurrent("Test persist update run", async () => {
 });
 
 test.concurrent("test create dataset", async () => {
-  const langchainClient = new Client({});
+  const langchainClient = new Client({ autoBatchTracing: false });
   const datasetName = "__test_create_dataset";
   const datasets = await toArray(langchainClient.listDatasets({ datasetName }));
   datasets.map(async (dataset: Dataset) => {
@@ -330,7 +330,7 @@ test.concurrent("test create dataset", async () => {
 });
 
 test.concurrent("Test share and unshare run", async () => {
-  const langchainClient = new Client({});
+  const langchainClient = new Client({ autoBatchTracing: false });
 
   // Create a new run
   const runId = uuidv4();
@@ -355,7 +355,7 @@ test.concurrent("Test share and unshare run", async () => {
 test.concurrent(
   "Test list datasets",
   async () => {
-    const langchainClient = new Client({});
+    const langchainClient = new Client({ autoBatchTracing: false });
     const datasetName1 = "___TEST dataset1";
     const datasetName2 = "___TEST dataset2";
     await deleteDataset(langchainClient, datasetName1);
@@ -420,7 +420,7 @@ test.concurrent(
 test.concurrent(
   "Test create feedback with source run",
   async () => {
-    const langchainClient = new Client({});
+    const langchainClient = new Client({ autoBatchTracing: false });
     const projectName = "__test_create_feedback_with_source_run";
     await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
@@ -459,7 +459,11 @@ test.concurrent(
 test.concurrent(
   "Test create run with masked inputs/outputs",
   async () => {
-    const langchainClient = new Client({ hideInputs: true, hideOutputs: true });
+    const langchainClient = new Client({
+      hideInputs: true,
+      hideOutputs: true,
+      autoBatchTracing: false,
+    });
     const projectName = "__test_create_run_with_masked_inputs_outputs";
     await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
@@ -507,7 +511,7 @@ test.concurrent(
 test.concurrent(
   "Test create run with revision id",
   async () => {
-    const langchainClient = new Client({});
+    const langchainClient = new Client({ autoBatchTracing: false });
     // eslint-disable-next-line no-process-env
     process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
     // eslint-disable-next-line no-process-env
@@ -564,7 +568,7 @@ test.concurrent(
 
 describe("createChatExample", () => {
   it("should convert LangChainBaseMessage objects to examples", async () => {
-    const langchainClient = new Client({});
+    const langchainClient = new Client({ autoBatchTracing: false });
 
     const datasetName = "__createChatExample-test-dataset";
     await deleteDataset(langchainClient, datasetName);
@@ -619,7 +623,7 @@ describe("createChatExample", () => {
 test.concurrent(
   "Test getRunUrl with run",
   async () => {
-    const client = new Client({});
+    const client = new Client({ autoBatchTracing: false });
     const runId = uuidv4();
     const run: Run = {
       id: runId,
@@ -646,7 +650,7 @@ test.concurrent(
 test.concurrent(
   "Examples CRUD",
   async () => {
-    const client = new Client({});
+    const client = new Client({ autoBatchTracing: false });
     const datasetName = "__test_examples_crud";
     await deleteDataset(client, datasetName);
     const dataset = await client.createDataset(datasetName);
