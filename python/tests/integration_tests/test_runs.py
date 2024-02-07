@@ -52,7 +52,7 @@ def test_nested_runs(
     langchain_client: Client,
 ):
     project_name = "__My Tracer Project - test_nested_runs"
-    if langchain_client.had_project(project_name):
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
     executor = ThreadPoolExecutor(max_workers=1)
