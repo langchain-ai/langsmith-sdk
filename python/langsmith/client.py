@@ -1,4 +1,5 @@
 """The LangSmith Client."""
+
 from __future__ import annotations
 
 import collections
@@ -151,12 +152,30 @@ def _default_retry_config() -> Retry:
     return Retry(**retry_params)  # type: ignore
 
 
-def _serialize_json(obj: Any) -> Any:
-    if isinstance(obj, datetime.datetime):
-        return obj.isoformat()
-    if isinstance(obj, uuid.UUID):
-        return str(obj)
+_PRIMITIVE_TYPES = (str, int, float, bool)
+_MAX_DEPTH = 2
+
+
+def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
+        if depth >= _MAX_DEPTH:
+            try:
+                return json.loads(json.dumps(obj))
+            except BaseException:
+                return repr(obj)
+        if isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        if obj is None or isinstance(obj, _PRIMITIVE_TYPES):
+            return obj
+        if isinstance(obj, bytes):
+            return obj.decode("utf-8")
+        if isinstance(obj, (set, list, tuple)):
+            return [_serialize_json(x, depth + 1) for x in list(obj)]
+        if isinstance(obj, dict):
+            return {k: _serialize_json(v, depth + 1) for k, v in obj.items()}
+
         serialization_methods = [
             ("model_dump_json", True),  # Pydantic V2
             ("json", True),  # Pydantic V1
@@ -178,15 +197,17 @@ def _serialize_json(obj: Any) -> Any:
         if dataclasses.is_dataclass(obj):
             # Regular dataclass
             return dataclasses.asdict(obj)
-        try:
-            if hasattr(obj, "__slots__"):
-                return {slot: getattr(obj, slot) for slot in obj.__slots__}
-            else:
-                return vars(obj)
-        except Exception as e:
-            logger.debug(f"Failed to serialize {type(obj)} to JSON using vars: {e}")
+        if hasattr(obj, "__slots__"):
+            all_attrs = {slot: getattr(obj, slot, None) for slot in obj.__slots__}
+        elif hasattr(obj, "__dict__"):
+            all_attrs = vars(obj)
+        else:
             return repr(obj)
-    except Exception as e:
+        return {
+            k: _serialize_json(v, depth=depth + 1) if v is not obj else repr(v)
+            for k, v in all_attrs.items()
+        }
+    except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
 
@@ -435,6 +456,40 @@ class Client:
         if self.api_key:
             headers["x-api-key"] = self.api_key
         return headers
+
+    @property
+    def info(self) -> Optional[ls_schemas.LangSmithInfo]:
+        """Get the information about the LangSmith API.
+
+        Returns
+        -------
+        Optional[ls_schemas.LangSmithInfo]
+            The information about the LangSmith API, or None if the API is
+                not available.
+        """
+        info = Client._get_info(self.session, self.api_url, self.timeout_ms)
+        if info is None and self.tracing_queue is not None:
+            self.tracing_queue = None
+        return cast(Optional[ls_schemas.LangSmithInfo], info)
+
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _get_info(
+        session: requests.Session, api_url: str, timeout_ms: int
+    ) -> Optional[ls_schemas.LangSmithInfo]:
+        try:
+            response = session.get(
+                api_url + "/info",
+                headers={"Accept": "application/json"},
+                timeout=timeout_ms / 1000,
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return ls_schemas.LangSmithInfo(**response.json())
+        except requests.HTTPError:
+            return None
+        except BaseException as e:
+            logger.warning(f"Failed to get info from {api_url}: {repr(e)}")
+            return None
 
     def request_with_retries(
         self,
@@ -786,6 +841,15 @@ class Client:
     def _run_transform(
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
     ) -> dict:
+        """
+        Transforms the given run object into a dictionary representation.
+
+        Args:
+            run (Union[ls_schemas.Run, dict]): The run object to transform.
+
+        Returns:
+            dict: The transformed run object as a dictionary.
+        """
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create = run.dict()  # type: ignore
         else:
@@ -798,6 +862,8 @@ class Client:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
         if "outputs" in run_create:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        if not run_create.get("start_time"):
+            run_create["start_time"] = datetime.datetime.utcnow()
         return run_create
 
     @staticmethod
@@ -842,8 +908,8 @@ class Client:
         inputs: Dict[str, Any],
         run_type: str,
         *,
-        execution_order: Optional[int] = None,
         project_name: Optional[str] = None,
+        revision_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -857,9 +923,8 @@ class Client:
         run_type : str
             The type of the run, such as tool, chain, llm, retriever,
             embedding, prompt, or parser.
-        execution_order : int or None, default=None
-            The position of the run in the full trace's execution sequence.
-                All root run traces have execution_order 1.
+        revision_id : ID_TYPE or None, default=None
+            The revision ID of the run.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -873,14 +938,12 @@ class Client:
             # if the project is not provided, use the environment's project
             ls_utils.get_tracer_project(),
         )
-        revision_id = kwargs.pop("revision_id", None)
         run_create = {
             **kwargs,
             "session_name": project_name,
             "name": name,
             "inputs": inputs,
             "run_type": run_type,
-            "execution_order": execution_order if execution_order is not None else 1,
         }
         if not self._filter_for_sampling([run_create]):
             return
@@ -895,6 +958,8 @@ class Client:
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
+            # Checked last since it makes a (cached) API call
+            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
@@ -1069,6 +1134,8 @@ class Client:
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
+            # Checked last since it makes an API call
+            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(data["dotted_order"], "update", data)
@@ -1108,9 +1175,8 @@ class Client:
         )
         runs: Dict[uuid.UUID, ls_schemas.Run] = {}
         for child_run in sorted(
-            # TODO: Remove execution_order once it's no longer used
             child_runs,
-            key=lambda r: r.dotted_order or str(r.execution_order),
+            key=lambda r: r.dotted_order,
         ):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
@@ -1203,9 +1269,9 @@ class Client:
         body_query: Dict[str, Any] = {
             "session": [project_id] if project_id else None,
             "run_type": run_type,
-            "reference_example": [reference_example_id]
-            if reference_example_id
-            else None,
+            "reference_example": (
+                [reference_example_id] if reference_example_id else None
+            ),
             "query": query,
             "filter": filter,
             "execution_order": execution_order,
@@ -1545,7 +1611,11 @@ class Client:
 
     @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
-        self, *, project_id: Optional[str] = None, project_name: Optional[str] = None
+        self,
+        *,
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        include_stats: bool = False,
     ) -> ls_schemas.TracerSessionResult:
         """Read a project from the LangSmith API.
 
@@ -1556,6 +1626,8 @@ class Client:
         project_name : str or None, default=None
             The name of the project to read.
                 Note: Only one of project_id or project_name may be given.
+        include_stats : bool, default=False
+            Whether to include a project's aggregate statistics in the response.
 
         Returns
         -------
@@ -1570,6 +1642,7 @@ class Client:
             params["name"] = project_name
         else:
             raise ValueError("Must provide project_name or project_id")
+        params["include_stats"] = include_stats
         response = self._get_with_retries(path, params=params)
         result = response.json()
         if isinstance(result, list):
@@ -1581,6 +1654,29 @@ class Client:
         return ls_schemas.TracerSessionResult(
             **response.json(), _host_url=self._host_url
         )
+
+    def has_project(
+        self, project_name: str, *, project_id: Optional[str] = None
+    ) -> bool:
+        """Check if a project exists.
+
+        Parameters
+        ----------
+        project_name : str
+            The name of the project to check for.
+        project_id : str or None, default=None
+            The ID of the project to check for.
+
+        Returns
+        -------
+        bool
+            Whether the project exists.
+        """
+        try:
+            self.read_project(project_name=project_name)
+        except ls_utils.LangSmithNotFoundError:
+            return False
+        return True
 
     def get_test_results(
         self,
@@ -1616,9 +1712,11 @@ class Client:
                     row[f"feedback.{k}"] = v.get("avg")
             row.update(
                 {
-                    "execution_time": (r.end_time - r.start_time).total_seconds()
-                    if r.end_time
-                    else None,
+                    "execution_time": (
+                        (r.end_time - r.start_time).total_seconds()
+                        if r.end_time
+                        else None
+                    ),
                     "error": r.error,
                     "id": r.id,
                 }
@@ -2046,9 +2144,9 @@ class Client:
                 final_generations = cast(dict, generations)
         return self.create_example(
             inputs={"input": final_input},
-            outputs={"output": final_generations}
-            if final_generations is not None
-            else None,
+            outputs=(
+                {"output": final_generations} if final_generations is not None else None
+            ),
             dataset_id=dataset_id,
             dataset_name=dataset_name,
             created_at=created_at,
@@ -2796,9 +2894,11 @@ class Client:
         name_contains: Optional[str] = None,
     ) -> Iterator[ls_schemas.AnnotationQueue]:
         params: dict = {
-            "ids": [_as_uuid(id_, f"queue_ids[{i}]") for i, id_ in enumerate(queue_ids)]
-            if queue_ids is not None
-            else None,
+            "ids": (
+                [_as_uuid(id_, f"queue_ids[{i}]") for i, id_ in enumerate(queue_ids)]
+                if queue_ids is not None
+                else None
+            ),
             "name": name,
             "name_contains": name_contains,
         }
@@ -3207,40 +3307,72 @@ _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
+def _ensure_ingest_config(
+    info: Optional[ls_schemas.LangSmithInfo],
+) -> ls_schemas.BatchIngestConfig:
+    default_config = ls_schemas.BatchIngestConfig(
+        size_limit=100,
+        scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
+        scale_up_qsize_trigger=_AUTO_SCALE_UP_QSIZE_TRIGGER,
+        scale_down_nempty_trigger=_AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
+    )
+    if not info:
+        return default_config
+    try:
+        if not info.batch_ingest_config:
+            return default_config
+        return info.batch_ingest_config
+    except BaseException:
+        return default_config
+
+
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
         return
+    try:
+        if not client.info:
+            print(f"no info: {client.info}", file=sys.stderr, flush=True)
+            return
+    except BaseException as e:
+        logger.debug("Error in tracing control thread: %s", e)
+        return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
+    batch_ingest_config = _ensure_ingest_config(client.info)
+    size_limit: int = batch_ingest_config["size_limit"]
+    scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
+    scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
 
     sub_threads: List[threading.Thread] = []
+    # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
+    num_known_refs = 3
 
     # loop until
     while (
         # the main thread dies
         threading.main_thread().is_alive()
         # or we're the only remaining reference to the client
-        and sys.getrefcount(client) > 3 + len(sub_threads)
-        # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
+        and sys.getrefcount(client) > num_known_refs + len(sub_threads)
     ):
         for thread in sub_threads:
             if not thread.is_alive():
                 sub_threads.remove(thread)
         if (
-            len(sub_threads) < _AUTO_SCALE_UP_NTHREADS_LIMIT
-            and tracing_queue.qsize() > _AUTO_SCALE_UP_QSIZE_TRIGGER
+            len(sub_threads) < scale_up_nthreads_limit
+            and tracing_queue.qsize() > scale_up_qsize_trigger
         ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func, args=(weakref.ref(client),)
             )
             sub_threads.append(new_thread)
             new_thread.start()
-        if next_batch := _tracing_thread_drain_queue(tracing_queue):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             _tracing_thread_handle_batch(client, tracing_queue, next_batch)
-
     # drain the queue on exit
-    while next_batch := _tracing_thread_drain_queue(tracing_queue, block=False):
+    while next_batch := _tracing_thread_drain_queue(
+        tracing_queue, limit=size_limit, block=False
+    ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
 
@@ -3248,9 +3380,16 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
         return
+    try:
+        if not client.info:
+            return
+    except BaseException as e:
+        logger.debug("Error in tracing control thread: %s", e)
+        return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
-
+    batch_ingest_config = _ensure_ingest_config(client.info)
+    size_limit = batch_ingest_config.get("size_limit", 100)
     seen_successive_empty_queues = 0
 
     # loop until
@@ -3258,14 +3397,17 @@ def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
         # the main thread dies
         threading.main_thread().is_alive()
         # or we've seen the queue empty 4 times in a row
-        and seen_successive_empty_queues <= _AUTO_SCALE_DOWN_NEMPTY_TRIGGER
+        and seen_successive_empty_queues
+        <= batch_ingest_config["scale_down_nempty_trigger"]
     ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue):
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
             _tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
             seen_successive_empty_queues += 1
 
     # drain the queue on exit
-    while next_batch := _tracing_thread_drain_queue(tracing_queue, block=False):
+    while next_batch := _tracing_thread_drain_queue(
+        tracing_queue, limit=size_limit, block=False
+    ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)

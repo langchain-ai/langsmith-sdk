@@ -1,11 +1,12 @@
 """LangSmith langchain_client Integration Tests."""
+
 import io
 import os
 import random
 import string
 import time
 from datetime import datetime, timedelta
-from typing import List, Optional, cast
+from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -13,13 +14,10 @@ from freezegun import freeze_time
 from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import Client
-from langsmith.evaluation import EvaluationResult, StringEvaluator
-from langsmith.run_trees import RunTree
 from langsmith.schemas import DataType
 from langsmith.utils import (
     LangSmithConnectionError,
     LangSmithError,
-    LangSmithNotFoundError,
 )
 
 
@@ -31,14 +29,9 @@ def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
 
 def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test projects."""
-    project_names = set([project.name for project in langchain_client.list_projects()])
     new_project = "__Test Project"
-    if new_project in project_names:
+    if langchain_client.has_project(new_project):
         langchain_client.delete_project(project_name=new_project)
-        project_names = set(
-            [project.name for project in langchain_client.list_projects()]
-        )
-    assert new_project not in project_names
 
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     langchain_client.create_project(
@@ -47,17 +40,18 @@ def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> 
     )
     project = langchain_client.read_project(project_name=new_project)
     assert project.name == new_project
-    project_names = set([sess.name for sess in langchain_client.list_projects()])
-    assert new_project in project_names
     runs = list(langchain_client.list_runs(project_name=new_project))
     project_id_runs = list(langchain_client.list_runs(project_id=project.id))
-    assert len(runs) == len(project_id_runs) == 0  # TODO: Add create_run method
+    assert len(runs) == len(project_id_runs) == 0
     langchain_client.delete_project(project_name=new_project)
 
     with pytest.raises(LangSmithError):
         langchain_client.read_project(project_name=new_project)
     assert new_project not in set(
-        [sess.name for sess in langchain_client.list_projects()]
+        [
+            sess.name
+            for sess in langchain_client.list_projects(name_contains=new_project)
+        ]
     )
     with pytest.raises(LangSmithError):
         langchain_client.delete_project(project_name=new_project)
@@ -130,11 +124,8 @@ def test_datasets(langchain_client: Client) -> None:
 
 
 @freeze_time("2023-01-01")
-def test_persist_update_run(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
+def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     project_name = "__test_persist_update_run"
     if project_name in [sess.name for sess in langchain_client.list_projects()]:
         langchain_client.delete_project(project_name=project_name)
@@ -147,7 +138,6 @@ def test_persist_update_run(
         inputs={"text": "hello world"},
         project_name=project_name,
         api_url=os.getenv("LANGCHAIN_ENDPOINT"),
-        execution_order=1,
         start_time=start_time,
         extra={"extra": "extra"},
         revision_id=revision_id,
@@ -163,7 +153,7 @@ def test_persist_update_run(
                 if stored_run.end_time is not None:
                     break
             except LangSmithError:
-                time.sleep(2)
+                time.sleep(3)
 
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
@@ -172,79 +162,6 @@ def test_persist_update_run(
         assert stored_run.extra["metadata"]["revision_id"] == str(revision_id)
     finally:
         langchain_client.delete_project(project_name=project_name)
-
-
-@freeze_time("2023-01-01")
-def test_evaluate_run(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
-    """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    project_name = "__test_evaluate_run"
-    dataset_name = "__test_evaluate_run_dataset"
-    if project_name in [sess.name for sess in langchain_client.list_projects()]:
-        langchain_client.delete_project(project_name=project_name)
-    if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
-        langchain_client.delete_dataset(dataset_name=dataset_name)
-
-    dataset = langchain_client.create_dataset(dataset_name)
-    predicted = "abcd"
-    ground_truth = "bcde"
-    example = langchain_client.create_example(
-        inputs={"input": "hello world"},
-        outputs={"output": ground_truth},
-        dataset_id=dataset.id,
-    )
-    parent_run = RunTree(
-        name="parent_run",
-        run_type="chain",
-        inputs={"input": "hello world"},
-        project_name=project_name,
-        serialized={},
-        start_time=datetime.now(),
-        reference_example_id=example.id,
-    )
-    parent_run.post()
-    parent_run.end(outputs={"output": predicted})
-    parent_run.patch()
-    parent_run.wait()
-
-    def jaccard_chars(output: str, answer: str) -> float:
-        """Naive Jaccard similarity between two strings."""
-        prediction_chars = set(output.strip().lower())
-        answer_chars = set(answer.strip().lower())
-        intersection = prediction_chars.intersection(answer_chars)
-        union = prediction_chars.union(answer_chars)
-        return len(intersection) / len(union)
-
-    def grader(run_input: str, run_output: str, answer: Optional[str]) -> dict:
-        """Compute the score and/or label for this run."""
-        if answer is None:
-            value = "AMBIGUOUS"
-            score = 0.5
-        else:
-            score = jaccard_chars(run_output, answer)
-            value = "CORRECT" if score > 0.9 else "INCORRECT"
-        return dict(score=score, value=value)
-
-    evaluator = StringEvaluator(evaluation_name="Jaccard", grading_function=grader)
-    runs = None
-    for _ in range(5):
-        try:
-            runs = list(
-                langchain_client.list_runs(
-                    project_name=project_name,
-                    execution_order=1,
-                    error=False,
-                )
-            )
-            break
-        except LangSmithNotFoundError:
-            time.sleep(2)
-    assert runs is not None
-    all_eval_results: List[EvaluationResult] = []
-    for run in runs:
-        all_eval_results.append(langchain_client.evaluate_run(run, evaluator))
 
 
 @pytest.mark.parametrize("uri", ["http://localhost:1981", "http://api.langchain.minus"])
@@ -471,15 +388,18 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
     runs = []
     wait = 2
-    for _ in range(5):
+    for _ in range(15):
         try:
-            runs = list(langchain_client.list_runs(project_name=_session))
+            runs = list(
+                langchain_client.list_runs(
+                    project_name=_session, run_ids=[str(trace_id), str(run_id_2)]
+                )
+            )
             if len(runs) == 2:
                 break
             raise LangSmithError("Runs not created yet")
         except LangSmithError:
             time.sleep(wait)
-            wait += 4
     else:
         raise ValueError("Runs not created in time")
     assert len(runs) == 2
@@ -498,3 +418,13 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     assert run2.outputs == {"output1": 7, "output2": 8}
 
     langchain_client.delete_project(project_name=_session)
+
+
+@freeze_time("2023-01-01")
+def test_get_info() -> None:
+    langchain_client = Client(api_key="not-a-real-key")
+    info = langchain_client.info
+    assert info
+    assert info.version is not None  # type: ignore
+    assert info.batch_ingest_config is not None  # type: ignore
+    assert info.batch_ingest_config["size_limit"] > 0  # type: ignore

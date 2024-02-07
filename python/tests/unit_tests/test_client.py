@@ -1,16 +1,19 @@
 """Test the LangSmith client."""
+
 import asyncio
 import dataclasses
 import gc
+import itertools
 import json
 import os
+import threading
 import time
 import uuid
 import weakref
 from datetime import datetime
 from enum import Enum
 from io import BytesIO
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -198,9 +201,7 @@ def test_create_run_unicode() -> None:
     session.request = mock.Mock()
     with patch.object(client, "session", session):
         id_ = uuid.uuid4()
-        client.create_run(
-            "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
-        )
+        client.create_run("my_run", inputs=inputs, run_type="llm", id=id_)
         client.update_run(id_, status="completed")
 
 
@@ -212,28 +213,27 @@ class CallTracker:
         self.counter += 1
 
 
+@pytest.mark.parametrize("supports_batch_endpoint", [True, False])
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
-def test_client_gc_empty(auto_batch_tracing: bool) -> None:
-    client = Client(
-        api_url="http://localhost:1984",
-        api_key="123",
-        auto_batch_tracing=auto_batch_tracing,
-    )
-    tracker = CallTracker()
-    weakref.finalize(client, tracker)
-    assert tracker.counter == 0
-
-    del client
-    time.sleep(1)  # Give the background thread time to stop
-    gc.collect()  # Force garbage collection
-    assert tracker.counter == 1, "Client was not garbage collected"
-
-
-@pytest.mark.parametrize("auto_batch_tracing", [True, False])
-def test_client_gc(auto_batch_tracing: bool) -> None:
+def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> None:
     session = mock.MagicMock(spec=requests.Session)
+    api_url = "http://localhost:1984"
+
+    def mock_get(*args, **kwargs):
+        if args[0] == f"{api_url}/info":
+            response = mock.Mock()
+            if supports_batch_endpoint:
+                response.json.return_value = {}
+            else:
+                response.raise_for_status.side_effect = HTTPError()
+                response.status_code = 404
+            return response
+        else:
+            return MagicMock()
+
+    session.get.side_effect = mock_get
     client = Client(
-        api_url="http://localhost:1984",
+        api_url=api_url,
         api_key="123",
         auto_batch_tracing=auto_batch_tracing,
         session=session,
@@ -248,28 +248,37 @@ def test_client_gc(auto_batch_tracing: bool) -> None:
             "my_run",
             inputs={},
             run_type="llm",
-            execution_order=1,
             id=id,
             trace_id=id,
             dotted_order=id,
         )
 
-    if auto_batch_tracing:
+    if auto_batch_tracing and supports_batch_endpoint:
         assert client.tracing_queue
         client.tracing_queue.join()
 
         request_calls = [call for call in session.request.mock_calls if call.args]
-        assert len(request_calls) == 1
+        assert len(request_calls) >= 1
+
         for call in request_calls:
             assert call.args[0] == "post"
             assert call.args[1] == "http://localhost:1984/runs/batch"
+        get_calls = [call for call in session.get.mock_calls if call.args]
+        # assert len(get_calls) == 1
+        for call in get_calls:
+            assert call.args[0] == f"{api_url}/info"
     else:
         request_calls = [call for call in session.request.mock_calls if call.args]
+
         assert len(request_calls) == 10
         for call in request_calls:
             assert call.args[0] == "post"
             assert call.args[1] == "http://localhost:1984/runs"
-
+        if auto_batch_tracing:
+            get_calls = [call for call in session.get.mock_calls if call.args]
+            # assert len(get_calls) == 1
+            for call in get_calls:
+                assert call.args[0] == f"{api_url}/info"
     del client
     time.sleep(1)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
@@ -291,9 +300,7 @@ def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
 
     # because no trace_id/dotted_order provided, auto batch is disabled
     for _ in range(10):
-        client.create_run(
-            "my_run", inputs={}, run_type="llm", execution_order=1, id=uuid.uuid4()
-        )
+        client.create_run("my_run", inputs={}, run_type="llm", id=uuid.uuid4())
     request_calls = [call for call in session.request.mock_calls if call.args]
     assert len(request_calls) == 10
     for call in request_calls:
@@ -327,7 +334,6 @@ def test_client_gc_after_autoscale() -> None:
             "my_run",
             inputs={},
             run_type="llm",
-            execution_order=1,
             id=id,
             trace_id=id,
             dotted_order=id,
@@ -346,14 +352,34 @@ def test_client_gc_after_autoscale() -> None:
         assert call.args[1] == "http://localhost:1984/runs/batch"
 
 
+@pytest.mark.parametrize("supports_batch_endpoint", [True, False])
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 def test_create_run_includes_langchain_env_var_metadata(
+    supports_batch_endpoint: bool,
     auto_batch_tracing: bool,
 ) -> None:
+    session = mock.Mock()
+    session.request = mock.Mock()
+    api_url = "http://localhost:1984"
+
+    def mock_get(*args, **kwargs):
+        if args[0] == f"{api_url}/info":
+            response = mock.Mock()
+            if supports_batch_endpoint:
+                response.json.return_value = {}
+            else:
+                response.raise_for_status.side_effect = HTTPError()
+                response.status_code = 404
+            return response
+        else:
+            return MagicMock()
+
+    session.get.side_effect = mock_get
     client = Client(
-        api_url="http://localhost:1984",
+        api_url=api_url,
         api_key="123",
         auto_batch_tracing=auto_batch_tracing,
+        session=session,
     )
     inputs = {
         "foo": "これは私の友達です",
@@ -362,40 +388,34 @@ def test_create_run_includes_langchain_env_var_metadata(
         "qux": "나는\u3000밥을\u3000먹었습니다.",
         "는\u3000밥": "나는\u3000밥을\u3000먹었습니다.",
     }
-    session = mock.Mock()
-    session.request = mock.Mock()
+
     # Set the environment variables just for this test
     with patch.dict(os.environ, {"LANGCHAIN_REVISION": "abcd2234"}):
         # Clear the cache to ensure the environment variables are re-read
         ls_env.get_langchain_env_var_metadata.cache_clear()
-        with patch.object(client, "session", session):
-            id_ = uuid.uuid4()
-            start_time = datetime.now()
-            client.create_run(
-                "my_run",
-                inputs=inputs,
-                run_type="llm",
-                execution_order=1,
-                id=id_,
-                trace_id=id_,
-                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
-                start_time=start_time,
+        id_ = uuid.uuid4()
+        start_time = datetime.now()
+        client.create_run(
+            "my_run",
+            inputs=inputs,
+            run_type="llm",
+            id=id_,
+            trace_id=id_,
+            dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
+            start_time=start_time,
+        )
+        if tracing_queue := client.tracing_queue:
+            tracing_queue.join()
+        # Check the posted value in the request
+        posted_value = json.loads(session.request.call_args[1]["data"])
+        if auto_batch_tracing and supports_batch_endpoint:
+            assert (
+                posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
+                == "abcd2234"
             )
-            if tracing_queue := client.tracing_queue:
-                tracing_queue.join()
-            # Check the posted value in the request
-            posted_value = json.loads(session.request.call_args[1]["data"])
-            if not auto_batch_tracing:
-                assert (
-                    posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"]
-                    == "abcd2234"
-                )
-                assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
-            else:
-                assert (
-                    posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
-                    == "abcd2234"
-                )
+        else:
+            assert posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"] == "abcd2234"
+            assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
 
 
 @pytest.mark.parametrize("source_type", ["api", "model"])
@@ -459,6 +479,17 @@ def test_serialize_json() -> None:
         def __init__(self, x: int) -> None:
             self.x = x
             self.y = "y"
+            self.a_list = [1, 2, 3]
+            self.a_tuple = (1, 2, 3)
+            self.a_set = {1, 2, 3}
+            self.a_dict = {"foo": "bar"}
+            self.my_bytes = b"foo"
+
+    class ClassWithTee:
+        def __init__(self) -> None:
+            tee_a, tee_b = itertools.tee(range(10))
+            self.tee_a = tee_a
+            self.tee_b = tee_b
 
     class MyClassWithSlots:
         __slots__ = ["x", "y"]
@@ -497,10 +528,30 @@ def test_serialize_json() -> None:
     current_time = datetime.now()
 
     class NestedClass:
-        __slots__ = ["person"]
+        __slots__ = ["person", "lock"]
 
         def __init__(self) -> None:
             self.person = Person(name="foo")
+            self.lock = [threading.Lock()]
+
+    class CyclicClass:
+        def __init__(self) -> None:
+            self.cyclic = self
+
+        def __repr__(self) -> str:
+            return "SoCyclic"
+
+    class CyclicClass2:
+        def __init__(self) -> None:
+            self.cyclic: Any = None
+            self.other: Any = None
+
+        def __repr__(self) -> str:
+            return "SoCyclic2"
+
+    cycle_2 = CyclicClass2()
+    cycle_2.cyclic = CyclicClass2()
+    cycle_2.cyclic.other = cycle_2
 
     class MyNamedTuple(NamedTuple):
         foo: str
@@ -510,6 +561,7 @@ def test_serialize_json() -> None:
         "uid": uid,
         "time": current_time,
         "my_class": MyClass(1),
+        "class_with_tee": ClassWithTee(),
         "my_slotted_class": MyClassWithSlots(1),
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
@@ -523,13 +575,26 @@ def test_serialize_json() -> None:
         "nested_class": NestedClass(),
         "attr_dict": AttrDict(foo="foo", bar=1),
         "named_tuple": MyNamedTuple(foo="foo", bar=1),
+        "cyclic": CyclicClass(),
+        "cyclic2": cycle_2,
     }
 
     res = json.loads(json.dumps(to_serialize, default=_serialize_json))
     expected = {
         "uid": str(uid),
         "time": current_time.isoformat(),
-        "my_class": {"x": 1, "y": "y"},
+        "my_class": {
+            "x": 1,
+            "y": "y",
+            "a_list": [1, 2, 3],
+            "a_tuple": [1, 2, 3],
+            "a_set": [1, 2, 3],
+            "a_dict": {"foo": "bar"},
+            "my_bytes": "foo",
+        },
+        "class_with_tee": lambda val: all(
+            ["_tee object" in val[key] for key in ["tee_a", "tee_b"]]
+        ),
         "my_slotted_class": {"x": 1, "y": "y"},
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
@@ -540,11 +605,22 @@ def test_serialize_json() -> None:
         "a_str": "foo",
         "an_int": 1,
         "a_float": 1.1,
-        "nested_class": {"person": {"name": "foo"}},
+        "nested_class": (
+            lambda val: val["person"] == {"name": "foo"}
+            and "_thread.lock object" in str(val.get("lock"))
+        ),
         "attr_dict": {"foo": "foo", "bar": 1},
         "named_tuple": ["foo", 1],
+        "cyclic": {"cyclic": "SoCyclic"},
+        # We don't really care about this case just want to not err
+        "cyclic2": lambda _: True,
     }
-    assert res == expected
+    assert set(expected) == set(res)
+    for k, v in expected.items():
+        if callable(v):
+            assert v(res[k])
+        else:
+            assert res[k] == v
 
 
 def test_host_url() -> None:

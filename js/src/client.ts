@@ -38,6 +38,10 @@ interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
+  hideInputs?: boolean;
+  hideOutputs?: boolean;
+  autoBatchTracing?: boolean;
+  pendingAutoBatchedRunLimit?: number;
 }
 
 interface ListRunsParams {
@@ -54,6 +58,7 @@ interface ListRunsParams {
   query?: string;
   filter?: string;
 }
+
 interface UploadCSVParams {
   csvFile: Blob;
   fileName: string;
@@ -91,7 +96,6 @@ interface CreateRunParams {
   name: string;
   inputs: KVMap;
   run_type: string;
-  execution_order?: number;
   id?: string;
   start_time?: number;
   end_time?: number;
@@ -104,9 +108,15 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
   revision_id?: string;
+  trace_id?: string;
+  dotted_order?: string;
 }
 
-interface projectOptions {
+interface UpdateRunParams extends RunUpdate {
+  id?: string;
+}
+
+interface ProjectOptions {
   projectName?: string;
   projectId?: string;
 }
@@ -118,6 +128,51 @@ export type CreateExampleOptions = {
   datasetName?: string;
   createdAt?: Date;
   exampleId?: string;
+};
+
+type AutoBatchQueueItem = {
+  action: "create" | "update";
+  item: RunCreate | RunUpdate;
+};
+
+async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
+  const runtimeEnv = await getRuntimeEnvironment();
+  const envVars = getLangChainEnvVarsMetadata();
+  return runs.map((run) => {
+    const extra = run.extra ?? {};
+    const metadata = extra.metadata;
+    run.extra = {
+      ...extra,
+      runtime: {
+        ...runtimeEnv,
+        ...extra?.runtime,
+      },
+      metadata: {
+        ...envVars,
+        ...(envVars.revision_id || run.revision_id
+          ? { revision_id: run.revision_id ?? envVars.revision_id }
+          : {}),
+        ...metadata,
+      },
+    };
+    return run;
+  });
+}
+
+const getTracingSamplingRate = () => {
+  const samplingRateStr = getEnvironmentVariable(
+    "LANGCHAIN_TRACING_SAMPLING_RATE"
+  );
+  if (samplingRateStr === undefined) {
+    return undefined;
+  }
+  const samplingRate = parseFloat(samplingRateStr);
+  if (samplingRate < 0 || samplingRate > 1) {
+    throw new Error(
+      `LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
+    );
+  }
+  return samplingRate;
 };
 
 // utility functions
@@ -158,20 +213,6 @@ function trimQuotes(str?: string): string | undefined {
     .replace(/^'(.*)'$/, "$1");
 }
 
-function hideInputs(inputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true") {
-    return {};
-  }
-  return inputs;
-}
-
-function hideOutputs(outputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true") {
-    return {};
-  }
-  return outputs;
-}
-
 function assertUuid(str: string): void {
   if (!uuid.validate(str)) {
     throw new Error(`Invalid UUID: ${str}`);
@@ -191,30 +232,64 @@ export class Client {
 
   private _tenantId: string | null = null;
 
+  private hideInputs?: boolean;
+
+  private hideOutputs?: boolean;
+
+  private tracingSampleRate?: number;
+
+  private sampledPostUuids = new Set();
+
+  private autoBatchTracing = true;
+
+  private pendingAutoBatchedRuns: AutoBatchQueueItem[] = [];
+
+  private pendingAutoBatchedRunLimit = 100;
+
+  private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  private autoBatchInitialDelayMs = 250;
+
+  private autoBatchAggregationDelayMs = 50;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
+    this.tracingSampleRate = getTracingSamplingRate();
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     this.validateApiKeyIfHosted();
     this.timeout_ms = config.timeout_ms ?? 12_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
+    this.hideOutputs = config.hideOutputs ?? defaultConfig.hideOutputs;
+    this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
+    this.pendingAutoBatchedRunLimit =
+      config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
   }
 
   public static getDefaultClientConfig(): {
     apiUrl: string;
     apiKey?: string;
     webUrl?: string;
+    hideInputs?: boolean;
+    hideOutputs?: boolean;
   } {
     const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
     const apiUrl =
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
       "https://api.smith.langchain.com";
+    const hideInputs =
+      getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true";
+    const hideOutputs =
+      getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
       webUrl: undefined,
+      hideInputs: hideInputs,
+      hideOutputs: hideOutputs,
     };
   }
 
@@ -256,6 +331,35 @@ export class Client {
       headers["x-api-key"] = `${this.apiKey}`;
     }
     return headers;
+  }
+
+  private processInputs(inputs: KVMap): KVMap {
+    if (this.hideInputs) {
+      return {};
+    }
+    return inputs;
+  }
+
+  private processOutputs(outputs: KVMap): KVMap {
+    if (this.hideOutputs) {
+      return {};
+    }
+    return outputs;
+  }
+
+  private prepareRunCreateOrUpdateInputs(run: RunUpdate): RunUpdate;
+  private prepareRunCreateOrUpdateInputs(run: RunCreate): RunCreate;
+  private prepareRunCreateOrUpdateInputs(
+    run: RunCreate | RunUpdate
+  ): RunCreate | RunUpdate {
+    const runParams = { ...run };
+    if (runParams.inputs !== undefined) {
+      runParams.inputs = this.processInputs(runParams.inputs);
+    }
+    if (runParams.outputs !== undefined) {
+      runParams.outputs = this.processOutputs(runParams.outputs);
+    }
+    return runParams;
   }
 
   private async _getResponse(
@@ -351,54 +455,222 @@ export class Client {
     }
   }
 
+  private _filterForSampling(
+    runs: CreateRunParams[] | UpdateRunParams[],
+    patch = false
+  ) {
+    if (this.tracingSampleRate === undefined) {
+      return runs;
+    }
+
+    if (patch) {
+      const sampled = [];
+      for (const run of runs) {
+        if (this.sampledPostUuids.has(run.id)) {
+          sampled.push(run);
+          this.sampledPostUuids.delete(run.id);
+        }
+      }
+      return sampled;
+    } else {
+      const sampled = [];
+      for (const run of runs) {
+        if (Math.random() < this.tracingSampleRate) {
+          sampled.push(run);
+          this.sampledPostUuids.add(run.id);
+        }
+      }
+      return sampled;
+    }
+  }
+
+  private async triggerAutoBatchSend(runs?: AutoBatchQueueItem[]) {
+    let batch = runs;
+    if (batch === undefined) {
+      batch = this.pendingAutoBatchedRuns.slice(
+        0,
+        this.pendingAutoBatchedRunLimit
+      );
+      this.pendingAutoBatchedRuns = this.pendingAutoBatchedRuns.slice(
+        this.pendingAutoBatchedRunLimit
+      );
+    }
+    await this.batchIngestRuns({
+      runCreates: batch
+        .filter((item) => item.action === "create")
+        .map((item) => item.item) as RunCreate[],
+      runUpdates: batch
+        .filter((item) => item.action === "update")
+        .map((item) => item.item) as RunUpdate[],
+    });
+  }
+
+  private appendRunCreateToAutoBatchQueue(item: AutoBatchQueueItem) {
+    const oldTimeout = this.autoBatchTimeout;
+    clearTimeout(this.autoBatchTimeout);
+    this.autoBatchTimeout = undefined;
+    this.pendingAutoBatchedRuns.push(item);
+    while (
+      this.pendingAutoBatchedRuns.length >= this.pendingAutoBatchedRunLimit
+    ) {
+      const batch = this.pendingAutoBatchedRuns.slice(
+        0,
+        this.pendingAutoBatchedRunLimit
+      );
+      this.pendingAutoBatchedRuns = this.pendingAutoBatchedRuns.slice(
+        this.pendingAutoBatchedRunLimit
+      );
+      void this.triggerAutoBatchSend(batch);
+    }
+    if (this.pendingAutoBatchedRuns.length > 0) {
+      if (!oldTimeout) {
+        this.autoBatchTimeout = setTimeout(() => {
+          this.autoBatchTimeout = undefined;
+          void this.triggerAutoBatchSend();
+        }, this.autoBatchInitialDelayMs);
+      } else {
+        this.autoBatchTimeout = setTimeout(() => {
+          this.autoBatchTimeout = undefined;
+          void this.triggerAutoBatchSend();
+        }, this.autoBatchAggregationDelayMs);
+      }
+    }
+  }
+
   public async createRun(run: CreateRunParams): Promise<void> {
+    if (!this._filterForSampling([run]).length) {
+      return;
+    }
     const headers = { ...this.headers, "Content-Type": "application/json" };
-    const extra = run.extra ?? {};
-    const metadata = extra.metadata;
-    const runtimeEnv = await getRuntimeEnvironment();
-    const envVars = getLangChainEnvVarsMetadata();
     const session_name = run.project_name;
     delete run.project_name;
-    const runCreate: RunCreate = {
+
+    const runCreate: RunCreate = this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
-      extra: {
-        ...run.extra,
-        runtime: {
-          ...runtimeEnv,
-          ...extra.runtime,
-        },
-        metadata: {
-          ...envVars,
-          ...(envVars.revision_id || run.revision_id
-            ? { revision_id: run.revision_id ?? envVars.revision_id }
-            : {}),
-          ...metadata,
-        },
-      },
-    };
-    runCreate.inputs = hideInputs(runCreate.inputs);
-    if (runCreate.outputs) {
-      runCreate.outputs = hideOutputs(runCreate.outputs);
+      start_time: run.start_time ?? Date.now(),
+    });
+    if (
+      this.autoBatchTracing &&
+      runCreate.trace_id !== undefined &&
+      runCreate.dotted_order !== undefined
+    ) {
+      this.appendRunCreateToAutoBatchQueue({
+        action: "create",
+        item: runCreate,
+      });
+      return;
     }
+    const mergedRunCreateParams = await mergeRuntimeEnvIntoRunCreates([
+      runCreate,
+    ]);
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,
-      body: JSON.stringify(runCreate),
+      body: JSON.stringify(mergedRunCreateParams[0]),
       signal: AbortSignal.timeout(this.timeout_ms),
     });
     await raiseForStatus(response, "create run");
   }
 
+  /**
+   * Batch ingest/upsert multiple runs in the Langsmith system.
+   * @param runs
+   */
+  public async batchIngestRuns({
+    runCreates,
+    runUpdates,
+  }: {
+    runCreates?: RunCreate[];
+    runUpdates?: RunUpdate[];
+  }) {
+    if (runCreates === undefined && runUpdates === undefined) {
+      return;
+    }
+    let preparedCreateParams =
+      runCreates?.map((create) =>
+        this.prepareRunCreateOrUpdateInputs(create)
+      ) ?? [];
+    let preparedUpdateParams =
+      runUpdates?.map((update) =>
+        this.prepareRunCreateOrUpdateInputs(update)
+      ) ?? [];
+
+    if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
+      const createById = preparedCreateParams.reduce(
+        (params: Record<string, RunCreate>, run) => {
+          if (!run.id) {
+            return params;
+          }
+          params[run.id] = run;
+          return params;
+        },
+        {}
+      );
+      const standaloneUpdates = [];
+      for (const updateParam of preparedUpdateParams) {
+        if (updateParam.id !== undefined && createById[updateParam.id]) {
+          createById[updateParam.id] = {
+            ...createById[updateParam.id],
+            ...updateParam,
+          };
+        } else {
+          standaloneUpdates.push(updateParam);
+        }
+      }
+      preparedCreateParams = Object.values(createById);
+      preparedUpdateParams = standaloneUpdates;
+    }
+    const body = {
+      post: this._filterForSampling(preparedCreateParams),
+      patch: this._filterForSampling(preparedUpdateParams, true),
+    };
+    if (!body.post.length && !body.patch.length) {
+      return;
+    }
+    preparedCreateParams = await mergeRuntimeEnvIntoRunCreates(
+      preparedCreateParams
+    );
+    const headers = {
+      ...this.headers,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/batch`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    await raiseForStatus(response, "batch create run");
+  }
+
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
-      run.inputs = hideInputs(run.inputs);
+      run.inputs = this.processInputs(run.inputs);
     }
 
     if (run.outputs) {
-      run.outputs = hideOutputs(run.outputs);
+      run.outputs = this.processOutputs(run.outputs);
+    }
+    // TODO: Untangle types
+    const data: UpdateRunParams = { ...run, id: runId };
+    if (!this._filterForSampling([data], true).length) {
+      return;
+    }
+    if (
+      this.autoBatchTracing &&
+      data.trace_id !== undefined &&
+      data.dotted_order !== undefined
+    ) {
+      this.appendRunCreateToAutoBatchQueue({ action: "update", item: data });
+      return;
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
@@ -433,7 +705,7 @@ export class Client {
   }: {
     runId?: string;
     run?: Run;
-    projectOpts?: projectOptions;
+    projectOpts?: ProjectOptions;
   }): Promise<string> {
     if (run !== undefined) {
       let sessionId: string;
@@ -806,9 +1078,11 @@ export class Client {
   public async readProject({
     projectId,
     projectName,
+    includeStats,
   }: {
     projectId?: string;
     projectName?: string;
+    includeStats?: boolean;
   }): Promise<TracerSessionResult> {
     let path = "/sessions";
     const params = new URLSearchParams();
@@ -821,6 +1095,9 @@ export class Client {
       params.append("name", projectName);
     } else {
       throw new Error("Must provide projectName or projectId");
+    }
+    if (includeStats !== undefined) {
+      params.append("include_stats", includeStats.toString());
     }
 
     const response = await this._get<TracerSession | TracerSession[]>(

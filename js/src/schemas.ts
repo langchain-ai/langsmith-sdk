@@ -70,9 +70,6 @@ export interface BaseRun {
   /** A human-readable name for the run. */
   name: string;
 
-  /** Defines the sequence in which the run was executed. */
-  execution_order?: number;
-
   /** The epoch time at which the run started, if available. */
   start_time?: number;
 
@@ -108,6 +105,23 @@ export interface BaseRun {
 
   /** Tags for further categorizing or annotating the run. */
   tags?: string[];
+
+  /** Unique ID assigned to every run within this nested trace. **/
+  trace_id?: string;
+
+  /**
+   * The dotted order for the run.
+   *
+   * This is a string composed of {time}{run-uuid}.* so that a trace can be
+   * sorted in the order it was executed.
+   *
+   * Example:
+   * - Parent: 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8
+   * - Children:
+   *    - 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155649Z809ed3a2-0172-4f4d-8a02-a64e9b7a0f8a
+   *   - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
+   */
+  dotted_order?: string;
 }
 
 /**
@@ -117,9 +131,6 @@ export interface BaseRun {
 export interface Run extends BaseRun {
   /** A unique identifier for the run, mandatory when loaded from DB. */
   id: string;
-
-  /** Defines the sequence in which the run was executed. */
-  execution_order?: number;
 
   /** The ID of the project that owns this run. */
   session_id?: string;
@@ -156,7 +167,26 @@ export interface Run extends BaseRun {
 
   /** IDs of parent runs, if multiple exist. */
   parent_run_ids?: string[];
-  /**Unique ID assigned to every run within this nested trace.**/
+}
+
+export interface RunCreate extends BaseRun {
+  revision_id?: string;
+  child_runs?: this[];
+  session_name?: string;
+}
+
+export interface RunUpdate {
+  id?: string;
+  end_time?: number;
+  extra?: KVMap;
+  error?: string;
+  inputs?: KVMap;
+  outputs?: KVMap;
+  parent_run_id?: string;
+  reference_example_id?: string;
+  events?: KVMap[];
+  session_id?: string;
+  /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 
   /**
@@ -172,23 +202,6 @@ export interface Run extends BaseRun {
    *   - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
    */
   dotted_order?: string;
-}
-
-export interface RunCreate extends BaseRun {
-  child_runs?: this[];
-  session_name?: string;
-}
-
-export interface RunUpdate {
-  end_time?: number;
-  extra?: KVMap;
-  error?: string;
-  inputs?: KVMap;
-  outputs?: KVMap;
-  parent_run_id?: string;
-  reference_example_id?: string;
-  events?: KVMap[];
-  session_id?: string;
 }
 
 export interface ExampleCreate extends BaseExample {

@@ -4,10 +4,12 @@ inputs:
   node-version:
     description: "Node version"
     required: true
-  docker_username:
+  langchain-api-key:
+    description: "Langchain"
     required: true
-  docker_password:
-    required: true
+  openai-api-key:
+    description: "OpenAI API key"
+    required: false
 runs:
   using: "composite"
   steps:
@@ -26,32 +28,11 @@ runs:
       shell: bash
       working-directory: js
 
-    - name: Log in to docker
-      uses: docker/login-action@v2
-      with:
-        username: ${{ inputs.docker_username }}
-        password: ${{ inputs.docker_password }}
-
     - name: Run JS integration tests
-      run: |
-        node dist/cli/main.cjs start --dev
-        node dist/cli/main.cjs status
-        sleep 5
-        counter=0
-        max_tries=20
-        while true; do
-          response=$(curl -f --write-out '%{http_code}' --silent --output /dev/null http://127.0.0.1:1984/tenants || true)
-          if [ "$response" -eq 200 ]; then
-            echo "Service is up!"
-            break
-          fi
-          ((counter++))
-          if [ $counter -ge $max_tries ]; then
-            echo "Service did not start within the expected time."
-            exit 1
-          fi
-          sleep 3
-        done
-        yarn test:integration
+      run: yarn test:integration
       shell: bash
       working-directory: js
+      env:
+        LANGCHAIN_TRACING_V2: "true"
+        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}

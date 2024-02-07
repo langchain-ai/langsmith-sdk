@@ -1,7 +1,8 @@
 {
   "name": "langsmith",
-  "version": "0.0.63",
+  "version": "0.0.66",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
+  "packageManager": "yarn@1.22.19",
   "files": [
     "dist/",
     "client.cjs",
