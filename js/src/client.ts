@@ -506,6 +506,7 @@ export class Client {
   }
 
   private appendRunCreateToAutoBatchQueue(item: AutoBatchQueueItem) {
+    const oldTimeout = this.autoBatchTimeout;
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     this.pendingAutoBatchedRuns.push(item);
@@ -522,16 +523,16 @@ export class Client {
       void this.triggerAutoBatchSend(batch);
     }
     if (this.pendingAutoBatchedRuns.length > 0) {
-      if (!this.autoBatchTimeout) {
-        this.autoBatchTimeout = setTimeout(
-          () => void this.triggerAutoBatchSend(),
-          this.autoBatchInitialDelayMs
-        );
+      if (!oldTimeout) {
+        this.autoBatchTimeout = setTimeout(() => {
+          this.autoBatchTimeout = undefined;
+          void this.triggerAutoBatchSend();
+        }, this.autoBatchInitialDelayMs);
       } else {
-        this.autoBatchTimeout = setTimeout(
-          () => void this.triggerAutoBatchSend(),
-          this.autoBatchAggregationDelayMs
-        );
+        this.autoBatchTimeout = setTimeout(() => {
+          this.autoBatchTimeout = undefined;
+          void this.triggerAutoBatchSend();
+        }, this.autoBatchAggregationDelayMs);
       }
     }
   }
