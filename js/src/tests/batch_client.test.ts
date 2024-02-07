@@ -5,7 +5,10 @@ import { convertToDottedOrderFormat } from "../run_trees.js";
 
 describe("Batch client tracing", () => {
   it("should create a batched run with the given input", async () => {
-    const client = new Client({ apiKey: "test-api-key" });
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+    });
     const callSpy = jest
       .spyOn((client as any).caller, "call")
       .mockResolvedValue({
@@ -55,7 +58,10 @@ describe("Batch client tracing", () => {
   });
 
   it("Create + update batching should merge into a single call", async () => {
-    const client = new Client({ apiKey: "test-api-key" });
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+    });
     const callSpy = jest
       .spyOn((client as any).caller, "call")
       .mockResolvedValue({
@@ -118,7 +124,10 @@ describe("Batch client tracing", () => {
   });
 
   it("should create an example with the given input and generation", async () => {
-    const client = new Client({ apiKey: "test-api-key" });
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+    });
     const callSpy = jest
       .spyOn((client as any).caller, "call")
       .mockResolvedValue({
@@ -218,6 +227,7 @@ describe("Batch client tracing", () => {
     const client = new Client({
       apiKey: "test-api-key",
       pendingAutoBatchedRunLimit: 10,
+      autoBatchTracing: true,
     });
     const callSpy = jest
       .spyOn((client as any).caller, "call")

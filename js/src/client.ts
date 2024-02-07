@@ -240,7 +240,7 @@ export class Client {
 
   private sampledPostUuids = new Set();
 
-  private autoBatchTracing = true;
+  private autoBatchTracing = false;
 
   private pendingAutoBatchedRuns: AutoBatchQueueItem[] = [];
 
