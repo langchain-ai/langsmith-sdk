@@ -647,7 +647,22 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    await raiseForStatus(response, "batch create run");
+    if (response.status === 404) {
+      this.autoBatchTracing = false;
+      for (const preparedCreateParam of body.post) {
+        await this.createRun(preparedCreateParam as CreateRunParams);
+      }
+      for (const preparedUpdateParam of body.patch) {
+        if (preparedUpdateParam.id !== undefined) {
+          await this.updateRun(
+            preparedUpdateParam.id,
+            preparedUpdateParam as UpdateRunParams
+          );
+        }
+      }
+    } else {
+      await raiseForStatus(response, "batch create run");
+    }
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
