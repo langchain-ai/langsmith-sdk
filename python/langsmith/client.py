@@ -300,10 +300,11 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     return outputs
 
 
-def _as_uuid(value: ID_TYPE, var: str) -> uuid.UUID:
+def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
     try:
         return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
     except ValueError as e:
+        var = var or "value"
         raise ls_utils.LangSmithUserError(
             f"{var} must be a valid UUID or UUID string. Got {value}"
         ) from e
@@ -892,14 +893,14 @@ class Client:
             for run in runs:
                 if run["id"] in self._sampled_post_uuids:
                     sampled.append(run)
-                    self._sampled_post_uuids.remove(run["id"])
+                    self._sampled_post_uuids.remove(_as_uuid(run["id"]))
             return sampled
         else:
             sampled = []
             for run in runs:
                 if random.random() < self.tracing_sample_rate:
                     sampled.append(run)
-                    self._sampled_post_uuids.add(run["id"])
+                    self._sampled_post_uuids.add(_as_uuid(run["id"]))
             return sampled
 
     def create_run(
@@ -1060,7 +1061,7 @@ class Client:
             return
 
         self._insert_runtime_env(body["post"])
-
+        logger.info(f"Batch ingesting {body['post']}, {len(body['patch'])} runs")
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs/batch",
@@ -3294,6 +3295,7 @@ def _tracing_thread_handle_batch(
     try:
         client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     except Exception:
+        logger.error("Error in tracing thread", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         pass
