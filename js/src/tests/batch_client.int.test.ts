@@ -59,7 +59,7 @@ test.concurrent(
       autoBatchTracing: true,
       callerOptions: { maxRetries: 0 },
     });
-    const projectName = "__test_persist_update_run_batch";
+    const projectName = "__test_persist_update_run_batch_1";
     await deleteProject(langchainClient, projectName);
 
     const runId = uuidv4();
@@ -90,46 +90,50 @@ test.concurrent(
   180_000
 );
 
-test("Test persist update runs above the batch size limit", async () => {
-  const langchainClient = new Client({
-    autoBatchTracing: true,
-    callerOptions: { maxRetries: 0 },
-    pendingAutoBatchedRunLimit: 2,
-  });
-  const projectName = "__test_persist_update_run_batch";
-  await deleteProject(langchainClient, projectName);
-
-  const createRun = async () => {
-    const runId = uuidv4();
-    const dottedOrder = convertToDottedOrderFormat(
-      new Date().getTime() / 1000,
-      runId
-    );
-    await langchainClient.createRun({
-      id: runId,
-      project_name: projectName,
-      name: "test_run",
-      run_type: "llm",
-      inputs: { text: "hello world" },
-      trace_id: runId,
-      dotted_order: dottedOrder,
+test.concurrent(
+  "Test persist update runs above the batch size limit",
+  async () => {
+    const langchainClient = new Client({
+      autoBatchTracing: true,
+      callerOptions: { maxRetries: 0 },
+      pendingAutoBatchedRunLimit: 2,
     });
+    const projectName = "__test_persist_update_run_batch_above_bs_limit";
+    await deleteProject(langchainClient, projectName);
 
-    await langchainClient.updateRun(runId, {
-      outputs: { output: ["Hi"] },
-      dotted_order: dottedOrder,
-      trace_id: runId,
-      end_time: Math.floor(new Date().getTime() / 1000),
-    });
-    await waitUntilRunFound(langchainClient, runId, true);
-    const storedRun = await langchainClient.readRun(runId);
-    expect(storedRun.id).toEqual(runId);
-  };
+    const createRun = async () => {
+      const runId = uuidv4();
+      const dottedOrder = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+      await langchainClient.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
 
-  await Promise.all([createRun(), createRun(), createRun()]);
+      await langchainClient.updateRun(runId, {
+        outputs: { output: ["Hi"] },
+        dotted_order: dottedOrder,
+        trace_id: runId,
+        end_time: Math.floor(new Date().getTime() / 1000),
+      });
+      await waitUntilRunFound(langchainClient, runId, true);
+      const storedRun = await langchainClient.readRun(runId);
+      expect(storedRun.id).toEqual(runId);
+    };
 
-  await langchainClient.deleteProject({ projectName });
-}, 180_000);
+    await Promise.all([createRun(), createRun(), createRun()]);
+
+    await langchainClient.deleteProject({ projectName });
+  },
+  180_000
+);
 
 test.concurrent(
   "Test persist update run with delay",
@@ -138,7 +142,7 @@ test.concurrent(
       autoBatchTracing: true,
       callerOptions: { maxRetries: 0 },
     });
-    const projectName = "__test_persist_update_run_batch";
+    const projectName = "__test_persist_update_run_batch_with_delay";
     await deleteProject(langchainClient, projectName);
 
     const runId = uuidv4();

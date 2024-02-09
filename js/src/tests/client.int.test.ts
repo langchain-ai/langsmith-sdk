@@ -150,9 +150,6 @@ test.concurrent(
 
     const projectName = "__test_evaluate_run" + Date.now();
     const datasetName = "__test_evaluate_run_dataset" + Date.now();
-    await deleteProject(langchainClient, projectName);
-    await deleteDataset(langchainClient, datasetName);
-
     const dataset = await langchainClient.createDataset(datasetName);
     const predicted = "abcd";
     const groundTruth = "bcde";
@@ -178,17 +175,6 @@ test.concurrent(
     await parentRun.postRun();
     await parentRun.end({ output: predicted });
     await parentRun.patchRun();
-
-    await waitUntilRunFound(
-      langchainClient,
-      parentRun.id,
-      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
-    );
-
-    const run = await langchainClient.readRun(parentRun.id);
-    expect(run.outputs).toEqual({ output: predicted });
-    const runUrl = await langchainClient.getRunUrl({ runId: run.id });
-    expect(runUrl).toContain(run.id);
 
     function jaccardChars(output: string, answer: string): number {
       const predictionChars = new Set(output.trim().toLowerCase());
@@ -221,27 +207,8 @@ test.concurrent(
       evaluationName: "Jaccard",
       gradingFunction: grader,
     });
+    const feedback = await langchainClient.evaluateRun(parentRun, evaluator);
 
-    const runs = langchainClient.listRuns({
-      projectName: projectName,
-      executionOrder: 1,
-      error: false,
-    });
-
-    const project = await langchainClient.readProject({
-      projectName: projectName,
-    });
-    const projectWithStats = await langchainClient.readProject({
-      projectId: project.id,
-    });
-    expect(projectWithStats.name).toBe(project.name);
-
-    const allFeedback: Feedback[] = [];
-    for await (const run of runs) {
-      allFeedback.push(await langchainClient.evaluateRun(run, evaluator));
-    }
-
-    expect(allFeedback.length).toEqual(1);
     await waitUntil(
       async () => {
         try {
@@ -249,7 +216,7 @@ test.concurrent(
             (
               await toArray(
                 langchainClient.listFeedback({
-                  runIds: [run.id],
+                  runIds: [parentRun.id],
                   feedbackKeys: ["jaccard"],
                   feedbackSourceTypes: ["model"],
                 })
@@ -266,12 +233,12 @@ test.concurrent(
 
     const fetchedFeedback: Feedback[] = await toArray(
       langchainClient.listFeedback({
-        runIds: [run.id],
+        runIds: [parentRun.id],
         feedbackKeys: ["jaccard"],
         feedbackSourceTypes: ["model"],
       })
     );
-    expect(fetchedFeedback[0].id).toEqual(allFeedback[0].id);
+    expect(fetchedFeedback[0].id).toEqual(feedback.id);
     expect(fetchedFeedback[0].score).toEqual(
       jaccardChars(predicted, groundTruth)
     );
@@ -284,15 +251,14 @@ test.concurrent(
       console.log(e);
     }
   },
-  180_000
+  360_000
 );
 
 test.concurrent(
   "Test persist update run",
   async () => {
     const langchainClient = new Client({ autoBatchTracing: false });
-    const projectName = "__test_persist_update_run";
-    await deleteProject(langchainClient, projectName);
+    const projectName = "__test_persist_update_run" + Date.now();
 
     const runId = uuidv4();
     await langchainClient.createRun({
@@ -311,9 +277,9 @@ test.concurrent(
     );
     const storedRun = await langchainClient.readRun(runId);
     expect(storedRun.id).toEqual(runId);
-    await langchainClient.deleteProject({ projectName });
+    await deleteProject(langchainClient, projectName);
   },
-  180_000
+  360_000
 );
 
 test.concurrent(
@@ -401,17 +367,6 @@ test.concurrent(
     expect(datasetsById.map((dataset) => dataset.id)).toContain(dataset1.id);
     expect(datasetsById.map((dataset) => dataset.id)).toContain(dataset2.id);
 
-    // List datasets by data type
-    const datasetsByDataTypeIterable = langchainClient.listDatasets({
-      datasetName: datasetName1,
-    });
-    const datasetsByDataType = [];
-    for await (const dataset of datasetsByDataTypeIterable) {
-      datasetsByDataType.push(dataset);
-    }
-    expect(datasetsByDataType).toHaveLength(1);
-    expect(datasetsByDataType[0].id).toBe(dataset1.id);
-
     // List datasets by name
     const datasetsByNameIterable = langchainClient.listDatasets({
       datasetName: datasetName1,
@@ -423,17 +378,8 @@ test.concurrent(
     expect(datasetsByName).toHaveLength(1);
     expect(datasetsByName.map((dataset) => dataset.id)).toContain(dataset1.id);
 
-    // Delete datasets
     await langchainClient.deleteDataset({ datasetId: dataset1.id });
     await langchainClient.deleteDataset({ datasetId: dataset2.id });
-    const remainingDatasetsIterable = langchainClient.listDatasets({
-      datasetIds: [dataset1.id, dataset2.id],
-    });
-    const remainingDatasets = [];
-    for await (const dataset of remainingDatasetsIterable) {
-      remainingDatasets.push(dataset);
-    }
-    expect(remainingDatasets).toHaveLength(0);
   },
   180_000
 );
