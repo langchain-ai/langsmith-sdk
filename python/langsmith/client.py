@@ -891,9 +891,10 @@ class Client:
         if patch:
             sampled = []
             for run in runs:
-                if run["id"] in self._sampled_post_uuids:
+                run_id = _as_uuid(run["id"])
+                if run_id in self._sampled_post_uuids:
                     sampled.append(run)
-                    self._sampled_post_uuids.remove(_as_uuid(run["id"]))
+                    self._sampled_post_uuids.remove(run_id)
             return sampled
         else:
             sampled = []
@@ -1061,7 +1062,7 @@ class Client:
             return
 
         self._insert_runtime_env(body["post"])
-        logger.info(f"Batch ingesting {body['post']}, {len(body['patch'])} runs")
+        logger.debug(f"Batch ingesting {len(body['post'])}, {len(body['patch'])} runs")
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs/batch",
@@ -3334,7 +3335,6 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         return
     try:
         if not client.info:
-            print(f"no info: {client.info}", file=sys.stderr, flush=True)
             return
     except BaseException as e:
         logger.debug("Error in tracing control thread: %s", e)

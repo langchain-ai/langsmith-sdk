@@ -144,10 +144,9 @@ from langsmith.run_trees import RunTree
 
 parent_run = RunTree(
     name="My Chat Bot",
+    run_type="chain",
     inputs={"text": "Summarize this morning's meetings."},
     # project_name= "Defaults to the LANGCHAIN_PROJECT env var"
-    # api_url= "Defaults to the LANGCHAIN_ENDPOINT env var"
-    # api_key= "Defaults to the LANGCHAIN_API_KEY env var"
 )
 parent_run.post()
 # .. My Chat Bot calls an LLM
