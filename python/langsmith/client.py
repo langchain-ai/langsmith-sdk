@@ -3306,7 +3306,6 @@ def _tracing_thread_handle_batch(
     try:
         client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     except Exception:
-        logger.error("Error in tracing thread", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         pass
