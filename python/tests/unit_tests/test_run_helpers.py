@@ -216,7 +216,7 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
     # Wait for batcher
     await asyncio.sleep(0.1)
     # check the mock_calls
-    mock_calls = mock_client.session.request.mock_calls
+    mock_calls = mock_client.session.request.mock_calls  # type: ignore
     assert len(mock_calls) <= 2
 
     call = mock_calls[0]
