@@ -242,6 +242,8 @@ export class Client {
 
   private autoBatchTracing = false;
 
+  private batchEndpointSupported?: boolean;
+
   private pendingAutoBatchedRuns: AutoBatchQueueItem[] = [];
 
   private pendingAutoBatchedRunLimit = 100;
@@ -537,6 +539,21 @@ export class Client {
     }
   }
 
+  protected async batchEndpointIsSupported() {
+    const response = await fetch(`${this.apiUrl}/info`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(this.timeout_ms),
+    });
+    if (!response.ok) {
+      // consume the response body to release the connection
+      // https://undici.nodejs.org/#/?id=garbage-collection
+      await response.text();
+      return false;
+    }
+    return true;
+  }
+
   public async createRun(run: CreateRunParams): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -632,6 +649,24 @@ export class Client {
     preparedCreateParams = await mergeRuntimeEnvIntoRunCreates(
       preparedCreateParams
     );
+    if (this.batchEndpointSupported === undefined) {
+      this.batchEndpointSupported = await this.batchEndpointIsSupported();
+    }
+    if (!this.batchEndpointSupported) {
+      this.autoBatchTracing = false;
+      for (const preparedCreateParam of body.post) {
+        await this.createRun(preparedCreateParam as CreateRunParams);
+      }
+      for (const preparedUpdateParam of body.patch) {
+        if (preparedUpdateParam.id !== undefined) {
+          await this.updateRun(
+            preparedUpdateParam.id,
+            preparedUpdateParam as UpdateRunParams
+          );
+        }
+      }
+      return;
+    }
     const headers = {
       ...this.headers,
       "Content-Type": "application/json",
@@ -647,22 +682,7 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    if (response.status === 404) {
-      this.autoBatchTracing = false;
-      for (const preparedCreateParam of body.post) {
-        await this.createRun(preparedCreateParam as CreateRunParams);
-      }
-      for (const preparedUpdateParam of body.patch) {
-        if (preparedUpdateParam.id !== undefined) {
-          await this.updateRun(
-            preparedUpdateParam.id,
-            preparedUpdateParam as UpdateRunParams
-          );
-        }
-      }
-    } else {
-      await raiseForStatus(response, "batch create run");
-    }
+    await raiseForStatus(response, "batch create run");
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
