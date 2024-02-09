@@ -1087,6 +1087,8 @@ class Client:
         inputs: Optional[Dict] = None,
         outputs: Optional[Dict] = None,
         events: Optional[Sequence[dict]] = None,
+        extra: Optional[Dict] = None,
+        tags: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1105,6 +1107,10 @@ class Client:
             The output values for the run.
         events : Sequence[dict] or None, default=None
             The events for the run.
+        extra : Dict or None, default=None
+            The extra information for the run.
+        tags : List[str] or None, default=None
+            The tags for the run.
         **kwargs : Any
             Kwargs are ignored.
         """
@@ -1118,11 +1124,15 @@ class Client:
             "trace_id": kwargs.pop("trace_id", None),
             "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),
+            "tags": tags,
+            "extra": extra,
         }
         if not self._filter_for_sampling([data], patch=True):
             return
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
+        else:
+            data["end_time"] = datetime.datetime.utcnow().isoformat()
         if error is not None:
             data["error"] = error
         if inputs is not None:
