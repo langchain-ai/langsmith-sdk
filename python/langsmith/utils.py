@@ -285,3 +285,11 @@ class FilterPoolFullWarning(logging.Filter):
         return (
             "Connection pool is full, discarding connection" not in record.getMessage()
         )
+
+
+class FilterPoolRetryingWarnings(logging.Filter):
+    """Filter the Pool's Retrying warnings."""
+
+    def filter(self, record) -> bool:
+        """Filter urrllib3 warnings on retries."""
+        return "Remote end closed connection " not in record.getMessage()

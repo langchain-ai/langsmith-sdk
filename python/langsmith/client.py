@@ -54,7 +54,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 # Filter the Connection pool is full warnings from urllib3
-logging.getLogger("urllib3.connectionpool").addFilter(ls_utils.FilterPoolFullWarning())
+connection_pool_logger = logging.getLogger("urllib3.connectionpool")
+connection_pool_logger.addFilter(ls_utils.FilterPoolFullWarning())
+connection_pool_logger.addFilter(ls_utils.FilterPoolRetryingWarnings())
 
 
 def _is_localhost(url: str) -> bool:
