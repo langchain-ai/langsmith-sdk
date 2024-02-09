@@ -1,5 +1,8 @@
+import asyncio
 import functools
 import inspect
+import json
+import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -160,22 +163,66 @@ def mock_client() -> Client:
     return client
 
 
-def test_traceable_iterator(mock_client: Client) -> None:
+@pytest.mark.parametrize("use_next", [True, False])
+def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
     @traceable(client=mock_client)
     def my_iterator_fn(a, b, d):
         for i in range(a + b + d):
             yield i
 
-    assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
+    expected = [0, 1, 2, 3, 4, 5]
+    genout = my_iterator_fn(1, 2, 3)
+    if use_next:
+        results = []
+        while True:
+            try:
+                results.append(next(genout))
+            except StopIteration:
+                break
+    else:
+        results = list(genout)
+    assert results == expected
+    # Wait for batcher
+    time.sleep(0.1)
+    # check the mock_calls
+    mock_calls = mock_client.session.request.mock_calls  # type: ignore
+    assert len(mock_calls) <= 2
 
+    call = mock_calls[0]
+    assert call.args[0] == "post"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(mock_calls[0].kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["outputs"]["output"] == expected
 
-async def test_traceable_async_iterator(mock_client: Client) -> None:
+@pytest.mark.parametrize("use_next", [True, False])
+async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> None:
     @traceable(client=mock_client)
     async def my_iterator_fn(a, b, d):
         for i in range(a + b + d):
             yield i
 
-    assert [i async for i in my_iterator_fn(1, 2, 3)] == [0, 1, 2, 3, 4, 5]
+    expected = [0, 1, 2, 3, 4, 5]
+    genout = my_iterator_fn(1, 2, 3)
+    if use_next:
+        results = []
+        async for item in genout:
+            results.append(item)
+    else:
+        results = [item async for item in genout]
+    assert results == expected
+    # Wait for batcher
+    await asyncio.sleep(0.1)
+    # check the mock_calls
+    mock_calls = mock_client.session.request.mock_calls
+    assert len(mock_calls) <= 2
+
+    call = mock_calls[0]
+    assert call.args[0] == "post"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(call.kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["outputs"]["output"] == expected
 
 
 @patch("langsmith.run_trees.Client", autospec=True)
