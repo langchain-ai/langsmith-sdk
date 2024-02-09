@@ -132,7 +132,7 @@ def _default_retry_config() -> Retry:
     """
     retry_params = dict(
         total=3,
-        status_forcelist=[502, 503, 504, 408, 425, 429],
+        status_forcelist=[502, 503, 504, 408, 425],
         backoff_factor=0.5,
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
