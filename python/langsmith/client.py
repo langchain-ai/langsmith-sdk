@@ -53,8 +53,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 logger = logging.getLogger(__name__)
-# Filter the Connection pool is full warnings from urllib3
-logging.getLogger("urllib3.connectionpool").addFilter(ls_utils.FilterPoolFullWarning())
+_urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 
 def _is_localhost(url: str) -> bool:
@@ -149,7 +148,7 @@ def _default_retry_config() -> Retry:
         # Retry on all methods
         retry_params["allowed_methods"] = None
 
-    return Retry(**retry_params)  # type: ignore
+    return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
 _PRIMITIVE_TYPES = (str, int, float, bool)
@@ -427,6 +426,13 @@ class Client:
         return f"Client (API URL: {self.api_url})"
 
     @property
+    @functools.lru_cache(maxsize=1)
+    def _host(self) -> str:
+        parsed_url = urllib_parse.urlparse(self.api_url)
+        host = parsed_url.netloc.split(":")[0]
+        return host
+
+    @property
     def _host_url(self) -> str:
         """The web host url."""
         if self._web_url:
@@ -535,7 +541,10 @@ class Client:
         LangSmithError
             If the request fails.
         """
-
+        logging_filters = [
+            ls_utils.FilterLangSmithRetry(),
+            ls_utils.FilterPoolFullWarning(host=str(self._host)),
+        ]
         retry_on_: Tuple[Type[BaseException], ...] = (
             *(retry_on or []),
             *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
@@ -545,9 +554,10 @@ class Client:
         for idx in range(stop_after_attempt):
             try:
                 try:
-                    response = self.session.request(
-                        request_method, url, stream=False, **request_kwargs
-                    )
+                    with ls_utils.filter_logs(_urllib3_logger, logging_filters):
+                        response = self.session.request(
+                            request_method, url, stream=False, **request_kwargs
+                        )
                     ls_utils.raise_for_status_with_text(response)
                     return response
                 except requests.HTTPError as e:
