@@ -1,4 +1,5 @@
 """Schemas for the LangSmith API."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -289,6 +290,18 @@ class Run(RunBase):
         if self._host_url and self.app_path:
             return f"{self._host_url}{self.app_path}"
         return None
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        if self.extra is None or "metadata" not in self.extra:
+            return {}
+        return self.extra["metadata"]
+
+    @property
+    def revision_id(self) -> Optional[UUID]:
+        """Retrieve the revision ID (if any)."""
+        return self.metadata.get("revision_id")
 
 
 class RunLikeDict(TypedDict, total=False):
