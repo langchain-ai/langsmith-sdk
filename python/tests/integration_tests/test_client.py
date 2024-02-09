@@ -135,7 +135,7 @@ def test_datasets(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
 
-@pytest.skip(reason="This test is flaky")
+@pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
     project_name = "__test_persist_update_run" + uuid4().hex[:4]
@@ -254,7 +254,7 @@ def test_list_datasets(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset2.id)
 
 
-@pytest.skip(reason="This test is flaky")
+@pytest.mark.skip(reason="This test is flaky")
 def test_create_run_with_masked_inputs_outputs(
     langchain_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
