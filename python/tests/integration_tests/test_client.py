@@ -7,7 +7,7 @@ import random
 import string
 import time
 from datetime import datetime, timedelta
-from typing import Callable, cast
+from typing import Any, Callable, Dict, cast
 from uuid import uuid4
 
 import pytest
@@ -23,7 +23,7 @@ from langsmith.utils import (
 
 
 def wait_for(
-    condition: Callable[[], bool], max_attempts: int = 10, sleep_time: int = 3
+    condition: Callable[[], bool], max_attempts: int = 20, sleep_time: int = 3
 ):
     for _ in range(max_attempts):
         try:
@@ -448,7 +448,7 @@ def test_get_info() -> None:
 def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     langchain_client = Client()
     run_id = uuid4()
-    run = {
+    run: Dict[str, Any] = {
         "id": run_id,
         "name": "run 1",
         "start_time": datetime.utcnow(),
@@ -464,15 +464,14 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     }
     if do_batching:
         run["trace_id"] = run_id
-        run["dotted_order"] = run["start_time"].strftime("%Y%m%dT%H%M%S%fZ") + str(
-            run_id
-        )
-
-    langchain_client.create_run(**run)
+        dotted_order = run["start_time"].strftime("%Y%m%dT%H%M%S%fZ") + str(run_id)  # type: ignore
+        run["dotted_order"] = dotted_order
+    revision_id = uuid4()
+    langchain_client.create_run(**run, revision_id=revision_id)  # type: ignore
 
     def _get_run(has_end: bool = False) -> bool:
         try:
-            r = langchain_client.read_run(run["id"])
+            r = langchain_client.read_run(run["id"])  # type: ignore
             if has_end:
                 return r.end_time is not None
             return True
@@ -481,17 +480,19 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
 
     wait_for(_get_run)
     created_run = langchain_client.read_run(run_id)
-    assert created_run.extra["metadata"]["foo"] == "bar"
+    assert created_run.metadata["foo"] == "bar"
+    assert created_run.metadata["revision_id"] == str(revision_id)
     # Update the run
     if add_metadata:
-        run["extra"]["metadata"]["foo2"] = "baz"
+        run["extra"]["metadata"]["foo2"] = "baz"  # type: ignore
         run["tags"] = ["tag3"]
-    langchain_client.update_run(run_id, **run)
+    langchain_client.update_run(run_id, **run)  # type: ignore
     wait_for(functools.partial(_get_run, has_end=True))
     updated_run = langchain_client.read_run(run_id)
-    assert updated_run.extra["metadata"]["foo"] == "bar", run.extra["metadata"]  # type: ignore
+    assert updated_run.metadata["foo"] == "bar", updated_run.metadata  # type: ignore
+    assert updated_run.revision_id == str(revision_id), updated_run.metadata
     if add_metadata:
-        assert updated_run.extra["metadata"]["foo2"] == "baz", run.extra["metadata"]  # type: ignore
+        assert updated_run.metadata["foo2"] == "baz", updated_run.metadata  # type: ignore
         assert updated_run.tags == ["tag3"]
     else:
         assert updated_run.tags == ["tag1", "tag2"]

@@ -487,10 +487,6 @@ def traceable(
                     try:
                         yield item
                     except GeneratorExit:
-                        logger.debug(
-                            "Generator exited early for "
-                            f"{run_container['new_run'].name}"
-                        )
                         break
             except BaseException as e:
                 stacktrace = traceback.format_exc()

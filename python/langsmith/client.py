@@ -911,7 +911,7 @@ class Client:
         run_type: str,
         *,
         project_name: Optional[str] = None,
-        revision_id: Optional[ID_TYPE] = None,
+        revision_id: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
