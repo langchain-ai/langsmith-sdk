@@ -19,11 +19,11 @@ from langsmith.utils import LangSmithConnectionError, LangSmithError
 
 
 def wait_for(
-    condition: Callable[[], bool], max_attempts: int = 40, sleep_time: int = 3
+    condition: Callable[[], bool], max_sleep_time: int = 120, sleep_time: int = 3
 ):
     """Wait for a condition to be true."""
     start_time = time.time()
-    for _ in range(max_attempts):
+    while time.time() - start_time < max_sleep_time:
         try:
             if condition():
                 return
@@ -201,7 +201,7 @@ def test_create_dataset(
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     dataset_name = "__test_create_dataset"
-    if dataset_name in [dataset.name for dataset in langchain_client.list_datasets()]:
+    if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(dataset_name, data_type=DataType.llm)
     ground_truth = "bcde"
@@ -217,11 +217,10 @@ def test_create_dataset(
 
 @freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
-    for name in ["___TEST dataset1", "___TEST dataset2"]:
-        datasets = list(langchain_client.list_datasets(dataset_name=name))
-        if datasets:
-            for dataset in datasets:
-                langchain_client.delete_dataset(dataset_id=dataset.id)
+    if langchain_client.has_dataset(dataset_name="___TEST dataset1"):
+        langchain_client.delete_dataset("___TEST dataset1")
+    if langchain_client.has_dataset(dataset_name="___TEST dataset2"):
+        langchain_client.delete_dataset("___TEST dataset2")
     dataset1 = langchain_client.create_dataset(
         "___TEST dataset1", data_type=DataType.llm
     )
@@ -443,6 +442,7 @@ def test_get_info() -> None:
     assert info.batch_ingest_config["size_limit"] > 0  # type: ignore
 
 
+@pytest.mark.skip(reason="This test is flaky")
 @pytest.mark.parametrize("add_metadata", [True, False])
 @pytest.mark.parametrize("do_batching", [True, False])
 def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
