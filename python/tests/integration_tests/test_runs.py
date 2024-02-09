@@ -55,6 +55,8 @@ def test_nested_runs(
     if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
+    # We don't require this anymore but we'll use it
+    # to keep testing for backwards compatibility
     executor = ThreadPoolExecutor(max_workers=1)
 
     @traceable(run_type="chain")
@@ -66,7 +68,7 @@ def test_nested_runs(
     def my_llm_run(text: str):
         return f"Completed: {text}"
 
-    @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])
+    @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])  # type: ignore
     def my_chain_run(text: str):
         return my_run(text)
 
@@ -120,7 +122,7 @@ async def test_nested_async_runs(langchain_client: Client):
     def my_sync_tool(text: str, *, my_arg: int = 10):
         return f"Completed: {text} {my_arg}"
 
-    @traceable(run_type="chain", executor=executor)
+    @traceable(run_type="chain")  # type: ignore
     async def my_chain_run(text: str):
         return await my_run(text)
 
@@ -179,7 +181,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
 
     executor = ThreadPoolExecutor(max_workers=1)
 
-    @traceable(run_type="chain", executor=executor)
+    @traceable(run_type="chain", executor=executor)  # type: ignore
     async def my_chain_run(text: str, run_tree: RunTree):
         thread_pool = ThreadPoolExecutor(max_workers=3)
         for i in range(2):
@@ -226,10 +228,7 @@ async def test_context_manager(langchain_client: Client) -> None:
     async def my_llm(prompt: str) -> str:
         return f"LLM {prompt}"
 
-    executor = ThreadPoolExecutor(max_workers=1)
-    with trace(
-        "my_context", "chain", project_name=project_name, executor=executor
-    ) as run_tree:
+    with trace("my_context", "chain", project_name=project_name) as run_tree:
         await my_llm("foo")
         with trace("my_context2", "chain", run_tree=run_tree) as run_tree2:
             runs = [my_llm("baz"), my_llm("qux")]
@@ -238,7 +237,6 @@ async def test_context_manager(langchain_client: Client) -> None:
                 await my_llm("corge")
             await asyncio.gather(*runs)
         run_tree.end(outputs={"End val": "my_context2"})
-    executor.shutdown(wait=True)
     poll_runs_until_count(langchain_client, project_name, 8)
     runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 8
