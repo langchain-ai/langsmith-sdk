@@ -277,80 +277,94 @@ test.concurrent(
       console.log(e);
     }
   },
-  160_000
+  180_000
 );
 
-test.concurrent("Test persist update run", async () => {
-  const langchainClient = new Client({ autoBatchTracing: false });
-  const projectName = "__test_persist_update_run";
-  await deleteProject(langchainClient, projectName);
+test.concurrent(
+  "Test persist update run",
+  async () => {
+    const langchainClient = new Client({ autoBatchTracing: false });
+    const projectName = "__test_persist_update_run";
+    await deleteProject(langchainClient, projectName);
 
-  const runId = uuidv4();
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { text: "hello world" },
-  });
+    const runId = uuidv4();
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+    });
 
-  await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
-  await waitUntilRunFound(
-    langchainClient,
-    runId,
-    (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
-  );
-  const storedRun = await langchainClient.readRun(runId);
-  expect(storedRun.id).toEqual(runId);
-  await langchainClient.deleteProject({ projectName });
-});
+    await langchainClient.updateRun(runId, { outputs: { output: ["Hi"] } });
+    await waitUntilRunFound(
+      langchainClient,
+      runId,
+      (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
+    );
+    const storedRun = await langchainClient.readRun(runId);
+    expect(storedRun.id).toEqual(runId);
+    await langchainClient.deleteProject({ projectName });
+  },
+  180_000
+);
 
-test.concurrent("test create dataset", async () => {
-  const langchainClient = new Client({ autoBatchTracing: false });
-  const datasetName = "__test_create_dataset";
-  const datasets = await toArray(langchainClient.listDatasets({ datasetName }));
-  datasets.map(async (dataset: Dataset) => {
-    if (dataset.name === datasetName) {
-      await langchainClient.deleteDataset({ datasetName });
-    }
-  });
-  const dataset = await langchainClient.createDataset(datasetName, {
-    dataType: "llm",
-  });
-  await langchainClient.createExample(
-    { input: "hello world" },
-    { output: "hi there" },
-    {
-      datasetId: dataset.id,
-    }
-  );
-  const loadedDataset = await langchainClient.readDataset({ datasetName });
-  expect(loadedDataset.data_type).toEqual("llm");
-  await langchainClient.deleteDataset({ datasetName });
-});
+test.concurrent(
+  "test create dataset",
+  async () => {
+    const langchainClient = new Client({ autoBatchTracing: false });
+    const datasetName = "__test_create_dataset";
+    const datasets = await toArray(
+      langchainClient.listDatasets({ datasetName })
+    );
+    datasets.map(async (dataset: Dataset) => {
+      if (dataset.name === datasetName) {
+        await langchainClient.deleteDataset({ datasetName });
+      }
+    });
+    const dataset = await langchainClient.createDataset(datasetName, {
+      dataType: "llm",
+    });
+    await langchainClient.createExample(
+      { input: "hello world" },
+      { output: "hi there" },
+      {
+        datasetId: dataset.id,
+      }
+    );
+    const loadedDataset = await langchainClient.readDataset({ datasetName });
+    expect(loadedDataset.data_type).toEqual("llm");
+    await langchainClient.deleteDataset({ datasetName });
+  },
+  180_000
+);
 
-test.concurrent("Test share and unshare run", async () => {
-  const langchainClient = new Client({ autoBatchTracing: false });
+test.concurrent(
+  "Test share and unshare run",
+  async () => {
+    const langchainClient = new Client({ autoBatchTracing: false });
 
-  // Create a new run
-  const runId = uuidv4();
-  await langchainClient.createRun({
-    name: "Test run",
-    inputs: { input: "hello world" },
-    run_type: "chain",
-    id: runId,
-  });
+    // Create a new run
+    const runId = uuidv4();
+    await langchainClient.createRun({
+      name: "Test run",
+      inputs: { input: "hello world" },
+      run_type: "chain",
+      id: runId,
+    });
 
-  await waitUntilRunFound(langchainClient, runId);
-  const sharedUrl = await langchainClient.shareRun(runId);
-  const response = await fetch(sharedUrl);
-  expect(response.status).toEqual(200);
-  expect(await langchainClient.readRunSharedLink(runId)).toEqual(sharedUrl);
+    await waitUntilRunFound(langchainClient, runId);
+    const sharedUrl = await langchainClient.shareRun(runId);
+    const response = await fetch(sharedUrl);
+    expect(response.status).toEqual(200);
+    expect(await langchainClient.readRunSharedLink(runId)).toEqual(sharedUrl);
 
-  await langchainClient.unshareRun(runId);
-  const sharedLink = await langchainClient.readRunSharedLink(runId);
-  expect(sharedLink).toBe(undefined);
-});
+    await langchainClient.unshareRun(runId);
+    const sharedLink = await langchainClient.readRunSharedLink(runId);
+    expect(sharedLink).toBe(undefined);
+  },
+  180_000
+);
 
 test.concurrent(
   "Test list datasets",
@@ -414,7 +428,7 @@ test.concurrent(
     }
     expect(remainingDatasets).toHaveLength(0);
   },
-  90_000
+  180_000
 );
 
 test.concurrent(
@@ -453,7 +467,7 @@ test.concurrent(
       feedbackSourceType: "app",
     });
   },
-  90_000
+  180_000
 );
 
 test.concurrent(
@@ -505,7 +519,7 @@ test.concurrent(
     expect(run2.outputs).toBeDefined();
     expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
   },
-  90_000
+  180_000
 );
 
 test.concurrent(
@@ -563,7 +577,7 @@ test.concurrent(
     expect(run2.extra?.metadata.LANGCHAIN_OTHER_KEY).toBeUndefined();
     expect(run2.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
   },
-  90_000
+  180_000
 );
 
 describe("createChatExample", () => {
@@ -617,7 +631,7 @@ describe("createChatExample", () => {
 
     // Delete dataset
     await langchainClient.deleteDataset({ datasetId: dataset.id });
-  }, 90_000);
+  }, 180_000);
 });
 
 test.concurrent(
@@ -644,7 +658,7 @@ test.concurrent(
     });
     expect(result).toContain(runId);
   },
-  90_000
+  180_000
 );
 
 test.concurrent(
@@ -689,5 +703,5 @@ test.concurrent(
     expect(examplesList2.length).toEqual(3);
     await client.deleteDataset({ datasetId: dataset.id });
   },
-  90_000
+  180_000
 );

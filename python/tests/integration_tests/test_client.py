@@ -23,7 +23,7 @@ from langsmith.utils import (
 
 
 def wait_for(
-    condition: Callable[[], bool], max_attempts: int = 20, sleep_time: int = 3
+    condition: Callable[[], bool], max_attempts: int = 40, sleep_time: int = 3
 ):
     for _ in range(max_attempts):
         try:
@@ -139,35 +139,29 @@ def test_datasets(langchain_client: Client) -> None:
 @freeze_time("2023-01-01")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
-    project_name = "__test_persist_update_run"
-    if project_name in [sess.name for sess in langchain_client.list_projects()]:
+    project_name = "__test_persist_update_run" + uuid4().hex[:4]
+    if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
-    start_time = datetime.now()
-    revision_id = uuid4()
-    run: dict = dict(
-        id=uuid4(),
-        name="test_run",
-        run_type="llm",
-        inputs={"text": "hello world"},
-        project_name=project_name,
-        api_url=os.getenv("LANGCHAIN_ENDPOINT"),
-        start_time=start_time,
-        extra={"extra": "extra"},
-        revision_id=revision_id,
-    )
-    langchain_client.create_run(**run)
-    run["outputs"] = {"output": ["Hi"]}
-    run["extra"]["foo"] = "bar"
-    langchain_client.update_run(run["id"], **run)
     try:
-        for _ in range(10):
-            try:
-                stored_run = langchain_client.read_run(run["id"])
-                if stored_run.end_time is not None:
-                    break
-            except LangSmithError:
-                time.sleep(3)
-
+        start_time = datetime.now()
+        revision_id = uuid4()
+        run: dict = dict(
+            id=uuid4(),
+            name="test_run",
+            run_type="llm",
+            inputs={"text": "hello world"},
+            project_name=project_name,
+            api_url=os.getenv("LANGCHAIN_ENDPOINT"),
+            start_time=start_time,
+            extra={"extra": "extra"},
+            revision_id=revision_id,
+        )
+        langchain_client.create_run(**run)
+        run["outputs"] = {"output": ["Hi"]}
+        run["extra"]["foo"] = "bar"
+        langchain_client.update_run(run["id"], **run)
+        wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
+        stored_run = langchain_client.read_run(run["id"])
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
@@ -193,15 +187,14 @@ def test_create_project(
 ) -> None:
     """Test the project creation"""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    project_name = "__test_create_project" + uuid4().hex[:4]
+    if langchain_client.has_project(project_name):
+        langchain_client.delete_project(project_name=project_name)
     try:
-        langchain_client.read_project(project_name="__test_create_project")
-        langchain_client.delete_project(project_name="__test_create_project")
-    except LangSmithError:
-        pass
-    project_name = "__test_create_project"
-    project = langchain_client.create_project(project_name=project_name)
-    assert project.name == project_name
-    langchain_client.delete_project(project_id=project.id)
+        project = langchain_client.create_project(project_name=project_name)
+        assert project.name == project_name
+    finally:
+        langchain_client.delete_project(project_name=project_name)
 
 
 @freeze_time("2023-01-01")
@@ -268,44 +261,53 @@ def test_list_datasets(langchain_client: Client) -> None:
 def test_create_run_with_masked_inputs_outputs(
     langchain_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    project_name = "__test_create_run_with_masked_inputs_outputs"
+    project_name = "__test_create_run_with_masked_inputs_outputs" + uuid4().hex[:4]
     monkeypatch.setenv("LANGCHAIN_HIDE_INPUTS", "true")
     monkeypatch.setenv("LANGCHAIN_HIDE_OUTPUTS", "true")
-    for project in langchain_client.list_projects():
-        if project.name == project_name:
-            langchain_client.delete_project(project_name=project_name)
+    if langchain_client.has_project(project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        run_id = uuid4()
+        langchain_client.create_run(
+            id=run_id,
+            project_name=project_name,
+            name="test_run",
+            run_type="llm",
+            inputs={"prompt": "hello world"},
+            outputs={"generation": "hi there"},
+            start_time=datetime.utcnow(),
+            end_time=datetime.utcnow(),
+            hide_inputs=True,
+            hide_outputs=True,
+        )
 
-    run_id = uuid4()
-    langchain_client.create_run(
-        id=run_id,
-        project_name=project_name,
-        name="test_run",
-        run_type="llm",
-        inputs={"prompt": "hello world"},
-        outputs={"generation": "hi there"},
-        start_time=datetime.utcnow(),
-        end_time=datetime.utcnow(),
-        hide_inputs=True,
-        hide_outputs=True,
-    )
+        run_id2 = uuid4()
+        langchain_client.create_run(
+            id=run_id2,
+            project_name=project_name,
+            name="test_run_2",
+            run_type="llm",
+            inputs={"messages": "hello world 2"},
+            start_time=datetime.utcnow(),
+            hide_inputs=True,
+        )
 
-    run_id2 = uuid4()
-    langchain_client.create_run(
-        id=run_id2,
-        project_name=project_name,
-        name="test_run_2",
-        run_type="llm",
-        inputs={"messages": "hello world 2"},
-        start_time=datetime.utcnow(),
-        hide_inputs=True,
-    )
-
-    langchain_client.update_run(
-        run_id2,
-        outputs={"generation": "hi there 2"},
-        end_time=datetime.utcnow(),
-        hide_outputs=True,
-    )
+        langchain_client.update_run(
+            run_id2,
+            outputs={"generation": "hi there 2"},
+            end_time=datetime.utcnow(),
+            hide_outputs=True,
+        )
+        wait_for(lambda: langchain_client.read_run(run_id).end_time is not None)
+        stored_run = langchain_client.read_run(run_id)
+        assert "prompt" in stored_run.inputs
+        assert "hello" not in str(stored_run.inputs)
+        wait_for(lambda: langchain_client.read_run(run_id2).end_time is not None)
+        stored_run2 = langchain_client.read_run(run_id2)
+        assert "messages" in stored_run2.inputs
+        assert "hello" not in str(stored_run2.inputs)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
 
 
 @freeze_time("2023-01-01")
@@ -469,16 +471,16 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     revision_id = uuid4()
     langchain_client.create_run(**run, revision_id=revision_id)  # type: ignore
 
-    def _get_run(has_end: bool = False) -> bool:
+    def _get_run(run_id: str, has_end: bool = False) -> bool:
         try:
-            r = langchain_client.read_run(run["id"])  # type: ignore
+            r = langchain_client.read_run(run_id)  # type: ignore
             if has_end:
                 return r.end_time is not None
             return True
         except LangSmithError:
             return False
 
-    wait_for(_get_run)
+    wait_for(lambda _: _get_run(run_id))
     created_run = langchain_client.read_run(run_id)
     assert created_run.metadata["foo"] == "bar"
     assert created_run.metadata["revision_id"] == str(revision_id)
@@ -487,7 +489,7 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
         run["extra"]["metadata"]["foo2"] = "baz"  # type: ignore
         run["tags"] = ["tag3"]
     langchain_client.update_run(run_id, **run)  # type: ignore
-    wait_for(functools.partial(_get_run, has_end=True))
+    wait_for(lambda _: _get_run(run_id, has_end=True))
     updated_run = langchain_client.read_run(run_id)
     assert updated_run.metadata["foo"] == "bar", updated_run.metadata  # type: ignore
     assert updated_run.revision_id == str(revision_id), updated_run.metadata
