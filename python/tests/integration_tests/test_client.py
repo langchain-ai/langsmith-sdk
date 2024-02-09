@@ -1,6 +1,5 @@
 """LangSmith langchain_client Integration Tests."""
 
-import functools
 import io
 import os
 import random
@@ -16,10 +15,7 @@ from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import Client
 from langsmith.schemas import DataType
-from langsmith.utils import (
-    LangSmithConnectionError,
-    LangSmithError,
-)
+from langsmith.utils import LangSmithConnectionError, LangSmithError
 
 
 def wait_for(
@@ -166,7 +162,7 @@ def test_persist_update_run(langchain_client: Client) -> None:
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
         assert stored_run.extra
-        assert stored_run.extra["metadata"]["revision_id"] == str(revision_id)
+        assert stored_run.revision_id == str(revision_id)
     finally:
         langchain_client.delete_project(project_name=project_name)
 
@@ -300,12 +296,14 @@ def test_create_run_with_masked_inputs_outputs(
         )
         wait_for(lambda: langchain_client.read_run(run_id).end_time is not None)
         stored_run = langchain_client.read_run(run_id)
-        assert "prompt" in stored_run.inputs
         assert "hello" not in str(stored_run.inputs)
+        assert stored_run.outputs is not None
+        assert "hi" not in str(stored_run.outputs)
         wait_for(lambda: langchain_client.read_run(run_id2).end_time is not None)
         stored_run2 = langchain_client.read_run(run_id2)
-        assert "messages" in stored_run2.inputs
         assert "hello" not in str(stored_run2.inputs)
+        assert stored_run2.outputs is not None
+        assert "hi" not in str(stored_run2.outputs)
     finally:
         langchain_client.delete_project(project_name=project_name)
 
