@@ -245,10 +245,17 @@ test.concurrent(
     await waitUntil(
       async () => {
         try {
-          const feedback = await langchainClient.readFeedback(
-            allFeedback[0].id
-          );
-          return feedback !== null && feedback !== undefined;
+          const listSuccess =
+            (
+              await toArray(
+                langchainClient.listFeedback({
+                  runIds: [run.id],
+                  feedbackKeys: ["jaccard"],
+                  feedbackSourceTypes: ["model"],
+                })
+              )
+            ).length > 0;
+          return listSuccess;
         } catch (e) {
           return false;
         }

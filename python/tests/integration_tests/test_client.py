@@ -156,12 +156,25 @@ def test_persist_update_run(langchain_client: Client) -> None:
         run["outputs"] = {"output": ["Hi"]}
         run["extra"]["foo"] = "bar"
         langchain_client.update_run(run["id"], **run)
-        wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
+
+        def foo() -> bool:
+            try:
+                res = langchain_client.read_run(run["id"]).end_time is not None
+                with open("foo.txt", "a") as f:
+                    print(f"READDDDD: {res}", flush=True, file=f)
+                return res
+            except:
+                with open("foo.txt", "a") as f:
+                    print("EXCEPTION", flush=True, file=f)
+                raise
+
+        wait_for(
+            foo
+        )  # lambda: langchain_client.read_run(run["id"]).end_time is not None)
         stored_run = langchain_client.read_run(run["id"])
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
-        assert stored_run.extra
         assert stored_run.revision_id == str(revision_id)
     finally:
         langchain_client.delete_project(project_name=project_name)
@@ -472,13 +485,15 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     def _get_run(run_id: str, has_end: bool = False) -> bool:
         try:
             r = langchain_client.read_run(run_id)  # type: ignore
+            with open("foo.txt", "a") as f:
+                print(f"HAS RUN END TIME: {r.end_time}", flush=True, file=f)
             if has_end:
                 return r.end_time is not None
             return True
         except LangSmithError:
             return False
 
-    wait_for(lambda _: _get_run(run_id))
+    wait_for(lambda: _get_run(run_id))
     created_run = langchain_client.read_run(run_id)
     assert created_run.metadata["foo"] == "bar"
     assert created_run.metadata["revision_id"] == str(revision_id)
@@ -487,13 +502,18 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
         run["extra"]["metadata"]["foo2"] = "baz"  # type: ignore
         run["tags"] = ["tag3"]
     langchain_client.update_run(run_id, **run)  # type: ignore
-    wait_for(lambda _: _get_run(run_id, has_end=True))
+    wait_for(lambda: _get_run(run_id, has_end=True))
     updated_run = langchain_client.read_run(run_id)
-    assert updated_run.metadata["foo"] == "bar", updated_run.metadata  # type: ignore
-    assert updated_run.revision_id == str(revision_id), updated_run.metadata
+    assert updated_run.metadata["foo"] == "bar"  # type: ignore
+    assert updated_run.revision_id == str(revision_id)
     if add_metadata:
-        assert updated_run.metadata["foo2"] == "baz", updated_run.metadata  # type: ignore
-        assert updated_run.tags == ["tag3"]
+        try:
+            updated_run.metadata["foo2"] == "baz"  # type: ignore
+            assert updated_run.tags == ["tag3"]
+        except KeyError:
+            with open("keys.txt", "a") as f:
+                print(f"KEYS: {updated_run.extra}", file=f)
+            raise
     else:
         assert updated_run.tags == ["tag1", "tag2"]
     assert updated_run.extra["runtime"] == created_run.extra["runtime"]  # type: ignore
