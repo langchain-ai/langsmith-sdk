@@ -1,5 +1,5 @@
 import { Client } from "../client.js";
-import { convertToDottedOrderFormat } from "../run_trees.js";
+import { RunTree, convertToDottedOrderFormat } from "../run_trees.js";
 import { v4 as uuidv4 } from "uuid";
 
 async function deleteProject(langchainClient: Client, projectName: string) {
@@ -170,6 +170,38 @@ test.concurrent(
     await waitUntilRunFound(langchainClient, runId, true);
     const storedRun = await langchainClient.readRun(runId);
     expect(storedRun.id).toEqual(runId);
+    await langchainClient.deleteProject({ projectName });
+  },
+  180_000
+);
+
+test.concurrent(
+  "Test persist update run tree",
+  async () => {
+    const langchainClient = new Client({
+      autoBatchTracing: true,
+      callerOptions: { maxRetries: 0 },
+    });
+    const projectName = "__test_persist_update_run_tree";
+    await deleteProject(langchainClient, projectName);
+    const runId = uuidv4();
+    const runTree = new RunTree({
+      name: "Test Run Tree",
+      id: runId,
+      inputs: { input: "foo1" },
+      client: langchainClient,
+      project_name: projectName,
+    });
+    await runTree.postRun();
+    runTree.end({ output: "foo2" });
+    await runTree.patchRun();
+    await waitUntilRunFound(langchainClient, runId, true);
+    const storedRun = await langchainClient.readRun(runId);
+    expect(storedRun.id).toEqual(runId);
+    expect(storedRun.dotted_order).toEqual(runTree.dotted_order);
+    expect(storedRun.trace_id).toEqual(runTree.trace_id);
+    expect(storedRun.inputs).toEqual({ input: "foo1" });
+    expect(storedRun.outputs).toEqual({ output: "foo2" });
     await langchainClient.deleteProject({ projectName });
   },
   180_000

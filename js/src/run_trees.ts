@@ -25,7 +25,7 @@ export function convertToDottedOrderFormat(epoch: number, runId: string) {
 
 export interface RunTreeConfig {
   name: string;
-  run_type: string;
+  run_type?: string;
   id?: string;
   project_name?: string;
   parent_run?: RunTree;
@@ -44,7 +44,7 @@ export interface RunTreeConfig {
 export class RunTree implements BaseRun {
   id: string;
   name: RunTreeConfig["name"];
-  run_type: RunTreeConfig["run_type"];
+  run_type: string;
   project_name: string;
   parent_run?: RunTree;
   child_runs: RunTree[];
@@ -87,6 +87,7 @@ export class RunTree implements BaseRun {
   private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
+      run_type: "chain",
       project_name:
         getEnvironmentVariable("LANGCHAIN_PROJECT") ??
         getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
