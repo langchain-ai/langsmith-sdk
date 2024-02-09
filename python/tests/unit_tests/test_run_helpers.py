@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import json
+import os
 import time
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -159,7 +160,7 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
 @pytest.fixture
 def mock_client() -> Client:
     mock_session = MagicMock()
-    client = Client(session=mock_session)
+    client = Client(session=mock_session, api_key="test")
     return client
 
 
@@ -194,6 +195,7 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
     body = json.loads(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == expected
+
 
 @pytest.mark.parametrize("use_next", [True, False])
 async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> None:
@@ -252,8 +254,9 @@ def test_as_runnable(_: MagicMock, mock_client: Client) -> None:
     def my_function(a, b, d):
         return a + b + d
 
-    runnable = as_runnable(my_function)
-    assert runnable.invoke({"a": 1, "b": 2, "d": 3}) == 6
+    with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "false"}):
+        runnable = as_runnable(my_function)
+        assert runnable.invoke({"a": 1, "b": 2, "d": 3}) == 6
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
@@ -262,13 +265,14 @@ def test_as_runnable_batch(mock_client: Client) -> None:
     def my_function(a, b, d):
         return a + b + d
 
-    runnable = as_runnable(my_function)
-    assert runnable.batch(
-        [
-            {"a": 1, "b": 2, "d": 3},
-            {"a": 1, "b": 2, "d": 4},
-        ]
-    ) == [6, 7]
+    with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "false"}):
+        runnable = as_runnable(my_function)
+        assert runnable.batch(
+            [
+                {"a": 1, "b": 2, "d": 3},
+                {"a": 1, "b": 2, "d": 4},
+            ]
+        ) == [6, 7]
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
@@ -278,8 +282,9 @@ async def test_as_runnable_async(_: MagicMock) -> None:
         return a + b + d
 
     runnable = as_runnable(my_function)
-    result = await runnable.ainvoke({"a": 1, "b": 2, "d": 3})
-    assert result == 6
+    with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "false"}):
+        result = await runnable.ainvoke({"a": 1, "b": 2, "d": 3})
+        assert result == 6
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
@@ -289,13 +294,14 @@ async def test_as_runnable_async_batch(_: MagicMock) -> None:
         return a + b + d
 
     runnable = as_runnable(my_function)
-    result = await runnable.abatch(
-        [
-            {"a": 1, "b": 2, "d": 3},
-            {"a": 1, "b": 2, "d": 4},
-        ]
-    )
-    assert result == [6, 7]
+    with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "false"}):
+        result = await runnable.abatch(
+            [
+                {"a": 1, "b": 2, "d": 3},
+                {"a": 1, "b": 2, "d": 4},
+            ]
+        )
+        assert result == [6, 7]
 
 
 def test_is_traceable_function(mock_client: Client) -> None:
