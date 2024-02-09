@@ -1,7 +1,11 @@
 import functools
 import inspect
 from typing import Any
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from langsmith import Client
 from langsmith.run_helpers import (
     _get_inputs,
     as_runnable,
@@ -149,8 +153,15 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
     }
 
 
-def test_traceable_iterator() -> None:
-    @traceable()
+@pytest.fixture
+def mock_client() -> Client:
+    mock_session = MagicMock()
+    client = Client(session=mock_session)
+    return client
+
+
+def test_traceable_iterator(mock_client: Client) -> None:
+    @traceable(client=mock_client)
     def my_iterator_fn(a, b, d):
         for i in range(a + b + d):
             yield i
@@ -158,8 +169,8 @@ def test_traceable_iterator() -> None:
     assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
 
 
-async def test_traceable_async_iterator() -> None:
-    @traceable()
+async def test_traceable_async_iterator(mock_client: Client) -> None:
+    @traceable(client=mock_client)
     async def my_iterator_fn(a, b, d):
         for i in range(a + b + d):
             yield i
@@ -167,8 +178,8 @@ async def test_traceable_async_iterator() -> None:
     assert [i async for i in my_iterator_fn(1, 2, 3)] == [0, 1, 2, 3, 4, 5]
 
 
-def test_traceable_iterator_noargs() -> None:
-    # Check that it's callable without the parens
+@patch("langsmith.run_trees.Client", autospec=True)
+def test_traceable_iterator_noargs(_: MagicMock) -> None:
     @traceable
     def my_iterator_fn(a, b, d):
         for i in range(a + b + d):
@@ -177,7 +188,8 @@ def test_traceable_iterator_noargs() -> None:
     assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
 
 
-async def test_traceable_async_iterator_noargs() -> None:
+@patch("langsmith.run_trees.Client", autospec=True)
+async def test_traceable_async_iterator_noargs(_: MagicMock) -> None:
     # Check that it's callable without the parens
     @traceable
     async def my_iterator_fn(a, b, d):
@@ -187,8 +199,9 @@ async def test_traceable_async_iterator_noargs() -> None:
     assert [i async for i in my_iterator_fn(1, 2, 3)] == [0, 1, 2, 3, 4, 5]
 
 
-def test_as_runnable() -> None:
-    @traceable()
+@patch("langsmith.client.requests.Session", autospec=True)
+def test_as_runnable(_: MagicMock, mock_client: Client) -> None:
+    @traceable(client=mock_client)
     def my_function(a, b, d):
         return a + b + d
 
@@ -196,8 +209,9 @@ def test_as_runnable() -> None:
     assert runnable.invoke({"a": 1, "b": 2, "d": 3}) == 6
 
 
-def test_as_runnable_batch() -> None:
-    @traceable()
+@patch("langsmith.client.requests.Session", autospec=True)
+def test_as_runnable_batch(mock_client: Client) -> None:
+    @traceable(client=mock_client)
     def my_function(a, b, d):
         return a + b + d
 
@@ -210,8 +224,9 @@ def test_as_runnable_batch() -> None:
     ) == [6, 7]
 
 
-async def test_as_runnable_async() -> None:
-    @traceable()
+@patch("langsmith.client.requests.Session", autospec=True)
+async def test_as_runnable_async(_: MagicMock) -> None:
+    @traceable(client=mock_client)
     async def my_function(a, b, d):
         return a + b + d
 
@@ -220,8 +235,9 @@ async def test_as_runnable_async() -> None:
     assert result == 6
 
 
-async def test_as_runnable_async_batch() -> None:
-    @traceable()
+@patch("langsmith.client.requests.Session", autospec=True)
+async def test_as_runnable_async_batch(mock_client: Client) -> None:
+    @traceable(client=mock_client)
     async def my_function(a, b, d):
         return a + b + d
 
@@ -235,16 +251,16 @@ async def test_as_runnable_async_batch() -> None:
     assert result == [6, 7]
 
 
-def test_is_traceable_function() -> None:
-    @traceable()
+def test_is_traceable_function(mock_client: Client) -> None:
+    @traceable(client=mock_client)
     def my_function(a: int, b: int, d: int) -> int:
         return a + b + d
 
     assert is_traceable_function(my_function)
 
 
-def test_is_traceable_partial_function() -> None:
-    @traceable()
+def test_is_traceable_partial_function(mock_client: Client) -> None:
+    @traceable(client=mock_client)
     def my_function(a: int, b: int, d: int) -> int:
         return a + b + d
 
@@ -260,9 +276,9 @@ def test_is_not_traceable_function() -> None:
     assert not is_traceable_function(my_function)
 
 
-def test_is_traceable_class_call() -> None:
+def test_is_traceable_class_call(mock_client: Client) -> None:
     class Foo:
-        @traceable()
+        @traceable(client=mock_client)
         def __call__(self, a: int, b: int) -> None:
             pass
 
