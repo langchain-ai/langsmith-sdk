@@ -168,6 +168,8 @@ export class RunTree implements BaseRun {
       session_name: run.project_name,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
+      trace_id: run.trace_id,
+      dotted_order: run.dotted_order,
     };
     return persistedRun;
   }
@@ -195,6 +197,8 @@ export class RunTree implements BaseRun {
       reference_example_id: this.reference_example_id,
       extra: this.extra,
       events: this.events,
+      dotted_order: this.dotted_order,
+      trace_id: this.trace_id,
     };
 
     await this.client.updateRun(this.id, runUpdate);
