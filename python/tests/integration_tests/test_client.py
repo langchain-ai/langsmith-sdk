@@ -21,13 +21,16 @@ from langsmith.utils import LangSmithConnectionError, LangSmithError
 def wait_for(
     condition: Callable[[], bool], max_attempts: int = 40, sleep_time: int = 3
 ):
+    """Wait for a condition to be true."""
+    start_time = time.time()
     for _ in range(max_attempts):
         try:
             if condition():
                 return
         except Exception:
             time.sleep(sleep_time)
-    raise ValueError("Callable did not return in time")
+    total_time = time.time() - start_time
+    raise ValueError(f"Callable did not return within {total_time}")
 
 
 @pytest.fixture
