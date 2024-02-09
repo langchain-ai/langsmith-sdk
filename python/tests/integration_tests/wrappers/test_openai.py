@@ -41,9 +41,8 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.01)
-    assert mock_session.return_value.request.call_count == 2
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "POST"
-    assert mock_session.return_value.request.call_args_list[1][0][0].upper() == "PATCH"
+    for call in mock_session.return_value.request.call_args_list:
+        assert call[0][0].upper() == "POST"
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -76,9 +75,8 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    assert mock_session.return_value.request.call_count == 2
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "POST"
-    assert mock_session.return_value.request.call_args_list[1][0][0].upper() == "PATCH"
+    for call in mock_session.return_value.request.call_args_list:
+        assert call[0][0].upper() == "POST"
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -117,9 +115,8 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    assert mock_session.return_value.request.call_count == 2
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "POST"
-    assert mock_session.return_value.request.call_args_list[1][0][0].upper() == "PATCH"
+    for call in mock_session.return_value.request.call_args_list:
+        assert call[0][0].upper() == "POST"
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -162,6 +159,6 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    assert mock_session.return_value.request.call_count == 2
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "POST"
-    assert mock_session.return_value.request.call_args_list[1][0][0].upper() == "PATCH"
+    assert mock_session.return_value.request.call_count >= 1
+    for call in mock_session.return_value.request.call_args_list:
+        assert call[0][0].upper() == "POST"

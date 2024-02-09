@@ -132,7 +132,7 @@ def _default_retry_config() -> Retry:
     """
     retry_params = dict(
         total=3,
-        status_forcelist=[502, 503, 504, 408, 425, 429],
+        status_forcelist=[502, 503, 504, 408, 425],
         backoff_factor=0.5,
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
@@ -300,10 +300,11 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     return outputs
 
 
-def _as_uuid(value: ID_TYPE, var: str) -> uuid.UUID:
+def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
     try:
         return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
     except ValueError as e:
+        var = var or "value"
         raise ls_utils.LangSmithUserError(
             f"{var} must be a valid UUID or UUID string. Got {value}"
         ) from e
@@ -890,16 +891,17 @@ class Client:
         if patch:
             sampled = []
             for run in runs:
-                if run["id"] in self._sampled_post_uuids:
+                run_id = _as_uuid(run["id"])
+                if run_id in self._sampled_post_uuids:
                     sampled.append(run)
-                    self._sampled_post_uuids.remove(run["id"])
+                    self._sampled_post_uuids.remove(run_id)
             return sampled
         else:
             sampled = []
             for run in runs:
                 if random.random() < self.tracing_sample_rate:
                     sampled.append(run)
-                    self._sampled_post_uuids.add(run["id"])
+                    self._sampled_post_uuids.add(_as_uuid(run["id"]))
             return sampled
 
     def create_run(
@@ -909,7 +911,7 @@ class Client:
         run_type: str,
         *,
         project_name: Optional[str] = None,
-        revision_id: Optional[ID_TYPE] = None,
+        revision_id: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1060,7 +1062,7 @@ class Client:
             return
 
         self._insert_runtime_env(body["post"])
-
+        logger.debug(f"Batch ingesting {len(body['post'])}, {len(body['patch'])} runs")
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs/batch",
@@ -1085,6 +1087,8 @@ class Client:
         inputs: Optional[Dict] = None,
         outputs: Optional[Dict] = None,
         events: Optional[Sequence[dict]] = None,
+        extra: Optional[Dict] = None,
+        tags: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1103,6 +1107,10 @@ class Client:
             The output values for the run.
         events : Sequence[dict] or None, default=None
             The events for the run.
+        extra : Dict or None, default=None
+            The extra information for the run.
+        tags : List[str] or None, default=None
+            The tags for the run.
         **kwargs : Any
             Kwargs are ignored.
         """
@@ -1116,11 +1124,15 @@ class Client:
             "trace_id": kwargs.pop("trace_id", None),
             "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),
+            "tags": tags,
+            "extra": extra,
         }
         if not self._filter_for_sampling([data], patch=True):
             return
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
+        else:
+            data["end_time"] = datetime.datetime.utcnow().isoformat()
         if error is not None:
             data["error"] = error
         if inputs is not None:
@@ -3332,7 +3344,6 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         return
     try:
         if not client.info:
-            print(f"no info: {client.info}", file=sys.stderr, flush=True)
             return
     except BaseException as e:
         logger.debug("Error in tracing control thread: %s", e)
