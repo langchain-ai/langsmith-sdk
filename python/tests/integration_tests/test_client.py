@@ -219,9 +219,9 @@ def test_create_dataset(
 @freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
     if langchain_client.has_dataset(dataset_name="___TEST dataset1"):
-        langchain_client.delete_dataset("___TEST dataset1")
+        langchain_client.delete_dataset(dataset_name="___TEST dataset1")
     if langchain_client.has_dataset(dataset_name="___TEST dataset2"):
-        langchain_client.delete_dataset("___TEST dataset2")
+        langchain_client.delete_dataset(dataset_name="___TEST dataset2")
     dataset1 = langchain_client.create_dataset(
         "___TEST dataset1", data_type=DataType.llm
     )

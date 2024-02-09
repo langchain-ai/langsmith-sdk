@@ -143,7 +143,7 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   await client.deleteDataset({ datasetId: rawDataset.id });
 });
 
-test.concurrent(
+test(
   "Test evaluate run",
   async () => {
     const langchainClient = new Client({ autoBatchTracing: false });
@@ -254,7 +254,7 @@ test.concurrent(
   360_000
 );
 
-test.concurrent(
+test(
   "Test persist update run",
   async () => {
     const langchainClient = new Client({ autoBatchTracing: false });
