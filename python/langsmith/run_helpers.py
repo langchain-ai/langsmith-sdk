@@ -468,7 +468,6 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -485,7 +484,14 @@ def traceable(
                     generator_result = func(*args, **kwargs)
                 for item in generator_result:
                     results.append(item)
-                    yield item
+                    try:
+                        yield item
+                    except GeneratorExit:
+                        logger.debug(
+                            "Generator exited early for "
+                            f"{run_container['new_run'].name}"
+                        )
+                        break
             except BaseException as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
