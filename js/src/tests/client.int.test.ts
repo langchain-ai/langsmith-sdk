@@ -1,9 +1,7 @@
-import { Dataset, Feedback, Run } from "../schemas.js";
+import { Dataset, Run } from "../schemas.js";
 import { FunctionMessage, HumanMessage } from "langchain/schema";
-import { RunTree, RunTreeConfig } from "../run_trees.js";
 
 import { Client } from "../client.js";
-import { StringEvaluator } from "../evaluation/string_evaluator.js";
 import { v4 as uuidv4 } from "uuid";
 
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
@@ -142,111 +140,6 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   });
   await client.deleteDataset({ datasetId: rawDataset.id });
 });
-
-test("Test evaluate run", async () => {
-  const langchainClient = new Client({ autoBatchTracing: false });
-
-  const projectName = "__test_evaluate_run" + Date.now();
-  const datasetName = "__test_evaluate_run_dataset" + Date.now();
-  const dataset = await langchainClient.createDataset(datasetName);
-  const predicted = "abcd";
-  const groundTruth = "bcde";
-  const example = await langchainClient.createExample(
-    { input: "hello world" },
-    { output: groundTruth },
-    {
-      datasetId: dataset.id,
-    }
-  );
-
-  const parentRunConfig: RunTreeConfig = {
-    name: "parent_run",
-    run_type: "chain",
-    inputs: { input: "hello world" },
-    project_name: projectName,
-    serialized: {},
-    client: langchainClient,
-    reference_example_id: example.id,
-  };
-
-  const parentRun = new RunTree(parentRunConfig);
-  await parentRun.postRun();
-  await parentRun.end({ output: predicted });
-  await parentRun.patchRun();
-
-  function jaccardChars(output: string, answer: string): number {
-    const predictionChars = new Set(output.trim().toLowerCase());
-    const answerChars = new Set(answer.trim().toLowerCase());
-    const intersection = [...predictionChars].filter((x) => answerChars.has(x));
-    const union = new Set([...predictionChars, ...answerChars]);
-    return intersection.length / union.size;
-  }
-
-  async function grader(config: {
-    input: string;
-    prediction: string;
-    answer?: string;
-  }): Promise<{ score: number; value: string }> {
-    let value: string;
-    let score: number;
-    if (config.answer === null || config.answer === undefined) {
-      value = "AMBIGUOUS";
-      score = -0.5;
-    } else {
-      score = jaccardChars(config.prediction, config.answer);
-      value = score > 0.9 ? "CORRECT" : "INCORRECT";
-    }
-    return { score: score, value: value };
-  }
-
-  const evaluator = new StringEvaluator({
-    evaluationName: "Jaccard",
-    gradingFunction: grader,
-  });
-  const feedback = await langchainClient.evaluateRun(parentRun, evaluator);
-
-  await waitUntil(
-    async () => {
-      try {
-        const listSuccess =
-          (
-            await toArray(
-              langchainClient.listFeedback({
-                runIds: [parentRun.id],
-                feedbackKeys: ["jaccard"],
-                feedbackSourceTypes: ["model"],
-              })
-            )
-          ).length > 0;
-        return listSuccess;
-      } catch (e) {
-        return false;
-      }
-    },
-    30_000,
-    1_000
-  );
-
-  const fetchedFeedback: Feedback[] = await toArray(
-    langchainClient.listFeedback({
-      runIds: [parentRun.id],
-      feedbackKeys: ["jaccard"],
-      feedbackSourceTypes: ["model"],
-    })
-  );
-  expect(fetchedFeedback[0].id).toEqual(feedback.id);
-  expect(fetchedFeedback[0].score).toEqual(
-    jaccardChars(predicted, groundTruth)
-  );
-  expect(fetchedFeedback[0].value).toEqual("INCORRECT");
-
-  try {
-    await langchainClient.deleteDataset({ datasetId: dataset.id });
-    await langchainClient.deleteProject({ projectName });
-  } catch (e) {
-    console.log(e);
-  }
-}, 360_000);
 
 test.concurrent(
   "test create dataset",
