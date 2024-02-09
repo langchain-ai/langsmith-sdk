@@ -102,7 +102,7 @@ class RunTree(RunBase):
         end_time: Optional[datetime] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
-        self.end_time = end_time or datetime.utcnow()
+        self.end_time = end_time or datetime.now(datetime.UTC)
         if outputs is not None:
             self.outputs = outputs
         if error is not None:
@@ -135,7 +135,7 @@ class RunTree(RunBase):
             error=error,
             run_type=run_type,
             reference_example_id=reference_example_id,
-            start_time=start_time or datetime.utcnow(),
+            start_time=start_time or datetime.now(datetime.UTC),
             end_time=end_time,
             extra=extra or {},
             parent_run=self,

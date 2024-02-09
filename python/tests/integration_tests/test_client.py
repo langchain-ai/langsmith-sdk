@@ -272,8 +272,8 @@ def test_create_run_with_masked_inputs_outputs(
             run_type="llm",
             inputs={"prompt": "hello world"},
             outputs={"generation": "hi there"},
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow(),
+            start_time=datetime.now(datetime.UTC),
+            end_time=datetime.now(datetime.UTC),
             hide_inputs=True,
             hide_outputs=True,
         )
@@ -285,14 +285,14 @@ def test_create_run_with_masked_inputs_outputs(
             name="test_run_2",
             run_type="llm",
             inputs={"messages": "hello world 2"},
-            start_time=datetime.utcnow(),
+            start_time=datetime.now(datetime.UTC),
             hide_inputs=True,
         )
 
         langchain_client.update_run(
             run_id2,
             outputs={"generation": "hi there 2"},
-            end_time=datetime.utcnow(),
+            end_time=datetime.now(datetime.UTC),
             hide_outputs=True,
         )
         wait_for(lambda: langchain_client.read_run(run_id).end_time is not None)
@@ -364,8 +364,8 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     _session = "__test_batch_ingest_runs"
     trace_id = uuid4()
     run_id_2 = uuid4()
-    current_time = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
-    later_time = (datetime.utcnow() + timedelta(seconds=1)).strftime("%Y%m%dT%H%M%S%fZ")
+    current_time = datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    later_time = (datetime.now(datetime.UTC) + timedelta(seconds=1)).strftime("%Y%m%dT%H%M%S%fZ")
     runs_to_create = [
         {
             "id": str(trace_id),
@@ -453,7 +453,7 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     run: Dict[str, Any] = {
         "id": run_id,
         "name": "run 1",
-        "start_time": datetime.utcnow(),
+        "start_time": datetime.now(datetime.UTC),
         "run_type": "chain",
         "inputs": {"input1": 1, "input2": 2},
         "outputs": {"output1": 3, "output2": 4},
