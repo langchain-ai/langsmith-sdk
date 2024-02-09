@@ -226,7 +226,7 @@ def test_as_runnable_batch(mock_client: Client) -> None:
 
 @patch("langsmith.client.requests.Session", autospec=True)
 async def test_as_runnable_async(_: MagicMock) -> None:
-    @traceable(client=mock_client)
+    @traceable()
     async def my_function(a, b, d):
         return a + b + d
 
@@ -236,8 +236,8 @@ async def test_as_runnable_async(_: MagicMock) -> None:
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
-async def test_as_runnable_async_batch(mock_client: Client) -> None:
-    @traceable(client=mock_client)
+async def test_as_runnable_async_batch(_: MagicMock) -> None:
+    @traceable()
     async def my_function(a, b, d):
         return a + b + d
 
