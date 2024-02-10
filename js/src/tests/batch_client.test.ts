@@ -15,6 +15,9 @@ describe("Batch client tracing", () => {
         ok: true,
         text: () => "",
       });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(true);
     const projectName = "__test_batch";
 
     const runId = uuidv4();
@@ -68,6 +71,9 @@ describe("Batch client tracing", () => {
         ok: true,
         text: () => "",
       });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(true);
     const projectName = "__test_batch";
 
     const runId = uuidv4();
@@ -134,6 +140,9 @@ describe("Batch client tracing", () => {
         ok: true,
         text: () => "",
       });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(true);
     const projectName = "__test_batch";
 
     const runId = uuidv4();
@@ -235,6 +244,9 @@ describe("Batch client tracing", () => {
         ok: true,
         text: () => "",
       });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(true);
     const projectName = "__test_batch";
 
     const runIds = await Promise.all(
@@ -295,5 +307,58 @@ describe("Batch client tracing", () => {
       ),
       patch: [],
     });
+  });
+
+  it("If batching is unsupported, fall back to old endpoint", async () => {
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+    });
+    const callSpy = jest
+      .spyOn((client as any).caller, "call")
+      .mockResolvedValue({
+        ok: true,
+        text: () => "",
+      });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(false);
+    const projectName = "__test_batch";
+
+    const runId = uuidv4();
+    const dottedOrder = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId
+    );
+    await client.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+      trace_id: runId,
+      dotted_order: dottedOrder,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const calledRequestParam: any = callSpy.mock.calls[0][2];
+    expect(JSON.parse(calledRequestParam?.body)).toMatchObject({
+      id: runId,
+      session_name: projectName,
+      extra: expect.anything(),
+      start_time: expect.any(Number),
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+      trace_id: runId,
+      dotted_order: dottedOrder,
+    });
+
+    expect(callSpy).toHaveBeenCalledWith(
+      fetch,
+      "https://api.smith.langchain.com/runs",
+      expect.objectContaining({ body: expect.any(String) })
+    );
   });
 });
