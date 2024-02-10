@@ -193,7 +193,7 @@ test.concurrent(
       project_name: projectName,
     });
     await runTree.postRun();
-    runTree.end({ output: "foo2" });
+    await runTree.end({ output: "foo2" });
     await runTree.patchRun();
     await waitUntilRunFound(langchainClient, runId, true);
     const storedRun = await langchainClient.readRun(runId);
