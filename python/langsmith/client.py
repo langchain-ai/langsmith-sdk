@@ -434,7 +434,7 @@ class Client:
 
     @property
     def _host(self) -> str:
-        _parse_url(self.api_url)
+        return _parse_url(self.api_url)
 
     @property
     def _host_url(self) -> str:
