@@ -5,4 +5,4 @@ export { Dataset, Example, TracerSession, Run, Feedback } from "./schemas.js";
 export { RunTree, RunTreeConfig } from "./run_trees.js";
 
 // Update using yarn bump-version
-export const __version__ = "0.0.68";
+export const __version__ = "0.0.69-rc0";
