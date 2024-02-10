@@ -309,6 +309,13 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
         ) from e
 
 
+@functools.lru_cache(maxsize=1)
+def _parse_url(url):
+    parsed_url = urllib_parse.urlparse(url)
+    host = parsed_url.netloc.split(":")[0]
+    return host
+
+
 @dataclass(order=True)
 class TracingQueueItem:
     priority: str
@@ -426,11 +433,8 @@ class Client:
         return f"Client (API URL: {self.api_url})"
 
     @property
-    @functools.lru_cache(maxsize=1)
     def _host(self) -> str:
-        parsed_url = urllib_parse.urlparse(self.api_url)
-        host = parsed_url.netloc.split(":")[0]
-        return host
+        _parse_url(self.api_url)
 
     @property
     def _host_url(self) -> str:
