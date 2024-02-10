@@ -29,7 +29,7 @@ class RunTree(RunBase):
     name: str
     id: UUID = Field(default_factory=uuid4)
     run_type: str = Field(default="chain")
-    start_time: datetime = Field(default_factory=datetime.now(timezone.utc))
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
     child_runs: List[RunTree] = Field(
         default_factory=list,

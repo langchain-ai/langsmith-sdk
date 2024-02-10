@@ -57,7 +57,7 @@ class ExampleCreate(ExampleBase):
     """Example create model."""
 
     id: Optional[UUID]
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Example(ExampleBase):
@@ -127,7 +127,7 @@ class DatasetCreate(DatasetBase):
     """Dataset create model."""
 
     id: Optional[UUID] = None
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Dataset(DatasetBase):
@@ -422,7 +422,7 @@ class TracerSession(BaseModel):
 
     id: UUID
     """The ID of the project."""
-    start_time: datetime = Field(default_factory=datetime.now(timezone.utc))
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     """The time the project was created."""
     end_time: Optional[datetime] = None
     """The time the project was ended."""
@@ -514,8 +514,8 @@ class AnnotationQueue(BaseModel):
     id: UUID
     name: str
     description: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tenant_id: UUID
 
 
