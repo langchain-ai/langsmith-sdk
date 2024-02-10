@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, cast
 from uuid import UUID, uuid4
 
@@ -29,7 +29,7 @@ class RunTree(RunBase):
     name: str
     id: UUID = Field(default_factory=uuid4)
     run_type: str = Field(default="chain")
-    start_time: datetime = Field(default_factory=datetime.utcnow)
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
     child_runs: List[RunTree] = Field(
         default_factory=list,
@@ -102,7 +102,7 @@ class RunTree(RunBase):
         end_time: Optional[datetime] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
-        self.end_time = end_time or datetime.utcnow()
+        self.end_time = end_time or datetime.now(timezone.utc)
         if outputs is not None:
             self.outputs = outputs
         if error is not None:
@@ -135,7 +135,7 @@ class RunTree(RunBase):
             error=error,
             run_type=run_type,
             reference_example_id=reference_example_id,
-            start_time=start_time or datetime.utcnow(),
+            start_time=start_time or datetime.now(timezone.utc),
             end_time=end_time,
             extra=extra or {},
             parent_run=self,

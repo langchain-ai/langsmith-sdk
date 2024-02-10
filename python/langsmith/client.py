@@ -878,7 +878,7 @@ class Client:
         if "outputs" in run_create:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
-            run_create["start_time"] = datetime.datetime.utcnow()
+            run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
         return run_create
 
     @staticmethod
@@ -1146,7 +1146,7 @@ class Client:
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
         else:
-            data["end_time"] = datetime.datetime.utcnow().isoformat()
+            data["end_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if error is not None:
             data["error"] = error
         if inputs is not None:
