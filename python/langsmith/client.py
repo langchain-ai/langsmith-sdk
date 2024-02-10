@@ -840,7 +840,7 @@ class Client:
 
     @staticmethod
     def _run_transform(
-        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
+        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict], update: bool = False
     ) -> dict:
         """
         Transforms the given run object into a dictionary representation.
@@ -863,7 +863,7 @@ class Client:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
         if "outputs" in run_create:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
-        if not run_create.get("start_time"):
+        if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
         return run_create
 
@@ -1024,7 +1024,7 @@ class Client:
             return
         # transform and convert to dicts
         create_dicts = [self._run_transform(run) for run in create or []]
-        update_dicts = [self._run_transform(run) for run in update or []]
+        update_dicts = [self._run_transform(run, update=True) for run in update or []]
         # combine post and patch dicts where possible
         if update_dicts and create_dicts:
             create_by_id = {run["id"]: run for run in create_dicts}
