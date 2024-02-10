@@ -13,6 +13,7 @@ To get started with the Python SDK, [install the package](https://pypi.org/proje
 
 ```bash
 pip install -U langsmith
+export LANGCHAIN_TRACING_V2=true
 export LANGCHAIN_API_KEY=ls_...
 ```
 
@@ -35,6 +36,7 @@ To get started with the JavaScript / TypeScript SDK, [install the package](https
 
 ```bash
 yarn add langsmith
+export LANGCHAIN_TRACING_V2=true
 export LANGCHAIN_API_KEY=ls_...
 ```
 
