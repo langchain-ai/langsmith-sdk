@@ -11,6 +11,9 @@
     "run_trees.cjs",
     "run_trees.js",
     "run_trees.d.ts",
+    "run_helpers.cjs",
+    "run_helpers.js",
+    "run_helpers.d.ts",
     "evaluation.cjs",
     "evaluation.js",
     "evaluation.d.ts",
@@ -109,6 +112,11 @@
       "types": "./run_trees.d.ts",
       "import": "./run_trees.js",
       "require": "./run_trees.cjs"
+    },
+    "./run_helpers": {
+      "types": "./run_helpers.d.ts",
+      "import": "./run_helpers.js",
+      "require": "./run_helpers.cjs"
     },
     "./evaluation": {
       "types": "./evaluation.d.ts",
