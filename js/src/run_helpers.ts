@@ -1,6 +1,18 @@
 import { RunTree, RunTreeConfig } from "./run_trees.js";
 import { KVMap } from "./schemas.js";
 
+export type TraceableFunction<I, O> = (
+  rawInput: I,
+  parentRun: RunTree | { root: RunTree } | null
+) => Promise<O>;
+
+export function isTraceableFunction(
+  x: unknown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): x is TraceableFunction<any, any> {
+  return typeof x === "function" && "langsmith:traceable" in x;
+}
+
 export const traceable = (params: RunTreeConfig) => {
   return <I, O>(func: (rawInput: I, parentRun: RunTree | null) => O) => {
     async function wrappedFunc(
