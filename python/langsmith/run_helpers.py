@@ -247,13 +247,15 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
         *args: Any,
         langsmith_extra: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
-    ) -> R: ...
+    ) -> R:
+        ...
 
 
 @overload
 def traceable(
     func: Callable[..., R],
-) -> Callable[..., R]: ...
+) -> Callable[..., R]:
+    ...
 
 
 @overload
@@ -266,7 +268,8 @@ def traceable(
     client: Optional[client.Client] = None,
     extra: Optional[Dict] = None,
     reduce_fn: Optional[Callable] = None,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
+) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
+    ...
 
 
 def traceable(
