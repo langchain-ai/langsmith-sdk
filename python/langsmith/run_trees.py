@@ -73,8 +73,6 @@ class RunTree(RunBase):
                 values["trace_id"] = values["parent_run"].trace_id
             else:
                 values["trace_id"] = values["id"]
-        else:
-            print(values["trace_id"])
         cast(dict, values.setdefault("extra", {}))
         return values
 
@@ -100,6 +98,7 @@ class RunTree(RunBase):
         outputs: Optional[Dict] = None,
         error: Optional[str] = None,
         end_time: Optional[datetime] = None,
+        events: Optional[List[Dict]] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
         self.end_time = end_time or datetime.now(timezone.utc)
@@ -107,6 +106,8 @@ class RunTree(RunBase):
             self.outputs = outputs
         if error is not None:
             self.error = error
+        if events is not None:
+            self.events = events
 
     def create_child(
         self,
@@ -181,6 +182,9 @@ class RunTree(RunBase):
             end_time=self.end_time,
             dotted_order=self.dotted_order,
             trace_id=self.trace_id,
+            events=self.events,
+            tags=self.tags,
+            extra=self.extra,
         )
 
     def wait(self) -> None:
