@@ -582,7 +582,6 @@ export class Client {
       runCreate,
     ]);
 
-    console.log(mergedRunCreateParams[0]);
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,

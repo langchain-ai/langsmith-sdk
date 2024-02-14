@@ -1,6 +1,8 @@
 import { RunTree, RunTreeConfig, isRunTree } from "./run_trees.js";
 import { KVMap } from "./schemas.js";
 
+type TraceableLastArg = RunTree | { config: Partial<RunTreeConfig> } | "root";
+
 /**
  * Higher-order function for creating or adding a run to a run tree.
  * The returned function will now expect the first argument to be a run tree
@@ -17,16 +19,20 @@ export function traceable<WrappedFunc extends (...args: any[]) => any>(
   type Output = Awaited<ReturnType<WrappedFunc>>;
 
   const traceableFunc: TraceableFunction<Inputs, Output> = async (
-    ...args: [...Inputs, RunTree | RunTreeConfig]
+    ...args: [...Inputs, TraceableLastArg]
   ): Promise<Output> => {
     let currentRunTree: RunTree;
 
-    const inputRunTree: RunTree | RunTreeConfig = args[args.length - 1];
+    const inputRunTree: TraceableLastArg = args[args.length - 1];
     const rawInputs = args.slice(0, args.length - 1) as Inputs;
 
-    if (!isRunTree(inputRunTree) && !isKVMap(inputRunTree)) {
+    if (
+      !isRunTree(inputRunTree) &&
+      inputRunTree !== "root" &&
+      !(isKVMap(inputRunTree) && "config" in inputRunTree)
+    ) {
       throw new Error(
-        "Last argument must be a RunTree or RunTreeConfig with a name"
+        "Last argument must be a RunTree instance or a config object with RunTree constructor arguments"
       );
     }
 
@@ -37,8 +43,13 @@ export function traceable<WrappedFunc extends (...args: any[]) => any>(
 
     if (isRunTree(inputRunTree)) {
       currentRunTree = await inputRunTree.createChild(ensuredConfig);
+    } else if (inputRunTree === "root") {
+      currentRunTree = new RunTree(ensuredConfig);
     } else {
-      currentRunTree = new RunTree({ ...ensuredConfig, ...inputRunTree });
+      currentRunTree = new RunTree({
+        ...ensuredConfig,
+        ...inputRunTree.config,
+      });
     }
 
     let inputs: KVMap;
@@ -91,7 +102,7 @@ export function traceable<WrappedFunc extends (...args: any[]) => any>(
 }
 
 export type TraceableFunction<Inputs extends unknown[], Output> = (
-  ...inputs: [...params: Inputs, runTree: RunTree | RunTreeConfig]
+  ...inputs: [...params: Inputs, runTree: TraceableLastArg]
 ) => Promise<Output>;
 
 export function isTraceableFunction(
