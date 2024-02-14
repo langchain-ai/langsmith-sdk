@@ -1,10 +1,10 @@
+import { v4 as uuidv4 } from "uuid";
 import { RunTree, RunTreeConfig, isRunTree } from "./run_trees.js";
 import { KVMap } from "./schemas.js";
 
-export type TraceableFunction<I, O> = (
-  rawInput: I,
-  parentRun: RunTree | { root: RunTree } | null
-) => Promise<O>;
+export type TraceableFunction<Inputs extends any[], Output> = (
+  ...rawInputs: Inputs | [RunTree, ...Inputs]
+) => Promise<[Output, RunTree]>;
 
 export function isTraceableFunction(
   x: unknown
@@ -17,23 +17,31 @@ export function traceable<Inputs extends any[], Output>(
   wrappedFunc: (...inputs: Inputs) => Output,
   config?: RunTreeConfig
 ) {
-  let boundParentRunTree: RunTree | undefined;
-  const traceableFunc = async (
+  const traceableFunc: TraceableFunction<Inputs, Output> = async (
     ...rawInputs: Inputs | [RunTree, ...Inputs]
-  ): Promise<Output> => {
-    let parentRunTree: RunTree | undefined = boundParentRunTree;
+  ): Promise<[Output, RunTree]> => {
+    let inputRunTree: RunTree | undefined;
+    let currentRunTree: RunTree;
     let wrappedFunctionInputs: Inputs;
+    const ensuredConfig = { name: "traced_function", ...config };
 
     if (isRunTree(rawInputs[0])) {
-      [parentRunTree, ...wrappedFunctionInputs] = rawInputs as [
+      [inputRunTree, ...wrappedFunctionInputs] = rawInputs as [
         RunTree,
         ...Inputs
       ];
+      if ("root" in inputRunTree) {
+        currentRunTree = inputRunTree.root as RunTree;
+      } else {
+        currentRunTree = await inputRunTree.createChild(ensuredConfig); 
+      }
     } else {
       wrappedFunctionInputs = rawInputs as Inputs;
-    }
-    if (parentRunTree == null) {
-      return wrappedFunc(...wrappedFunctionInputs);
+      currentRunTree = new RunTree({
+        id: uuidv4(),
+        run_type: "chain",
+        ...ensuredConfig,
+      });
     }
     let inputs: KVMap;
     const firstWrappedFunctionInput = wrappedFunctionInputs[0];
@@ -52,19 +60,11 @@ export function traceable<Inputs extends any[], Output>(
       inputs = { input: firstWrappedFunctionInput };
     }
 
-    const ensuredConfig = { name: "traced_function", config };
-
-    const currentRunTree: RunTree =
-      "root" in parentRunTree
-        ? (parentRunTree.root as RunTree)
-        : await parentRunTree.createChild({
-            ...ensuredConfig,
-            inputs,
-          });
-
-    if ("root" in parentRunTree) {
-      Object.assign(currentRunTree, { ...ensuredConfig, inputs });
+    if ("root" in currentRunTree) {
+      Object.assign(currentRunTree, { ...ensuredConfig });
     }
+
+    currentRunTree.inputs = inputs;
 
     const initialOutputs = currentRunTree.outputs;
     const initialError = currentRunTree.error;
@@ -85,7 +85,7 @@ export function traceable<Inputs extends any[], Output>(
       } else {
         currentRunTree.end_time = Date.now();
       }
-      return rawOutput;
+      return [rawOutput, currentRunTree];
     } catch (error) {
       if (initialError === currentRunTree.error) {
         await currentRunTree.end(initialOutputs, String(error));
@@ -97,9 +97,6 @@ export function traceable<Inputs extends any[], Output>(
     } finally {
       await currentRunTree.postRun();
     }
-  };
-  traceableFunc.setParentRunTree = (parent: RunTree) => {
-    boundParentRunTree = parent;
   };
   Object.defineProperty(wrappedFunc, "langsmith:traceable", {
     value: config,
