@@ -18,9 +18,6 @@ test.concurrent(
     const langchainClient = new Client({
       callerOptions: { maxRetries: 0 },
     });
-    const testFunction = (a: string, b: number) => {
-      return a + b;
-    };
     const projectName = "__test_traceable_wrapper";
     const runId = uuidv4();
     const rootRunTree = new RunTree({
@@ -31,11 +28,24 @@ test.concurrent(
       project_name: projectName,
     });
 
-    const traceableFunction = traceable(testFunction, { name: "testinger" });
-    // const openaiCompletions = traceable(openai.chat.completions.create);
+    const addValueTraceable = traceable(
+      (a: string, b: number) => {
+        return a + b;
+      },
+      { name: "testinger" }
+    );
 
-    const [response, runTree] = await traceableFunction(rootRunTree, "testing", 9);
-    const [response2, runTree2] = await traceableFunction(runTree, "testing2", 10);
+    expect(await addValueTraceable(rootRunTree, "testing", 9)).toBe("testing9");
+
+    const entryTraceable = traceable(
+      (complex: { value: string }, runTree: RunTree) =>
+        addValueTraceable(runTree, complex.value, 1),
+      { name: "nested_testinger" }
+    );
+
+    expect(await entryTraceable(rootRunTree, { value: "testing" })).toBe(
+      "testing1"
+    );
 
     // await deleteProject(langchainClient, projectName);
   },
