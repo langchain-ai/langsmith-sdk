@@ -3,6 +3,7 @@ import { KVMap } from "./schemas.js";
 
 /**
  * Higher-order function for creating or adding a run to a run tree.
+ * The returned function will now expect the first argument to be a run tree
  *
  * @param wrappedFunc Targeted function to be traced
  * @param config Useful for adding additional metadata such as name, tags or providing custom LangSmith client instance
@@ -14,7 +15,7 @@ export function traceable<Inputs extends unknown[], Output>(
   const traceableFunc: TraceableFunction<Inputs, Output> = async (
     inputRunTree: RunTree | RunTreeConfig,
     ...rawInputs: Inputs
-  ): Promise<Output> => {
+  ): Promise<Awaited<Output>> => {
     let currentRunTree: RunTree;
     const ensuredConfig: RunTreeConfig = {
       name: wrappedFunc.name || "<lambda>",
@@ -69,6 +70,7 @@ export function traceable<Inputs extends unknown[], Output>(
       await currentRunTree.postRun();
     }
   };
+
   Object.defineProperty(wrappedFunc, "langsmith:traceable", {
     value: config,
   });
