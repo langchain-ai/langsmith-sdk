@@ -13,6 +13,12 @@ export function isTraceableFunction(
   return typeof x === "function" && "langsmith:traceable" in x;
 }
 
+/**
+ * Higher-order function for creating or adding a run to a run tree.
+ *
+ * @param wrappedFunc Targeted function to be traced
+ * @param config Useful for adding additional metadata such as name, tags or providing custom LangSmith client instance
+ */
 export function traceable<Inputs extends unknown[], Output>(
   wrappedFunc: (runTree: RunTree, ...inputs: Inputs) => Output,
   config?: RunTreeConfig
