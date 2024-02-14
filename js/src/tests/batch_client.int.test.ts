@@ -57,7 +57,8 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({
       autoBatchTracing: true,
-      callerOptions: { maxRetries: 0 },
+      callerOptions: { maxRetries: 0},
+      timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_batch_1";
     await deleteProject(langchainClient, projectName);
@@ -97,6 +98,7 @@ test.concurrent(
       autoBatchTracing: true,
       callerOptions: { maxRetries: 0 },
       pendingAutoBatchedRunLimit: 2,
+      timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_batch_above_bs_limit";
     await deleteProject(langchainClient, projectName);
@@ -141,6 +143,7 @@ test.concurrent(
     const langchainClient = new Client({
       autoBatchTracing: true,
       callerOptions: { maxRetries: 0 },
+      timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_batch_with_delay";
     await deleteProject(langchainClient, projectName);
@@ -181,6 +184,7 @@ test.concurrent(
     const langchainClient = new Client({
       autoBatchTracing: true,
       callerOptions: { maxRetries: 0 },
+      timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_tree";
     await deleteProject(langchainClient, projectName);

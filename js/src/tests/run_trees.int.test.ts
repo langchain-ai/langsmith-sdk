@@ -42,7 +42,7 @@ async function pollRunsUntilCount(
         return false;
       }
     },
-    60_000, // Wait up to 60 seconds
+    120_000, // Wait up to 120 seconds
     3000 // every 3 second
   );
 }
@@ -159,7 +159,7 @@ test.concurrent(
     ];
 
     try {
-      const langchainClient = new Client();
+      const langchainClient = new Client({timeout_ms: 30000});
 
       for (const project of projectNames) {
         if (await langchainClient.hasProject({ projectName: project })) {

@@ -119,7 +119,7 @@ async def test_list_runs_multi_project(langchain_client: Client):
         poll_runs_until_count(langchain_client, project_names[1], 1)
         runs = list(langchain_client.list_runs(project_name=project_names))
         assert len(runs) == 2
-        assert all([run.outputs["output"] == "Completed: foo" for run in runs]) # type: ignore
+        assert all([run.outputs["output"] == "Completed: foo" for run in runs])  # type: ignore
         assert runs[0].session_id != runs[1].session_id
 
     finally:
