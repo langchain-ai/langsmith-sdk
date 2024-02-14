@@ -1242,6 +1242,7 @@ class Client:
         project_id: Optional[Union[ID_TYPE, Sequence[ID_TYPE]]] = None,
         project_name: Optional[Union[str, Sequence[str]]] = None,
         run_type: Optional[str] = None,
+        trace_id: Optional[ID_TYPE] = None,
         reference_example_id: Optional[ID_TYPE] = None,
         query: Optional[str] = None,
         filter: Optional[str] = None,
@@ -1262,6 +1263,8 @@ class Client:
             The name(s) of the project to filter by.
         run_type : str or None, default=None
             The type of the runs to filter by.
+        trace_id : UUID or None, default=None
+            The ID of the trace to filter by.
         reference_example_id : UUID or None, default=None
             The ID of the reference example to filter by.
         query : str or None, default=None
@@ -1313,6 +1316,7 @@ class Client:
             "start_time": start_time.isoformat() if start_time else None,
             "error": error,
             "id": run_ids,
+            "trace": trace_id,
             **kwargs,
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}

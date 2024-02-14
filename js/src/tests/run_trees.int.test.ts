@@ -145,6 +145,20 @@ test.concurrent(
       runMap.get("parent_run")?.id
     );
     expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
+
+    const traceRunsIter = langchainClient.listRuns({
+      traceId: runs[0].trace_id,
+    });
+    const traceRuns = await toArray(traceRunsIter);
+    expect(traceRuns.length).toEqual(5);
+    // Sort by dotted order and assert runs lists are equal
+    const sortedRuns = runs.sort((a, b) =>
+      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+    );
+    const sortedTraceRuns = traceRuns.sort((a, b) =>
+      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+    );
+    expect(sortedRuns).toEqual(sortedTraceRuns);
     await langchainClient.deleteProject({ projectName });
   },
   120_000
