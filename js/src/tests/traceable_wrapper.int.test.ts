@@ -23,18 +23,19 @@ test.concurrent(
     };
     const projectName = "__test_traceable_wrapper";
     const runId = uuidv4();
-    const runTree = new RunTree({
-      name: "Test Run Tree",
+    const rootRunTree = new RunTree({
+      name: "test_run_tree",
+      run_type: "chain",
       id: runId,
       client: langchainClient,
       project_name: projectName,
     });
 
-    const traceableFunction = traceable(testFunction);
+    const traceableFunction = traceable(testFunction, { name: "testinger" });
+    // const openaiCompletions = traceable(openai.chat.completions.create);
 
-    traceableFunction.setParentRunTree(runTree);
-
-    console.log(await traceableFunction("testing", 9));
+    const [response, runTree] = await traceableFunction(rootRunTree, "testing", 9);
+    const [response2, runTree2] = await traceableFunction(runTree, "testing2", 10);
 
     // await deleteProject(langchainClient, projectName);
   },
