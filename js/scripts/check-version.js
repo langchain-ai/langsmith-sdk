@@ -1,5 +1,4 @@
 import { readFileSync } from "fs";
-import { join } from "path";
 const indexFilePath = "src/index.ts";
 const packageJson = JSON.parse(readFileSync("package.json"));
 let indexFileContent = readFileSync(indexFilePath, "utf-8");
