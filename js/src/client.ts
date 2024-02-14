@@ -227,6 +227,8 @@ export class Queue<T> {
   }
 
   push(item: T): Promise<void> {
+    // this.items.push is synchronous with promise creation:
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
     return new Promise<void>((resolve) => {
       this.items.push([item, resolve]);
     });
@@ -516,25 +518,27 @@ export class Client {
     }
   }
 
-  private async triggerAutoBatchSend() {
-    const [batch, done] = this.autoBatchQueue.pop(
-      this.pendingAutoBatchedRunLimit
-    );
-    if (!batch.length) {
-      done();
-      return;
-    }
-    try {
-      await this.batchIngestRuns({
-        runCreates: batch
-          .filter((item) => item.action === "create")
-          .map((item) => item.item) as RunCreate[],
-        runUpdates: batch
-          .filter((item) => item.action === "update")
-          .map((item) => item.item) as RunUpdate[],
-      });
-    } finally {
-      done();
+  private async drainAutoBatchQueue() {
+    while (this.autoBatchQueue.size >= 0) {
+      const [batch, done] = this.autoBatchQueue.pop(
+        this.pendingAutoBatchedRunLimit
+      );
+      if (!batch.length) {
+        done();
+        return;
+      }
+      try {
+        await this.batchIngestRuns({
+          runCreates: batch
+            .filter((item) => item.action === "create")
+            .map((item) => item.item) as RunCreate[],
+          runUpdates: batch
+            .filter((item) => item.action === "update")
+            .map((item) => item.item) as RunUpdate[],
+        });
+      } finally {
+        done();
+      }
     }
   }
 
@@ -546,17 +550,17 @@ export class Client {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     const itemPromise = this.autoBatchQueue.push(item);
-    if (immediatelyTriggerBatch) {
-      await this.triggerAutoBatchSend();
-    }
-    while (this.autoBatchQueue.size >= this.pendingAutoBatchedRunLimit) {
-      await this.triggerAutoBatchSend();
+    if (
+      immediatelyTriggerBatch ||
+      this.autoBatchQueue.size > this.pendingAutoBatchedRunLimit
+    ) {
+      await this.drainAutoBatchQueue();
     }
     if (this.autoBatchQueue.size > 0) {
       this.autoBatchTimeout = setTimeout(
         () => {
           this.autoBatchTimeout = undefined;
-          void this.triggerAutoBatchSend();
+          void this.drainAutoBatchQueue();
         },
         oldTimeout
           ? this.autoBatchAggregationDelayMs

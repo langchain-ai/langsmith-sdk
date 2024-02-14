@@ -280,9 +280,10 @@ describe("Batch client tracing", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     const calledRequestParam: any = callSpy.mock.calls[0][2];
-    // Second batch should still be pending
-    expect(callSpy.mock.calls[1]).toBeUndefined();
-    // First batch should fire as soon as it hits 10
+    const calledRequestParam2: any = callSpy.mock.calls[1][2];
+
+    // Queue should drain as soon as size limit is reached,
+    // sending both batches
     expect(JSON.parse(calledRequestParam?.body)).toEqual({
       post: runIds.slice(0, 10).map((runId, i) =>
         expect.objectContaining({
@@ -296,11 +297,6 @@ describe("Batch client tracing", () => {
       ),
       patch: [],
     });
-
-    // Wait for the aggregation delay
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    const calledRequestParam2: any = callSpy.mock.calls[1][2];
 
     expect(JSON.parse(calledRequestParam2?.body)).toEqual({
       post: runIds.slice(10).map((runId, i) =>
