@@ -145,7 +145,7 @@ test.concurrent(
   "test create dataset",
   async () => {
     const langchainClient = new Client({ autoBatchTracing: false });
-    const datasetName = "__test_create_dataset";
+    const datasetName = "__test_create_dataset JS";
     const datasets = await toArray(
       langchainClient.listDatasets({ datasetName })
     );
@@ -202,8 +202,8 @@ test.concurrent(
   "Test list datasets",
   async () => {
     const langchainClient = new Client({ autoBatchTracing: false });
-    const datasetName1 = "___TEST dataset1";
-    const datasetName2 = "___TEST dataset2";
+    const datasetName1 = "___TEST dataset1 JS";
+    const datasetName2 = "___TEST dataset2 JS";
     await deleteDataset(langchainClient, datasetName1);
     await deleteDataset(langchainClient, datasetName2);
     // Create two new datasets
@@ -247,7 +247,7 @@ test.concurrent(
   "Test create feedback with source run",
   async () => {
     const langchainClient = new Client({ autoBatchTracing: false });
-    const projectName = "__test_create_feedback_with_source_run";
+    const projectName = "__test_create_feedback_with_source_run JS";
     await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
     await langchainClient.createRun({
@@ -290,7 +290,7 @@ test.concurrent(
       hideOutputs: true,
       autoBatchTracing: false,
     });
-    const projectName = "__test_create_run_with_masked_inputs_outputs";
+    const projectName = "__test_create_run_with_masked_inputs_outputs JS";
     await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
     await langchainClient.createRun({
@@ -344,7 +344,7 @@ test.concurrent(
     process.env.LANGCHAIN_OTHER_FIELD = "test_other_field";
     // eslint-disable-next-line no-process-env
     process.env.LANGCHAIN_OTHER_KEY = "test_other_key";
-    const projectName = "__test_create_run_with_revision_id";
+    const projectName = "__test_create_run_with_revision_id JS";
     await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
     await langchainClient.createRun({
@@ -396,7 +396,7 @@ describe("createChatExample", () => {
   it("should convert LangChainBaseMessage objects to examples", async () => {
     const langchainClient = new Client({ autoBatchTracing: false });
 
-    const datasetName = "__createChatExample-test-dataset";
+    const datasetName = "__createChatExample-test-dataset JS";
     await deleteDataset(langchainClient, datasetName);
     const dataset = await langchainClient.createDataset(datasetName);
 
@@ -477,7 +477,7 @@ test.concurrent(
   "Examples CRUD",
   async () => {
     const client = new Client({ autoBatchTracing: false });
-    const datasetName = "__test_examples_crud";
+    const datasetName = "__test_examples_crud JS";
     await deleteDataset(client, datasetName);
     const dataset = await client.createDataset(datasetName);
     const example = await client.createExample(
