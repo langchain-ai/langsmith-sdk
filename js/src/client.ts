@@ -219,6 +219,36 @@ function assertUuid(str: string): void {
   }
 }
 
+export class Queue<T> {
+  items: [T, () => void][] = [];
+
+  get size() {
+    return this.items.length;
+  }
+
+  push(item: T): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.items.push([item, resolve]);
+    });
+  }
+
+  pop(upToN: number): [T[], () => void] {
+    if (upToN < 1) {
+      throw new Error("Number of items to pop off may not be less than 1.");
+    }
+    const popped: typeof this.items = [];
+    while (popped.length < upToN && this.items.length) {
+      const item = this.items.shift();
+      if (item) {
+        popped.push(item);
+      } else {
+        break;
+      }
+    }
+    return [popped.map((it) => it[0]), () => popped.forEach((it) => it[1]())];
+  }
+}
+
 export class Client {
   private apiKey?: string;
 
@@ -244,7 +274,7 @@ export class Client {
 
   private batchEndpointSupported?: boolean;
 
-  private pendingAutoBatchedRuns: AutoBatchQueueItem[] = [];
+  private autoBatchQueue = new Queue<AutoBatchQueueItem>();
 
   private pendingAutoBatchedRunLimit = 100;
 
@@ -486,57 +516,54 @@ export class Client {
     }
   }
 
-  private async triggerAutoBatchSend(runs?: AutoBatchQueueItem[]) {
-    let batch = runs;
-    if (batch === undefined) {
-      batch = this.pendingAutoBatchedRuns.slice(
-        0,
-        this.pendingAutoBatchedRunLimit
-      );
-      this.pendingAutoBatchedRuns = this.pendingAutoBatchedRuns.slice(
-        this.pendingAutoBatchedRunLimit
-      );
+  private async triggerAutoBatchSend() {
+    const [batch, done] = this.autoBatchQueue.pop(
+      this.pendingAutoBatchedRunLimit
+    );
+    if (!batch.length) {
+      done();
+      return;
     }
-    await this.batchIngestRuns({
-      runCreates: batch
-        .filter((item) => item.action === "create")
-        .map((item) => item.item) as RunCreate[],
-      runUpdates: batch
-        .filter((item) => item.action === "update")
-        .map((item) => item.item) as RunUpdate[],
-    });
+    try {
+      await this.batchIngestRuns({
+        runCreates: batch
+          .filter((item) => item.action === "create")
+          .map((item) => item.item) as RunCreate[],
+        runUpdates: batch
+          .filter((item) => item.action === "update")
+          .map((item) => item.item) as RunUpdate[],
+      });
+    } finally {
+      done();
+    }
   }
 
-  private appendRunCreateToAutoBatchQueue(item: AutoBatchQueueItem) {
+  private async processRunOperation(
+    item: AutoBatchQueueItem,
+    immediatelyTriggerBatch?: boolean
+  ) {
     const oldTimeout = this.autoBatchTimeout;
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
-    this.pendingAutoBatchedRuns.push(item);
-    while (
-      this.pendingAutoBatchedRuns.length >= this.pendingAutoBatchedRunLimit
-    ) {
-      const batch = this.pendingAutoBatchedRuns.slice(
-        0,
-        this.pendingAutoBatchedRunLimit
-      );
-      this.pendingAutoBatchedRuns = this.pendingAutoBatchedRuns.slice(
-        this.pendingAutoBatchedRunLimit
-      );
-      void this.triggerAutoBatchSend(batch);
+    const itemPromise = this.autoBatchQueue.push(item);
+    if (immediatelyTriggerBatch) {
+      await this.triggerAutoBatchSend();
     }
-    if (this.pendingAutoBatchedRuns.length > 0) {
-      if (!oldTimeout) {
-        this.autoBatchTimeout = setTimeout(() => {
+    while (this.autoBatchQueue.size >= this.pendingAutoBatchedRunLimit) {
+      await this.triggerAutoBatchSend();
+    }
+    if (this.autoBatchQueue.size > 0) {
+      this.autoBatchTimeout = setTimeout(
+        () => {
           this.autoBatchTimeout = undefined;
           void this.triggerAutoBatchSend();
-        }, this.autoBatchInitialDelayMs);
-      } else {
-        this.autoBatchTimeout = setTimeout(() => {
-          this.autoBatchTimeout = undefined;
-          void this.triggerAutoBatchSend();
-        }, this.autoBatchAggregationDelayMs);
-      }
+        },
+        oldTimeout
+          ? this.autoBatchAggregationDelayMs
+          : this.autoBatchInitialDelayMs
+      );
     }
+    return itemPromise;
   }
 
   protected async batchEndpointIsSupported() {
@@ -572,7 +599,7 @@ export class Client {
       runCreate.trace_id !== undefined &&
       runCreate.dotted_order !== undefined
     ) {
-      this.appendRunCreateToAutoBatchQueue({
+      void this.processRunOperation({
         action: "create",
         item: runCreate,
       });
@@ -704,7 +731,14 @@ export class Client {
       data.trace_id !== undefined &&
       data.dotted_order !== undefined
     ) {
-      this.appendRunCreateToAutoBatchQueue({ action: "update", item: data });
+      if (run.end_time !== undefined && data.parent_run_id === undefined) {
+        // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
+        // in serverless environments.
+        await this.processRunOperation({ action: "update", item: data }, true);
+        return;
+      } else {
+        void this.processRunOperation({ action: "update", item: data });
+      }
       return;
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };

@@ -129,7 +129,7 @@ describe("Batch client tracing", () => {
     );
   });
 
-  it("should create an example with the given input and generation", async () => {
+  it("should immediately trigger a batch on root run end", async () => {
     const client = new Client({
       apiKey: "test-api-key",
       autoBatchTracing: true,
@@ -160,10 +160,12 @@ describe("Batch client tracing", () => {
       dotted_order: dottedOrder,
     });
 
+    // Wait for first batch to send
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     const endTime = Math.floor(new Date().getTime() / 1000);
 
+    // A root run finishing triggers the second batch
     await client.updateRun(runId, {
       outputs: { output: ["Hi"] },
       dotted_order: dottedOrder,
@@ -177,6 +179,7 @@ describe("Batch client tracing", () => {
       runId2
     );
 
+    // Will send in a third batch, even though it's triggered around the same time as the update
     await client.createRun({
       id: runId2,
       project_name: projectName,
@@ -191,6 +194,7 @@ describe("Batch client tracing", () => {
 
     const calledRequestParam: any = callSpy.mock.calls[0][2];
     const calledRequestParam2: any = callSpy.mock.calls[1][2];
+    const calledRequestParam3: any = callSpy.mock.calls[2][2];
     expect(JSON.parse(calledRequestParam?.body)).toEqual({
       post: [
         expect.objectContaining({
@@ -207,17 +211,7 @@ describe("Batch client tracing", () => {
     });
 
     expect(JSON.parse(calledRequestParam2?.body)).toEqual({
-      post: [
-        expect.objectContaining({
-          id: runId2,
-          run_type: "llm",
-          inputs: {
-            text: "hello world 2",
-          },
-          trace_id: runId2,
-          dotted_order: dottedOrder2,
-        }),
-      ],
+      post: [],
       patch: [
         expect.objectContaining({
           id: runId,
@@ -229,6 +223,20 @@ describe("Batch client tracing", () => {
           },
         }),
       ],
+    });
+    expect(JSON.parse(calledRequestParam3?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runId2,
+          run_type: "llm",
+          inputs: {
+            text: "hello world 2",
+          },
+          trace_id: runId2,
+          dotted_order: dottedOrder2,
+        }),
+      ],
+      patch: [],
     });
   });
 
