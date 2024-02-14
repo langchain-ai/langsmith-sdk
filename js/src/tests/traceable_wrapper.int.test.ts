@@ -35,15 +35,15 @@ test.concurrent(
       { name: "testinger" }
     );
 
-    expect(await addValueTraceable(rootRunTree, "testing", 9)).toBe("testing9");
+    expect(await addValueTraceable("testing", 9, rootRunTree)).toBe("testing9");
 
     const entryTraceable = traceable(
       (complex: { value: string }, runTree: RunTree) =>
-        addValueTraceable(runTree, complex.value, 1),
+        addValueTraceable(complex.value, 1, runTree),
       { name: "nested_testinger" }
     );
 
-    expect(await entryTraceable(rootRunTree, { value: "testing" })).toBe(
+    expect(await entryTraceable({ value: "testing" }, rootRunTree)).toBe(
       "testing1"
     );
 
