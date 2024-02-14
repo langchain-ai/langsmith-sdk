@@ -1,18 +1,6 @@
 import { RunTree, RunTreeConfig, isRunTree } from "./run_trees.js";
 import { KVMap } from "./schemas.js";
 
-export type TraceableFunction<Inputs extends unknown[], Output> = (
-  runTree: RunTree,
-  ...rawInputs: Inputs
-) => Promise<Output>;
-
-export function isTraceableFunction(
-  x: unknown
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): x is TraceableFunction<any, any> {
-  return typeof x === "function" && "langsmith:traceable" in x;
-}
-
 /**
  * Higher-order function for creating or adding a run to a run tree.
  *
@@ -45,12 +33,7 @@ export function traceable<Inputs extends unknown[], Output>(
       inputs = {};
     } else if (rawInputs.length > 1) {
       inputs = { args: rawInputs };
-    } else if (
-      typeof firstInput === "object" &&
-      !Array.isArray(firstInput) &&
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      !(firstInput instanceof Date)
-    ) {
+    } else if (isKVMap(firstInput)) {
       inputs = firstInput;
     } else {
       inputs = { input: firstInput };
@@ -63,20 +46,16 @@ export function traceable<Inputs extends unknown[], Output>(
 
     try {
       const rawOutput = await wrappedFunc(currentRunTree, ...rawInputs);
-      const outputs: KVMap =
-        typeof rawOutput === "object" &&
-        rawOutput != null &&
-        !Array.isArray(rawOutput) &&
-        // eslint-disable-next-line no-instanceof/no-instanceof
-        !(rawOutput instanceof Date)
-          ? rawOutput
-          : { outputs: rawOutput };
+      const outputs: KVMap = isKVMap(rawOutput)
+        ? rawOutput
+        : { outputs: rawOutput };
 
       if (initialOutputs === currentRunTree.outputs) {
         await currentRunTree.end(outputs);
       } else {
         currentRunTree.end_time = Date.now();
       }
+
       return rawOutput;
     } catch (error) {
       if (initialError === currentRunTree.error) {
@@ -94,4 +73,26 @@ export function traceable<Inputs extends unknown[], Output>(
     value: config,
   });
   return traceableFunc;
+}
+
+export type TraceableFunction<Inputs extends unknown[], Output> = (
+  runTree: RunTree,
+  ...rawInputs: Inputs
+) => Promise<Output>;
+
+export function isTraceableFunction(
+  x: unknown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): x is TraceableFunction<any, any> {
+  return typeof x === "function" && "langsmith:traceable" in x;
+}
+
+function isKVMap(x: unknown): x is Record<string, unknown> {
+  return (
+    typeof x === "object" &&
+    x != null &&
+    !Array.isArray(x) &&
+    // eslint-disable-next-line no-instanceof/no-instanceof
+    !(x instanceof Date)
+  );
 }
