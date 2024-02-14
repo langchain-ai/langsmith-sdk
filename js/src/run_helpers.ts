@@ -28,7 +28,10 @@ export function traceable<Inputs extends unknown[], Output>(
     ...rawInputs: Inputs
   ): Promise<Output> => {
     let currentRunTree: RunTree;
-    const ensuredConfig: RunTreeConfig = { name: "wrapped_func", ...config };
+    const ensuredConfig: RunTreeConfig = {
+      name: wrappedFunc.name || "<lambda>",
+      ...config,
+    };
 
     if (isRunTree(inputRunTree)) {
       currentRunTree = await inputRunTree.createChild(ensuredConfig);
