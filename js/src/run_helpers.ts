@@ -1,10 +1,10 @@
-import { v4 as uuidv4 } from "uuid";
 import { RunTree, RunTreeConfig, isRunTree } from "./run_trees.js";
 import { KVMap } from "./schemas.js";
 
-export type TraceableFunction<Inputs extends any[], Output> = (
-  ...rawInputs: Inputs | [RunTree, ...Inputs]
-) => Promise<[Output, RunTree]>;
+export type TraceableFunction<Inputs extends unknown[], Output> = (
+  runTree: RunTree,
+  ...rawInputs: Inputs
+) => Promise<Output>;
 
 export function isTraceableFunction(
   x: unknown
@@ -13,55 +13,38 @@ export function isTraceableFunction(
   return typeof x === "function" && "langsmith:traceable" in x;
 }
 
-export function traceable<Inputs extends any[], Output>(
-  wrappedFunc: (...inputs: Inputs) => Output,
+export function traceable<Inputs extends unknown[], Output>(
+  wrappedFunc: (runTree: RunTree, ...inputs: Inputs) => Output,
   config?: RunTreeConfig
 ) {
   const traceableFunc: TraceableFunction<Inputs, Output> = async (
-    ...rawInputs: Inputs | [RunTree, ...Inputs]
-  ): Promise<[Output, RunTree]> => {
-    let inputRunTree: RunTree | undefined;
+    inputRunTree: RunTree | RunTreeConfig,
+    ...rawInputs: Inputs
+  ): Promise<Output> => {
     let currentRunTree: RunTree;
-    let wrappedFunctionInputs: Inputs;
-    const ensuredConfig = { name: "traced_function", ...config };
+    const ensuredConfig: RunTreeConfig = { name: "wrapped_func", ...config };
 
-    if (isRunTree(rawInputs[0])) {
-      [inputRunTree, ...wrappedFunctionInputs] = rawInputs as [
-        RunTree,
-        ...Inputs
-      ];
-      if ("root" in inputRunTree) {
-        currentRunTree = inputRunTree.root as RunTree;
-      } else {
-        currentRunTree = await inputRunTree.createChild(ensuredConfig); 
-      }
+    if (isRunTree(inputRunTree)) {
+      currentRunTree = await inputRunTree.createChild(ensuredConfig);
     } else {
-      wrappedFunctionInputs = rawInputs as Inputs;
-      currentRunTree = new RunTree({
-        id: uuidv4(),
-        run_type: "chain",
-        ...ensuredConfig,
-      });
+      currentRunTree = new RunTree({ ...ensuredConfig, ...inputRunTree });
     }
+
     let inputs: KVMap;
-    const firstWrappedFunctionInput = wrappedFunctionInputs[0];
-    if (firstWrappedFunctionInput == null) {
+    const firstInput = rawInputs[0];
+    if (firstInput == null) {
       inputs = {};
-    } else if (wrappedFunctionInputs.length > 1) {
-      inputs = { args: wrappedFunctionInputs };
+    } else if (rawInputs.length > 1) {
+      inputs = { args: rawInputs };
     } else if (
-      typeof firstWrappedFunctionInput === "object" &&
-      !Array.isArray(firstWrappedFunctionInput) &&
+      typeof firstInput === "object" &&
+      !Array.isArray(firstInput) &&
       // eslint-disable-next-line no-instanceof/no-instanceof
-      !(firstWrappedFunctionInput instanceof Date)
+      !(firstInput instanceof Date)
     ) {
-      inputs = firstWrappedFunctionInput;
+      inputs = firstInput;
     } else {
-      inputs = { input: firstWrappedFunctionInput };
-    }
-
-    if ("root" in currentRunTree) {
-      Object.assign(currentRunTree, { ...ensuredConfig });
+      inputs = { input: firstInput };
     }
 
     currentRunTree.inputs = inputs;
@@ -70,7 +53,7 @@ export function traceable<Inputs extends any[], Output>(
     const initialError = currentRunTree.error;
 
     try {
-      const rawOutput = await wrappedFunc(...wrappedFunctionInputs);
+      const rawOutput = await wrappedFunc(currentRunTree, ...rawInputs);
       const outputs: KVMap =
         typeof rawOutput === "object" &&
         rawOutput != null &&
@@ -85,7 +68,7 @@ export function traceable<Inputs extends any[], Output>(
       } else {
         currentRunTree.end_time = Date.now();
       }
-      return [rawOutput, currentRunTree];
+      return rawOutput;
     } catch (error) {
       if (initialError === currentRunTree.error) {
         await currentRunTree.end(initialOutputs, String(error));
