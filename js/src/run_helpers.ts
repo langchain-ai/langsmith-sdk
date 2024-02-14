@@ -17,10 +17,13 @@ export function traceable<WrappedFunc extends (...args: any[]) => any>(
   type Output = Awaited<ReturnType<WrappedFunc>>;
 
   const traceableFunc: TraceableFunction<Inputs, Output> = async (
-    inputRunTree: RunTree | RunTreeConfig,
-    ...rawInputs: Inputs
+    ...args: [...Inputs, RunTree | RunTreeConfig]
   ): Promise<Output> => {
     let currentRunTree: RunTree;
+
+    const inputRunTree: RunTree | RunTreeConfig = args[args.length - 1];
+    const rawInputs = args.slice(0, args.length - 1) as Inputs;
+
     const ensuredConfig: RunTreeConfig = {
       name: wrappedFunc.name || "<lambda>",
       ...config,
@@ -82,8 +85,7 @@ export function traceable<WrappedFunc extends (...args: any[]) => any>(
 }
 
 export type TraceableFunction<Inputs extends unknown[], Output> = (
-  runTree: RunTree,
-  ...rawInputs: Inputs
+  ...inputs: [...Inputs, runTree: RunTree | RunTreeConfig]
 ) => Promise<Output>;
 
 export function isTraceableFunction(
