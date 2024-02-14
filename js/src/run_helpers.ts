@@ -91,7 +91,7 @@ export function traceable<WrappedFunc extends (...args: any[]) => any>(
 }
 
 export type TraceableFunction<Inputs extends unknown[], Output> = (
-  ...inputs: [...Inputs, runTree: RunTree | RunTreeConfig]
+  ...inputs: [...params: Inputs, runTree: RunTree | RunTreeConfig]
 ) => Promise<Output>;
 
 export function isTraceableFunction(
