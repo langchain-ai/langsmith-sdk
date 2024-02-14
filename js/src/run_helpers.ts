@@ -1,4 +1,4 @@
-import { RunTree, RunTreeConfig } from "./run_trees.js";
+import { RunTree, RunTreeConfig, isRunTree } from "./run_trees.js";
 import { KVMap } from "./schemas.js";
 
 export type TraceableFunction<I, O> = (
@@ -13,69 +13,96 @@ export function isTraceableFunction(
   return typeof x === "function" && "langsmith:traceable" in x;
 }
 
-export const traceable = (params: RunTreeConfig) => {
-  return <I, O>(func: (rawInput: I, parentRun: RunTree | null) => O) => {
-    async function wrappedFunc(
-      rawInput: I,
-      parentRun: RunTree | { root: RunTree } | null
+export function traceable<Inputs extends any[], Output>(
+  wrappedFunc: (...inputs: Inputs) => Output,
+  config?: RunTreeConfig
+) {
+  let boundParentRunTree: RunTree | undefined;
+  const traceableFunc = async (
+    ...rawInputs: Inputs | [RunTree, ...Inputs]
+  ): Promise<Output> => {
+    let parentRunTree: RunTree | undefined = boundParentRunTree;
+    let wrappedFunctionInputs: Inputs;
+
+    if (isRunTree(rawInputs[0])) {
+      [parentRunTree, ...wrappedFunctionInputs] = rawInputs as [
+        RunTree,
+        ...Inputs
+      ];
+    } else {
+      wrappedFunctionInputs = rawInputs as Inputs;
+    }
+    if (parentRunTree == null) {
+      return wrappedFunc(...wrappedFunctionInputs);
+    }
+    let inputs: KVMap;
+    const firstWrappedFunctionInput = wrappedFunctionInputs[0];
+    if (firstWrappedFunctionInput == null) {
+      inputs = {};
+    } else if (wrappedFunctionInputs.length > 1) {
+      inputs = { args: wrappedFunctionInputs };
+    } else if (
+      typeof firstWrappedFunctionInput === "object" &&
+      !Array.isArray(firstWrappedFunctionInput) &&
+      // eslint-disable-next-line no-instanceof/no-instanceof
+      !(firstWrappedFunctionInput instanceof Date)
     ) {
-      if (parentRun == null) {
-        return await func(rawInput, parentRun);
-      }
-
-      const inputs: KVMap =
-        typeof rawInput === "object" && rawInput != null
-          ? rawInput
-          : { input: rawInput };
-
-      const currentRun: RunTree =
-        "root" in parentRun
-          ? parentRun.root
-          : await parentRun.createChild({
-              ...params,
-              inputs,
-            });
-
-      if ("root" in parentRun) {
-        Object.assign(currentRun, { ...params, inputs });
-      }
-
-      const initialOutputs = currentRun.outputs;
-      const initialError = currentRun.error;
-
-      try {
-        const rawOutput = await func(rawInput, currentRun);
-        const outputs: KVMap =
-          typeof rawOutput === "object" &&
-          rawOutput != null &&
-          !Array.isArray(rawOutput)
-            ? rawOutput
-            : { outputs: rawOutput };
-
-        if (initialOutputs === currentRun.outputs) {
-          await currentRun.end(outputs);
-        } else {
-          currentRun.end_time = Date.now();
-        }
-
-        return rawOutput;
-      } catch (error) {
-        if (initialError === currentRun.error) {
-          await currentRun.end(initialOutputs, String(error));
-        } else {
-          currentRun.end_time = Date.now();
-        }
-
-        throw error;
-      } finally {
-        await currentRun.postRun();
-      }
+      inputs = firstWrappedFunctionInput;
+    } else {
+      inputs = { input: firstWrappedFunctionInput };
     }
 
-    Object.defineProperty(wrappedFunc, "langsmith:traceable", {
-      value: params,
-    });
+    const ensuredConfig = { name: "traced_function", config };
 
-    return wrappedFunc;
+    const currentRunTree: RunTree =
+      "root" in parentRunTree
+        ? (parentRunTree.root as RunTree)
+        : await parentRunTree.createChild({
+            ...ensuredConfig,
+            inputs,
+          });
+
+    if ("root" in parentRunTree) {
+      Object.assign(currentRunTree, { ...ensuredConfig, inputs });
+    }
+
+    const initialOutputs = currentRunTree.outputs;
+    const initialError = currentRunTree.error;
+
+    try {
+      const rawOutput = await wrappedFunc(...wrappedFunctionInputs);
+      const outputs: KVMap =
+        typeof rawOutput === "object" &&
+        rawOutput != null &&
+        !Array.isArray(rawOutput) &&
+        // eslint-disable-next-line no-instanceof/no-instanceof
+        !(rawOutput instanceof Date)
+          ? rawOutput
+          : { outputs: rawOutput };
+
+      if (initialOutputs === currentRunTree.outputs) {
+        await currentRunTree.end(outputs);
+      } else {
+        currentRunTree.end_time = Date.now();
+      }
+      return rawOutput;
+    } catch (error) {
+      if (initialError === currentRunTree.error) {
+        await currentRunTree.end(initialOutputs, String(error));
+      } else {
+        currentRunTree.end_time = Date.now();
+      }
+
+      throw error;
+    } finally {
+      await currentRunTree.postRun();
+    }
   };
-};
+  traceableFunc.setParentRunTree = (parent: RunTree) => {
+    boundParentRunTree = parent;
+  };
+  Object.defineProperty(wrappedFunc, "langsmith:traceable", {
+    value: config,
+  });
+  return traceableFunc;
+}
