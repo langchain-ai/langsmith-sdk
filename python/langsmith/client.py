@@ -1239,8 +1239,8 @@ class Client:
     def list_runs(
         self,
         *,
-        project_id: Optional[ID_TYPE] = None,
-        project_name: Optional[str] = None,
+        project_id: Optional[Union[ID_TYPE, Sequence[ID_TYPE]]] = None,
+        project_name: Optional[Union[str, Sequence[str]]] = None,
         run_type: Optional[str] = None,
         reference_example_id: Optional[ID_TYPE] = None,
         query: Optional[str] = None,
@@ -1257,9 +1257,9 @@ class Client:
         Parameters
         ----------
         project_id : UUID or None, default=None
-            The ID of the project to filter by.
+            The ID(s) of the project to filter by.
         project_name : str or None, default=None
-            The name of the project to filter by.
+            The name(s) of the project to filter by.
         run_type : str or None, default=None
             The type of the runs to filter by.
         reference_example_id : UUID or None, default=None
@@ -1288,12 +1288,20 @@ class Client:
         Run
             The runs.
         """
+        project_ids = []
+        if isinstance(project_id, (uuid.UUID, str)):
+            project_ids.append(project_id)
+        elif isinstance(project_id, list):
+            project_ids.extend(project_id)
         if project_name is not None:
-            if project_id is not None:
-                raise ValueError("Only one of project_id or project_name may be given")
-            project_id = self.read_project(project_name=project_name).id
+            if isinstance(project_name, str):
+                project_name = [project_name]
+            project_ids.extend(
+                [self.read_project(project_name=name).id for name in project_name]
+            )
+
         body_query: Dict[str, Any] = {
-            "session": [project_id] if project_id else None,
+            "session": project_ids if project_ids else None,
             "run_type": run_type,
             "reference_example": (
                 [reference_example_id] if reference_example_id else None

@@ -45,8 +45,8 @@ interface ClientConfig {
 }
 
 interface ListRunsParams {
-  projectId?: string;
-  projectName?: string;
+  projectId?: string | string[];
+  projectName?: string | string[];
   executionOrder?: number;
   parentRunId?: string;
   referenceExampleId?: string;
@@ -818,15 +818,23 @@ export class Client {
     filter,
     limit,
   }: ListRunsParams): AsyncIterable<Run> {
-    let projectId_ = projectId;
+    let projectIds: string[] = [];
+    if (projectId) {
+      projectIds = Array.isArray(projectId) ? projectId : [projectId];
+    }
     if (projectName) {
-      if (projectId) {
-        throw new Error("Only one of projectId or projectName may be given");
-      }
-      projectId_ = (await this.readProject({ projectName })).id;
+      const projectNames = Array.isArray(projectName)
+        ? projectName
+        : [projectName];
+      const projectIds_ = await Promise.all(
+        projectNames.map((name) =>
+          this.readProject({ projectName: name }).then((project) => project.id)
+        )
+      );
+      projectIds.push(...projectIds_);
     }
     const body = {
-      session: projectId_ ? [projectId_] : null,
+      session: projectIds.length ? projectIds : null,
       run_type: runType,
       reference_example: referenceExampleId,
       query,
