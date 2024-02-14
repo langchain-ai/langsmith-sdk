@@ -159,7 +159,7 @@ test.concurrent(
     ];
 
     try {
-      const langchainClient = new Client({timeout_ms: 30000});
+      const langchainClient = new Client({ timeout_ms: 30000 });
 
       for (const project of projectNames) {
         if (await langchainClient.hasProject({ projectName: project })) {
@@ -208,7 +208,11 @@ test.concurrent(
 
       for (const project of projectNames) {
         if (await langchainClient.hasProject({ projectName: project })) {
-          await langchainClient.deleteProject({ projectName: project });
+          try {
+            await langchainClient.deleteProject({ projectName: project });
+          } catch (e) {
+            console.debug(e);
+          }
         }
       }
     }

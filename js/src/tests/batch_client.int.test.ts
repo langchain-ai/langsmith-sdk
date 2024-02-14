@@ -57,7 +57,7 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({
       autoBatchTracing: true,
-      callerOptions: { maxRetries: 0},
+      callerOptions: { maxRetries: 0 },
       timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_batch_1";

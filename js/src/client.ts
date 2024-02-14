@@ -1125,6 +1125,7 @@ export class Client {
     projectId?: string;
     projectName?: string;
   }): Promise<boolean> {
+    // TODO: Add a head request
     let path = "/sessions";
     const params = new URLSearchParams();
     if (projectId !== undefined && projectName !== undefined) {
@@ -1141,12 +1142,27 @@ export class Client {
       fetch,
       `${this.apiUrl}${path}?${params}`,
       {
-        method: "HEAD",
+        method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    return response.ok;
+    // consume the response body to release the connection
+    // https://undici.nodejs.org/#/?id=garbage-collection
+    try {
+      const result = await response.json();
+      if (!response.ok) {
+        return false;
+      }
+      // If it's OK and we're querying by name, need to check the list is not empty
+      if (Array.isArray(result)) {
+        return result.length > 0;
+      }
+      // projectId querying
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   public async readProject({
