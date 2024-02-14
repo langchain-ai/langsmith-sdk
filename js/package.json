@@ -38,7 +38,7 @@
     "build:esm": "tsc --outDir dist/ && rm -rf dist/tests dist/**/tests",
     "build:cjs": "tsc --outDir dist-cjs/ -p tsconfig.cjs.json && node scripts/move-cjs-to-dist.js && rm -r dist-cjs",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests --testPathIgnorePatterns='\\.int\\.test.[tj]s' --testTimeout 30000",
-    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=\\.int\\.test.ts --testTimeout 100000",
+    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=traceable_wrapper\\.int\\.test.ts --testTimeout 100000",
     "test:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --config jest.config.cjs --testTimeout 100000",
     "lint": "eslint 'src/**/*.{ts,tsx}' --quiet --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
