@@ -99,6 +99,35 @@ def test_nested_runs(
         pass
 
 
+async def test_list_runs_multi_project(langchain_client: Client):
+    project_names = [
+        "__My Tracer Project - test_list_runs_multi_project",
+        "__My Tracer Project - test_list_runs_multi_project2",
+    ]
+    try:
+        for project_name in project_names:
+            if langchain_client.has_project(project_name):
+                langchain_client.delete_project(project_name=project_name)
+
+        @traceable(run_type="chain")
+        async def my_run(text: str):
+            return "Completed: " + text
+
+        for project_name in project_names:
+            await my_run("foo", langsmith_extra=dict(project_name=project_name))
+        poll_runs_until_count(langchain_client, project_names[0], 1)
+        poll_runs_until_count(langchain_client, project_names[1], 1)
+        runs = list(langchain_client.list_runs(project_name=project_names))
+        assert len(runs) == 2
+        assert all([run.outputs["output"] == "Completed: foo" for run in runs])  # type: ignore
+        assert runs[0].session_id != runs[1].session_id
+
+    finally:
+        for project_name in project_names:
+            if langchain_client.has_project(project_name):
+                langchain_client.delete_project(project_name=project_name)
+
+
 async def test_nested_async_runs(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs"
