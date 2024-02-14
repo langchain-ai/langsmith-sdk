@@ -24,6 +24,8 @@ export function traceable<WrappedFunc extends (...args: any[]) => any>(
     const inputRunTree: RunTree | RunTreeConfig = args[args.length - 1];
     const rawInputs = args.slice(0, args.length - 1) as Inputs;
 
+    // TODO: ensure the last argument actually is a RunTree or RunTreeConfig (with name)
+
     const ensuredConfig: RunTreeConfig = {
       name: wrappedFunc.name || "<lambda>",
       ...config,
