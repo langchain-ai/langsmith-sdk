@@ -1118,6 +1118,37 @@ export class Client {
     return result as TracerSession;
   }
 
+  public async hasProject({
+    projectId,
+    projectName,
+  }: {
+    projectId?: string;
+    projectName?: string;
+  }): Promise<boolean> {
+    let path = "/sessions";
+    const params = new URLSearchParams();
+    if (projectId !== undefined && projectName !== undefined) {
+      throw new Error("Must provide either projectName or projectId, not both");
+    } else if (projectId !== undefined) {
+      assertUuid(projectId);
+      path += `/${projectId}`;
+    } else if (projectName !== undefined) {
+      params.append("name", projectName);
+    } else {
+      throw new Error("Must provide projectName or projectId");
+    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}${path}?${params}`,
+      {
+        method: "HEAD",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    return response.ok;
+  }
+
   public async readProject({
     projectId,
     projectName,

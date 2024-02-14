@@ -1,5 +1,5 @@
 import { Dataset, Run } from "../schemas.js";
-import { FunctionMessage, HumanMessage } from "langchain/schema";
+import { FunctionMessage, HumanMessage } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
