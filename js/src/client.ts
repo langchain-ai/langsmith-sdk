@@ -47,6 +47,7 @@ interface ClientConfig {
 interface ListRunsParams {
   projectId?: string | string[];
   projectName?: string | string[];
+  traceId?: string;
   executionOrder?: number;
   parentRunId?: string;
   referenceExampleId?: string;
@@ -808,6 +809,7 @@ export class Client {
     projectId,
     projectName,
     parentRunId,
+    traceId,
     referenceExampleId,
     startTime,
     executionOrder,
@@ -845,6 +847,7 @@ export class Client {
       error,
       id,
       limit,
+      trace: traceId,
     };
 
     for await (const runs of this._getCursorPaginatedList<Run>(
