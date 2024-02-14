@@ -8,14 +8,18 @@ import { KVMap } from "./schemas.js";
  * @param wrappedFunc Targeted function to be traced
  * @param config Useful for adding additional metadata such as name, tags or providing custom LangSmith client instance
  */
-export function traceable<Inputs extends unknown[], Output>(
-  wrappedFunc: (runTree: RunTree, ...inputs: Inputs) => Output,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function traceable<WrappedFunc extends (...args: any[]) => any>(
+  wrappedFunc: WrappedFunc,
   config?: RunTreeConfig
 ) {
+  type Inputs = InputsWithoutRunTree<Parameters<WrappedFunc>>;
+  type Output = Awaited<ReturnType<WrappedFunc>>;
+
   const traceableFunc: TraceableFunction<Inputs, Output> = async (
     inputRunTree: RunTree | RunTreeConfig,
     ...rawInputs: Inputs
-  ): Promise<Awaited<Output>> => {
+  ): Promise<Output> => {
     let currentRunTree: RunTree;
     const ensuredConfig: RunTreeConfig = {
       name: wrappedFunc.name || "<lambda>",
@@ -46,7 +50,7 @@ export function traceable<Inputs extends unknown[], Output>(
     const initialError = currentRunTree.error;
 
     try {
-      const rawOutput = await wrappedFunc(currentRunTree, ...rawInputs);
+      const rawOutput = await wrappedFunc(...rawInputs, currentRunTree);
       const outputs: KVMap = isKVMap(rawOutput)
         ? rawOutput
         : { outputs: rawOutput };
@@ -98,3 +102,10 @@ function isKVMap(x: unknown): x is Record<string, unknown> {
     !(x instanceof Date)
   );
 }
+
+type InputsWithoutRunTree<Inputs extends unknown[]> = Inputs extends [
+  ...infer Start,
+  RunTree
+]
+  ? Start
+  : Inputs;
