@@ -14,7 +14,7 @@ except ImportError:
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith.client import ID_TYPE, Client
+from langsmith.client import ID_TYPE, RUN_TYPE_T, Client
 
 logger = logging.getLogger(__name__)
 
@@ -104,13 +104,17 @@ class RunTree(ls_schemas.RunBase):
         metadata_.update(metadata)
 
     def add_events(
-        self, events: Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent]]
+        self,
+        events: Union[
+            ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent], Sequence[dict], dict
+        ],
     ) -> None:
         if self.events is None:
             self.events = []
         if isinstance(events, dict):
-            events = [events]
-        self.events.extend(events)
+            self.events.append(events)  # type: ignore[arg-type]
+        else:
+            self.events.extend(events)  # type: ignore[arg-type]
 
     def end(
         self,
@@ -132,7 +136,7 @@ class RunTree(ls_schemas.RunBase):
     def create_child(
         self,
         name: str,
-        run_type: str,
+        run_type: RUN_TYPE_T = "chain",
         *,
         run_id: Optional[ID_TYPE] = None,
         serialized: Optional[Dict] = None,
@@ -147,6 +151,8 @@ class RunTree(ls_schemas.RunBase):
     ) -> RunTree:
         """Add a child run to the run tree."""
         serialized_ = serialized or {"name": name}
+
+        logger.warning(f"session_name: {self.session_name} {self.name}")
         run = RunTree(
             name=name,
             id=run_id or uuid4(),

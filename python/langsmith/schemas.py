@@ -537,3 +537,14 @@ class LangSmithInfo(BaseModel):
 
 
 Example.update_forward_refs()
+
+
+class RunEvent(TypedDict, total=False):
+    """Run event schema."""
+
+    name: str
+    """Type of event."""
+    time: Union[datetime, str]
+    """Time of the event."""
+    kwargs: Optional[Dict[str, Any]]
+    """Additional metadata for the event."""

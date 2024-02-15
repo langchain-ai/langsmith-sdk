@@ -158,11 +158,15 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
     }
 
 
-@pytest.fixture
-def mock_client() -> Client:
+def _get_mock_client() -> Client:
     mock_session = MagicMock()
     client = Client(session=mock_session, api_key="test")
     return client
+
+
+@pytest.fixture
+def mock_client() -> Client:
+    return _get_mock_client()
 
 
 @pytest.mark.parametrize("use_next", [True, False])
@@ -309,6 +313,49 @@ async def test_as_runnable_async_batch(_: MagicMock) -> None:
         assert result == [6, 7]
 
 
+def test_traceable_project_name() -> None:
+    mock_client_ = _get_mock_client()
+
+    @traceable(client=mock_client_, project_name="my foo project")
+    def my_function(a: int, b: int, d: int) -> int:
+        return a + b + d
+
+    my_function(1, 2, 3)
+    time.sleep(0.1)
+    # Inspect the mock_calls and asser tthat "my foo project" is in
+    # the session_name arg of the body
+    mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+    assert 1 <= len(mock_calls) <= 2
+    call = mock_calls[0]
+    assert call.args[0] == "post"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(call.kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["session_name"] == "my foo project"
+
+    # reset
+    mock_client_ = _get_mock_client()
+
+    @traceable(client=mock_client_, project_name="my bar project")
+    def my_other_function(run_tree) -> int:
+        return my_function(1, 2, 3)
+
+    my_other_function()
+    time.sleep(0.1)
+    # Inspect the mock_calls and assert that "my bar project" is in
+    # both all POST runs in the single request. We want to ensure
+    # all runs in a trace are associated with the same project.
+    mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+    assert 1 <= len(mock_calls) <= 2
+    call = mock_calls[0]
+    assert call.args[0] == "post"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(call.kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["session_name"] == "my bar project"
+    assert body["post"][1]["session_name"] == "my bar project"
+
+
 def test_is_traceable_function(mock_client: Client) -> None:
     @traceable(client=mock_client)
     def my_function(a: int, b: int, d: int) -> int:
@@ -355,7 +402,7 @@ def test_traceable_warning() -> None:
     with warnings.catch_warnings(record=True) as warning_records:
         warnings.simplefilter("always")
 
-        @traceable(run_type="invalid_run_type")
+        @traceable(run_type="invalid_run_type")  # type: ignore
         def my_function() -> None:
             pass
 
@@ -373,7 +420,7 @@ def test_traceable_wrong_run_type_pos_arg() -> None:
     with warnings.catch_warnings(record=True) as warning_records:
         warnings.simplefilter("always")
 
-        @traceable("my_run_type")
+        @traceable("my_run_type")  # type: ignore
         def my_function() -> None:
             pass
 
