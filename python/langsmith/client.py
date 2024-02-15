@@ -1077,20 +1077,23 @@ class Client:
 
         self._insert_runtime_env(body["post"])
         logger.debug(f"Batch ingesting {len(body['post'])}, {len(body['patch'])} runs")
-        self.request_with_retries(
-            "post",
-            f"{self.api_url}/runs/batch",
-            request_kwargs={
-                "data": json.dumps(body, default=_serialize_json),
-                "timeout": self.timeout_ms / 1000,
-                "headers": {
-                    **self._headers,
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
+        try:
+            self.request_with_retries(
+                "post",
+                f"{self.api_url}/runs/batch",
+                request_kwargs={
+                    "data": json.dumps(body, default=_serialize_json),
+                    "timeout": self.timeout_ms / 1000,
+                    "headers": {
+                        **self._headers,
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                    },
                 },
-            },
-            to_ignore=(ls_utils.LangSmithConflictError,),
-        )
+                to_ignore=(ls_utils.LangSmithConflictError,),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def update_run(
         self,

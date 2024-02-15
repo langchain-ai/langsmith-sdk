@@ -223,8 +223,10 @@ def _setup_run(
             tags=tags_,
             client=client_,
         )
-
-    new_run.post()
+    try:
+        new_run.post()
+    except Exception as e:
+        logger.error(f"Failed to post run {new_run.id}: {e}")
     response_container = _TraceableContainer(
         new_run=new_run,
         project_name=project_name_,
