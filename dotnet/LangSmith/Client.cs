@@ -16,10 +16,10 @@ namespace LangSmith
 
     public class CreateRunParams
     {
-        public required string Name { get; set; }
-        public required Dictionary<string, object> Inputs { get; set; }
-        public required string RunType { get; set; }
-        public required string Id { get; set; }
+        public string? Name { get; set; }
+        public Dictionary<string, object>? Inputs { get; set; }
+        public string? RunType { get; set; }
+        public string? Id { get; set; }
         public long? StartTime { get; set; }
         public long? EndTime { get; set; }
         public Dictionary<string, object>? Extra { get; set; }
@@ -53,66 +53,79 @@ namespace LangSmith
 
     public class RunResult
     {
-        public string Id { get; set; }
         public bool Success { get; set; }
-        public string Message { get; set; }
+        public string? Message { get; set; }
     }
 
     public class BatchItem
     {
-        public string Type { get; set; } // "create" or "update"
-        public object Item { get; set; }
+        public string? Type { get; set; } // "create" or "update"
+        public object? Item { get; set; }
     }
 
     public class Client
     {
         private readonly HttpClient _httpClient;
         private readonly ClientConfig _config;
-        private readonly ConcurrentQueue<BatchItem> _autoBatchQueue = new();
+        private readonly ConcurrentQueue<BatchItem> _autoBatchQueue = new ConcurrentQueue<BatchItem>();
 
         public Client(ClientConfig config)
         {
-            _config = config;
+            _config = config ?? throw new ArgumentNullException(nameof(config));
             _httpClient = new HttpClient
             {
+                BaseAddress = new Uri(config.ApiUrl),
                 Timeout = TimeSpan.FromMilliseconds(config.TimeoutMs)
             };
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
+            if (!string.IsNullOrWhiteSpace(config.ApiKey))
+            {
+                _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
+            }
         }
 
         public async Task<RunResult> CreateRunAsync(CreateRunParams runParams)
         {
-            if (_config.AutoBatchTracing)
+            if (runParams != null)
             {
-                EnqueueBatchItem(new BatchItem { Type = "create", Item = runParams });
-                TriggerBatchProcessingIfNeeded();
-                return new RunResult { Success = true, Message = "Run creation queued" };
+                if (_config.AutoBatchTracing)
+                {
+                    _autoBatchQueue.Enqueue(new BatchItem { Type = "create", Item = runParams });
+                    TriggerBatchProcessingIfNeeded();
+                    return new RunResult { Success = true, Message = "Run creation queued" };
+                }
+                else
+                {
+                    var path = "/runs";
+                    return await PostAsync<CreateRunParams, RunResult>(path, runParams);
+                }
             }
-            else
-            {
-                await PostAsync("/runs", runParams);
-                return new RunResult { Success = true, Message = "Run creation queued" };
-            }
+
+            throw new ArgumentNullException(nameof(runParams));
         }
 
         public async Task<RunResult> UpdateRunAsync(string runId, UpdateRunParams runParams)
         {
+            if (string.IsNullOrWhiteSpace(runId))
+            {
+                throw new ArgumentNullException(nameof(runId));
+            }
+
+            if (runParams == null)
+            {
+                throw new ArgumentNullException(nameof(runParams));
+            }
+
             if (_config.AutoBatchTracing)
             {
-                EnqueueBatchItem(new BatchItem { Type = "update", Item = runParams });
+                _autoBatchQueue.Enqueue(new BatchItem { Type = "update", Item = runParams });
                 TriggerBatchProcessingIfNeeded();
                 return new RunResult { Success = true, Message = "Run update queued" };
             }
             else
             {
-                await PatchAsync($"/runs/{runId}", runParams);
-                return new RunResult { Success = true, Message = "Run update queued" };
+                var path = $"/runs/{runId}";
+                return await PatchAsync<UpdateRunParams, RunResult>(path, runParams);
             }
-        }
-
-        private void EnqueueBatchItem(BatchItem item)
-        {
-            _autoBatchQueue.Enqueue(item);
         }
 
         private void TriggerBatchProcessingIfNeeded()
@@ -123,34 +136,37 @@ namespace LangSmith
             }
         }
 
-        private async Task<RunResult> PostAsync<T>(string path, T data)
+        private async Task<RunResult> PostAsync<TRequest, TResponse>(string path, TRequest data)
         {
             var jsonContent = JsonSerializer.Serialize(data);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync($"{_config.ApiUrl}{path}", content);
+            var response = await _httpClient.PostAsync(path, content);
             response.EnsureSuccessStatusCode();
             var jsonResponse = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<RunResult>(jsonResponse);
+            var deserializedResponse = JsonSerializer.Deserialize<TResponse>(jsonResponse);
+            return deserializedResponse as RunResult ?? default!;
         }
 
-        private async Task<RunResult> PatchAsync<T>(string path, T data)
+        private async Task<RunResult> PatchAsync<TRequest, TResponse>(string path, TRequest data)
+            where TResponse : RunResult
         {
             var jsonContent = JsonSerializer.Serialize(data);
             var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-            var request = new HttpRequestMessage(HttpMethod.Patch, $"{_config.ApiUrl}{path}") { Content = content };
+            var request = new HttpRequestMessage(HttpMethod.Patch, path) { Content = content };
             var response = await _httpClient.SendAsync(request);
             response.EnsureSuccessStatusCode();
             var jsonResponse = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<RunResult>(jsonResponse);
+            return JsonSerializer.Deserialize<TResponse>(jsonResponse) ?? default!;
         }
 
         private async Task ProcessAutoBatchQueueAsync()
         {
-            // Temporary lists to hold batched items
-            List<CreateRunParams> createBatchList = new();
-            List<UpdateRunParams> updateBatchList = new();
+            var batchRequest = new
+            {
+                post = new List<CreateRunParams>(),
+                patch = new List<UpdateRunParams>()
+            };
 
-            // Dequeue items while the queue is not empty
             while (_autoBatchQueue.TryDequeue(out var batchItem))
             {
                 switch (batchItem.Type)
@@ -158,55 +174,40 @@ namespace LangSmith
                     case "create":
                         if (batchItem.Item is CreateRunParams createParams)
                         {
-                            createBatchList.Add(createParams);
+                            batchRequest.post.Add(createParams);
                         }
                         break;
                     case "update":
                         if (batchItem.Item is UpdateRunParams updateParams)
                         {
-                            updateBatchList.Add(updateParams);
+                            batchRequest.patch.Add(updateParams);
                         }
                         break;
-                    default:
-                        // Handle error or unexpected item type
-                        break;
                 }
 
-                // Check if we've reached the API's batch size limit or the queue is empty
-                if (createBatchList.Count >= _config.PendingAutoBatchedRunLimit || updateBatchList.Count >= _config.PendingAutoBatchedRunLimit)
+                if (batchRequest.post.Count + batchRequest.patch.Count >= _config.PendingAutoBatchedRunLimit)
                 {
-                    await SendBatchCreate(createBatchList);
-                    await SendBatchUpdate(updateBatchList);
-                    createBatchList.Clear();
-                    updateBatchList.Clear();
+                    await SendBatchRequest(batchRequest);
+                    batchRequest.post.Clear();
+                    batchRequest.patch.Clear();
                 }
             }
 
-            // Process any remaining items in the batch lists
-            if (createBatchList.Any() || updateBatchList.Any())
+            if (batchRequest.post.Any() || batchRequest.patch.Any())
             {
-                await SendBatchCreate(createBatchList);
-                await SendBatchUpdate(updateBatchList);
+                await SendBatchRequest(batchRequest);
             }
         }
 
-        private async Task SendBatchCreate(List<CreateRunParams> createBatchList)
+        private async Task SendBatchRequest(dynamic batchRequest)
         {
-            if (!createBatchList.Any()) return;
+            if (!batchRequest.post.Any() && !batchRequest.patch.Any())
+            {
+                return;
+            }
 
-            // Assuming the API has an endpoint for batch creating runs
-            var path = "/runs/batch/create";
-            await PostAsync(path, createBatchList);
-        }
-
-        private async Task SendBatchUpdate(List<UpdateRunParams> updateBatchList)
-        {
-            if (updateBatchList.Count == 0) return;
-
-            // Assuming the API has an endpoint for batch updating runs
-            var path = "/runs/batch/update";
-            await PostAsync(path, updateBatchList);
+            var path = "/runs/batch";
+            await PostAsync<dynamic, RunResult>(path, batchRequest);
         }
     }
 }
-
