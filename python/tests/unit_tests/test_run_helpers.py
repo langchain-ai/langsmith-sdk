@@ -191,7 +191,7 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
             results = list(genout)
         assert results == expected
     # Wait for batcher
-    time.sleep(0.1)
+    time.sleep(0.25)
     # check the mock_calls
     mock_calls = mock_client.session.request.mock_calls  # type: ignore
     assert 1 <= len(mock_calls) <= 2
@@ -223,7 +223,7 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
             results = [item async for item in genout]
         assert results == expected
         # Wait for batcher
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.25)
         # check the mock_calls
         mock_calls = mock_client.session.request.mock_calls  # type: ignore
         assert 1 <= len(mock_calls) <= 2
@@ -321,7 +321,7 @@ def test_traceable_project_name() -> None:
         return a + b + d
 
     my_function(1, 2, 3)
-    time.sleep(0.1)
+    time.sleep(0.25)
     # Inspect the mock_calls and asser tthat "my foo project" is in
     # the session_name arg of the body
     mock_calls = mock_client_.session.request.mock_calls  # type: ignore
@@ -341,7 +341,7 @@ def test_traceable_project_name() -> None:
         return my_function(1, 2, 3)
 
     my_other_function()
-    time.sleep(0.1)
+    time.sleep(0.25)
     # Inspect the mock_calls and assert that "my bar project" is in
     # both all POST runs in the single request. We want to ensure
     # all runs in a trace are associated with the same project.
