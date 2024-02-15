@@ -30,7 +30,7 @@ runs:
     - name: Install dependencies
       run: |
         poetry install --with dev
-        pip install -U langchain
+        poetry run pip install -U langchain
       shell: bash
       working-directory: python
 

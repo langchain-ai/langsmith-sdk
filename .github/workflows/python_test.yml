@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --with dev,lint
-          pip install -U langchain
+          poetry run pip install -U langchain
       - name: Analysing the code with our lint
         run: make lint
 

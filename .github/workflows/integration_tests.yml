@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --with dev
-          pip install -U langchain
+          poetry run pip install -U langchain
       - name: Run Python integration tests
         uses: ./.github/actions/python-integration-tests
         with:
