@@ -3452,9 +3452,9 @@ kleur@^3.0.3:
   integrity sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==
 
 langsmith@~0.0.48:
-  version "0.0.68"
-  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.0.68.tgz#8748d3203d348cc19e5ee4ddeef908964a62e21a"
-  integrity sha512-bxaJndEhUFDfv5soWKxONrLMZaVZfS+G4smJl3WYQlsEph8ierG3QbJfx1PEwl40TD0aFBjzq62usUX1UOCjuA==
+  version "0.0.70"
+  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.0.70.tgz#797be2b26da18843a94a802b6a73c91b72e8042b"
+  integrity sha512-QFHrzo/efBowGPCxtObv7G40/OdwqQfGshavMbSJtHBgX+OMqnn4lCMqVeEwTdyue4lEcpwAsGNg5Vty91YIyw==
   dependencies:
     "@types/uuid" "^9.0.1"
     commander "^10.0.1"
