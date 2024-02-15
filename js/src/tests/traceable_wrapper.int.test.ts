@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { FakeStreamingLLM } from "@langchain/core/utils/testing";
 import { Client } from "../client.js";
-import { traceable } from "../run_helpers.js";
+import { traceable } from "../traceable.js";
 // import { RunTree } from "../run_trees.js";
 
 async function deleteProject(langchainClient: Client, projectName: string) {

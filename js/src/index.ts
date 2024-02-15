@@ -10,11 +10,5 @@ export type {
 
 export { RunTree, type RunTreeConfig } from "./run_trees.js";
 
-export {
-  traceable,
-  type TraceableFunction,
-  isTraceableFunction,
-} from "./run_helpers.js";
-
 // Update using yarn bump-version
 export const __version__ = "0.0.69-rc0";

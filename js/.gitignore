@@ -37,9 +37,9 @@ Chinook_Sqlite.sql
 /run_trees.cjs
 /run_trees.js
 /run_trees.d.ts
-/run_helpers.cjs
-/run_helpers.js
-/run_helpers.d.ts
+/traceables.cjs
+/traceables.js
+/traceables.d.ts
 /evaluation.cjs
 /evaluation.js
 /evaluation.d.ts

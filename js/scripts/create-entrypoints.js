@@ -9,7 +9,7 @@ import * as path from "path";
 const entrypoints = {
   client: "client",
   run_trees: "run_trees",
-  run_helpers: "run_helpers",
+  traceables: "traceables",
   evaluation: "evaluation/index",
   schemas: "schemas",
 };
