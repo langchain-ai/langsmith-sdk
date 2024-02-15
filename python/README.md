@@ -316,7 +316,7 @@ client.chat.completions.create(
 
 Oftentimes, you use the OpenAI client inside of other functions.
 You can get nested traces by using this wrapped client and decorating those functions with `@traceable`.
-See [this documentation](faq/logging_and_viewing) for more documentation how to use this decorator
+See [this documentation](https://docs.smith.langchain.com/tracing/faq/logging_and_viewing) for more documentation how to use this decorator
 
 ```python
 from langsmith import traceable
