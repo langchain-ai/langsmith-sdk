@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { FakeStreamingLLM } from "@langchain/core/utils/testing";
 import { Client } from "../client.js";
 import { traceable } from "../traceable.js";
