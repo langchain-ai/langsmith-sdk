@@ -223,8 +223,10 @@ def _setup_run(
             tags=tags_,
             client=client_,
         )
-
-    new_run.post()
+    try:
+        new_run.post()
+    except Exception as e:
+        logger.error(f"Failed to post run {new_run.id}: {e}")
     response_container = _TraceableContainer(
         new_run=new_run,
         project_name=project_name_,
@@ -238,6 +240,16 @@ def _setup_run(
 
 
 R = TypeVar("R", covariant=True)
+
+_VALID_RUN_TYPES = {
+    "tool",
+    "chain",
+    "llm",
+    "retriever",
+    "embedding",
+    "prompt",
+    "parser",
+}
 
 
 @runtime_checkable
@@ -298,6 +310,17 @@ def traceable(
         if args and isinstance(args[0], str)
         else (kwargs.get("run_type") or "chain")
     )
+    if run_type not in _VALID_RUN_TYPES:
+        warnings.warn(
+            f"Unrecognized run_type: {run_type}. Must be one of: {_VALID_RUN_TYPES}."
+            f" Did you mean @traceable(name='{run_type}')?"
+        )
+    if len(args) > 1:
+        warnings.warn(
+            "The `traceable()` decorator only accepts one positional argument, "
+            "which should be the run_type. All other arguments should be passed "
+            "as keyword arguments."
+        )
     extra_outer = kwargs.get("extra") or {}
     name = kwargs.get("name")
     metadata = kwargs.get("metadata")
