@@ -89,6 +89,7 @@ Langsmith's `traceable` wrapper function makes it easy to trace any function or 
 
 ### OpenAI SDK
 
+<!-- markdown-link-check-disable -->
 The easiest ways to trace calls from the [OpenAI SDK](https://platform.openai.com/docs/api-reference) with LangSmith
 is using the `traceable` wrapper function available in LangSmith 0.1.0 and up.
 

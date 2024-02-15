@@ -282,6 +282,7 @@ LangSmith easily integrates with your favorite LLM framework.
 
 ## OpenAI SDK
 
+<!-- markdown-link-check-disable -->
 We provide a convenient wrapper for the [OpenAI SDK](https://platform.openai.com/docs/api-reference).
 
 In order to use, you first need to set your LangSmith API key.
