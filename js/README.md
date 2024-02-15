@@ -71,21 +71,261 @@ console.log(response);
 
 ### Logging Traces Outside LangChain
 
-_Note: this API is experimental and may change in the future_
-
 You can still use the LangSmith development platform without depending on any
 LangChain code. You can connect either by setting the appropriate environment variables,
 or by directly specifying the connection information in the RunTree.
 
 1. **Copy the environment variables from the Settings Page and add them to your application.**
 
-```typescript
-process.env["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"; // or your own server
-process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>";
-// process.env["LANGCHAIN_PROJECT"] = "My Project Name"; // Optional: "default" is used if not set
+```shell
+export LANGCHAIN_API_KEY=<YOUR-LANGSMITH-API-KEY>
+# export LANGCHAIN_PROJECT="My Project Name" #  Optional: "default" is used if not set
+# export LANGCHAIN_ENDPOINT=https://api.smith.langchain.com # or your own server
 ```
 
-2. **Log traces using a RunTree.**
+## Integrations
+
+Langsmith's `traceable` wrapper function makes it easy to trace any function or LLM call in your own favorite framework. Below are some examples.
+
+### OpenAI SDK
+
+<!-- markdown-link-check-disable -->
+The easiest ways to trace calls from the [OpenAI SDK](https://platform.openai.com/docs/api-reference) with LangSmith
+is using the `traceable` wrapper function available in LangSmith 0.1.0 and up.
+
+In order to use, you first need to set your LangSmith API key:
+
+```shell
+export LANGCHAIN_API_KEY=<your-api-key>
+```
+
+Next, you will need to install the LangSmith SDK and the OpenAI SDK:
+
+```shell
+npm install langsmith openai
+```
+
+After that, initialize your OpenAI client:
+
+```ts
+import { OpenAI } from "openai";
+
+const client = new OpenAI();
+```
+
+Then, you can wrap the client methods you want to use by passing it to the `traceable` function like this:
+
+```ts
+import { traceable } from "langsmith/traceable";
+
+const createCompletion = traceable(
+  openai.chat.completions.create.bind(openai.chat.completions),
+  { name: "OpenAI Chat Completion", run_type: "llm" }
+);
+```
+
+Note the use of `.bind` to preserve the function's context. The `run_type` field in the extra config object
+marks the function as an LLM call, and enables token usage tracking for OpenAI.
+
+This new method takes the same exact arguments and has the same return type as the original method,
+but will log everything to LangSmith!
+
+```ts
+await createCompletion({
+  model: "gpt-3.5-turbo",
+  messages: [{ content: "Hi there!", role: "user" }],
+});
+```
+
+```
+{
+  id: 'chatcmpl-8sOWEOYVyehDlyPcBiaDtTxWvr9v6',
+  object: 'chat.completion',
+  created: 1707974654,
+  model: 'gpt-3.5-turbo-0613',
+  choices: [
+    {
+      index: 0,
+      message: { role: 'assistant', content: 'Hello! How can I help you today?' },
+      logprobs: null,
+      finish_reason: 'stop'
+    }
+  ],
+  usage: { prompt_tokens: 10, completion_tokens: 9, total_tokens: 19 },
+  system_fingerprint: null
+}
+```
+
+This also works for streaming:
+
+```ts
+const stream = await createCompletion({
+  model: "gpt-3.5-turbo",
+  stream: true,
+  messages: [{ content: "Hi there!", role: "user" }],
+});
+```
+
+```ts
+for await (const chunk of stream) {
+  console.log(chunk);
+}
+```
+
+Oftentimes, you use the OpenAI client inside of other functions or as part of a longer
+sequence. You can automatically get nested traces by using this wrapped method
+within other functions wrapped with `traceable`.
+
+```ts
+const nestedTrace = traceable(async (text: string) => {
+  const completion = await createCompletion({
+    model: "gpt-3.5-turbo",
+    messages: [{ content: text, role: "user" }],
+  });
+  return completion;
+});
+
+await nestedTrace("Why is the sky blue?");
+```
+
+```
+{
+  "id": "chatcmpl-8sPToJQLLVepJvyeTfzZMOMVIKjMo",
+  "object": "chat.completion",
+  "created": 1707978348,
+  "model": "gpt-3.5-turbo-0613",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The sky appears blue because of a phenomenon known as Rayleigh scattering. The Earth's atmosphere is composed of tiny molecules, such as nitrogen and oxygen, which are much smaller than the wavelength of visible light. When sunlight interacts with these molecules, it gets scattered in all directions. However, shorter wavelengths of light (blue and violet) are scattered more compared to longer wavelengths (red, orange, and yellow). \n\nAs a result, when sunlight passes through the Earth's atmosphere, the blue and violet wavelengths are scattered in all directions, making the sky appear blue. This scattering of shorter wavelengths is also responsible for the vibrant colors observed during sunrise and sunset, when the sunlight has to pass through a thicker portion of the atmosphere, causing the longer wavelengths to dominate the scattered light."
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 13,
+    "completion_tokens": 154,
+    "total_tokens": 167
+  },
+  "system_fingerprint": null
+}
+```
+
+:::tip
+[Click here](https://smith.langchain.com/public/4af46ef6-b065-46dc-9cf0-70f1274edb01/r) to see an example LangSmith trace of the above.
+:::
+
+## Next.js
+
+You can use the `traceable` wrapper function in Next.js apps to wrap arbitrary functions much like in the example above.
+
+One neat trick you can use for Next.js and other similar server frameworks is to wrap the entire exported handler for a route
+to group traces for the any sub-runs. Here's an example:
+
+```ts
+import { NextRequest, NextResponse } from "next/server";
+
+import { OpenAI } from "openai";
+import { traceable } from "langsmith/traceable";
+
+export const runtime = "edge";
+
+const handler = traceable(
+  async function () {
+    const openai = new OpenAI();
+    const createCompletion = traceable(
+      openai.chat.completions.create.bind(openai.chat.completions),
+      { name: "OpenAI Chat Completion", run_type: "llm" }
+    );
+
+    const completion = await createCompletion({
+      model: "gpt-3.5-turbo",
+      messages: [{ content: "Why is the sky blue?", role: "user" }],
+    });
+
+    const response1 = completion.choices[0].message.content;
+
+    const completion2 = await createCompletion({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { content: "Why is the sky blue?", role: "user" },
+        { content: response1, role: "assistant" },
+        { content: "Cool thank you!", role: "user" },
+      ],
+    });
+
+    const response2 = completion2.choices[0].message.content;
+
+    return {
+      text: response2,
+    };
+  },
+  {
+    name: "Simple Next.js handler",
+  }
+);
+
+export async function POST(req: NextRequest) {
+  const result = await handler();
+  return NextResponse.json(result);
+}
+```
+
+The two OpenAI calls within the handler will be traced with appropriate inputs, outputs,
+and token usage information.
+
+:::tip
+[Click here](https://smith.langchain.com/public/faaf26ad-8c59-4622-bcfe-b7d896733ca6/r) to see an example LangSmith trace of the above.
+:::
+
+## Vercel AI SDK
+
+The [Vercel AI SDK](https://sdk.vercel.ai/docs) contains integrations with a variety of model providers.
+Here's an example of how you can trace outputs in a Next.js handler:
+
+```ts
+import { traceable } from 'langsmith/traceable';
+import { OpenAIStream, StreamingTextResponse } from 'ai';
+
+// Note: There are no types for the Mistral API client yet.
+import MistralClient from '@mistralai/mistralai';
+
+const client = new MistralClient(process.env.MISTRAL_API_KEY || '');
+
+export async function POST(req: Request) {
+  // Extract the `messages` from the body of the request
+  const { messages } = await req.json();
+
+  const mistralChatStream = traceable(
+    client.chatStream.bind(client),
+    {
+      name: "Mistral Stream",
+      run_type: "llm",
+    }
+  );
+
+  const response = await mistralChatStream({
+    model: 'mistral-tiny',
+    maxTokens: 1000,
+    messages,
+  });
+
+  // Convert the response into a friendly text-stream. The Mistral client responses are
+  // compatible with the Vercel AI SDK OpenAIStream adapter.
+  const stream = OpenAIStream(response as any);
+
+  // Respond with the stream
+  return new StreamingTextResponse(stream);
+}
+```
+
+See the [AI SDK docs](https://sdk.vercel.ai/docs) for more examples.
+
+
+#### Alternatives: **Log traces using a RunTree.**
 
 A RunTree tracks your application. Each RunTree object is required to have a name and run_type. These and other important attributes are as follows:
 
@@ -189,7 +429,9 @@ await parentRun.end({
 await parentRun.patchRun();
 ```
 
-### Create a Dataset from Existing Runs
+## Evaluation
+
+####  Create a Dataset from Existing Runs
 
 Once your runs are stored in LangSmith, you can convert them into a dataset.
 For this example, we will do so using the Client, but you can also do this using

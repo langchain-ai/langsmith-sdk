@@ -3,7 +3,7 @@
 This repository contains the Python and Javascript SDK's for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
 LangSmith helps your team debug, evaluate, and monitor your language models and intelligent agents. It works
-with any LLM Application, including a native integration with the [LangChain Python](https://github.com/hwchase17/langchain) and [LangChain JS](https://github.com/hwchase17/langchainjs) open source libraries.
+with any LLM Application, including a native integration with the [LangChain Python](https://github.com/langchain-ai/langchain) and [LangChain JS](https://github.com/langchain-ai/langchainjs) open source libraries.
 
 LangSmith is developed and maintained by [LangChain](https://langchain.com/), the company behind the LangChain framework.
 
@@ -19,7 +19,7 @@ export LANGCHAIN_API_KEY=ls_...
 
 Then start tracing your app:
 
-```
+```python
 import openai
 from langsmith import traceable
 from langsmith.wrappers import wrap_openai
@@ -41,6 +41,42 @@ export LANGCHAIN_API_KEY=ls_...
 ```
 
 Then start tracing your app!
+
+```javascript
+import { traceable } from "langsmith/traceable";
+import { OpenAI } from "openai";
+
+const client = new OpenAI();
+
+const createCompletion = traceable(
+  openai.chat.completions.create.bind(openai.chat.completions),
+  { name: "OpenAI Chat Completion", run_type: "llm" }
+);
+
+await createCompletion({
+  model: "gpt-3.5-turbo",
+  messages: [{ content: "Hi there!", role: "user" }],
+});
+```
+
+```
+{
+  id: 'chatcmpl-8sOWEOYVyehDlyPcBiaDtTxWvr9v6',
+  object: 'chat.completion',
+  created: 1707974654,
+  model: 'gpt-3.5-turbo-0613',
+  choices: [
+    {
+      index: 0,
+      message: { role: 'assistant', content: 'Hello! How can I help you today?' },
+      logprobs: null,
+      finish_reason: 'stop'
+    }
+  ],
+  usage: { prompt_tokens: 10, completion_tokens: 9, total_tokens: 19 },
+  system_fingerprint: null
+}
+```
 
 ## Cookbook
 

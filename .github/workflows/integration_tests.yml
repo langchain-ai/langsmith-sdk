@@ -40,7 +40,9 @@ jobs:
       - name: Install poetry
         run: pipx install poetry==1.4.2
       - name: Install dependencies
-        run: poetry install --with dev
+        run: |
+          poetry install --with dev
+          poetry run pip install -U langchain
       - name: Run Python integration tests
         uses: ./.github/actions/python-integration-tests
         with:

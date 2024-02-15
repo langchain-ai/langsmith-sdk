@@ -51,7 +51,7 @@ test.concurrent(
   "Test post and patch run",
   async () => {
     const projectName = `__test_run_tree`;
-    const langchainClient = new Client({});
+    const langchainClient = new Client({ timeout_ms: 30000 });
     try {
       await langchainClient.readProject({ projectName });
       await langchainClient.deleteProject({ projectName });
