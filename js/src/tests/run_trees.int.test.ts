@@ -43,7 +43,7 @@ async function pollRunsUntilCount(
       }
     },
     120_000, // Wait up to 120 seconds
-    3000 // every 3 second
+    5000 // every 5 second
   );
 }
 
