@@ -17,7 +17,7 @@ except ImportError:
     from pydantic import Field, root_validator, validator
 
 from langsmith import utils
-from langsmith.client import ID_TYPE, Client
+from langsmith.client import ID_TYPE, RUN_TYPE_T, Client
 from langsmith.schemas import RunBase
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ class RunTree(RunBase):
     def create_child(
         self,
         name: str,
-        run_type: str,
+        run_type: RUN_TYPE_T = "chain",
         *,
         run_id: Optional[ID_TYPE] = None,
         serialized: Optional[Dict] = None,

@@ -355,7 +355,7 @@ def test_traceable_warning() -> None:
     with warnings.catch_warnings(record=True) as warning_records:
         warnings.simplefilter("always")
 
-        @traceable(run_type="invalid_run_type")
+        @traceable(run_type="invalid_run_type")  # type: ignore
         def my_function() -> None:
             pass
 
@@ -373,7 +373,7 @@ def test_traceable_wrong_run_type_pos_arg() -> None:
     with warnings.catch_warnings(record=True) as warning_records:
         warnings.simplefilter("always")
 
-        @traceable("my_run_type")
+        @traceable("my_run_type")  # type: ignore
         def my_function() -> None:
             pass
 

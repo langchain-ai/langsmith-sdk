@@ -32,7 +32,8 @@ from typing import (
     runtime_checkable,
 )
 
-from langsmith import client, run_trees, utils
+from langsmith import client as ls_client
+from langsmith import run_trees, utils
 
 if TYPE_CHECKING:
     from langchain.schema.runnable import Runnable
@@ -94,14 +95,14 @@ def _get_inputs(
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
-    reference_example_id: Optional[client.ID_TYPE]
+    reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
     run_tree: Optional[run_trees.RunTree]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
-    run_id: Optional[client.ID_TYPE]
-    client: Optional[client.Client]
+    run_id: Optional[ls_client.ID_TYPE]
+    client: Optional[ls_client.Client]
 
 
 class _TraceableContainer(TypedDict, total=False):
@@ -141,13 +142,13 @@ def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
 
 def _setup_run(
     func: Callable,
-    run_type: str,
+    run_type: ls_client.RUN_TYPE_T,
     extra_outer: dict,
     langsmith_extra: Optional[LangSmithExtra] = None,
     name: Optional[str] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
-    client: Optional[client.Client] = None,
+    client: Optional[ls_client.Client] = None,
     args: Any = None,
     kwargs: Any = None,
 ) -> _TraceableContainer:
@@ -272,12 +273,12 @@ def traceable(
 
 @overload
 def traceable(
-    run_type: str = "chain",
+    run_type: ls_client.RUN_TYPE_T = "chain",
     *,
     name: Optional[str] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
-    client: Optional[client.Client] = None,
+    client: Optional[ls_client.Client] = None,
     extra: Optional[Dict] = None,
     reduce_fn: Optional[Callable] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
@@ -305,7 +306,7 @@ def traceable(
                 called, and the run itself will be stuck in a pending state.
 
     """
-    run_type = (
+    run_type: ls_client.RUN_TYPE_T = (
         args[0]
         if args and isinstance(args[0], str)
         else (kwargs.get("run_type") or "chain")
@@ -582,7 +583,7 @@ def traceable(
 @contextlib.contextmanager
 def trace(
     name: str,
-    run_type: str,
+    run_type: ls_client.RUN_TYPE_T = "chain",
     *,
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
