@@ -273,7 +273,7 @@ export class Client {
 
   private sampledPostUuids = new Set();
 
-  private autoBatchTracing = false;
+  private autoBatchTracing = true;
 
   private batchEndpointSupported?: boolean;
 
