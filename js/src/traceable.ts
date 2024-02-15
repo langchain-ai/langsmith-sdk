@@ -7,6 +7,7 @@ const asyncLocalStorage = new AsyncLocalStorage<RunTree>();
 
 export type RunTreeLike = RunTree;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type TraceableFunction<Inputs extends any[], Output> = (
   ...rawInputs: Inputs | [RunTreeLike, ...Inputs]
 ) => Promise<Output>;
