@@ -2,14 +2,14 @@ import { Client } from "../client.js";
 import { traceable } from "../run_helpers.js";
 import { RunTree } from "../run_trees.js";
 
-// async function deleteProject(langchainClient: Client, projectName: string) {
-//   try {
-//     await langchainClient.readProject({ projectName });
-//     await langchainClient.deleteProject({ projectName });
-//   } catch (e) {
-//     // Pass
-//   }
-// }
+async function deleteProject(langchainClient: Client, projectName: string) {
+  try {
+    await langchainClient.readProject({ projectName });
+    await langchainClient.deleteProject({ projectName });
+  } catch (e) {
+    // Pass
+  }
+}
 
 test.concurrent(
   "Test traceable wrapper",
@@ -22,7 +22,7 @@ test.concurrent(
       (a: string, b: number) => {
         return a + b;
       },
-      { name: "testinger" }
+      { name: "add_value" }
     );
 
     expect(
@@ -39,7 +39,7 @@ test.concurrent(
     const entryTraceable = traceable(
       (complex: { value: string }, runTree: RunTree) =>
         addValueTraceable(complex.value, 1, runTree),
-      { name: "nested_testinger" }
+      { name: "run_with_nesting" }
     );
 
     expect(
@@ -56,7 +56,7 @@ test.concurrent(
       )
     ).toBe("testing1");
 
-    // await deleteProject(langchainClient, projectName);
+    await deleteProject(langchainClient, projectName);
   },
   180_000
 );

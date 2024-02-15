@@ -4,11 +4,18 @@ import { KVMap } from "./schemas.js";
 type TraceableLastArg = RunTree | { config: Partial<RunTreeConfig> } | "root";
 
 /**
- * Higher-order function for creating or adding a run to a run tree.
- * The returned function will now expect the first argument to be a run tree
+ * Higher-order function that takes function as input and returns a
+ * "TraceableFunction" - a wrapped version of the input that
+ * automatically handles tracing.
+ *
+ * The returned TraceableFunction expects the final argument to be a run tree,
+ * or the string "root" for root runs. Traceable functions can
+ * call other traceable functions internally, and should pass their run
+ * tree down to enable nested tracing.
  *
  * @param wrappedFunc Targeted function to be traced
- * @param config Useful for adding additional metadata such as name, tags or providing custom LangSmith client instance
+ * @param config Additional metadata such as name, tags or providing
+ *     a custom LangSmith client instance
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function traceable<WrappedFunc extends (...args: any[]) => any>(
