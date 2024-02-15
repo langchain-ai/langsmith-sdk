@@ -179,7 +179,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     });
   };
 
-  Object.defineProperty(wrappedFunc, "langsmith:traceable", {
+  Object.defineProperty(traceableFunc, "langsmith:traceable", {
     value: config,
   });
 
