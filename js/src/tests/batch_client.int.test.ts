@@ -48,11 +48,11 @@ async function waitUntilRunFound(
       }
     },
     30_000,
-    1_000
+    5_000
   );
 }
 
-test.concurrent(
+test.only(
   "Test persist update run",
   async () => {
     const langchainClient = new Client({

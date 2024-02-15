@@ -68,7 +68,7 @@ async function waitUntilRunFound(
       }
     },
     180_000,
-    1_000
+    5_000
   );
 }
 
