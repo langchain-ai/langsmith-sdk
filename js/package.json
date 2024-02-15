@@ -11,6 +11,9 @@
     "run_trees.cjs",
     "run_trees.js",
     "run_trees.d.ts",
+    "traceable.cjs",
+    "traceable.js",
+    "traceable.d.ts",
     "evaluation.cjs",
     "evaluation.js",
     "evaluation.d.ts",
@@ -110,6 +113,11 @@
       "types": "./run_trees.d.ts",
       "import": "./run_trees.js",
       "require": "./run_trees.cjs"
+    },
+    "./traceable": {
+      "types": "./traceable.d.ts",
+      "import": "./traceable.js",
+      "require": "./traceable.cjs"
     },
     "./evaluation": {
       "types": "./evaluation.d.ts",
