@@ -31,7 +31,17 @@ jobs:
         run: cd js && yarn run build
       - name: Check version
         run: cd js && yarn run check-version
+      - name: Check NPM version
+        id: check_npm_version
+        run: |
+          cd js
+          if yarn run check-npm-version; then
+            echo "::set-output name=should_publish::true"
+          else
+            echo "::set-output name=should_publish::false"
+          fi
       - name: Publish package to NPM
+        if: steps.check_npm_version.outputs.should_publish == 'true'
         run: |
           cd js
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc

@@ -45,8 +45,9 @@ interface ClientConfig {
 }
 
 interface ListRunsParams {
-  projectId?: string;
-  projectName?: string;
+  projectId?: string | string[];
+  projectName?: string | string[];
+  traceId?: string;
   executionOrder?: number;
   parentRunId?: string;
   referenceExampleId?: string;
@@ -808,6 +809,7 @@ export class Client {
     projectId,
     projectName,
     parentRunId,
+    traceId,
     referenceExampleId,
     startTime,
     executionOrder,
@@ -818,15 +820,23 @@ export class Client {
     filter,
     limit,
   }: ListRunsParams): AsyncIterable<Run> {
-    let projectId_ = projectId;
+    let projectIds: string[] = [];
+    if (projectId) {
+      projectIds = Array.isArray(projectId) ? projectId : [projectId];
+    }
     if (projectName) {
-      if (projectId) {
-        throw new Error("Only one of projectId or projectName may be given");
-      }
-      projectId_ = (await this.readProject({ projectName })).id;
+      const projectNames = Array.isArray(projectName)
+        ? projectName
+        : [projectName];
+      const projectIds_ = await Promise.all(
+        projectNames.map((name) =>
+          this.readProject({ projectName: name }).then((project) => project.id)
+        )
+      );
+      projectIds.push(...projectIds_);
     }
     const body = {
-      session: projectId_ ? [projectId_] : null,
+      session: projectIds.length ? projectIds : null,
       run_type: runType,
       reference_example: referenceExampleId,
       query,
@@ -837,6 +847,7 @@ export class Client {
       error,
       id,
       limit,
+      trace: traceId,
     };
 
     for await (const runs of this._getCursorPaginatedList<Run>(
@@ -1108,6 +1119,53 @@ export class Client {
       );
     }
     return result as TracerSession;
+  }
+
+  public async hasProject({
+    projectId,
+    projectName,
+  }: {
+    projectId?: string;
+    projectName?: string;
+  }): Promise<boolean> {
+    // TODO: Add a head request
+    let path = "/sessions";
+    const params = new URLSearchParams();
+    if (projectId !== undefined && projectName !== undefined) {
+      throw new Error("Must provide either projectName or projectId, not both");
+    } else if (projectId !== undefined) {
+      assertUuid(projectId);
+      path += `/${projectId}`;
+    } else if (projectName !== undefined) {
+      params.append("name", projectName);
+    } else {
+      throw new Error("Must provide projectName or projectId");
+    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}${path}?${params}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    // consume the response body to release the connection
+    // https://undici.nodejs.org/#/?id=garbage-collection
+    try {
+      const result = await response.json();
+      if (!response.ok) {
+        return false;
+      }
+      // If it's OK and we're querying by name, need to check the list is not empty
+      if (Array.isArray(result)) {
+        return result.length > 0;
+      }
+      // projectId querying
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   public async readProject({
