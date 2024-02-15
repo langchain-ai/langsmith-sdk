@@ -39,6 +39,30 @@ export type TraceableFunction<Func extends (...args: any[]) => any> =
     ? UnionToIntersection<
         WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4] | [A5, R5]>
       >
+    : Func extends {
+        (...args: infer A1): infer R1;
+        (...args: infer A2): infer R2;
+        (...args: infer A3): infer R3;
+        (...args: infer A4): infer R4;
+      }
+    ? UnionToIntersection<
+        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4]>
+      >
+    : Func extends {
+        (...args: infer A1): infer R1;
+        (...args: infer A2): infer R2;
+        (...args: infer A3): infer R3;
+      }
+    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3]>>
+    : Func extends {
+        (...args: infer A1): infer R1;
+        (...args: infer A2): infer R2;
+      }
+    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2]>>
+    : Func extends {
+        (...args: infer A1): infer R1;
+      }
+    ? UnionToIntersection<WrapArgReturnPair<[A1, R1]>>
     : never;
 
 const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
