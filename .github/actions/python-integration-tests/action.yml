@@ -28,7 +28,9 @@ runs:
       working-directory: python
 
     - name: Install dependencies
-      run: poetry install --with dev
+      run: |
+        poetry install --with dev
+        poetry run pip install -U langchain
       shell: bash
       working-directory: python
 
