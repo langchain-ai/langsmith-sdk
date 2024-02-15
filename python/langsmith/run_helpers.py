@@ -239,6 +239,16 @@ def _setup_run(
 
 R = TypeVar("R", covariant=True)
 
+_VALID_RUN_TYPES = {
+    "tool",
+    "chain",
+    "llm",
+    "retriever",
+    "embedding",
+    "prompt",
+    "parser",
+}
+
 
 @runtime_checkable
 class SupportsLangsmithExtra(Protocol, Generic[R]):
@@ -247,15 +257,13 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
         *args: Any,
         langsmith_extra: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
-    ) -> R:
-        ...
+    ) -> R: ...
 
 
 @overload
 def traceable(
     func: Callable[..., R],
-) -> Callable[..., R]:
-    ...
+) -> Callable[..., R]: ...
 
 
 @overload
@@ -268,8 +276,7 @@ def traceable(
     client: Optional[client.Client] = None,
     extra: Optional[Dict] = None,
     reduce_fn: Optional[Callable] = None,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
-    ...
+) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
 
 
 def traceable(
@@ -298,6 +305,11 @@ def traceable(
         if args and isinstance(args[0], str)
         else (kwargs.get("run_type") or "chain")
     )
+    if run_type not in _VALID_RUN_TYPES:
+        warnings.warn(
+            f"Unrecognized run_type: {run_type}. Must be one of: {_VALID_RUN_TYPES}."
+            f" Did you mean @traceable(name='{run_type}')?"
+        )
     extra_outer = kwargs.get("extra") or {}
     name = kwargs.get("name")
     metadata = kwargs.get("metadata")
