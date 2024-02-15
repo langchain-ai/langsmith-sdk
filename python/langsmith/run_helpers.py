@@ -32,7 +32,8 @@ from typing import (
     runtime_checkable,
 )
 
-from langsmith import client, run_trees, utils
+from langsmith import client as ls_client
+from langsmith import run_trees, utils
 
 if TYPE_CHECKING:
     from langchain.schema.runnable import Runnable
@@ -94,14 +95,14 @@ def _get_inputs(
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
-    reference_example_id: Optional[client.ID_TYPE]
+    reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
     run_tree: Optional[run_trees.RunTree]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
-    run_id: Optional[client.ID_TYPE]
-    client: Optional[client.Client]
+    run_id: Optional[ls_client.ID_TYPE]
+    client: Optional[ls_client.Client]
 
 
 class _TraceableContainer(TypedDict, total=False):
@@ -114,11 +115,23 @@ class _TraceableContainer(TypedDict, total=False):
     outer_tags: Optional[List[str]]
 
 
+class _ContainerInput(TypedDict, total=False):
+    """Typed response when initializing a run a traceable."""
+
+    extra_outer: Optional[Dict]
+    name: Optional[str]
+    metadata: Optional[Dict[str, Any]]
+    tags: Optional[List[str]]
+    client: Optional[ls_client.Client]
+    reduce_fn: Optional[Callable]
+    project_name: Optional[str]
+    run_type: ls_client.RUN_TYPE_T
+
+
 def _container_end(
     container: _TraceableContainer,
     outputs: Optional[Any] = None,
     error: Optional[str] = None,
-    events: Optional[List[dict]] = None,
 ):
     """End the run."""
     run_tree = container.get("new_run")
@@ -126,7 +139,7 @@ def _container_end(
         # Tracing disabled
         return
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
-    run_tree.end(outputs=outputs_, error=error, events=events)
+    run_tree.end(outputs=outputs_, error=error)
     run_tree.patch()
 
 
@@ -141,17 +154,23 @@ def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
 
 def _setup_run(
     func: Callable,
-    run_type: str,
-    extra_outer: dict,
+    container_input: _ContainerInput,
     langsmith_extra: Optional[LangSmithExtra] = None,
-    name: Optional[str] = None,
-    metadata: Optional[Mapping[str, Any]] = None,
-    tags: Optional[List[str]] = None,
-    client: Optional[client.Client] = None,
     args: Any = None,
     kwargs: Any = None,
 ) -> _TraceableContainer:
-    outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
+    """Create a new run or create_child() if run is passed in kwargs."""
+    extra_outer = container_input.get("extra_outer") or {}
+    name = container_input.get("name")
+    metadata = container_input.get("metadata")
+    tags = container_input.get("tags")
+    client = container_input.get("client")
+    run_type = container_input.get("run_type") or "chain"
+    outer_project = (
+        _PROJECT_NAME.get()
+        or container_input["project_name"]
+        or utils.get_tracer_project()
+    )
     langsmith_extra = langsmith_extra or LangSmithExtra()
     parent_run_ = langsmith_extra.get("run_tree") or _PARENT_RUN_TREE.get()
     if not parent_run_ and not utils.tracing_is_enabled():
@@ -277,9 +296,9 @@ def traceable(
     name: Optional[str] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
-    client: Optional[client.Client] = None,
-    extra: Optional[Dict] = None,
+    client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable] = None,
+    project_name: Optional[str] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
     ...
 
@@ -321,12 +340,17 @@ def traceable(
             "which should be the run_type. All other arguments should be passed "
             "as keyword arguments."
         )
-    extra_outer = kwargs.get("extra") or {}
-    name = kwargs.get("name")
-    metadata = kwargs.get("metadata")
-    tags = kwargs.get("tags")
-    client = kwargs.get("client")
-    reduce_fn = kwargs.get("reduce_fn")
+    reduce_fn = (kwargs.get("reduce_fn"),)
+    container_input = _ContainerInput(
+        # TODO: Deprecate raw extra
+        extra_outer=kwargs.get("extra"),
+        name=kwargs.get("name"),
+        metadata=kwargs.get("metadata"),
+        tags=kwargs.get("tags"),
+        client=kwargs.get("client"),
+        project_name=kwargs.get("project_name"),
+        run_type=run_type,
+    )
 
     def decorator(func: Callable):
         @functools.wraps(func)
@@ -339,13 +363,8 @@ def traceable(
             context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
@@ -375,17 +394,11 @@ def traceable(
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            events: List[dict] = []
             context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
@@ -412,20 +425,20 @@ def traceable(
                     async_gen_result = await async_gen_result
                 async for item in async_gen_result:
                     if run_type == "llm":
-                        events.append(
+                        run_container["new_run"].add_events(
                             {
                                 "name": "new_token",
                                 "time": datetime.datetime.now(
                                     datetime.timezone.utc
                                 ).isoformat(),
                                 "kwargs": {"token": item},
-                            },
+                            }
                         )
                     results.append(item)
                     yield item
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace, events=events)
+                _container_end(run_container, error=stacktrace)
                 raise e
             finally:
                 _PARENT_RUN_TREE.set(context_run)
@@ -443,7 +456,7 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            _container_end(run_container, outputs=function_result, events=events)
+            _container_end(run_container, outputs=function_result)
 
         @functools.wraps(func)
         def wrapper(
@@ -455,13 +468,8 @@ def traceable(
             context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
@@ -492,16 +500,10 @@ def traceable(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
             context_run = _PARENT_RUN_TREE.get()
-            events: List[dict] = []
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
@@ -521,14 +523,14 @@ def traceable(
                     generator_result = func(*args, **kwargs)
                 for item in generator_result:
                     if run_type == "llm":
-                        events.append(
+                        run_container["new_run"].add_events(
                             {
                                 "name": "new_token",
                                 "time": datetime.datetime.now(
                                     datetime.timezone.utc
                                 ).isoformat(),
                                 "kwargs": {"token": item},
-                            },
+                            }
                         )
                     results.append(item)
                     try:
@@ -537,7 +539,7 @@ def traceable(
                         break
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace, events=events)
+                _container_end(run_container, error=stacktrace)
                 raise e
             finally:
                 _PARENT_RUN_TREE.set(context_run)
@@ -555,7 +557,7 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            _container_end(run_container, outputs=function_result, events=events)
+            _container_end(run_container, outputs=function_result)
 
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper

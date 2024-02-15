@@ -4,26 +4,22 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Sequence, Union, cast
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import (  # type: ignore[import]
-        Field,
-        root_validator,
-        validator,
-    )
+    from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
 except ImportError:
     from pydantic import Field, root_validator, validator
 
+from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith.client import ID_TYPE, Client
-from langsmith.schemas import RunBase
 
 logger = logging.getLogger(__name__)
 
 
-class RunTree(RunBase):
+class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
     name: str
@@ -92,13 +88,37 @@ class RunTree(RunBase):
             values["dotted_order"] = current_dotted_order
         return values
 
+    def add_tags(self, tags: Union[Sequence[str], str]) -> None:
+        """Add tags to the run."""
+        if isinstance(tags, str):
+            tags = [tags]
+        if self.tags is None:
+            self.tags = []
+        self.tags.extend(tags)
+
+    def add_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Add metadata to the run."""
+        if self.extra is None:
+            self.extra = {}
+        metadata_: dict = self.extra.setdefault("metadata", {})
+        metadata_.update(metadata)
+
+    def add_events(
+        self, events: Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent]]
+    ) -> None:
+        if self.events is None:
+            self.events = []
+        if isinstance(events, dict):
+            events = [events]
+        self.events.extend(events)
+
     def end(
         self,
         *,
         outputs: Optional[Dict] = None,
         error: Optional[str] = None,
         end_time: Optional[datetime] = None,
-        events: Optional[List[Dict]] = None,
+        events: Optional[Sequence[ls_schemas.RunEvent]] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
         self.end_time = end_time or datetime.now(timezone.utc)
@@ -107,7 +127,7 @@ class RunTree(RunBase):
         if error is not None:
             self.error = error
         if events is not None:
-            self.events = events
+            self.add_events(events)
 
     def create_child(
         self,
