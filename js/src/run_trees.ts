@@ -205,3 +205,11 @@ export class RunTree implements BaseRun {
     await this.client.updateRun(this.id, runUpdate);
   }
 }
+
+export function isRunTree(x?: unknown): x is RunTree {
+  return (
+    x !== undefined &&
+    typeof (x as RunTree).createChild === "function" &&
+    typeof (x as RunTree).postRun === "function"
+  );
+}
