@@ -53,8 +53,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 logger = logging.getLogger(__name__)
-# Filter the Connection pool is full warnings from urllib3
-logging.getLogger("urllib3.connectionpool").addFilter(ls_utils.FilterPoolFullWarning())
+_urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 
 def _is_localhost(url: str) -> bool:
@@ -132,7 +131,7 @@ def _default_retry_config() -> Retry:
     """
     retry_params = dict(
         total=3,
-        status_forcelist=[502, 503, 504, 408, 425, 429],
+        status_forcelist=[502, 503, 504, 408, 425],
         backoff_factor=0.5,
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
@@ -149,7 +148,7 @@ def _default_retry_config() -> Retry:
         # Retry on all methods
         retry_params["allowed_methods"] = None
 
-    return Retry(**retry_params)  # type: ignore
+    return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
 _PRIMITIVE_TYPES = (str, int, float, bool)
@@ -300,13 +299,21 @@ def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
     return outputs
 
 
-def _as_uuid(value: ID_TYPE, var: str) -> uuid.UUID:
+def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
     try:
         return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
     except ValueError as e:
+        var = var or "value"
         raise ls_utils.LangSmithUserError(
             f"{var} must be a valid UUID or UUID string. Got {value}"
         ) from e
+
+
+@functools.lru_cache(maxsize=1)
+def _parse_url(url):
+    parsed_url = urllib_parse.urlparse(url)
+    host = parsed_url.netloc.split(":")[0]
+    return host
 
 
 @dataclass(order=True)
@@ -343,7 +350,7 @@ class Client:
         timeout_ms: Optional[int] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
-        auto_batch_tracing: bool = False,
+        auto_batch_tracing: bool = True,
     ) -> None:
         """Initialize a Client instance.
 
@@ -424,6 +431,10 @@ class Client:
             The string representation of the instance.
         """
         return f"Client (API URL: {self.api_url})"
+
+    @property
+    def _host(self) -> str:
+        return _parse_url(self.api_url)
 
     @property
     def _host_url(self) -> str:
@@ -534,7 +545,10 @@ class Client:
         LangSmithError
             If the request fails.
         """
-
+        logging_filters = [
+            ls_utils.FilterLangSmithRetry(),
+            ls_utils.FilterPoolFullWarning(host=str(self._host)),
+        ]
         retry_on_: Tuple[Type[BaseException], ...] = (
             *(retry_on or []),
             *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
@@ -544,9 +558,10 @@ class Client:
         for idx in range(stop_after_attempt):
             try:
                 try:
-                    response = self.session.request(
-                        request_method, url, stream=False, **request_kwargs
-                    )
+                    with ls_utils.filter_logs(_urllib3_logger, logging_filters):
+                        response = self.session.request(
+                            request_method, url, stream=False, **request_kwargs
+                        )
                     ls_utils.raise_for_status_with_text(response)
                     return response
                 except requests.HTTPError as e:
@@ -839,7 +854,7 @@ class Client:
 
     @staticmethod
     def _run_transform(
-        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
+        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict], update: bool = False
     ) -> dict:
         """
         Transforms the given run object into a dictionary representation.
@@ -862,8 +877,8 @@ class Client:
             run_create["inputs"] = _hide_inputs(run_create["inputs"])
         if "outputs" in run_create:
             run_create["outputs"] = _hide_outputs(run_create["outputs"])
-        if not run_create.get("start_time"):
-            run_create["start_time"] = datetime.datetime.utcnow()
+        if not update and not run_create.get("start_time"):
+            run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
         return run_create
 
     @staticmethod
@@ -890,16 +905,17 @@ class Client:
         if patch:
             sampled = []
             for run in runs:
-                if run["id"] in self._sampled_post_uuids:
+                run_id = _as_uuid(run["id"])
+                if run_id in self._sampled_post_uuids:
                     sampled.append(run)
-                    self._sampled_post_uuids.remove(run["id"])
+                    self._sampled_post_uuids.remove(run_id)
             return sampled
         else:
             sampled = []
             for run in runs:
                 if random.random() < self.tracing_sample_rate:
                     sampled.append(run)
-                    self._sampled_post_uuids.add(run["id"])
+                    self._sampled_post_uuids.add(_as_uuid(run["id"]))
             return sampled
 
     def create_run(
@@ -909,7 +925,7 @@ class Client:
         run_type: str,
         *,
         project_name: Optional[str] = None,
-        revision_id: Optional[ID_TYPE] = None,
+        revision_id: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1022,7 +1038,7 @@ class Client:
             return
         # transform and convert to dicts
         create_dicts = [self._run_transform(run) for run in create or []]
-        update_dicts = [self._run_transform(run) for run in update or []]
+        update_dicts = [self._run_transform(run, update=True) for run in update or []]
         # combine post and patch dicts where possible
         if update_dicts and create_dicts:
             create_by_id = {run["id"]: run for run in create_dicts}
@@ -1060,7 +1076,7 @@ class Client:
             return
 
         self._insert_runtime_env(body["post"])
-
+        logger.debug(f"Batch ingesting {len(body['post'])}, {len(body['patch'])} runs")
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs/batch",
@@ -1085,6 +1101,8 @@ class Client:
         inputs: Optional[Dict] = None,
         outputs: Optional[Dict] = None,
         events: Optional[Sequence[dict]] = None,
+        extra: Optional[Dict] = None,
+        tags: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1103,6 +1121,10 @@ class Client:
             The output values for the run.
         events : Sequence[dict] or None, default=None
             The events for the run.
+        extra : Dict or None, default=None
+            The extra information for the run.
+        tags : List[str] or None, default=None
+            The tags for the run.
         **kwargs : Any
             Kwargs are ignored.
         """
@@ -1116,11 +1138,15 @@ class Client:
             "trace_id": kwargs.pop("trace_id", None),
             "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),
+            "tags": tags,
+            "extra": extra,
         }
         if not self._filter_for_sampling([data], patch=True):
             return
         if end_time is not None:
             data["end_time"] = end_time.isoformat()
+        else:
+            data["end_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if error is not None:
             data["error"] = error
         if inputs is not None:
@@ -1213,9 +1239,10 @@ class Client:
     def list_runs(
         self,
         *,
-        project_id: Optional[ID_TYPE] = None,
-        project_name: Optional[str] = None,
+        project_id: Optional[Union[ID_TYPE, Sequence[ID_TYPE]]] = None,
+        project_name: Optional[Union[str, Sequence[str]]] = None,
         run_type: Optional[str] = None,
+        trace_id: Optional[ID_TYPE] = None,
         reference_example_id: Optional[ID_TYPE] = None,
         query: Optional[str] = None,
         filter: Optional[str] = None,
@@ -1231,11 +1258,13 @@ class Client:
         Parameters
         ----------
         project_id : UUID or None, default=None
-            The ID of the project to filter by.
+            The ID(s) of the project to filter by.
         project_name : str or None, default=None
-            The name of the project to filter by.
+            The name(s) of the project to filter by.
         run_type : str or None, default=None
             The type of the runs to filter by.
+        trace_id : UUID or None, default=None
+            The ID of the trace to filter by.
         reference_example_id : UUID or None, default=None
             The ID of the reference example to filter by.
         query : str or None, default=None
@@ -1262,12 +1291,20 @@ class Client:
         Run
             The runs.
         """
+        project_ids = []
+        if isinstance(project_id, (uuid.UUID, str)):
+            project_ids.append(project_id)
+        elif isinstance(project_id, list):
+            project_ids.extend(project_id)
         if project_name is not None:
-            if project_id is not None:
-                raise ValueError("Only one of project_id or project_name may be given")
-            project_id = self.read_project(project_name=project_name).id
+            if isinstance(project_name, str):
+                project_name = [project_name]
+            project_ids.extend(
+                [self.read_project(project_name=name).id for name in project_name]
+            )
+
         body_query: Dict[str, Any] = {
-            "session": [project_id] if project_id else None,
+            "session": project_ids if project_ids else None,
             "run_type": run_type,
             "reference_example": (
                 [reference_example_id] if reference_example_id else None
@@ -1279,6 +1316,7 @@ class Client:
             "start_time": start_time.isoformat() if start_time else None,
             "error": error,
             "id": run_ids,
+            "trace": trace_id,
             **kwargs,
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}
@@ -3332,7 +3370,6 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         return
     try:
         if not client.info:
-            print(f"no info: {client.info}", file=sys.stderr, flush=True)
             return
     except BaseException as e:
         logger.debug("Error in tracing control thread: %s", e)

@@ -1,14 +1,16 @@
 """Decorator for creating a run tree from functions."""
+
 from __future__ import annotations
 
 import contextlib
 import contextvars
+import datetime
 import functools
 import inspect
 import logging
 import traceback
 import uuid
-from concurrent import futures
+import warnings
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -116,6 +118,7 @@ def _container_end(
     container: _TraceableContainer,
     outputs: Optional[Any] = None,
     error: Optional[str] = None,
+    events: Optional[List[dict]] = None,
 ):
     """End the run."""
     run_tree = container.get("new_run")
@@ -123,7 +126,7 @@ def _container_end(
         # Tracing disabled
         return
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
-    run_tree.end(outputs=outputs_, error=error)
+    run_tree.end(outputs=outputs_, error=error, events=events)
     run_tree.patch()
 
 
@@ -142,7 +145,6 @@ def _setup_run(
     extra_outer: dict,
     langsmith_extra: Optional[LangSmithExtra] = None,
     name: Optional[str] = None,
-    executor: Optional[futures.ThreadPoolExecutor] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
     client: Optional[client.Client] = None,
@@ -219,7 +221,6 @@ def _setup_run(
             project_name=project_name_,
             extra=extra_inner,
             tags=tags_,
-            executor=executor,
             client=client_,
         )
 
@@ -262,7 +263,6 @@ def traceable(
     run_type: str = "chain",
     *,
     name: Optional[str] = None,
-    executor: Optional[futures.ThreadPoolExecutor] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
     client: Optional[client.Client] = None,
@@ -282,8 +282,6 @@ def traceable(
         run_type: The type of run to create. Examples: llm, chain, tool, prompt,
             retriever, etc. Defaults to "chain".
         name: The name of the run. Defaults to the function name.
-        executor: The thread pool executor to use for the run. Defaults to None,
-            which will use the default executor.
         metadata: The metadata to add to the run. Defaults to None.
         tags: The tags to add to the run. Defaults to None.
         client: The client to use for logging the run to LangSmith. Defaults to
@@ -302,7 +300,6 @@ def traceable(
     )
     extra_outer = kwargs.get("extra") or {}
     name = kwargs.get("name")
-    executor = kwargs.get("executor")
     metadata = kwargs.get("metadata")
     tags = kwargs.get("tags")
     client = kwargs.get("client")
@@ -323,7 +320,6 @@ def traceable(
                 langsmith_extra=langsmith_extra,
                 extra_outer=extra_outer,
                 name=name,
-                executor=executor,
                 metadata=metadata,
                 tags=tags,
                 client=client,
@@ -356,6 +352,7 @@ def traceable(
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
+            events: List[dict] = []
             context_run = _PARENT_RUN_TREE.get()
             run_container = _setup_run(
                 func,
@@ -363,7 +360,6 @@ def traceable(
                 langsmith_extra=langsmith_extra,
                 extra_outer=extra_outer,
                 name=name,
-                executor=executor,
                 metadata=metadata,
                 tags=tags,
                 client=client,
@@ -392,11 +388,21 @@ def traceable(
                 if inspect.iscoroutine(async_gen_result):
                     async_gen_result = await async_gen_result
                 async for item in async_gen_result:
+                    if run_type == "llm":
+                        events.append(
+                            {
+                                "name": "new_token",
+                                "time": datetime.datetime.now(
+                                    datetime.timezone.utc
+                                ).isoformat(),
+                                "kwargs": {"token": item},
+                            },
+                        )
                     results.append(item)
                     yield item
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=stacktrace, events=events)
                 raise e
             finally:
                 _PARENT_RUN_TREE.set(context_run)
@@ -414,7 +420,7 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            _container_end(run_container, outputs=function_result)
+            _container_end(run_container, outputs=function_result, events=events)
 
         @functools.wraps(func)
         def wrapper(
@@ -430,7 +436,6 @@ def traceable(
                 langsmith_extra=langsmith_extra,
                 extra_outer=extra_outer,
                 name=name,
-                executor=executor,
                 metadata=metadata,
                 tags=tags,
                 client=client,
@@ -464,20 +469,19 @@ def traceable(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
             context_run = _PARENT_RUN_TREE.get()
+            events: List[dict] = []
             run_container = _setup_run(
                 func,
                 run_type=run_type,
                 langsmith_extra=langsmith_extra,
                 extra_outer=extra_outer,
                 name=name,
-                executor=executor,
                 metadata=metadata,
                 tags=tags,
                 client=client,
                 args=args,
                 kwargs=kwargs,
             )
-
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -493,11 +497,24 @@ def traceable(
                     # around this.
                     generator_result = func(*args, **kwargs)
                 for item in generator_result:
+                    if run_type == "llm":
+                        events.append(
+                            {
+                                "name": "new_token",
+                                "time": datetime.datetime.now(
+                                    datetime.timezone.utc
+                                ).isoformat(),
+                                "kwargs": {"token": item},
+                            },
+                        )
                     results.append(item)
-                    yield item
+                    try:
+                        yield item
+                    except GeneratorExit:
+                        break
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=stacktrace, events=events)
                 raise e
             finally:
                 _PARENT_RUN_TREE.set(context_run)
@@ -515,7 +532,7 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            _container_end(run_container, outputs=function_result)
+            _container_end(run_container, outputs=function_result, events=events)
 
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper
@@ -546,13 +563,20 @@ def trace(
     *,
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
-    executor: Optional[futures.ThreadPoolExecutor] = None,
     project_name: Optional[str] = None,
     run_tree: Optional[run_trees.RunTree] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
+    **kwargs: Any,
 ) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
+    if kwargs:
+        # In case someone was passing an executor before.
+        warnings.warn(
+            "The `trace` context manager no longer supports the following kwargs: "
+            f"{sorted(kwargs.keys())}.",
+            DeprecationWarning,
+        )
     outer_tags = _TAGS.get()
     outer_metadata = _METADATA.get()
     outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
@@ -581,7 +605,6 @@ def trace(
             name=name,
             run_type=run_type,
             extra=extra_outer,
-            executor=executor,
             project_name=project_name_,
             inputs=inputs or {},
             tags=tags_,

@@ -6,6 +6,7 @@ To install:
 
 ```bash
 pip install -U langsmith
+export LANGCHAIN_TRACING_V2=true
 export LANGCHAIN_API_KEY=ls_...
 ```
 
@@ -146,10 +147,7 @@ parent_run = RunTree(
     name="My Chat Bot",
     run_type="chain",
     inputs={"text": "Summarize this morning's meetings."},
-    serialized={},  # Serialized representation of this chain
     # project_name= "Defaults to the LANGCHAIN_PROJECT env var"
-    # api_url= "Defaults to the LANGCHAIN_ENDPOINT env var"
-    # api_key= "Defaults to the LANGCHAIN_API_KEY env var"
 )
 parent_run.post()
 # .. My Chat Bot calls an LLM
@@ -276,6 +274,136 @@ runs = client.list_runs(
 for run in runs:
     client.evaluate_run(run, evaluator)
 ```
+
+
+## Integrations
+
+LangSmith easily integrates with your favorite LLM framework.
+
+## OpenAI SDK
+
+<!-- markdown-link-check-disable -->
+We provide a convenient wrapper for the [OpenAI SDK](https://platform.openai.com/docs/api-reference).
+
+In order to use, you first need to set your LangSmith API key.
+
+```shell
+export LANGCHAIN_API_KEY=<your-api-key>
+```
+
+Next, you will need to install the LangSmith SDK:
+
+```shell
+pip install -U langsmith
+```
+
+After that, you can wrap the OpenAI client:
+
+```python
+from openai import OpenAI
+from langsmith import wrappers
+
+client = wrappers.wrap_openai(OpenAI())
+```
+
+Now, you can use the OpenAI client as you normally would, but now everything is logged to LangSmith!
+
+```python
+client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+)
+```
+
+Oftentimes, you use the OpenAI client inside of other functions.
+You can get nested traces by using this wrapped client and decorating those functions with `@traceable`.
+See [this documentation](https://docs.smith.langchain.com/tracing/faq/logging_and_viewing) for more documentation how to use this decorator
+
+```python
+from langsmith import traceable
+
+@traceable()
+def my_function(text: str):
+    return client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": f"Say {text}"}],
+    )
+
+my_function("hello world")
+```
+
+# Instructor
+
+We provide a convenient integration with [Instructor](https://jxnl.github.io/instructor/), largely by virtue of it essentially just using the OpenAI SDK.
+
+In order to use, you first need to set your LangSmith API key.
+
+```shell
+export LANGCHAIN_API_KEY=<your-api-key>
+```
+
+Next, you will need to install the LangSmith SDK:
+
+```shell
+pip install -U langsmith
+```
+
+After that, you can wrap the OpenAI client:
+
+```python
+from openai import OpenAI
+from langsmith import wrappers
+
+client = wrappers.wrap_openai(OpenAI())
+```
+
+After this, you can patch the OpenAI client using `instructor`:
+
+```python
+import instructor
+
+client = instructor.patch(OpenAI())
+```
+
+Now, you can use `instructor` as you normally would, but now everything is logged to LangSmith!
+
+```python
+from pydantic import BaseModel
+
+
+class UserDetail(BaseModel):
+    name: str
+    age: int
+
+
+user = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    response_model=UserDetail,
+    messages=[
+        {"role": "user", "content": "Extract Jason is 25 years old"},
+    ]
+)
+```
+
+Oftentimes, you use `instructor` inside of other functions.
+You can get nested traces by using this wrapped client and decorating those functions with `@traceable`.
+See [this documentation](https://docs.smith.langchain.com/tracing/faq/logging_and_viewing) for more documentation how to use this decorator
+
+```python
+@traceable()
+def my_function(text: str) -> UserDetail:
+    return client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        response_model=UserDetail,
+        messages=[
+            {"role": "user", "content": f"Extract {text}"},
+        ]
+    )
+
+
+my_function("Jason is 25 years old")
+```
+
 
 ## Additional Documentation
 

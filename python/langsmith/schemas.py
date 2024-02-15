@@ -1,7 +1,8 @@
 """Schemas for the LangSmith API."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import (
     Any,
@@ -56,7 +57,7 @@ class ExampleCreate(ExampleBase):
     """Example create model."""
 
     id: Optional[UUID]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Example(ExampleBase):
@@ -126,7 +127,7 @@ class DatasetCreate(DatasetBase):
     """Dataset create model."""
 
     id: Optional[UUID] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Dataset(DatasetBase):
@@ -290,6 +291,18 @@ class Run(RunBase):
             return f"{self._host_url}{self.app_path}"
         return None
 
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        if self.extra is None or "metadata" not in self.extra:
+            return {}
+        return self.extra["metadata"]
+
+    @property
+    def revision_id(self) -> Optional[UUID]:
+        """Retrieve the revision ID (if any)."""
+        return self.metadata.get("revision_id")
+
 
 class RunLikeDict(TypedDict, total=False):
     """Run-like dictionary, for type-hinting."""
@@ -409,7 +422,7 @@ class TracerSession(BaseModel):
 
     id: UUID
     """The ID of the project."""
-    start_time: datetime = Field(default_factory=datetime.utcnow)
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     """The time the project was created."""
     end_time: Optional[datetime] = None
     """The time the project was ended."""
@@ -501,8 +514,8 @@ class AnnotationQueue(BaseModel):
     id: UUID
     name: str
     description: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tenant_id: UUID
 
 
