@@ -193,7 +193,7 @@ namespace LangSmith
                 }
             }
 
-            if (batchRequest.post.Any() || batchRequest.patch.Any())
+            if (batchRequest.post.Count != 0 || batchRequest.patch.Count != 0)
             {
                 await SendBatchRequest(batchRequest);
             }
