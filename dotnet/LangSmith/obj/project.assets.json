@@ -1,0 +1,66 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {}
+  },
+  "libraries": {},
+  "projectFileDependencyGroups": {
+    "net8.0": []
+  },
+  "packageFolders": {
+    "/Users/wfh/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/Users/wfh/code/lc/langchainplus-sdk/dotnet/LangSmith/LangSmith.csproj",
+      "projectName": "LangSmith",
+      "projectPath": "/Users/wfh/code/lc/langchainplus-sdk/dotnet/LangSmith/LangSmith.csproj",
+      "packagesPath": "/Users/wfh/.nuget/packages/",
+      "outputPath": "/Users/wfh/code/lc/langchainplus-sdk/dotnet/LangSmith/obj/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/Users/wfh/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      }
+    },
+    "frameworks": {
+      "net8.0": {
+        "targetAlias": "net8.0",
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/8.0.102/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}
