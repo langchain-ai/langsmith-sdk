@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { FakeStreamingLLM } from "@langchain/core/utils/testing";
 import { Client } from "../client.js";
 import { traceable } from "../traceable.js";
-// import { RunTree } from "../run_trees.js";
+import { RunTree } from "../run_trees.js";
 
 async function deleteProject(langchainClient: Client, projectName: string) {
   try {
@@ -95,6 +95,15 @@ test.concurrent(
       async (complex: { value: string }) => {
         const result = await nestedAddValueTraceable(complex.value, 1);
         const result2 = await nestedAddValueTraceable(result, 2);
+        await nestedAddValueTraceable(
+          new RunTree({
+            name: "root_nested_add_value",
+            project_name: projectName,
+            client: langchainClient,
+          }),
+          result,
+          2
+        );
         return nestedAddValueTraceable(result2, 3);
       },
       {

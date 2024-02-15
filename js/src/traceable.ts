@@ -49,11 +49,7 @@ export function traceable<Inputs extends any[], Output>(
 
     const previousRunTree = asyncLocalStorage.getStore();
     if (isRunTree(args[0])) {
-      if (args[0].start_time !== undefined) {
-        currentRunTree = await args[0].createChild(ensuredConfig);
-      } else {
-        currentRunTree = args[0];
-      }
+      currentRunTree = args[0];
       rawInputs = args.slice(1) as Inputs;
     } else if (previousRunTree !== undefined) {
       currentRunTree = await previousRunTree.createChild(ensuredConfig);
