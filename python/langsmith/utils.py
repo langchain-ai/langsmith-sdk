@@ -1,13 +1,27 @@
 """Generic utility functions."""
 
+import contextlib
 import enum
 import functools
 import logging
 import os
 import subprocess
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+import threading
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import requests
+from urllib3.util import Retry
 
 from langsmith import schemas as ls_schemas
 
@@ -280,8 +294,57 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 class FilterPoolFullWarning(logging.Filter):
     """Filter urrllib3 warnings logged when the connection pool isn't reused."""
 
+    def __init__(self, name: str = "", host: str = "") -> None:
+        super().__init__(name)
+        self._host = host
+
     def filter(self, record) -> bool:
         """urllib3.connectionpool:Connection pool is full, discarding connection: ..."""
-        return (
-            "Connection pool is full, discarding connection" not in record.getMessage()
-        )
+        msg = record.getMessage()
+        if "Connection pool is full, discarding connection" not in msg:
+            return True
+        return self._host not in msg
+
+
+class FilterLangSmithRetry(logging.Filter):
+    """Filter for retries from this lib."""
+
+    def filter(self, record) -> bool:
+        """Filter retries from this library."""
+        # We re-raise/log manually.
+        msg = record.getMessage()
+        return "LangSmithRetry" not in msg
+
+
+class LangSmithRetry(Retry):
+    """Wrapper to filter logs with this name."""
+
+
+_FILTER_LOCK = threading.RLock()
+
+
+@contextlib.contextmanager
+def filter_logs(
+    logger: logging.Logger, filters: Sequence[logging.Filter]
+) -> Generator[None, None, None]:
+    """
+    Temporarily adds specified filters to a logger.
+
+    Parameters:
+    - logger: The logger to which the filters will be added.
+    - filters: A sequence of logging.Filter objects to be temporarily added
+        to the logger.
+    """
+    with _FILTER_LOCK:
+        for filter in filters:
+            logger.addFilter(filter)
+    # Not actually perfectly thread-safe, but it's only log filters
+    try:
+        yield
+    finally:
+        with _FILTER_LOCK:
+            for filter in filters:
+                try:
+                    logger.removeFilter(filter)
+                except BaseException:
+                    _LOGGER.warning("Failed to remove filter")

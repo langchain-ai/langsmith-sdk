@@ -25,7 +25,7 @@ export function convertToDottedOrderFormat(epoch: number, runId: string) {
 
 export interface RunTreeConfig {
   name: string;
-  run_type: string;
+  run_type?: string;
   id?: string;
   project_name?: string;
   parent_run?: RunTree;
@@ -44,7 +44,7 @@ export interface RunTreeConfig {
 export class RunTree implements BaseRun {
   id: string;
   name: RunTreeConfig["name"];
-  run_type: RunTreeConfig["run_type"];
+  run_type: string;
   project_name: string;
   parent_run?: RunTree;
   child_runs: RunTree[];
@@ -87,6 +87,7 @@ export class RunTree implements BaseRun {
   private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
+      run_type: "chain",
       project_name:
         getEnvironmentVariable("LANGCHAIN_PROJECT") ??
         getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
@@ -168,6 +169,8 @@ export class RunTree implements BaseRun {
       session_name: run.project_name,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
+      trace_id: run.trace_id,
+      dotted_order: run.dotted_order,
     };
     return persistedRun;
   }
@@ -195,8 +198,18 @@ export class RunTree implements BaseRun {
       reference_example_id: this.reference_example_id,
       extra: this.extra,
       events: this.events,
+      dotted_order: this.dotted_order,
+      trace_id: this.trace_id,
     };
 
     await this.client.updateRun(this.id, runUpdate);
   }
+}
+
+export function isRunTree(x?: unknown): x is RunTree {
+  return (
+    x !== undefined &&
+    typeof (x as RunTree).createChild === "function" &&
+    typeof (x as RunTree).postRun === "function"
+  );
 }

@@ -55,6 +55,8 @@ def test_nested_runs(
     if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
+    # We don't require this anymore but we'll use it
+    # to keep testing for backwards compatibility
     executor = ThreadPoolExecutor(max_workers=1)
 
     @traceable(run_type="chain")
@@ -66,7 +68,7 @@ def test_nested_runs(
     def my_llm_run(text: str):
         return f"Completed: {text}"
 
-    @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])
+    @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])  # type: ignore
     def my_chain_run(text: str):
         return my_run(text)
 
@@ -97,6 +99,35 @@ def test_nested_runs(
         pass
 
 
+async def test_list_runs_multi_project(langchain_client: Client):
+    project_names = [
+        "__My Tracer Project - test_list_runs_multi_project",
+        "__My Tracer Project - test_list_runs_multi_project2",
+    ]
+    try:
+        for project_name in project_names:
+            if langchain_client.has_project(project_name):
+                langchain_client.delete_project(project_name=project_name)
+
+        @traceable(run_type="chain")
+        async def my_run(text: str):
+            return "Completed: " + text
+
+        for project_name in project_names:
+            await my_run("foo", langsmith_extra=dict(project_name=project_name))
+        poll_runs_until_count(langchain_client, project_names[0], 1)
+        poll_runs_until_count(langchain_client, project_names[1], 1)
+        runs = list(langchain_client.list_runs(project_name=project_names))
+        assert len(runs) == 2
+        assert all([run.outputs["output"] == "Completed: foo" for run in runs])  # type: ignore
+        assert runs[0].session_id != runs[1].session_id
+
+    finally:
+        for project_name in project_names:
+            if langchain_client.has_project(project_name):
+                langchain_client.delete_project(project_name=project_name)
+
+
 async def test_nested_async_runs(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs"
@@ -120,7 +151,7 @@ async def test_nested_async_runs(langchain_client: Client):
     def my_sync_tool(text: str, *, my_arg: int = 10):
         return f"Completed: {text} {my_arg}"
 
-    @traceable(run_type="chain", executor=executor)
+    @traceable(run_type="chain")  # type: ignore
     async def my_chain_run(text: str):
         return await my_run(text)
 
@@ -179,7 +210,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
 
     executor = ThreadPoolExecutor(max_workers=1)
 
-    @traceable(run_type="chain", executor=executor)
+    @traceable(run_type="chain", executor=executor)  # type: ignore
     async def my_chain_run(text: str, run_tree: RunTree):
         thread_pool = ThreadPoolExecutor(max_workers=3)
         for i in range(2):
@@ -193,12 +224,18 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     executor.shutdown(wait=True)
     poll_runs_until_count(langchain_client, project_name, 17)
     runs = list(langchain_client.list_runs(project_name=project_name))
+    trace_runs = list(langchain_client.list_runs(trace_id=runs[0].trace_id))
+    assert len(trace_runs) == 17
     assert len(runs) == 17
     assert sum([run.run_type == "llm" for run in runs]) == 8
     assert sum([run.name == "async_llm" for run in runs]) == 6
     assert sum([run.name == "my_llm_run" for run in runs]) == 2
     assert sum([run.run_type == "tool" for run in runs]) == 6
     assert sum([run.run_type == "chain" for run in runs]) == 3
+    # sort by dotted_order
+    runs = sorted(runs, key=lambda run: run.dotted_order)
+    trace_runs = sorted(trace_runs, key=lambda run: run.dotted_order)
+    assert runs == trace_runs
     # Check that all instances of async_llm have a parent with
     # the same name (my_tool_run)
     name_to_ids_map = defaultdict(list)
@@ -226,10 +263,7 @@ async def test_context_manager(langchain_client: Client) -> None:
     async def my_llm(prompt: str) -> str:
         return f"LLM {prompt}"
 
-    executor = ThreadPoolExecutor(max_workers=1)
-    with trace(
-        "my_context", "chain", project_name=project_name, executor=executor
-    ) as run_tree:
+    with trace("my_context", "chain", project_name=project_name) as run_tree:
         await my_llm("foo")
         with trace("my_context2", "chain", run_tree=run_tree) as run_tree2:
             runs = [my_llm("baz"), my_llm("qux")]
@@ -238,7 +272,6 @@ async def test_context_manager(langchain_client: Client) -> None:
                 await my_llm("corge")
             await asyncio.gather(*runs)
         run_tree.end(outputs={"End val": "my_context2"})
-    executor.shutdown(wait=True)
     poll_runs_until_count(langchain_client, project_name, 8)
     runs = list(langchain_client.list_runs(project_name=project_name))
     assert len(runs) == 8

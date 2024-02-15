@@ -100,10 +100,10 @@ export class AsyncCaller {
                 }
               }
             },
-            retries: this.maxRetries,
-            randomize: true,
             // If needed we can change some of the defaults here,
             // but they're quite sensible.
+            retries: this.maxRetries,
+            randomize: true,
           }
         ),
       { throwOnTimeout: true }

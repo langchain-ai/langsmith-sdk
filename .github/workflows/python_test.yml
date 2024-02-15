@@ -52,7 +52,9 @@ jobs:
       - name: Install poetry
         run: pipx install poetry==$POETRY_VERSION
       - name: Install dependencies
-        run: poetry install --with dev,lint
+        run: |
+          poetry install --with dev,lint
+          poetry run pip install -U langchain
       - name: Analysing the code with our lint
         run: make lint
 
@@ -72,7 +74,9 @@ jobs:
       - name: Install poetry
         run: pipx install poetry==$POETRY_VERSION
       - name: Install dependencies
-        run: poetry install
+        run: |
+          poetry install --with dev
+          poetry run pip install -U langchain
       - name: Run tests
         run: make tests
         shell: bash
