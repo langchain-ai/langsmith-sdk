@@ -84,7 +84,7 @@ export function traceable<Inputs extends any[], Output>(
           if (isAsyncIterable(rawOutput)) {
             // eslint-disable-next-line no-inner-declarations
             async function* wrapOutputForTracing() {
-              const chunks = [];
+              const chunks: unknown[] = [];
               // TypeScript thinks this is unsafe
               for await (const chunk of rawOutput as AsyncIterable<unknown>) {
                 chunks.push(chunk);
