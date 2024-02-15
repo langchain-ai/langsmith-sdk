@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LangSmith")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4ef2c932ab3c1f3de6e46375db76bf2cc7864028")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d8b863758624f78ace060f4ab866f80d254aa5d7")]
 [assembly: System.Reflection.AssemblyProductAttribute("LangSmith")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LangSmith")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
