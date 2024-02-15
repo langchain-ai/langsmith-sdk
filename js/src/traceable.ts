@@ -8,9 +8,9 @@ const asyncLocalStorage = new AsyncLocalStorage<RunTree>();
 export type RunTreeLike = RunTree;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TraceableFunction<Inputs extends any[], Output> = (
-  ...rawInputs: Inputs | [RunTreeLike, ...Inputs]
-) => Promise<Output>;
+export type TraceableFunction<Func extends (...args: any[]) => any> = (
+  ...rawInputs: Parameters<Func>
+) => Promise<ReturnType<Func>>;
 
 const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   x != null &&
@@ -33,11 +33,14 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
  *     a custom LangSmith client instance
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function traceable<Inputs extends any[], Output>(
-  wrappedFunc: (...args: Inputs) => Output,
-  config?: RunTreeConfig
+export function traceable<Func extends (...args: any[]) => any>(
+  wrappedFunc: Func,
+  config?: Partial<RunTreeConfig>
 ) {
-  const traceableFunc: TraceableFunction<Inputs, Output> = async (
+  type Inputs = Parameters<Func>;
+  type Output = ReturnType<Func>;
+
+  const traceableFunc: TraceableFunction<Func> = async (
     ...args: Inputs | [RunTreeLike, ...Inputs]
   ): Promise<Output> => {
     let currentRunTree: RunTree;
@@ -132,7 +135,7 @@ export function traceable<Inputs extends any[], Output>(
 export function isTraceableFunction(
   x: unknown
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): x is TraceableFunction<any, any> {
+): x is TraceableFunction<any> {
   return typeof x === "function" && "langsmith:traceable" in x;
 }
 
