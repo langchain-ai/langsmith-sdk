@@ -6,6 +6,7 @@ import os
 import time
 from typing import Any
 from unittest.mock import MagicMock, patch
+import warnings
 
 import pytest
 
@@ -348,3 +349,52 @@ def test_is_not_traceable_class_call() -> None:
             pass
 
     assert not is_traceable_function(Foo())
+
+
+def test_traceable_warning() -> None:
+    with warnings.catch_warnings(record=True) as warning_records:
+        warnings.simplefilter("always")
+
+        @traceable(run_type="invalid_run_type")
+        def my_function() -> None:
+            pass
+
+        assert len(warning_records) == 1
+        assert issubclass(warning_records[0].category, UserWarning)
+        assert "Unrecognized run_type: invalid_run_type" in str(
+            warning_records[0].message
+        )
+        assert "Did you mean @traceable(name='invalid_run_type')?" in str(
+            warning_records[0].message
+        )
+
+def test_traceable_wrong_run_type_pos_arg() -> None:
+    with warnings.catch_warnings(record=True) as warning_records:
+        warnings.simplefilter("always")
+
+        @traceable("my_run_type")
+        def my_function() -> None:
+            pass
+
+        assert len(warning_records) == 1
+        assert issubclass(warning_records[0].category, UserWarning)
+        assert "Unrecognized run_type: my_run_type" in str(
+            warning_records[0].message
+        )
+        assert "Did you mean @traceable(name='my_run_type')?" in str(
+            warning_records[0].message
+        )
+
+def test_traceable_too_many_pos_args() -> None:
+    with warnings.catch_warnings(record=True) as warning_records:
+        warnings.simplefilter("always")
+
+        @traceable("chain", "my_function")
+        def my_function() -> None:
+            pass
+
+        assert len(warning_records) == 1
+        assert issubclass(warning_records[0].category, UserWarning)
+        assert "only accepts one positional argument" in str(
+            warning_records[0].message
+        )
