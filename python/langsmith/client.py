@@ -29,6 +29,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -117,6 +118,9 @@ def _is_langchain_hosted(url: str) -> bool:
 
 
 ID_TYPE = Union[uuid.UUID, str]
+RUN_TYPE_T = Literal[
+    "tool", "chain", "llm", "retriever", "embedding", "prompt", "parser"
+]
 
 
 def _default_retry_config() -> Retry:
@@ -922,7 +926,7 @@ class Client:
         self,
         name: str,
         inputs: Dict[str, Any],
-        run_type: str,
+        run_type: RUN_TYPE_T,
         *,
         project_name: Optional[str] = None,
         revision_id: Optional[str] = None,
