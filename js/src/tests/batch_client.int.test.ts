@@ -52,7 +52,7 @@ async function waitUntilRunFound(
   );
 }
 
-test.only(
+test.concurrent(
   "Test persist update run",
   async () => {
     const langchainClient = new Client({
