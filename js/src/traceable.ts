@@ -7,10 +7,39 @@ const asyncLocalStorage = new AsyncLocalStorage<RunTree>();
 
 export type RunTreeLike = RunTree;
 
+type WrapArgReturnPair<Pair> = Pair extends [
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  infer Args extends any[],
+  infer Return
+]
+  ? {
+      (...args: Args): Promise<Return>;
+      (...args: [runTree: RunTreeLike, ...rest: Args]): Promise<Return>;
+    }
+  : never;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TraceableFunction<Func extends (...args: any[]) => any> = (
-  ...rawInputs: Parameters<Func>
-) => Promise<ReturnType<Func>>;
+type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (
+  x: infer I
+) => void
+  ? I
+  : never;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TraceableFunction<Func extends (...args: any[]) => any> =
+  // function overloads are represented as intersections rather than unions
+  // matches the behavior introduced in https://github.com/microsoft/TypeScript/pull/54448
+  Func extends {
+    (...args: infer A1): infer R1;
+    (...args: infer A2): infer R2;
+    (...args: infer A3): infer R3;
+    (...args: infer A4): infer R4;
+    (...args: infer A5): infer R5;
+  }
+    ? UnionToIntersection<
+        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4] | [A5, R5]>
+      >
+    : never;
 
 const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   x != null &&
@@ -40,7 +69,7 @@ export function traceable<Func extends (...args: any[]) => any>(
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
 
-  const traceableFunc: TraceableFunction<Func> = async (
+  const traceableFunc = async (
     ...args: Inputs | [RunTreeLike, ...Inputs]
   ): Promise<Output> => {
     let currentRunTree: RunTree;
@@ -129,7 +158,8 @@ export function traceable<Func extends (...args: any[]) => any>(
   Object.defineProperty(wrappedFunc, "langsmith:traceable", {
     value: config,
   });
-  return traceableFunc;
+
+  return traceableFunc as TraceableFunction<Func>;
 }
 
 export function isTraceableFunction(

@@ -143,6 +143,26 @@ test.concurrent(
     expect(storedRun3.id).toEqual(runId3);
 
     await deleteProject(langchainClient, projectName);
+
+    async function overload(a: string, b: number): Promise<string>;
+    async function overload(config: { a: string; b: number }): Promise<string>;
+    async function overload(
+      ...args: [a: string, b: number] | [config: { a: string; b: number }]
+    ): Promise<string> {
+      if (args.length === 1) {
+        return args[0].a + args[0].b;
+      }
+      return args[0] + args[1];
+    }
+
+    const wrappedOverload = traceable(overload, {
+      name: "wrapped_overload",
+      project_name: projectName,
+      client: langchainClient,
+    });
+
+    expect(await wrappedOverload("testing", 123)).toBe("testing123");
+    expect(await wrappedOverload({ a: "testing", b: 456 })).toBe("testing456");
   },
   180_000
 );
