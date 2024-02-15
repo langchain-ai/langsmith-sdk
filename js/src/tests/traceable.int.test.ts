@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { FakeStreamingLLM } from "@langchain/core/utils/testing";
 import { Client } from "../client.js";
-import { traceable } from "../traceable.js";
+import { isTraceableFunction, traceable } from "../traceable.js";
 import { RunTree } from "../run_trees.js";
 
 async function deleteProject(langchainClient: Client, projectName: string) {
@@ -76,6 +76,7 @@ test.concurrent(
     );
 
     expect(await addValueTraceable("testing", 9)).toBe("testing9");
+    expect(isTraceableFunction(addValueTraceable)).toBe(true);
 
     await waitUntilRunFound(langchainClient, runId, true);
     const storedRun = await langchainClient.readRun(runId);
@@ -116,6 +117,7 @@ test.concurrent(
     );
 
     expect(await entryTraceable({ value: "testing" })).toBe("testing123");
+    expect(isTraceableFunction(entryTraceable)).toBe(true);
 
     await waitUntilRunFound(langchainClient, runId2, true);
     const storedRun2 = await langchainClient.readRun(runId2);
@@ -131,6 +133,7 @@ test.concurrent(
       client: langchainClient,
       id: runId3,
     });
+    expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
     const chunks = [];
 
@@ -163,6 +166,7 @@ test.concurrent(
 
     expect(await wrappedOverload("testing", 123)).toBe("testing123");
     expect(await wrappedOverload({ a: "testing", b: 456 })).toBe("testing456");
+    expect(isTraceableFunction(wrappedOverload)).toBe(true);
   },
   180_000
 );
