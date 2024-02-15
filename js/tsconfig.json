@@ -34,7 +34,7 @@
     "entryPoints": [
       "src/client.ts",
       "src/run_trees.ts",
-      "src/traceables.ts",
+      "src/traceable.ts",
       "src/evaluation/index.ts",
       "src/schemas.ts"
     ]
