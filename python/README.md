@@ -322,7 +322,7 @@ See [this documentation](https://docs.smith.langchain.com/tracing/faq/logging_an
 ```python
 from langsmith import traceable
 
-@traceable()
+@traceable(name="Call OpenAI")
 def my_function(text: str):
     return client.chat.completions.create(
         model="gpt-4",
