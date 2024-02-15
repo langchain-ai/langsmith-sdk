@@ -3,7 +3,7 @@
 This repository contains the Python and Javascript SDK's for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
 LangSmith helps your team debug, evaluate, and monitor your language models and intelligent agents. It works
-with any LLM Application, including a native integration with the [LangChain Python](https://github.com/hwchase17/langchain) and [LangChain JS](https://github.com/hwchase17/langchainjs) open source libraries.
+with any LLM Application, including a native integration with the [LangChain Python](https://github.com/langchain-ai/langchain) and [LangChain JS](https://github.com/langchain-ai/langchainjs) open source libraries.
 
 LangSmith is developed and maintained by [LangChain](https://langchain.com/), the company behind the LangChain framework.
 
