@@ -1,8 +1,13 @@
 {
   "version": 2,
-  "dgSpecHash": "Zr3kAlURx4wPCS2psSXDQ5TzwUewoNav93uSW2hXRmmYyWbKxfgKUaXmbI8RZlskhO6QmjkWJWULybIc0TrNOQ==",
+  "dgSpecHash": "df93G06536s3ge2+qlmdEm7GWMbTNaOK53PMCgtepS50C5ry5DKKaNuLaii2oDhzlWdiCTPJK+vpmFSoSoO3+w==",
   "success": true,
   "projectFilePath": "/Users/wfh/code/lc/langchainplus-sdk/dotnet/LangSmith/LangSmith.csproj",
-  "expectedPackageFiles": [],
+  "expectedPackageFiles": [
+    "/Users/wfh/.nuget/packages/castle.core/5.1.1/castle.core.5.1.1.nupkg.sha512",
+    "/Users/wfh/.nuget/packages/moq/4.20.70/moq.4.20.70.nupkg.sha512",
+    "/Users/wfh/.nuget/packages/nunit/4.0.1/nunit.4.0.1.nupkg.sha512",
+    "/Users/wfh/.nuget/packages/system.diagnostics.eventlog/6.0.0/system.diagnostics.eventlog.6.0.0.nupkg.sha512"
+  ],
   "logs": []
 }

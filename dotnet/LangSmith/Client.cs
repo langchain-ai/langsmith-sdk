@@ -68,8 +68,9 @@ namespace LangSmith
         private readonly HttpClient _httpClient;
         private readonly ClientConfig _config;
         private readonly ConcurrentQueue<BatchItem> _autoBatchQueue = new ConcurrentQueue<BatchItem>();
+        private IConfig @object;
 
-        public Client(ClientConfig config)
+        public Client(ClientConfig config, HttpClient httpClient)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _httpClient = new HttpClient
@@ -81,6 +82,11 @@ namespace LangSmith
             {
                 _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
             }
+        }
+
+        public Client(IConfig @object)
+        {
+            this.@object = @object;
         }
 
         public async Task<RunResult> CreateRunAsync(CreateRunParams runParams)
@@ -132,7 +138,7 @@ namespace LangSmith
         {
             if (_autoBatchQueue.Count >= _config.PendingAutoBatchedRunLimit)
             {
-                Task.Run(async () => await ProcessAutoBatchQueueAsync());
+                Task.Run(ProcessAutoBatchQueueAsync);
             }
         }
 

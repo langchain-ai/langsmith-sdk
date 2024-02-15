@@ -37,6 +37,16 @@
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
+          "dependencies": {
+            "NUnit": {
+              "target": "Package",
+              "version": "[4.0.1, )"
+            },
+            "moq": {
+              "target": "Package",
+              "version": "[4.20.70, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",
