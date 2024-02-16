@@ -46,6 +46,9 @@ Chinook_Sqlite.sql
 /schemas.cjs
 /schemas.js
 /schemas.d.ts
+/wrappers.cjs
+/wrappers.js
+/wrappers.d.ts
 /index.cjs
 /index.js
 /index.d.ts

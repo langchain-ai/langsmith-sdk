@@ -90,6 +90,7 @@ Langsmith's `traceable` wrapper function makes it easy to trace any function or 
 ### OpenAI SDK
 
 <!-- markdown-link-check-disable -->
+
 The easiest ways to trace calls from the [OpenAI SDK](https://platform.openai.com/docs/api-reference) with LangSmith
 is using the `traceable` wrapper function available in LangSmith 0.1.0 and up.
 
@@ -105,72 +106,41 @@ Next, you will need to install the LangSmith SDK and the OpenAI SDK:
 npm install langsmith openai
 ```
 
-After that, initialize your OpenAI client:
+After that, initialize your OpenAI client and wrap the client with `wrapOpenAI` method to enable tracing for Completion and Chat completion API:
 
 ```ts
 import { OpenAI } from "openai";
+import { wrapOpenAI } from "langsmith/wrappers";
 
-const client = new OpenAI();
+const openai = wrapOpenAI(new OpenAI());
+
+await openai.chat.completions.create({
+  model: "gpt-3.5-turbo",
+  messages: [{ content: "Hi there!", role: "user" }],
+});
 ```
 
-Then, you can wrap the client methods you want to use by passing it to the `traceable` function like this:
+Alternatively, you can use the `traceable` function to wrap the client methods you want to use:
 
 ```ts
 import { traceable } from "langsmith/traceable";
+
+const openai = new OpenAI();
 
 const createCompletion = traceable(
   openai.chat.completions.create.bind(openai.chat.completions),
   { name: "OpenAI Chat Completion", run_type: "llm" }
 );
-```
 
-Note the use of `.bind` to preserve the function's context. The `run_type` field in the extra config object
-marks the function as an LLM call, and enables token usage tracking for OpenAI.
-
-This new method takes the same exact arguments and has the same return type as the original method,
-but will log everything to LangSmith!
-
-```ts
 await createCompletion({
   model: "gpt-3.5-turbo",
   messages: [{ content: "Hi there!", role: "user" }],
 });
 ```
 
-```
-{
-  id: 'chatcmpl-8sOWEOYVyehDlyPcBiaDtTxWvr9v6',
-  object: 'chat.completion',
-  created: 1707974654,
-  model: 'gpt-3.5-turbo-0613',
-  choices: [
-    {
-      index: 0,
-      message: { role: 'assistant', content: 'Hello! How can I help you today?' },
-      logprobs: null,
-      finish_reason: 'stop'
-    }
-  ],
-  usage: { prompt_tokens: 10, completion_tokens: 9, total_tokens: 19 },
-  system_fingerprint: null
-}
-```
-
-This also works for streaming:
-
-```ts
-const stream = await createCompletion({
-  model: "gpt-3.5-turbo",
-  stream: true,
-  messages: [{ content: "Hi there!", role: "user" }],
-});
-```
-
-```ts
-for await (const chunk of stream) {
-  console.log(chunk);
-}
-```
+Note the use of `.bind` to preserve the function's context. The `run_type` field in the
+extra config object marks the function as an LLM call, and enables token usage tracking
+for OpenAI.
 
 Oftentimes, you use the OpenAI client inside of other functions or as part of a longer
 sequence. You can automatically get nested traces by using this wrapped method
@@ -178,7 +148,7 @@ within other functions wrapped with `traceable`.
 
 ```ts
 const nestedTrace = traceable(async (text: string) => {
-  const completion = await createCompletion({
+  const completion = await openai.chat.completions.create({
     model: "gpt-3.5-turbo",
     messages: [{ content: text, role: "user" }],
   });
@@ -230,25 +200,22 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { OpenAI } from "openai";
 import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
 
 export const runtime = "edge";
 
 const handler = traceable(
   async function () {
-    const openai = new OpenAI();
-    const createCompletion = traceable(
-      openai.chat.completions.create.bind(openai.chat.completions),
-      { name: "OpenAI Chat Completion", run_type: "llm" }
-    );
+    const openai = wrapOpenAI(new OpenAI());
 
-    const completion = await createCompletion({
+    const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [{ content: "Why is the sky blue?", role: "user" }],
     });
 
     const response1 = completion.choices[0].message.content;
 
-    const completion2 = await createCompletion({
+    const completion2 = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         { content: "Why is the sky blue?", role: "user" },
@@ -287,28 +254,25 @@ The [Vercel AI SDK](https://sdk.vercel.ai/docs) contains integrations with a var
 Here's an example of how you can trace outputs in a Next.js handler:
 
 ```ts
-import { traceable } from 'langsmith/traceable';
-import { OpenAIStream, StreamingTextResponse } from 'ai';
+import { traceable } from "langsmith/traceable";
+import { OpenAIStream, StreamingTextResponse } from "ai";
 
 // Note: There are no types for the Mistral API client yet.
-import MistralClient from '@mistralai/mistralai';
+import MistralClient from "@mistralai/mistralai";
 
-const client = new MistralClient(process.env.MISTRAL_API_KEY || '');
+const client = new MistralClient(process.env.MISTRAL_API_KEY || "");
 
 export async function POST(req: Request) {
   // Extract the `messages` from the body of the request
   const { messages } = await req.json();
 
-  const mistralChatStream = traceable(
-    client.chatStream.bind(client),
-    {
-      name: "Mistral Stream",
-      run_type: "llm",
-    }
-  );
+  const mistralChatStream = traceable(client.chatStream.bind(client), {
+    name: "Mistral Stream",
+    run_type: "llm",
+  });
 
   const response = await mistralChatStream({
-    model: 'mistral-tiny',
+    model: "mistral-tiny",
     maxTokens: 1000,
     messages,
   });
@@ -323,7 +287,6 @@ export async function POST(req: Request) {
 ```
 
 See the [AI SDK docs](https://sdk.vercel.ai/docs) for more examples.
-
 
 #### Alternatives: **Log traces using a RunTree.**
 
@@ -413,7 +376,7 @@ try {
   await childChainRun.end({
     error: `I errored again ${e.message}`,
   });
-  await childChainRun.patchRun(); 
+  await childChainRun.patchRun();
   throw e;
 }
 
@@ -431,7 +394,7 @@ await parentRun.patchRun();
 
 ## Evaluation
 
-####  Create a Dataset from Existing Runs
+#### Create a Dataset from Existing Runs
 
 Once your runs are stored in LangSmith, you can convert them into a dataset.
 For this example, we will do so using the Client, but you can also do this using
