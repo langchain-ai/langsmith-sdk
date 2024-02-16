@@ -4,26 +4,22 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Sequence, Union, cast
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import (  # type: ignore[import]
-        Field,
-        root_validator,
-        validator,
-    )
+    from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
 except ImportError:
     from pydantic import Field, root_validator, validator
 
+from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client
-from langsmith.schemas import RunBase
 
 logger = logging.getLogger(__name__)
 
 
-class RunTree(RunBase):
+class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
     name: str
@@ -48,6 +44,8 @@ class RunTree(RunBase):
     trace_id: UUID = Field(default="", description="The trace id of the run.")
 
     class Config:
+        """Pydantic model configuration."""
+
         arbitrary_types_allowed = True
         allow_population_by_field_name = True
         extra = "allow"
@@ -78,6 +76,7 @@ class RunTree(RunBase):
 
     @root_validator(pre=False)
     def ensure_dotted_order(cls, values: dict) -> dict:
+        """Ensure the dotted order of the run."""
         current_dotted_order = values.get("dotted_order")
         if current_dotted_order and current_dotted_order.strip():
             return values
@@ -92,13 +91,65 @@ class RunTree(RunBase):
             values["dotted_order"] = current_dotted_order
         return values
 
+    def add_tags(self, tags: Union[Sequence[str], str]) -> None:
+        """Add tags to the run."""
+        if isinstance(tags, str):
+            tags = [tags]
+        if self.tags is None:
+            self.tags = []
+        self.tags.extend(tags)
+
+    def add_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Add metadata to the run."""
+        if self.extra is None:
+            self.extra = {}
+        metadata_: dict = self.extra.setdefault("metadata", {})
+        metadata_.update(metadata)
+
+    def add_event(
+        self,
+        events: Union[
+            ls_schemas.RunEvent,
+            Sequence[ls_schemas.RunEvent],
+            Sequence[dict],
+            dict,
+            str,
+        ],
+    ) -> None:
+        """Add an event to the list of events.
+
+        Args:
+            events (Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent],
+                    Sequence[dict], dict, str]):
+                The event(s) to be added. It can be a single event, a sequence
+                    of events,
+                a sequence of dictionaries, a dictionary, or a string.
+
+        Returns:
+            None
+        """
+        if self.events is None:
+            self.events = []
+        if isinstance(events, dict):
+            self.events.append(events)  # type: ignore[arg-type]
+        elif isinstance(events, str):
+            self.events.append(
+                {
+                    "name": "event",
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "message": events,
+                }
+            )
+        else:
+            self.events.extend(events)  # type: ignore[arg-type]
+
     def end(
         self,
         *,
         outputs: Optional[Dict] = None,
         error: Optional[str] = None,
         end_time: Optional[datetime] = None,
-        events: Optional[List[Dict]] = None,
+        events: Optional[Sequence[ls_schemas.RunEvent]] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
         self.end_time = end_time or datetime.now(timezone.utc)
@@ -107,7 +158,7 @@ class RunTree(RunBase):
         if error is not None:
             self.error = error
         if events is not None:
-            self.events = events
+            self.add_event(events)
 
     def create_child(
         self,
@@ -127,6 +178,8 @@ class RunTree(RunBase):
     ) -> RunTree:
         """Add a child run to the run tree."""
         serialized_ = serialized or {"name": name}
+
+        logger.warning(f"session_name: {self.session_name} {self.name}")
         run = RunTree(
             name=name,
             id=run_id or uuid4(),

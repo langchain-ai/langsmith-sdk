@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import (
@@ -50,6 +51,8 @@ class ExampleBase(BaseModel):
     outputs: Optional[Dict[str, Any]] = Field(default=None)
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -101,6 +104,8 @@ class ExampleUpdate(BaseModel):
     outputs: Optional[Dict[str, Any]] = None
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -120,6 +125,8 @@ class DatasetBase(BaseModel):
     data_type: Optional[DataType] = None
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -181,9 +188,12 @@ class RunTypeEnum(str, Enum):
 
 
 class RunBase(BaseModel):
-    """
-    Base Run schema.
-    Contains the fundamental fields to define a run in a system.
+    """Base Run schema.
+
+    A Run is a span representing a single unit of work or operation within your LLM app.
+    This could be a single call to an LLM or chain, to a prompt formatting call,
+    to a runnable lambda invocation. If you are familiar with OpenTelemetry,
+    you can think of a run as a span.
     """
 
     id: UUID
@@ -229,6 +239,27 @@ class RunBase(BaseModel):
 
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
+
+    _lock: threading.Lock = Field(default_factory=threading.Lock)
+
+    class Config:
+        """Configuration class for the schema."""
+
+        underscore_attrs_are_private = True
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        with self._lock:
+            if self.extra is None:
+                self.extra = {}
+            metadata = self.extra.setdefault("metadata", {})
+        return metadata
+
+    @property
+    def revision_id(self) -> Optional[UUID]:
+        """Retrieve the revision ID (if any)."""
+        return self.metadata.get("revision_id")
 
 
 class Run(RunBase):
@@ -291,18 +322,6 @@ class Run(RunBase):
             return f"{self._host_url}{self.app_path}"
         return None
 
-    @property
-    def metadata(self) -> dict[str, Any]:
-        """Retrieve the metadata (if any)."""
-        if self.extra is None or "metadata" not in self.extra:
-            return {}
-        return self.extra["metadata"]
-
-    @property
-    def revision_id(self) -> Optional[UUID]:
-        """Retrieve the revision ID (if any)."""
-        return self.metadata.get("revision_id")
-
 
 class RunLikeDict(TypedDict, total=False):
     """Run-like dictionary, for type-hinting."""
@@ -342,6 +361,17 @@ class RunWithAnnotationQueueInfo(RunBase):
 
 
 class FeedbackSourceBase(BaseModel):
+    """Base class for feedback sources.
+
+    This represents whether feedback is submitted from the API, model, human labeler,
+        etc.
+
+    Attributes:
+        type (str): The type of the feedback source.
+        metadata (Optional[Dict[str, Any]]): Additional metadata for the feedback
+            source.
+    """
+
     type: str
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
@@ -392,6 +422,8 @@ class FeedbackBase(BaseModel):
     """The source of the feedback."""
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -465,8 +497,10 @@ class TracerSession(BaseModel):
 
 
 class TracerSessionResult(TracerSession):
-    """TracerSession schema returned when reading a project
-    by ID. Sessions are also referred to as "Projects" in the UI."""
+    """A project, hydrated with additional information.
+
+    Sessions are also referred to as "Projects" in the UI.
+    """
 
     run_count: Optional[int]
     """The number of runs in the project."""
@@ -492,9 +526,7 @@ class TracerSessionResult(TracerSession):
 
 @runtime_checkable
 class BaseMessageLike(Protocol):
-    """
-    A protocol representing objects similar to BaseMessage.
-    """
+    """A protocol representing objects similar to BaseMessage."""
 
     content: str
     additional_kwargs: Dict
@@ -505,12 +537,34 @@ class BaseMessageLike(Protocol):
 
 
 class DatasetShareSchema(TypedDict, total=False):
+    """Represents the schema for a dataset share.
+
+    Attributes:
+        dataset_id (UUID): The ID of the dataset.
+        share_token (UUID): The token for sharing the dataset.
+        url (str): The URL of the shared dataset.
+    """
+
     dataset_id: UUID
     share_token: UUID
     url: str
 
 
 class AnnotationQueue(BaseModel):
+    """Represents an annotation queue.
+
+    Attributes:
+        id (UUID): The ID of the annotation queue.
+        name (str): The name of the annotation queue.
+        description (Optional[str], optional): The description of the annotation queue.
+            Defaults to None.
+        created_at (datetime, optional): The creation timestamp of the annotation queue.
+            Defaults to the current UTC time.
+        updated_at (datetime, optional): The last update timestamp of the annotation
+             queue. Defaults to the current UTC time.
+        tenant_id (UUID): The ID of the tenant associated with the annotation queue.
+    """
+
     id: UUID
     name: str
     description: Optional[str] = None
@@ -520,6 +574,16 @@ class AnnotationQueue(BaseModel):
 
 
 class BatchIngestConfig(TypedDict, total=False):
+    """Configuration for batch ingestion.
+
+    Attributes:
+        scale_up_qsize_trigger (int): The queue size threshold that triggers scaling up.
+        scale_up_nthreads_limit (int): The maximum number of threads to scale up to.
+        scale_down_nempty_trigger (int): The number of empty threads that triggers
+            scaling down.
+        size_limit (int): The maximum size limit for the batch.
+    """
+
     scale_up_qsize_trigger: int
     scale_up_nthreads_limit: int
     scale_down_nempty_trigger: int
@@ -537,3 +601,14 @@ class LangSmithInfo(BaseModel):
 
 
 Example.update_forward_refs()
+
+
+class RunEvent(TypedDict, total=False):
+    """Run event schema."""
+
+    name: str
+    """Type of event."""
+    time: Union[datetime, str]
+    """Time of the event."""
+    kwargs: Optional[Dict[str, Any]]
+    """Additional metadata for the event."""
