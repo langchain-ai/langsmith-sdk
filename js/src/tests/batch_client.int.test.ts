@@ -57,7 +57,7 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({
       autoBatchTracing: true,
-      callerOptions: { maxRetries: 0 },
+      callerOptions: { maxRetries: 2 },
       timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_batch_1";
@@ -96,7 +96,7 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({
       autoBatchTracing: true,
-      callerOptions: { maxRetries: 0 },
+      callerOptions: { maxRetries: 2 },
       pendingAutoBatchedRunLimit: 2,
       timeout_ms: 30_000,
     });
@@ -142,7 +142,7 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({
       autoBatchTracing: true,
-      callerOptions: { maxRetries: 0 },
+      callerOptions: { maxRetries: 2 },
       timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_batch_with_delay";
@@ -183,7 +183,7 @@ test.concurrent(
   async () => {
     const langchainClient = new Client({
       autoBatchTracing: true,
-      callerOptions: { maxRetries: 0 },
+      callerOptions: { maxRetries: 2 },
       timeout_ms: 30_000,
     });
     const projectName = "__test_persist_update_run_tree";

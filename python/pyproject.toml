@@ -59,10 +59,22 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
 select = [
-  "E", # pycodestyle
-  "F", # pyflakes
-  "I", # isort
+  "E",    # pycodestyle
+  "F",    # pyflakes
+  "I",    # isort
+  "D",    # pydocstyle
+  "D401", # First line should be in imperative mood
 ]
+ignore = [
+  # Relax the convention by _not_ requiring documentation for every function parameter.
+  "D417",
+]
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+"langsmith/cli/*" = ["D"]
 
 [tool.mypy]
 ignore_missing_imports = "True"

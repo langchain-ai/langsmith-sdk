@@ -51,7 +51,7 @@ from langsmith import utils as ls_utils
 from langsmith.evaluation import evaluator as ls_evaluator
 
 if TYPE_CHECKING:
-    import pandas as pd
+    import pandas as pd  # type: ignore
 
 logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
@@ -65,7 +65,7 @@ def _is_localhost(url: str) -> bool:
     url : str
         The URL to check.
 
-    Returns
+    Returns:
     -------
     bool
         True if the URL is localhost, False otherwise.
@@ -105,7 +105,7 @@ def _is_langchain_hosted(url: str) -> bool:
     url : str
         The URL to check.
 
-    Returns
+    Returns:
     -------
     bool
         True if the URL is langchain hosted, False otherwise.
@@ -128,7 +128,7 @@ def _default_retry_config() -> Retry:
 
     If urllib3 version is 1.26 or greater, retry on all methods.
 
-    Returns
+    Returns:
     -------
     Retry
         The default retry configuration.
@@ -237,7 +237,7 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     api_key : str or None
         The API key.
 
-    Raises
+    Raises:
     ------
     LangSmithUserError
         If the API key is not provided when using the hosted service.
@@ -253,7 +253,7 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
 def _get_tracing_sampling_rate() -> float | None:
     """Get the tracing sampling rate.
 
-    Returns
+    Returns:
     -------
     float
         The tracing sampling rate.
@@ -322,6 +322,14 @@ def _parse_url(url):
 
 @dataclass(order=True)
 class TracingQueueItem:
+    """An item in the tracing queue.
+
+    Attributes:
+        priority (str): The priority of the item.
+        action (str): The action associated with the item.
+        item (Any): The item itself.
+    """
+
     priority: str
     action: str
     item: Any = field(compare=False)
@@ -377,7 +385,7 @@ class Client:
             The session to use for requests. If None, a new session will be
             created.
 
-        Raises
+        Raises:
         ------
         LangSmithUserError
             If the API key is not provided when using the hosted service.
@@ -418,7 +426,7 @@ class Client:
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
 
-        Returns
+        Returns:
         -------
         str
             The HTML representation of the instance.
@@ -429,7 +437,7 @@ class Client:
     def __repr__(self) -> str:
         """Return a string representation of the instance with a link to the URL.
 
-        Returns
+        Returns:
         -------
         str
             The string representation of the instance.
@@ -462,7 +470,7 @@ class Client:
     def _headers(self) -> Dict[str, str]:
         """Get the headers for the API request.
 
-        Returns
+        Returns:
         -------
         Dict[str, str]
             The headers for the API request.
@@ -476,7 +484,7 @@ class Client:
     def info(self) -> Optional[ls_schemas.LangSmithInfo]:
         """Get the information about the LangSmith API.
 
-        Returns
+        Returns:
         -------
         Optional[ls_schemas.LangSmithInfo]
             The information about the LangSmith API, or None if the API is
@@ -533,12 +541,12 @@ class Client:
         to_ignore : Sequence[Type[BaseException]] or None, default=None
             The exceptions to ignore / pass on.
 
-        Returns
+        Returns:
         -------
         Response
             The response object.
 
-        Raises
+        Raises:
         ------
         LangSmithAPIError
             If a server error occurs.
@@ -658,7 +666,7 @@ class Client:
         params : dict or None, default=None
             The query parameters.
 
-        Yields
+        Yields:
         ------
         dict
             The items in the paginated list.
@@ -700,7 +708,7 @@ class Client:
             The HTTP request method.
         data_key : str, default="runs"
 
-        Yields
+        Yields:
         ------
         dict
             The items in the paginated list.
@@ -756,12 +764,12 @@ class Client:
         data_type : DataType or None, default=DataType.kv
             The data type of the dataset.
 
-        Returns
+        Returns:
         -------
         Dataset
             The uploaded dataset.
 
-        Raises
+        Raises:
         ------
         ValueError
             If the csv_file is not a string or tuple.
@@ -807,12 +815,12 @@ class Client:
         data_type : DataType or None, default=DataType.kv
             The data type of the dataset.
 
-        Returns
+        Returns:
         -------
         Dataset
             The uploaded dataset.
 
-        Raises
+        Raises:
         ------
         ValueError
             If the csv_file is not a string or tuple.
@@ -860,8 +868,7 @@ class Client:
     def _run_transform(
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict], update: bool = False
     ) -> dict:
-        """
-        Transforms the given run object into a dictionary representation.
+        """Transform the given run object into a dictionary representation.
 
         Args:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
@@ -948,7 +955,7 @@ class Client:
         **kwargs : Any
             Additional keyword arguments.
 
-        Raises
+        Raises:
         ------
         LangSmithUserError
             If the API key is not provided when using the hosted service.
@@ -1013,8 +1020,7 @@ class Client:
         *,
         pre_sampled: bool = False,
     ):
-        """
-        Batch ingest/upsert multiple runs in the Langsmith system.
+        """Batch ingest/upsert multiple runs in the Langsmith system.
 
         Args:
             create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
@@ -1037,7 +1043,6 @@ class Client:
             - The run objects MUST contain the dotted_order and trace_id fields
                 to be accepted by the API.
         """
-
         if not create and not update:
             return
         # transform and convert to dicts
@@ -1192,12 +1197,12 @@ class Client:
         run : Run
             The run to load child runs for.
 
-        Returns
+        Returns:
         -------
         Run
             The run with loaded child runs.
 
-        Raises
+        Raises:
         ------
         LangSmithError
             If a child run has no parent.
@@ -1232,7 +1237,7 @@ class Client:
         load_child_runs : bool, default=False
             Whether to load nested child runs.
 
-        Returns
+        Returns:
         -------
         Run
             The run.
@@ -1293,7 +1298,7 @@ class Client:
         **kwargs : Any
             Additional keyword arguments.
 
-        Yields
+        Yields:
         ------
         Run
             The runs.
@@ -1352,7 +1357,7 @@ class Client:
         project_id : UUID or None, default=None
             The ID of the project.
 
-        Returns
+        Returns:
         -------
         str
             The URL for the run.
@@ -1397,6 +1402,15 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def read_run_shared_link(self, run_id: ID_TYPE) -> Optional[str]:
+        """Retrieve the shared link for a specific run.
+
+        Args:
+            run_id (ID_TYPE): The ID of the run.
+
+        Returns:
+            Optional[str]: The shared link for the run, or None if the link is not
+            available.
+        """
         response = self.session.get(
             f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}/share",
             headers=self._headers,
@@ -1433,6 +1447,20 @@ class Client:
         *,
         dataset_name: Optional[str] = None,
     ) -> ls_schemas.DatasetShareSchema:
+        """Retrieve the shared schema of a dataset.
+
+        Args:
+            dataset_id (Optional[ID_TYPE]): The ID of the dataset.
+                Either `dataset_id` or `dataset_name` must be given.
+            dataset_name (Optional[str]): The name of the dataset.
+                Either `dataset_id` or `dataset_name` must be given.
+
+        Returns:
+            ls_schemas.DatasetShareSchema: The shared schema of the dataset.
+
+        Raises:
+            ValueError: If neither `dataset_id` nor `dataset_name` is given.
+        """
         if dataset_id is None and dataset_name is None:
             raise ValueError("Either dataset_id or dataset_name must be given")
         if dataset_id is None:
@@ -1528,6 +1556,21 @@ class Client:
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
     ) -> Iterator[ls_schemas.TracerSessionResult]:
+        """List shared projects.
+
+        Args:
+            dataset_share_token : str
+                The share token of the dataset.
+            project_ids : List[ID_TYPE], optional
+                List of project IDs to filter the results, by default None.
+            name : str, optional
+                Name of the project to filter the results, by default None.
+            name_contains : str, optional
+                Substring to search for in project names, by default None.
+
+        Yields:
+            TracerSessionResult: The shared projects.
+        """
         params = {"id": project_ids, "name": name, "name_contains": name_contains}
         share_token = _as_uuid(dataset_share_token, "dataset_share_token")
         yield from [
@@ -1565,7 +1608,7 @@ class Client:
         reference_dataset_id: UUID or None, default=None
             The ID of the reference dataset to associate with the project.
 
-        Returns
+        Returns:
         -------
         TracerSession
             The created project.
@@ -1618,7 +1661,7 @@ class Client:
         project_extra : dict or None, default=None
             Additional project information.
 
-        Returns
+        Returns:
         -------
         TracerSession
             The updated project.
@@ -1674,7 +1717,7 @@ class Client:
         include_stats : bool, default=False
             Whether to include a project's aggregate statistics in the response.
 
-        Returns
+        Returns:
         -------
         TracerSessionResult
             The project.
@@ -1712,7 +1755,7 @@ class Client:
         project_id : str or None, default=None
             The ID of the project to check for.
 
-        Returns
+        Returns:
         -------
         bool
             Whether the project exists.
@@ -1734,7 +1777,7 @@ class Client:
         Note: this will fetch whatever data exists in the DB. Results are not
         immediately available in the DB upon evaluation run completion.
 
-        Returns
+        Returns:
         -------
         pd.DataFrame
             A dataframe containing the test results.
@@ -1801,8 +1844,7 @@ class Client:
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
     ) -> Iterator[ls_schemas.TracerSession]:
-        """
-        List projects from the LangSmith API.
+        """List projects from the LangSmith API.
 
         Parameters
         ----------
@@ -1819,7 +1861,7 @@ class Client:
         reference_free : Optional[bool], optional
             Whether to filter for only projects not associated with a dataset.
 
-        Yields
+        Yields:
         ------
         TracerSession
             The projects.
@@ -1891,7 +1933,7 @@ class Client:
         data_type : DataType or None, default=DataType.kv
             The data type of the dataset.
 
-        Returns
+        Returns:
         -------
         Dataset
             The created dataset.
@@ -1925,7 +1967,7 @@ class Client:
         dataset_id : str or None, default=None
             The ID of the dataset to check.
 
-        Returns
+        Returns:
         -------
         bool
             Whether the dataset exists.
@@ -1952,7 +1994,7 @@ class Client:
         dataset_id : UUID or None, default=None
             The ID of the dataset to read.
 
-        Returns
+        Returns:
         -------
         Dataset
             The dataset.
@@ -1985,8 +2027,7 @@ class Client:
     def read_dataset_openai_finetuning(
         self, dataset_id: Optional[str] = None, *, dataset_name: Optional[str] = None
     ) -> list:
-        """
-        Download a dataset in OpenAI Jsonl format and load it as a list of dicts.
+        """Download a dataset in OpenAI Jsonl format and load it as a list of dicts.
 
         Parameters
         ----------
@@ -1995,7 +2036,7 @@ class Client:
         dataset_name : str
             The name of the dataset to download.
 
-        Returns
+        Returns:
         -------
         list
             The dataset loaded as a list of dicts.
@@ -2023,7 +2064,7 @@ class Client:
     ) -> Iterator[ls_schemas.Dataset]:
         """List the datasets on the LangSmith API.
 
-        Yields
+        Yields:
         ------
         Dataset
             The datasets.
@@ -2298,11 +2339,11 @@ class Client:
         dataset_name : Optional[str], default=None
             The name of the dataset to create the examples in.
 
-        Returns
+        Returns:
         -------
         None
 
-        Raises
+        Raises:
         ------
         ValueError
             If both `dataset_id` and `dataset_name` are `None`.
@@ -2344,26 +2385,23 @@ class Client:
         and expected outputs (or other reference information)
         for a model or chain.
 
-        Parameters
-        ----------
-        inputs : Mapping[str, Any]
-            The input values for the example.
-        dataset_id : UUID or None, default=None
-            The ID of the dataset to create the example in.
-        dataset_name : str or None, default=None
-            The name of the dataset to create the example in.
-        created_at : datetime or None, default=None
-            The creation timestamp of the example.
-        outputs : Mapping[str, Any] or None, default=None
-            The output values for the example.
-        exemple_id : UUID or None, default=None
-            The ID of the example to create. If not provided, a new
-            example will be created.
+        Args:
+            inputs : Mapping[str, Any]
+                The input values for the example.
+            dataset_id : UUID or None, default=None
+                The ID of the dataset to create the example in.
+            dataset_name : str or None, default=None
+                The name of the dataset to create the example in.
+            created_at : datetime or None, default=None
+                The creation timestamp of the example.
+            outputs : Mapping[str, Any] or None, default=None
+                The output values for the example.
+            exemple_id : UUID or None, default=None
+                The ID of the example to create. If not provided, a new
+                example will be created.
 
-        Returns
-        -------
-        Example
-            The created example.
+        Returns:
+            Example: The created example.
         """
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
@@ -2392,15 +2430,11 @@ class Client:
     def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
         """Read an example from the LangSmith API.
 
-        Parameters
-        ----------
-        example_id : str or UUID
-            The ID of the example to read.
+        Args:
+            example_id (UUID): The ID of the example to read.
 
-        Returns
-        -------
-        Example
-            The example.
+        Returns:
+            Example: The example.
         """
         response = self._get_with_retries(
             f"/examples/{_as_uuid(example_id, 'example_id')}",
@@ -2420,19 +2454,18 @@ class Client:
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
 
-        Parameters
-        ----------
-        dataset_id : UUID or None, default=None
-            The ID of the dataset to filter by.
-        dataset_name : str or None, default=None
-            The name of the dataset to filter by.
-        example_ids : List[UUID] or None, default=None
-            The IDs of the examples to filter by.
+        Args:
+            dataset_id (UUID, optional): The ID of the dataset to filter by.
+                Defaults to None.
+            dataset_name (str, optional): The name of the dataset to filter by.
+                Defaults to None.
+            example_ids (List[UUID], optional): The IDs of the examples to filter by.
+                Defaults to None.
+            inline_s3_urls (bool, optional): Whether to inline S3 URLs.
+                Defaults to True.
 
-        Yields
-        ------
-        Example
-            The examples.
+        Yields:
+            Example: The examples.
         """
         params: Dict[str, Any] = {}
         if dataset_id is not None:
@@ -2473,7 +2506,7 @@ class Client:
         dataset_id : UUID or None, default=None
             The ID of the dataset to update.
 
-        Returns
+        Returns:
         -------
         Dict[str, Any]
             The updated example.
@@ -2519,12 +2552,12 @@ class Client:
         load_child_runs : bool
             Whether to load child runs.
 
-        Returns
+        Returns:
         -------
         Run
             The resolved run.
 
-        Raises
+        Raises:
         ------
         TypeError
             If the run type is invalid.
@@ -2549,7 +2582,7 @@ class Client:
         run : Run
             The run associated with the example.
 
-        Returns
+        Returns:
         -------
         Example or None
             The resolved example.
@@ -2611,7 +2644,7 @@ class Client:
         load_child_runs : bool, default=False
             Whether to load child runs when resolving the run ID.
 
-        Returns
+        Returns:
         -------
         Feedback
             The feedback object created by the evaluation.
@@ -2685,7 +2718,7 @@ class Client:
         load_child_runs : bool, default=False
             Whether to load child runs when resolving the run ID.
 
-        Returns
+        Returns:
         -------
         EvaluationResult
             The evaluation result object created by the evaluation.
@@ -2864,7 +2897,7 @@ class Client:
         feedback_id : str or UUID
             The ID of the feedback to read.
 
-        Returns
+        Returns:
         -------
         Feedback
             The feedback.
@@ -2897,7 +2930,7 @@ class Client:
         **kwargs : Any
             Additional keyword arguments.
 
-        Yields
+        Yields:
         ------
         Feedback
             The feedback objects.
@@ -2938,6 +2971,20 @@ class Client:
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
     ) -> Iterator[ls_schemas.AnnotationQueue]:
+        """List the annotation queues on the LangSmith API.
+
+        Args:
+            queue_ids : List[str or UUID] or None, default=None
+                The IDs of the queues to filter by.
+            name : str or None, default=None
+                The name of the queue to filter by.
+            name_contains : str or None, default=None
+                The substring that the queue name should contain.
+
+        Yields:
+            AnnotationQueue
+                The annotation queues.
+        """
         params: dict = {
             "ids": (
                 [_as_uuid(id_, f"queue_ids[{i}]") for i, id_ in enumerate(queue_ids)]
@@ -2959,6 +3006,20 @@ class Client:
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.AnnotationQueue:
+        """Create an annotation queue on the LangSmith API.
+
+        Args:
+            name : str
+                The name of the annotation queue.
+            description : str, optional
+                The description of the annotation queue.
+            queue_id : str or UUID, optional
+                The ID of the annotation queue.
+
+        Returns:
+            AnnotationQueue
+                The created annotation queue object.
+        """
         body = {
             "name": name,
             "description": description,
@@ -2976,12 +3037,28 @@ class Client:
         return ls_schemas.AnnotationQueue(**response.json())
 
     def read_annotation_queue(self, queue_id: ID_TYPE) -> ls_schemas.AnnotationQueue:
+        """Read an annotation queue with the specified queue ID.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue to read.
+
+        Returns:
+            ls_schemas.AnnotationQueue: The annotation queue object.
+        """
         # TODO: Replace when actual endpoint is added
         return next(self.list_annotation_queues(queue_ids=[queue_id]))
 
     def update_annotation_queue(
         self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
     ) -> None:
+        """Update an annotation queue with the specified queue_id.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue to update.
+            name (str): The new name for the annotation queue.
+            description (Optional[str], optional): The new description for the
+                annotation queue. Defaults to None.
+        """
         response = self.request_with_retries(
             "patch",
             f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
@@ -2996,6 +3073,11 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def delete_annotation_queue(self, queue_id: ID_TYPE) -> None:
+        """Delete an annotation queue with the specified queue ID.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue to delete.
+        """
         response = self.session.delete(
             f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
             headers=self._headers,
@@ -3005,6 +3087,13 @@ class Client:
     def add_runs_to_annotation_queue(
         self, queue_id: ID_TYPE, *, run_ids: List[ID_TYPE]
     ) -> None:
+        """Add runs to an annotation queue with the specified queue ID.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+            run_ids (List[ID_TYPE]): The IDs of the runs to be added to the annotation
+                queue.
+        """
         response = self.request_with_retries(
             "post",
             f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs",
@@ -3020,6 +3109,15 @@ class Client:
     def list_runs_from_annotation_queue(
         self, queue_id: ID_TYPE
     ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
+        """List runs from an annotation queue with the specified queue ID.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+
+        Yields:
+            ls_schemas.RunWithAnnotationQueueInfo: An iterator of runs from the
+                annotation queue.
+        """
         path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
         yield from (
             ls_schemas.RunWithAnnotationQueueInfo(**run)
@@ -3040,9 +3138,9 @@ class Client:
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Asynchronously run the Chain or language model on a dataset
-        and store traces to the specified project name.
+        """Asynchronously run the Chain or language model on a dataset.
+
+        Store traces to the specified project name.
 
         Args:
             dataset_name: Name of the dataset to run the chain on.
@@ -3070,9 +3168,8 @@ class Client:
 
         For the synchronous version, see client.run_on_dataset.
 
-        Examples
+        Examples:
         --------
-
         .. code-block:: python
 
             from langsmith import Client
@@ -3181,9 +3278,9 @@ class Client:
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Run the Chain or language model on a dataset and store traces
-        to the specified project name.
+        """Run the Chain or language model on a dataset.
+
+        Store traces to the specified project name.
 
         Args:
             dataset_name: Name of the dataset to run the chain on.
@@ -3212,9 +3309,8 @@ class Client:
 
         For the (usually faster) async version of this function, see `client.arun_on_dataset`.
 
-        Examples
+        Examples:
         --------
-
         .. code-block:: python
 
             from langsmith import Client
