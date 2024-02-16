@@ -670,7 +670,7 @@ def traceable(
                 for item in generator_result:
                     if run_type == "llm":
                         if run_container["new_run"]:
-                            run_container["new_run"].add_events(
+                            run_container["new_run"].add_event(
                                 {
                                     "name": "new_token",
                                     "time": datetime.datetime.now(
