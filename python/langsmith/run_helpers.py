@@ -272,12 +272,36 @@ _VALID_RUN_TYPES = {
 
 @runtime_checkable
 class SupportsLangsmithExtra(Protocol, Generic[R]):
+    """Implementations of this Protoc accept an optional langsmith_extra parameter.
+
+    Args:
+        *args: Variable length arguments.
+        langsmith_extra (Optional[Dict[str, Any]]): Optional dictionary of
+            additional parameters for Langsmith.
+        **kwargs: Keyword arguments.
+
+    Returns:
+        R: The return type of the callable.
+    """
+
     def __call__(
         self,
         *args: Any,
         langsmith_extra: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> R:
+        """Call the instance when it is called as a function.
+
+        Args:
+            *args: Variable length argument list.
+            langsmith_extra: Optional dictionary containing additional
+                parameters specific to Langsmith.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            R: The return value of the method.
+
+        """
         ...
 
 
@@ -306,10 +330,10 @@ def traceable(
     *args: Any,
     **kwargs: Any,
 ) -> Union[Callable, Callable[[Callable], Callable]]:
-    """Decorator for creating or adding a run to a run tree.
+    """Trace a function with langsmith.
 
     Args:
-        run_type: The type of run to create. Examples: llm, chain, tool, prompt,
+        run_type: The type of run (span) to create. Examples: llm, chain, tool, prompt,
             retriever, etc. Defaults to "chain".
         name: The name of the run. Defaults to the function name.
         metadata: The metadata to add to the run. Defaults to None.
@@ -324,6 +348,114 @@ def traceable(
         project_name: The name of the project to log the run to. Defaults to None,
             which will use the default project.
 
+
+    Returns:
+            Union[Callable, Callable[[Callable], Callable]]: The decorated function.
+
+    Note:
+            - Requires that LANGCHAIN_TRACING_V2 be set to 'true' in the environment.
+
+    Examples:
+        .. code-block:: python
+            import httpx
+            import asyncio
+
+            from typing import Iterable
+            from langsmith import traceable, Client
+
+
+            # Basic usage:
+            @traceable
+            def my_function(x: float, y: float) -> float:
+                return x + y
+
+
+            my_function(5, 6)
+
+
+            @traceable
+            async def my_async_function(query_params: dict) -> dict:
+                async with httpx.AsyncClient() as http_client:
+                    response = await http_client.get(
+                        "https://api.example.com/data",
+                        params=query_params,
+                    )
+                    return response.json()
+
+
+            asyncio.run(my_async_function({"param": "value"}))
+
+
+            # Streaming data with a generator:
+            @traceable
+            def my_generator(n: int) -> Iterable:
+                for i in range(n):
+                    yield i
+
+
+            for item in my_generator(5):
+                print(item)
+
+
+            # Async streaming data
+            @traceable
+            async def my_async_generator(query_params: dict) -> Iterable:
+                async with httpx.AsyncClient() as http_client:
+                    response = await http_client.get(
+                        "https://api.example.com/data",
+                        params=query_params,
+                    )
+                    for item in response.json():
+                        yield item
+
+
+            async def async_code():
+                async for item in my_async_generator({"param": "value"}):
+                    print(item)
+
+
+            asyncio.run(async_code())
+
+
+            # Specifying a run type and name:
+            @traceable(name="CustomName", run_type="tool")
+            def another_function(a: float, b: float) -> float:
+                return a * b
+
+
+            another_function(5, 6)
+
+
+            # Logging with custom metadata and tags:
+            @traceable(
+                metadata={"version": "1.0", "author": "John Doe"},
+                tags=["beta", "test"]
+            )
+            def tagged_function(x):
+                return x**2
+
+
+            tagged_function(5)
+
+            # Specifying a custom client and project name:
+            custom_client = Client(api_key="your_api_key")
+
+
+            @traceable(client=custom_client, project_name="My Special Project")
+            def project_specific_function(data):
+                return data
+
+
+            project_specific_function({"data": "to process"})
+
+
+            # Manually passing langsmith_extra:
+            @traceable
+            def manual_extra_function(x):
+                return x**2
+
+
+            manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
     """
     run_type: ls_client.RUN_TYPE_T = (
         args[0]
@@ -372,7 +504,7 @@ def traceable(
             langsmith_extra: Optional[LangSmithExtra] = None,
             **kwargs: Any,
         ) -> Any:
-            """Async version of wrapper function"""
+            """Async version of wrapper function."""
             context_run = get_run_tree_context()
             run_container = _setup_run(
                 func,
@@ -622,7 +754,7 @@ def trace(
     outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
     parent_run_ = get_run_tree_context() if run_tree is None else run_tree
 
-    # Merge and set context varaibles
+    # Merge and set context variables
     tags_ = sorted(set((tags or []) + (outer_tags or [])))
     _TAGS.set(tags_)
     metadata = {**(metadata or {}), **(outer_metadata or {}), "ls_method": "trace"}
@@ -671,6 +803,27 @@ def trace(
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
+    """Convert a function wrapped by the LangSmith @traceable decorator to a Runnable.
+
+    Args:
+        traceable_fn (Callable): The function wrapped by the @traceable decorator.
+
+    Returns:
+        Runnable: A Runnable object that maintains a consistent LangSmith
+            tracing context.
+
+    Raises:
+        ImportError: If langchain module is not installed.
+        ValueError: If the provided function is not wrapped by the @traceable decorator.
+
+    Example:
+        >>> @traceable
+        ... def my_function(input_data):
+        ...     # Function implementation
+        ...     pass
+        ...
+        >>> runnable = as_runnable(my_function)
+    """
     try:
         from langchain.callbacks.manager import (
             AsyncCallbackManager,
@@ -695,8 +848,9 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         )
 
     class RunnableTraceable(RunnableLambda):
-        """RunnableTraceable converts a @traceable decorated function
-        to a Runnable in a way that hands off the LangSmith tracing context.
+        """Converts a @traceable decorated function to a Runnable.
+
+        This helps maintain a consistent LangSmith tracing context.
         """
 
         def __init__(
@@ -772,7 +926,6 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             afunc: Optional[Callable[..., Awaitable[Output]]],
         ) -> Optional[Callable[[Input, RunnableConfig], Awaitable[Output]]]:
             """Wrap an async function to make it synchronous."""
-
             if afunc is None:
                 return None
 

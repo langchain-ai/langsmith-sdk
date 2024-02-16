@@ -1,3 +1,4 @@
+"""This module contains the StringEvaluator class."""
 from typing import Callable, Dict, Optional
 
 from pydantic import BaseModel

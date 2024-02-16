@@ -44,6 +44,8 @@ class RunTree(ls_schemas.RunBase):
     trace_id: UUID = Field(default="", description="The trace id of the run.")
 
     class Config:
+        """Pydantic model configuration."""
+
         arbitrary_types_allowed = True
         allow_population_by_field_name = True
         extra = "allow"
@@ -74,6 +76,7 @@ class RunTree(ls_schemas.RunBase):
 
     @root_validator(pre=False)
     def ensure_dotted_order(cls, values: dict) -> dict:
+        """Ensure the dotted order of the run."""
         current_dotted_order = values.get("dotted_order")
         if current_dotted_order and current_dotted_order.strip():
             return values
@@ -113,6 +116,18 @@ class RunTree(ls_schemas.RunBase):
             str,
         ],
     ) -> None:
+        """Add an event to the list of events.
+
+        Args:
+            events (Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent],
+                    Sequence[dict], dict, str]):
+                The event(s) to be added. It can be a single event, a sequence
+                    of events,
+                a sequence of dictionaries, a dictionary, or a string.
+
+        Returns:
+            None
+        """
         if self.events is None:
             self.events = []
         if isinstance(events, dict):
