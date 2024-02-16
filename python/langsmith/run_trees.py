@@ -103,16 +103,28 @@ class RunTree(ls_schemas.RunBase):
         metadata_: dict = self.extra.setdefault("metadata", {})
         metadata_.update(metadata)
 
-    def add_events(
+    def add_event(
         self,
         events: Union[
-            ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent], Sequence[dict], dict
+            ls_schemas.RunEvent,
+            Sequence[ls_schemas.RunEvent],
+            Sequence[dict],
+            dict,
+            str,
         ],
     ) -> None:
         if self.events is None:
             self.events = []
         if isinstance(events, dict):
             self.events.append(events)  # type: ignore[arg-type]
+        elif isinstance(events, str):
+            self.events.append(
+                {
+                    "name": "event",
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "message": events,
+                }
+            )
         else:
             self.events.extend(events)  # type: ignore[arg-type]
 
@@ -131,7 +143,7 @@ class RunTree(ls_schemas.RunBase):
         if error is not None:
             self.error = error
         if events is not None:
-            self.add_events(events)
+            self.add_event(events)
 
     def create_child(
         self,
