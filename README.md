@@ -43,17 +43,13 @@ export LANGCHAIN_API_KEY=ls_...
 Then start tracing your app!
 
 ```javascript
-import { traceable } from "langsmith/traceable";
 import { OpenAI } from "openai";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
 
-const client = new OpenAI();
+const client = wrapOpenAI(new OpenAI());
 
-const createCompletion = traceable(
-  openai.chat.completions.create.bind(openai.chat.completions),
-  { name: "OpenAI Chat Completion", run_type: "llm" }
-);
-
-await createCompletion({
+await client.chat.completions.create({
   model: "gpt-3.5-turbo",
   messages: [{ content: "Hi there!", role: "user" }],
 });
