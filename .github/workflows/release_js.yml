@@ -1,11 +1,6 @@
 name: JS Release
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "js/package.json"
   workflow_dispatch:
 
 jobs:
