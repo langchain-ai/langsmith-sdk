@@ -47,9 +47,12 @@ _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
 
 
-def get_run_tree_context() -> Optional[run_trees.RunTree]:
+def get_current_run_tree() -> Optional[run_trees.RunTree]:
     """Get the current run tree context."""
     return _PARENT_RUN_TREE.get()
+
+
+get_run_tree_context = get_current_run_tree
 
 
 def _is_traceable_function(func: Callable) -> bool:
@@ -308,8 +311,7 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 @overload
 def traceable(
     func: Callable[..., R],
-) -> Callable[..., R]:
-    ...
+) -> Callable[..., R]: ...
 
 
 @overload
@@ -322,8 +324,7 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
-    ...
+) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
 
 
 def traceable(
