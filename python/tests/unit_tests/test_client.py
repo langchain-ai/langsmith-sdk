@@ -1,18 +1,31 @@
 """Test the LangSmith client."""
+
 import asyncio
+import dataclasses
+import gc
+import itertools
 import json
 import os
+import threading
+import time
 import uuid
+import weakref
 from datetime import datetime
+from enum import Enum
 from io import BytesIO
-from typing import Optional
+from typing import Any, NamedTuple, Optional
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import attr
+import dataclasses_json
 import pytest
+import requests
 from pydantic import BaseModel
+from requests import HTTPError
 
 import langsmith.env as ls_env
+import langsmith.utils as ls_utils
 from langsmith.client import (
     Client,
     _get_api_key,
@@ -22,7 +35,6 @@ from langsmith.client import (
     _serialize_json,
 )
 from langsmith.schemas import Example
-from langsmith.utils import LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -42,7 +54,7 @@ def test__is_langchain_hosted() -> None:
 
 def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    with pytest.raises(LangSmithUserError, match="API key must be provided"):
+    with pytest.raises(ls_utils.LangSmithUserError, match="API key must be provided"):
         Client(api_url="https://api.smith.langchain.com")
     client = Client(api_url="http://localhost:1984")
     assert client.api_url == "http://localhost:1984"
@@ -172,12 +184,11 @@ def test_get_api_url() -> None:
     with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None, None) == "http://env.url"
 
-    with pytest.raises(LangSmithUserError):
+    with pytest.raises(ls_utils.LangSmithUserError):
         _get_api_url(" ", "api_key")
 
 
 def test_create_run_unicode() -> None:
-    client = Client(api_url="http://localhost:1984", api_key="123")
     inputs = {
         "foo": "これは私の友達です",
         "bar": "این یک کتاب است",
@@ -187,16 +198,188 @@ def test_create_run_unicode() -> None:
     }
     session = mock.Mock()
     session.request = mock.Mock()
-    with patch.object(client, "session", session):
-        id_ = uuid.uuid4()
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    id_ = uuid.uuid4()
+    client.create_run("my_run", inputs=inputs, run_type="llm", id=id_)
+    client.update_run(id_, status="completed")
+
+
+class CallTracker:
+    def __init__(self) -> None:
+        self.counter = 0
+
+    def __call__(self, *args: object, **kwargs: object) -> None:
+        self.counter += 1
+
+
+@pytest.mark.parametrize("supports_batch_endpoint", [True, False])
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    api_url = "http://localhost:1984"
+
+    def mock_get(*args, **kwargs):
+        if args[0] == f"{api_url}/info":
+            response = mock.Mock()
+            if supports_batch_endpoint:
+                response.json.return_value = {}
+            else:
+                response.raise_for_status.side_effect = HTTPError()
+                response.status_code = 404
+            return response
+        else:
+            return MagicMock()
+
+    session.get.side_effect = mock_get
+    client = Client(
+        api_url=api_url,
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    for _ in range(10):
+        id = uuid.uuid4()
         client.create_run(
-            "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
+            "my_run",
+            inputs={},
+            run_type="llm",
+            id=id,
+            trace_id=id,
+            dotted_order=id,
         )
-        client.update_run(id_, status="completed")
+
+    if auto_batch_tracing and supports_batch_endpoint:
+        assert client.tracing_queue
+        client.tracing_queue.join()
+
+        request_calls = [call for call in session.request.mock_calls if call.args]
+        assert len(request_calls) >= 1
+
+        for call in request_calls:
+            assert call.args[0] == "post"
+            assert call.args[1] == "http://localhost:1984/runs/batch"
+        get_calls = [call for call in session.get.mock_calls if call.args]
+        # assert len(get_calls) == 1
+        for call in get_calls:
+            assert call.args[0] == f"{api_url}/info"
+    else:
+        request_calls = [call for call in session.request.mock_calls if call.args]
+
+        assert len(request_calls) == 10
+        for call in request_calls:
+            assert call.args[0] == "post"
+            assert call.args[1] == "http://localhost:1984/runs"
+        if auto_batch_tracing:
+            get_calls = [call for call in session.get.mock_calls if call.args]
+            # assert len(get_calls) == 1
+            for call in get_calls:
+                assert call.args[0] == f"{api_url}/info"
+    del client
+    time.sleep(1)  # Give the background thread time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
 
 
-def test_create_run_includes_langchain_env_var_metadata() -> None:
-    client = Client(api_url="http://localhost:1984", api_key="123")
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    # because no trace_id/dotted_order provided, auto batch is disabled
+    for _ in range(10):
+        client.create_run("my_run", inputs={}, run_type="llm", id=uuid.uuid4())
+    request_calls = [call for call in session.request.mock_calls if call.args]
+    assert len(request_calls) == 10
+    for call in request_calls:
+        assert call.args[0] == "post"
+        assert call.args[1] == "http://localhost:1984/runs"
+
+    del client
+    time.sleep(1)  # Give the background thread time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+
+def test_client_gc_after_autoscale() -> None:
+    session = mock.MagicMock(spec=requests.Session)
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        auto_batch_tracing=True,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+
+    tracing_queue = client.tracing_queue
+    assert tracing_queue is not None
+
+    for _ in range(50_000):
+        id = uuid.uuid4()
+        client.create_run(
+            "my_run",
+            inputs={},
+            run_type="llm",
+            id=id,
+            trace_id=id,
+            dotted_order=id,
+        )
+
+    del client
+    tracing_queue.join()
+    time.sleep(2)  # Give the background threads time to stop
+    gc.collect()  # Force garbage collection
+    assert tracker.counter == 1, "Client was not garbage collected"
+
+    request_calls = [call for call in session.request.mock_calls if call.args]
+    assert len(request_calls) >= 500 and len(request_calls) <= 550
+    for call in request_calls:
+        assert call.args[0] == "post"
+        assert call.args[1] == "http://localhost:1984/runs/batch"
+
+
+@pytest.mark.parametrize("supports_batch_endpoint", [True, False])
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_create_run_includes_langchain_env_var_metadata(
+    supports_batch_endpoint: bool,
+    auto_batch_tracing: bool,
+) -> None:
+    session = mock.Mock()
+    session.request = mock.Mock()
+    api_url = "http://localhost:1984"
+
+    def mock_get(*args, **kwargs):
+        if args[0] == f"{api_url}/info":
+            response = mock.Mock()
+            if supports_batch_endpoint:
+                response.json.return_value = {}
+            else:
+                response.raise_for_status.side_effect = HTTPError()
+                response.status_code = 404
+            return response
+        else:
+            return MagicMock()
+
+    session.get.side_effect = mock_get
+    client = Client(
+        api_url=api_url,
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+    )
     inputs = {
         "foo": "これは私の友達です",
         "bar": "این یک کتاب است",
@@ -204,27 +387,40 @@ def test_create_run_includes_langchain_env_var_metadata() -> None:
         "qux": "나는\u3000밥을\u3000먹었습니다.",
         "는\u3000밥": "나는\u3000밥을\u3000먹었습니다.",
     }
-    session = mock.Mock()
-    session.request = mock.Mock()
+
     # Set the environment variables just for this test
     with patch.dict(os.environ, {"LANGCHAIN_REVISION": "abcd2234"}):
         # Clear the cache to ensure the environment variables are re-read
         ls_env.get_langchain_env_var_metadata.cache_clear()
-        with patch.object(client, "session", session):
-            id_ = uuid.uuid4()
-            client.create_run(
-                "my_run", inputs=inputs, run_type="llm", execution_order=1, id=id_
+        id_ = uuid.uuid4()
+        start_time = datetime.now()
+        client.create_run(
+            "my_run",
+            inputs=inputs,
+            run_type="llm",
+            id=id_,
+            trace_id=id_,
+            dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{id_}",
+            start_time=start_time,
+        )
+        if tracing_queue := client.tracing_queue:
+            tracing_queue.join()
+        # Check the posted value in the request
+        posted_value = json.loads(session.request.call_args[1]["data"])
+        if auto_batch_tracing and supports_batch_endpoint:
+            assert (
+                posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
+                == "abcd2234"
             )
-            # Check the posted value in the request
-            posted_value = json.loads(session.request.call_args[1]["data"])
+        else:
             assert posted_value["extra"]["metadata"]["LANGCHAIN_REVISION"] == "abcd2234"
             assert "LANGCHAIN_API_KEY" not in posted_value["extra"]["metadata"]
 
 
 @pytest.mark.parametrize("source_type", ["api", "model"])
 def test_create_feedback_string_source_type(source_type: str) -> None:
-    client = Client(api_url="http://localhost:1984", api_key="123")
     session = mock.Mock()
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
     request_object = mock.Mock()
     request_object.json.return_value = {
         "id": uuid.uuid4(),
@@ -234,13 +430,12 @@ def test_create_feedback_string_source_type(source_type: str) -> None:
         "run_id": uuid.uuid4(),
     }
     session.post.return_value = request_object
-    with patch.object(client, "session", session):
-        id_ = uuid.uuid4()
-        client.create_feedback(
-            id_,
-            key="Foo",
-            feedback_source_type=source_type,
-        )
+    id_ = uuid.uuid4()
+    client.create_feedback(
+        id_,
+        key="Foo",
+        feedback_source_type=source_type,
+    )
 
 
 def test_pydantic_serialize() -> None:
@@ -277,7 +472,157 @@ def test_pydantic_serialize() -> None:
     assert res2 == {"output": expected}
 
 
-def test_host_url() -> None:
+def test_serialize_json() -> None:
+    class MyClass:
+        def __init__(self, x: int) -> None:
+            self.x = x
+            self.y = "y"
+            self.a_list = [1, 2, 3]
+            self.a_tuple = (1, 2, 3)
+            self.a_set = {1, 2, 3}
+            self.a_dict = {"foo": "bar"}
+            self.my_bytes = b"foo"
+
+    class ClassWithTee:
+        def __init__(self) -> None:
+            tee_a, tee_b = itertools.tee(range(10))
+            self.tee_a = tee_a
+            self.tee_b = tee_b
+
+    class MyClassWithSlots:
+        __slots__ = ["x", "y"]
+
+        def __init__(self, x: int) -> None:
+            self.x = x
+            self.y = "y"
+
+    class MyPydantic(BaseModel):
+        foo: str
+        bar: int
+
+    @dataclasses.dataclass
+    class MyDataclass:
+        foo: str
+        bar: int
+
+        def something(self) -> None:
+            pass
+
+    class MyEnum(str, Enum):
+        FOO = "foo"
+        BAR = "bar"
+
+    @dataclasses_json.dataclass_json
+    @dataclasses.dataclass
+    class Person:
+        name: str
+
+    @attr.dataclass
+    class AttrDict:
+        foo: str = attr.ib()
+        bar: int
+
+    uid = uuid.uuid4()
+    current_time = datetime.now()
+
+    class NestedClass:
+        __slots__ = ["person", "lock"]
+
+        def __init__(self) -> None:
+            self.person = Person(name="foo")
+            self.lock = [threading.Lock()]
+
+    class CyclicClass:
+        def __init__(self) -> None:
+            self.cyclic = self
+
+        def __repr__(self) -> str:
+            return "SoCyclic"
+
+    class CyclicClass2:
+        def __init__(self) -> None:
+            self.cyclic: Any = None
+            self.other: Any = None
+
+        def __repr__(self) -> str:
+            return "SoCyclic2"
+
+    cycle_2 = CyclicClass2()
+    cycle_2.cyclic = CyclicClass2()
+    cycle_2.cyclic.other = cycle_2
+
+    class MyNamedTuple(NamedTuple):
+        foo: str
+        bar: int
+
+    to_serialize = {
+        "uid": uid,
+        "time": current_time,
+        "my_class": MyClass(1),
+        "class_with_tee": ClassWithTee(),
+        "my_slotted_class": MyClassWithSlots(1),
+        "my_dataclass": MyDataclass("foo", 1),
+        "my_enum": MyEnum.FOO,
+        "my_pydantic": MyPydantic(foo="foo", bar=1),
+        "person": Person(name="foo"),
+        "a_bool": True,
+        "a_none": None,
+        "a_str": "foo",
+        "an_int": 1,
+        "a_float": 1.1,
+        "nested_class": NestedClass(),
+        "attr_dict": AttrDict(foo="foo", bar=1),
+        "named_tuple": MyNamedTuple(foo="foo", bar=1),
+        "cyclic": CyclicClass(),
+        "cyclic2": cycle_2,
+    }
+
+    res = json.loads(json.dumps(to_serialize, default=_serialize_json))
+    expected = {
+        "uid": str(uid),
+        "time": current_time.isoformat(),
+        "my_class": {
+            "x": 1,
+            "y": "y",
+            "a_list": [1, 2, 3],
+            "a_tuple": [1, 2, 3],
+            "a_set": [1, 2, 3],
+            "a_dict": {"foo": "bar"},
+            "my_bytes": "foo",
+        },
+        "class_with_tee": lambda val: all(
+            ["_tee object" in val[key] for key in ["tee_a", "tee_b"]]
+        ),
+        "my_slotted_class": {"x": 1, "y": "y"},
+        "my_dataclass": {"foo": "foo", "bar": 1},
+        "my_enum": "foo",
+        "my_pydantic": {"foo": "foo", "bar": 1},
+        "person": {"name": "foo"},
+        "a_bool": True,
+        "a_none": None,
+        "a_str": "foo",
+        "an_int": 1,
+        "a_float": 1.1,
+        "nested_class": (
+            lambda val: val["person"] == {"name": "foo"}
+            and "_thread.lock object" in str(val.get("lock"))
+        ),
+        "attr_dict": {"foo": "foo", "bar": 1},
+        "named_tuple": ["foo", 1],
+        "cyclic": {"cyclic": "SoCyclic"},
+        # We don't really care about this case just want to not err
+        "cyclic2": lambda _: True,
+    }
+    assert set(expected) == set(res)
+    for k, v in expected.items():
+        if callable(v):
+            assert v(res[k])
+        else:
+            assert res[k] == v
+
+
+@patch("langsmith.client.requests.Session", autospec=True)
+def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="https://api.foobar.com/api", api_key="API_KEY")
     assert client._host_url == "https://api.foobar.com"
 
@@ -296,3 +641,84 @@ def test_host_url() -> None:
 
     client = Client(api_url="https://api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://smith.langchain.com"
+
+
+@patch("langsmith.client.time.sleep")
+def test_retry_on_connection_error(mock_sleep: MagicMock):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_session.request.side_effect = requests.ConnectionError()
+
+    with pytest.raises(ls_utils.LangSmithConnectionError):
+        client.request_with_retries("GET", "https://test.url", {}, stop_after_attempt=2)
+    assert mock_session.request.call_count == 2
+
+
+@patch("langsmith.client.time.sleep")
+def test_http_status_500_handling(mock_sleep):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.raise_for_status.side_effect = HTTPError()
+    mock_session.request.return_value = mock_response
+
+    with pytest.raises(ls_utils.LangSmithAPIError):
+        client.request_with_retries("GET", "https://test.url", {}, stop_after_attempt=2)
+    assert mock_session.request.call_count == 2
+
+
+@patch("langsmith.client.time.sleep")
+def test_pass_on_409_handling(mock_sleep):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 409
+    mock_response.raise_for_status.side_effect = HTTPError()
+    mock_session.request.return_value = mock_response
+
+    response = client.request_with_retries(
+        "GET",
+        "https://test.url",
+        {},
+        stop_after_attempt=5,
+        to_ignore=[ls_utils.LangSmithConflictError],
+    )
+    assert mock_session.request.call_count == 1
+    assert response == mock_response
+
+
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_http_status_429_handling(mock_raise_for_status):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_session.request.return_value = mock_response
+    mock_raise_for_status.side_effect = HTTPError()
+    with pytest.raises(ls_utils.LangSmithRateLimitError):
+        client.request_with_retries("GET", "https://test.url", {})
+
+
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_http_status_401_handling(mock_raise_for_status):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_session.request.return_value = mock_response
+    mock_raise_for_status.side_effect = HTTPError()
+    with pytest.raises(ls_utils.LangSmithAuthError):
+        client.request_with_retries("GET", "https://test.url", {})
+
+
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_http_status_404_handling(mock_raise_for_status):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_session.request.return_value = mock_response
+    mock_raise_for_status.side_effect = HTTPError()
+    with pytest.raises(ls_utils.LangSmithNotFoundError):
+        client.request_with_retries("GET", "https://test.url", {})

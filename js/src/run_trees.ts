@@ -12,13 +12,22 @@ function warnOnce(message: string): void {
   }
 }
 
+function stripNonAlphanumeric(input: string) {
+  return input.replace(/[-:.]/g, "");
+}
+
+export function convertToDottedOrderFormat(epoch: number, runId: string) {
+  return (
+    stripNonAlphanumeric(`${new Date(epoch).toISOString().slice(0, -1)}000Z`) +
+    runId
+  );
+}
+
 export interface RunTreeConfig {
   name: string;
-  run_type: string;
+  run_type?: string;
   id?: string;
   project_name?: string;
-  execution_order?: number;
-  child_execution_order?: number;
   parent_run?: RunTree;
   child_runs?: RunTree[];
   start_time?: number;
@@ -35,12 +44,10 @@ export interface RunTreeConfig {
 export class RunTree implements BaseRun {
   id: string;
   name: RunTreeConfig["name"];
-  run_type: RunTreeConfig["run_type"];
+  run_type: string;
   project_name: string;
   parent_run?: RunTree;
   child_runs: RunTree[];
-  execution_order: number;
-  child_execution_order: number;
   start_time: number;
   end_time?: number;
   extra: KVMap;
@@ -51,21 +58,41 @@ export class RunTree implements BaseRun {
   reference_example_id?: string;
   client: Client;
   events?: KVMap[] | undefined;
+  trace_id: string;
+  dotted_order: string;
 
   constructor(config: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
     Object.assign(this, { ...defaultConfig, ...config });
+    if (!this.trace_id) {
+      if (this.parent_run) {
+        this.trace_id = this.parent_run.trace_id;
+      } else {
+        this.trace_id = this.id;
+      }
+    }
+    if (!this.dotted_order) {
+      const currentDottedOrder = convertToDottedOrderFormat(
+        this.start_time,
+        this.id
+      );
+      if (this.parent_run) {
+        this.dotted_order =
+          this.parent_run.dotted_order + "." + currentDottedOrder;
+      } else {
+        this.dotted_order = currentDottedOrder;
+      }
+    }
   }
   private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
+      run_type: "chain",
       project_name:
         getEnvironmentVariable("LANGCHAIN_PROJECT") ??
         getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
         "default",
       child_runs: [],
-      execution_order: 1,
-      child_execution_order: 1,
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
       api_key: getEnvironmentVariable("LANGCHAIN_API_KEY"),
@@ -84,8 +111,6 @@ export class RunTree implements BaseRun {
       parent_run: this,
       project_name: this.project_name,
       client: this.client,
-      execution_order: this.child_execution_order + 1,
-      child_execution_order: this.child_execution_order + 1,
     });
 
     this.child_runs.push(child);
@@ -100,13 +125,6 @@ export class RunTree implements BaseRun {
     this.outputs = outputs;
     this.error = error;
     this.end_time = endTime;
-
-    if (this.parent_run) {
-      this.parent_run.child_execution_order = Math.max(
-        this.parent_run.child_execution_order,
-        this.child_execution_order
-      );
-    }
   }
 
   private async _convertToCreate(
@@ -144,7 +162,6 @@ export class RunTree implements BaseRun {
       run_type: run.run_type,
       reference_example_id: run.reference_example_id,
       extra: runExtra,
-      execution_order: run.execution_order,
       serialized: run.serialized,
       error: run.error,
       inputs: run.inputs,
@@ -152,6 +169,8 @@ export class RunTree implements BaseRun {
       session_name: run.project_name,
       child_runs: child_runs,
       parent_run_id: parent_run_id,
+      trace_id: run.trace_id,
+      dotted_order: run.dotted_order,
     };
     return persistedRun;
   }
@@ -179,8 +198,18 @@ export class RunTree implements BaseRun {
       reference_example_id: this.reference_example_id,
       extra: this.extra,
       events: this.events,
+      dotted_order: this.dotted_order,
+      trace_id: this.trace_id,
     };
 
     await this.client.updateRun(this.id, runUpdate);
   }
+}
+
+export function isRunTree(x?: unknown): x is RunTree {
+  return (
+    x !== undefined &&
+    typeof (x as RunTree).createChild === "function" &&
+    typeof (x as RunTree).postRun === "function"
+  );
 }

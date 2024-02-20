@@ -1,12 +1,27 @@
 """Generic utility functions."""
+
+import contextlib
 import enum
 import functools
 import logging
 import os
 import subprocess
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+import threading
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import requests
+from urllib3.util import Retry
 
 from langsmith import schemas as ls_schemas
 
@@ -35,6 +50,10 @@ class LangSmithAuthError(LangSmithError):
 
 class LangSmithNotFoundError(LangSmithError):
     """Couldn't find the requested resource."""
+
+
+class LangSmithConflictError(LangSmithError):
+    """The resource already exists."""
 
 
 class LangSmithConnectionError(LangSmithError):
@@ -94,6 +113,7 @@ def get_enum_value(enu: Union[enum.Enum, str]) -> str:
 
 @functools.lru_cache(maxsize=1)
 def log_once(level: int, message: str) -> None:
+    """Log a message at the specified level, but only once."""
     _LOGGER.log(level, message)
 
 
@@ -143,6 +163,18 @@ def _convert_message(message: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def get_messages_from_inputs(inputs: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Extract messages from the given inputs dictionary.
+
+    Args:
+        inputs (Mapping[str, Any]): The inputs dictionary.
+
+    Returns:
+        List[Dict[str, Any]]: A list of dictionaries representing
+            the extracted messages.
+
+    Raises:
+        ValueError: If no message(s) are found in the inputs dictionary.
+    """
     if "messages" in inputs:
         return [_convert_message(message) for message in inputs["messages"]]
     if "message" in inputs:
@@ -151,6 +183,17 @@ def get_messages_from_inputs(inputs: Mapping[str, Any]) -> List[Dict[str, Any]]:
 
 
 def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> Dict[str, Any]:
+    """Retrieve the message generation from the given outputs.
+
+    Args:
+        outputs (Mapping[str, Any]): The outputs dictionary.
+
+    Returns:
+        Dict[str, Any]: The message generation.
+
+    Raises:
+        ValueError: If no generations are found or if multiple generations are present.
+    """
     if "generations" not in outputs:
         raise ValueError(f"No generations found in in run with output: {outputs}.")
     generations = outputs["generations"]
@@ -169,6 +212,17 @@ def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> Dict[str,
 
 
 def get_prompt_from_inputs(inputs: Mapping[str, Any]) -> str:
+    """Retrieve the prompt from the given inputs.
+
+    Args:
+        inputs (Mapping[str, Any]): The inputs dictionary.
+
+    Returns:
+        str: The prompt.
+
+    Raises:
+        ValueError: If the prompt is not found or if multiple prompts are present.
+    """
     if "prompt" in inputs:
         return inputs["prompt"]
     if "prompts" in inputs:
@@ -183,6 +237,7 @@ def get_prompt_from_inputs(inputs: Mapping[str, Any]) -> str:
 
 
 def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
+    """Get the LLM generation from the outputs."""
     if "generations" not in outputs:
         raise ValueError(f"No generations found in in run with output: {outputs}.")
     generations = outputs["generations"]
@@ -234,8 +289,7 @@ def convert_langchain_message(message: ls_schemas.BaseMessageLike) -> dict:
 
 
 def is_base_message_like(obj: object) -> bool:
-    """
-    Check if the given object is similar to BaseMessage.
+    """Check if the given object is similar to BaseMessage.
 
     Args:
         obj (object): The object to check.
@@ -275,8 +329,62 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 class FilterPoolFullWarning(logging.Filter):
     """Filter urrllib3 warnings logged when the connection pool isn't reused."""
 
+    def __init__(self, name: str = "", host: str = "") -> None:
+        """Initialize the FilterPoolFullWarning filter.
+
+        Args:
+            name (str, optional): The name of the filter. Defaults to "".
+            host (str, optional): The host to filter. Defaults to "".
+        """
+        super().__init__(name)
+        self._host = host
+
     def filter(self, record) -> bool:
         """urllib3.connectionpool:Connection pool is full, discarding connection: ..."""
-        return (
-            "Connection pool is full, discarding connection" not in record.getMessage()
-        )
+        msg = record.getMessage()
+        if "Connection pool is full, discarding connection" not in msg:
+            return True
+        return self._host not in msg
+
+
+class FilterLangSmithRetry(logging.Filter):
+    """Filter for retries from this lib."""
+
+    def filter(self, record) -> bool:
+        """Filter retries from this library."""
+        # We re-raise/log manually.
+        msg = record.getMessage()
+        return "LangSmithRetry" not in msg
+
+
+class LangSmithRetry(Retry):
+    """Wrapper to filter logs with this name."""
+
+
+_FILTER_LOCK = threading.RLock()
+
+
+@contextlib.contextmanager
+def filter_logs(
+    logger: logging.Logger, filters: Sequence[logging.Filter]
+) -> Generator[None, None, None]:
+    """Temporarily adds specified filters to a logger.
+
+    Parameters:
+    - logger: The logger to which the filters will be added.
+    - filters: A sequence of logging.Filter objects to be temporarily added
+        to the logger.
+    """
+    with _FILTER_LOCK:
+        for filter in filters:
+            logger.addFilter(filter)
+    # Not actually perfectly thread-safe, but it's only log filters
+    try:
+        yield
+    finally:
+        with _FILTER_LOCK:
+            for filter in filters:
+                try:
+                    logger.removeFilter(filter)
+                except BaseException:
+                    _LOGGER.warning("Failed to remove filter")

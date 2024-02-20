@@ -5,20 +5,34 @@ This package contains the Python client for interacting with the [LangSmith plat
 To install:
 
 ```bash
-pip install langsmith
+pip install -U langsmith
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=ls_...
 ```
 
-LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM Application and provides seamless integration with [LangChain](https://github.com/hwchase17/langchain), a widely recognized open-source framework that simplifies the process for developers to create powerful language model applications.
+Then trace:
 
-> **Note**: You can enjoy the benefits of LangSmith without using the LangChain open-source packages! To get started with your own proprietary framework, set up your account and then skip to [Logging Traces Outside LangChain](#logging-traces-outside-langchain).
+```python
+import openai
+from langsmith.wrappers import wrap_openai
+
+client = wrap_openai(openai.Client())
+
+client.chat.completions.create(
+    messages=[{"role": "user", "content": "Hello, world"}],
+    model="gpt-3.5-turbo"
+)
+```
+
+LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM application.
 
 > **Cookbook:** For tutorials on how to get more value out of LangSmith, check out the [Langsmith Cookbook](https://github.com/langchain-ai/langsmith-cookbook/tree/main) repo.
 
 A typical workflow looks like:
 
 1. Set up an account with LangSmith.
-2. Log traces.
-3. Debug, Create Datasets, and Evaluate Runs.
+2. Log traces while debugging and prototyping.
+3. Run benchmark evaluations and continuously improve with the collected data.
 
 We'll walk through these steps in more detail below.
 
@@ -32,7 +46,7 @@ Note: Save the API Key in a secure location. It will not be shown again.
 
 ## 2. Log Traces
 
-You can log traces natively in your LangChain application or using a LangSmith RunTree.
+You can log traces natively using the LangSmith SDK or within your LangChain application.
 
 ### Logging Traces with LangChain
 
@@ -68,11 +82,8 @@ add_val({"val": 1})
 
 ### Logging Traces Outside LangChain
 
-_Note: this API is experimental and may change in the future_
-
 You can still use the LangSmith development platform without depending on any
-LangChain code. You can connect either by setting the appropriate environment variables,
-or by directly specifying the connection information in the RunTree.
+LangChain code.
 
 1. **Copy the environment variables from the Settings Page and add them to your application.**
 
@@ -85,7 +96,7 @@ os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 
 2. **Log traces**
 
-The easiest way to log traces using the SDK is via the `@traceable` decorator. Below is an example. 
+The easiest way to log traces using the SDK is via the `@traceable` decorator. Below is an example.
 
 ```python
 from datetime import datetime
@@ -93,35 +104,27 @@ from typing import List, Optional, Tuple
 
 import openai
 from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 
-openai_client = openai.Client()
+client = wrap_openai(openai.Client())
 
-@traceable(run_type="llm")
-def call_openai(data: List[dict], model: str = "gpt-3.5-turbo", temperature: float = 0.0):
-    return openai_client.chat.completion.create(
-        model=model,
-        messages=data,
-        temperature=temperature,
-    )
-
-
-@traceable(run_type="chain")
+@traceable
 def argument_generator(query: str, additional_description: str = "") -> str:
-    return call_openai(
+    return client.chat.completions.create(
         [
-            {"role": "system", "content": f"You are a debater making an argument on a topic."
+            {"role": "system", "content": "You are a debater making an argument on a topic."
              f"{additional_description}"
              f" The current time is {datetime.now()}"},
             {"role": "user", "content": f"The discussion topic is {query}"}
         ]
     ).choices[0].message.content
 
-    
 
-@traceable(run_type="chain")      
+
+@traceable
 def argument_chain(query: str, additional_description: str = "") -> str:
     argument = argument_generator(query, additional_description)
-    # ... Do other processing or call other functions... 
+    # ... Do other processing or call other functions...
     return argument
 
 argument_chain("Why is blue better than orange?")
@@ -144,10 +147,7 @@ parent_run = RunTree(
     name="My Chat Bot",
     run_type="chain",
     inputs={"text": "Summarize this morning's meetings."},
-    serialized={},  # Serialized representation of this chain
     # project_name= "Defaults to the LANGCHAIN_PROJECT env var"
-    # api_url= "Defaults to the LANGCHAIN_ENDPOINT env var"
-    # api_key= "Defaults to the LANGCHAIN_API_KEY env var"
 )
 parent_run.post()
 # .. My Chat Bot calls an LLM
@@ -274,6 +274,136 @@ runs = client.list_runs(
 for run in runs:
     client.evaluate_run(run, evaluator)
 ```
+
+
+## Integrations
+
+LangSmith easily integrates with your favorite LLM framework.
+
+## OpenAI SDK
+
+<!-- markdown-link-check-disable -->
+We provide a convenient wrapper for the [OpenAI SDK](https://platform.openai.com/docs/api-reference).
+
+In order to use, you first need to set your LangSmith API key.
+
+```shell
+export LANGCHAIN_API_KEY=<your-api-key>
+```
+
+Next, you will need to install the LangSmith SDK:
+
+```shell
+pip install -U langsmith
+```
+
+After that, you can wrap the OpenAI client:
+
+```python
+from openai import OpenAI
+from langsmith import wrappers
+
+client = wrappers.wrap_openai(OpenAI())
+```
+
+Now, you can use the OpenAI client as you normally would, but now everything is logged to LangSmith!
+
+```python
+client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Say this is a test"}],
+)
+```
+
+Oftentimes, you use the OpenAI client inside of other functions.
+You can get nested traces by using this wrapped client and decorating those functions with `@traceable`.
+See [this documentation](https://docs.smith.langchain.com/tracing/faq/logging_and_viewing) for more documentation how to use this decorator
+
+```python
+from langsmith import traceable
+
+@traceable(name="Call OpenAI")
+def my_function(text: str):
+    return client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": f"Say {text}"}],
+    )
+
+my_function("hello world")
+```
+
+# Instructor
+
+We provide a convenient integration with [Instructor](https://jxnl.github.io/instructor/), largely by virtue of it essentially just using the OpenAI SDK.
+
+In order to use, you first need to set your LangSmith API key.
+
+```shell
+export LANGCHAIN_API_KEY=<your-api-key>
+```
+
+Next, you will need to install the LangSmith SDK:
+
+```shell
+pip install -U langsmith
+```
+
+After that, you can wrap the OpenAI client:
+
+```python
+from openai import OpenAI
+from langsmith import wrappers
+
+client = wrappers.wrap_openai(OpenAI())
+```
+
+After this, you can patch the OpenAI client using `instructor`:
+
+```python
+import instructor
+
+client = instructor.patch(OpenAI())
+```
+
+Now, you can use `instructor` as you normally would, but now everything is logged to LangSmith!
+
+```python
+from pydantic import BaseModel
+
+
+class UserDetail(BaseModel):
+    name: str
+    age: int
+
+
+user = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    response_model=UserDetail,
+    messages=[
+        {"role": "user", "content": "Extract Jason is 25 years old"},
+    ]
+)
+```
+
+Oftentimes, you use `instructor` inside of other functions.
+You can get nested traces by using this wrapped client and decorating those functions with `@traceable`.
+See [this documentation](https://docs.smith.langchain.com/tracing/faq/logging_and_viewing) for more documentation how to use this decorator
+
+```python
+@traceable()
+def my_function(text: str) -> UserDetail:
+    return client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        response_model=UserDetail,
+        messages=[
+            {"role": "user", "content": f"Extract {text}"},
+        ]
+    )
+
+
+my_function("Jason is 25 years old")
+```
+
 
 ## Additional Documentation
 

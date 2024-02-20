@@ -1,7 +1,9 @@
 """Schemas for the LangSmith API."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import threading
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import (
     Any,
@@ -9,11 +11,12 @@ from typing import (
     List,
     Optional,
     Protocol,
-    TypedDict,
     Union,
     runtime_checkable,
 )
 from uuid import UUID
+
+from typing_extensions import TypedDict
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
@@ -48,6 +51,8 @@ class ExampleBase(BaseModel):
     outputs: Optional[Dict[str, Any]] = Field(default=None)
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -55,7 +60,7 @@ class ExampleCreate(ExampleBase):
     """Example create model."""
 
     id: Optional[UUID]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Example(ExampleBase):
@@ -99,6 +104,8 @@ class ExampleUpdate(BaseModel):
     outputs: Optional[Dict[str, Any]] = None
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -118,6 +125,8 @@ class DatasetBase(BaseModel):
     data_type: Optional[DataType] = None
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -125,7 +134,7 @@ class DatasetCreate(DatasetBase):
     """Dataset create model."""
 
     id: Optional[UUID] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Dataset(DatasetBase):
@@ -179,9 +188,12 @@ class RunTypeEnum(str, Enum):
 
 
 class RunBase(BaseModel):
-    """
-    Base Run schema.
-    Contains the fundamental fields to define a run in a system.
+    """Base Run schema.
+
+    A Run is a span representing a single unit of work or operation within your LLM app.
+    This could be a single call to an LLM or chain, to a prompt formatting call,
+    to a runnable lambda invocation. If you are familiar with OpenTelemetry,
+    you can think of a run as a span.
     """
 
     id: UUID
@@ -228,6 +240,27 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
+    _lock: threading.Lock = Field(default_factory=threading.Lock)
+
+    class Config:
+        """Configuration class for the schema."""
+
+        underscore_attrs_are_private = True
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        with self._lock:
+            if self.extra is None:
+                self.extra = {}
+            metadata = self.extra.setdefault("metadata", {})
+        return metadata
+
+    @property
+    def revision_id(self) -> Optional[UUID]:
+        """Retrieve the revision ID (if any)."""
+        return self.metadata.get("revision_id")
+
 
 class Run(RunBase):
     """Run schema when loading from the DB."""
@@ -257,9 +290,9 @@ class Run(RunBase):
     """Time the first token was processed."""
     parent_run_ids: Optional[List[UUID]] = None
     """List of parent run IDs."""
-    trace_id: Optional[UUID] = None
+    trace_id: UUID
     """Unique ID assigned to every run within this nested trace."""
-    dotted_order: Optional[str] = None
+    dotted_order: str = Field(default="")
     """Dotted order for the run.
 
     This is a string composed of {time}{run-uuid}.* so that a trace can be
@@ -271,14 +304,16 @@ class Run(RunBase):
         - 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155649Z809ed3a2-0172-4f4d-8a02-a64e9b7a0f8a
         - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
     """  # noqa: E501
-    execution_order: Optional[int] = None
-    """The execution order of the run within a run trace."""
     _host_url: Optional[str] = PrivateAttr(default=None)
 
     def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
         """Initialize a Run object."""
+        if not kwargs.get("trace_id"):
+            kwargs = {"trace_id": kwargs.get("id"), **kwargs}
         super().__init__(**kwargs)
         self._host_url = _host_url
+        if not self.dotted_order.strip() and not self.parent_run_id:
+            self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
 
     @property
     def url(self) -> Optional[str]:
@@ -286,6 +321,34 @@ class Run(RunBase):
         if self._host_url and self.app_path:
             return f"{self._host_url}{self.app_path}"
         return None
+
+
+class RunLikeDict(TypedDict, total=False):
+    """Run-like dictionary, for type-hinting."""
+
+    name: str
+    run_type: RunTypeEnum
+    start_time: datetime
+    inputs: Optional[dict]
+    outputs: Optional[dict]
+    end_time: Optional[datetime]
+    extra: Optional[dict]
+    error: Optional[str]
+    serialized: Optional[dict]
+    parent_run_id: Optional[UUID]
+    manifest_id: Optional[UUID]
+    events: Optional[List[dict]]
+    tags: Optional[List[str]]
+    inputs_s3_urls: Optional[dict]
+    outputs_s3_urls: Optional[dict]
+    id: Optional[UUID]
+    session_id: Optional[UUID]
+    session_name: Optional[str]
+    reference_example_id: Optional[UUID]
+    input_attachments: Optional[dict]
+    output_attachments: Optional[dict]
+    trace_id: UUID
+    dotted_order: str
 
 
 class RunWithAnnotationQueueInfo(RunBase):
@@ -298,6 +361,17 @@ class RunWithAnnotationQueueInfo(RunBase):
 
 
 class FeedbackSourceBase(BaseModel):
+    """Base class for feedback sources.
+
+    This represents whether feedback is submitted from the API, model, human labeler,
+        etc.
+
+    Attributes:
+        type (str): The type of the feedback source.
+        metadata (Optional[Dict[str, Any]]): Additional metadata for the feedback
+            source.
+    """
+
     type: str
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
@@ -348,6 +422,8 @@ class FeedbackBase(BaseModel):
     """The source of the feedback."""
 
     class Config:
+        """Configuration class for the schema."""
+
         frozen = True
 
 
@@ -378,7 +454,7 @@ class TracerSession(BaseModel):
 
     id: UUID
     """The ID of the project."""
-    start_time: datetime = Field(default_factory=datetime.utcnow)
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     """The time the project was created."""
     end_time: Optional[datetime] = None
     """The time the project was ended."""
@@ -421,8 +497,10 @@ class TracerSession(BaseModel):
 
 
 class TracerSessionResult(TracerSession):
-    """TracerSession schema returned when reading a project
-    by ID. Sessions are also referred to as "Projects" in the UI."""
+    """A project, hydrated with additional information.
+
+    Sessions are also referred to as "Projects" in the UI.
+    """
 
     run_count: Optional[int]
     """The number of runs in the project."""
@@ -448,9 +526,7 @@ class TracerSessionResult(TracerSession):
 
 @runtime_checkable
 class BaseMessageLike(Protocol):
-    """
-    A protocol representing objects similar to BaseMessage.
-    """
+    """A protocol representing objects similar to BaseMessage."""
 
     content: str
     additional_kwargs: Dict
@@ -461,18 +537,78 @@ class BaseMessageLike(Protocol):
 
 
 class DatasetShareSchema(TypedDict, total=False):
+    """Represents the schema for a dataset share.
+
+    Attributes:
+        dataset_id (UUID): The ID of the dataset.
+        share_token (UUID): The token for sharing the dataset.
+        url (str): The URL of the shared dataset.
+    """
+
     dataset_id: UUID
     share_token: UUID
     url: str
 
 
 class AnnotationQueue(BaseModel):
+    """Represents an annotation queue.
+
+    Attributes:
+        id (UUID): The ID of the annotation queue.
+        name (str): The name of the annotation queue.
+        description (Optional[str], optional): The description of the annotation queue.
+            Defaults to None.
+        created_at (datetime, optional): The creation timestamp of the annotation queue.
+            Defaults to the current UTC time.
+        updated_at (datetime, optional): The last update timestamp of the annotation
+             queue. Defaults to the current UTC time.
+        tenant_id (UUID): The ID of the tenant associated with the annotation queue.
+    """
+
     id: UUID
     name: str
     description: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tenant_id: UUID
 
 
+class BatchIngestConfig(TypedDict, total=False):
+    """Configuration for batch ingestion.
+
+    Attributes:
+        scale_up_qsize_trigger (int): The queue size threshold that triggers scaling up.
+        scale_up_nthreads_limit (int): The maximum number of threads to scale up to.
+        scale_down_nempty_trigger (int): The number of empty threads that triggers
+            scaling down.
+        size_limit (int): The maximum size limit for the batch.
+    """
+
+    scale_up_qsize_trigger: int
+    scale_up_nthreads_limit: int
+    scale_down_nempty_trigger: int
+    size_limit: int
+
+
+class LangSmithInfo(BaseModel):
+    """Information about the LangSmith server."""
+
+    version: str = ""
+    """The version of the LangSmith server."""
+    license_expiration_time: Optional[datetime] = None
+    """The time the license will expire."""
+    batch_ingest_config: Optional[BatchIngestConfig] = None
+
+
 Example.update_forward_refs()
+
+
+class RunEvent(TypedDict, total=False):
+    """Run event schema."""
+
+    name: str
+    """Type of event."""
+    time: Union[datetime, str]
+    """Time of the event."""
+    kwargs: Optional[Dict[str, Any]]
+    """Additional metadata for the event."""

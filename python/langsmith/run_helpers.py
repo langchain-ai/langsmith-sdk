@@ -1,14 +1,16 @@
 """Decorator for creating a run tree from functions."""
+
 from __future__ import annotations
 
 import contextlib
 import contextvars
+import datetime
 import functools
 import inspect
 import logging
 import traceback
 import uuid
-from concurrent import futures
+import warnings
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -24,11 +26,14 @@ from typing import (
     Protocol,
     TypedDict,
     TypeVar,
+    Union,
     cast,
+    overload,
     runtime_checkable,
 )
 
-from langsmith import client, run_trees, utils
+from langsmith import client as ls_client
+from langsmith import run_trees, utils
 
 if TYPE_CHECKING:
     from langchain.schema.runnable import Runnable
@@ -42,9 +47,12 @@ _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
 
 
-def get_run_tree_context() -> Optional[run_trees.RunTree]:
+def get_current_run_tree() -> Optional[run_trees.RunTree]:
     """Get the current run tree context."""
     return _PARENT_RUN_TREE.get()
+
+
+get_run_tree_context = get_current_run_tree
 
 
 def _is_traceable_function(func: Callable) -> bool:
@@ -57,6 +65,13 @@ def is_traceable_function(func: Callable) -> bool:
         _is_traceable_function(func)
         or (isinstance(func, functools.partial) and _is_traceable_function(func.func))
         or (hasattr(func, "__call__") and _is_traceable_function(func.__call__))
+    )
+
+
+def is_async(func: Callable) -> bool:
+    """Inspect function or wrapped function to see if it is async."""
+    return inspect.iscoroutinefunction(func) or (
+        hasattr(func, "__wrapped__") and inspect.iscoroutinefunction(func.__wrapped__)
     )
 
 
@@ -83,14 +98,14 @@ def _get_inputs(
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
-    reference_example_id: Optional[client.ID_TYPE]
+    reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
     run_tree: Optional[run_trees.RunTree]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
-    run_id: Optional[client.ID_TYPE]
-    client: Optional[client.Client]
+    run_id: Optional[ls_client.ID_TYPE]
+    client: Optional[ls_client.Client]
 
 
 class _TraceableContainer(TypedDict, total=False):
@@ -101,6 +116,19 @@ class _TraceableContainer(TypedDict, total=False):
     outer_project: Optional[str]
     outer_metadata: Optional[Dict[str, Any]]
     outer_tags: Optional[List[str]]
+
+
+class _ContainerInput(TypedDict, total=False):
+    """Typed response when initializing a run a traceable."""
+
+    extra_outer: Optional[Dict]
+    name: Optional[str]
+    metadata: Optional[Dict[str, Any]]
+    tags: Optional[List[str]]
+    client: Optional[ls_client.Client]
+    reduce_fn: Optional[Callable]
+    project_name: Optional[str]
+    run_type: ls_client.RUN_TYPE_T
 
 
 def _container_end(
@@ -129,34 +157,38 @@ def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
 
 def _setup_run(
     func: Callable,
-    run_type: str,
-    extra_outer: dict,
+    container_input: _ContainerInput,
     langsmith_extra: Optional[LangSmithExtra] = None,
-    name: Optional[str] = None,
-    executor: Optional[futures.ThreadPoolExecutor] = None,
-    metadata: Optional[Mapping[str, Any]] = None,
-    tags: Optional[List[str]] = None,
-    client: Optional[client.Client] = None,
     args: Any = None,
     kwargs: Any = None,
 ) -> _TraceableContainer:
-    outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
+    """Create a new run or create_child() if run is passed in kwargs."""
+    extra_outer = container_input.get("extra_outer") or {}
+    name = container_input.get("name")
+    metadata = container_input.get("metadata")
+    tags = container_input.get("tags")
+    client = container_input.get("client")
+    run_type = container_input.get("run_type") or "chain"
+    outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
-    parent_run_ = langsmith_extra.get("run_tree") or _PARENT_RUN_TREE.get()
+    parent_run_ = langsmith_extra.get("run_tree") or get_run_tree_context()
+    selected_project = (
+        _PROJECT_NAME.get()  # From parent trace
+        or langsmith_extra.get("project_name")  # at invocation time
+        or container_input["project_name"]  # at decorator time
+        or utils.get_tracer_project()  # default
+    )
     if not parent_run_ and not utils.tracing_is_enabled():
         utils.log_once(
             logging.DEBUG, "LangSmith tracing is disabled, returning original function."
         )
         return _TraceableContainer(
             new_run=None,
-            project_name=outer_project,
+            project_name=selected_project,
             outer_project=outer_project,
             outer_metadata=None,
             outer_tags=None,
         )
-    # Else either the env var is set OR a parent run was explicitly set,
-    # which occurs in the `as_runnable()` flow
-    project_name_ = langsmith_extra.get("project_name", outer_project)
     signature = inspect.signature(func)
     name_ = name or func.__name__
     docstring = func.__doc__
@@ -207,17 +239,18 @@ def _setup_run(
             inputs=inputs,
             run_type=run_type,
             reference_example_id=langsmith_extra.get("reference_example_id"),
-            project_name=project_name_,
+            project_name=selected_project,
             extra=extra_inner,
             tags=tags_,
-            executor=executor,
             client=client_,
         )
-
-    new_run.post()
+    try:
+        new_run.post()
+    except Exception as e:
+        logger.error(f"Failed to post run {new_run.id}: {e}")
     response_container = _TraceableContainer(
         new_run=new_run,
-        project_name=project_name_,
+        project_name=selected_project,
         outer_project=outer_project,
         outer_metadata=outer_metadata,
         outer_tags=outer_tags,
@@ -229,51 +262,243 @@ def _setup_run(
 
 R = TypeVar("R", covariant=True)
 
+_VALID_RUN_TYPES = {
+    "tool",
+    "chain",
+    "llm",
+    "retriever",
+    "embedding",
+    "prompt",
+    "parser",
+}
+
 
 @runtime_checkable
 class SupportsLangsmithExtra(Protocol, Generic[R]):
+    """Implementations of this Protoc accept an optional langsmith_extra parameter.
+
+    Args:
+        *args: Variable length arguments.
+        langsmith_extra (Optional[Dict[str, Any]]): Optional dictionary of
+            additional parameters for Langsmith.
+        **kwargs: Keyword arguments.
+
+    Returns:
+        R: The return type of the callable.
+    """
+
     def __call__(
         self,
         *args: Any,
         langsmith_extra: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> R:
+        """Call the instance when it is called as a function.
+
+        Args:
+            *args: Variable length argument list.
+            langsmith_extra: Optional dictionary containing additional
+                parameters specific to Langsmith.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            R: The return value of the method.
+
+        """
         ...
 
 
+@overload
 def traceable(
-    run_type: str = "chain",
+    func: Callable[..., R],
+) -> Callable[..., R]:
+    ...
+
+
+@overload
+def traceable(
+    run_type: ls_client.RUN_TYPE_T = "chain",
     *,
     name: Optional[str] = None,
-    executor: Optional[futures.ThreadPoolExecutor] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
-    client: Optional[client.Client] = None,
-    extra: Optional[Dict] = None,
+    client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable] = None,
+    project_name: Optional[str] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
-    """Decorator for creating or adding a run to a run tree.
+    ...
+
+
+def traceable(
+    *args: Any,
+    **kwargs: Any,
+) -> Union[Callable, Callable[[Callable], Callable]]:
+    """Trace a function with langsmith.
 
     Args:
-        run_type: The type of run to create. Examples: llm, chain, tool, prompt,
+        run_type: The type of run (span) to create. Examples: llm, chain, tool, prompt,
             retriever, etc. Defaults to "chain".
         name: The name of the run. Defaults to the function name.
-        executor: The thread pool executor to use for the run. Defaults to None,
-            which will use the default executor.
         metadata: The metadata to add to the run. Defaults to None.
         tags: The tags to add to the run. Defaults to None.
         client: The client to use for logging the run to LangSmith. Defaults to
             None, which will use the default client.
-        extra: Any additional info to be injected into the run's 'extra' field.
-            Metadata are stored in a field within the extra dict. Defaults to None.
         reduce_fn: A function to reduce the output of the function if the function
             returns a generator. Defaults to None, which means the values will be
                 logged as a list. Note: if the iterator is never exhausted (e.g.
                 the function returns an infinite generator), this will never be
                 called, and the run itself will be stuck in a pending state.
+        project_name: The name of the project to log the run to. Defaults to None,
+            which will use the default project.
 
+
+    Returns:
+            Union[Callable, Callable[[Callable], Callable]]: The decorated function.
+
+    Note:
+            - Requires that LANGCHAIN_TRACING_V2 be set to 'true' in the environment.
+
+    Examples:
+        .. code-block:: python
+            import httpx
+            import asyncio
+
+            from typing import Iterable
+            from langsmith import traceable, Client
+
+
+            # Basic usage:
+            @traceable
+            def my_function(x: float, y: float) -> float:
+                return x + y
+
+
+            my_function(5, 6)
+
+
+            @traceable
+            async def my_async_function(query_params: dict) -> dict:
+                async with httpx.AsyncClient() as http_client:
+                    response = await http_client.get(
+                        "https://api.example.com/data",
+                        params=query_params,
+                    )
+                    return response.json()
+
+
+            asyncio.run(my_async_function({"param": "value"}))
+
+
+            # Streaming data with a generator:
+            @traceable
+            def my_generator(n: int) -> Iterable:
+                for i in range(n):
+                    yield i
+
+
+            for item in my_generator(5):
+                print(item)
+
+
+            # Async streaming data
+            @traceable
+            async def my_async_generator(query_params: dict) -> Iterable:
+                async with httpx.AsyncClient() as http_client:
+                    response = await http_client.get(
+                        "https://api.example.com/data",
+                        params=query_params,
+                    )
+                    for item in response.json():
+                        yield item
+
+
+            async def async_code():
+                async for item in my_async_generator({"param": "value"}):
+                    print(item)
+
+
+            asyncio.run(async_code())
+
+
+            # Specifying a run type and name:
+            @traceable(name="CustomName", run_type="tool")
+            def another_function(a: float, b: float) -> float:
+                return a * b
+
+
+            another_function(5, 6)
+
+
+            # Logging with custom metadata and tags:
+            @traceable(
+                metadata={"version": "1.0", "author": "John Doe"},
+                tags=["beta", "test"]
+            )
+            def tagged_function(x):
+                return x**2
+
+
+            tagged_function(5)
+
+            # Specifying a custom client and project name:
+            custom_client = Client(api_key="your_api_key")
+
+
+            @traceable(client=custom_client, project_name="My Special Project")
+            def project_specific_function(data):
+                return data
+
+
+            project_specific_function({"data": "to process"})
+
+
+            # Manually passing langsmith_extra:
+            @traceable
+            def manual_extra_function(x):
+                return x**2
+
+
+            manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
     """
-    extra_outer = extra or {}
+    run_type: ls_client.RUN_TYPE_T = (
+        args[0]
+        if args and isinstance(args[0], str)
+        else (kwargs.pop("run_type", None) or "chain")
+    )
+    if run_type not in _VALID_RUN_TYPES:
+        warnings.warn(
+            f"Unrecognized run_type: {run_type}. Must be one of: {_VALID_RUN_TYPES}."
+            f" Did you mean @traceable(name='{run_type}')?"
+        )
+    if len(args) > 1:
+        warnings.warn(
+            "The `traceable()` decorator only accepts one positional argument, "
+            "which should be the run_type. All other arguments should be passed "
+            "as keyword arguments."
+        )
+    if "extra" in kwargs:
+        warnings.warn(
+            "The `extra` keyword argument is deprecated. Please use `metadata` "
+            "instead.",
+            DeprecationWarning,
+        )
+    reduce_fn = kwargs.pop("reduce_fn", None)
+    container_input = _ContainerInput(
+        # TODO: Deprecate raw extra
+        extra_outer=kwargs.pop("extra", None),
+        name=kwargs.pop("name", None),
+        metadata=kwargs.pop("metadata", None),
+        tags=kwargs.pop("tags", None),
+        client=kwargs.pop("client", None),
+        project_name=kwargs.pop("project_name", None),
+        run_type=run_type,
+    )
+    if kwargs:
+        warnings.warn(
+            f"The following keyword arguments are not recognized and will be ignored: "
+            f"{sorted(kwargs.keys())}.",
+            DeprecationWarning,
+        )
 
     def decorator(func: Callable):
         @functools.wraps(func)
@@ -282,18 +507,12 @@ def traceable(
             langsmith_extra: Optional[LangSmithExtra] = None,
             **kwargs: Any,
         ) -> Any:
-            """Async version of wrapper function"""
-            context_run = _PARENT_RUN_TREE.get()
+            """Async version of wrapper function."""
+            context_run = get_run_tree_context()
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                executor=executor,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
@@ -323,17 +542,11 @@ def traceable(
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            context_run = _PARENT_RUN_TREE.get()
+            context_run = get_run_tree_context()
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                executor=executor,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
@@ -355,7 +568,21 @@ def traceable(
                 _PROJECT_NAME.set(run_container["outer_project"])
                 _TAGS.set(run_container["outer_tags"])
                 _METADATA.set(run_container["outer_metadata"])
+                # Can't iterate through if it's a coroutine
+                if inspect.iscoroutine(async_gen_result):
+                    async_gen_result = await async_gen_result
                 async for item in async_gen_result:
+                    if run_type == "llm":
+                        if run_container["new_run"]:
+                            run_container["new_run"].add_event(
+                                {
+                                    "name": "new_token",
+                                    "time": datetime.datetime.now(
+                                        datetime.timezone.utc
+                                    ).isoformat(),
+                                    "kwargs": {"token": item},
+                                }
+                            )
                     results.append(item)
                     yield item
             except BaseException as e:
@@ -387,17 +614,11 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
-            context_run = _PARENT_RUN_TREE.get()
+            context_run = get_run_tree_context()
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                executor=executor,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
@@ -427,21 +648,14 @@ def traceable(
         def generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
-            context_run = _PARENT_RUN_TREE.get()
+            context_run = get_run_tree_context()
             run_container = _setup_run(
                 func,
-                run_type=run_type,
+                container_input=container_input,
                 langsmith_extra=langsmith_extra,
-                extra_outer=extra_outer,
-                name=name,
-                executor=executor,
-                metadata=metadata,
-                tags=tags,
-                client=client,
                 args=args,
                 kwargs=kwargs,
             )
-
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
@@ -457,8 +671,22 @@ def traceable(
                     # around this.
                     generator_result = func(*args, **kwargs)
                 for item in generator_result:
+                    if run_type == "llm":
+                        if run_container["new_run"]:
+                            run_container["new_run"].add_event(
+                                {
+                                    "name": "new_token",
+                                    "time": datetime.datetime.now(
+                                        datetime.timezone.utc
+                                    ).isoformat(),
+                                    "kwargs": {"token": item},
+                                }
+                            )
                     results.append(item)
-                    yield item
+                    try:
+                        yield item
+                    except GeneratorExit:
+                        break
             except BaseException as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
@@ -483,38 +711,53 @@ def traceable(
 
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper
-        elif inspect.iscoroutinefunction(func):
-            selected_wrapper = async_wrapper
-        elif inspect.isgeneratorfunction(func):
+        elif is_async(func):
+            if reduce_fn:
+                selected_wrapper = async_generator_wrapper
+            else:
+                selected_wrapper = async_wrapper
+        elif reduce_fn or inspect.isgeneratorfunction(func):
             selected_wrapper = generator_wrapper
         else:
             selected_wrapper = wrapper
         setattr(selected_wrapper, "__langsmith_traceable__", True)
         return selected_wrapper
 
+    # If the decorator is called with no arguments, then it's being used as a
+    # decorator, so we return the decorator function
+    if len(args) == 1 and callable(args[0]) and not kwargs:
+        return decorator(args[0])
+    # Else it's being used as a decorator factory, so we return the decorator
     return decorator
 
 
 @contextlib.contextmanager
 def trace(
     name: str,
-    run_type: str,
+    run_type: ls_client.RUN_TYPE_T = "chain",
     *,
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
-    executor: Optional[futures.ThreadPoolExecutor] = None,
     project_name: Optional[str] = None,
     run_tree: Optional[run_trees.RunTree] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
+    **kwargs: Any,
 ) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
+    if kwargs:
+        # In case someone was passing an executor before.
+        warnings.warn(
+            "The `trace` context manager no longer supports the following kwargs: "
+            f"{sorted(kwargs.keys())}.",
+            DeprecationWarning,
+        )
     outer_tags = _TAGS.get()
     outer_metadata = _METADATA.get()
     outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
-    parent_run_ = _PARENT_RUN_TREE.get() if run_tree is None else run_tree
+    parent_run_ = get_run_tree_context() if run_tree is None else run_tree
 
-    # Merge and set context varaibles
+    # Merge and set context variables
     tags_ = sorted(set((tags or []) + (outer_tags or [])))
     _TAGS.set(tags_)
     metadata = {**(metadata or {}), **(outer_metadata or {}), "ls_method": "trace"}
@@ -537,7 +780,6 @@ def trace(
             name=name,
             run_type=run_type,
             extra=extra_outer,
-            executor=executor,
             project_name=project_name_,
             inputs=inputs or {},
             tags=tags_,
@@ -564,6 +806,27 @@ def trace(
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
+    """Convert a function wrapped by the LangSmith @traceable decorator to a Runnable.
+
+    Args:
+        traceable_fn (Callable): The function wrapped by the @traceable decorator.
+
+    Returns:
+        Runnable: A Runnable object that maintains a consistent LangSmith
+            tracing context.
+
+    Raises:
+        ImportError: If langchain module is not installed.
+        ValueError: If the provided function is not wrapped by the @traceable decorator.
+
+    Example:
+        >>> @traceable
+        ... def my_function(input_data):
+        ...     # Function implementation
+        ...     pass
+        ...
+        >>> runnable = as_runnable(my_function)
+    """
     try:
         from langchain.callbacks.manager import (
             AsyncCallbackManager,
@@ -588,8 +851,9 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         )
 
     class RunnableTraceable(RunnableLambda):
-        """RunnableTraceable converts a @traceable decorated function
-        to a Runnable in a way that hands off the LangSmith tracing context.
+        """Converts a @traceable decorated function to a Runnable.
+
+        This helps maintain a consistent LangSmith tracing context.
         """
 
         def __init__(
@@ -599,7 +863,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         ) -> None:
             wrapped: Optional[Callable[[Input], Output]] = None
             awrapped = self._wrap_async(afunc)
-            if inspect.iscoroutinefunction(func):
+            if is_async(func):
                 if awrapped is not None:
                     raise TypeError(
                         "Func was provided as a coroutine function, but afunc was "
@@ -648,7 +912,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
 
         @staticmethod
         def _wrap_sync(
-            func: Callable[..., Output]
+            func: Callable[..., Output],
         ) -> Callable[[Input, RunnableConfig], Output]:
             """Wrap a synchronous function to make it asynchronous."""
 
@@ -662,10 +926,9 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
 
         @staticmethod
         def _wrap_async(
-            afunc: Optional[Callable[..., Awaitable[Output]]]
+            afunc: Optional[Callable[..., Awaitable[Output]]],
         ) -> Optional[Callable[[Input, RunnableConfig], Awaitable[Output]]]:
             """Wrap an async function to make it synchronous."""
-
             if afunc is None:
                 return None
 
