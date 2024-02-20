@@ -114,7 +114,7 @@ services:
     depends_on:
       langchain-clickhouse:
         condition: service_healthy
-    restart: "no"
+    restart: "on-failure:10"
     entrypoint:
       [
         "bash",
