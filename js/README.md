@@ -91,8 +91,8 @@ Langsmith's `traceable` wrapper function makes it easy to trace any function or 
 
 <!-- markdown-link-check-disable -->
 
-The easiest ways to trace calls from the [OpenAI SDK](https://platform.openai.com/docs/api-reference) with LangSmith
-is using the `traceable` wrapper function available in LangSmith 0.1.0 and up.
+The easiest way to trace calls from the [OpenAI SDK](https://platform.openai.com/docs/api-reference) with LangSmith
+is using the `wrapOpenAI` wrapper function available in LangSmith 0.1.3 and up.
 
 In order to use, you first need to set your LangSmith API key:
 
@@ -106,7 +106,7 @@ Next, you will need to install the LangSmith SDK and the OpenAI SDK:
 npm install langsmith openai
 ```
 
-After that, initialize your OpenAI client and wrap the client with `wrapOpenAI` method to enable tracing for Completion and Chat completion API:
+After that, initialize your OpenAI client and wrap the client with `wrapOpenAI` method to enable tracing for the completions and chat completions methods:
 
 ```ts
 import { OpenAI } from "openai";
