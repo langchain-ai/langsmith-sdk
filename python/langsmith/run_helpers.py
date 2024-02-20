@@ -47,9 +47,12 @@ _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
 
 
-def get_run_tree_context() -> Optional[run_trees.RunTree]:
+def get_current_run_tree() -> Optional[run_trees.RunTree]:
     """Get the current run tree context."""
     return _PARENT_RUN_TREE.get()
+
+
+get_run_tree_context = get_current_run_tree
 
 
 def _is_traceable_function(func: Callable) -> bool:
