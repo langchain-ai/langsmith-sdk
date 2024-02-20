@@ -1,3 +1,5 @@
+"""This module contains the evaluator classes for evaluating runs."""
+
 import asyncio
 import uuid
 from abc import abstractmethod
@@ -43,8 +45,11 @@ class EvaluationResult(BaseModel):
 
 
 class EvaluationResults(TypedDict, total=False):
-    """Batch evaluation results, if your evaluator wishes
-    to return multiple scores."""
+    """Batch evaluation results.
+
+    This makes it easy for your evaluator to return multiple
+    metrics at once.
+    """
 
     results: List[EvaluationResult]
     """The evaluation results."""
@@ -69,8 +74,7 @@ class RunEvaluator:
 
 
 class DynamicRunEvaluator(RunEvaluator):
-    """
-    A dynamic evaluator that wraps a function and transforms it into a `RunEvaluator`.
+    """A dynamic evaluator that wraps a function and transforms it into a `RunEvaluator`.
 
     This class is designed to be used with the `@run_evaluator` decorator, allowing
     functions that take a `Run` and an optional `Example` as arguments, and return
@@ -86,8 +90,7 @@ class DynamicRunEvaluator(RunEvaluator):
             [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults, dict]
         ],
     ):
-        """
-        Initialize the DynamicRunEvaluator with a given function.
+        """Initialize the DynamicRunEvaluator with a given function.
 
         Args:
             func (Callable): A function that takes a `Run` and an optional `Example` as
@@ -130,8 +133,7 @@ class DynamicRunEvaluator(RunEvaluator):
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
-        """
-        Evaluate a run using the wrapped function.
+        """Evaluate a run using the wrapped function.
 
         This method directly invokes the wrapped function with the provided arguments.
 
@@ -154,8 +156,7 @@ class DynamicRunEvaluator(RunEvaluator):
     def __call__(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
-        """
-        Make the evaluator callable, allowing it to be used like a function.
+        """Make the evaluator callable, allowing it to be used like a function.
 
         This method enables the evaluator instance to be called directly, forwarding the
         call to `evaluate_run`.
@@ -175,5 +176,8 @@ def run_evaluator(
         [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults, dict]
     ],
 ):
-    """Decorator to create a run evaluator from a function."""
+    """Create a run evaluator from a function.
+
+    Decorator that transforms a function into a `RunEvaluator`.
+    """
     return DynamicRunEvaluator(func)

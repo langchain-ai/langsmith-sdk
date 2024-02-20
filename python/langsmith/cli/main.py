@@ -190,7 +190,6 @@ class LangSmithCommand:
 
     def status(self) -> None:
         """Provide information about the status LangSmith server."""
-
         command = [
             *self.docker_compose_command,
             "-f",

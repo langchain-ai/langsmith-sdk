@@ -38,11 +38,16 @@ interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
+  hideInputs?: boolean;
+  hideOutputs?: boolean;
+  autoBatchTracing?: boolean;
+  pendingAutoBatchedRunLimit?: number;
 }
 
 interface ListRunsParams {
-  projectId?: string;
-  projectName?: string;
+  projectId?: string | string[];
+  projectName?: string | string[];
+  traceId?: string;
   executionOrder?: number;
   parentRunId?: string;
   referenceExampleId?: string;
@@ -54,6 +59,7 @@ interface ListRunsParams {
   query?: string;
   filter?: string;
 }
+
 interface UploadCSVParams {
   csvFile: Blob;
   fileName: string;
@@ -91,7 +97,6 @@ interface CreateRunParams {
   name: string;
   inputs: KVMap;
   run_type: string;
-  execution_order?: number;
   id?: string;
   start_time?: number;
   end_time?: number;
@@ -104,9 +109,15 @@ interface CreateRunParams {
   parent_run_id?: string;
   project_name?: string;
   revision_id?: string;
+  trace_id?: string;
+  dotted_order?: string;
 }
 
-interface projectOptions {
+interface UpdateRunParams extends RunUpdate {
+  id?: string;
+}
+
+interface ProjectOptions {
   projectName?: string;
   projectId?: string;
 }
@@ -118,6 +129,51 @@ export type CreateExampleOptions = {
   datasetName?: string;
   createdAt?: Date;
   exampleId?: string;
+};
+
+type AutoBatchQueueItem = {
+  action: "create" | "update";
+  item: RunCreate | RunUpdate;
+};
+
+async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
+  const runtimeEnv = await getRuntimeEnvironment();
+  const envVars = getLangChainEnvVarsMetadata();
+  return runs.map((run) => {
+    const extra = run.extra ?? {};
+    const metadata = extra.metadata;
+    run.extra = {
+      ...extra,
+      runtime: {
+        ...runtimeEnv,
+        ...extra?.runtime,
+      },
+      metadata: {
+        ...envVars,
+        ...(envVars.revision_id || run.revision_id
+          ? { revision_id: run.revision_id ?? envVars.revision_id }
+          : {}),
+        ...metadata,
+      },
+    };
+    return run;
+  });
+}
+
+const getTracingSamplingRate = () => {
+  const samplingRateStr = getEnvironmentVariable(
+    "LANGCHAIN_TRACING_SAMPLING_RATE"
+  );
+  if (samplingRateStr === undefined) {
+    return undefined;
+  }
+  const samplingRate = parseFloat(samplingRateStr);
+  if (samplingRate < 0 || samplingRate > 1) {
+    throw new Error(
+      `LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
+    );
+  }
+  return samplingRate;
 };
 
 // utility functions
@@ -158,23 +214,41 @@ function trimQuotes(str?: string): string | undefined {
     .replace(/^'(.*)'$/, "$1");
 }
 
-function hideInputs(inputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true") {
-    return {};
-  }
-  return inputs;
-}
-
-function hideOutputs(outputs: KVMap): KVMap {
-  if (getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true") {
-    return {};
-  }
-  return outputs;
-}
-
 function assertUuid(str: string): void {
   if (!uuid.validate(str)) {
     throw new Error(`Invalid UUID: ${str}`);
+  }
+}
+
+export class Queue<T> {
+  items: [T, () => void][] = [];
+
+  get size() {
+    return this.items.length;
+  }
+
+  push(item: T): Promise<void> {
+    // this.items.push is synchronous with promise creation:
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
+    return new Promise<void>((resolve) => {
+      this.items.push([item, resolve]);
+    });
+  }
+
+  pop(upToN: number): [T[], () => void] {
+    if (upToN < 1) {
+      throw new Error("Number of items to pop off may not be less than 1.");
+    }
+    const popped: typeof this.items = [];
+    while (popped.length < upToN && this.items.length) {
+      const item = this.items.shift();
+      if (item) {
+        popped.push(item);
+      } else {
+        break;
+      }
+    }
+    return [popped.map((it) => it[0]), () => popped.forEach((it) => it[1]())];
   }
 }
 
@@ -191,30 +265,66 @@ export class Client {
 
   private _tenantId: string | null = null;
 
+  private hideInputs?: boolean;
+
+  private hideOutputs?: boolean;
+
+  private tracingSampleRate?: number;
+
+  private sampledPostUuids = new Set();
+
+  private autoBatchTracing = true;
+
+  private batchEndpointSupported?: boolean;
+
+  private autoBatchQueue = new Queue<AutoBatchQueueItem>();
+
+  private pendingAutoBatchedRunLimit = 100;
+
+  private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  private autoBatchInitialDelayMs = 250;
+
+  private autoBatchAggregationDelayMs = 50;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
+    this.tracingSampleRate = getTracingSamplingRate();
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     this.validateApiKeyIfHosted();
-    this.timeout_ms = config.timeout_ms ?? 4000;
+    this.timeout_ms = config.timeout_ms ?? 12_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
+    this.hideOutputs = config.hideOutputs ?? defaultConfig.hideOutputs;
+    this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
+    this.pendingAutoBatchedRunLimit =
+      config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
   }
 
   public static getDefaultClientConfig(): {
     apiUrl: string;
     apiKey?: string;
     webUrl?: string;
+    hideInputs?: boolean;
+    hideOutputs?: boolean;
   } {
     const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
     const apiUrl =
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
       "https://api.smith.langchain.com";
+    const hideInputs =
+      getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true";
+    const hideOutputs =
+      getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
       webUrl: undefined,
+      hideInputs: hideInputs,
+      hideOutputs: hideOutputs,
     };
   }
 
@@ -256,6 +366,35 @@ export class Client {
       headers["x-api-key"] = `${this.apiKey}`;
     }
     return headers;
+  }
+
+  private processInputs(inputs: KVMap): KVMap {
+    if (this.hideInputs) {
+      return {};
+    }
+    return inputs;
+  }
+
+  private processOutputs(outputs: KVMap): KVMap {
+    if (this.hideOutputs) {
+      return {};
+    }
+    return outputs;
+  }
+
+  private prepareRunCreateOrUpdateInputs(run: RunUpdate): RunUpdate;
+  private prepareRunCreateOrUpdateInputs(run: RunCreate): RunCreate;
+  private prepareRunCreateOrUpdateInputs(
+    run: RunCreate | RunUpdate
+  ): RunCreate | RunUpdate {
+    const runParams = { ...run };
+    if (runParams.inputs !== undefined) {
+      runParams.inputs = this.processInputs(runParams.inputs);
+    }
+    if (runParams.outputs !== undefined) {
+      runParams.outputs = this.processOutputs(runParams.outputs);
+    }
+    return runParams;
   }
 
   private async _getResponse(
@@ -351,54 +490,261 @@ export class Client {
     }
   }
 
+  private _filterForSampling(
+    runs: CreateRunParams[] | UpdateRunParams[],
+    patch = false
+  ) {
+    if (this.tracingSampleRate === undefined) {
+      return runs;
+    }
+
+    if (patch) {
+      const sampled = [];
+      for (const run of runs) {
+        if (this.sampledPostUuids.has(run.id)) {
+          sampled.push(run);
+          this.sampledPostUuids.delete(run.id);
+        }
+      }
+      return sampled;
+    } else {
+      const sampled = [];
+      for (const run of runs) {
+        if (Math.random() < this.tracingSampleRate) {
+          sampled.push(run);
+          this.sampledPostUuids.add(run.id);
+        }
+      }
+      return sampled;
+    }
+  }
+
+  private async drainAutoBatchQueue() {
+    while (this.autoBatchQueue.size >= 0) {
+      const [batch, done] = this.autoBatchQueue.pop(
+        this.pendingAutoBatchedRunLimit
+      );
+      if (!batch.length) {
+        done();
+        return;
+      }
+      try {
+        await this.batchIngestRuns({
+          runCreates: batch
+            .filter((item) => item.action === "create")
+            .map((item) => item.item) as RunCreate[],
+          runUpdates: batch
+            .filter((item) => item.action === "update")
+            .map((item) => item.item) as RunUpdate[],
+        });
+      } finally {
+        done();
+      }
+    }
+  }
+
+  private async processRunOperation(
+    item: AutoBatchQueueItem,
+    immediatelyTriggerBatch?: boolean
+  ) {
+    const oldTimeout = this.autoBatchTimeout;
+    clearTimeout(this.autoBatchTimeout);
+    this.autoBatchTimeout = undefined;
+    const itemPromise = this.autoBatchQueue.push(item);
+    if (
+      immediatelyTriggerBatch ||
+      this.autoBatchQueue.size > this.pendingAutoBatchedRunLimit
+    ) {
+      await this.drainAutoBatchQueue();
+    }
+    if (this.autoBatchQueue.size > 0) {
+      this.autoBatchTimeout = setTimeout(
+        () => {
+          this.autoBatchTimeout = undefined;
+          void this.drainAutoBatchQueue();
+        },
+        oldTimeout
+          ? this.autoBatchAggregationDelayMs
+          : this.autoBatchInitialDelayMs
+      );
+    }
+    return itemPromise;
+  }
+
+  protected async batchEndpointIsSupported() {
+    const response = await fetch(`${this.apiUrl}/info`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(this.timeout_ms),
+    });
+    if (!response.ok) {
+      // consume the response body to release the connection
+      // https://undici.nodejs.org/#/?id=garbage-collection
+      await response.text();
+      return false;
+    }
+    return true;
+  }
+
   public async createRun(run: CreateRunParams): Promise<void> {
+    if (!this._filterForSampling([run]).length) {
+      return;
+    }
     const headers = { ...this.headers, "Content-Type": "application/json" };
-    const extra = run.extra ?? {};
-    const metadata = extra.metadata;
-    const runtimeEnv = await getRuntimeEnvironment();
-    const envVars = getLangChainEnvVarsMetadata();
     const session_name = run.project_name;
     delete run.project_name;
-    const runCreate: RunCreate = {
+
+    const runCreate: RunCreate = this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
-      extra: {
-        ...run.extra,
-        runtime: {
-          ...runtimeEnv,
-          ...extra.runtime,
-        },
-        metadata: {
-          ...envVars,
-          ...(envVars.revision_id || run.revision_id
-            ? { revision_id: run.revision_id ?? envVars.revision_id }
-            : {}),
-          ...metadata,
-        },
-      },
-    };
-    runCreate.inputs = hideInputs(runCreate.inputs);
-    if (runCreate.outputs) {
-      runCreate.outputs = hideOutputs(runCreate.outputs);
+      start_time: run.start_time ?? Date.now(),
+    });
+    if (
+      this.autoBatchTracing &&
+      runCreate.trace_id !== undefined &&
+      runCreate.dotted_order !== undefined
+    ) {
+      void this.processRunOperation({
+        action: "create",
+        item: runCreate,
+      });
+      return;
     }
+    const mergedRunCreateParams = await mergeRuntimeEnvIntoRunCreates([
+      runCreate,
+    ]);
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,
-      body: JSON.stringify(runCreate),
+      body: JSON.stringify(mergedRunCreateParams[0]),
       signal: AbortSignal.timeout(this.timeout_ms),
     });
     await raiseForStatus(response, "create run");
   }
 
+  /**
+   * Batch ingest/upsert multiple runs in the Langsmith system.
+   * @param runs
+   */
+  public async batchIngestRuns({
+    runCreates,
+    runUpdates,
+  }: {
+    runCreates?: RunCreate[];
+    runUpdates?: RunUpdate[];
+  }) {
+    if (runCreates === undefined && runUpdates === undefined) {
+      return;
+    }
+    let preparedCreateParams =
+      runCreates?.map((create) =>
+        this.prepareRunCreateOrUpdateInputs(create)
+      ) ?? [];
+    let preparedUpdateParams =
+      runUpdates?.map((update) =>
+        this.prepareRunCreateOrUpdateInputs(update)
+      ) ?? [];
+
+    if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
+      const createById = preparedCreateParams.reduce(
+        (params: Record<string, RunCreate>, run) => {
+          if (!run.id) {
+            return params;
+          }
+          params[run.id] = run;
+          return params;
+        },
+        {}
+      );
+      const standaloneUpdates = [];
+      for (const updateParam of preparedUpdateParams) {
+        if (updateParam.id !== undefined && createById[updateParam.id]) {
+          createById[updateParam.id] = {
+            ...createById[updateParam.id],
+            ...updateParam,
+          };
+        } else {
+          standaloneUpdates.push(updateParam);
+        }
+      }
+      preparedCreateParams = Object.values(createById);
+      preparedUpdateParams = standaloneUpdates;
+    }
+    const body = {
+      post: this._filterForSampling(preparedCreateParams),
+      patch: this._filterForSampling(preparedUpdateParams, true),
+    };
+    if (!body.post.length && !body.patch.length) {
+      return;
+    }
+    preparedCreateParams = await mergeRuntimeEnvIntoRunCreates(
+      preparedCreateParams
+    );
+    if (this.batchEndpointSupported === undefined) {
+      this.batchEndpointSupported = await this.batchEndpointIsSupported();
+    }
+    if (!this.batchEndpointSupported) {
+      this.autoBatchTracing = false;
+      for (const preparedCreateParam of body.post) {
+        await this.createRun(preparedCreateParam as CreateRunParams);
+      }
+      for (const preparedUpdateParam of body.patch) {
+        if (preparedUpdateParam.id !== undefined) {
+          await this.updateRun(
+            preparedUpdateParam.id,
+            preparedUpdateParam as UpdateRunParams
+          );
+        }
+      }
+      return;
+    }
+    const headers = {
+      ...this.headers,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/batch`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    await raiseForStatus(response, "batch create run");
+  }
+
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
-      run.inputs = hideInputs(run.inputs);
+      run.inputs = this.processInputs(run.inputs);
     }
 
     if (run.outputs) {
-      run.outputs = hideOutputs(run.outputs);
+      run.outputs = this.processOutputs(run.outputs);
+    }
+    // TODO: Untangle types
+    const data: UpdateRunParams = { ...run, id: runId };
+    if (!this._filterForSampling([data], true).length) {
+      return;
+    }
+    if (
+      this.autoBatchTracing &&
+      data.trace_id !== undefined &&
+      data.dotted_order !== undefined
+    ) {
+      if (run.end_time !== undefined && data.parent_run_id === undefined) {
+        // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
+        // in serverless environments.
+        await this.processRunOperation({ action: "update", item: data }, true);
+        return;
+      } else {
+        void this.processRunOperation({ action: "update", item: data });
+      }
+      return;
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
@@ -433,7 +779,7 @@ export class Client {
   }: {
     runId?: string;
     run?: Run;
-    projectOpts?: projectOptions;
+    projectOpts?: ProjectOptions;
   }): Promise<string> {
     if (run !== undefined) {
       let sessionId: string;
@@ -501,6 +847,7 @@ export class Client {
     projectId,
     projectName,
     parentRunId,
+    traceId,
     referenceExampleId,
     startTime,
     executionOrder,
@@ -511,15 +858,23 @@ export class Client {
     filter,
     limit,
   }: ListRunsParams): AsyncIterable<Run> {
-    let projectId_ = projectId;
+    let projectIds: string[] = [];
+    if (projectId) {
+      projectIds = Array.isArray(projectId) ? projectId : [projectId];
+    }
     if (projectName) {
-      if (projectId) {
-        throw new Error("Only one of projectId or projectName may be given");
-      }
-      projectId_ = (await this.readProject({ projectName })).id;
+      const projectNames = Array.isArray(projectName)
+        ? projectName
+        : [projectName];
+      const projectIds_ = await Promise.all(
+        projectNames.map((name) =>
+          this.readProject({ projectName: name }).then((project) => project.id)
+        )
+      );
+      projectIds.push(...projectIds_);
     }
     const body = {
-      session: projectId_ ? [projectId_] : null,
+      session: projectIds.length ? projectIds : null,
       run_type: runType,
       reference_example: referenceExampleId,
       query,
@@ -530,6 +885,7 @@ export class Client {
       error,
       id,
       limit,
+      trace: traceId,
     };
 
     for await (const runs of this._getCursorPaginatedList<Run>(
@@ -803,12 +1159,61 @@ export class Client {
     return result as TracerSession;
   }
 
-  public async readProject({
+  public async hasProject({
     projectId,
     projectName,
   }: {
     projectId?: string;
     projectName?: string;
+  }): Promise<boolean> {
+    // TODO: Add a head request
+    let path = "/sessions";
+    const params = new URLSearchParams();
+    if (projectId !== undefined && projectName !== undefined) {
+      throw new Error("Must provide either projectName or projectId, not both");
+    } else if (projectId !== undefined) {
+      assertUuid(projectId);
+      path += `/${projectId}`;
+    } else if (projectName !== undefined) {
+      params.append("name", projectName);
+    } else {
+      throw new Error("Must provide projectName or projectId");
+    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}${path}?${params}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    // consume the response body to release the connection
+    // https://undici.nodejs.org/#/?id=garbage-collection
+    try {
+      const result = await response.json();
+      if (!response.ok) {
+        return false;
+      }
+      // If it's OK and we're querying by name, need to check the list is not empty
+      if (Array.isArray(result)) {
+        return result.length > 0;
+      }
+      // projectId querying
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  public async readProject({
+    projectId,
+    projectName,
+    includeStats,
+  }: {
+    projectId?: string;
+    projectName?: string;
+    includeStats?: boolean;
   }): Promise<TracerSessionResult> {
     let path = "/sessions";
     const params = new URLSearchParams();
@@ -821,6 +1226,9 @@ export class Client {
       params.append("name", projectName);
     } else {
       throw new Error("Must provide projectName or projectId");
+    }
+    if (includeStats !== undefined) {
+      params.append("include_stats", includeStats.toString());
     }
 
     const response = await this._get<TracerSession | TracerSession[]>(
@@ -1167,7 +1575,7 @@ export class Client {
       dataset_id: datasetId_,
       inputs,
       outputs,
-      created_at: createdAt_.toISOString(),
+      created_at: createdAt_?.toISOString(),
       id: exampleId,
     };
 
@@ -1186,6 +1594,63 @@ export class Client {
 
     const result = await response.json();
     return result as Example;
+  }
+
+  public async createExamples(props: {
+    inputs: Array<KVMap>;
+    outputs?: Array<KVMap>;
+    sourceRunIds?: Array<string>;
+    exampleIds?: Array<string>;
+    datasetId?: string;
+    datasetName?: string;
+  }): Promise<Example[]> {
+    const {
+      inputs,
+      outputs,
+      sourceRunIds,
+      exampleIds,
+      datasetId,
+      datasetName,
+    } = props;
+    let datasetId_ = datasetId;
+    if (datasetId_ === undefined && datasetName === undefined) {
+      throw new Error("Must provide either datasetName or datasetId");
+    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId_ === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    }
+
+    const formattedExamples = inputs.map((input, idx) => {
+      return {
+        dataset_id: datasetId_,
+        inputs: input,
+        outputs: outputs ? outputs[idx] : undefined,
+        id: exampleIds ? exampleIds[idx] : undefined,
+        source_run_id: sourceRunIds ? sourceRunIds[idx] : undefined,
+      };
+    });
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/examples/bulk`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(formattedExamples),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create examples: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+    return result as Example[];
   }
 
   public async createLLMExample(
