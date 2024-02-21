@@ -5,7 +5,7 @@ import {
   convertToDottedOrderFormat,
 } from "../run_trees.js";
 
-async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
+export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const item of iterable) {
     result.push(item);
@@ -13,15 +13,19 @@ async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
-async function waitUntil(
+export async function waitUntil(
   condition: () => Promise<boolean>,
   timeout: number,
   interval: number
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    if (await condition()) {
-      return;
+    try {
+      if (await condition()) {
+        return;
+      }
+    } catch (e) {
+      // Pass
     }
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
