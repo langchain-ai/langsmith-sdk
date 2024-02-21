@@ -65,8 +65,8 @@ export interface RunnableConfigLike {
 }
 
 interface CallbackManagerLike {
-  _parentRunId?: string;
   handlers: TracerLike[];
+  getParentRunId(): string | undefined;
 }
 
 interface TracerLike {
@@ -132,11 +132,13 @@ export class RunTree implements BaseRun {
     }
   ): RunTree {
     // We only handle the callback manager case for now
-    const callbackManager = config?.callbacks as CallbackManagerLike | undefined;
+    const callbackManager = config?.callbacks as
+      | CallbackManagerLike
+      | undefined;
     let parentRun: RunTree | undefined;
     let projectName: string | undefined;
     if (callbackManager) {
-      const parentRunId = callbackManager?._parentRunId;
+      const parentRunId = callbackManager?.getParentRunId();
       const langChainTracer = callbackManager?.handlers?.find(
         (handler: TracerLike) => handler?.name == "langchain_tracer"
       ) as LangChainTracerLike | undefined;
