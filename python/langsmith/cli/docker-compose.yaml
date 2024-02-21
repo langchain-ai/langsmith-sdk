@@ -29,6 +29,8 @@ services:
         condition: service_healthy
       clickhouse-setup:
         condition: service_completed_successfully
+      postgres-setup:
+        condition: service_completed_successfully
     restart: always
   langchain-queue:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
@@ -44,6 +46,8 @@ services:
         condition: service_healthy
       clickhouse-setup:
         condition: service_completed_successfully
+      postgres-setup:
+        condition: service_completed_successfully
     restart: always
   langchain-hub:
     image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
@@ -55,7 +59,15 @@ services:
     ports:
       - 1985:1985
     depends_on:
-      - langchain-db
+      langchain-db:
+        condition: service_healthy
+      langchain-redis:
+        condition: service_healthy
+      clickhouse-setup:
+        condition: service_completed_successfully
+      postgres-setup:
+        condition: service_completed_successfully
+    restart: always
   langchain-db:
     image: postgres:14.7
     command:
@@ -120,6 +132,22 @@ services:
         "bash",
         "-c",
         "migrate -source file://clickhouse/migrations -database 'clickhouse://langchain-clickhouse:9000?username=default&password=password&database=default&x-multi-statement=true&x-migrations-table-engine=MergeTree' up",
+      ]
+  postgres-setup:
+    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
+    depends_on:
+      langchain-db:
+        condition: service_healthy
+    environment:
+      - LANGCHAIN_ENV=local_docker
+      - LOG_LEVEL=warning
+      - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
+    restart: "on-failure:10"
+    entrypoint:
+      [
+        "bash",
+        "-c",
+        "alembic upgrade head",
       ]
 volumes:
   langchain-db-data:
