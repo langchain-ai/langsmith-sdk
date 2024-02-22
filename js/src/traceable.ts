@@ -1,6 +1,12 @@
 import { AsyncLocalStorage } from "async_hooks";
 
-import { RunTree, RunTreeConfig, isRunTree } from "./run_trees.js";
+import {
+  RunTree,
+  RunTreeConfig,
+  RunnableConfigLike,
+  isRunTree,
+  isRunnableConfigLike,
+} from "./run_trees.js";
 import { KVMap } from "./schemas.js";
 
 const asyncLocalStorage = new AsyncLocalStorage<RunTree>();
@@ -15,6 +21,7 @@ type WrapArgReturnPair<Pair> = Pair extends [
   ? {
       (...args: Args): Promise<Return>;
       (...args: [runTree: RunTreeLike, ...rest: Args]): Promise<Return>;
+      (...args: [config: RunnableConfigLike, ...rest: Args]): Promise<Return>;
     }
   : never;
 
@@ -94,7 +101,7 @@ export function traceable<Func extends (...args: any[]) => any>(
   type Output = ReturnType<Func>;
 
   const traceableFunc = async (
-    ...args: Inputs | [RunTreeLike, ...Inputs]
+    ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ): Promise<Output> => {
     let currentRunTree: RunTree;
     let rawInputs: Inputs;
@@ -107,6 +114,9 @@ export function traceable<Func extends (...args: any[]) => any>(
     const previousRunTree = asyncLocalStorage.getStore();
     if (isRunTree(args[0])) {
       currentRunTree = args[0];
+      rawInputs = args.slice(1) as Inputs;
+    } else if (isRunnableConfigLike(args[0])) {
+      currentRunTree = RunTree.fromRunnableConfig(args[0], ensuredConfig);
       rawInputs = args.slice(1) as Inputs;
     } else if (previousRunTree !== undefined) {
       currentRunTree = await previousRunTree.createChild(ensuredConfig);

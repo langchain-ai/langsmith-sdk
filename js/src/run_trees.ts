@@ -29,10 +29,12 @@ export interface RunTreeConfig {
   id?: string;
   project_name?: string;
   parent_run?: RunTree;
+  parent_run_id?: string;
   child_runs?: RunTree[];
   start_time?: number;
   end_time?: number;
   extra?: KVMap;
+  tags?: string[];
   error?: string;
   serialized?: object;
   inputs?: KVMap;
@@ -41,16 +43,52 @@ export interface RunTreeConfig {
   client?: Client;
 }
 
+export interface RunnableConfigLike {
+  /**
+   * Tags for this call and any sub-calls (eg. a Chain calling an LLM).
+   * You can use these to filter calls.
+   */
+  tags?: string[];
+
+  /**
+   * Metadata for this call and any sub-calls (eg. a Chain calling an LLM).
+   * Keys should be strings, values should be JSON-serializable.
+   */
+  metadata?: Record<string, unknown>;
+
+  /**
+   * Callbacks for this call and any sub-calls (eg. a Chain calling an LLM).
+   * Tags are passed to all callbacks, metadata is passed to handle*Start callbacks.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  callbacks?: any;
+}
+
+interface CallbackManagerLike {
+  handlers: TracerLike[];
+  getParentRunId?: () => string | undefined;
+}
+
+interface TracerLike {
+  name: string;
+}
+interface LangChainTracerLike extends TracerLike {
+  name: "langchain_tracer";
+  projectName: string;
+  getRun?: (id: string) => RunTree | undefined;
+}
+
 export class RunTree implements BaseRun {
   id: string;
   name: RunTreeConfig["name"];
   run_type: string;
   project_name: string;
-  parent_run?: RunTree;
+  parent_run?: BaseRun;
   child_runs: RunTree[];
   start_time: number;
   end_time?: number;
   extra: KVMap;
+  tags?: string[];
   error?: string;
   serialized: object;
   inputs: KVMap;
@@ -62,11 +100,12 @@ export class RunTree implements BaseRun {
   dotted_order: string;
 
   constructor(config: RunTreeConfig) {
-    const defaultConfig = RunTree.getDefaultConfig(config.client);
-    Object.assign(this, { ...defaultConfig, ...config });
+    const defaultConfig = RunTree.getDefaultConfig();
+    const client = config.client ?? new Client();
+    Object.assign(this, { ...defaultConfig, ...config, client });
     if (!this.trace_id) {
       if (this.parent_run) {
-        this.trace_id = this.parent_run.trace_id;
+        this.trace_id = this.parent_run.trace_id ?? this.id;
       } else {
         this.trace_id = this.id;
       }
@@ -84,7 +123,49 @@ export class RunTree implements BaseRun {
       }
     }
   }
-  private static getDefaultConfig(client?: Client): object {
+
+  static fromRunnableConfig(
+    config: RunnableConfigLike,
+    props: {
+      name: string;
+      tags?: string[];
+      metadata?: KVMap;
+    }
+  ): RunTree {
+    // We only handle the callback manager case for now
+    const callbackManager = config?.callbacks as
+      | CallbackManagerLike
+      | undefined;
+    let parentRun: RunTree | undefined;
+    let projectName: string | undefined;
+    if (callbackManager) {
+      const parentRunId = callbackManager?.getParentRunId?.() ?? "";
+      const langChainTracer = callbackManager?.handlers?.find(
+        (handler: TracerLike) => handler?.name == "langchain_tracer"
+      ) as LangChainTracerLike | undefined;
+      parentRun = langChainTracer?.getRun?.(parentRunId);
+      projectName = langChainTracer?.projectName;
+    }
+    const deduppedTags = [
+      ...new Set((parentRun?.tags ?? []).concat(config?.tags ?? [])),
+    ];
+    const dedupedMetadata = {
+      ...parentRun?.extra?.metadata,
+      ...config?.metadata,
+    };
+    const rt = new RunTree({
+      name: props?.name ?? "<lambda>",
+      parent_run: parentRun,
+      tags: deduppedTags,
+      extra: {
+        metadata: dedupedMetadata,
+      },
+      project_name: projectName,
+    });
+    return rt;
+  }
+
+  private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
       run_type: "chain",
@@ -101,7 +182,6 @@ export class RunTree implements BaseRun {
       serialized: {},
       inputs: {},
       extra: {},
-      client: client ?? new Client({}),
     };
   }
 
@@ -171,6 +251,7 @@ export class RunTree implements BaseRun {
       parent_run_id: parent_run_id,
       trace_id: run.trace_id,
       dotted_order: run.dotted_order,
+      tags: run.tags,
     };
     return persistedRun;
   }
@@ -200,6 +281,7 @@ export class RunTree implements BaseRun {
       events: this.events,
       dotted_order: this.dotted_order,
       trace_id: this.trace_id,
+      tags: this.tags,
     };
 
     await this.client.updateRun(this.id, runUpdate);
@@ -211,5 +293,34 @@ export function isRunTree(x?: unknown): x is RunTree {
     x !== undefined &&
     typeof (x as RunTree).createChild === "function" &&
     typeof (x as RunTree).postRun === "function"
+  );
+}
+
+function containsLangChainTracerLike(x?: unknown): x is LangChainTracerLike[] {
+  return (
+    Array.isArray(x) &&
+    x.some((callback: unknown) => {
+      return (
+        typeof (callback as LangChainTracerLike).name === "string" &&
+        (callback as LangChainTracerLike).name === "langchain_tracer"
+      );
+    })
+  );
+}
+
+export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
+  // Check that it's an object with a callbacks arg
+  // that has either a CallbackManagerLike object with a langchain tracer within it
+  // or an array with a LangChainTracerLike object within it
+
+  return (
+    x !== undefined &&
+    typeof (x as RunnableConfigLike).callbacks === "object" &&
+    // Callback manager with a langchain tracer
+    (containsLangChainTracerLike(
+      (x as RunnableConfigLike).callbacks?.handlers
+    ) ||
+      // Or it's an array with a LangChainTracerLike object within it
+      containsLangChainTracerLike((x as RunnableConfigLike).callbacks))
   );
 }
