@@ -551,7 +551,9 @@ export class Client {
       this.autoBatchTimeout = setTimeout(
         () => {
           this.autoBatchTimeout = undefined;
-          void this.drainAutoBatchQueue();
+          // This error would happen in the background and is uncatchable
+          // from the outside. So just log instead.
+          void this.drainAutoBatchQueue().catch(console.error);
         },
         oldTimeout
           ? this.autoBatchAggregationDelayMs
@@ -597,7 +599,7 @@ export class Client {
       void this.processRunOperation({
         action: "create",
         item: runCreate,
-      });
+      }).catch(console.error);
       return;
     }
     const mergedRunCreateParams = await mergeRuntimeEnvIntoRunCreates([
@@ -694,22 +696,17 @@ export class Client {
       "Content-Type": "application/json",
       Accept: "application/json",
     };
-
-    try {
-      const response = await this.caller.call(
-        fetch,
-        `${this.apiUrl}/runs/batch`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(this.timeout_ms),
-        }
-      );
-      await raiseForStatus(response, "batch create run");
-    } catch (e) {
-      console.error(`Failed to batch create runs: ${e}`);
-    }
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/batch`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    await raiseForStatus(response, "batch create run");
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
@@ -737,7 +734,9 @@ export class Client {
         await this.processRunOperation({ action: "update", item: data }, true);
         return;
       } else {
-        void this.processRunOperation({ action: "update", item: data });
+        void this.processRunOperation({ action: "update", item: data }).catch(
+          console.error
+        );
       }
       return;
     }
