@@ -15,7 +15,7 @@ test("Should work with manually set API key", async () => {
       apiKey: key,
     });
     const callSpy = jest
-      .spyOn((langchainClient as any).caller, "call")
+      .spyOn((langchainClient as any).batchIngestCaller, "call")
       .mockResolvedValue({
         ok: true,
         text: () => "",

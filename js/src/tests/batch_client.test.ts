@@ -10,7 +10,7 @@ describe("Batch client tracing", () => {
       autoBatchTracing: true,
     });
     const callSpy = jest
-      .spyOn((client as any).caller, "call")
+      .spyOn((client as any).batchIngestCaller, "call")
       .mockResolvedValue({
         ok: true,
         text: () => "",
@@ -66,7 +66,7 @@ describe("Batch client tracing", () => {
       autoBatchTracing: true,
     });
     const callSpy = jest
-      .spyOn((client as any).caller, "call")
+      .spyOn((client as any).batchIngestCaller, "call")
       .mockResolvedValue({
         ok: true,
         text: () => "",
@@ -135,7 +135,7 @@ describe("Batch client tracing", () => {
       autoBatchTracing: true,
     });
     const callSpy = jest
-      .spyOn((client as any).caller, "call")
+      .spyOn((client as any).batchIngestCaller, "call")
       .mockResolvedValue({
         ok: true,
         text: () => "",
@@ -247,7 +247,7 @@ describe("Batch client tracing", () => {
       autoBatchTracing: true,
     });
     const callSpy = jest
-      .spyOn((client as any).caller, "call")
+      .spyOn((client as any).batchIngestCaller, "call")
       .mockResolvedValue({
         ok: true,
         text: () => "",
