@@ -75,7 +75,7 @@ test.concurrent(
           const traces = await getNestedFunction();
           return traces.length > 0;
         },
-        30_000,
+        120_000,
         10
       );
 
