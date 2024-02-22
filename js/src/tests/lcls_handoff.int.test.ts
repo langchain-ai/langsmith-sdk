@@ -49,10 +49,10 @@ test.concurrent(
     workflow.addEdge("agent", "action");
     workflow.setFinishPoint("action");
     const app = workflow.compile();
-    console.log(projectName);
     const tracer = new LangChainTracer({ projectName });
     const client = new Client({
       callerOptions: { maxRetries: 3 },
+      timeout_ms: 30_000,
     });
     try {
       const result = await app.invoke(
@@ -76,7 +76,7 @@ test.concurrent(
           const traces = await getNestedFunction();
           return traces.length > 0;
         },
-        30_000,
+        120_000,
         10
       );
 
@@ -85,6 +85,9 @@ test.concurrent(
       const trace = traces[0];
       expect(trace.name).toEqual("add_negligible_value");
       expect(trace.parent_run_id).not.toBeNull();
+    } catch (e) {
+      console.error(e);
+      throw e;
     } finally {
       await client.deleteProject({ projectName });
     }

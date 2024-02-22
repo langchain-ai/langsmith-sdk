@@ -70,3 +70,29 @@ export async function deleteDataset(
     // Pass
   }
 }
+
+export async function waitUntilRunFound(
+  client: Client,
+  runId: string,
+  checkOutputs = false
+) {
+  return waitUntil(
+    async () => {
+      try {
+        const run = await client.readRun(runId);
+        if (checkOutputs) {
+          return (
+            run.outputs !== null &&
+            run.outputs !== undefined &&
+            Object.keys(run.outputs).length !== 0
+          );
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+    30_000,
+    5_000
+  );
+}

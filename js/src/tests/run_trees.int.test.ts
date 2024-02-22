@@ -184,7 +184,7 @@ test.concurrent(
           try {
             await langchainClient.deleteProject({ projectName: project });
           } catch (e) {
-            console.debug(e);
+            // Pass
           }
         }
       }
