@@ -695,9 +695,23 @@ export class Client {
       Accept: "application/json",
     };
 
+    const handle429 = async (response?: Response) => {
+      if (response?.status === 429) {
+        const retryAfter =
+          Number(response.headers.get("retry-after") ?? 30) * 1000;
+        if (retryAfter > 0) {
+          await new Promise((resolve) => setTimeout(resolve, retryAfter));
+          // Return directly after calling this check
+          return true;
+        }
+      }
+      // Fall back to existing status checks
+      return false;
+    };
     try {
       const response = await this.caller.call(
         fetch,
+        handle429,
         `${this.apiUrl}/runs/batch`,
         {
           method: "POST",

@@ -32,6 +32,8 @@ export interface AsyncCallerCallOptions {
   signal?: AbortSignal;
 }
 
+export type StatusCallback = (response?: Response) => Promise<boolean>;
+
 /**
  * A class that can be used to make async calls with concurrency and retry logic.
  *
@@ -63,13 +65,19 @@ export class AsyncCaller {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   call<A extends any[], T extends (...args: A) => Promise<any>>(
     callable: T,
-    ...args: Parameters<T>
+    ...args: Parameters<T> | [StatusCallback, ...Parameters<T>]
   ): Promise<Awaited<ReturnType<T>>> {
+    // If the first arg of ...args is an async function, it's a status callback
+    let statusCallback: StatusCallback | undefined;
+    if (typeof args[0] === "function") {
+      statusCallback = args.shift() as StatusCallback;
+    }
+
     return this.queue.add(
       () =>
         pRetry(
           () =>
-            callable(...args).catch((error) => {
+            callable(...(args as Parameters<T>)).catch((error) => {
               // eslint-disable-next-line no-instanceof/no-instanceof
               if (error instanceof Error) {
                 throw error;
@@ -78,7 +86,7 @@ export class AsyncCaller {
               }
             }),
           {
-            onFailedAttempt(error) {
+            async onFailedAttempt(error) {
               if (
                 error.message.startsWith("Cancel") ||
                 error.message.startsWith("TimeoutError") ||
@@ -91,8 +99,15 @@ export class AsyncCaller {
                 throw error;
               }
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const status = (error as any)?.response?.status;
+              const response: Response | undefined = (error as any)?.response;
+              const status = response?.status;
               if (status) {
+                if (statusCallback) {
+                  const callbackResponse = await statusCallback(response);
+                  if (callbackResponse) {
+                    return;
+                  }
+                }
                 if (STATUS_NO_RETRY.includes(+status)) {
                   throw error;
                 } else if (STATUS_IGNORE.includes(+status)) {
