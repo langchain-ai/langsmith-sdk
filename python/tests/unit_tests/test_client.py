@@ -722,3 +722,32 @@ def test_http_status_404_handling(mock_raise_for_status):
     mock_raise_for_status.side_effect = HTTPError()
     with pytest.raises(ls_utils.LangSmithNotFoundError):
         client.request_with_retries("GET", "https://test.url", {})
+
+
+@patch("langsmith.client.ls_utils.raise_for_status_with_text")
+def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.headers = {"retry-after": "0.5"}
+    mock_response.status_code = 429
+    mock_session.request.return_value = mock_response
+    mock_raise_for_status.side_effect = HTTPError()
+
+    client.batch_ingest_runs(
+        create=[
+            {
+                "name": "test",
+                "id": str(uuid.uuid4()),
+                "trace_id": str(uuid.uuid4()),
+                "dotted_order": str(uuid.uuid4()),
+            }
+        ],
+    )
+    # Check that there were 3 post calls (may be other get calls though)
+    assert mock_session.request.call_count >= 3
+    # count the number of POST requests
+    assert (
+        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "post"])
+        == 3
+    )

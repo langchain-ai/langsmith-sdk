@@ -571,7 +571,9 @@ class Client:
         )
         to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
         response = None
+
         for idx in range(stop_after_attempt):
+
             try:
                 try:
                     with ls_utils.filter_logs(_urllib3_logger, logging_filters):
@@ -583,9 +585,10 @@ class Client:
                 except requests.HTTPError as e:
                     if response is not None:
                         if handle_response is not None:
-                            should_continue = handle_response(response, idx + 1)
-                            if should_continue:
-                                continue
+                            if idx + 1 < stop_after_attempt:
+                                should_continue = handle_response(response, idx + 1)
+                                if should_continue:
+                                    continue
                         if response.status_code == 500:
                             raise ls_utils.LangSmithAPIError(
                                 f"Server error caused failure to {request_method}"
@@ -1097,7 +1100,14 @@ class Client:
         def handle_429(response: requests.Response, attempt: int) -> bool:
             # Min of 30 seconds, max of 1 minute
             if response.status_code == 429:
-                retry_after = int(response.headers.get("retry-after", "30"))
+                try:
+                    retry_after = float(response.headers.get("retry-after", "30"))
+                except ValueError:
+                    logger.warning(
+                        "Invalid retry-after header value: %s",
+                        response.headers.get("retry-after"),
+                    )
+                    retry_after = 30
                 # Add exponential backoff
                 retry_after = retry_after * 2 ** (attempt - 1) + random.random()
                 time.sleep(retry_after)
@@ -1118,6 +1128,7 @@ class Client:
                     },
                 },
                 to_ignore=(ls_utils.LangSmithConflictError,),
+                stop_after_attempt=3,
                 handle_response=handle_429,
             )
         except Exception as e:
