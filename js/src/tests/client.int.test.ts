@@ -3,46 +3,7 @@ import { FunctionMessage, HumanMessage } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
-
-async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
-  const result: T[] = [];
-  for await (const item of iterable) {
-    result.push(item);
-  }
-  return result;
-}
-
-async function deleteProject(langchainClient: Client, projectName: string) {
-  try {
-    await langchainClient.readProject({ projectName });
-    await langchainClient.deleteProject({ projectName });
-  } catch (e) {
-    // Pass
-  }
-}
-async function deleteDataset(langchainClient: Client, datasetName: string) {
-  try {
-    const existingDataset = await langchainClient.readDataset({ datasetName });
-    await langchainClient.deleteDataset({ datasetId: existingDataset.id });
-  } catch (e) {
-    // Pass
-  }
-}
-async function waitUntil(
-  condition: () => Promise<boolean>,
-  timeout: number,
-  interval: number
-): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if (await condition()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, interval));
-  }
-  const elapsed = Date.now() - start;
-  throw new Error(`Timeout after ${elapsed / 1000}s`);
-}
+import { deleteDataset, deleteProject, toArray, waitUntil } from "./utils.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(

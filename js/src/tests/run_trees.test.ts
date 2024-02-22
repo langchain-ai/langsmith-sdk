@@ -4,11 +4,10 @@ import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 
-test.concurrent(
-  "Should work with manually set API key",
-  async () => {
-    const key = process.env.LANGCHAIN_API_KEY;
-    delete process.env.LANGCHAIN_API_KEY;
+test("Should work with manually set API key", async () => {
+  const key = process.env.LANGCHAIN_API_KEY;
+  delete process.env.LANGCHAIN_API_KEY;
+  try {
     const langchainClient = new Client({
       autoBatchTracing: true,
       callerOptions: { maxRetries: 0 },
@@ -31,6 +30,7 @@ test.concurrent(
     await runTree.postRun();
     await new Promise((resolve) => setTimeout(resolve, 1000));
     expect(callSpy).toHaveBeenCalled();
-  },
-  180_000
-);
+  } finally {
+    process.env.LANGCHAIN_API_KEY = key;
+  }
+}, 180_000);

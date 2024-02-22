@@ -179,6 +179,7 @@ export interface RunUpdate {
   id?: string;
   end_time?: number;
   extra?: KVMap;
+  tags?: string[];
   error?: string;
   inputs?: KVMap;
   outputs?: KVMap;
