@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 import { Run } from "../schemas.js";
 import { traceable } from "../traceable.js";
-import { toArray, waitUntil } from "./run_trees.int.test.js";
+import { toArray, waitUntil } from "./utils.js";
 
 test.concurrent(
   "Test handoff between run tree and LangChain code.",
