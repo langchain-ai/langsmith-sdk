@@ -522,6 +522,7 @@ class Client:
         stop_after_attempt: int = 1,
         retry_on: Optional[Sequence[Type[BaseException]]] = None,
         to_ignore: Optional[Sequence[Type[BaseException]]] = None,
+        handle_response: Optional[Callable[[requests.Response, int], Any]] = None,
     ) -> requests.Response:
         """Send a request with retries.
 
@@ -540,6 +541,9 @@ class Client:
             [LangSmithConnectionError, LangSmithAPIError].
         to_ignore : Sequence[Type[BaseException]] or None, default=None
             The exceptions to ignore / pass on.
+        handle_response : Callable[[requests.Response, int], Any] or None, default=None
+            A function to handle the response and return whether to continue
+            retrying.
 
         Returns:
         -------
@@ -578,6 +582,10 @@ class Client:
                     return response
                 except requests.HTTPError as e:
                     if response is not None:
+                        if handle_response is not None:
+                            should_continue = handle_response(response, idx + 1)
+                            if should_continue:
+                                continue
                         if response.status_code == 500:
                             raise ls_utils.LangSmithAPIError(
                                 f"Server error caused failure to {request_method}"
@@ -1085,7 +1093,17 @@ class Client:
             return
 
         self._insert_runtime_env(body["post"])
-        logger.debug(f"Batch ingesting {len(body['post'])}, {len(body['patch'])} runs")
+
+        def handle_429(response: requests.Response, attempt: int) -> bool:
+            # Min of 30 seconds, max of 1 minute
+            if response.status_code == 429:
+                retry_after = int(response.headers.get("retry-after", "30"))
+                # Add exponential backoff
+                retry_after = retry_after * 2 ** (attempt - 1) + random.random()
+                time.sleep(retry_after)
+                return True
+            return False
+
         try:
             self.request_with_retries(
                 "post",
@@ -1100,6 +1118,7 @@ class Client:
                     },
                 },
                 to_ignore=(ls_utils.LangSmithConflictError,),
+                handle_response=handle_429,
             )
         except Exception as e:
             logger.warning(f"Failed to batch ingest runs: {repr(e)}")
