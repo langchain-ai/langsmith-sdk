@@ -1,24 +1,12 @@
-import "../schemas.js"
-import "../traceable.js"
-import "./run_trees.int.test.js"
-import "@langchain/core/messages"
-import "@langchain/core/runnables"
-import "@langchain/core/tracers/tracer_langchain"
-import "@langchain/langgraph"
-import "langsmith"
-import "uuid"
-import HumanMessage }
-import RunnableLambda }
-import waitUntil }
-import { BaseMessage
-import { Client }
-import { LangChainTracer }
-import { MessageGraph }
-import { Run }
-import { RunnableConfig
-import { toArray
-import { traceable }
-import { v4 as uuidv4 }
+import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import { MessageGraph } from "@langchain/langgraph";
+import { v4 as uuidv4 } from "uuid";
+import { Client } from "../client.js";
+import { Run } from "../schemas.js";
+import { traceable } from "../traceable.js";
+import { toArray, waitUntil } from "./run_trees.int.test.js";
 
 test.concurrent(
   "Test handoff between run tree and LangChain code.",
@@ -61,6 +49,7 @@ test.concurrent(
     workflow.addEdge("agent", "action");
     workflow.setFinishPoint("action");
     const app = workflow.compile();
+    console.log(projectName);
     const tracer = new LangChainTracer({ projectName });
     const client = new Client({
       callerOptions: { maxRetries: 3 },
