@@ -1,3 +1,5 @@
+/* eslint-disable no-process-env */
+
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
