@@ -52,6 +52,7 @@ test.concurrent(
     const tracer = new LangChainTracer({ projectName });
     const client = new Client({
       callerOptions: { maxRetries: 3 },
+      timeout_ms: 30_000,
     });
     try {
       const result = await app.invoke(
@@ -84,6 +85,9 @@ test.concurrent(
       const trace = traces[0];
       expect(trace.name).toEqual("add_negligible_value");
       expect(trace.parent_run_id).not.toBeNull();
+    } catch (e) {
+      console.error(e);
+      throw e;
     } finally {
       await client.deleteProject({ projectName });
     }
