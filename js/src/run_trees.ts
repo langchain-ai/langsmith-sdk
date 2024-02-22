@@ -66,7 +66,7 @@ export interface RunnableConfigLike {
 
 interface CallbackManagerLike {
   handlers: TracerLike[];
-  getParentRunId(): string | undefined;
+  getParentRunId?: () => string | undefined;
 }
 
 interface TracerLike {
@@ -75,7 +75,7 @@ interface TracerLike {
 interface LangChainTracerLike extends TracerLike {
   name: "langchain_tracer";
   projectName: string;
-  getRun(id: string): RunTree | undefined;
+  getRun?: (id: string) => RunTree | undefined;
 }
 
 export class RunTree implements BaseRun {
@@ -138,11 +138,11 @@ export class RunTree implements BaseRun {
     let parentRun: RunTree | undefined;
     let projectName: string | undefined;
     if (callbackManager) {
-      const parentRunId = callbackManager?.getParentRunId();
+      const parentRunId = callbackManager?.getParentRunId?.() ?? "";
       const langChainTracer = callbackManager?.handlers?.find(
         (handler: TracerLike) => handler?.name == "langchain_tracer"
       ) as LangChainTracerLike | undefined;
-      parentRun = langChainTracer?.getRun(parentRunId ?? "");
+      parentRun = langChainTracer?.getRun?.(parentRunId);
       projectName = langChainTracer?.projectName;
     }
     const deduppedTags = [
@@ -152,7 +152,6 @@ export class RunTree implements BaseRun {
       ...parentRun?.extra?.metadata,
       ...config?.metadata,
     };
-    console;
     const rt = new RunTree({
       name: props?.name ?? "<lambda>",
       parent_run: parentRun,
@@ -162,7 +161,6 @@ export class RunTree implements BaseRun {
       },
       project_name: projectName,
     });
-    console.log("fromRunnableConfig", rt);
     return rt;
   }
 
@@ -298,7 +296,7 @@ export function isRunTree(x?: unknown): x is RunTree {
   );
 }
 
-function containsLangChainTracerLike(x: unknown): x is LangChainTracerLike[] {
+function containsLangChainTracerLike(x?: unknown): x is LangChainTracerLike[] {
   return (
     Array.isArray(x) &&
     x.some((callback: unknown) => {
