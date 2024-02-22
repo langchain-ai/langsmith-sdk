@@ -1381,22 +1381,29 @@
     "@jridgewell/resolve-uri" "3.1.0"
     "@jridgewell/sourcemap-codec" "1.4.14"
 
-"@langchain/core@^0.1.28":
-  version "0.1.28"
-  resolved "https://registry.yarnpkg.com/@langchain/core/-/core-0.1.28.tgz#07831383687bb157fc41253fad70274a15fd142d"
-  integrity sha512-8f4VUCO2cIoGQGLc9SiiGyb4JsIAVKs1b/qtOj1WvxD3Z8W93lYFsuSEpFdyppkimx8N+MpDdWG+Nd/9RJ3Xyg==
+"@langchain/core@^0.1.27", "@langchain/core@^0.1.32":
+  version "0.1.32"
+  resolved "https://registry.yarnpkg.com/@langchain/core/-/core-0.1.32.tgz#cd6748cc91b8b208ba7c736c16c6dbeb291dc86c"
+  integrity sha512-7b8wBQMej2QxaDDS0fCQa3/zrA2raTh1RBe2h1som7QxFpWJkHSxwVwdvGUotX9SopmsY99TK54sK0amfDvBBA==
   dependencies:
     ansi-styles "^5.0.0"
     camelcase "6"
     decamelize "1.2.0"
     js-tiktoken "^1.0.8"
-    langsmith "~0.0.48"
+    langsmith "~0.1.1"
     ml-distance "^4.0.0"
     p-queue "^6.6.2"
     p-retry "4"
     uuid "^9.0.0"
     zod "^3.22.4"
     zod-to-json-schema "^3.22.3"
+
+"@langchain/langgraph@^0.0.8":
+  version "0.0.8"
+  resolved "https://registry.yarnpkg.com/@langchain/langgraph/-/langgraph-0.0.8.tgz#910d6190effee4433fc829c3e76940c4565e53e8"
+  integrity sha512-NVARwCBPfRqCDS2d/VBMfbGIoZij6kB6Q+HUtTFCsfZ36FnovQ6L3YwKT11SmTf6xIil9S0zvK4gPf3asLzRaw==
+  dependencies:
+    "@langchain/core" "^0.1.27"
 
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"
@@ -3559,10 +3566,10 @@ kleur@^3.0.3:
   resolved "https://registry.npmjs.org/kleur/-/kleur-3.0.3.tgz"
   integrity sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==
 
-langsmith@~0.0.48:
-  version "0.0.70"
-  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.0.70.tgz#797be2b26da18843a94a802b6a73c91b72e8042b"
-  integrity sha512-QFHrzo/efBowGPCxtObv7G40/OdwqQfGshavMbSJtHBgX+OMqnn4lCMqVeEwTdyue4lEcpwAsGNg5Vty91YIyw==
+langsmith@~0.1.1:
+  version "0.1.3"
+  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.1.3.tgz#b086c5dd0709c41da417bc8b672e8f4a03e80809"
+  integrity sha512-kQMS3QySeU0Qt9A71d9trUXbeKn33HfxpRc7hRjSB967zcdTAngh66NcqYqBflD3nOL4FK6LKmvfb3vbNDEoPg==
   dependencies:
     "@types/uuid" "^9.0.1"
     commander "^10.0.1"
