@@ -694,17 +694,22 @@ export class Client {
       "Content-Type": "application/json",
       Accept: "application/json",
     };
-    const response = await this.caller.call(
-      fetch,
-      `${this.apiUrl}/runs/batch`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeout_ms),
-      }
-    );
-    await raiseForStatus(response, "batch create run");
+
+    try {
+      const response = await this.caller.call(
+        fetch,
+        `${this.apiUrl}/runs/batch`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(this.timeout_ms),
+        }
+      );
+      await raiseForStatus(response, "batch create run");
+    } catch (e) {
+      console.error(`Failed to batch create runs: ${e}`);
+    }
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
