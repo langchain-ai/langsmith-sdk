@@ -294,7 +294,6 @@ export class Client {
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
-    this.validateApiKeyIfHosted();
     this.timeout_ms = config.timeout_ms ?? 12_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
     this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
@@ -326,15 +325,6 @@ export class Client {
       hideInputs: hideInputs,
       hideOutputs: hideOutputs,
     };
-  }
-
-  private validateApiKeyIfHosted(): void {
-    const isLocal = isLocalhost(this.apiUrl);
-    if (!isLocal && !this.apiKey) {
-      throw new Error(
-        "API key must be provided when using hosted LangSmith API"
-      );
-    }
   }
 
   private getHostUrl(): string {
