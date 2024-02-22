@@ -100,8 +100,9 @@ export class RunTree implements BaseRun {
   dotted_order: string;
 
   constructor(config: RunTreeConfig) {
-    const defaultConfig = RunTree.getDefaultConfig(config.client);
-    Object.assign(this, { ...defaultConfig, ...config });
+    const defaultConfig = RunTree.getDefaultConfig();
+    const client = config.client ?? new Client();
+    Object.assign(this, { ...defaultConfig, ...config, client });
     if (!this.trace_id) {
       if (this.parent_run) {
         this.trace_id = this.parent_run.trace_id ?? this.id;
@@ -164,7 +165,7 @@ export class RunTree implements BaseRun {
     return rt;
   }
 
-  private static getDefaultConfig(client?: Client): object {
+  private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
       run_type: "chain",
@@ -181,7 +182,6 @@ export class RunTree implements BaseRun {
       serialized: {},
       inputs: {},
       extra: {},
-      client: client ?? new Client({}),
     };
   }
 

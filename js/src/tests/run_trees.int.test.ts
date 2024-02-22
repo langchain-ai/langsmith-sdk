@@ -4,52 +4,7 @@ import {
   RunTreeConfig,
   convertToDottedOrderFormat,
 } from "../run_trees.js";
-
-export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
-  const result: T[] = [];
-  for await (const item of iterable) {
-    result.push(item);
-  }
-  return result;
-}
-
-export async function waitUntil(
-  condition: () => Promise<boolean>,
-  timeout: number,
-  interval: number
-): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    try {
-      if (await condition()) {
-        return;
-      }
-    } catch (e) {
-      // Pass
-    }
-    await new Promise((resolve) => setTimeout(resolve, interval));
-  }
-  throw new Error("Timeout");
-}
-
-async function pollRunsUntilCount(
-  client: Client,
-  projectName: string,
-  count: number
-): Promise<void> {
-  await waitUntil(
-    async () => {
-      try {
-        const runs = await toArray(client.listRuns({ projectName }));
-        return runs.length === count;
-      } catch (e) {
-        return false;
-      }
-    },
-    120_000, // Wait up to 120 seconds
-    5000 // every 5 second
-  );
-}
+import { toArray, waitUntil, pollRunsUntilCount } from "./utils.js";
 
 test.concurrent(
   "Test post and patch run",
