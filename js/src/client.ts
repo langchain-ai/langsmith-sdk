@@ -220,6 +220,20 @@ function assertUuid(str: string): void {
   }
 }
 
+const handle429 = async (response?: Response) => {
+  if (response?.status === 429) {
+    const retryAfter =
+      parseInt(response.headers.get("retry-after") ?? "30", 10) * 1000;
+    if (retryAfter > 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryAfter));
+      // Return directly after calling this check
+      return true;
+    }
+  }
+  // Fall back to existing status checks
+  return false;
+};
+
 export class Queue<T> {
   items: [T, () => void][] = [];
 
@@ -261,6 +275,8 @@ export class Client {
 
   private caller: AsyncCaller;
 
+  private batchIngestCaller: AsyncCaller;
+
   private timeout_ms: number;
 
   private _tenantId: string | null = null;
@@ -296,6 +312,10 @@ export class Client {
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     this.timeout_ms = config.timeout_ms ?? 12_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.batchIngestCaller = new AsyncCaller({
+      ...(config.callerOptions ?? {}),
+      onFailedResponseHook: handle429,
+    });
     this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
     this.hideOutputs = config.hideOutputs ?? defaultConfig.hideOutputs;
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
@@ -695,23 +715,9 @@ export class Client {
       Accept: "application/json",
     };
 
-    const handle429 = async (response?: Response) => {
-      if (response?.status === 429) {
-        const retryAfter =
-          Number(response.headers.get("retry-after") ?? 30) * 1000;
-        if (retryAfter > 0) {
-          await new Promise((resolve) => setTimeout(resolve, retryAfter));
-          // Return directly after calling this check
-          return true;
-        }
-      }
-      // Fall back to existing status checks
-      return false;
-    };
     try {
-      const response = await this.caller.call(
+      const response = await this.batchIngestCaller.call(
         fetch,
-        handle429,
         `${this.apiUrl}/runs/batch`,
         {
           method: "POST",

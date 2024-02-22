@@ -15,6 +15,8 @@ const STATUS_IGNORE = [
   409, // Conflict
 ];
 
+type ResponseCallback = (response?: Response) => Promise<boolean>;
+
 export interface AsyncCallerParams {
   /**
    * The maximum number of concurrent calls that can be made.
@@ -26,13 +28,13 @@ export interface AsyncCallerParams {
    * with an exponential backoff between each attempt. Defaults to 6.
    */
   maxRetries?: number;
+
+  onFailedResponseHook?: ResponseCallback;
 }
 
 export interface AsyncCallerCallOptions {
   signal?: AbortSignal;
 }
-
-type StatusCallback = (response?: Response) => Promise<boolean>;
 
 /**
  * A class that can be used to make async calls with concurrency and retry logic.
@@ -54,25 +56,23 @@ export class AsyncCaller {
 
   private queue: typeof import("p-queue")["default"]["prototype"];
 
+  private onFailedResponseHook?: ResponseCallback;
+
   constructor(params: AsyncCallerParams) {
     this.maxConcurrency = params.maxConcurrency ?? Infinity;
     this.maxRetries = params.maxRetries ?? 6;
 
     const PQueue = "default" in PQueueMod ? PQueueMod.default : PQueueMod;
     this.queue = new PQueue({ concurrency: this.maxConcurrency });
+    this.onFailedResponseHook = params?.onFailedResponseHook;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   call<A extends any[], T extends (...args: A) => Promise<any>>(
     callable: T,
-    ...args: Parameters<T> | [StatusCallback, ...Parameters<T>]
+    ...args: Parameters<T>
   ): Promise<Awaited<ReturnType<T>>> {
-    // If the first arg of ...args is an async function, it's a status callback
-    let statusCallback: StatusCallback | undefined;
-    if (typeof args[0] === "function") {
-      statusCallback = args.shift() as StatusCallback;
-    }
-
+    const onFailedResponseHook = this.onFailedResponseHook;
     return this.queue.add(
       () =>
         pRetry(
@@ -102,16 +102,13 @@ export class AsyncCaller {
               const response: Response | undefined = (error as any)?.response;
               const status = response?.status;
               if (status) {
-                if (statusCallback) {
-                  const callbackResponse = await statusCallback(response);
-                  if (callbackResponse) {
-                    return;
-                  }
-                }
                 if (STATUS_NO_RETRY.includes(+status)) {
                   throw error;
                 } else if (STATUS_IGNORE.includes(+status)) {
                   return;
+                }
+                if (onFailedResponseHook) {
+                  await onFailedResponseHook(response);
                 }
               }
             },
