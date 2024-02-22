@@ -40,6 +40,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+import orjson
 import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
@@ -213,6 +214,24 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
+
+
+def _dumps_json(obj: Any) -> bytes:
+    """Serialize an object to a JSON formatted string.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize.
+    default : Callable[[Any], Any] or None, default=None
+        The default function to use for serialization.
+
+    Returns:
+    -------
+    str
+        The JSON formatted string.
+    """
+    return orjson.dumps(obj, default=_serialize_json)
 
 
 def close_session(session: requests.Session) -> None:
@@ -729,7 +748,7 @@ class Client:
                 request_method,
                 f"{self.api_url}{path}",
                 request_kwargs={
-                    "data": json.dumps(params_, default=_serialize_json),
+                    "data": _dumps_json(params_),
                     "headers": self._headers,
                     "timeout": self.timeout_ms / 1000,
                 },
@@ -1012,7 +1031,7 @@ class Client:
             "post",
             f"{self.api_url}/runs",
             request_kwargs={
-                "data": json.dumps(run_create, default=_serialize_json),
+                "data": _dumps_json(run_create),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -1118,7 +1137,7 @@ class Client:
                 "post",
                 f"{self.api_url}/runs/batch",
                 request_kwargs={
-                    "data": json.dumps(body, default=_serialize_json),
+                    "data": _dumps_json(body),
                     "timeout": self.timeout_ms / 1000,
                     "headers": {
                         **self._headers,
@@ -1212,7 +1231,7 @@ class Client:
             "patch",
             f"{self.api_url}/runs/{data['id']}",
             request_kwargs={
-                "data": json.dumps(data, default=_serialize_json),
+                "data": _dumps_json(data),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -1659,7 +1678,7 @@ class Client:
         response = self.session.post(
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(body, default=_serialize_json),
+            data=_dumps_json(body),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
@@ -1708,7 +1727,7 @@ class Client:
         response = self.session.patch(
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(body, default=_serialize_json),
+            data=_dumps_json(body),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
@@ -2394,7 +2413,7 @@ class Client:
         response = self.session.post(
             f"{self.api_url}/examples/bulk",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(examples, default=_serialize_json),
+            data=_dumps_json(examples),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -2914,7 +2933,7 @@ class Client:
         response = self.session.patch(
             self.api_url + f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(feedback_update, default=_serialize_json),
+            data=_dumps_json(feedback_update),
         )
         ls_utils.raise_for_status_with_text(response)
 
