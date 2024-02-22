@@ -573,7 +573,6 @@ class Client:
         response = None
 
         for idx in range(stop_after_attempt):
-
             try:
                 try:
                     with ls_utils.filter_logs(_urllib3_logger, logging_filters):
