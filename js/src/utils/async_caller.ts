@@ -15,6 +15,8 @@ const STATUS_IGNORE = [
   409, // Conflict
 ];
 
+type ResponseCallback = (response?: Response) => Promise<boolean>;
+
 export interface AsyncCallerParams {
   /**
    * The maximum number of concurrent calls that can be made.
@@ -26,6 +28,8 @@ export interface AsyncCallerParams {
    * with an exponential backoff between each attempt. Defaults to 6.
    */
   maxRetries?: number;
+
+  onFailedResponseHook?: ResponseCallback;
 }
 
 export interface AsyncCallerCallOptions {
@@ -52,12 +56,15 @@ export class AsyncCaller {
 
   private queue: typeof import("p-queue")["default"]["prototype"];
 
+  private onFailedResponseHook?: ResponseCallback;
+
   constructor(params: AsyncCallerParams) {
     this.maxConcurrency = params.maxConcurrency ?? Infinity;
     this.maxRetries = params.maxRetries ?? 6;
 
     const PQueue = "default" in PQueueMod ? PQueueMod.default : PQueueMod;
     this.queue = new PQueue({ concurrency: this.maxConcurrency });
+    this.onFailedResponseHook = params?.onFailedResponseHook;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,11 +72,12 @@ export class AsyncCaller {
     callable: T,
     ...args: Parameters<T>
   ): Promise<Awaited<ReturnType<T>>> {
+    const onFailedResponseHook = this.onFailedResponseHook;
     return this.queue.add(
       () =>
         pRetry(
           () =>
-            callable(...args).catch((error) => {
+            callable(...(args as Parameters<T>)).catch((error) => {
               // eslint-disable-next-line no-instanceof/no-instanceof
               if (error instanceof Error) {
                 throw error;
@@ -78,7 +86,7 @@ export class AsyncCaller {
               }
             }),
           {
-            onFailedAttempt(error) {
+            async onFailedAttempt(error) {
               if (
                 error.message.startsWith("Cancel") ||
                 error.message.startsWith("TimeoutError") ||
@@ -91,12 +99,16 @@ export class AsyncCaller {
                 throw error;
               }
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const status = (error as any)?.response?.status;
+              const response: Response | undefined = (error as any)?.response;
+              const status = response?.status;
               if (status) {
                 if (STATUS_NO_RETRY.includes(+status)) {
                   throw error;
                 } else if (STATUS_IGNORE.includes(+status)) {
                   return;
+                }
+                if (onFailedResponseHook) {
+                  await onFailedResponseHook(response);
                 }
               }
             },
