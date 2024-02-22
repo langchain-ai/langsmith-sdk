@@ -49,7 +49,6 @@ test.concurrent(
     workflow.addEdge("agent", "action");
     workflow.setFinishPoint("action");
     const app = workflow.compile();
-    console.log(projectName);
     const tracer = new LangChainTracer({ projectName });
     const client = new Client({
       callerOptions: { maxRetries: 3 },
