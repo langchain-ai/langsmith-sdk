@@ -32,7 +32,7 @@ export interface AsyncCallerCallOptions {
   signal?: AbortSignal;
 }
 
-export type StatusCallback = (response?: Response) => Promise<boolean>;
+type StatusCallback = (response?: Response) => Promise<boolean>;
 
 /**
  * A class that can be used to make async calls with concurrency and retry logic.
