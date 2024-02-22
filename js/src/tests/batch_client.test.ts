@@ -60,6 +60,38 @@ describe("Batch client tracing", () => {
     );
   });
 
+  it("should not throw an error if fetch fails for batch requests", async () => {
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+    });
+    jest.spyOn((client as any).caller, "call").mockImplementation(() => {
+      throw new Error("Mock error!");
+    });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(true);
+    const projectName = "__test_batch";
+
+    const runId = uuidv4();
+    const dottedOrder = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId
+    );
+
+    await client.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+      trace_id: runId,
+      dotted_order: dottedOrder,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
+
   it("Create + update batching should merge into a single call", async () => {
     const client = new Client({
       apiKey: "test-api-key",
