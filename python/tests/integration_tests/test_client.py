@@ -219,40 +219,39 @@ def test_create_dataset(
 
 @freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
-    if langchain_client.has_dataset(dataset_name="___TEST dataset1"):
-        langchain_client.delete_dataset(dataset_name="___TEST dataset1")
-    if langchain_client.has_dataset(dataset_name="___TEST dataset2"):
-        langchain_client.delete_dataset(dataset_name="___TEST dataset2")
-    dataset1 = langchain_client.create_dataset(
-        "___TEST dataset1", data_type=DataType.llm
-    )
-    dataset2 = langchain_client.create_dataset(
-        "___TEST dataset2", data_type=DataType.kv
-    )
-    assert dataset1.url is not None
-    assert dataset2.url is not None
-    datasets = list(
-        langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
-    )
-    assert len(datasets) == 2
-    assert dataset1.id in [dataset.id for dataset in datasets]
-    assert dataset2.id in [dataset.id for dataset in datasets]
-    assert dataset1.data_type == DataType.llm
-    assert dataset2.data_type == DataType.kv
-    # Sub-filter on data type
-    datasets = list(langchain_client.list_datasets(data_type=DataType.llm.value))
-    assert len(datasets) > 0
-    assert dataset1.id in {dataset.id for dataset in datasets}
-    # Sub-filter on name
-    datasets = list(
-        langchain_client.list_datasets(
-            dataset_ids=[dataset1.id, dataset2.id], dataset_name="___TEST dataset1"
+    ds1n = "__test_list_datasets1" + uuid4().hex[:4]
+    ds2n = "__test_list_datasets2" + uuid4().hex[:4]
+    try:
+        dataset1 = langchain_client.create_dataset(ds1n, data_type=DataType.llm)
+        dataset2 = langchain_client.create_dataset(ds2n, data_type=DataType.kv)
+        assert dataset1.url is not None
+        assert dataset2.url is not None
+        datasets = list(
+            langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
         )
-    )
-    assert len(datasets) == 1
-    # Delete datasets
-    langchain_client.delete_dataset(dataset_id=dataset1.id)
-    langchain_client.delete_dataset(dataset_id=dataset2.id)
+        assert len(datasets) == 2
+        assert dataset1.id in [dataset.id for dataset in datasets]
+        assert dataset2.id in [dataset.id for dataset in datasets]
+        assert dataset1.data_type == DataType.llm
+        assert dataset2.data_type == DataType.kv
+        # Sub-filter on data type
+        datasets = list(langchain_client.list_datasets(data_type=DataType.llm.value))
+        assert len(datasets) > 0
+        assert dataset1.id in {dataset.id for dataset in datasets}
+        # Sub-filter on name
+        datasets = list(
+            langchain_client.list_datasets(
+                dataset_ids=[dataset1.id, dataset2.id], dataset_name=ds1n
+            )
+        )
+        assert len(datasets) == 1
+    finally:
+        # Delete datasets
+        for name in [ds1n, ds2n]:
+            try:
+                langchain_client.delete_dataset(dataset_name=name)
+            except LangSmithError:
+                pass
 
 
 @pytest.mark.skip(reason="This test is flaky")

@@ -588,6 +588,7 @@ class BatchIngestConfig(TypedDict, total=False):
     scale_up_nthreads_limit: int
     scale_down_nempty_trigger: int
     size_limit: int
+    size_limit_bytes: Optional[int]
 
 
 class LangSmithInfo(BaseModel):
