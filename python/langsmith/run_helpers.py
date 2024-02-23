@@ -317,7 +317,8 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 @overload
 def traceable(
     func: Callable[..., R],
-) -> Callable[..., R]: ...
+) -> Callable[..., R]:
+    ...
 
 
 @overload
@@ -331,7 +332,8 @@ def traceable(
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
+) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
+    ...
 
 
 def traceable(
