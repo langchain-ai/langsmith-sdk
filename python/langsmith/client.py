@@ -40,6 +40,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+import orjson
 import requests
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
@@ -163,7 +164,7 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
         if depth >= _MAX_DEPTH:
             try:
-                return json.loads(json.dumps(obj))
+                return orjson.loads(orjson.dumps(obj))
             except BaseException:
                 return repr(obj)
         if isinstance(obj, datetime.datetime):
@@ -213,6 +214,30 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
+
+
+def _dumps_json(obj: Any) -> bytes:
+    """Serialize an object to a JSON formatted string.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize.
+    default : Callable[[Any], Any] or None, default=None
+        The default function to use for serialization.
+
+    Returns:
+    -------
+    str
+        The JSON formatted string.
+    """
+    return orjson.dumps(
+        obj,
+        default=_serialize_json,
+        option=orjson.OPT_SERIALIZE_NUMPY
+        | orjson.OPT_SERIALIZE_DATACLASS
+        | orjson.OPT_SERIALIZE_UUID,
+    )
 
 
 def close_session(session: requests.Session) -> None:
@@ -729,7 +754,7 @@ class Client:
                 request_method,
                 f"{self.api_url}{path}",
                 request_kwargs={
-                    "data": json.dumps(params_, default=_serialize_json),
+                    "data": _dumps_json(params_),
                     "headers": self._headers,
                     "timeout": self.timeout_ms / 1000,
                 },
@@ -1012,7 +1037,7 @@ class Client:
             "post",
             f"{self.api_url}/runs",
             request_kwargs={
-                "data": json.dumps(run_create, default=_serialize_json),
+                "data": _dumps_json(run_create),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -1082,20 +1107,50 @@ class Client:
                 )
         # filter out runs that are not sampled
         if pre_sampled:
-            body = {
+            raw_body = {
                 "post": create_dicts,
                 "patch": update_dicts,
             }
         else:
-            body = {
+            raw_body = {
                 "post": self._filter_for_sampling(create_dicts),
                 "patch": self._filter_for_sampling(update_dicts, patch=True),
             }
-        if not body["post"] and not body["patch"]:
+        if not raw_body["post"] and not raw_body["patch"]:
             return
 
-        self._insert_runtime_env(body["post"])
+        self._insert_runtime_env(raw_body["post"])
 
+        if self.info is None:
+            raise ls_utils.LangSmithUserError(
+                "Batch ingest is not supported by your LangSmith server version. "
+                "Please upgrade to a newer version."
+            )
+        info = cast(ls_schemas.LangSmithInfo, self.info)
+
+        size_limit_bytes = (info.batch_ingest_config or {}).get(
+            "size_limit_bytes"
+            # 20 MB max by default
+        ) or 20_971_520
+        # Get orjson fragments to avoid going over the max request size
+        partial_body = {
+            "post": [_dumps_json(run) for run in raw_body["post"]],
+            "patch": [_dumps_json(run) for run in raw_body["patch"]],
+        }
+        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+        body_size = 0
+        for key in ["post", "patch"]:
+            body = collections.deque(partial_body[key])
+            while body:
+                if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
+                    self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+                    body_size = 0
+                body_size += len(body[0])
+                body_chunks[key].append(orjson.Fragment(body.popleft()))
+        if body_size:
+            self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+
+    def _post_batch_ingest_runs(self, body: bytes):
         def handle_429(response: requests.Response, attempt: int) -> bool:
             # Min of 30 seconds, max of 1 minute
             if response.status_code == 429:
@@ -1118,7 +1173,7 @@ class Client:
                 "post",
                 f"{self.api_url}/runs/batch",
                 request_kwargs={
-                    "data": json.dumps(body, default=_serialize_json),
+                    "data": body,
                     "timeout": self.timeout_ms / 1000,
                     "headers": {
                         **self._headers,
@@ -1212,7 +1267,7 @@ class Client:
             "patch",
             f"{self.api_url}/runs/{data['id']}",
             request_kwargs={
-                "data": json.dumps(data, default=_serialize_json),
+                "data": _dumps_json(data),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -1659,7 +1714,7 @@ class Client:
         response = self.session.post(
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(body, default=_serialize_json),
+            data=_dumps_json(body),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
@@ -1708,7 +1763,7 @@ class Client:
         response = self.session.patch(
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(body, default=_serialize_json),
+            data=_dumps_json(body),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
@@ -2394,7 +2449,7 @@ class Client:
         response = self.session.post(
             f"{self.api_url}/examples/bulk",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(examples, default=_serialize_json),
+            data=_dumps_json(examples),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -2863,9 +2918,7 @@ class Client:
             "POST",
             self.api_url + "/feedback" + ("/eager" if eager else ""),
             request_kwargs={
-                "data": json.dumps(
-                    feedback.dict(exclude_none=True), default=_serialize_json
-                ),
+                "data": _dumps_json(feedback.dict(exclude_none=True)),
                 "headers": {
                     **self._headers,
                     "Content-Type": "application/json",
@@ -2914,7 +2967,7 @@ class Client:
         response = self.session.patch(
             self.api_url + f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=json.dumps(feedback_update, default=_serialize_json),
+            data=_dumps_json(feedback_update),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -3481,6 +3534,7 @@ def _ensure_ingest_config(
     info: Optional[ls_schemas.LangSmithInfo],
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
+        size_limit_bytes=None,  # Note this field is not used here
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
         scale_up_qsize_trigger=_AUTO_SCALE_UP_QSIZE_TRIGGER,
