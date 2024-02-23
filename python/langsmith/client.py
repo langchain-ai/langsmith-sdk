@@ -231,7 +231,13 @@ def _dumps_json(obj: Any) -> bytes:
     str
         The JSON formatted string.
     """
-    return orjson.dumps(obj, default=_serialize_json)
+    return orjson.dumps(
+        obj,
+        default=_serialize_json,
+        option=orjson.OPT_SERIALIZE_NUMPY
+        | orjson.OPT_SERIALIZE_DATACLASS
+        | orjson.OPT_SERIALIZE_UUID,
+    )
 
 
 def close_session(session: requests.Session) -> None:
