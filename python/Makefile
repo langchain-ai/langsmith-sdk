@@ -1,7 +1,7 @@
 .PHONY: tests lint format
 
 tests:
-	poetry run pytest tests/unit_tests
+	poetry run pytest -n auto --durations=10 tests/unit_tests
 
 tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests

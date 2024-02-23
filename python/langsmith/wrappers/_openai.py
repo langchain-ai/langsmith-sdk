@@ -143,9 +143,11 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
 def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> Callable:
     @functools.wraps(original_create)
     def create(*args, stream: bool = False, **kwargs):
-        kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
-            name=name, run_type="llm", reduce_fn=reduce_fn if stream else None
+            name=name,
+            run_type="llm",
+            reduce_fn=reduce_fn if stream else None,
+            process_inputs=_strip_not_given,
         )
 
         return decorator(original_create)(*args, stream=stream, **kwargs)
@@ -154,7 +156,10 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
     async def acreate(*args, stream: bool = False, **kwargs):
         kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
-            name=name, run_type="llm", reduce_fn=reduce_fn if stream else None
+            name=name,
+            run_type="llm",
+            reduce_fn=reduce_fn if stream else None,
+            process_inputs=_strip_not_given,
         )
         if stream:
             # TODO: This slightly alters the output to be a generator instead of the
