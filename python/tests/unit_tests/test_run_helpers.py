@@ -173,7 +173,7 @@ def mock_client() -> Client:
 def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
     with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "true"}):
 
-        @traceable(client=mock_client, filter_inputs=["a", "b", "d"])
+        @traceable(client=mock_client)
         def my_iterator_fn(a, b, d):
             for i in range(a + b + d):
                 yield i
