@@ -106,11 +106,42 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
     return d
 
 
+_DEFAULT_INVOCATION_PARAMS = (
+    "engine",
+    "model",
+    "stream",
+    "frequency_penalty",
+    "function_call",
+    "functions",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "n",
+    "presence_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_logprobs",
+    "top_p",
+    "user",
+    "extra_headers",
+    "extra_query",
+    "extra_body",
+    "timeout",
+)
+
+
 def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> Callable:
     @functools.wraps(original_create)
     def create(*args, stream: bool = False, **kwargs):
         decorator = run_helpers.traceable(
-            name=name, run_type="llm", reduce_fn=reduce_fn if stream else None
+            name=name,
+            run_type="llm",
+            reduce_fn=reduce_fn if stream else None,
+            invocation_params=_DEFAULT_INVOCATION_PARAMS,
         )
 
         return decorator(original_create)(*args, stream=stream, **kwargs)
@@ -118,7 +149,10 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
     @functools.wraps(original_create)
     async def acreate(*args, stream: bool = False, **kwargs):
         decorator = run_helpers.traceable(
-            name=name, run_type="llm", reduce_fn=reduce_fn if stream else None
+            name=name,
+            run_type="llm",
+            reduce_fn=reduce_fn if stream else None,
+            invocation_params=_DEFAULT_INVOCATION_PARAMS,
         )
         if stream:
             # TODO: This slightly alters the output to be a generator instead of the
