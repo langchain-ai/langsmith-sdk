@@ -237,7 +237,6 @@ def _dumps_json(obj: Any) -> bytes:
         option=orjson.OPT_SERIALIZE_NUMPY
         | orjson.OPT_SERIALIZE_DATACLASS
         | orjson.OPT_SERIALIZE_UUID
-        | orjson.OPT_PASSTHROUGH_DATETIME
     )
 
 
