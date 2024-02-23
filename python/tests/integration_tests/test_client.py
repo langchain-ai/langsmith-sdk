@@ -241,7 +241,7 @@ def test_list_datasets(langchain_client: Client) -> None:
         # Sub-filter on name
         datasets = list(
             langchain_client.list_datasets(
-                dataset_ids=[dataset1.id, dataset2.id], dataset_name="___TEST dataset1"
+                dataset_ids=[dataset1.id, dataset2.id], dataset_name=ds1n
             )
         )
         assert len(datasets) == 1
