@@ -20,10 +20,12 @@ from typing import (
     Dict,
     Generator,
     Generic,
+    Iterable,
     List,
     Mapping,
     Optional,
     Protocol,
+    Tuple,
     TypedDict,
     TypeVar,
     Union,
@@ -76,10 +78,14 @@ def is_async(func: Callable) -> bool:
 
 
 def _get_inputs(
-    signature: inspect.Signature, *args: Any, **kwargs: Any
-) -> Dict[str, Any]:
+    signature: inspect.Signature,
+    as_invocation_params: Optional[Iterable[str]],
+    *args: Any,
+    **kwargs: Any,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Return a dictionary of inputs from the function signature."""
     bound = signature.bind_partial(*args, **kwargs)
+    invocation_params = {}
     bound.apply_defaults()
     arguments = dict(bound.arguments)
     arguments.pop("self", None)
@@ -91,8 +97,13 @@ def _get_inputs(
             if param_name in arguments:
                 arguments.update(arguments[param_name])
                 arguments.pop(param_name)
-
-    return arguments
+    if as_invocation_params:
+        invocation_params = {
+            k: arguments.pop(k, None)
+            for k in list(as_invocation_params)
+            if k in arguments
+        }
+    return arguments, invocation_params
 
 
 class LangSmithExtra(TypedDict, total=False):
@@ -129,6 +140,7 @@ class _ContainerInput(TypedDict, total=False):
     reduce_fn: Optional[Callable]
     project_name: Optional[str]
     run_type: ls_client.RUN_TYPE_T
+    as_invocation_params: Optional[Iterable[str]]
 
 
 def _container_end(
@@ -203,10 +215,14 @@ def _setup_run(
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
     try:
-        inputs = _get_inputs(signature, *args, **kwargs)
+        inputs, invocation_params = _get_inputs(
+            signature, container_input["as_invocation_params"], *args, **kwargs
+        )
     except TypeError as e:
         logger.debug(f"Failed to infer inputs for {name_}: {e}")
         inputs = {"args": args, "kwargs": kwargs}
+        invocation_params = {}
+    extra_inner["invocation_params"] = invocation_params
     outer_tags = _TAGS.get()
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     _TAGS.set(tags_)
@@ -325,6 +341,7 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
+    invocation_params: Optional[Iterable[str]] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
     ...
 
@@ -350,6 +367,8 @@ def traceable(
                 called, and the run itself will be stuck in a pending state.
         project_name: The name of the project to log the run to. Defaults to None,
             which will use the default project.
+        invocation_params: The keys from the input to treat as "invocation parameters",
+            which are more configuration than actual data flow.
 
 
     Returns:
@@ -492,6 +511,7 @@ def traceable(
         client=kwargs.pop("client", None),
         project_name=kwargs.pop("project_name", None),
         run_type=run_type,
+        as_invocation_params=kwargs.pop("invocation_params", None),
     )
     if kwargs:
         warnings.warn(

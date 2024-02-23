@@ -24,7 +24,7 @@ def test__get_inputs_with_no_args() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature)
+    inputs, _ = _get_inputs(signature, None)
     assert inputs == {}
 
 
@@ -33,7 +33,7 @@ def test__get_inputs_with_args() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, 2, 3)
+    inputs, _ = _get_inputs(signature, None, 1, 2, 3)
     assert inputs == {"a": 1, "b": 2, "c": 3}
 
 
@@ -42,8 +42,9 @@ def test__get_inputs_with_defaults() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, 2)
-    assert inputs == {"a": 1, "b": 2, "c": 3}
+    inputs, invoc_params = _get_inputs(signature, ("b",), 1, 2)
+    assert inputs == {"a": 1, "c": 3}
+    assert invoc_params == {"b": 2}
 
 
 def test__get_inputs_with_var_args() -> None:
@@ -52,7 +53,7 @@ def test__get_inputs_with_var_args() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, 2, 3, 4)
+    inputs, _ = _get_inputs(signature, None, 1, 2, 3, 4)
     assert inputs == {"a": 1, "b": 2, "kwargs": (3, 4)}
 
 
@@ -61,7 +62,7 @@ def test__get_inputs_with_var_kwargs() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, 2, c=3, d=4)
+    inputs, _ = _get_inputs(signature, None, 1, 2, c=3, d=4)
     assert inputs == {"a": 1, "b": 2, "c": 3, "d": 4}
 
 
@@ -70,8 +71,9 @@ def test__get_inputs_with_var_kwargs_and_varargs() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, 2, 3, 4, c=5, d=6)
-    assert inputs == {"a": 1, "b": 2, "args": (3, 4), "c": 5, "d": 6}
+    inputs, invoc_params = _get_inputs(signature, {"b", "foo"}, 1, 2, 3, 4, c=5, d=6)
+    assert inputs == {"a": 1, "args": (3, 4), "c": 5, "d": 6}
+    assert invoc_params == {"b": 2}
 
 
 def test__get_inputs_with_class_method() -> None:
@@ -81,7 +83,7 @@ def test__get_inputs_with_class_method() -> None:
             pass
 
     signature = inspect.signature(Foo.bar)
-    inputs = _get_inputs(signature, 1, 2)
+    inputs, _ = _get_inputs(signature, None, 1, 2)
     assert inputs == {"a": 1, "b": 2}
 
 
@@ -92,7 +94,7 @@ def test__get_inputs_with_static_method() -> None:
             pass
 
     signature = inspect.signature(Foo.bar)
-    inputs = _get_inputs(signature, 1, 2)
+    inputs, _ = _get_inputs(signature, None, 1, 2)
     assert inputs == {"a": 1, "b": 2}
 
 
@@ -102,7 +104,7 @@ def test__get_inputs_with_self() -> None:
             pass
 
     signature = inspect.signature(Foo.bar)
-    inputs = _get_inputs(signature, Foo(), 1, 2)
+    inputs, _ = _get_inputs(signature, None, Foo(), 1, 2)
     assert inputs == {"a": 1, "b": 2}
 
 
@@ -111,7 +113,7 @@ def test__get_inputs_with_kwargs_and_var_kwargs() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, 2, c=3, **{"d": 4})
+    inputs, _ = _get_inputs(signature, None, 1, 2, c=3, **{"d": 4})
     assert inputs == {"a": 1, "b": 2, "c": 3, "d": 4}
 
 
@@ -120,7 +122,7 @@ def test__get_inputs_with_var_kwargs_and_other_kwargs() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, 2, c=3, other_kwargs={"d": 4})
+    inputs, _ = _get_inputs(signature, None, 1, 2, c=3, other_kwargs={"d": 4})
     assert inputs == {"a": 1, "b": 2, "c": 3, "other_kwargs": {"d": 4}}
 
 
@@ -129,7 +131,7 @@ def test__get_inputs_with_keyword_only_args() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, b=2, c=3)
+    inputs, _ = _get_inputs(signature, None, 1, b=2, c=3)
     assert inputs == {"a": 1, "b": 2, "c": 3}
 
 
@@ -138,7 +140,7 @@ def test__get_inputs_with_keyword_only_args_and_defaults() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1)
+    inputs, _ = _get_inputs(signature, None, 1)
     assert inputs == {"a": 1, "b": 2, "c": 3}
 
 
@@ -147,7 +149,9 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
         pass
 
     signature = inspect.signature(foo)
-    inputs = _get_inputs(signature, 1, b=2, c=3, d=4, e=5, other_kwargs={"f": 6})
+    inputs, _ = _get_inputs(
+        signature, None, 1, b=2, c=3, d=4, e=5, other_kwargs={"f": 6}
+    )
     assert inputs == {
         "kwargs": 1,
         "b": 2,
