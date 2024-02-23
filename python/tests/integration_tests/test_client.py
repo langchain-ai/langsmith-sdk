@@ -359,7 +359,6 @@ def test_create_chat_example(
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-@freeze_time("2023-01-01")
 def test_batch_ingest_runs(langchain_client: Client) -> None:
     _session = "__test_batch_ingest_runs"
     trace_id = uuid4()
@@ -418,6 +417,7 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             raise LangSmithError("Runs not created yet")
         except LangSmithError:
             time.sleep(wait)
+            wait += 1
     else:
         raise ValueError("Runs not created in time")
     assert len(runs) == 2
