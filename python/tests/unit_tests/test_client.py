@@ -757,7 +757,7 @@ def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
 MB = 1024 * 1024
 
 
-@pytest.mark.parametrize("payload_size", [5 * MB])  # MB, 5 * MB, 9 * MB])
+@pytest.mark.parametrize("payload_size", [MB, 5 * MB, 9 * MB, 21 * MB])
 def test_batch_ingest_run_splits_large_batches(payload_size: int):
     mock_session = MagicMock()
     client = Client(api_key="test", session=mock_session)
@@ -799,3 +799,19 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
         sum([1 for call in mock_session.request.call_args_list if call[0][0] == "post"])
         == expected_num_requests
     )
+
+    # Use orjson to reload all the post request bodies and check that all the
+    # post/patch requests are present in the request bodies
+    import orjson
+
+    request_bodies = [
+        op
+        for call in mock_session.request.call_args_list
+        for reqs in orjson.loads(call[1]["data"]).values()
+        for op in reqs
+    ]
+    all_run_ids = run_ids + patch_ids
+
+    # Check that all the run_ids are present in the request bodies
+    for run_id in all_run_ids:
+        assert any([body["id"] == str(run_id) for body in request_bodies])
