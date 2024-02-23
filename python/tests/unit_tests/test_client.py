@@ -5,6 +5,7 @@ import dataclasses
 import gc
 import itertools
 import json
+import math
 import os
 import threading
 import time
@@ -751,3 +752,66 @@ def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
         sum([1 for call in mock_session.request.call_args_list if call[0][0] == "post"])
         == 3
     )
+
+
+MB = 1024 * 1024
+
+
+@pytest.mark.parametrize("payload_size", [MB, 5 * MB, 9 * MB, 21 * MB])
+def test_batch_ingest_run_splits_large_batches(payload_size: int):
+    mock_session = MagicMock()
+    client = Client(api_key="test", session=mock_session)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    # Create 6 run ops total, each with an inputs dictionary that's payload_size bytess
+    run_ids = [str(uuid.uuid4()) for _ in range(3)]
+    patch_ids = [str(uuid.uuid4()) for _ in range(3)]
+    posts = [
+        {
+            "name": "test",
+            "id": run_id,
+            "trace_id": run_id,
+            "dotted_order": run_id,
+            "inputs": {"x": "a" * payload_size},
+            "start_time": "2021-01-01T00:00:00Z",
+        }
+        for run_id in run_ids
+    ]
+    patches = [
+        {
+            "id": run_id,
+            "trace_id": run_id,
+            "dotted_order": run_id,
+            "end_time": "2021-01-01T00:00:00Z",
+            "outputs": {"y": "b" * payload_size},
+        }
+        for run_id in patch_ids
+    ]
+    client.batch_ingest_runs(create=posts, update=patches)
+    # we can support up to 20MB per batch, so we need to find the number of batches
+    # we should be sending
+    max_in_batch = max(1, (20 * MB) // (payload_size + 20))
+
+    expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
+    # count the number of POST requests
+    assert (
+        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "post"])
+        == expected_num_requests
+    )
+
+    # Use orjson to reload all the post request bodies and check that all the
+    # post/patch requests are present in the request bodies
+    import orjson
+
+    request_bodies = [
+        op
+        for call in mock_session.request.call_args_list
+        for reqs in orjson.loads(call[1]["data"]).values()
+        for op in reqs
+    ]
+    all_run_ids = run_ids + patch_ids
+
+    # Check that all the run_ids are present in the request bodies
+    for run_id in all_run_ids:
+        assert any([body["id"] == str(run_id) for body in request_bodies])
