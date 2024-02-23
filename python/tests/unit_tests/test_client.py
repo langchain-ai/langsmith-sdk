@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import attr
 import dataclasses_json
+import orjson
 import pytest
 import requests
 from pydantic import BaseModel
@@ -29,6 +30,7 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith.client import (
     Client,
+    _dumps_json,
     _get_api_key,
     _get_api_url,
     _is_langchain_hosted,
@@ -577,8 +579,7 @@ def test_serialize_json() -> None:
         "cyclic": CyclicClass(),
         "cyclic2": cycle_2,
     }
-
-    res = json.loads(json.dumps(to_serialize, default=_serialize_json))
+    res = orjson.loads(_dumps_json(to_serialize))
     expected = {
         "uid": str(uid),
         "time": current_time.isoformat(),
@@ -616,10 +617,14 @@ def test_serialize_json() -> None:
     }
     assert set(expected) == set(res)
     for k, v in expected.items():
-        if callable(v):
-            assert v(res[k])
-        else:
-            assert res[k] == v
+        try:
+            if callable(v):
+                assert v(res[k]), f"Failed for {k}"
+            else:
+                assert res[k] == v, f"Failed for {k}"
+        except AssertionError:
+            breakpoint()
+            raise
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
