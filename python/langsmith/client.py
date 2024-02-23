@@ -1101,20 +1101,50 @@ class Client:
                 )
         # filter out runs that are not sampled
         if pre_sampled:
-            body = {
+            raw_body = {
                 "post": create_dicts,
                 "patch": update_dicts,
             }
         else:
-            body = {
+            raw_body = {
                 "post": self._filter_for_sampling(create_dicts),
                 "patch": self._filter_for_sampling(update_dicts, patch=True),
             }
-        if not body["post"] and not body["patch"]:
+        if not raw_body["post"] and not raw_body["patch"]:
             return
 
-        self._insert_runtime_env(body["post"])
+        self._insert_runtime_env(raw_body["post"])
 
+        if self.info is None:
+            raise ls_utils.LangSmithUserError(
+                "Batch ingest is not supported by your LangSmith server version. "
+                "Please upgrade to a newer version."
+            )
+        info = cast(ls_schemas.LangSmithInfo, self.info)
+
+        size_limit_bytes = (info.batch_ingest_config or {}).get(
+            "size_limit_bytes"
+            # 20 MB max by default
+        ) or 20_971_520
+        # Get orjson fragments to avoid going over the max request size
+        partial_body = {
+            "post": [_dumps_json(run) for run in raw_body["post"]],
+            "patch": [_dumps_json(run) for run in raw_body["patch"]],
+        }
+        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+        body_size = 0
+        for key in ["post", "patch"]:
+            body = collections.deque(partial_body[key])
+            while body:
+                if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
+                    self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+                    body_size = 0
+                body_size += len(body[0])
+                body_chunks[key].append(orjson.Fragment(body.popleft()))
+        if body_size:
+            self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+
+    def _post_batch_ingest_runs(self, body: bytes):
         def handle_429(response: requests.Response, attempt: int) -> bool:
             # Min of 30 seconds, max of 1 minute
             if response.status_code == 429:
@@ -1137,7 +1167,7 @@ class Client:
                 "post",
                 f"{self.api_url}/runs/batch",
                 request_kwargs={
-                    "data": _dumps_json(body),
+                    "data": body,
                     "timeout": self.timeout_ms / 1000,
                     "headers": {
                         **self._headers,
@@ -3500,6 +3530,7 @@ def _ensure_ingest_config(
     info: Optional[ls_schemas.LangSmithInfo],
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
+        size_limit_bytes=None,  # Note this field is not used here
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
         scale_up_qsize_trigger=_AUTO_SCALE_UP_QSIZE_TRIGGER,
