@@ -164,7 +164,7 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
         if depth >= _MAX_DEPTH:
             try:
-                return json.loads(json.dumps(obj))
+                return orjson.loads(orjson.dumps(obj))
             except BaseException:
                 return repr(obj)
         if isinstance(obj, datetime.datetime):
@@ -236,7 +236,7 @@ def _dumps_json(obj: Any) -> bytes:
         default=_serialize_json,
         option=orjson.OPT_SERIALIZE_NUMPY
         | orjson.OPT_SERIALIZE_DATACLASS
-        | orjson.OPT_SERIALIZE_UUID
+        | orjson.OPT_SERIALIZE_UUID,
     )
 
 
@@ -2918,9 +2918,7 @@ class Client:
             "POST",
             self.api_url + "/feedback" + ("/eager" if eager else ""),
             request_kwargs={
-                "data": json.dumps(
-                    feedback.dict(exclude_none=True), default=_serialize_json
-                ),
+                "data": _dumps_json(feedback.dict(exclude_none=True)),
                 "headers": {
                     **self._headers,
                     "Content-Type": "application/json",
