@@ -623,7 +623,6 @@ def test_serialize_json() -> None:
             else:
                 assert res[k] == v, f"Failed for {k}"
         except AssertionError:
-            breakpoint()
             raise
 
 
