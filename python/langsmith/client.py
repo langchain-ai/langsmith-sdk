@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import collections
-import dataclasses
 import datetime
 import functools
 import importlib
@@ -156,7 +155,6 @@ def _default_retry_config() -> Retry:
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
-_PRIMITIVE_TYPES = (str, int, float, bool)
 _MAX_DEPTH = 2
 
 
@@ -164,21 +162,13 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
         if depth >= _MAX_DEPTH:
             try:
-                return orjson.loads(orjson.dumps(obj))
+                return orjson.loads(_dumps_json_single(obj))
             except BaseException:
                 return repr(obj)
-        if isinstance(obj, datetime.datetime):
-            return obj.isoformat()
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-        if obj is None or isinstance(obj, _PRIMITIVE_TYPES):
-            return obj
         if isinstance(obj, bytes):
             return obj.decode("utf-8")
-        if isinstance(obj, (set, list, tuple)):
-            return [_serialize_json(x, depth + 1) for x in list(obj)]
-        if isinstance(obj, dict):
-            return {k: _serialize_json(v, depth + 1) for k, v in obj.items()}
+        if isinstance(obj, (set, tuple)):
+            return orjson.loads(_dumps_json_single(list(obj)))
 
         serialization_methods = [
             ("model_dump_json", True),  # Pydantic V2
@@ -197,26 +187,33 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                 except Exception as e:
                     logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
                     return repr(obj)
-
-        if dataclasses.is_dataclass(obj):
-            # Regular dataclass
-            return dataclasses.asdict(obj)
         if hasattr(obj, "__slots__"):
             all_attrs = {slot: getattr(obj, slot, None) for slot in obj.__slots__}
         elif hasattr(obj, "__dict__"):
             all_attrs = vars(obj)
         else:
             return repr(obj)
-        return {
-            k: _serialize_json(v, depth=depth + 1) if v is not obj else repr(v)
-            for k, v in all_attrs.items()
-        }
+        filtered = {k: v if v is not obj else repr(v) for k, v in all_attrs.items()}
+        return orjson.loads(_dumps_json(filtered, depth=depth + 1))
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
 
 
-def _dumps_json(obj: Any) -> bytes:
+def _dumps_json_single(
+    obj: Any, default: Optional[Callable[[Any], Any]] = None
+) -> bytes:
+    return orjson.dumps(
+        obj,
+        default=default,
+        option=orjson.OPT_SERIALIZE_NUMPY
+        | orjson.OPT_SERIALIZE_DATACLASS
+        | orjson.OPT_SERIALIZE_UUID
+        | orjson.OPT_NON_STR_KEYS,
+    )
+
+
+def _dumps_json(obj: Any, depth: int = 0) -> bytes:
     """Serialize an object to a JSON formatted string.
 
     Parameters
@@ -231,13 +228,7 @@ def _dumps_json(obj: Any) -> bytes:
     str
         The JSON formatted string.
     """
-    return orjson.dumps(
-        obj,
-        default=_serialize_json,
-        option=orjson.OPT_SERIALIZE_NUMPY
-        | orjson.OPT_SERIALIZE_DATACLASS
-        | orjson.OPT_SERIALIZE_UUID,
-    )
+    return _dumps_json_single(obj, functools.partial(_serialize_json, depth=depth))
 
 
 def close_session(session: requests.Session) -> None:
@@ -1009,7 +1000,6 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-
         run_create = self._run_transform(run_create)
         self._insert_runtime_env([run_create])
 
@@ -1032,7 +1022,6 @@ class Client:
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
-
         self.request_with_retries(
             "post",
             f"{self.api_url}/runs",
@@ -3517,6 +3506,7 @@ def _tracing_thread_handle_batch(
     try:
         client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     except Exception:
+        logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         pass
