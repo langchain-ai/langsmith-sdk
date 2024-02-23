@@ -394,7 +394,9 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
         "Async yielded 4",
     ]
 
-    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, sleep_time=5
+    )
     runs = list(langchain_client.list_runs(project_name=project_name))
     run = runs[0]
     assert run.run_type == "chain"
