@@ -208,7 +208,10 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
 async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> None:
     with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "true"}):
 
-        @traceable(client=mock_client)
+        def filter_inputs(kwargs: dict):
+            return {"a": "FOOOOOO", "b": kwargs["b"], "d": kwargs["d"]}
+
+        @traceable(client=mock_client, process_inputs=filter_inputs)
         async def my_iterator_fn(a, b, d):
             for i in range(a + b + d):
                 yield i
@@ -234,6 +237,8 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         body = json.loads(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["outputs"]["output"] == expected
+        # Assert the inputs are filtered as expected
+        assert body["post"][0]["inputs"] == {"a": "FOOOOOO", "b": 2, "d": 3}
 
 
 @patch("langsmith.run_trees.Client", autospec=True)

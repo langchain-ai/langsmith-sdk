@@ -1,8 +1,20 @@
 from __future__ import annotations
 
 import functools
+import logging
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Dict, List, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    DefaultDict,
+    Dict,
+    List,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from langsmith import run_helpers
 
@@ -16,6 +28,28 @@ if TYPE_CHECKING:
     from openai.types.completion import Completion
 
 C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI"])
+logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache
+def _get_not_given() -> Optional[Type]:
+    try:
+        from openai._types import NotGiven
+
+        return NotGiven
+    except ImportError:
+        return None
+
+
+def _strip_not_given(d: dict) -> dict:
+    try:
+        not_given = _get_not_given()
+        if not_given is None:
+            return d
+        return {k: v for k, v in d.items() if not isinstance(v, not_given)}
+    except Exception as e:
+        logger.error(f"Error stripping NotGiven: {e}")
+        return d
 
 
 def _reduce_choices(choices: List[Choice]) -> dict:
@@ -110,15 +144,22 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
     @functools.wraps(original_create)
     def create(*args, stream: bool = False, **kwargs):
         decorator = run_helpers.traceable(
-            name=name, run_type="llm", reduce_fn=reduce_fn if stream else None
+            name=name,
+            run_type="llm",
+            reduce_fn=reduce_fn if stream else None,
+            process_inputs=_strip_not_given,
         )
 
         return decorator(original_create)(*args, stream=stream, **kwargs)
 
     @functools.wraps(original_create)
     async def acreate(*args, stream: bool = False, **kwargs):
+        kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
-            name=name, run_type="llm", reduce_fn=reduce_fn if stream else None
+            name=name,
+            run_type="llm",
+            reduce_fn=reduce_fn if stream else None,
+            process_inputs=_strip_not_given,
         )
         if stream:
             # TODO: This slightly alters the output to be a generator instead of the

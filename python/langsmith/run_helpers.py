@@ -129,6 +129,7 @@ class _ContainerInput(TypedDict, total=False):
     reduce_fn: Optional[Callable]
     project_name: Optional[str]
     run_type: ls_client.RUN_TYPE_T
+    process_inputs: Optional[Callable[[dict], dict]]
 
 
 def _container_end(
@@ -207,6 +208,12 @@ def _setup_run(
     except TypeError as e:
         logger.debug(f"Failed to infer inputs for {name_}: {e}")
         inputs = {"args": args, "kwargs": kwargs}
+    process_inputs = container_input.get("process_inputs")
+    if process_inputs:
+        try:
+            inputs = process_inputs(inputs)
+        except Exception as e:
+            logger.error(f"Failed to filter inputs for {name_}: {e}")
     outer_tags = _TAGS.get()
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     _TAGS.set(tags_)
@@ -325,6 +332,7 @@ def traceable(
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
+    process_inputs: Optional[Callable[[dict], dict]] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
     ...
 
@@ -350,6 +358,7 @@ def traceable(
                 called, and the run itself will be stuck in a pending state.
         project_name: The name of the project to log the run to. Defaults to None,
             which will use the default project.
+        process_inputs: A function to filter the inputs to the run. Defaults to None.
 
 
     Returns:
@@ -492,6 +501,7 @@ def traceable(
         client=kwargs.pop("client", None),
         project_name=kwargs.pop("project_name", None),
         run_type=run_type,
+        process_inputs=kwargs.pop("process_inputs", None),
     )
     if kwargs:
         warnings.warn(
