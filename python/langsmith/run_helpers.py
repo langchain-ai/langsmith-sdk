@@ -208,9 +208,10 @@ def _setup_run(
     except TypeError as e:
         logger.debug(f"Failed to infer inputs for {name_}: {e}")
         inputs = {"args": args, "kwargs": kwargs}
-    if container_input.get("process_inputs"):
+    process_inputs = container_input.get("process_inputs")
+    if process_inputs:
         try:
-            inputs = container_input["process_inputs"](inputs)
+            inputs = process_inputs(inputs)
         except Exception as e:
             logger.error(f"Failed to filter inputs for {name_}: {e}")
     outer_tags = _TAGS.get()
