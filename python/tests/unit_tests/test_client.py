@@ -803,11 +803,6 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
         sum([1 for call in mock_session.request.call_args_list if call[0][0] == "post"])
         == expected_num_requests
     )
-
-    # Use orjson to reload all the post request bodies and check that all the
-    # post/patch requests are present in the request bodies
-    import orjson
-
     request_bodies = [
         op
         for call in mock_session.request.call_args_list
@@ -819,3 +814,6 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
     # Check that all the run_ids are present in the request bodies
     for run_id in all_run_ids:
         assert any([body["id"] == str(run_id) for body in request_bodies])
+
+    # Check that no duplicate run_ids are present in the request bodies
+    assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
