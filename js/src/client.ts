@@ -266,6 +266,9 @@ export class Queue<T> {
   }
 }
 
+// 20 MB
+export const DEFAULT_SIZE_LIMIT_BYTES = 20_971_520;
+
 export class Client {
   private apiKey?: string;
 
@@ -302,6 +305,8 @@ export class Client {
   private autoBatchInitialDelayMs = 250;
 
   private autoBatchAggregationDelayMs = 50;
+
+  private serverInfo: Record<string, any> | undefined;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
@@ -583,7 +588,7 @@ export class Client {
     return itemPromise;
   }
 
-  protected async batchEndpointIsSupported() {
+  protected async _getServerInfo() {
     const response = await fetch(`${this.apiUrl}/info`, {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -593,6 +598,15 @@ export class Client {
       // consume the response body to release the connection
       // https://undici.nodejs.org/#/?id=garbage-collection
       await response.text();
+      throw new Error("Failed to retrieve server info.");
+    }
+    return response.json();
+  }
+
+  protected async batchEndpointIsSupported() {
+    try {
+      this.serverInfo = await this._getServerInfo();
+    } catch (e) {
       return false;
     }
     return true;
@@ -683,11 +697,11 @@ export class Client {
       preparedCreateParams = Object.values(createById);
       preparedUpdateParams = standaloneUpdates;
     }
-    const body = {
+    const rawBatch = {
       post: this._filterForSampling(preparedCreateParams),
       patch: this._filterForSampling(preparedUpdateParams, true),
     };
-    if (!body.post.length && !body.patch.length) {
+    if (!rawBatch.post.length && !rawBatch.patch.length) {
       return;
     }
     preparedCreateParams = await mergeRuntimeEnvIntoRunCreates(
@@ -698,10 +712,10 @@ export class Client {
     }
     if (!this.batchEndpointSupported) {
       this.autoBatchTracing = false;
-      for (const preparedCreateParam of body.post) {
+      for (const preparedCreateParam of rawBatch.post) {
         await this.createRun(preparedCreateParam as CreateRunParams);
       }
-      for (const preparedUpdateParam of body.patch) {
+      for (const preparedUpdateParam of rawBatch.patch) {
         if (preparedUpdateParam.id !== undefined) {
           await this.updateRun(
             preparedUpdateParam.id,
@@ -711,6 +725,40 @@ export class Client {
       }
       return;
     }
+    const sizeLimitBytes =
+      this.serverInfo?.batch_ingest_config?.size_limit_bytes ??
+      DEFAULT_SIZE_LIMIT_BYTES;
+    const batchChunks = {
+      post: [] as (typeof rawBatch)["post"],
+      patch: [] as (typeof rawBatch)["patch"],
+    };
+    let currentBatchSizeBytes = 0;
+    for (const k of ["post", "patch"]) {
+      const key = k as keyof typeof rawBatch;
+      const batchItems = rawBatch[key].reverse();
+      let batchItem = batchItems.pop();
+      while (batchItem !== undefined) {
+        const stringifiedBatchItem = JSON.stringify(batchItem);
+        if (
+          currentBatchSizeBytes > 0 &&
+          currentBatchSizeBytes + stringifiedBatchItem.length > sizeLimitBytes
+        ) {
+          await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+          currentBatchSizeBytes = 0;
+          batchChunks.post = [];
+          batchChunks.patch = [];
+        }
+        currentBatchSizeBytes += stringifiedBatchItem.length;
+        batchChunks[key].push(batchItem);
+        batchItem = batchItems.pop();
+      }
+    }
+    if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
+      await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+    }
+  }
+
+  private async _postBatchIngestRuns(body: string) {
     const headers = {
       ...this.headers,
       "Content-Type": "application/json",
@@ -722,7 +770,7 @@ export class Client {
       {
         method: "POST",
         headers,
-        body: JSON.stringify(body),
+        body: body,
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );

@@ -66,8 +66,13 @@ describe("Batch client tracing", () => {
       autoBatchTracing: true,
     });
     jest.spyOn((client as any).caller, "call").mockImplementation(() => {
-      throw new Error("Mock error!");
+      throw new Error("Totally expected mock error");
     });
+    jest
+      .spyOn((client as any).batchIngestCaller, "call")
+      .mockImplementation(() => {
+        throw new Error("Totally expected mock error");
+      });
     jest
       .spyOn(client as any, "batchEndpointIsSupported")
       .mockResolvedValue(true);
@@ -341,6 +346,113 @@ describe("Batch client tracing", () => {
           trace_id: runId,
         })
       ),
+      patch: [],
+    });
+  });
+
+  it("should send traces above the batch size limit in bytes and see even batches", async () => {
+    const client = new Client({
+      apiKey: "test-api-key",
+      pendingAutoBatchedRunLimit: 10,
+      autoBatchTracing: true,
+    });
+    const callSpy = jest
+      .spyOn((client as any).batchIngestCaller, "call")
+      .mockResolvedValue({
+        ok: true,
+        text: () => "",
+      });
+    jest.spyOn(client as any, "_getServerInfo").mockResolvedValue({
+      batch_ingest_config: {
+        size_limit_bytes: 1,
+      },
+    });
+    const projectName = "__test_batch";
+
+    const runIds = await Promise.all(
+      [...Array(4)].map(async (_, i) => {
+        const runId = uuidv4();
+        const dottedOrder = convertToDottedOrderFormat(
+          new Date().getTime() / 1000,
+          runId
+        );
+        await client.createRun({
+          id: runId,
+          project_name: projectName,
+          name: "test_run " + i,
+          run_type: "llm",
+          inputs: { text: "hello world " + i },
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        });
+        return runId;
+      })
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(callSpy.mock.calls.length).toEqual(4);
+
+    const calledRequestParam: any = callSpy.mock.calls[0][2];
+    const calledRequestParam2: any = callSpy.mock.calls[1][2];
+    const calledRequestParam3: any = callSpy.mock.calls[2][2];
+    const calledRequestParam4: any = callSpy.mock.calls[3][2];
+
+    // Queue should drain as soon as byte size limit of 1 is reached,
+    // sending each call individually
+    expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runIds[0],
+          run_type: "llm",
+          inputs: {
+            text: "hello world 0",
+          },
+          trace_id: runIds[0],
+        }),
+      ],
+      patch: [],
+    });
+
+    expect(JSON.parse(calledRequestParam2?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runIds[1],
+          run_type: "llm",
+          inputs: {
+            text: "hello world 1",
+          },
+          trace_id: runIds[1],
+        }),
+      ],
+      patch: [],
+    });
+
+    expect(JSON.parse(calledRequestParam3?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runIds[2],
+          run_type: "llm",
+          inputs: {
+            text: "hello world 2",
+          },
+          trace_id: runIds[2],
+        }),
+      ],
+      patch: [],
+    });
+
+    expect(JSON.parse(calledRequestParam4?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runIds[3],
+          run_type: "llm",
+          inputs: {
+            text: "hello world 3",
+          },
+          trace_id: runIds[3],
+        }),
+      ],
       patch: [],
     });
   });
