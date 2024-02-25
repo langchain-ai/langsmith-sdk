@@ -1134,6 +1134,7 @@ class Client:
                 if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
                     self._post_batch_ingest_runs(orjson.dumps(body_chunks))
                     body_size = 0
+                    body_chunks.clear()
                 body_size += len(body[0])
                 body_chunks[key].append(orjson.Fragment(body.popleft()))
         if body_size:
