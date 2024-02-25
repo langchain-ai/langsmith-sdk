@@ -267,7 +267,7 @@ export class Queue<T> {
 }
 
 // 20 MB
-export const DEFAULT_SIZE_LIMIT_BYTES = 20_971_520;
+export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
 export class Client {
   private apiKey?: string;
@@ -727,7 +727,7 @@ export class Client {
     }
     const sizeLimitBytes =
       this.serverInfo?.batch_ingest_config?.size_limit_bytes ??
-      DEFAULT_SIZE_LIMIT_BYTES;
+      DEFAULT_BATCH_SIZE_LIMIT_BYTES;
     const batchChunks = {
       post: [] as (typeof rawBatch)["post"],
       patch: [] as (typeof rawBatch)["patch"],
