@@ -887,7 +887,9 @@ class Client:
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
         return ls_schemas.Dataset(
-            **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            **result,
+            _host_url=self._host_url,
+            _tenant_id=self._get_optional_tenant_id(),
         )
 
     @staticmethod
@@ -1758,18 +1760,24 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
 
-    def _get_tenant_id(self) -> uuid.UUID:
+    def _get_optional_tenant_id(self) -> Optional[uuid.UUID]:
         if self._tenant_id is not None:
             return self._tenant_id
         response = self._get_with_retries("/sessions", params={"limit": 1})
         result = response.json()
-        if isinstance(result, list):
+        if isinstance(result, list) and len(result) > 0:
             tracer_session = ls_schemas.TracerSessionResult(
                 **result[0], _host_url=self._host_url
             )
             self._tenant_id = tracer_session.tenant_id
             return self._tenant_id
-        raise ls_utils.LangSmithError("No projects found")
+        return None
+
+    def _get_tenant_id(self) -> uuid.UUID:
+        tenant_id = self._get_optional_tenant_id()
+        if tenant_id is None:
+            raise ls_utils.LangSmithError("No tenant ID found")
+        return tenant_id
 
     @ls_utils.xor_args(("project_id", "project_name"))
     def read_project(
@@ -2026,7 +2034,7 @@ class Client:
         return ls_schemas.Dataset(
             **response.json(),
             _host_url=self._host_url,
-            _tenant_id=self._get_tenant_id(),
+            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def has_dataset(
@@ -2092,10 +2100,14 @@ class Client:
                     f"Dataset {dataset_name} not found"
                 )
             return ls_schemas.Dataset(
-                **result[0], _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+                **result[0],
+                _host_url=self._host_url,
+                _tenant_id=self._get_optional_tenant_id(),
             )
         return ls_schemas.Dataset(
-            **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            **result,
+            _host_url=self._host_url,
+            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def read_dataset_openai_finetuning(
@@ -2155,7 +2167,9 @@ class Client:
 
         yield from (
             ls_schemas.Dataset(
-                **dataset, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+                **dataset,
+                _host_url=self._host_url,
+                _tenant_id=self._get_optional_tenant_id(),
             )
             for dataset in self._get_paginated_list("/datasets", params=params)
         )
@@ -2498,7 +2512,9 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
         return ls_schemas.Example(
-            **result, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+            **result,
+            _host_url=self._host_url,
+            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
@@ -2516,7 +2532,7 @@ class Client:
         return ls_schemas.Example(
             **response.json(),
             _host_url=self._host_url,
-            _tenant_id=self._get_tenant_id(),
+            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def list_examples(
@@ -2554,7 +2570,9 @@ class Client:
         params["inline_s3_urls"] = inline_s3_urls
         yield from (
             ls_schemas.Example(
-                **example, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+                **example,
+                _host_url=self._host_url,
+                _tenant_id=self._get_optional_tenant_id(),
             )
             for example in self._get_paginated_list("/examples", params=params)
         )
@@ -2667,7 +2685,9 @@ class Client:
             reference_example_ = example
         elif isinstance(example, dict):
             reference_example_ = ls_schemas.Example(
-                **example, _host_url=self._host_url, _tenant_id=self._get_tenant_id()
+                **example,
+                _host_url=self._host_url,
+                _tenant_id=self._get_optional_tenant_id(),
             )
         elif run.reference_example_id is not None:
             reference_example_ = self.read_example(run.reference_example_id)
