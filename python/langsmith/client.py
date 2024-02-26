@@ -1763,14 +1763,19 @@ class Client:
     def _get_optional_tenant_id(self) -> Optional[uuid.UUID]:
         if self._tenant_id is not None:
             return self._tenant_id
-        response = self._get_with_retries("/sessions", params={"limit": 1})
-        result = response.json()
-        if isinstance(result, list) and len(result) > 0:
-            tracer_session = ls_schemas.TracerSessionResult(
-                **result[0], _host_url=self._host_url
+        try:
+            response = self._get_with_retries("/sessions", params={"limit": 1})
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                tracer_session = ls_schemas.TracerSessionResult(
+                    **result[0], _host_url=self._host_url
+                )
+                self._tenant_id = tracer_session.tenant_id
+                return self._tenant_id
+        except Exception as e:
+            logger.warning(
+                "Failed to get tenant ID from LangSmith: %s", repr(e), exc_info=True
             )
-            self._tenant_id = tracer_session.tenant_id
-            return self._tenant_id
         return None
 
     def _get_tenant_id(self) -> uuid.UUID:
