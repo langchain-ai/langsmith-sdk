@@ -1334,6 +1334,7 @@ class Client:
         reference_example_id: Optional[ID_TYPE] = None,
         query: Optional[str] = None,
         filter: Optional[str] = None,
+        trace_filter: Optional[str] = None,
         execution_order: Optional[int] = None,
         parent_run_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
@@ -1359,6 +1360,10 @@ class Client:
             The query string to filter by.
         filter : str or None, default=None
             The filter string to filter by.
+        trace_filter : str or None, default=None
+            The trace filter string to filter by. This is meant to be used in
+            conjunction with the regular `filter` parameter to let you
+            filter runs by attributes of the root run within a trace.
         execution_order : int or None, default=None
             The execution order to filter by. Execution order is the position
             of the run in the full trace's execution sequence.
@@ -1378,7 +1383,60 @@ class Client:
         ------
         Run
             The runs.
-        """
+
+        Examples:
+        --------
+        .. code-block:: python
+
+            # List all runs in a project
+            project_runs = client.list_runs(project_name="<your_project>")
+
+            # List LLM and Chat runs in the last 24 hours
+            todays_llm_runs = client.list_runs(
+                project_name="<your_project>",
+                start_time=datetime.now() - timedelta(days=1),
+                run_type="llm",
+            )
+
+            # List traces in a project
+            root_runs = client.list_runs(
+                project_name="<your_project>",
+                execution_order=1
+            )
+
+            # List runs without errors
+            correct_runs = client.list_runs(project_name="<your_project>", error=False)
+
+            # List runs by run ID
+            run_ids = ['a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836','9398e6be-964f-4aa4-8ae9-ad78cd4b7074']
+            selected_runs = client.list_runs(id=run_ids)
+
+            # List all "chain" type runs that took more than 10 seconds and had
+            # `total_tokens` greater than 5000
+            chain_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))'
+            )
+
+            # List all runs called "extractor" whose root of the trace was assigned feedback "user_score" score of 1
+            good_extractor_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='eq(name, "extractor")',
+                trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))'
+            )
+
+            # List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0
+            complex_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
+            )
+
+            # List all runs where `tags` include "experimental" or "beta" and `latency` is greater than 2 seconds
+            tagged_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))'
+            )
+        """  # noqa: E501
         project_ids = []
         if isinstance(project_id, (uuid.UUID, str)):
             project_ids.append(project_id)
@@ -1399,6 +1457,7 @@ class Client:
             ),
             "query": query,
             "filter": filter,
+            "trace_filter": trace_filter,
             "execution_order": execution_order,
             "parent_run": parent_run_id,
             "start_time": start_time.isoformat() if start_time else None,
