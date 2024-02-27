@@ -1002,6 +1002,7 @@ export class Client {
    * // List all runs in a project
    * const projectRuns = client.listRuns({ projectName: "<your_project>" });
    *
+   * @example
    * // List LLM and Chat runs in the last 24 hours
    * const todaysLLMRuns = client.listRuns({
    *   projectName: "<your_project>",
@@ -1009,18 +1010,21 @@ export class Client {
    *   run_type: "llm",
    * });
    *
+   * @example
    * // List traces in a project
    * const rootRuns = client.listRuns({
    *   projectName: "<your_project>",
    *   execution_order: 1,
    * });
    *
+   * @example
    * // List runs without errors
    * const correctRuns = client.listRuns({
    *   projectName: "<your_project>",
    *   error: false,
    * });
    *
+   * @example
    * // List runs by run ID
    * const runIds = [
    *   "a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836",
@@ -1028,12 +1032,14 @@ export class Client {
    * ];
    * const selectedRuns = client.listRuns({ run_ids: runIds });
    *
+   * @example
    * // List all "chain" type runs that took more than 10 seconds and had `total_tokens` greater than 5000
    * const chainRuns = client.listRuns({
    *   projectName: "<your_project>",
    *   filter: 'and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))',
    * });
    *
+   * @example
    * // List all runs called "extractor" whose root of the trace was assigned feedback "user_score" score of 1
    * const goodExtractorRuns = client.listRuns({
    *   projectName: "<your_project>",
@@ -1041,12 +1047,14 @@ export class Client {
    *   traceFilter: 'and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
    * });
    *
+   * @example
    * // List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0
    * const complexRuns = client.listRuns({
    *   projectName: "<your_project>",
    *   filter: 'and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))',
    * });
    *
+   * @example
    * // List all runs where `tags` include "experimental" or "beta" and `latency` is greater than 2 seconds
    * const taggedRuns = client.listRuns({
    *   projectName: "<your_project>",
