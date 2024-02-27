@@ -44,20 +44,95 @@ interface ClientConfig {
   pendingAutoBatchedRunLimit?: number;
 }
 
+/**
+ * Represents the parameters for listing runs (spans) from the Langsmith server.
+ */
 interface ListRunsParams {
+  /**
+   * The ID or IDs of the project(s) to filter by.
+   */
   projectId?: string | string[];
+
+  /**
+   * The name or names of the project(s) to filter by.
+   */
   projectName?: string | string[];
+
+  /**
+   * The ID of the trace to filter by.
+   */
   traceId?: string;
+
+  /**
+   * The execution order to filter by.
+   */
   executionOrder?: number;
+
+  /**
+   * The ID of the parent run to filter by.
+   */
   parentRunId?: string;
+
+  /**
+   * The ID of the reference example to filter by.
+   */
   referenceExampleId?: string;
+
+  /**
+   * The start time to filter by.
+   */
   startTime?: Date;
+
+  /**
+   * The run type to filter by.
+   */
   runType?: string;
+
+  /**
+   * Indicates whether to filter by error runs.
+   */
   error?: boolean;
+
+  /**
+   * The ID or IDs of the runs to filter by.
+   */
   id?: string[];
+
+  /**
+   * The maximum number of runs to retrieve.
+   */
   limit?: number;
+
+  /**
+   * The query string to filter by.
+   */
   query?: string;
+
+  /**
+   * The filter string to apply.
+   *
+   * Run Filtering:
+   * Listing runs with query params is useful for simple queries, but doesn't support many common needs, such as filtering by metadata, tags, or other fields.
+   * LangSmith supports a filter query language to permit more complex filtering operations when fetching runs. This guide will provide a high level overview of the grammar as well as a few examples of when it can be useful.
+   * If you'd prefer a more visual guide, you can get a taste of the language by viewing the table of runs on any of your projects' pages. We provide some recommended filters to get you started that you can copy and use the SDK.
+   *
+   * Grammar:
+   * The filtering grammar is based on common comparators on fields in the run object. Supported comparators include:
+   * - gte (greater than or equal to)
+   * - gt (greater than)
+   * - lte (less than or equal to)
+   * - lt (less than)
+   * - eq (equal to)
+   * - neq (not equal to)
+   * - has (check if run contains a tag or metadata json blob)
+   * - search (search for a substring in a string field)
+   */
   filter?: string;
+
+  /**
+   * The trace filter string to apply. Uses the same grammar as the filter string.
+   */
+  traceFilter?: string;
 }
 
 interface UploadCSVParams {
@@ -905,21 +980,96 @@ export class Client {
     return run;
   }
 
-  public async *listRuns({
-    projectId,
-    projectName,
-    parentRunId,
-    traceId,
-    referenceExampleId,
-    startTime,
-    executionOrder,
-    runType,
-    error,
-    id,
-    query,
-    filter,
-    limit,
-  }: ListRunsParams): AsyncIterable<Run> {
+  /**
+   * List runs from the LangSmith server.
+   * @param projectId - The ID of the project to filter by.
+   * @param projectName - The name of the project to filter by.
+   * @param parentRunId - The ID of the parent run to filter by.
+   * @param traceId - The ID of the trace to filter by.
+   * @param referenceExampleId - The ID of the reference example to filter by.
+   * @param startTime - The start time to filter by.
+   * @param executionOrder - The execution order to filter by.
+   * @param runType - The run type to filter by.
+   * @param error - Indicates whether to filter by error runs.
+   * @param id - The ID of the run to filter by.
+   * @param query - The query string to filter by.
+   * @param filter - The filter string to apply to the run spans.
+   * @param traceFilter - The filter string to apply on the root run of the trace.
+   * @param limit - The maximum number of runs to retrieve.
+   * @returns {AsyncIterable<Run>} - The runs.
+   *
+   * @example
+   * // List all runs in a project
+   * const projectRuns = client.listRuns({ projectName: "<your_project>" });
+   *
+   * // List LLM and Chat runs in the last 24 hours
+   * const todaysLLMRuns = client.listRuns({
+   *   projectName: "<your_project>",
+   *   start_time: new Date(Date.now() - 24 * 60 * 60 * 1000),
+   *   run_type: "llm",
+   * });
+   *
+   * // List traces in a project
+   * const rootRuns = client.listRuns({
+   *   projectName: "<your_project>",
+   *   execution_order: 1,
+   * });
+   *
+   * // List runs without errors
+   * const correctRuns = client.listRuns({
+   *   projectName: "<your_project>",
+   *   error: false,
+   * });
+   *
+   * // List runs by run ID
+   * const runIds = [
+   *   "a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836",
+   *   "9398e6be-964f-4aa4-8ae9-ad78cd4b7074",
+   * ];
+   * const selectedRuns = client.listRuns({ run_ids: runIds });
+   *
+   * // List all "chain" type runs that took more than 10 seconds and had `total_tokens` greater than 5000
+   * const chainRuns = client.listRuns({
+   *   projectName: "<your_project>",
+   *   filter: 'and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))',
+   * });
+   *
+   * // List all runs called "extractor" whose root of the trace was assigned feedback "user_score" score of 1
+   * const goodExtractorRuns = client.listRuns({
+   *   projectName: "<your_project>",
+   *   filter: 'eq(name, "extractor")',
+   *   traceFilter: 'and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
+   * });
+   *
+   * // List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0
+   * const complexRuns = client.listRuns({
+   *   projectName: "<your_project>",
+   *   filter: 'and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))',
+   * });
+   *
+   * // List all runs where `tags` include "experimental" or "beta" and `latency` is greater than 2 seconds
+   * const taggedRuns = client.listRuns({
+   *   projectName: "<your_project>",
+   *   filter: 'and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))',
+   * });
+   */
+  public async *listRuns(props: ListRunsParams): AsyncIterable<Run> {
+    const {
+      projectId,
+      projectName,
+      parentRunId,
+      traceId,
+      referenceExampleId,
+      startTime,
+      executionOrder,
+      runType,
+      error,
+      id,
+      query,
+      filter,
+      traceFilter,
+      limit,
+    } = props;
     let projectIds: string[] = [];
     if (projectId) {
       projectIds = Array.isArray(projectId) ? projectId : [projectId];
@@ -941,6 +1091,7 @@ export class Client {
       reference_example: referenceExampleId,
       query,
       filter,
+      trace_filter: traceFilter,
       execution_order: executionOrder,
       parent_run: parentRunId ? [parentRunId] : null,
       start_time: startTime ? startTime.toISOString() : null,
