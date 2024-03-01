@@ -178,8 +178,6 @@ class RunTree(ls_schemas.RunBase):
     ) -> RunTree:
         """Add a child run to the run tree."""
         serialized_ = serialized or {"name": name}
-
-        logger.warning(f"session_name: {self.session_name} {self.name}")
         run = RunTree(
             name=name,
             id=run_id or uuid4(),
