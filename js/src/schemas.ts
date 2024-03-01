@@ -282,3 +282,15 @@ export interface LangChainBaseMessage {
   content: string;
   additional_kwargs?: KVMap;
 }
+
+export interface FeedbackIngestToken {
+  id: string;
+  url: string;
+  expires_at: string;
+}
+
+export interface TimeDelta {
+  days?: number;
+  hours?: number;
+  minutes?: number;
+}

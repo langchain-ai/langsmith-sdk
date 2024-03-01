@@ -3189,7 +3189,7 @@ class Client:
                 The feedback ingest tokens.
         """
         params = {
-            "run_id": run_id,
+            "run_id": _as_uuid(run_id, "run_id"),
         }
         yield from (
             ls_schemas.FeedbackIngestToken(**token)

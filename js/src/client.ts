@@ -9,12 +9,14 @@ import {
   ExampleCreate,
   ExampleUpdate,
   Feedback,
+  FeedbackIngestToken,
   KVMap,
   LangChainBaseMessage,
   Run,
   RunCreate,
   RunUpdate,
   ScoreType,
+  TimeDelta,
   TracerSession,
   TracerSessionResult,
   ValueType,
@@ -2182,6 +2184,54 @@ export class Client {
       queryParams
     )) {
       yield* feedbacks;
+    }
+  }
+
+  public async createPresignedFeedbackToken(
+    runId: string,
+    feedbackKey: string,
+    {
+      expiration,
+    }: {
+      expiration?: string | TimeDelta;
+    } = {}
+  ): Promise<FeedbackIngestToken> {
+    const body: KVMap = {
+      run_id: runId,
+      feedback_key: feedbackKey,
+    };
+    if (expiration) {
+      if (typeof expiration === "string") {
+        body["expires_at"] = expiration;
+      } else if (expiration?.hours || expiration?.minutes || expiration?.days) {
+        body["expires_in"] = expiration;
+      }
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/feedback/tokens`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    const result = await response.json();
+    return result as FeedbackIngestToken;
+  }
+
+  public async *listPresignedFeedbackTokens(
+    runId: string
+  ): AsyncIterable<FeedbackIngestToken> {
+    assertUuid(runId);
+    const params = new URLSearchParams({ run_id: runId });
+    for await (const tokens of this._getPaginated<FeedbackIngestToken>(
+      "/feedback/tokens",
+      params
+    )) {
+      yield* tokens;
     }
   }
 }
