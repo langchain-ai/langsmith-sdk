@@ -3129,6 +3129,73 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def create_presigned_feedback_token(
+        self,
+        run_id: ID_TYPE,
+        feedback_key: str,
+        *,
+        expiration: Optional[datetime.datetime | datetime.timedelta] = None,
+    ) -> ls_schemas.FeedbackIngestToken:
+        """Create a pre-signed URL to send feedback data to.
+
+        This is useful for giving browser-based clients a way to upload
+        feedback data directly to LangSmith without accessing the
+        API key.
+
+        Args:
+            feedback_id: The ID of the feedback.
+            expiration: The expiration time of the pre-signed URL.
+                Either a datetime or a timedelta from now.
+
+        Returns:
+            The pre-signed URL for uploading feedback data.
+        """
+        body: Dict[str, Any] = {
+            "run_id": run_id,
+            "feedback_key": feedback_key,
+            "expiration": expiration,
+        }
+        if isinstance(expiration, datetime.datetime):
+            body["expires_at"] = expiration.isoformat()
+        elif isinstance(expiration, datetime.timedelta):
+            body["expires_in"] = ls_schemas.TimeDeltaInput(
+                days=expiration.days,
+                hours=expiration.seconds // 3600,
+                minutes=(expiration.seconds // 60) % 60,
+            )
+
+        response = self.request_with_retries(
+            "post",
+            f"{self.api_url}/feedback/tokens",
+            {
+                "data": _dumps_json(body),
+                "headers": self._headers,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.FeedbackIngestToken(**response.json())
+
+    def list_presigned_feedback_tokens(
+        self,
+        run_id: ID_TYPE,
+    ) -> Iterator[ls_schemas.FeedbackIngestToken]:
+        """List the feedback ingest tokens for a run.
+
+        Args:
+            run_id: The ID of the run to filter by.
+
+        Yields:
+            FeedbackIngestToken
+                The feedback ingest tokens.
+        """
+        params = {
+            "run_id": run_id,
+        }
+        yield from (
+            ls_schemas.FeedbackIngestToken(**token)
+            for token in self._get_paginated_list("/feedback/tokens", params=params)
+        )
+
     # Annotation Queue API
 
     def list_annotation_queues(

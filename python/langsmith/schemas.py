@@ -604,6 +604,20 @@ class LangSmithInfo(BaseModel):
 Example.update_forward_refs()
 
 
+class FeedbackIngestToken(BaseModel):
+    """Represents the schema for a feedback ingest token.
+
+    Attributes:
+        id (UUID): The ID of the feedback ingest token.
+        token (str): The token for ingesting feedback.
+        expires_at (datetime): The expiration time of the token.
+    """
+
+    id: UUID
+    url: str
+    expires_at: datetime
+
+
 class RunEvent(TypedDict, total=False):
     """Run event schema."""
 
@@ -613,3 +627,14 @@ class RunEvent(TypedDict, total=False):
     """Time of the event."""
     kwargs: Optional[Dict[str, Any]]
     """Additional metadata for the event."""
+
+
+class TimeDeltaInput(TypedDict, total=False):
+    """Timedelta input schema."""
+
+    days: int
+    """Number of days."""
+    hours: int
+    """Number of hours."""
+    minutes: int
+    """Number of minutes."""
