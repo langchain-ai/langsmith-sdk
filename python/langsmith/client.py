@@ -1335,6 +1335,7 @@ class Client:
         query: Optional[str] = None,
         filter: Optional[str] = None,
         trace_filter: Optional[str] = None,
+        tree_filter: Optional[str] = None,
         execution_order: Optional[int] = None,
         parent_run_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
@@ -1361,9 +1362,14 @@ class Client:
         filter : str or None, default=None
             The filter string to filter by.
         trace_filter : str or None, default=None
-            The trace filter string to filter by. This is meant to be used in
-            conjunction with the regular `filter` parameter to let you
+            Filter to apply to the ROOT run in the trace tree. This is meant to
+            be used in conjunction with the regular `filter` parameter to let you
             filter runs by attributes of the root run within a trace.
+        tree_filter : str or None, default=None
+            Filter to apply to OTHER runs in the trace tree, including
+            sibling and child runs. This is meant to be used in conjunction with
+            the regular `filter` parameter to let you filter runs by attributes
+            of any run within a trace.
         execution_order : int or None, default=None
             The execution order to filter by. Execution order is the position
             of the run in the full trace's execution sequence.
@@ -1458,6 +1464,7 @@ class Client:
             "query": query,
             "filter": filter,
             "trace_filter": trace_filter,
+            "tree_filter": tree_filter,
             "execution_order": execution_order,
             "parent_run": parent_run_id,
             "start_time": start_time.isoformat() if start_time else None,
@@ -2604,6 +2611,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         example_ids: Optional[Sequence[ID_TYPE]] = None,
+        as_of: Optional[datetime.datetime] = None,
         inline_s3_urls: bool = True,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -2615,13 +2623,19 @@ class Client:
                 Defaults to None.
             example_ids (List[UUID], optional): The IDs of the examples to filter by.
                 Defaults to None.
+            as_of (datetime, optional): The timestamp to retrieve the examples as of.
+                This determines the dataset version.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
 
         Yields:
             Example: The examples.
         """
-        params: Dict[str, Any] = {}
+        params: Dict[str, Any] = {
+            "id": example_ids,
+            "as_of": as_of.isoformat() if as_of else None,
+            "inline_s3_urls": inline_s3_urls,
+        }
         if dataset_id is not None:
             params["dataset"] = dataset_id
         elif dataset_name is not None:
@@ -2629,9 +2643,6 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
-        if example_ids is not None:
-            params["id"] = example_ids
-        params["inline_s3_urls"] = inline_s3_urls
         yield from (
             ls_schemas.Example(
                 **example,
