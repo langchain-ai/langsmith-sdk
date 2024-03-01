@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.11"
+version = "0.1.12"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
