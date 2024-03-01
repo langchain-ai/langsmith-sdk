@@ -2187,6 +2187,21 @@ export class Client {
     }
   }
 
+  /**
+   * Creates a presigned feedback token and URL.
+   * 
+   * The token can be used to authorize feedback metrics without
+   * needing an API key. This is useful for giving browser-based
+   * applications the ability to submit feedback without needing
+   * to expose an API key.
+   * 
+   * @param runId - The ID of the run.
+   * @param feedbackKey - The feedback key.
+   * @param options - Additional options for the token.
+   * @param options.expiration - The expiration time for the token.
+   * 
+   * @returns A promise that resolves to a FeedbackIngestToken.
+   */
   public async createPresignedFeedbackToken(
     runId: string,
     feedbackKey: string,
@@ -2222,6 +2237,11 @@ export class Client {
     return result as FeedbackIngestToken;
   }
 
+  /**
+   * Retrieves a list of presigned feedback tokens for a given run ID.
+   * @param runId The ID of the run.
+   * @returns An async iterable of FeedbackIngestToken objects.
+   */
   public async *listPresignedFeedbackTokens(
     runId: string
   ): AsyncIterable<FeedbackIngestToken> {
