@@ -2044,7 +2044,6 @@ export class Client {
       sourceRunId,
       feedbackId,
       feedbackConfig,
-      eager = false,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -2086,7 +2085,7 @@ export class Client {
       feedback_source: feedback_source,
       feedbackConfig,
     };
-    const url = `${this.apiUrl}/feedback` + (eager ? "/eager" : "");
+    const url = `${this.apiUrl}/feedback`;
     const response = await this.caller.call(fetch, url, {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
@@ -2229,6 +2228,10 @@ export class Client {
       } else if (expiration?.hours || expiration?.minutes || expiration?.days) {
         body["expires_in"] = expiration;
       }
+    } else {
+      body["expires_in"] = {
+        hours: 3,
+      };
     }
 
     const response = await this.caller.call(

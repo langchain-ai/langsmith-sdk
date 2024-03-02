@@ -427,11 +427,37 @@ class FeedbackBase(BaseModel):
         frozen = True
 
 
+class FeedbackCategory(TypedDict, total=False):
+    """Specific value and label pair for feedback."""
+
+    value: float
+    label: Optional[str]
+
+
+class FeedbackConfig(TypedDict, total=False):
+    """Represents _how_ a feedback value ought to be interpreted.
+
+    Attributes:
+        type (Literal["continuous", "categorical", "freeform"]): The type of feedback.
+        min (Optional[float]): The minimum value for continuous feedback.
+        max (Optional[float]): The maximum value for continuous feedback.
+        categories (Optional[List[FeedbackCategory]]): If feedback is categorical,
+            This defines the valid categories the server will accept.
+            Not applicable to continuosu or freeform feedback types.
+    """
+
+    type: Literal["continuous", "categorical", "freeform"]
+    min: Optional[float]
+    max: Optional[float]
+    categories: Optional[List[FeedbackCategory]]
+
+
 class FeedbackCreate(FeedbackBase):
     """Schema used for creating feedback."""
 
     feedback_source: FeedbackSourceBase
     """The source of the feedback."""
+    feedback_config: Optional[FeedbackConfig] = None
 
 
 class Feedback(FeedbackBase):
@@ -638,28 +664,3 @@ class TimeDeltaInput(TypedDict, total=False):
     """Number of hours."""
     minutes: int
     """Number of minutes."""
-
-
-class FeedbackCategory(TypedDict, total=False):
-    """Specific value and label pair for feedback."""
-
-    value: float
-    label: Optional[str]
-
-
-class FeedbackConfig(TypedDict, total=False):
-    """Represents _how_ a feedback value ought to be interpreted.
-
-    Attributes:
-        type (Literal["continuous", "categorical", "freeform"]): The type of feedback.
-        min (Optional[float]): The minimum value for continuous feedback.
-        max (Optional[float]): The maximum value for continuous feedback.
-        categories (Optional[List[FeedbackCategory]]): If feedback is categorical,
-            This defines the valid categories the server will accept.
-            Not applicable to continuosu or freeform feedback types.
-    """
-
-    type: Literal["continuous", "categorical", "freeform"]
-    min: Optional[float]
-    max: Optional[float]
-    categories: Optional[List[FeedbackCategory]]

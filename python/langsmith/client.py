@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import uuid
+import warnings
 import weakref
 from dataclasses import dataclass, field
 from queue import Empty, PriorityQueue, Queue
@@ -2922,8 +2923,8 @@ class Client:
         source_run_id: Optional[ID_TYPE] = None,
         feedback_id: Optional[ID_TYPE] = None,
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
-        eager: bool = False,
         stop_after_attempt: int = 10,
+        **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
 
@@ -2955,14 +2956,15 @@ class Client:
             The configuration specifying how to interpret feedback with this key.
             Examples include continuous (with min/max bounds), categorical,
             or freeform.
-        eager : bool, default=False
-            Whether to skip the write queue when creating the feedback. This means
-            that the feedback will be immediately available for reading, but may
-            cause the write to fail if the API is under heavy load, since the target
-            run_id may have not been created yet.
         stop_after_attempt : int, default=10
             The number of times to retry the request before giving up.
         """
+        if kwargs:
+            warnings.warn(
+                "The following arguments are no longer used in the create_feedback"
+                f" endpoint: {sorted(kwargs)}",
+                DeprecationWarning,
+            )
         if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
             feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
         if feedback_source_type == ls_schemas.FeedbackSourceType.API:
@@ -3003,10 +3005,11 @@ class Client:
             feedback_source=feedback_source,
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
+            feedback_config=feedback_config,
         )
         self.request_with_retries(
             "POST",
-            self.api_url + "/feedback" + ("/eager" if eager else ""),
+            self.api_url + "/feedback",
             request_kwargs={
                 "data": _dumps_json(feedback.dict(exclude_none=True)),
                 "headers": {
@@ -3153,6 +3156,7 @@ class Client:
             feedback_key:
             expiration: The expiration time of the pre-signed URL.
                 Either a datetime or a timedelta offset from now.
+                Default to 3 hours.
             feedback_config: FeedbackConfig or None.
                 If creating a feedback_key for the first time,
                 this defines how the metric should be interpreted,
@@ -3165,9 +3169,15 @@ class Client:
         body: Dict[str, Any] = {
             "run_id": run_id,
             "feedback_key": feedback_key,
-            "expiration": expiration,
+            "feedback_config": feedback_config,
         }
-        if isinstance(expiration, datetime.datetime):
+        if expiration is None:
+            body["expires_in"] = ls_schemas.TimeDeltaInput(
+                days=0,
+                hours=3,
+                minutes=0,
+            )
+        elif isinstance(expiration, datetime.datetime):
             body["expires_at"] = expiration.isoformat()
         elif isinstance(expiration, datetime.timedelta):
             body["expires_in"] = ls_schemas.TimeDeltaInput(
@@ -3175,6 +3185,8 @@ class Client:
                 hours=expiration.seconds // 3600,
                 minutes=(expiration.seconds // 60) % 60,
             )
+        else:
+            raise ValueError(f"Unknown expiration type: {type(expiration)}")
 
         response = self.request_with_retries(
             "post",
