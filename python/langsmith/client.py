@@ -2921,6 +2921,7 @@ class Client:
         ] = ls_schemas.FeedbackSourceType.API,
         source_run_id: Optional[ID_TYPE] = None,
         feedback_id: Optional[ID_TYPE] = None,
+        feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         eager: bool = False,
         stop_after_attempt: int = 10,
     ) -> ls_schemas.Feedback:
@@ -2950,6 +2951,10 @@ class Client:
         feedback_id : str or UUID or None, default=None
             The ID of the feedback to create. If not provided, a random UUID will be
             generated.
+        feedback_config: FeedbackConfig or None, default=None,
+            The configuration specifying how to interpret feedback with this key.
+            Examples include continuous (with min/max bounds), categorical,
+            or freeform.
         eager : bool, default=False
             Whether to skip the write queue when creating the feedback. This means
             that the feedback will be immediately available for reading, but may
@@ -3135,6 +3140,7 @@ class Client:
         feedback_key: str,
         *,
         expiration: Optional[datetime.datetime | datetime.timedelta] = None,
+        feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
     ) -> ls_schemas.FeedbackIngestToken:
         """Create a pre-signed URL to send feedback data to.
 
@@ -3143,9 +3149,15 @@ class Client:
         API key.
 
         Args:
-            feedback_id: The ID of the feedback.
+            run_id:
+            feedback_key:
             expiration: The expiration time of the pre-signed URL.
-                Either a datetime or a timedelta from now.
+                Either a datetime or a timedelta offset from now.
+            feedback_config: FeedbackConfig or None.
+                If creating a feedback_key for the first time,
+                this defines how the metric should be interpreted,
+                such as a continuous score (w/ optional bounds),
+                or distribution over categorical values.
 
         Returns:
             The pre-signed URL for uploading feedback data.

@@ -644,17 +644,19 @@ class FeedbackCategory(TypedDict, total=False):
     """Specific value and label pair for feedback."""
 
     value: float
-    label: str | None = Field(default=None, min_length=1)
+    label: Optional[str]
 
 
-class FeedbackConfig(BaseModel, total=False):
+class FeedbackConfig(TypedDict, total=False):
     """Represents _how_ a feedback value ought to be interpreted.
 
     Attributes:
         type (Literal["continuous", "categorical", "freeform"]): The type of feedback.
         min (Optional[float]): The minimum value for continuous feedback.
         max (Optional[float]): The maximum value for continuous feedback.
-        categories (Optional[List[FeedbackCategory]]): The categories for categorical feedback.
+        categories (Optional[List[FeedbackCategory]]): If feedback is categorical,
+            This defines the valid categories the server will accept.
+            Not applicable to continuosu or freeform feedback types.
     """
 
     type: Literal["continuous", "categorical", "freeform"]
