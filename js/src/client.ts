@@ -9,12 +9,15 @@ import {
   ExampleCreate,
   ExampleUpdate,
   Feedback,
+  FeedbackConfig,
+  FeedbackIngestToken,
   KVMap,
   LangChainBaseMessage,
   Run,
   RunCreate,
   RunUpdate,
   ScoreType,
+  TimeDelta,
   TracerSession,
   TracerSessionResult,
   ValueType,
@@ -159,6 +162,7 @@ interface FeedbackCreate {
   correction?: object | null;
   comment?: string | null;
   feedback_source?: feedback_source | KVMap | null;
+  feedbackConfig?: FeedbackConfig;
 }
 
 interface FeedbackUpdate {
@@ -2039,7 +2043,7 @@ export class Client {
       feedbackSourceType = "api",
       sourceRunId,
       feedbackId,
-      eager = false,
+      feedbackConfig,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -2047,6 +2051,7 @@ export class Client {
       comment?: string;
       sourceInfo?: object;
       feedbackSourceType?: FeedbackSourceType;
+      feedbackConfig?: FeedbackConfig;
       sourceRunId?: string;
       feedbackId?: string;
       eager?: boolean;
@@ -2078,8 +2083,9 @@ export class Client {
       correction,
       comment,
       feedback_source: feedback_source,
+      feedbackConfig,
     };
-    const url = `${this.apiUrl}/feedback` + (eager ? "/eager" : "");
+    const url = `${this.apiUrl}/feedback`;
     const response = await this.caller.call(fetch, url, {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
@@ -2182,6 +2188,81 @@ export class Client {
       queryParams
     )) {
       yield* feedbacks;
+    }
+  }
+
+  /**
+   * Creates a presigned feedback token and URL.
+   *
+   * The token can be used to authorize feedback metrics without
+   * needing an API key. This is useful for giving browser-based
+   * applications the ability to submit feedback without needing
+   * to expose an API key.
+   *
+   * @param runId - The ID of the run.
+   * @param feedbackKey - The feedback key.
+   * @param options - Additional options for the token.
+   * @param options.expiration - The expiration time for the token.
+   *
+   * @returns A promise that resolves to a FeedbackIngestToken.
+   */
+  public async createPresignedFeedbackToken(
+    runId: string,
+    feedbackKey: string,
+    {
+      expiration,
+      feedbackConfig,
+    }: {
+      expiration?: string | TimeDelta;
+      feedbackConfig?: FeedbackConfig;
+    } = {}
+  ): Promise<FeedbackIngestToken> {
+    const body: KVMap = {
+      run_id: runId,
+      feedback_key: feedbackKey,
+      feedback_config: feedbackConfig,
+    };
+    if (expiration) {
+      if (typeof expiration === "string") {
+        body["expires_at"] = expiration;
+      } else if (expiration?.hours || expiration?.minutes || expiration?.days) {
+        body["expires_in"] = expiration;
+      }
+    } else {
+      body["expires_in"] = {
+        hours: 3,
+      };
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/feedback/tokens`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+      }
+    );
+    const result = await response.json();
+    return result as FeedbackIngestToken;
+  }
+
+  /**
+   * Retrieves a list of presigned feedback tokens for a given run ID.
+   * @param runId The ID of the run.
+   * @returns An async iterable of FeedbackIngestToken objects.
+   */
+  public async *listPresignedFeedbackTokens(
+    runId: string
+  ): AsyncIterable<FeedbackIngestToken> {
+    assertUuid(runId);
+    const params = new URLSearchParams({ run_id: runId });
+    for await (const tokens of this._getPaginated<FeedbackIngestToken>(
+      "/feedback/tokens",
+      params
+    )) {
+      yield* tokens;
     }
   }
 }
