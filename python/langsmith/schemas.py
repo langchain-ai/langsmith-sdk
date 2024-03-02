@@ -638,3 +638,26 @@ class TimeDeltaInput(TypedDict, total=False):
     """Number of hours."""
     minutes: int
     """Number of minutes."""
+
+
+class FeedbackCategory(TypedDict, total=False):
+    """Specific value and label pair for feedback."""
+
+    value: float
+    label: str | None = Field(default=None, min_length=1)
+
+
+class FeedbackConfig(BaseModel, total=False):
+    """Represents _how_ a feedback value ought to be interpreted.
+
+    Attributes:
+        type (Literal["continuous", "categorical", "freeform"]): The type of feedback.
+        min (Optional[float]): The minimum value for continuous feedback.
+        max (Optional[float]): The maximum value for continuous feedback.
+        categories (Optional[List[FeedbackCategory]]): The categories for categorical feedback.
+    """
+
+    type: Literal["continuous", "categorical", "freeform"]
+    min: Optional[float]
+    max: Optional[float]
+    categories: Optional[List[FeedbackCategory]]
