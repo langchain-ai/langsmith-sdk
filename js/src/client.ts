@@ -9,6 +9,7 @@ import {
   ExampleCreate,
   ExampleUpdate,
   Feedback,
+  FeedbackConfig,
   FeedbackIngestToken,
   KVMap,
   LangChainBaseMessage,
@@ -161,6 +162,7 @@ interface FeedbackCreate {
   correction?: object | null;
   comment?: string | null;
   feedback_source?: feedback_source | KVMap | null;
+  feedbackConfig?: FeedbackConfig;
 }
 
 interface FeedbackUpdate {
@@ -2041,6 +2043,7 @@ export class Client {
       feedbackSourceType = "api",
       sourceRunId,
       feedbackId,
+      feedbackConfig,
       eager = false,
     }: {
       score?: ScoreType;
@@ -2049,6 +2052,7 @@ export class Client {
       comment?: string;
       sourceInfo?: object;
       feedbackSourceType?: FeedbackSourceType;
+      feedbackConfig?: FeedbackConfig;
       sourceRunId?: string;
       feedbackId?: string;
       eager?: boolean;
@@ -2080,6 +2084,7 @@ export class Client {
       correction,
       comment,
       feedback_source: feedback_source,
+      feedbackConfig,
     };
     const url = `${this.apiUrl}/feedback` + (eager ? "/eager" : "");
     const response = await this.caller.call(fetch, url, {
@@ -2189,17 +2194,17 @@ export class Client {
 
   /**
    * Creates a presigned feedback token and URL.
-   * 
+   *
    * The token can be used to authorize feedback metrics without
    * needing an API key. This is useful for giving browser-based
    * applications the ability to submit feedback without needing
    * to expose an API key.
-   * 
+   *
    * @param runId - The ID of the run.
    * @param feedbackKey - The feedback key.
    * @param options - Additional options for the token.
    * @param options.expiration - The expiration time for the token.
-   * 
+   *
    * @returns A promise that resolves to a FeedbackIngestToken.
    */
   public async createPresignedFeedbackToken(
@@ -2207,13 +2212,16 @@ export class Client {
     feedbackKey: string,
     {
       expiration,
+      feedbackConfig,
     }: {
       expiration?: string | TimeDelta;
+      feedbackConfig?: FeedbackConfig;
     } = {}
   ): Promise<FeedbackIngestToken> {
     const body: KVMap = {
       run_id: runId,
       feedback_key: feedbackKey,
+      feedback_config: feedbackConfig,
     };
     if (expiration) {
       if (typeof expiration === "string") {
