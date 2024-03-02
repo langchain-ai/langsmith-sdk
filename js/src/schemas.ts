@@ -282,3 +282,48 @@ export interface LangChainBaseMessage {
   content: string;
   additional_kwargs?: KVMap;
 }
+
+export interface FeedbackIngestToken {
+  id: string;
+  url: string;
+  expires_at: string;
+}
+
+export interface TimeDelta {
+  days?: number;
+  hours?: number;
+  minutes?: number;
+}
+
+export interface FeedbackCategory {
+  value: number;
+  label?: string | null;
+}
+
+/**
+ * Represents the configuration for feedback.
+ * This determines how the LangSmith service interprets feedback
+ * values of the associated key.
+ */
+export interface FeedbackConfig {
+  /**
+   * The type of feedback.
+   */
+  type: "continuous" | "categorical" | "freeform";
+
+  /**
+   * The minimum value for continuous feedback.
+   */
+  min?: number | null;
+
+  /**
+   * The maximum value for continuous feedback.
+   */
+  max?: number | null;
+
+  /**
+   * If feedback is categorical, this defines the valid categories the server will accept.
+   * Not applicable to continuous or freeform feedback types.
+   */
+  categories?: FeedbackCategory[] | null;
+}
