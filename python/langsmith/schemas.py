@@ -422,7 +422,7 @@ class FeedbackBase(BaseModel):
     feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback."""
     session_id: Optional[UUID] = None
-    """The associated session ID this feedback is logged for."""
+    """The associated project ID (Session = Project) this feedback is logged for."""
 
     class Config:
         """Configuration class for the schema."""
