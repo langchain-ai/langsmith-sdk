@@ -2971,7 +2971,14 @@ class Client:
             or freeform.
         stop_after_attempt : int, default=10
             The number of times to retry the request before giving up.
+        session_id : str or UUID
+            The ID of the session to provide feedback on. One - and only one - of
+            this and run_id must be provided.
         """
+        if run_id is None and session_id is None:
+            raise ValueError("One of run_id and session_id must be provided")
+        if run_id is not None and session_id is not None:
+            raise ValueError("Only one of run_id and session_id must be provided")
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
