@@ -241,3 +241,7 @@ class RunTree(ls_schemas.RunBase):
     def wait(self) -> None:
         """Wait for all _futures to complete."""
         pass
+
+    def get_url(self) -> str:
+        """Return the URL of the run."""
+        return self.client.get_run_url(run=self)
