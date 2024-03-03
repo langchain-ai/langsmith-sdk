@@ -853,7 +853,6 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
       }
     );
-    console.log(response);
     await raiseForStatus(response, "batch create run");
   }
 
