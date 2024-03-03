@@ -2521,9 +2521,13 @@ class Client:
                 "inputs": in_,
                 "outputs": out_,
                 "dataset_id": dataset_id,
-                "metadata": metadata_
+                "metadata": metadata_,
             }
-            for in_, out_, metadata_ in zip(inputs, outputs or [None] * len(inputs), metadata or [None] * len(inputs))
+            for in_, out_, metadata_ in zip(
+                inputs,
+                outputs or [None] * len(inputs),
+                metadata or [None] * len(inputs),
+            )
         ]
 
         response = self.session.post(
@@ -2577,7 +2581,7 @@ class Client:
             "inputs": inputs,
             "outputs": outputs,
             "dataset_id": dataset_id,
-            "metadata": metadata
+            "metadata": metadata,
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
@@ -3015,7 +3019,7 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
-            session_id=session_id
+            session_id=session_id,
         )
         self.request_with_retries(
             "POST",
