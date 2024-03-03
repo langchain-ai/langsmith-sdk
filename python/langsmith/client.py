@@ -2601,7 +2601,9 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
-    def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
+    def read_example(
+        self, example_id: ID_TYPE, *, as_of: Optional[datetime.datetime] = None
+    ) -> ls_schemas.Example:
         """Read an example from the LangSmith API.
 
         Args:
@@ -2612,6 +2614,9 @@ class Client:
         """
         response = self._get_with_retries(
             f"/examples/{_as_uuid(example_id, 'example_id')}",
+            params={
+                "as_of": as_of.isoformat() if as_of else None,
+            },
         )
         return ls_schemas.Example(
             **response.json(),
@@ -2671,6 +2676,7 @@ class Client:
         *,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[Dict] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
@@ -2695,6 +2701,7 @@ class Client:
             inputs=inputs,
             outputs=outputs,
             dataset_id=dataset_id,
+            metadata=metadata,
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
