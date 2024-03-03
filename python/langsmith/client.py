@@ -2936,7 +2936,7 @@ class Client:
         feedback_id: Optional[ID_TYPE] = None,
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         stop_after_attempt: int = 10,
-        session_id: Optional[ID_TYPE] = None,
+        project_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -2944,7 +2944,8 @@ class Client:
         Parameters
         ----------
         run_id : str or UUID
-            The ID of the run to provide feedback on.
+            The ID of the run to provide feedback for. Either the run_id OR
+            the project_id must be provided.
         key : str
             The name of the metric, tag, or 'aspect' this feedback is about.
         score : float or int or bool or None, default=None
@@ -2971,14 +2972,14 @@ class Client:
             or freeform.
         stop_after_attempt : int, default=10
             The number of times to retry the request before giving up.
-        session_id : str or UUID
-            The ID of the session to provide feedback on. One - and only one - of
+        project_id : str or UUID
+            The ID of the project_id to provide feedback on. One - and only one - of
             this and run_id must be provided.
         """
-        if run_id is None and session_id is None:
-            raise ValueError("One of run_id and session_id must be provided")
-        if run_id is not None and session_id is not None:
-            raise ValueError("Only one of run_id and session_id must be provided")
+        if run_id is None and project_id is None:
+            raise ValueError("One of run_id and project_id must be provided")
+        if run_id is not None and project_id is not None:
+            raise ValueError("Only one of run_id and project_id must be provided")
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -3026,7 +3027,7 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
-            session_id=session_id,
+            session_id=project_id,
         )
         self.request_with_retries(
             "POST",
