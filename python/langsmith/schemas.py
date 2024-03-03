@@ -49,6 +49,7 @@ class ExampleBase(BaseModel):
     dataset_id: UUID
     inputs: Dict[str, Any]
     outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
 
     class Config:
         """Configuration class for the schema."""

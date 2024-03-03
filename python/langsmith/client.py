@@ -2482,6 +2482,7 @@ class Client:
         *,
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
@@ -2494,6 +2495,8 @@ class Client:
             The input values for the examples.
         outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The output values for the examples.
+        metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
+            The metadata for the examples.
         dataset_id : Optional[ID_TYPE], default=None
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
@@ -2518,8 +2521,9 @@ class Client:
                 "inputs": in_,
                 "outputs": out_,
                 "dataset_id": dataset_id,
+                "metadata": metadata_
             }
-            for in_, out_ in zip(inputs, outputs or [None] * len(inputs))
+            for in_, out_, metadata_ in zip(inputs, outputs or [None] * len(inputs), metadata or [None] * len(inputs))
         ]
 
         response = self.session.post(
@@ -2537,6 +2541,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
         example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -2556,6 +2561,8 @@ class Client:
                 The creation timestamp of the example.
             outputs : Mapping[str, Any] or None, default=None
                 The output values for the example.
+            metadata : Mapping[str, Any] or None, default=None
+                The metadata for the example.
             exemple_id : UUID or None, default=None
                 The ID of the example to create. If not provided, a new
                 example will be created.
@@ -2570,6 +2577,7 @@ class Client:
             "inputs": inputs,
             "outputs": outputs,
             "dataset_id": dataset_id,
+            "metadata": metadata
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
