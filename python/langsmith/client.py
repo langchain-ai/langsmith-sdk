@@ -2482,6 +2482,7 @@ class Client:
         *,
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
@@ -2494,6 +2495,8 @@ class Client:
             The input values for the examples.
         outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The output values for the examples.
+        metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
+            The metadata for the examples.
         dataset_id : Optional[ID_TYPE], default=None
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
@@ -2518,8 +2521,13 @@ class Client:
                 "inputs": in_,
                 "outputs": out_,
                 "dataset_id": dataset_id,
+                "metadata": metadata_,
             }
-            for in_, out_ in zip(inputs, outputs or [None] * len(inputs))
+            for in_, out_, metadata_ in zip(
+                inputs,
+                outputs or [None] * len(inputs),
+                metadata or [None] * len(inputs),
+            )
         ]
 
         response = self.session.post(
@@ -2537,6 +2545,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
         example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -2556,6 +2565,8 @@ class Client:
                 The creation timestamp of the example.
             outputs : Mapping[str, Any] or None, default=None
                 The output values for the example.
+            metadata : Mapping[str, Any] or None, default=None
+                The metadata for the example.
             exemple_id : UUID or None, default=None
                 The ID of the example to create. If not provided, a new
                 example will be created.
@@ -2570,6 +2581,7 @@ class Client:
             "inputs": inputs,
             "outputs": outputs,
             "dataset_id": dataset_id,
+            "metadata": metadata,
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
@@ -2589,7 +2601,9 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
-    def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
+    def read_example(
+        self, example_id: ID_TYPE, *, as_of: Optional[datetime.datetime] = None
+    ) -> ls_schemas.Example:
         """Read an example from the LangSmith API.
 
         Args:
@@ -2600,6 +2614,9 @@ class Client:
         """
         response = self._get_with_retries(
             f"/examples/{_as_uuid(example_id, 'example_id')}",
+            params={
+                "as_of": as_of.isoformat() if as_of else None,
+            },
         )
         return ls_schemas.Example(
             **response.json(),
@@ -2659,6 +2676,7 @@ class Client:
         *,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[Dict] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
@@ -2683,6 +2701,7 @@ class Client:
             inputs=inputs,
             outputs=outputs,
             dataset_id=dataset_id,
+            metadata=metadata,
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
@@ -2909,7 +2928,7 @@ class Client:
 
     def create_feedback(
         self,
-        run_id: ID_TYPE,
+        run_id: Optional[ID_TYPE],
         key: str,
         *,
         score: Union[float, int, bool, None] = None,
@@ -2924,6 +2943,7 @@ class Client:
         feedback_id: Optional[ID_TYPE] = None,
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         stop_after_attempt: int = 10,
+        project_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -2931,7 +2951,8 @@ class Client:
         Parameters
         ----------
         run_id : str or UUID
-            The ID of the run to provide feedback on.
+            The ID of the run to provide feedback for. Either the run_id OR
+            the project_id must be provided.
         key : str
             The name of the metric, tag, or 'aspect' this feedback is about.
         score : float or int or bool or None, default=None
@@ -2958,7 +2979,14 @@ class Client:
             or freeform.
         stop_after_attempt : int, default=10
             The number of times to retry the request before giving up.
+        project_id : str or UUID
+            The ID of the project_id to provide feedback on. One - and only one - of
+            this and run_id must be provided.
         """
+        if run_id is None and project_id is None:
+            raise ValueError("One of run_id and project_id must be provided")
+        if run_id is not None and project_id is not None:
+            raise ValueError("Only one of run_id and project_id must be provided")
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -3006,6 +3034,7 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
+            session_id=project_id,
         )
         self.request_with_retries(
             "POST",
