@@ -145,7 +145,11 @@ def _container_end(
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
     run_tree.end(outputs=outputs_, error=error)
     run_tree.patch()
-    logger.info(f"See trace: {run_tree.get_url()}")
+    if error:
+        try:
+            logger.info(f"See trace: {run_tree.get_url()}")
+        except Exception:
+            pass
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
@@ -319,8 +323,7 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 @overload
 def traceable(
     func: Callable[..., R],
-) -> Callable[..., R]:
-    ...
+) -> Callable[..., R]: ...
 
 
 @overload
@@ -334,8 +337,7 @@ def traceable(
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]:
-    ...
+) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
 
 
 def traceable(
