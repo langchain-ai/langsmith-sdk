@@ -407,7 +407,7 @@ class FeedbackBase(BaseModel):
     """The time the feedback was created."""
     modified_at: Optional[datetime] = None
     """The time the feedback was last modified."""
-    run_id: UUID
+    run_id: Optional[UUID]
     """The associated run ID this feedback is logged for."""
     key: str
     """The metric name, tag, or aspect to provide feedback on."""
@@ -421,6 +421,8 @@ class FeedbackBase(BaseModel):
     """Correction for the run."""
     feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback."""
+    session_id: Optional[UUID] = None
+    """The associated session ID this feedback is logged for."""
 
     class Config:
         """Configuration class for the schema."""

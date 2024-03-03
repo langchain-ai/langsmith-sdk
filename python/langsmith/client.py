@@ -2917,7 +2917,7 @@ class Client:
 
     def create_feedback(
         self,
-        run_id: ID_TYPE,
+        run_id: Optional[ID_TYPE],
         key: str,
         *,
         score: Union[float, int, bool, None] = None,
@@ -2932,6 +2932,7 @@ class Client:
         feedback_id: Optional[ID_TYPE] = None,
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         stop_after_attempt: int = 10,
+        session_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -3014,6 +3015,7 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
+            session_id=session_id
         )
         self.request_with_retries(
             "POST",
