@@ -1,8 +1,8 @@
 # LangSmith Client SDKs
 
 [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk)](https://github.com/langchain-ai/langsmith-sdk/releases)
-[![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
-[![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
+[Python: ![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
+[JS: ![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
 
 This repository contains the Python and Javascript SDK's for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
