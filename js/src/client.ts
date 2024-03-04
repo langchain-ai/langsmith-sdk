@@ -363,9 +363,9 @@ export class Client {
 
   private _tenantId: string | null = null;
 
-  private hideInputs?: boolean;
+  private hideInputs?: boolean | ((inputs: KVMap) => KVMap);
 
-  private hideOutputs?: boolean;
+  private hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
 
   private tracingSampleRate?: number;
 
@@ -463,15 +463,27 @@ export class Client {
   }
 
   private processInputs(inputs: KVMap): KVMap {
-    if (this.hideInputs) {
+    if (this.hideInputs === false) {
+      return inputs;
+    }
+    if (this.hideInputs === true) {
       return {};
+    }
+    if (typeof this.hideInputs === "function") {
+      return this.hideInputs(inputs);
     }
     return inputs;
   }
 
   private processOutputs(outputs: KVMap): KVMap {
-    if (this.hideOutputs) {
+    if (this.hideOutputs === false) {
+      return outputs;
+    }
+    if (this.hideOutputs === true) {
       return {};
+    }
+    if (typeof this.hideOutputs === "function") {
+      return this.hideOutputs(outputs);
     }
     return outputs;
   }
