@@ -241,12 +241,7 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    _lock: threading.Lock = Field(default_factory=threading.Lock)
-
-    class Config:
-        """Configuration class for the schema."""
-
-        underscore_attrs_are_private = True
+    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
 
     @property
     def metadata(self) -> dict[str, Any]:
