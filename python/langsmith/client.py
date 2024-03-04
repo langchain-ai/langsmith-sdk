@@ -308,18 +308,6 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
     return _api_url.strip().strip('"').strip("'").rstrip("/")
 
 
-def _hide_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    if os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true":
-        return {}
-    return inputs
-
-
-def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
-    if os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true":
-        return {}
-    return outputs
-
-
 def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
     try:
         return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
@@ -368,6 +356,8 @@ class Client:
         "tracing_sample_rate",
         "_sampled_post_uuids",
         "tracing_queue",
+        "_hide_inputs",
+        "_hide_outputs",
     ]
 
     def __init__(
@@ -380,6 +370,8 @@ class Client:
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
+        hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
+        hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -401,6 +393,12 @@ class Client:
         session: requests.Session or None, default=None
             The session to use for requests. If None, a new session will be
             created.
+        hide_inputs: Whether to hide run inputs when tracing with this client.
+            If True, hides the entire inputs. If a function, applied to
+            all run inputs when creating runs.
+        hide_outputs: Whether to hide run outputs when tracing with this client.
+            If True, hides the entire outputs. If a function, applied to
+            all run outputs when creating runs.
 
         Raises:
         ------
@@ -438,6 +436,16 @@ class Client:
         self.session.mount("https://", adapter)
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
+        )
+        self._hide_inputs = (
+            hide_inputs
+            if hide_inputs is not None
+            else os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true"
+        )
+        self._hide_outputs = (
+            hide_outputs
+            if hide_outputs is not None
+            else os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true"
         )
 
     def _repr_html_(self) -> str:
@@ -893,9 +901,10 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
-    @staticmethod
     def _run_transform(
-        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict], update: bool = False
+        self,
+        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
+        update: bool = False,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
@@ -914,9 +923,9 @@ class Client:
         elif isinstance(run["id"], str):
             run["id"] = uuid.UUID(run["id"])
         if "inputs" in run_create:
-            run_create["inputs"] = _hide_inputs(run_create["inputs"])
+            run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
         if "outputs" in run_create:
-            run_create["outputs"] = _hide_outputs(run_create["outputs"])
+            run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
         return run_create
@@ -1035,6 +1044,20 @@ class Client:
             },
             to_ignore=(ls_utils.LangSmithConflictError,),
         )
+
+    def _hide_run_inputs(self, inputs: dict):
+        if self._hide_inputs is False:
+            return inputs
+        if self._hide_inputs is True:
+            return {}
+        return self._hide_inputs(inputs)
+
+    def _hide_run_outputs(self, outputs: dict):
+        if self._hide_outputs is False:
+            return outputs
+        if self._hide_outputs is True:
+            return {}
+        return self._hide_outputs(outputs)
 
     def batch_ingest_runs(
         self,
@@ -1239,9 +1262,9 @@ class Client:
         if error is not None:
             data["error"] = error
         if inputs is not None:
-            data["inputs"] = _hide_inputs(inputs)
+            data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
-            data["outputs"] = _hide_outputs(outputs)
+            data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
         if (
