@@ -1,5 +1,8 @@
 # LangSmith Client SDK
 
+[![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
+
+
 This package contains the TypeScript client for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
 To install:
