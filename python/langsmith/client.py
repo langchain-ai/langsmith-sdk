@@ -444,7 +444,7 @@ class Client:
         )
         self._hide_outputs = (
             hide_outputs
-            if hide_inputs is not None
+            if hide_outputs is not None
             else os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true"
         )
 

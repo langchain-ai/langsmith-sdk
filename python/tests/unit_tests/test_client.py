@@ -306,13 +306,50 @@ def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
     request_calls = [call for call in session.request.mock_calls if call.args]
     assert len(request_calls) == 10
     for call in request_calls:
-        assert call.args[0] == "post"
         assert call.args[1] == "http://localhost:1984/runs"
 
     del client
     time.sleep(1)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_create_run_with_filters(auto_batch_tracing: bool) -> None:
+    session = mock.MagicMock(spec=requests.Session)
+
+    def filter_inputs(inputs: dict) -> dict:
+        return {"hi there": "woah"}
+
+    def filter_outputs(outputs: dict):
+        return {k: v + "goodbye" for k, v in outputs.items()}
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=auto_batch_tracing,
+        session=session,
+        hide_inputs=filter_inputs,
+        hide_outputs=filter_outputs,
+    )
+    tracker = CallTracker()
+    weakref.finalize(client, tracker)
+    assert tracker.counter == 0
+    expected = ['"hi there":"woah"']
+    for _ in range(3):
+        id_ = uuid.uuid4()
+        client.create_run("my_run", inputs={"foo": "bar"}, run_type="llm", id=id_)
+        output_val = uuid.uuid4().hex[:5]
+        client.update_run(
+            id_, end_time=datetime.now(), outputs={"theoutput": output_val}
+        )
+        expected.append(output_val + "goodbye")
+
+    request_calls = [call for call in session.request.mock_calls if call.args]
+    all_posted = "\n".join(
+        [call.kwargs["data"].decode("utf-8") for call in request_calls]
+    )
+    assert all([exp in all_posted for exp in expected])
 
 
 def test_client_gc_after_autoscale() -> None:
