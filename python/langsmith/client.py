@@ -2652,7 +2652,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         example_ids: Optional[Sequence[ID_TYPE]] = None,
-        as_of: Optional[datetime.datetime] = None,
+        as_of: Optional[Union[datetime.datetime, str]] = None,
         inline_s3_urls: bool = True,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -2664,8 +2664,10 @@ class Client:
                 Defaults to None.
             example_ids (List[UUID], optional): The IDs of the examples to filter by.
                 Defaults to None.
-            as_of (datetime, optional): The timestamp to retrieve the examples as of.
-                This determines the dataset version.
+            as_of (datetime, str, or optional): The dataset version tag OR
+                timestamp to retrieve the examples as of.
+                Response examples will only be those that were present at the time
+                of the tagged (or timestamped) version.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
 
@@ -2674,7 +2676,9 @@ class Client:
         """
         params: Dict[str, Any] = {
             "id": example_ids,
-            "as_of": as_of.isoformat() if as_of else None,
+            "as_of": (
+                as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
+            ),
             "inline_s3_urls": inline_s3_urls,
         }
         if dataset_id is not None:
