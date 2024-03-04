@@ -1,5 +1,6 @@
 # LangSmith Client SDK
 
+![NPM Version](https://img.shields.io/npm/v/langsmith?logo=npm)
 [![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
 
 
