@@ -1,4 +1,5 @@
 # LangSmith Client SDK
+[![Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
 
 This package contains the Python client for interacting with the [LangSmith platform](https://smith.langchain.com/).
 

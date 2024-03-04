@@ -1,5 +1,9 @@
 # LangSmith Client SDKs
 
+[![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk)](https://github.com/langchain-ai/langsmith-sdk/releases)
+[![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langchain)
+[![JS Downloads](https://img.shields.io/npm/dw/langchain)]
+
 This repository contains the Python and Javascript SDK's for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
 LangSmith helps your team debug, evaluate, and monitor your language models and intelligent agents. It works
