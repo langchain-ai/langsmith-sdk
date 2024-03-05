@@ -308,18 +308,6 @@ def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
     return _api_url.strip().strip('"').strip("'").rstrip("/")
 
 
-def _hide_inputs(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    if os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true":
-        return {}
-    return inputs
-
-
-def _hide_outputs(outputs: Dict[str, Any]) -> Dict[str, Any]:
-    if os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true":
-        return {}
-    return outputs
-
-
 def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
     try:
         return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
@@ -368,6 +356,8 @@ class Client:
         "tracing_sample_rate",
         "_sampled_post_uuids",
         "tracing_queue",
+        "_hide_inputs",
+        "_hide_outputs",
     ]
 
     def __init__(
@@ -380,6 +370,8 @@ class Client:
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
+        hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
+        hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -401,6 +393,12 @@ class Client:
         session: requests.Session or None, default=None
             The session to use for requests. If None, a new session will be
             created.
+        hide_inputs: Whether to hide run inputs when tracing with this client.
+            If True, hides the entire inputs. If a function, applied to
+            all run inputs when creating runs.
+        hide_outputs: Whether to hide run outputs when tracing with this client.
+            If True, hides the entire outputs. If a function, applied to
+            all run outputs when creating runs.
 
         Raises:
         ------
@@ -438,6 +436,16 @@ class Client:
         self.session.mount("https://", adapter)
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
+        )
+        self._hide_inputs = (
+            hide_inputs
+            if hide_inputs is not None
+            else os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true"
+        )
+        self._hide_outputs = (
+            hide_outputs
+            if hide_outputs is not None
+            else os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true"
         )
 
     def _repr_html_(self) -> str:
@@ -498,7 +506,7 @@ class Client:
         return headers
 
     @property
-    def info(self) -> Optional[ls_schemas.LangSmithInfo]:
+    def info(self) -> ls_schemas.LangSmithInfo:
         """Get the information about the LangSmith API.
 
         Returns:
@@ -507,16 +515,13 @@ class Client:
             The information about the LangSmith API, or None if the API is
                 not available.
         """
-        info = Client._get_info(self.session, self.api_url, self.timeout_ms)
-        if info is None and self.tracing_queue is not None:
-            self.tracing_queue = None
-        return cast(Optional[ls_schemas.LangSmithInfo], info)
+        return Client._get_info(self.session, self.api_url, self.timeout_ms)
 
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def _get_info(
         session: requests.Session, api_url: str, timeout_ms: int
-    ) -> Optional[ls_schemas.LangSmithInfo]:
+    ) -> ls_schemas.LangSmithInfo:
         try:
             response = session.get(
                 api_url + "/info",
@@ -526,10 +531,10 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             return ls_schemas.LangSmithInfo(**response.json())
         except requests.HTTPError:
-            return None
+            return ls_schemas.LangSmithInfo()
         except BaseException as e:
             logger.warning(f"Failed to get info from {api_url}: {repr(e)}")
-            return None
+            return ls_schemas.LangSmithInfo()
 
     def request_with_retries(
         self,
@@ -639,9 +644,14 @@ class Client:
                             f" {repr(e)}"
                         )
                 except requests.ConnectionError as e:
+                    recommendation = (
+                        "Please confirm your LANGCHAIN_ENDPOINT"
+                        if self.api_url != "https://api.smith.langchain.com"
+                        else "Please confirm your internet connection."
+                    )
                     raise ls_utils.LangSmithConnectionError(
                         f"Connection error caused failure to {request_method} {url}"
-                        "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+                        f"  in LangSmith API. {recommendation}."
                         f" {repr(e)}"
                     ) from e
                 except Exception as e:
@@ -893,9 +903,10 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
-    @staticmethod
     def _run_transform(
-        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict], update: bool = False
+        self,
+        run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
+        update: bool = False,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
@@ -913,10 +924,10 @@ class Client:
             run_create["id"] = uuid.uuid4()
         elif isinstance(run["id"], str):
             run["id"] = uuid.UUID(run["id"])
-        if "inputs" in run_create:
-            run_create["inputs"] = _hide_inputs(run_create["inputs"])
-        if "outputs" in run_create:
-            run_create["outputs"] = _hide_outputs(run_create["outputs"])
+        if "inputs" in run_create and run_create["inputs"] is not None:
+            run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
+        if "outputs" in run_create and run_create["outputs"] is not None:
+            run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
         return run_create
@@ -1013,13 +1024,13 @@ class Client:
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
-            # Checked last since it makes a (cached) API call
-            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        self._create_run(run_create)
 
+    def _create_run(self, run_create: dict):
         headers = {
             **self._headers,
             "Accept": "application/json",
@@ -1035,6 +1046,20 @@ class Client:
             },
             to_ignore=(ls_utils.LangSmithConflictError,),
         )
+
+    def _hide_run_inputs(self, inputs: dict):
+        if self._hide_inputs is False:
+            return inputs
+        if self._hide_inputs is True:
+            return {}
+        return self._hide_inputs(inputs)
+
+    def _hide_run_outputs(self, outputs: dict):
+        if self._hide_outputs is False:
+            return outputs
+        if self._hide_outputs is True:
+            return {}
+        return self._hide_outputs(outputs)
 
     def batch_ingest_runs(
         self,
@@ -1112,13 +1137,7 @@ class Client:
             return
 
         self._insert_runtime_env(raw_body["post"])
-
-        if self.info is None:
-            raise ls_utils.LangSmithUserError(
-                "Batch ingest is not supported by your LangSmith server version. "
-                "Please upgrade to a newer version."
-            )
-        info = cast(ls_schemas.LangSmithInfo, self.info)
+        info = self.info
 
         size_limit_bytes = (info.batch_ingest_config or {}).get(
             "size_limit_bytes"
@@ -1217,11 +1236,6 @@ class Client:
         **kwargs : Any
             Kwargs are ignored.
         """
-        headers = {
-            **self._headers,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
         data: Dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "trace_id": kwargs.pop("trace_id", None),
@@ -1239,9 +1253,9 @@ class Client:
         if error is not None:
             data["error"] = error
         if inputs is not None:
-            data["inputs"] = _hide_inputs(inputs)
+            data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
-            data["outputs"] = _hide_outputs(outputs)
+            data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
         if (
@@ -1249,18 +1263,24 @@ class Client:
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
-            # Checked last since it makes an API call
-            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(data["dotted_order"], "update", data)
             )
+        return self._update_run(data)
+
+    def _update_run(self, run_update: dict) -> None:
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
 
         self.request_with_retries(
             "patch",
-            f"{self.api_url}/runs/{data['id']}",
+            f"{self.api_url}/runs/{run_update['id']}",
             request_kwargs={
-                "data": _dumps_json(data),
+                "data": _dumps_json(run_update),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -2272,6 +2292,139 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def update_dataset_tag(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: datetime.datetime,
+        tag: str,
+    ) -> None:
+        """Update the tags of a dataset.
+
+        If the tag is already assigned to a different version of this dataset,
+        the tag will be moved to the new version. The as_of parameter is used to
+        determine which version of the dataset to apply the new tags to.
+        It must be an exact version of the dataset to succeed. You can
+        use the read_dataset_version method to find the exact version
+        to apply the tags to.
+
+        Parameters
+        ----------
+        dataset_id : UUID
+            The ID of the dataset to update.
+        as_of : datetime.datetime
+            The timestamp of the dataset to apply the new tags to.
+        tag : str
+            The new tag to apply to the dataset.
+
+        Examples:
+        --------
+        .. code-block:: python
+            dataset_name = "my-dataset"
+            # Get the version of a dataset <= a given timestamp
+            dataset_version = client.read_dataset_version(
+                dataset_name=dataset_name, as_of=datetime.datetime(2024, 1, 1)
+            )
+            # Assign that version a new tag
+            client.update_dataset_tags(
+                dataset_name="my-dataset",
+                as_of=dataset_version.as_of,
+                tag="prod",
+            )
+        """
+        if dataset_name is not None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        if dataset_id is None:
+            raise ValueError("Must provide either dataset name or ID")
+        response = self.session.put(
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/tags",
+            headers=self._headers,
+            json={
+                "as_of": as_of.isoformat(),
+                "tag": tag,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def list_dataset_versions(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> Iterator[ls_schemas.DatasetVersion]:
+        """List dataset versions.
+
+        Args:
+            dataset_id (Optional[ID_TYPE]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            search (Optional[str]): The search query.
+
+        Returns:
+            Iterator[ls_schemas.DatasetVersion]: An iterator of dataset versions.
+        """
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        params = {"search": search}
+        yield from (
+            ls_schemas.DatasetVersion(**version)
+            for version in self._get_paginated_list(
+                f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/versions",
+                params=params,
+            )
+        )
+
+    def read_dataset_version(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: Optional[datetime.datetime] = None,
+        tag: Optional[str] = None,
+    ) -> ls_schemas.DatasetVersion:
+        """Get dataset version by as_of or exact tag.
+
+        Ues this to resolve the nearest version to a given timestamp or for a given tag.
+
+        Args:
+            dataset_id (Optional[ID_TYPE]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            as_of (Optional[datetime.datetime]): The timestamp of the dataset
+                to retrieve.
+            tag (Optional[str]): The tag of the dataset to retrieve.
+
+        Returns:
+            ls_schemas.DatasetVersion: The dataset version.
+
+
+        Examples:
+        --------
+        .. code-block:: python
+
+            # Get the latest version of a dataset
+            client.read_dataset_version(dataset_name="my-dataset", tag="latest")
+
+            # Get the version of a dataset <= a given timestamp
+            client.read_dataset_version(
+                dataset_name="my-dataset",
+                as_of=datetime.datetime(2024, 1, 1),
+            )
+
+
+            # Get the version of a dataset with a specific tag
+            client.read_dataset_version(dataset_name="my-dataset", tag="prod")
+        """
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        if (as_of and tag) or (as_of is None and tag is None):
+            raise ValueError("Exactly one of as_of and tag must be specified.")
+        response = self._get_with_retries(
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/version",
+            params={"as_of": as_of, "tag": tag},
+        )
+        return ls_schemas.DatasetVersion(**response.json())
+
     def clone_public_dataset(
         self,
         token_or_url: str,
@@ -2482,6 +2635,7 @@ class Client:
         *,
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
@@ -2494,6 +2648,8 @@ class Client:
             The input values for the examples.
         outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The output values for the examples.
+        metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
+            The metadata for the examples.
         dataset_id : Optional[ID_TYPE], default=None
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
@@ -2518,8 +2674,13 @@ class Client:
                 "inputs": in_,
                 "outputs": out_,
                 "dataset_id": dataset_id,
+                "metadata": metadata_,
             }
-            for in_, out_ in zip(inputs, outputs or [None] * len(inputs))
+            for in_, out_, metadata_ in zip(
+                inputs,
+                outputs or [None] * len(inputs),
+                metadata or [None] * len(inputs),
+            )
         ]
 
         response = self.session.post(
@@ -2537,6 +2698,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
         example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -2556,6 +2718,8 @@ class Client:
                 The creation timestamp of the example.
             outputs : Mapping[str, Any] or None, default=None
                 The output values for the example.
+            metadata : Mapping[str, Any] or None, default=None
+                The metadata for the example.
             exemple_id : UUID or None, default=None
                 The ID of the example to create. If not provided, a new
                 example will be created.
@@ -2570,6 +2734,7 @@ class Client:
             "inputs": inputs,
             "outputs": outputs,
             "dataset_id": dataset_id,
+            "metadata": metadata,
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
@@ -2589,7 +2754,9 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
-    def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
+    def read_example(
+        self, example_id: ID_TYPE, *, as_of: Optional[datetime.datetime] = None
+    ) -> ls_schemas.Example:
         """Read an example from the LangSmith API.
 
         Args:
@@ -2600,6 +2767,9 @@ class Client:
         """
         response = self._get_with_retries(
             f"/examples/{_as_uuid(example_id, 'example_id')}",
+            params={
+                "as_of": as_of.isoformat() if as_of else None,
+            },
         )
         return ls_schemas.Example(
             **response.json(),
@@ -2612,7 +2782,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         example_ids: Optional[Sequence[ID_TYPE]] = None,
-        as_of: Optional[datetime.datetime] = None,
+        as_of: Optional[Union[datetime.datetime, str]] = None,
         inline_s3_urls: bool = True,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -2624,8 +2794,10 @@ class Client:
                 Defaults to None.
             example_ids (List[UUID], optional): The IDs of the examples to filter by.
                 Defaults to None.
-            as_of (datetime, optional): The timestamp to retrieve the examples as of.
-                This determines the dataset version.
+            as_of (datetime, str, or optional): The dataset version tag OR
+                timestamp to retrieve the examples as of.
+                Response examples will only be those that were present at the time
+                of the tagged (or timestamped) version.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
 
@@ -2634,7 +2806,9 @@ class Client:
         """
         params: Dict[str, Any] = {
             "id": example_ids,
-            "as_of": as_of.isoformat() if as_of else None,
+            "as_of": (
+                as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
+            ),
             "inline_s3_urls": inline_s3_urls,
         }
         if dataset_id is not None:
@@ -2659,6 +2833,7 @@ class Client:
         *,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[Dict] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
@@ -2683,6 +2858,7 @@ class Client:
             inputs=inputs,
             outputs=outputs,
             dataset_id=dataset_id,
+            metadata=metadata,
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
@@ -2909,7 +3085,7 @@ class Client:
 
     def create_feedback(
         self,
-        run_id: ID_TYPE,
+        run_id: Optional[ID_TYPE],
         key: str,
         *,
         score: Union[float, int, bool, None] = None,
@@ -2924,6 +3100,7 @@ class Client:
         feedback_id: Optional[ID_TYPE] = None,
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         stop_after_attempt: int = 10,
+        project_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -2931,7 +3108,8 @@ class Client:
         Parameters
         ----------
         run_id : str or UUID
-            The ID of the run to provide feedback on.
+            The ID of the run to provide feedback for. Either the run_id OR
+            the project_id must be provided.
         key : str
             The name of the metric, tag, or 'aspect' this feedback is about.
         score : float or int or bool or None, default=None
@@ -2958,7 +3136,14 @@ class Client:
             or freeform.
         stop_after_attempt : int, default=10
             The number of times to retry the request before giving up.
+        project_id : str or UUID
+            The ID of the project_id to provide feedback on. One - and only one - of
+            this and run_id must be provided.
         """
+        if run_id is None and project_id is None:
+            raise ValueError("One of run_id and project_id must be provided")
+        if run_id is not None and project_id is not None:
+            raise ValueError("Only one of run_id and project_id must be provided")
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -3006,6 +3191,7 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
+            session_id=project_id,
         )
         self.request_with_retries(
             "POST",
@@ -3391,10 +3577,11 @@ class Client:
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
         project_metadata: Optional[Dict[str, Any]] = None,
+        dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Asynchronously run the Chain or language model on a dataset.
 
@@ -3410,6 +3597,8 @@ class Client:
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             project_metadata: Optional metadata to store with the project.
+            dataset_version: Optional version identifier to run the dataset on.
+                Can be a timestamp or a string tag.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
@@ -3517,9 +3706,10 @@ class Client:
             project_name=project_name,
             project_metadata=project_metadata,
             verbose=verbose,
-            tags=tags,
             input_mapper=input_mapper,
             revision_id=revision_id,
+            dataset_version=dataset_version,
+            **kwargs,
         )
 
     def run_on_dataset(
@@ -3531,10 +3721,11 @@ class Client:
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
         project_metadata: Optional[Dict[str, Any]] = None,
+        dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Run the Chain or language model on a dataset.
 
@@ -3551,6 +3742,8 @@ class Client:
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             project_metadata: Metadata to store with the project.
+            dataset_version: Optional version identifier to run the dataset on.
+                Can be a timestamp or a string tag.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
@@ -3658,9 +3851,10 @@ class Client:
             project_name=project_name,
             project_metadata=project_metadata,
             verbose=verbose,
-            tags=tags,
             input_mapper=input_mapper,
             revision_id=revision_id,
+            dataset_version=dataset_version,
+            **kwargs,
         )
 
 
@@ -3686,7 +3880,9 @@ def _tracing_thread_drain_queue(
 
 
 def _tracing_thread_handle_batch(
-    client: Client, tracing_queue: Queue, batch: List[TracingQueueItem]
+    client: Client,
+    tracing_queue: Queue,
+    batch: List[TracingQueueItem],
 ) -> None:
     create = [it.item for it in batch if it.action == "create"]
     update = [it.item for it in batch if it.action == "update"]
@@ -3708,7 +3904,7 @@ _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
 def _ensure_ingest_config(
-    info: Optional[ls_schemas.LangSmithInfo],
+    info: ls_schemas.LangSmithInfo,
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
         size_limit_bytes=None,  # Note this field is not used here
@@ -3730,12 +3926,6 @@ def _ensure_ingest_config(
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
-        return
-    try:
-        if not client.info:
-            return
-    except BaseException as e:
-        logger.debug("Error in tracing control thread: %s", e)
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
@@ -3763,7 +3953,8 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             and tracing_queue.qsize() > scale_up_qsize_trigger
         ):
             new_thread = threading.Thread(
-                target=_tracing_sub_thread_func, args=(weakref.ref(client),)
+                target=_tracing_sub_thread_func,
+                args=(weakref.ref(client),),
             )
             sub_threads.append(new_thread)
             new_thread.start()
@@ -3776,7 +3967,9 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
 
-def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
+def _tracing_sub_thread_func(
+    client_ref: weakref.ref[Client],
+) -> None:
     client = client_ref()
     if client is None:
         return

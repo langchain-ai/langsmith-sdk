@@ -4,7 +4,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Literal, Mapping, Optional, Union, cast
+from typing import Dict, List, Mapping, Optional, Union, cast
 
 from langsmith import env as ls_env
 from langsmith import utils as ls_utils
@@ -101,19 +101,13 @@ class LangSmithCommand:
     def pull(
         self,
         *,
-        stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
-        version: str = "latest",
+        version: str = "0.1.12",
     ) -> None:
         """Pull the latest LangSmith images.
 
         Args:
-            stage: Which stage of LangSmith images to pull.
-                One of "prod", "dev", or "beta".
+            version: The LangSmith version to use for LangSmith. Defaults to 0.1.12
         """
-        if stage == "dev":
-            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "dev-"
-        elif stage == "beta":
-            os.environ["_LANGSMITH_IMAGE_PREFIX"] = "rc-"
         os.environ["_LANGSMITH_IMAGE_VERSION"] = version
         subprocess.run(
             [
@@ -127,19 +121,13 @@ class LangSmithCommand:
     def start(
         self,
         *,
-        stage: Union[Literal["prod"], Literal["dev"], Literal["beta"]] = "prod",
         openai_api_key: Optional[str] = None,
         langsmith_license_key: str,
-        version: str = "latest",
+        version: str = "0.1.12",
     ) -> None:
         """Run the LangSmith server locally.
 
         Args:
-            expose: If True, expose the server to the internet using ngrok.
-            auth_token: The ngrok authtoken to use (visible in the ngrok dashboard).
-                If not provided, ngrok server session length will be restricted.
-            stage: Which set of images to pull when running.
-                One of "prod", "dev", or "beta".
             openai_api_key: The OpenAI API key to use for LangSmith
                 If not provided, the OpenAI API Key will be read from the
                 OPENAI_API_KEY environment variable. If neither are provided,
@@ -148,12 +136,13 @@ class LangSmithCommand:
                 If not provided, the LangSmith license key will be read from the
                 LANGSMITH_LICENSE_KEY environment variable. If neither are provided,
                 Langsmith will not start up.
+            version: The LangSmith version to use for LangSmith. Defaults to latest.
         """
         if openai_api_key is not None:
             os.environ["OPENAI_API_KEY"] = openai_api_key
         if langsmith_license_key is not None:
             os.environ["LANGSMITH_LICENSE_KEY"] = langsmith_license_key
-        self.pull(stage=stage, version=version)
+        self.pull(version=version)
         self._start_local()
 
     def stop(self, clear_volumes: bool = False) -> None:
@@ -245,12 +234,6 @@ def main() -> None:
         "start", description="Start the LangSmith server."
     )
     server_start_parser.add_argument(
-        "--stage",
-        default="prod",
-        choices=["prod", "dev", "beta"],
-        help="Which set of images to pull when running.",
-    )
-    server_start_parser.add_argument(
         "--openai-api-key",
         default=os.getenv("OPENAI_API_KEY"),
         help="The OpenAI API key to use for LangSmith."
@@ -268,15 +251,11 @@ def main() -> None:
     )
     server_start_parser.add_argument(
         "--version",
-        default="latest",
-        help="The LangSmith version to use for LangSmith. Defaults to latest."
-        " We recommend pegging this to the latest static version available at"
-        " https://hub.docker.com/repository/docker/langchain/langchainplus-backend"
-        " if you are using Langsmith in production.",
+        default="0.1.12",
+        help="The LangSmith version to use for LangSmith. Defaults to 0.1.12.",
     )
     server_start_parser.set_defaults(
         func=lambda args: server_command.start(
-            stage=args.stage,
             openai_api_key=args.openai_api_key,
             langsmith_license_key=args.langsmith_license_key,
             version=args.version,
@@ -299,21 +278,12 @@ def main() -> None:
         "pull", description="Pull the latest LangSmith images."
     )
     server_pull_parser.add_argument(
-        "--stage",
-        default="prod",
-        choices=["prod", "dev", "beta"],
-        help="Which stage of LangSmith images to pull.",
-    )
-    server_pull_parser.add_argument(
         "--version",
-        default="latest",
-        help="The LangSmith version to use for LangSmith. Defaults to latest."
-        " We recommend pegging this to the latest static version available at"
-        " https://hub.docker.com/repository/docker/langchain/langchainplus-backend"
-        " if you are using Langsmith in production.",
+        default="0.1.12",
+        help="The LangSmith version to use for LangSmith. Defaults to 0.1.12.",
     )
     server_pull_parser.set_defaults(
-        func=lambda args: server_command.pull(stage=args.stage, version=args.version)
+        func=lambda args: server_command.pull(version=args.version)
     )
     server_logs_parser = subparsers.add_parser(
         "logs", description="Show the LangSmith server logs."

@@ -49,6 +49,7 @@ class ExampleBase(BaseModel):
     dataset_id: UUID
     inputs: Dict[str, Any]
     outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
 
     class Config:
         """Configuration class for the schema."""
@@ -175,16 +176,11 @@ class Dataset(DatasetBase):
         return None
 
 
-class RunTypeEnum(str, Enum):
-    """(Deprecated) Enum for run types. Use string directly."""
+class DatasetVersion(BaseModel):
+    """Class representing a dataset version."""
 
-    tool = "tool"
-    chain = "chain"
-    llm = "llm"
-    retriever = "retriever"
-    embedding = "embedding"
-    prompt = "prompt"
-    parser = "parser"
+    tags: Optional[List[str]] = None
+    as_of: datetime
 
 
 class RunBase(BaseModel):
@@ -240,12 +236,7 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    _lock: threading.Lock = Field(default_factory=threading.Lock)
-
-    class Config:
-        """Configuration class for the schema."""
-
-        underscore_attrs_are_private = True
+    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -321,6 +312,18 @@ class Run(RunBase):
         if self._host_url and self.app_path:
             return f"{self._host_url}{self.app_path}"
         return None
+
+
+class RunTypeEnum(str, Enum):
+    """(Deprecated) Enum for run types. Use string directly."""
+
+    tool = "tool"
+    chain = "chain"
+    llm = "llm"
+    retriever = "retriever"
+    embedding = "embedding"
+    prompt = "prompt"
+    parser = "parser"
 
 
 class RunLikeDict(TypedDict, total=False):
@@ -406,7 +409,7 @@ class FeedbackBase(BaseModel):
     """The time the feedback was created."""
     modified_at: Optional[datetime] = None
     """The time the feedback was last modified."""
-    run_id: UUID
+    run_id: Optional[UUID]
     """The associated run ID this feedback is logged for."""
     key: str
     """The metric name, tag, or aspect to provide feedback on."""
@@ -420,6 +423,8 @@ class FeedbackBase(BaseModel):
     """Correction for the run."""
     feedback_source: Optional[FeedbackSourceBase] = None
     """The source of the feedback."""
+    session_id: Optional[UUID] = None
+    """The associated project ID (Session = Project) this feedback is logged for."""
 
     class Config:
         """Configuration class for the schema."""

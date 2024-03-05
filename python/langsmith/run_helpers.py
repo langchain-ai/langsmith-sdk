@@ -145,6 +145,11 @@ def _container_end(
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
     run_tree.end(outputs=outputs_, error=error)
     run_tree.patch()
+    if error:
+        try:
+            logger.info(f"See trace: {run_tree.get_url()}")
+        except Exception:
+            pass
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:

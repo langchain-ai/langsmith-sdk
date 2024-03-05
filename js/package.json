@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.1.9",
+  "version": "0.1.12",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -29,12 +29,9 @@
   ],
   "type": "module",
   "main": "./dist/index.js",
-  "bin": {
-    "langsmith": "./dist/cli/main.cjs"
-  },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js && node scripts/create-cli.js",
+    "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js",
     "bump-version": "node scripts/bump-version.js",
     "check-version": "node scripts/check-version.js",
     "check-npm-version": "node scripts/check-npm-version.js",
