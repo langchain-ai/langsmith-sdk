@@ -506,7 +506,7 @@ class Client:
         return headers
 
     @property
-    def info(self) -> Optional[ls_schemas.LangSmithInfo]:
+    def info(self) -> ls_schemas.LangSmithInfo:
         """Get the information about the LangSmith API.
 
         Returns:
@@ -515,16 +515,13 @@ class Client:
             The information about the LangSmith API, or None if the API is
                 not available.
         """
-        info = Client._get_info(self.session, self.api_url, self.timeout_ms)
-        if info is None and self.tracing_queue is not None:
-            self.tracing_queue = None
-        return cast(Optional[ls_schemas.LangSmithInfo], info)
+        return Client._get_info(self.session, self.api_url, self.timeout_ms)
 
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def _get_info(
         session: requests.Session, api_url: str, timeout_ms: int
-    ) -> Optional[ls_schemas.LangSmithInfo]:
+    ) -> ls_schemas.LangSmithInfo:
         try:
             response = session.get(
                 api_url + "/info",
@@ -534,10 +531,10 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             return ls_schemas.LangSmithInfo(**response.json())
         except requests.HTTPError:
-            return None
+            return ls_schemas.LangSmithInfo()
         except BaseException as e:
             logger.warning(f"Failed to get info from {api_url}: {repr(e)}")
-            return None
+            return ls_schemas.LangSmithInfo()
 
     def request_with_retries(
         self,
@@ -647,9 +644,14 @@ class Client:
                             f" {repr(e)}"
                         )
                 except requests.ConnectionError as e:
+                    recommendation = (
+                        "Please confirm your LANGCHAIN_ENDPOINT"
+                        if self.api_url != "https://api.smith.langchain.com"
+                        else "Please confirm your internet connection."
+                    )
                     raise ls_utils.LangSmithConnectionError(
                         f"Connection error caused failure to {request_method} {url}"
-                        "  in LangSmith API. Please confirm your LANGCHAIN_ENDPOINT."
+                        f"  in LangSmith API. {recommendation}."
                         f" {repr(e)}"
                     ) from e
                 except Exception as e:
@@ -1022,13 +1024,13 @@ class Client:
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
-            # Checked last since it makes a (cached) API call
-            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        self._create_run(run_create)
 
+    def _create_run(self, run_create: dict):
         headers = {
             **self._headers,
             "Accept": "application/json",
@@ -1135,13 +1137,7 @@ class Client:
             return
 
         self._insert_runtime_env(raw_body["post"])
-
-        if self.info is None:
-            raise ls_utils.LangSmithUserError(
-                "Batch ingest is not supported by your LangSmith server version. "
-                "Please upgrade to a newer version."
-            )
-        info = cast(ls_schemas.LangSmithInfo, self.info)
+        info = self.info
 
         size_limit_bytes = (info.batch_ingest_config or {}).get(
             "size_limit_bytes"
@@ -1240,11 +1236,6 @@ class Client:
         **kwargs : Any
             Kwargs are ignored.
         """
-        headers = {
-            **self._headers,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
         data: Dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "trace_id": kwargs.pop("trace_id", None),
@@ -1272,18 +1263,24 @@ class Client:
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
-            # Checked last since it makes an API call
-            and self.info is not None  # Older versions don't support batch ingest
         ):
             return self.tracing_queue.put(
                 TracingQueueItem(data["dotted_order"], "update", data)
             )
+        return self._update_run(data)
+
+    def _update_run(self, run_update: dict) -> None:
+        headers = {
+            **self._headers,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
 
         self.request_with_retries(
             "patch",
-            f"{self.api_url}/runs/{data['id']}",
+            f"{self.api_url}/runs/{run_update['id']}",
             request_kwargs={
-                "data": _dumps_json(data),
+                "data": _dumps_json(run_update),
                 "headers": headers,
                 "timeout": self.timeout_ms / 1000,
             },
@@ -3883,7 +3880,9 @@ def _tracing_thread_drain_queue(
 
 
 def _tracing_thread_handle_batch(
-    client: Client, tracing_queue: Queue, batch: List[TracingQueueItem]
+    client: Client,
+    tracing_queue: Queue,
+    batch: List[TracingQueueItem],
 ) -> None:
     create = [it.item for it in batch if it.action == "create"]
     update = [it.item for it in batch if it.action == "update"]
@@ -3905,7 +3904,7 @@ _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 
 
 def _ensure_ingest_config(
-    info: Optional[ls_schemas.LangSmithInfo],
+    info: ls_schemas.LangSmithInfo,
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
         size_limit_bytes=None,  # Note this field is not used here
@@ -3927,12 +3926,6 @@ def _ensure_ingest_config(
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
-        return
-    try:
-        if not client.info:
-            return
-    except BaseException as e:
-        logger.debug("Error in tracing control thread: %s", e)
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
@@ -3960,7 +3953,8 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             and tracing_queue.qsize() > scale_up_qsize_trigger
         ):
             new_thread = threading.Thread(
-                target=_tracing_sub_thread_func, args=(weakref.ref(client),)
+                target=_tracing_sub_thread_func,
+                args=(weakref.ref(client),),
             )
             sub_threads.append(new_thread)
             new_thread.start()
@@ -3973,7 +3967,9 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
 
-def _tracing_sub_thread_func(client_ref: weakref.ref[Client]) -> None:
+def _tracing_sub_thread_func(
+    client_ref: weakref.ref[Client],
+) -> None:
     client = client_ref()
     if client is None:
         return
