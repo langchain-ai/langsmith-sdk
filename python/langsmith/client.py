@@ -2306,7 +2306,11 @@ class Client:
         """Update the tags of a dataset.
 
         If the tag is already assigned to a different version of this dataset,
-        the tag will be moved to the new version.
+        the tag will be moved to the new version. The as_of parameter is used to
+        determine which version of the dataset to apply the new tags to.
+        It must be an exact version of the dataset to succeed. You can
+        use the get_dataset_version method to find the exact version
+        to apply the tags to.
 
         Parameters
         ----------
@@ -2316,6 +2320,21 @@ class Client:
             The timestamp of the dataset to apply the new tags to.
         tags : List[str]
             The new tags to apply to the dataset.
+
+        Examples:
+        --------
+        .. code-block:: python
+            dataset_name = "my-dataset"
+            # Get the version of a dataset <= a given timestamp
+            dataset_version = client.get_dataset_version(
+                dataset_name=dataset_name, as_of=datetime.datetime(2024, 1, 1)
+            )
+            # Assign that version a new tag
+            client.update_dataset_tags(
+                dataset_name="my-dataset",
+                as_of=dataset_version.as_of,
+                tags=["prod"],
+            )
         """
         if dataset_name is not None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
@@ -2330,6 +2349,84 @@ class Client:
             },
         )
         ls_utils.raise_for_status_with_text(response)
+
+    def list_dataset_versions(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> Iterator[ls_schemas.DatasetVersion]:
+        """List dataset versions.
+
+        Args:
+            dataset_id (Optional[ID_TYPE]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            search (Optional[str]): The search query.
+
+        Returns:
+            Iterator[ls_schemas.DatasetVersion]: An iterator of dataset versions.
+        """
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        params = {"search": search}
+        yield from (
+            ls_schemas.DatasetVersion(**version)
+            for version in self._get_paginated_list(
+                f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/versions",
+                params=params,
+            )
+        )
+
+    def get_dataset_version(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: Optional[datetime.datetime] = None,
+        tag: Optional[str] = None,
+    ) -> ls_schemas.DatasetVersion:
+        """Get dataset version by as_of or exact tag.
+
+        Ues this to resolve the nearest version to a given timestamp or for a given tag.
+
+        Args:
+            dataset_id (Optional[ID_TYPE]): The ID of the dataset.
+            dataset_name (Optional[str]): The name of the dataset.
+            as_of (Optional[datetime.datetime]): The timestamp of the dataset
+                to retrieve.
+            tag (Optional[str]): The tag of the dataset to retrieve.
+
+        Returns:
+            ls_schemas.DatasetVersion: The dataset version.
+
+
+        Examples:
+        --------
+        .. code-block:: python
+
+            # Get the latest version of a dataset
+            client.get_dataset_version(dataset_name="my-dataset", tag="latest")
+
+            # Get the version of a dataset <= a given timestamp
+            client.get_dataset_version(
+                dataset_name="my-dataset",
+                as_of=datetime.datetime(2024, 1, 1),
+            )
+
+
+            # Get the version of a dataset with a specific tag
+            client.get_dataset_version(dataset_name="my-dataset", tag="prod")
+        """
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        if (as_of and tag) or (as_of is None and tag is None):
+            raise ValueError("Exactly one of as_of and tag must be specified.")
+        response = self._get_with_retries(
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/version",
+            params={"as_of": as_of, "tag": tag},
+        )
+        return ls_schemas.DatasetVersion(**response.json())
 
     def clone_public_dataset(
         self,
