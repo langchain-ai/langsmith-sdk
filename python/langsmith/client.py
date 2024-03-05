@@ -2295,13 +2295,13 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def update_dataset_tags(
+    def update_dataset_tag(
         self,
         *,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         as_of: datetime.datetime,
-        tags: List[str],
+        tag: str,
     ) -> None:
         """Update the tags of a dataset.
 
@@ -2309,7 +2309,7 @@ class Client:
         the tag will be moved to the new version. The as_of parameter is used to
         determine which version of the dataset to apply the new tags to.
         It must be an exact version of the dataset to succeed. You can
-        use the get_dataset_version method to find the exact version
+        use the read_dataset_version method to find the exact version
         to apply the tags to.
 
         Parameters
@@ -2318,22 +2318,22 @@ class Client:
             The ID of the dataset to update.
         as_of : datetime.datetime
             The timestamp of the dataset to apply the new tags to.
-        tags : List[str]
-            The new tags to apply to the dataset.
+        tag : str
+            The new tag to apply to the dataset.
 
         Examples:
         --------
         .. code-block:: python
             dataset_name = "my-dataset"
             # Get the version of a dataset <= a given timestamp
-            dataset_version = client.get_dataset_version(
+            dataset_version = client.read_dataset_version(
                 dataset_name=dataset_name, as_of=datetime.datetime(2024, 1, 1)
             )
             # Assign that version a new tag
             client.update_dataset_tags(
                 dataset_name="my-dataset",
                 as_of=dataset_version.as_of,
-                tags=["prod"],
+                tag="prod",
             )
         """
         if dataset_name is not None:
@@ -2345,7 +2345,7 @@ class Client:
             headers=self._headers,
             json={
                 "as_of": as_of.isoformat(),
-                "tags": tags,
+                "tag": tag,
             },
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2378,7 +2378,7 @@ class Client:
             )
         )
 
-    def get_dataset_version(
+    def read_dataset_version(
         self,
         *,
         dataset_id: Optional[ID_TYPE] = None,
@@ -2406,17 +2406,17 @@ class Client:
         .. code-block:: python
 
             # Get the latest version of a dataset
-            client.get_dataset_version(dataset_name="my-dataset", tag="latest")
+            client.read_dataset_version(dataset_name="my-dataset", tag="latest")
 
             # Get the version of a dataset <= a given timestamp
-            client.get_dataset_version(
+            client.read_dataset_version(
                 dataset_name="my-dataset",
                 as_of=datetime.datetime(2024, 1, 1),
             )
 
 
             # Get the version of a dataset with a specific tag
-            client.get_dataset_version(dataset_name="my-dataset", tag="prod")
+            client.read_dataset_version(dataset_name="my-dataset", tag="prod")
         """
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
