@@ -922,9 +922,9 @@ class Client:
             run_create["id"] = uuid.uuid4()
         elif isinstance(run["id"], str):
             run["id"] = uuid.UUID(run["id"])
-        if "inputs" in run_create:
+        if "inputs" in run_create and run_create["inputs"] is not None:
             run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
-        if "outputs" in run_create:
+        if "outputs" in run_create and run_create["outputs"] is not None:
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
