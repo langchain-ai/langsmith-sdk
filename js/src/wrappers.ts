@@ -12,6 +12,13 @@ type OpenAIType = {
   };
 };
 
+/**
+ * Wraps an OpenAI client's completion methods, enabling automatic LangSmith
+ * tracing. Method signatures are unchanged.
+ * @param openai An OpenAI client instance.
+ * @param options LangSmith options.
+ * @returns
+ */
 export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
   options?: { client?: Client }
@@ -64,7 +71,18 @@ const _wrapClient = <T extends object>(
   });
 };
 
-export const wrapClient = <T extends object>(
+/**
+ * Wrap an arbitrary SDK, enabling automatic LangSmith tracing.
+ * Method signatures are unchanged.
+ *
+ * Note that this will wrap and trace ALL SDK methods, not just
+ * LLM completion methods. If the passed SDK contains other methods,
+ * we recommend using the wrapped instance for LLM calls only.
+ * @param sdk An arbitrary SDK instance.
+ * @param options LangSmith options.
+ * @returns
+ */
+export const wrapSDK = <T extends object>(
   sdk: T,
   options?: { client?: Client; runName?: string }
 ): T => {

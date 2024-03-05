@@ -1,17 +1,17 @@
-// import { jest } from "@jest/globals";
+import { jest } from "@jest/globals";
 import { Anthropic } from "@anthropic-ai/sdk";
-import { wrapClient } from "../wrappers.js";
+import { wrapSDK } from "../wrappers.js";
 import { Client } from "../client.js";
 
 test.concurrent("chat.completions", async () => {
   const client = new Client();
-  // const callSpy = jest
-  //   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  //   .spyOn((client as any).caller, "call")
-  //   .mockResolvedValue({ ok: true, text: () => "" });
+  const callSpy = jest
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .spyOn((client as any).caller, "call")
+    .mockResolvedValue({ ok: true, text: () => "" });
 
   const originalClient = new Anthropic();
-  const patchedClient = wrapClient(new Anthropic(), { client });
+  const patchedClient = wrapSDK(new Anthropic(), { client });
 
   // invoke
   const original = await originalClient.messages.create({
@@ -78,8 +78,8 @@ test.concurrent("chat.completions", async () => {
   }
 
   expect(patchedChunks).toEqual(originalChunks);
-  // for (const call of callSpy.mock.calls) {
-  //   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  //   expect((call[2] as any)["method"]).toBe("POST");
-  // }
+  for (const call of callSpy.mock.calls) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((call[2] as any)["method"]).toBe("POST");
+  }
 });
