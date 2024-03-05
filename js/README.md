@@ -315,13 +315,13 @@ const response = await sdkWithTracing.messages.create({
       content: `What is 1 + 1? Respond only with "2" and nothing else.`,
     },
   ],
-  model: "claude-2.1",
+  model: "claude-3-sonnet-20240229",
   max_tokens: 1024,
 });
 ```
 
 :::tip
-[Click here](https://smith.langchain.com/public/3f84efd4-ae7c-49ef-bb4a-20d7ec61063d/r) to see an example LangSmith trace of the above.
+[Click here](https://smith.langchain.com/public/0e7248af-bbed-47cf-be9f-5967fea1dec1/r) to see an example LangSmith trace of the above.
 :::
 
 #### Alternatives: **Log traces using a RunTree.**
