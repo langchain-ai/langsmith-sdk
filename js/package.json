@@ -64,7 +64,6 @@
   },
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.16.1",
     "@babel/preset-env": "^7.22.4",
     "@jest/globals": "^29.5.0",
     "@langchain/core": "^0.1.32",

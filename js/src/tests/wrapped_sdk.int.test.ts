@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import { Anthropic } from "@anthropic-ai/sdk";
+import { OpenAI } from "openai";
 import { wrapSDK } from "../wrappers.js";
 import { Client } from "../client.js";
 
@@ -10,74 +10,54 @@ test.concurrent("chat.completions", async () => {
     .spyOn((client as any).caller, "call")
     .mockResolvedValue({ ok: true, text: () => "" });
 
-  const originalClient = new Anthropic();
-  const patchedClient = wrapSDK(new Anthropic(), { client });
+  const originalClient = new OpenAI();
+  const patchedClient = wrapSDK(new OpenAI(), { client });
 
   // invoke
-  const original = await originalClient.messages.create({
-    messages: [
-      {
-        role: "user",
-        content: `What is 1 + 1? Respond only with "2" and nothing else.`,
-      },
-    ],
-    model: "claude-2.1",
-    max_tokens: 1024,
+  const original = await originalClient.chat.completions.create({
+    messages: [{ role: "user", content: `Say 'foo'` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
   });
 
-  const patched = await patchedClient.messages.create({
-    messages: [
-      {
-        role: "user",
-        content: `What is 1 + 1? Respond only with "2" and nothing else.`,
-      },
-    ],
-    model: "claude-2.1",
-    max_tokens: 1024,
+  const patched = await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: `Say 'foo'` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
   });
 
-  expect(patched.content).toEqual(original.content);
+  expect(patched.choices).toEqual(original.choices);
 
   // stream
-  const originalStream = await originalClient.messages.create({
-    messages: [
-      {
-        role: "user",
-        content: `What is 1 + 1? Respond only with "2" and nothing else.`,
-      },
-    ],
-    model: "claude-2.1",
-    max_tokens: 1024,
+  const originalStream = await originalClient.chat.completions.create({
+    messages: [{ role: "user", content: `Say 'foo'` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
     stream: true,
   });
 
-  const originalChunks = [];
+  const originalChoices = [];
   for await (const chunk of originalStream) {
-    if (chunk.type === "message_delta") {
-      originalChunks.push(chunk.delta);
-    }
+    originalChoices.push(chunk.choices);
   }
 
-  const patchedStream = await patchedClient.messages.create({
-    messages: [
-      {
-        role: "user",
-        content: `What is 1 + 1? Respond only with "2" and nothing else.`,
-      },
-    ],
-    model: "claude-2.1",
-    max_tokens: 1024,
+  const patchedStream = await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: `Say 'foo'` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
     stream: true,
   });
 
-  const patchedChunks = [];
+  const patchedChoices = [];
   for await (const chunk of patchedStream) {
-    if (chunk.type === "message_delta") {
-      patchedChunks.push(chunk.delta);
-    }
+    patchedChoices.push(chunk.choices);
   }
 
-  expect(patchedChunks).toEqual(originalChunks);
+  expect(patchedChoices).toEqual(originalChoices);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((call[2] as any)["method"]).toBe("POST");
