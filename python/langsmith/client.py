@@ -3447,8 +3447,8 @@ class Client:
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
         project_metadata: Optional[Dict[str, Any]] = None,
+        dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -3466,6 +3466,8 @@ class Client:
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             project_metadata: Optional metadata to store with the project.
+            dataset_version: Optional version identifier to run the dataset on.
+                Can be a timestamp or a string tag.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
@@ -3573,9 +3575,9 @@ class Client:
             project_name=project_name,
             project_metadata=project_metadata,
             verbose=verbose,
-            tags=tags,
             input_mapper=input_mapper,
             revision_id=revision_id,
+            dataset_version=dataset_version,
         )
 
     def run_on_dataset(
@@ -3587,8 +3589,8 @@ class Client:
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
         project_metadata: Optional[Dict[str, Any]] = None,
+        dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        tags: Optional[List[str]] = None,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -3607,6 +3609,8 @@ class Client:
             project_name: Name of the project to store the traces in.
                 Defaults to {dataset_name}-{chain class name}-{datetime}.
             project_metadata: Metadata to store with the project.
+            dataset_version: Optional version identifier to run the dataset on.
+                Can be a timestamp or a string tag.
             verbose: Whether to print progress.
             tags: Tags to add to each run in the project.
             input_mapper: A function to map to the inputs dictionary from an Example
@@ -3714,9 +3718,9 @@ class Client:
             project_name=project_name,
             project_metadata=project_metadata,
             verbose=verbose,
-            tags=tags,
             input_mapper=input_mapper,
             revision_id=revision_id,
+            dataset_version=dataset_version,
         )
 
 
