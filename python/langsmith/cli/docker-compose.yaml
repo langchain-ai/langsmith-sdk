@@ -30,11 +30,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
     ports:
       - 1984:1984
     depends_on:
@@ -61,11 +56,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - MAX_ASYNC_JOBS_PER_WORKER=${MAX_ASYNC_JOBS_PER_WORKER:-10}
     command:
       - "saq"
@@ -95,11 +85,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
     ports:
       - 1985:1985
     depends_on:
@@ -182,11 +167,6 @@ services:
       - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_NATIVE_PORT=${CLICKHOUSE_NATIVE_PORT:-9000}
     entrypoint:
       [
         "bash",
@@ -208,12 +188,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
-      - 'DEFAULT_FEATURE_FLAGS={"run_rules_enabled": true}'
     restart: "on-failure:10"
     entrypoint:
       [
