@@ -2295,6 +2295,42 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def update_dataset_tags(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: datetime.datetime,
+        tags: List[str],
+    ) -> None:
+        """Update the tags of a dataset.
+
+        If the tag is already assigned to a different version of this dataset,
+        the tag will be moved to the new version.
+
+        Parameters
+        ----------
+        dataset_id : UUID
+            The ID of the dataset to update.
+        as_of : datetime.datetime
+            The timestamp of the dataset to apply the new tags to.
+        tags : List[str]
+            The new tags to apply to the dataset.
+        """
+        if dataset_name is not None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        if dataset_id is None:
+            raise ValueError("Must provide either dataset name or ID")
+        response = self.session.put(
+            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/tags",
+            headers=self._headers,
+            json={
+                "as_of": as_of.isoformat(),
+                "tags": tags,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     def clone_public_dataset(
         self,
         token_or_url: str,
