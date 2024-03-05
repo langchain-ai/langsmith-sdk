@@ -1,11 +1,15 @@
 version: "4"
 services:
   langchain-playground:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-playground:${_LANGSMITH_IMAGE_VERSION:-latest}
+    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
     ports:
       - 3001:3001
   langchain-frontend:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-frontend-dynamic:${_LANGSMITH_IMAGE_VERSION:-latest}
+    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    environment:
+      - VITE_BACKEND_AUTH_TYPE=${AUTH_TYPE:-none}
+      - VITE_OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - VITE_OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
     ports:
       - 80:80
     depends_on:
@@ -13,13 +17,24 @@ services:
       - langchain-playground
       - langchain-hub
   langchain-backend:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
-      - LOG_LEVEL=warning
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+      - AUTH_TYPE=${AUTH_TYPE:-none}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
+      - API_KEY_SALT=${API_KEY_SALT}
+      - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
+      - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
     ports:
       - 1984:1984
     depends_on:
@@ -33,12 +48,29 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-queue:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
     environment:
+      - PORT=1984
       - LANGCHAIN_ENV=local_docker
-      - LOG_LEVEL=warning
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
-    entrypoint: "rq worker --with-scheduler -u redis://langchain-redis:6379 --serializer lc_database.queue.serializer.ORJSONSerializer --worker-class lc_database.queue.worker.Worker --connection-class lc_database.queue.connection.RedisRetry --job-class lc_database.queue.job.AsyncJob"
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+      - AUTH_TYPE=${AUTH_TYPE:-none}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
+      - API_KEY_SALT=${API_KEY_SALT}
+      - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
+      - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - MAX_ASYNC_JOBS_PER_WORKER=${MAX_ASYNC_JOBS_PER_WORKER:-10}
+    command:
+      - "saq"
+      - "app.async_worker.settings"
+      - "--quiet"
     depends_on:
       langchain-db:
         condition: service_healthy
@@ -50,12 +82,24 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-hub:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainhub-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
+    image: langchain/langhub-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
     environment:
       - PORT=1985
       - LANGCHAIN_ENV=local_docker
-      - LOG_LEVEL=warning
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+      - AUTH_TYPE=${AUTH_TYPE:-none}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
+      - API_KEY_SALT=${API_KEY_SALT}
+      - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
+      - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
     ports:
       - 1985:1985
     depends_on:
@@ -122,11 +166,27 @@ services:
       timeout: 2s
       retries: 30
   clickhouse-setup:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
     depends_on:
       langchain-clickhouse:
         condition: service_healthy
     restart: "on-failure:10"
+    environment:
+      - PORT=1984
+      - LANGCHAIN_ENV=local_docker
+      - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+      - AUTH_TYPE=${AUTH_TYPE:-none}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
+      - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
+      - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
+      - CLICKHOUSE_NATIVE_PORT=${CLICKHOUSE_NATIVE_PORT:-9000}
     entrypoint:
       [
         "bash",
@@ -134,14 +194,26 @@ services:
         "migrate -source file://clickhouse/migrations -database 'clickhouse://langchain-clickhouse:9000?username=default&password=password&database=default&x-multi-statement=true&x-migrations-table-engine=MergeTree' up",
       ]
   postgres-setup:
-    image: langchain/${_LANGSMITH_IMAGE_PREFIX-}langchainplus-backend:${_LANGSMITH_IMAGE_VERSION:-latest}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
     depends_on:
       langchain-db:
         condition: service_healthy
     environment:
       - LANGCHAIN_ENV=local_docker
-      - LOG_LEVEL=warning
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
+      - API_KEY_SALT=${API_KEY_SALT}
+      - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
+      - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - 'DEFAULT_FEATURE_FLAGS={"run_rules_enabled": true}'
     restart: "on-failure:10"
     entrypoint:
       [
