@@ -255,7 +255,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
             dotted_order=id,
         )
 
-    if auto_batch_tracing and supports_batch_endpoint:
+    if auto_batch_tracing:
         assert client.tracing_queue
         client.tracing_queue.join()
 
@@ -447,7 +447,7 @@ def test_create_run_includes_langchain_env_var_metadata(
             tracing_queue.join()
         # Check the posted value in the request
         posted_value = json.loads(session.request.call_args[1]["data"])
-        if auto_batch_tracing and supports_batch_endpoint:
+        if auto_batch_tracing:
             assert (
                 posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
                 == "abcd2234"
