@@ -133,9 +133,17 @@ interface ListRunsParams {
   filter?: string;
 
   /**
-   * The trace filter string to apply. Uses the same grammar as the filter string.
+   * Filter to apply to the ROOT run in the trace tree. This is meant to be used in conjunction with the regular
+   *  `filter` parameter to let you filter runs by attributes of the root run within a trace. Example is filtering by
+   * feedback assigned to the trace.
    */
   traceFilter?: string;
+
+  /**
+   * Filter to apply to OTHER runs in the trace tree, including sibling and child runs. This is meant to be used in
+   * conjunction with the regular `filter` parameter to let you filter runs by attributes of any run within a trace.
+   */
+  treeFilter?: string;
 }
 
 interface UploadCSVParams {
@@ -1092,6 +1100,7 @@ export class Client {
       query,
       filter,
       traceFilter,
+      treeFilter,
       limit,
     } = props;
     let projectIds: string[] = [];
@@ -1116,8 +1125,9 @@ export class Client {
       query,
       filter,
       trace_filter: traceFilter,
+      tree_filter: treeFilter,
       execution_order: executionOrder,
-      parent_run: parentRunId ? [parentRunId] : null,
+      parent_run: parentRunId,
       start_time: startTime ? startTime.toISOString() : null,
       error,
       id,
