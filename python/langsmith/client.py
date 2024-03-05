@@ -3451,6 +3451,7 @@ class Client:
         verbose: bool = False,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Asynchronously run the Chain or language model on a dataset.
 
@@ -3578,6 +3579,7 @@ class Client:
             input_mapper=input_mapper,
             revision_id=revision_id,
             dataset_version=dataset_version,
+            **kwargs,
         )
 
     def run_on_dataset(
@@ -3593,6 +3595,7 @@ class Client:
         verbose: bool = False,
         input_mapper: Optional[Callable[[Dict], Any]] = None,
         revision_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Run the Chain or language model on a dataset.
 
@@ -3721,6 +3724,7 @@ class Client:
             input_mapper=input_mapper,
             revision_id=revision_id,
             dataset_version=dataset_version,
+            **kwargs,
         )
 
 
