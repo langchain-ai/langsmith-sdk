@@ -176,16 +176,11 @@ class Dataset(DatasetBase):
         return None
 
 
-class RunTypeEnum(str, Enum):
-    """(Deprecated) Enum for run types. Use string directly."""
+class DatasetVersion(BaseModel):
+    """Class representing a dataset version."""
 
-    tool = "tool"
-    chain = "chain"
-    llm = "llm"
-    retriever = "retriever"
-    embedding = "embedding"
-    prompt = "prompt"
-    parser = "parser"
+    tags: Optional[List[str]] = None
+    as_of: datetime
 
 
 class RunBase(BaseModel):
@@ -317,6 +312,18 @@ class Run(RunBase):
         if self._host_url and self.app_path:
             return f"{self._host_url}{self.app_path}"
         return None
+
+
+class RunTypeEnum(str, Enum):
+    """(Deprecated) Enum for run types. Use string directly."""
+
+    tool = "tool"
+    chain = "chain"
+    llm = "llm"
+    retriever = "retriever"
+    embedding = "embedding"
+    prompt = "prompt"
+    parser = "parser"
 
 
 class RunLikeDict(TypedDict, total=False):
