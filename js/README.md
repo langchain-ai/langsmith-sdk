@@ -292,39 +292,6 @@ export async function POST(req: Request) {
 
 See the [AI SDK docs](https://sdk.vercel.ai/docs) for more examples.
 
-```ts
-import { traceable } from "langsmith/traceable";
-import { OpenAIStream, StreamingTextResponse } from "ai";
-
-// Note: There are no types for the Mistral API client yet.
-import MistralClient from "@mistralai/mistralai";
-
-const client = new MistralClient(process.env.MISTRAL_API_KEY || "");
-
-export async function POST(req: Request) {
-  // Extract the `messages` from the body of the request
-  const { messages } = await req.json();
-
-  const mistralChatStream = traceable(client.chatStream.bind(client), {
-    name: "Mistral Stream",
-    run_type: "llm",
-  });
-
-  const response = await mistralChatStream({
-    model: "mistral-tiny",
-    maxTokens: 1000,
-    messages,
-  });
-
-  // Convert the response into a friendly text-stream. The Mistral client responses are
-  // compatible with the Vercel AI SDK OpenAIStream adapter.
-  const stream = OpenAIStream(response as any);
-
-  // Respond with the stream
-  return new StreamingTextResponse(stream);
-}
-```
-
 ## Arbitrary SDKs
 
 You can use the generic `wrapSDK` method to add tracing for arbitrary SDKs.
