@@ -292,6 +292,38 @@ export async function POST(req: Request) {
 
 See the [AI SDK docs](https://sdk.vercel.ai/docs) for more examples.
 
+## Arbitrary SDKs
+
+You can use the generic `wrapSDK` method to add tracing for arbitrary SDKs.
+
+Do note that this will trace ALL methods in the SDK, not just chat completion endpoints.
+If the SDK you are wrapping has other methods, we recommend using it for only LLM calls.
+
+Here's an example using the Anthropic SDK:
+
+```ts
+import { wrapSDK } from "langsmith/wrappers";
+import { Anthropic } from "@anthropic-ai/sdk";
+
+const originalSDK = new Anthropic();
+const sdkWithTracing = wrapSDK(originalSDK);
+
+const response = await sdkWithTracing.messages.create({
+  messages: [
+    {
+      role: "user",
+      content: `What is 1 + 1? Respond only with "2" and nothing else.`,
+    },
+  ],
+  model: "claude-3-sonnet-20240229",
+  max_tokens: 1024,
+});
+```
+
+:::tip
+[Click here](https://smith.langchain.com/public/0e7248af-bbed-47cf-be9f-5967fea1dec1/r) to see an example LangSmith trace of the above.
+:::
+
 #### Alternatives: **Log traces using a RunTree.**
 
 A RunTree tracks your application. Each RunTree object is required to have a name and run_type. These and other important attributes are as follows:
