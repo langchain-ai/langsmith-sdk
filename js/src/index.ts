@@ -11,4 +11,4 @@ export type {
 export { RunTree, type RunTreeConfig } from "./run_trees.js";
 
 // Update using yarn bump-version
-export const __version__ = "0.1.12";
+export const __version__ = "0.1.13";
