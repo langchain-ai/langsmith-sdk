@@ -669,3 +669,20 @@ class TimeDeltaInput(TypedDict, total=False):
     """Number of hours."""
     minutes: int
     """Number of minutes."""
+
+
+class DatasetDiffInfo(BaseModel):
+    """Represents the difference information between two datasets.
+
+    Attributes:
+        examples_modified (List[UUID]): A list of UUIDs representing
+            the modified examples.
+        examples_added (List[UUID]): A list of UUIDs representing
+            the added examples.
+        examples_removed (List[UUID]): A list of UUIDs representing
+            the removed examples.
+    """
+
+    examples_modified: List[UUID]
+    examples_added: List[UUID]
+    examples_removed: List[UUID]
