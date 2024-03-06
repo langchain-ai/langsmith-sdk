@@ -1,11 +1,11 @@
 version: "4"
 services:
   langchain-playground:
-    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     ports:
       - 3001:3001
   langchain-frontend:
-    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - VITE_BACKEND_AUTH_TYPE=${AUTH_TYPE:-none}
       - VITE_OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
@@ -17,7 +17,7 @@ services:
       - langchain-playground
       - langchain-hub
   langchain-backend:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
@@ -43,7 +43,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-queue:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
@@ -72,7 +72,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-hub:
-    image: langchain/langhub-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langhub-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - PORT=1985
       - LANGCHAIN_ENV=local_docker
@@ -151,7 +151,7 @@ services:
       timeout: 2s
       retries: 30
   clickhouse-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     depends_on:
       langchain-clickhouse:
         condition: service_healthy
@@ -174,7 +174,7 @@ services:
         "migrate -source file://clickhouse/migrations -database 'clickhouse://langchain-clickhouse:9000?username=default&password=password&database=default&x-multi-statement=true&x-migrations-table-engine=MergeTree' up",
       ]
   postgres-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     depends_on:
       langchain-db:
         condition: service_healthy
