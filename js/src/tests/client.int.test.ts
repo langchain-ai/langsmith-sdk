@@ -438,7 +438,7 @@ test.concurrent(
   "Examples CRUD",
   async () => {
     const client = new Client({ autoBatchTracing: false });
-    const datasetName = "__test_examples_crud JS";
+    const datasetName = "__test_examples_crud JS" + Date.now();
     await deleteDataset(client, datasetName);
     const dataset = await client.createDataset(datasetName);
     const example = await client.createExample(
@@ -449,6 +449,7 @@ test.concurrent(
       }
     );
     const exampleValue = await client.readExample(example.id);
+    const initialVersion = exampleValue.modified_at;
     expect(exampleValue.inputs.input).toEqual("hello world");
     expect(exampleValue?.outputs?.output).toEqual("hi there");
     // Create multiple
@@ -465,6 +466,10 @@ test.concurrent(
       ],
       datasetId: dataset.id,
     });
+    const initialExamplesList = await toArray(
+      client.listExamples({ datasetId: dataset.id, asOf: initialVersion })
+    );
+    expect(initialExamplesList.length).toEqual(1);
     const examplesList = await toArray(
       client.listExamples({ datasetId: dataset.id })
     );
@@ -474,6 +479,15 @@ test.concurrent(
       client.listExamples({ datasetId: dataset.id })
     );
     expect(examplesList2.length).toEqual(3);
+    const datasetDiff = await client.diffDatasetVersions({
+      datasetId: dataset.id,
+      fromVersion: initialVersion,
+      toVersion: "latest",
+    });
+    expect(datasetDiff.examples_added.length).toEqual(3);
+    expect(datasetDiff.examples_modified.length).toEqual(0);
+    expect(datasetDiff.examples_removed.length).toEqual(1);
+
     await client.deleteDataset({ datasetId: dataset.id });
   },
   180_000

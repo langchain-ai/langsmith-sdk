@@ -327,3 +327,9 @@ export interface FeedbackConfig {
    */
   categories?: FeedbackCategory[] | null;
 }
+
+export interface DatasetDiffInfo {
+  examples_modified: string[];
+  examples_added: string[];
+  examples_removed: string[];
+}

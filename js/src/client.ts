@@ -4,6 +4,7 @@ import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   DataType,
   Dataset,
+  DatasetDiffInfo,
   DatasetShareSchema,
   Example,
   ExampleCreate,
@@ -1710,6 +1711,41 @@ export class Client {
     return result;
   }
 
+  public async diffDatasetVersions({
+    datasetId,
+    datasetName,
+    fromVersion,
+    toVersion,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    fromVersion: string | Date;
+    toVersion: string | Date;
+  }): Promise<DatasetDiffInfo> {
+    let datasetId_ = datasetId;
+    if (datasetId_ === undefined && datasetName === undefined) {
+      throw new Error("Must provide either datasetName or datasetId");
+    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId_ === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    }
+    const urlParams = new URLSearchParams({
+      from_version:
+        typeof fromVersion === "string"
+          ? fromVersion
+          : fromVersion.toISOString(),
+      to_version:
+        typeof toVersion === "string" ? toVersion : toVersion.toISOString(),
+    });
+    const response = await this._get<DatasetDiffInfo>(
+      `/datasets/${datasetId_}/versions/diff`,
+      urlParams
+    );
+    return response as DatasetDiffInfo;
+  }
+
   public async readDatasetOpenaiFinetuning({
     datasetId,
     datasetName,
@@ -1939,10 +1975,14 @@ export class Client {
     datasetId,
     datasetName,
     exampleIds,
+    asOf,
+    inlineS3Urls,
   }: {
     datasetId?: string;
     datasetName?: string;
     exampleIds?: string[];
+    asOf?: string | Date;
+    inlineS3Urls?: boolean;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -1956,6 +1996,16 @@ export class Client {
       throw new Error("Must provide a datasetName or datasetId");
     }
     const params = new URLSearchParams({ dataset: datasetId_ });
+    const dataset_version = asOf
+      ? typeof asOf === "string"
+        ? asOf
+        : asOf?.toISOString()
+      : undefined;
+    if (dataset_version) {
+      params.append("as_of", dataset_version);
+    }
+    const inlineS3Urls_ = inlineS3Urls ?? true;
+    params.append("inline_s3_urls", inlineS3Urls_.toString());
     if (exampleIds !== undefined) {
       for (const id_ of exampleIds) {
         params.append("id", id_);

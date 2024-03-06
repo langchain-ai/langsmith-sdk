@@ -36,7 +36,9 @@ def wait_for(
 
 @pytest.fixture
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    # monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
+    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
     return Client()
 
 
@@ -196,24 +198,52 @@ def test_create_project(
         langchain_client.delete_project(project_name=project_name)
 
 
-@freeze_time("2023-01-01")
 def test_create_dataset(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
     """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    dataset_name = "__test_create_dataset"
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
+    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
+    dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(dataset_name, data_type=DataType.llm)
     ground_truth = "bcde"
-    langchain_client.create_example(
+    example = langchain_client.create_example(
         inputs={"input": "hello world"},
         outputs={"output": ground_truth},
         dataset_id=dataset.id,
     )
+    initial_version = example.modified_at
     loaded_dataset = langchain_client.read_dataset(dataset_name=dataset_name)
     assert loaded_dataset.data_type == DataType.llm
+    example_2 = langchain_client.create_example(
+        inputs={"input": "hello world 2"},
+        outputs={"output": "fghi"},
+        dataset_id=dataset.id,
+    )
+    langchain_client.update_example(
+        example_id=example.id,
+        inputs={"input": "hello world"},
+        outputs={"output": "bcde"},
+    )
+    initial_examples = list(
+        langchain_client.list_examples(dataset_id=dataset.id, as_of=initial_version)
+    )
+    assert len(initial_examples) == 1
+    latest_examples = list(langchain_client.list_examples(dataset_id=dataset.id))
+    assert len(latest_examples) == 2
+    latest_tagged_examples = list(
+        langchain_client.list_examples(dataset_id=dataset.id, as_of="latest")
+    )
+    assert len(latest_tagged_examples) == 2
+    assert latest_tagged_examples == latest_examples
+    diffs = langchain_client.diff_dataset_versions(
+        loaded_dataset.id, from_version=initial_version, to_version="latest"
+    )
+    assert diffs.examples_added == [example_2.id]
+    assert diffs.examples_removed == []
+    assert diffs.examples_modified == [example.id]
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
