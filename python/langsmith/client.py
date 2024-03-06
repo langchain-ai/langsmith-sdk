@@ -2095,6 +2095,7 @@ class Client:
         *,
         description: Optional[str] = None,
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
+        exist_ok: bool = False,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -2106,6 +2107,8 @@ class Client:
             The description of the dataset.
         data_type : DataType or None, default=DataType.kv
             The data type of the dataset.
+        exist_ok : bool, default=False
+            If True, do not raise an error if the dataset already exists.
 
         Returns:
         -------
@@ -2117,12 +2120,17 @@ class Client:
             description=description,
             data_type=data_type,
         )
-        response = self.session.post(
-            self.api_url + "/datasets",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=dataset.json(),
-        )
-        ls_utils.raise_for_status_with_text(response)
+        try:
+            response = self.session.post(
+                self.api_url + "/datasets",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=dataset.json(),
+            )
+            ls_utils.raise_for_status_with_text(response)
+        except ls_utils.LangSmithConflictError as e:
+            if exist_ok:
+                return self.read_dataset(dataset_name=dataset_name)
+            raise e
         return ls_schemas.Dataset(
             **response.json(),
             _host_url=self._host_url,
