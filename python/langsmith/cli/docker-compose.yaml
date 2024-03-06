@@ -1,11 +1,11 @@
 version: "4"
 services:
   langchain-playground:
-    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     ports:
       - 3001:3001
   langchain-frontend:
-    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - VITE_BACKEND_AUTH_TYPE=${AUTH_TYPE:-none}
       - VITE_OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
@@ -17,7 +17,7 @@ services:
       - langchain-playground
       - langchain-hub
   langchain-backend:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
@@ -30,11 +30,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
     ports:
       - 1984:1984
     depends_on:
@@ -48,7 +43,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-queue:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
@@ -61,11 +56,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - MAX_ASYNC_JOBS_PER_WORKER=${MAX_ASYNC_JOBS_PER_WORKER:-10}
     command:
       - "saq"
@@ -82,7 +72,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-hub:
-    image: langchain/langhub-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langhub-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     environment:
       - PORT=1985
       - LANGCHAIN_ENV=local_docker
@@ -95,11 +85,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
     ports:
       - 1985:1985
     depends_on:
@@ -166,7 +151,7 @@ services:
       timeout: 2s
       retries: 30
   clickhouse-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     depends_on:
       langchain-clickhouse:
         condition: service_healthy
@@ -182,11 +167,6 @@ services:
       - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_NATIVE_PORT=${CLICKHOUSE_NATIVE_PORT:-9000}
     entrypoint:
       [
         "bash",
@@ -194,7 +174,7 @@ services:
         "migrate -source file://clickhouse/migrations -database 'clickhouse://langchain-clickhouse:9000?username=default&password=password&database=default&x-multi-statement=true&x-migrations-table-engine=MergeTree' up",
       ]
   postgres-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.12}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.17}
     depends_on:
       langchain-db:
         condition: service_healthy
@@ -208,12 +188,6 @@ services:
       - API_KEY_SALT=${API_KEY_SALT}
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-default}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-password}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-langchain-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
-      - 'DEFAULT_FEATURE_FLAGS={"run_rules_enabled": true}'
     restart: "on-failure:10"
     entrypoint:
       [
