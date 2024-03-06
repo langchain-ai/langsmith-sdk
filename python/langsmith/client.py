@@ -2261,10 +2261,10 @@ class Client:
             f"{self.api_url}/datasets/{dsid}/versions/diff",
             headers=self._headers,
             params={
-                "from": from_version.isoformat()
+                "from_version": from_version.isoformat()
                 if isinstance(from_version, datetime.datetime)
                 else from_version,
-                "to": to_version.isoformat()
+                "to_version": to_version.isoformat()
                 if isinstance(to_version, datetime.datetime)
                 else to_version,
             },
