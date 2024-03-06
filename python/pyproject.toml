@@ -49,6 +49,7 @@ pytest-watcher = "^0.3.4"
 pytest-xdist = "^3.5.0"
 pytest-cov = "^4.1.0"
 dataclasses-json = "^0.6.4"
+anthropic = "^0.18.1"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
