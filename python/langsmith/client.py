@@ -358,6 +358,7 @@ class Client:
         "tracing_queue",
         "_hide_inputs",
         "_hide_outputs",
+        "_info",
     ]
 
     def __init__(
@@ -372,6 +373,7 @@ class Client:
         auto_batch_tracing: bool = True,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
+        info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -399,6 +401,9 @@ class Client:
         hide_outputs: Whether to hide run outputs when tracing with this client.
             If True, hides the entire outputs. If a function, applied to
             all run outputs when creating runs.
+        info: Optional[ls_schemas.LangSmithInfo]
+            The information about the LangSmith API. If not provided, it will
+            be fetched from the API.
 
         Raises:
         ------
@@ -416,6 +421,11 @@ class Client:
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
         self.session = session if session else requests.Session()
+        self._info = (
+            info
+            if info is None or isinstance(info, ls_schemas.LangSmithInfo)
+            else ls_schemas.LangSmithInfo(**info)
+        )
         weakref.finalize(self, close_session, self.session)
         # Initialize auto batching
         if auto_batch_tracing:
@@ -515,26 +525,19 @@ class Client:
             The information about the LangSmith API, or None if the API is
                 not available.
         """
-        return Client._get_info(self.session, self.api_url, self.timeout_ms)
-
-    @staticmethod
-    @functools.lru_cache(maxsize=1)
-    def _get_info(
-        session: requests.Session, api_url: str, timeout_ms: int
-    ) -> ls_schemas.LangSmithInfo:
-        try:
-            response = session.get(
-                api_url + "/info",
-                headers={"Accept": "application/json"},
-                timeout=timeout_ms / 1000,
-            )
-            ls_utils.raise_for_status_with_text(response)
-            return ls_schemas.LangSmithInfo(**response.json())
-        except requests.HTTPError:
-            return ls_schemas.LangSmithInfo()
-        except BaseException as e:
-            logger.warning(f"Failed to get info from {api_url}: {repr(e)}")
-            return ls_schemas.LangSmithInfo()
+        if self._info is None:
+            try:
+                response = self.session.get(
+                    self.api_url + "/info",
+                    headers={"Accept": "application/json"},
+                    timeout=self.timeout_ms / 1000,
+                )
+                ls_utils.raise_for_status_with_text(response)
+                self._info = ls_schemas.LangSmithInfo(**response.json())
+            except BaseException as e:
+                logger.warning(f"Failed to get info from {self.api_url}: {repr(e)}")
+                self._info = ls_schemas.LangSmithInfo()
+        return self._info
 
     def request_with_retries(
         self,
@@ -2261,12 +2264,16 @@ class Client:
             f"{self.api_url}/datasets/{dsid}/versions/diff",
             headers=self._headers,
             params={
-                "from_version": from_version.isoformat()
-                if isinstance(from_version, datetime.datetime)
-                else from_version,
-                "to_version": to_version.isoformat()
-                if isinstance(to_version, datetime.datetime)
-                else to_version,
+                "from_version": (
+                    from_version.isoformat()
+                    if isinstance(from_version, datetime.datetime)
+                    else from_version
+                ),
+                "to_version": (
+                    to_version.isoformat()
+                    if isinstance(to_version, datetime.datetime)
+                    else to_version
+                ),
             },
         )
         ls_utils.raise_for_status_with_text(response)
