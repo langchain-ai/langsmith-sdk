@@ -1,0 +1,6 @@
+[submodule "LangSmith-java"]
+	path = LangSmith-java
+	url = git@github.com:stainless-sdks/LangSmith-java.git
+[submodule "java"]
+	path = java
+	url = git@github.com:stainless-sdks/LangSmith-java.git
