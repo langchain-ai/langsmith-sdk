@@ -57,7 +57,7 @@ services:
       - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
       - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
       - MAX_ASYNC_JOBS_PER_WORKER=${MAX_ASYNC_JOBS_PER_WORKER:-10}
-      - ASYNCPG
+      - ASYNCPG_POOL_MAX_SIZE=${ASYNCPG_POOL_MAX_SIZE:-3}
     command:
       - "saq"
       - "app.async_worker.settings"
