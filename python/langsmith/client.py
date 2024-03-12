@@ -440,10 +440,13 @@ class Client:
         else:
             self.tracing_queue = None
 
-        # Mount the HTTPAdapter with the retry configuration
+        # Mount the HTTPAdapter with the retry configuration.
         adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
+        # Don't overwrite if session already has an adapter
+        if not self.session.get_adapter("http://"):
+            self.session.mount("http://", adapter)
+        if not self.session.get_adapter("https://"):
+            self.session.mount("https://", adapter)
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
