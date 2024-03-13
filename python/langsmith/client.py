@@ -295,15 +295,12 @@ def _get_api_key(api_key: Optional[str]) -> Optional[str]:
 
 
 def _get_api_url(api_url: Optional[str]) -> str:
-    _api_url = (
-        api_url
-        or os.getenv(
-            "LANGSMITH_ENDPOINT",
-            os.getenv(
-                "LANGCHAIN_ENDPOINT",
-                "https://api.smith.langchain.com",
-            )
-        )
+    _api_url = api_url or os.getenv(
+        "LANGSMITH_ENDPOINT",
+        os.getenv(
+            "LANGCHAIN_ENDPOINT",
+            "https://api.smith.langchain.com",
+        ),
     )
     if not _api_url.strip():
         raise ls_utils.LangSmithUserError("LangSmith API URL cannot be empty")

@@ -66,14 +66,16 @@ def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Scenario 1: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT are set, but api_url is not
+    # Scenario 1: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT
+    # are set, but api_url is not
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
     client = Client()
     assert client.api_url == "https://api.smith.langsmith-endpoint.com"
 
-    # Scenario 2: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT are set, and api_url is set
+    # Scenario 2: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT
+    #  are set, and api_url is set
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
@@ -96,14 +98,16 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Scenario 1: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set, but api_key is not
+    # Scenario 1: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set,
+    #  but api_key is not
     monkeypatch.setenv("LANGCHAIN_API_KEY", "env_langchain_api_key")
     monkeypatch.setenv("LANGSMITH_API_KEY", "env_langsmith_api_key")
 
     client = Client()
     assert client.api_key == "env_langsmith_api_key"
 
-    # Scenario 2: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set, and api_key is set
+    # Scenario 2: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set,
+    #  and api_key is set
     monkeypatch.setenv("LANGCHAIN_API_KEY", "env_langchain_api_key")
     monkeypatch.setenv("LANGSMITH_API_KEY", "env_langsmith_api_key")
 
