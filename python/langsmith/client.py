@@ -289,11 +289,19 @@ def _get_tracing_sampling_rate() -> float | None:
     return sampling_rate
 
 
+def _get_env(var_names: Sequence[str], default: Optional[str] = None) -> Optional[str]:
+    for var_name in var_names:
+        var = os.getenv(var_name)
+        if var is not None:
+            return var
+    return default
+
+
 def _get_api_key(api_key: Optional[str]) -> Optional[str]:
     api_key_ = (
         api_key
         if api_key is not None
-        else os.getenv("LANGSMITH_API_KEY", os.getenv("LANGCHAIN_API_KEY"))
+        else _get_env(("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"))
     )
     if api_key_ is None or not api_key_.strip():
         return None
@@ -301,15 +309,12 @@ def _get_api_key(api_key: Optional[str]) -> Optional[str]:
 
 
 def _get_api_url(api_url: Optional[str]) -> str:
-    _api_url = (
-        api_url
-        or os.getenv(
-            "LANGSMITH_ENDPOINT",
-            os.getenv(
-                "LANGCHAIN_ENDPOINT",
-            ),
-        )
-        or "https://api.smith.langchain.com"
+    _api_url = api_url or cast(
+        str,
+        _get_env(
+            ("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+            "https://api.smith.langchain.com",
+        ),
     )
     if not _api_url.strip():
         raise ls_utils.LangSmithUserError("LangSmith API URL cannot be empty")
