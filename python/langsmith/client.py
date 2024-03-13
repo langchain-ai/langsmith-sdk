@@ -297,20 +297,23 @@ def _get_api_key(api_key: Optional[str]) -> Optional[str]:
 
 
 def _get_api_url(api_url: Optional[str]) -> str:
-    _api_url = api_url or os.getenv(
-        "LANGSMITH_ENDPOINT",
-        os.getenv(
-            "LANGCHAIN_ENDPOINT",
-            "https://api.smith.langchain.com",
-        ),
+    _api_url = (
+        api_url
+        or os.getenv(
+            "LANGSMITH_ENDPOINT",
+            os.getenv(
+                "LANGCHAIN_ENDPOINT",
+            ),
+        )
+        or "https://api.smith.langchain.com"
     )
     if not _api_url.strip():
         raise ls_utils.LangSmithUserError("LangSmith API URL cannot be empty")
     return _api_url.strip().strip('"').strip("'").rstrip("/")
 
 
-def _get_write_api_urls(write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
-    _write_api_urls = write_api_urls or json.loads(
+def _get_write_api_urls(_write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
+    _write_api_urls = _write_api_urls or json.loads(
         os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
     )
     processed_write_api_urls = {}
@@ -379,7 +382,7 @@ class Client:
         "_hide_inputs",
         "_hide_outputs",
         "_info",
-        "write_api_urls",
+        "_write_api_urls",
     ]
 
     def __init__(
@@ -454,15 +457,15 @@ class Client:
 
         self.tracing_sample_rate = _get_tracing_sampling_rate()
         self._sampled_post_uuids: set[uuid.UUID] = set()
-        self.write_api_urls = _get_write_api_urls(api_urls)
-        if self.write_api_urls:
-            self.api_url = next(iter(self.write_api_urls))
-            self.api_key = self.write_api_urls[self.api_url]
+        self._write_api_urls = _get_write_api_urls(api_urls)
+        if self._write_api_urls:
+            self.api_url = next(iter(self._write_api_urls))
+            self.api_key: Optional[str] = self._write_api_urls[self.api_url]
         else:
             self.api_url = _get_api_url(api_url)
             self.api_key = _get_api_key(api_key)
             _validate_api_key_if_hosted(self.api_url, self.api_key)
-            self.write_api_urls = {self.api_url: self.api_key}
+            self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 10000
         self._web_url = web_url
@@ -1085,7 +1088,7 @@ class Client:
         self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
-        for api_url, api_key in self.write_api_urls.items():
+        for api_url, api_key in self._write_api_urls.items():
             headers = {
                 **self._headers,
                 "Accept": "application/json",
@@ -1237,7 +1240,7 @@ class Client:
             return False
 
         try:
-            for api_url, api_key in self.write_api_urls.items():
+            for api_url, api_key in self._write_api_urls.items():
                 self.request_with_retries(
                     "post",
                     f"{api_url}/runs/batch",
@@ -1328,7 +1331,7 @@ class Client:
         return self._update_run(data)
 
     def _update_run(self, run_update: dict) -> None:
-        for api_url, api_key in self.write_api_urls.items():
+        for api_url, api_key in self._write_api_urls.items():
             headers = {
                 **self._headers,
                 "Accept": "application/json",
