@@ -59,6 +59,7 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
 
+
 def _is_localhost(url: str) -> bool:
     """Check if the URL is localhost.
 
@@ -296,15 +297,12 @@ def _get_api_key(api_key: Optional[str]) -> Optional[str]:
 
 
 def _get_api_url(api_url: Optional[str]) -> str:
-    _api_url = (
-        api_url
-        or os.getenv(
-            "LANGSMITH_ENDPOINT",
-            os.getenv(
-                "LANGCHAIN_ENDPOINT",
-                "https://api.smith.langchain.com",
-            )
-        )
+    _api_url = api_url or os.getenv(
+        "LANGSMITH_ENDPOINT",
+        os.getenv(
+            "LANGCHAIN_ENDPOINT",
+            "https://api.smith.langchain.com",
+        ),
     )
     if not _api_url.strip():
         raise ls_utils.LangSmithUserError("LangSmith API URL cannot be empty")
@@ -312,12 +310,16 @@ def _get_api_url(api_url: Optional[str]) -> str:
 
 
 def _get_write_api_urls(write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
-    _write_api_urls = write_api_urls or json.loads(os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}"))
+    _write_api_urls = write_api_urls or json.loads(
+        os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
+    )
     processed_write_api_urls = {}
     for url, api_key in _write_api_urls.items():
         processed_url = url.strip()
         if not processed_url:
-            raise ls_utils.LangSmithUserError("LangSmith runs API URL within LANGSMITH_RUNS_ENDPOINTS cannot be empty")
+            raise ls_utils.LangSmithUserError(
+                "LangSmith runs API URL within LANGSMITH_RUNS_ENDPOINTS cannot be empty"
+            )
         processed_url = processed_url.strip().strip('"').strip("'").rstrip("/")
         processed_api_key = api_key.strip().strip('"').strip("'")
         _validate_api_key_if_hosted(processed_url, processed_api_key)
@@ -437,15 +439,17 @@ class Client:
             If the API key is not provided when using the hosted service.
             If both api_url and api_urls are provided.
         """
-
         if api_url and api_urls:
             raise ls_utils.LangSmithUserError(
                 "You cannot provide both api_url and api_urls."
             )
 
-        if (os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")) and os.getenv("LANGSMITH_ENDPOINTS"):
+        if (
+            os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")
+        ) and os.getenv("LANGSMITH_RUNS_ENDPOINTS"):
             raise ls_utils.LangSmithUserError(
-                "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINTS."
+                "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
+                "and LANGSMITH_ENDPOINTS."
             )
 
         self.tracing_sample_rate = _get_tracing_sampling_rate()
@@ -458,6 +462,7 @@ class Client:
             self.api_url = _get_api_url(api_url)
             self.api_key = _get_api_key(api_key)
             _validate_api_key_if_hosted(self.api_url, self.api_key)
+            self.write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 10000
         self._web_url = web_url
@@ -1081,8 +1086,12 @@ class Client:
 
     def _create_run(self, run_create: dict):
         for api_url, api_key in self.write_api_urls.items():
-            headers = {**self._headers, "Accept": "application/json",
-                       "Content-Type": "application/json", X_API_KEY: api_key}
+            headers = {
+                **self._headers,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                X_API_KEY: api_key,
+            }
             self.request_with_retries(
                 "post",
                 f"{api_url}/runs",
