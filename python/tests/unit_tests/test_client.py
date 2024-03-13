@@ -150,7 +150,7 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
         "https://api.smith.langsmith-endpoint_2.com": "456",
         "https://api.smith.langsmith-endpoint_3.com": "789",
     }
-    monkeypatch.delenv("LANGCHAIN_ENDPOINT")
+    monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
     monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
     client = Client()
