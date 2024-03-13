@@ -288,19 +288,21 @@ def _get_tracing_sampling_rate() -> float | None:
 
 
 def _get_api_key(api_key: Optional[str]) -> Optional[str]:
-    api_key = api_key if api_key is not None else os.getenv("LANGCHAIN_API_KEY")
+    api_key = api_key or os.getenv("LANGSMITH_API_KEY", os.getenv("LANGCHAIN_API_KEY"))
     if api_key is None or not api_key.strip():
         return None
     return api_key.strip().strip('"').strip("'")
 
 
-def _get_api_url(api_url: Optional[str], api_key: Optional[str]) -> str:
+def _get_api_url(api_url: Optional[str]) -> str:
     _api_url = (
         api_url
-        if api_url is not None
-        else os.getenv(
-            "LANGCHAIN_ENDPOINT",
-            "https://api.smith.langchain.com",
+        or os.getenv(
+            "LANGSMITH_ENDPOINT",
+            os.getenv(
+                "LANGCHAIN_ENDPOINT",
+                "https://api.smith.langchain.com",
+            )
         )
     )
     if not _api_url.strip():
@@ -413,7 +415,7 @@ class Client:
         self.tracing_sample_rate = _get_tracing_sampling_rate()
         self._sampled_post_uuids: set[uuid.UUID] = set()
         self.api_key = _get_api_key(api_key)
-        self.api_url = _get_api_url(api_url, self.api_key)
+        self.api_url = _get_api_url(api_url)
         _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 10000
