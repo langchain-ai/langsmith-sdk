@@ -290,10 +290,14 @@ def _get_tracing_sampling_rate() -> float | None:
 
 
 def _get_api_key(api_key: Optional[str]) -> Optional[str]:
-    api_key = api_key or os.getenv("LANGSMITH_API_KEY", os.getenv("LANGCHAIN_API_KEY"))
-    if api_key is None or not api_key.strip():
+    api_key_ = (
+        api_key
+        if api_key is not None
+        else os.getenv("LANGSMITH_API_KEY", os.getenv("LANGCHAIN_API_KEY"))
+    )
+    if api_key_ is None or not api_key_.strip():
         return None
-    return api_key.strip().strip('"').strip("'")
+    return api_key_.strip().strip('"').strip("'")
 
 
 def _get_api_url(api_url: Optional[str]) -> str:
@@ -452,7 +456,7 @@ class Client:
         ) and os.getenv("LANGSMITH_RUNS_ENDPOINTS"):
             raise ls_utils.LangSmithUserError(
                 "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
-                "and LANGSMITH_ENDPOINTS."
+                "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
         self.tracing_sample_rate = _get_tracing_sampling_rate()
