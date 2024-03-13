@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
+X_API_KEY = "x-api-key"
 
 def _is_localhost(url: str) -> bool:
     """Check if the URL is localhost.
@@ -310,6 +311,21 @@ def _get_api_url(api_url: Optional[str]) -> str:
     return _api_url.strip().strip('"').strip("'").rstrip("/")
 
 
+def _get_write_api_urls(write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
+    _write_api_urls = write_api_urls or json.loads(os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}"))
+    processed_write_api_urls = {}
+    for url, api_key in _write_api_urls.items():
+        processed_url = url.strip()
+        if not processed_url:
+            raise ls_utils.LangSmithUserError("LangSmith runs API URL within LANGSMITH_RUNS_ENDPOINTS cannot be empty")
+        processed_url = processed_url.strip().strip('"').strip("'").rstrip("/")
+        processed_api_key = api_key.strip().strip('"').strip("'")
+        _validate_api_key_if_hosted(processed_url, processed_api_key)
+        processed_write_api_urls[processed_url] = processed_api_key
+
+    return processed_write_api_urls
+
+
 def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
     try:
         return uuid.UUID(value) if not isinstance(value, uuid.UUID) else value
@@ -361,6 +377,7 @@ class Client:
         "_hide_inputs",
         "_hide_outputs",
         "_info",
+        "write_api_urls",
     ]
 
     def __init__(
@@ -376,6 +393,7 @@ class Client:
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
+        api_urls: Optional[Dict[str, str]] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -406,17 +424,40 @@ class Client:
         info: Optional[ls_schemas.LangSmithInfo]
             The information about the LangSmith API. If not provided, it will
             be fetched from the API.
+        api_urls: Optional[Dict[str, str]]
+            A dictionary of write API URLs and their corresponding API keys.
+            Useful for multi-tenant setups. Data is only read from the first
+            URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
+            to all URLs in the dictionary. Feedback, sessions, datasets, examples,
+            annotation queues and evaluation results are only written to the first.
 
         Raises:
         ------
         LangSmithUserError
             If the API key is not provided when using the hosted service.
+            If both api_url and api_urls are provided.
         """
+
+        if api_url and api_urls:
+            raise ls_utils.LangSmithUserError(
+                "You cannot provide both api_url and api_urls."
+            )
+
+        if (os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")) and os.getenv("LANGSMITH_ENDPOINTS"):
+            raise ls_utils.LangSmithUserError(
+                "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINTS."
+            )
+
         self.tracing_sample_rate = _get_tracing_sampling_rate()
         self._sampled_post_uuids: set[uuid.UUID] = set()
-        self.api_key = _get_api_key(api_key)
-        self.api_url = _get_api_url(api_url)
-        _validate_api_key_if_hosted(self.api_url, self.api_key)
+        self.write_api_urls = _get_write_api_urls(api_urls)
+        if self.write_api_urls:
+            self.api_url = next(iter(self.write_api_urls))
+            self.api_key = self.write_api_urls[self.api_url]
+        else:
+            self.api_url = _get_api_url(api_url)
+            self.api_key = _get_api_key(api_key)
+            _validate_api_key_if_hosted(self.api_url, self.api_key)
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = timeout_ms or 10000
         self._web_url = web_url
@@ -517,7 +558,7 @@ class Client:
         """
         headers = {"User-Agent": f"langsmith-py/{langsmith.__version__}"}
         if self.api_key:
-            headers["x-api-key"] = self.api_key
+            headers[X_API_KEY] = self.api_key
         return headers
 
     @property
@@ -1039,21 +1080,19 @@ class Client:
         self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
-        headers = {
-            **self._headers,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        self.request_with_retries(
-            "post",
-            f"{self.api_url}/runs",
-            request_kwargs={
-                "data": _dumps_json(run_create),
-                "headers": headers,
-                "timeout": self.timeout_ms / 1000,
-            },
-            to_ignore=(ls_utils.LangSmithConflictError,),
-        )
+        for api_url, api_key in self.write_api_urls.items():
+            headers = {**self._headers, "Accept": "application/json",
+                       "Content-Type": "application/json", X_API_KEY: api_key}
+            self.request_with_retries(
+                "post",
+                f"{api_url}/runs",
+                request_kwargs={
+                    "data": _dumps_json(run_create),
+                    "headers": headers,
+                    "timeout": self.timeout_ms / 1000,
+                },
+                to_ignore=(ls_utils.LangSmithConflictError,),
+            )
 
     def _hide_run_inputs(self, inputs: dict):
         if self._hide_inputs is False:
@@ -1189,22 +1228,24 @@ class Client:
             return False
 
         try:
-            self.request_with_retries(
-                "post",
-                f"{self.api_url}/runs/batch",
-                request_kwargs={
-                    "data": body,
-                    "timeout": self.timeout_ms / 1000,
-                    "headers": {
-                        **self._headers,
-                        "Accept": "application/json",
-                        "Content-Type": "application/json",
+            for api_url, api_key in self.write_api_urls.items():
+                self.request_with_retries(
+                    "post",
+                    f"{api_url}/runs/batch",
+                    request_kwargs={
+                        "data": body,
+                        "timeout": self.timeout_ms / 1000,
+                        "headers": {
+                            **self._headers,
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            X_API_KEY: api_key,
+                        },
                     },
-                },
-                to_ignore=(ls_utils.LangSmithConflictError,),
-                stop_after_attempt=3,
-                handle_response=handle_429,
-            )
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                    stop_after_attempt=3,
+                    handle_response=handle_429,
+                )
         except Exception as e:
             logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
@@ -1278,21 +1319,23 @@ class Client:
         return self._update_run(data)
 
     def _update_run(self, run_update: dict) -> None:
-        headers = {
-            **self._headers,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
+        for api_url, api_key in self.write_api_urls.items():
+            headers = {
+                **self._headers,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                X_API_KEY: api_key,
+            }
 
-        self.request_with_retries(
-            "patch",
-            f"{self.api_url}/runs/{run_update['id']}",
-            request_kwargs={
-                "data": _dumps_json(run_update),
-                "headers": headers,
-                "timeout": self.timeout_ms / 1000,
-            },
-        )
+            self.request_with_retries(
+                "patch",
+                f"{api_url}/runs/{run_update['id']}",
+                request_kwargs={
+                    "data": _dumps_json(run_update),
+                    "headers": headers,
+                    "timeout": self.timeout_ms / 1000,
+                },
+            )
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
