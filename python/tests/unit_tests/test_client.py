@@ -152,7 +152,7 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     }
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
     client = Client()
-    assert client.write_api_urls == data
+    assert client._write_api_urls == data
     assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
     assert client.api_key == "123"
 

@@ -457,7 +457,9 @@ class Client:
 
         self.tracing_sample_rate = _get_tracing_sampling_rate()
         self._sampled_post_uuids: set[uuid.UUID] = set()
-        self._write_api_urls = _get_write_api_urls(api_urls)
+        self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
+            api_urls
+        )
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
             self.api_key: Optional[str] = self._write_api_urls[self.api_url]
