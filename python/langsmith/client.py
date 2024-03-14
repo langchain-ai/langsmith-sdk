@@ -81,20 +81,22 @@ def _is_localhost(url: str) -> bool:
         return False
 
 
-def _parse_token_or_url(url_or_token: str, api_url: str) -> Tuple[str, str]:
+def _parse_token_or_url(
+    url_or_token: Union[str, uuid.UUID], api_url: str, num_parts: int = 2
+) -> Tuple[str, str]:
     """Parse a public dataset URL or share token."""
     try:
-        uuid.UUID(url_or_token)
-        return api_url, url_or_token
+        if isinstance(url_or_token, uuid.UUID) or uuid.UUID(url_or_token):
+            return api_url, str(url_or_token)
     except ValueError:
         pass
 
     # Then it's a URL
-    parsed_url = urllib_parse.urlparse(url_or_token)
+    parsed_url = urllib_parse.urlparse(str(url_or_token))
     # Extract the UUID from the path
     path_parts = parsed_url.path.split("/")
-    if len(path_parts) >= 2:
-        token_uuid = path_parts[-2]
+    if len(path_parts) >= num_parts:
+        token_uuid = path_parts[-num_parts]
     else:
         raise ls_utils.LangSmithUserError(f"Invalid public dataset URL: {url_or_token}")
     return api_url, token_uuid
@@ -3471,6 +3473,58 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def create_feedback_from_token(
+        self,
+        token_or_url: Union[str, uuid.UUID],
+        score: Union[float, int, bool, None] = None,
+        *,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """Create feedback from a presigned token or URL.
+
+        Args:
+            token_or_url (Union[str, uuid.UUID]): The token or URL from which to create
+                 feedback.
+            score (Union[float, int, bool, None], optional): The score of the feedback.
+                Defaults to None.
+            value (Union[float, int, bool, str, dict, None], optional): The value of the
+                feedback. Defaults to None.
+            correction (Union[dict, None], optional): The correction of the feedback.
+                Defaults to None.
+            comment (Union[str, None], optional): The comment of the feedback. Defaults
+                to None.
+            metadata (Optional[dict], optional): Additional metadata for the feedback.
+                Defaults to None.
+
+        Raises:
+            ValueError: If the source API URL is invalid.
+
+        Returns:
+            None: This method does not return anything.
+        """
+        source_api_url, token_uuid = _parse_token_or_url(
+            token_or_url, self.api_url, num_parts=1
+        )
+        if source_api_url != self.api_url:
+            raise ValueError(f"Invalid source API URL. {source_api_url}")
+        response = self.session.post(
+            f"{source_api_url}/feedback/tokens/{_as_uuid(token_uuid)}",
+            data=_dumps_json(
+                {
+                    "score": score,
+                    "value": value,
+                    "correction": correction,
+                    "comment": comment,
+                    "metadata": metadata,
+                }
+            ),
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     def create_presigned_feedback_token(
         self,
         run_id: ID_TYPE,
@@ -3587,7 +3641,11 @@ class Client:
             "name_contains": name_contains,
         }
         yield from (
-            ls_schemas.AnnotationQueue(**queue)
+            ls_schemas.AnnotationQueue(
+                **queue,
+                _host_url=self._host_url,
+                _tenant_id=self._get_optional_tenant_id(),
+            )
             for queue in self._get_paginated_list("/annotation-queues", params=params)
         )
 
@@ -3626,7 +3684,11 @@ class Client:
             },
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueue(**response.json())
+        return ls_schemas.AnnotationQueue(
+            **response.json(),
+            _host_url=self._host_url,
+            _tenant_id=self._get_optional_tenant_id(),
+        )
 
     def read_annotation_queue(self, queue_id: ID_TYPE) -> ls_schemas.AnnotationQueue:
         """Read an annotation queue with the specified queue ID.
@@ -3672,7 +3734,7 @@ class Client:
         """
         response = self.session.delete(
             f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
-            headers=self._headers,
+            headers={"Accept": "application/json", **self._headers},
         )
         ls_utils.raise_for_status_with_text(response)
 
