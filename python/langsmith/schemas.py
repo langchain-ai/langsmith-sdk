@@ -221,7 +221,7 @@ class RunBase(BaseModel):
     """List of events associated with the run, like
     start and end events."""
 
-    inputs: Optional[dict] = Field(default_factory=dict)
+    inputs: dict = Field(default_factory=dict)
     """Inputs used for the run."""
 
     outputs: Optional[dict] = None
