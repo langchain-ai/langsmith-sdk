@@ -99,7 +99,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     # Scenario 1: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set,
-    #  but api_key is not
+    # but api_key is not
     monkeypatch.setenv("LANGCHAIN_API_KEY", "env_langchain_api_key")
     monkeypatch.setenv("LANGSMITH_API_KEY", "env_langsmith_api_key")
 
@@ -107,7 +107,7 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_key == "env_langsmith_api_key"
 
     # Scenario 2: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set,
-    #  and api_key is set
+    # and api_key is set
     monkeypatch.setenv("LANGCHAIN_API_KEY", "env_langchain_api_key")
     monkeypatch.setenv("LANGSMITH_API_KEY", "env_langsmith_api_key")
 
@@ -127,6 +127,36 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
     client = Client()
     assert client.api_key == "env_langsmith_api_key"
+
+
+def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
+    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
+
+    with pytest.raises(ls_utils.LangSmithUserError):
+        Client()
+
+    monkeypatch.undo()
+    with pytest.raises(ls_utils.LangSmithUserError):
+        Client(
+            api_url="https://api.smith.langchain.com",
+            api_key="123",
+            api_urls={"https://api.smith.langchain.com": "123"},
+        )
+
+    data = {
+        "https://api.smith.langsmith-endpoint_1.com": "123",
+        "https://api.smith.langsmith-endpoint_2.com": "456",
+        "https://api.smith.langsmith-endpoint_3.com": "789",
+    }
+    monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
+    monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
+    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
+    client = Client()
+    assert client._write_api_urls == data
+    assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
+    assert client.api_key == "123"
 
 
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -238,22 +268,22 @@ def test_get_api_key() -> None:
 
 
 def test_get_api_url() -> None:
-    assert _get_api_url("http://provided.url", "api_key") == "http://provided.url"
+    assert _get_api_url("http://provided.url") == "http://provided.url"
 
     with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None, "api_key") == "http://env.url"
+        assert _get_api_url(None) == "http://env.url"
 
     with patch.dict(os.environ, {}, clear=True):
-        assert _get_api_url(None, "api_key") == "https://api.smith.langchain.com"
+        assert _get_api_url(None) == "https://api.smith.langchain.com"
 
     with patch.dict(os.environ, {}, clear=True):
-        assert _get_api_url(None, None) == "https://api.smith.langchain.com"
+        assert _get_api_url(None) == "https://api.smith.langchain.com"
 
     with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None, None) == "http://env.url"
+        assert _get_api_url(None) == "http://env.url"
 
     with pytest.raises(ls_utils.LangSmithUserError):
-        _get_api_url(" ", "api_key")
+        _get_api_url(" ")
 
 
 def test_create_run_unicode() -> None:

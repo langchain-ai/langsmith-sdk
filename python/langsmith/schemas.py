@@ -221,7 +221,7 @@ class RunBase(BaseModel):
     """List of events associated with the run, like
     start and end events."""
 
-    inputs: dict
+    inputs: dict = Field(default_factory=dict)
     """Inputs used for the run."""
 
     outputs: Optional[dict] = None
@@ -301,7 +301,8 @@ class Run(RunBase):
         """Initialize a Run object."""
         if not kwargs.get("trace_id"):
             kwargs = {"trace_id": kwargs.get("id"), **kwargs}
-        super().__init__(**kwargs)
+        inputs = kwargs.pop("inputs", None) or {}
+        super().__init__(**kwargs, inputs=inputs)
         self._host_url = _host_url
         if not self.dotted_order.strip() and not self.parent_run_id:
             self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
