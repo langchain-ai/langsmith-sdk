@@ -310,9 +310,13 @@ def _get_api_url(api_url: Optional[str]) -> str:
 
 
 def _get_write_api_urls(write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
-    _write_api_urls = write_api_urls or json.loads(
-        os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
-    )
+    _write_api_urls_str = os.getenv("LANGSMITH_RUNS_ENDPOINTS")
+    try:
+        _write_api_urls = write_api_urls or json.loads(_write_api_urls_str or "{}")
+    except json.JSONDecodeError as e:
+        raise ls_utils.LangSmithUserError(
+            "LANGSMITH_RUNS_ENDPOINTS must be a valid JSON string"
+        ) from e
     processed_write_api_urls = {}
     for url, api_key in _write_api_urls.items():
         processed_url = url.strip()
