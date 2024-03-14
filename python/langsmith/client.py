@@ -87,12 +87,12 @@ def _parse_token_or_url(
     """Parse a public dataset URL or share token."""
     try:
         if isinstance(url_or_token, uuid.UUID) or uuid.UUID(url_or_token):
-            return api_url, url_or_token
+            return api_url, str(url_or_token)
     except ValueError:
         pass
 
     # Then it's a URL
-    parsed_url = urllib_parse.urlparse(url_or_token)
+    parsed_url = urllib_parse.urlparse(str(url_or_token))
     # Extract the UUID from the path
     path_parts = parsed_url.path.split("/")
     if len(path_parts) >= num_parts:
