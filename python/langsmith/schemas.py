@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import (
     Any,
@@ -279,6 +280,13 @@ class Run(RunBase):
     """Total tokens for prompt and completion."""
     first_token_time: Optional[datetime] = None
     """Time the first token was processed."""
+    total_cost: Optional[Decimal] = None
+    """The total estimated LLM cost associated with the completion tokens."""
+    prompt_cost: Optional[Decimal] = None
+    """The estimated cost associated with the prompt (input) tokens."""
+    completion_cost: Optional[Decimal] = None
+    """The estimated cost associated with the completion tokens."""
+
     parent_run_ids: Optional[List[UUID]] = None
     """List of parent run IDs."""
     trace_id: UUID
