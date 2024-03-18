@@ -2787,7 +2787,7 @@ class Client:
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        ids: Optional[Sequence[ID_TYPE]] = None,
+        ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
