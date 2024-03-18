@@ -2786,6 +2786,8 @@ class Client:
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
+        ids: Optional[Sequence[ID_TYPE]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
@@ -2800,6 +2802,10 @@ class Client:
             The output values for the examples.
         metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The metadata for the examples.
+        source_run_ids : Optional[Sequence[Optional[ID_TYPE]]], default=None
+                The IDs of the source runs associated with the examples.
+        ids : Optional[Sequence[ID_TYPE]], default=None
+            The IDs of the examples.
         dataset_id : Optional[ID_TYPE], default=None
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
@@ -2825,11 +2831,15 @@ class Client:
                 "outputs": out_,
                 "dataset_id": dataset_id,
                 "metadata": metadata_,
+                "id": id_,
+                "source_run_id": source_run_id_,
             }
-            for in_, out_, metadata_ in zip(
+            for in_, out_, metadata_, id_, source_run_id_ in zip(
                 inputs,
                 outputs or [None] * len(inputs),
                 metadata or [None] * len(inputs),
+                ids or [None] * len(inputs),
+                source_run_ids or [None] * len(inputs),
             )
         ]
 
