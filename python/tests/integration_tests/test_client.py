@@ -434,7 +434,7 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     ]
     langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
     runs = []
-    wait = 2
+    wait = 4
     for _ in range(15):
         try:
             runs = list(
