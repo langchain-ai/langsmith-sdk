@@ -116,6 +116,8 @@ def convert_runs_to_test(
         )
         runs_as_test(runs, dataset_name="Extraction Good")
     """
+    if not runs:
+        raise ValueError(f"""Expected a non-empty sequence of runs. Received: {runs}""")
     client = client or Client()
     ds = client.create_dataset(dataset_name=dataset_name)
     outputs = [r.outputs for r in runs] if include_outputs else None
@@ -137,7 +139,9 @@ def convert_runs_to_test(
 
     examples = list(client.list_examples(dataset_name=dataset_name))
     run_to_example_map = {e.source_run_id: e.id for e in examples}
-    dataset_version = examples[0].modified_at
+    dataset_version = (
+        examples[0].modified_at if examples[0].modified_at else examples[0].created_at
+    )
 
     to_create = [
         run_dict
