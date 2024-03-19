@@ -3,12 +3,16 @@
 These functions may change in the future.
 """
 
+import collections
+import concurrent.futures
 import datetime
+import itertools
 import uuid
-from typing import List, Optional, Sequence
+from typing import DefaultDict, List, Optional, Sequence, Tuple, TypeVar
 
 import langsmith.beta._utils as beta_utils
 import langsmith.schemas as ls_schemas
+from langsmith import evaluation as ls_eval
 from langsmith.client import Client
 
 
@@ -165,3 +169,68 @@ def convert_runs_to_test(
         project.id, end_time=datetime.datetime.now(tz=datetime.timezone.utc)
     )
     return project
+
+
+def _load_nested_traces(project_name: str, client: Client) -> ls_schemas.Run:
+    runs = client.list_runs(project_name=project_name)
+    treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
+        list
+    )
+    results = []
+    all_runs = {}
+    for run in runs:
+        if run.parent_run_id is not None:
+            treemap[run.parent_run_id].append(run)
+        else:
+            results.append(run)
+        all_runs[run.id] = run
+    for run_id, child_runs in treemap.items():
+        all_runs[run_id].child_runs = sorted(child_runs, key=lambda r: r.dotted_order)
+    return results
+
+
+T = TypeVar("T")
+U = TypeVar("U")
+
+
+def _outer_product(list1: List[T], list2: List[U]) -> List[Tuple[T, U]]:
+    return list(itertools.product(list1, list2))
+
+
+def compute_test_metrics(
+    test_name: str,
+    *,
+    evaluators: list,
+    max_concurrency: Optional[int] = 10,
+    client: Optional[Client] = None,
+) -> None:
+    """Compute test metrics for a given test name using a list of evaluators.
+
+    Args:
+        test_name (str): The name of the test project to evaluate.
+        evaluators (list): A list of evaluators to compute metrics with.
+        max_concurrency (Optional[int], optional): The maximum number of concurrent
+            evaluations. Defaults to 10.
+        client (Optional[Client], optional): The client to use for evaluations.
+            Defaults to None.
+
+    Returns:
+        None: This function does not return any value.
+
+    Raises:
+        None: This function does not raise any exceptions.
+    """
+    evaluators_: List[ls_eval.RunEvaluator] = [
+        (
+            func
+            if isinstance(func, (ls_eval.RunEvaluator, callable))
+            else ls_eval.run_evaluator(func)
+        )
+        for func in evaluators
+    ]
+    client = client or Client()
+    traces = _load_nested_traces(test_name, client)
+
+    # Evaluate
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        executor.map(client.evaluate_run, zip(*_outer_product(traces, evaluators_)))
