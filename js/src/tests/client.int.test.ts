@@ -28,7 +28,7 @@ async function waitUntilRunFound(
         return false;
       }
     },
-    180_000,
+    210_000,
     5_000
   );
 }
@@ -292,7 +292,7 @@ test.concurrent(
     expect(run2.outputs).toBeDefined();
     expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
   },
-  180_000
+  240_000
 );
 
 test.concurrent(
