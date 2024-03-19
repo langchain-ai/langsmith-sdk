@@ -197,6 +197,7 @@ def _outer_product(list1: List[T], list2: List[U]) -> List[Tuple[T, U]]:
     return list(itertools.product(list1, list2))
 
 
+@beta_utils.warn_beta
 def compute_test_metrics(
     project_name: str,
     *,
