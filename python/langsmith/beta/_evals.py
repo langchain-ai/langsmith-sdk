@@ -135,9 +135,9 @@ def convert_runs_to_test(
 
     test_project_name = test_project_name or f"prod-baseline-{uuid.uuid4().hex[:6]}"
 
-    run_to_example_map = {
-        e.source_run_id: e.id for e in client.list_examples(dataset_name=dataset_name)
-    }
+    examples = list(client.list_examples(dataset_name=dataset_name))
+    run_to_example_map = {e.source_run_id: e.id for e in examples}
+    dataset_version = examples[0].modified_at
 
     to_create = [
         run_dict
@@ -150,6 +150,7 @@ def convert_runs_to_test(
         reference_dataset_id=ds.id,
         metadata={
             "which": "prod-baseline",
+            "dataset_version": dataset_version,
         },
     )
 
