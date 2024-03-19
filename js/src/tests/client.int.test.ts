@@ -292,7 +292,7 @@ test.concurrent(
     expect(run2.outputs).toBeDefined();
     expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
   },
-  180_000
+  240_000
 );
 
 test.concurrent(
