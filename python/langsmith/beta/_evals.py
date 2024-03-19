@@ -230,7 +230,9 @@ def compute_test_metrics(
             )
     client = client or Client()
     traces = _load_nested_traces(project_name, client)
-
-    # Evaluate
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-        executor.map(client.evaluate_run, zip(*_outer_product(traces, evaluators_)))
+        results = executor.map(
+            client.evaluate_run, *zip(*_outer_product(traces, evaluators_))
+        )
+    for _ in results:
+        pass
