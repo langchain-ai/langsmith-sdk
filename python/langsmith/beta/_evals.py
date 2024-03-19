@@ -150,7 +150,7 @@ def convert_runs_to_test(
         reference_dataset_id=ds.id,
         metadata={
             "which": "prod-baseline",
-            "dataset_version": dataset_version,
+            "dataset_version": dataset_version.isoformat(),
         },
     )
 
