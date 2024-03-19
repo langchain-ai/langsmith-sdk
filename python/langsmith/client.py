@@ -2944,6 +2944,7 @@ class Client:
         example_ids: Optional[Sequence[ID_TYPE]] = None,
         as_of: Optional[Union[datetime.datetime, str]] = None,
         inline_s3_urls: bool = True,
+        **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
 
@@ -2965,6 +2966,7 @@ class Client:
             Example: The examples.
         """
         params: Dict[str, Any] = {
+            **kwargs,
             "id": example_ids,
             "as_of": (
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
