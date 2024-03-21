@@ -351,7 +351,11 @@ test.concurrent(
 
 describe("createChatExample", () => {
   it("should convert LangChainBaseMessage objects to examples", async () => {
-    const langchainClient = new Client({ autoBatchTracing: false });
+    const langchainClient = new Client({
+      autoBatchTracing: false,
+      // Test the fetch options option
+      fetchOptions: { cache: "no-store" },
+    });
 
     const datasetName = "__createChatExample-test-dataset JS";
     await deleteDataset(langchainClient, datasetName);
