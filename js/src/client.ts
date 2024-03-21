@@ -46,6 +46,7 @@ interface ClientConfig {
   hideOutputs?: boolean;
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
+  fetchOptions?: RequestInit;
 }
 
 /**
@@ -396,6 +397,8 @@ export class Client {
 
   private serverInfo: Record<string, any> | undefined;
 
+  private fetchOptions: RequestInit;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -414,6 +417,7 @@ export class Client {
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
+    this.fetchOptions = config.fetchOptions || {};
   }
 
   public static getDefaultClientConfig(): {
@@ -522,6 +526,7 @@ export class Client {
       method: "GET",
       headers: this.headers,
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     if (!response.ok) {
       throw new Error(
@@ -553,6 +558,7 @@ export class Client {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       });
       if (!response.ok) {
         throw new Error(
@@ -584,6 +590,7 @@ export class Client {
         method: requestMethod,
         headers: { ...this.headers, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
         body: JSON.stringify(bodyParams),
       });
       const responseBody = await response.json();
@@ -693,6 +700,7 @@ export class Client {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     if (!response.ok) {
       // consume the response body to release the connection
@@ -745,6 +753,7 @@ export class Client {
       headers,
       body: JSON.stringify(mergedRunCreateParams[0]),
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     await raiseForStatus(response, "create run");
   }
@@ -872,6 +881,7 @@ export class Client {
         headers,
         body: body,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     await raiseForStatus(response, "batch create run");
@@ -917,6 +927,7 @@ export class Client {
         headers,
         body: JSON.stringify(run),
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     await raiseForStatus(response, "update run");
@@ -1161,6 +1172,7 @@ export class Client {
         headers: this.headers,
         body: JSON.stringify(data),
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     const result = await response.json();
@@ -1179,6 +1191,7 @@ export class Client {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     await raiseForStatus(response, "unshare run");
@@ -1193,6 +1206,7 @@ export class Client {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     const result = await response.json();
@@ -1226,6 +1240,7 @@ export class Client {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     const runs = await response.json();
@@ -1251,6 +1266,7 @@ export class Client {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     const shareSchema = await response.json();
@@ -1283,6 +1299,7 @@ export class Client {
         headers: this.headers,
         body: JSON.stringify(data),
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     const shareSchema = await response.json();
@@ -1301,6 +1318,7 @@ export class Client {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     await raiseForStatus(response, "unshare dataset");
@@ -1315,6 +1333,7 @@ export class Client {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     const dataset = await response.json();
@@ -1355,6 +1374,7 @@ export class Client {
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     const result = await response.json();
     if (!response.ok) {
@@ -1397,6 +1417,7 @@ export class Client {
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     const result = await response.json();
     if (!response.ok) {
@@ -1434,6 +1455,7 @@ export class Client {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     // consume the response body to release the connection
@@ -1583,6 +1605,7 @@ export class Client {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     await raiseForStatus(
@@ -1625,6 +1648,7 @@ export class Client {
       headers: this.headers,
       body: formData,
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
 
     if (!response.ok) {
@@ -1660,6 +1684,7 @@ export class Client {
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
 
     if (!response.ok) {
@@ -1829,6 +1854,7 @@ export class Client {
       method: "DELETE",
       headers: this.headers,
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     if (!response.ok) {
       throw new Error(
@@ -1867,6 +1893,7 @@ export class Client {
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(data),
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
 
     if (!response.ok) {
@@ -1923,6 +1950,7 @@ export class Client {
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(formattedExamples),
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
 
@@ -2026,6 +2054,7 @@ export class Client {
       method: "DELETE",
       headers: this.headers,
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     if (!response.ok) {
       throw new Error(
@@ -2048,6 +2077,7 @@ export class Client {
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(update),
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     if (!response.ok) {
@@ -2163,6 +2193,7 @@ export class Client {
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(feedback),
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     await raiseForStatus(response, "create feedback");
     return feedback as Feedback;
@@ -2204,6 +2235,7 @@ export class Client {
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(feedbackUpdate),
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     await raiseForStatus(response, "update feedback");
@@ -2223,6 +2255,7 @@ export class Client {
       method: "DELETE",
       headers: this.headers,
       signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
     });
     if (!response.ok) {
       throw new Error(
@@ -2314,6 +2347,7 @@ export class Client {
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
     );
     const result = await response.json();
