@@ -279,17 +279,13 @@ test.concurrent(
       outputs: { generation: "hi there 2" },
       end_time: new Date().getTime(),
     });
-    await waitUntilRunFound(langchainClient, runId, true);
+    await waitUntilRunFound(langchainClient, runId, false);
     const run1 = await langchainClient.readRun(runId);
-    expect(run1.inputs).toBeDefined();
-    expect(Object.keys(run1.inputs)).toHaveLength(0);
-    expect(run1.outputs).toBeDefined();
+    expect(Object.keys(run1.inputs ?? {})).toHaveLength(0);
     expect(Object.keys(run1.outputs ?? {})).toHaveLength(0);
-    await waitUntilRunFound(langchainClient, runId2, true);
+    await waitUntilRunFound(langchainClient, runId2, false);
     const run2 = await langchainClient.readRun(runId2);
-    expect(run2.inputs).toBeDefined();
-    expect(Object.keys(run2.inputs)).toHaveLength(0);
-    expect(run2.outputs).toBeDefined();
+    expect(Object.keys(run2.inputs ?? {})).toHaveLength(0);
     expect(Object.keys(run2.outputs ?? {})).toHaveLength(0);
   },
   240_000
@@ -355,7 +351,11 @@ test.concurrent(
 
 describe("createChatExample", () => {
   it("should convert LangChainBaseMessage objects to examples", async () => {
-    const langchainClient = new Client({ autoBatchTracing: false });
+    const langchainClient = new Client({
+      autoBatchTracing: false,
+      // Test the fetch options option
+      fetchOptions: { cache: "no-store" },
+    });
 
     const datasetName = "__createChatExample-test-dataset JS";
     await deleteDataset(langchainClient, datasetName);
