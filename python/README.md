@@ -19,9 +19,10 @@ import openai
 from langsmith.wrappers import wrap_openai
 from langsmith import traceable
 
+# Auto-trace LLM calls in-context
 client = wrap_openai(openai.Client())
 
-@traceable
+@traceable # Auto-trace this function
 def pipeline(user_input: str):
     result = client.chat.completions.create(
         messages=[{"role": "user", "content": user_input}],
