@@ -44,6 +44,7 @@ def pipeline(user_input: str):
     return result.choices[0].message.content
 
 pipeline("Hello, world!")
+# Hello there! How can I assist you today?
 ```
 
 See the resulting nested trace [🌐 here](https://smith.langchain.com/public/b37ca9b1-60cd-4a2a-817e-3c4e4443fdc0/r).
@@ -64,32 +65,19 @@ Then start tracing your app!
 import { OpenAI } from "openai";
 import { traceable } from "langsmith/traceable";
 import { wrapOpenAI } from "langsmith/wrappers";
-
+// Auto-trace LLM calls in-context
 const client = wrapOpenAI(new OpenAI());
-
-await client.chat.completions.create({
-  model: "gpt-3.5-turbo",
-  messages: [{ content: "Hi there!", role: "user" }],
+// Auto-trace this function
+const pipeline = traceable(async (user_input) => {
+    const result = await client.chat.completions.create({
+        messages: [{ role: "user", content: user_input }],
+        model: "gpt-3.5-turbo",
+    });
+    return result.choices[0].message.content;
 });
-```
 
-```
-{
-  id: 'chatcmpl-8sOWEOYVyehDlyPcBiaDtTxWvr9v6',
-  object: 'chat.completion',
-  created: 1707974654,
-  model: 'gpt-3.5-turbo-0613',
-  choices: [
-    {
-      index: 0,
-      message: { role: 'assistant', content: 'Hello! How can I help you today?' },
-      logprobs: null,
-      finish_reason: 'stop'
-    }
-  ],
-  usage: { prompt_tokens: 10, completion_tokens: 9, total_tokens: 19 },
-  system_fingerprint: null
-}
+await pipeline("Hello, world!")
+// Hello there! How can I assist you today?
 ```
 
 ## Cookbook
