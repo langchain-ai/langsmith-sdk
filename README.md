@@ -13,7 +13,7 @@ with any LLM Application, including a native integration with the [LangChain Pyt
 
 LangSmith is developed and maintained by [LangChain](https://langchain.com/), the company behind the LangChain framework.
 
-## Quick Start
+## Python Quick Start
 
 To get started with the Python SDK, [install the package](https://pypi.org/project/langsmith/), then follow the instructions in the [Python README](python/README.md).
 
@@ -25,18 +25,30 @@ export LANGCHAIN_API_KEY=ls_...
 
 Then start tracing your app:
 
+Then trace:
+
 ```python
 import openai
-from langsmith import traceable
 from langsmith.wrappers import wrap_openai
+from langsmith import traceable
 
+# Auto-trace LLM calls in-context
 client = wrap_openai(openai.Client())
 
-client.chat.completions.create(
-    messages=[{"role": "user", "content": "Hello, world"}],
-    model="gpt-3.5-turbo"
-)
+@traceable # Auto-trace this function
+def pipeline(user_input: str):
+    result = client.chat.completions.create(
+        messages=[{"role": "user", "content": user_input}],
+        model="gpt-3.5-turbo"
+    )
+    return result.choices[0].message.content
+
+pipeline("Hello, world!")
 ```
+
+See the resulting nested trace [🌐 here](https://smith.langchain.com/public/b37ca9b1-60cd-4a2a-817e-3c4e4443fdc0/r).
+
+## JS Quick Start
 
 To get started with the JavaScript / TypeScript SDK, [install the package](https://www.npmjs.com/package/langsmith), then follow the instructions in the [JS README](js/README.md).
 
