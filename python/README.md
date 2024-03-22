@@ -17,14 +17,22 @@ Then trace:
 ```python
 import openai
 from langsmith.wrappers import wrap_openai
+from langsmith import traceable
 
+# Auto-trace LLM calls in-context
 client = wrap_openai(openai.Client())
 
-client.chat.completions.create(
-    messages=[{"role": "user", "content": "Hello, world"}],
-    model="gpt-3.5-turbo"
-)
+@traceable # Auto-trace this function
+def pipeline(user_input: str):
+    result = client.chat.completions.create(
+        messages=[{"role": "user", "content": user_input}],
+        model="gpt-3.5-turbo"
+    )
+    return result.choices[0].message.content
+
+pipeline("Hello, world!")
 ```
+See the resulting nested trace [🌐 here](https://smith.langchain.com/public/b37ca9b1-60cd-4a2a-817e-3c4e4443fdc0/r).
 
 LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM application.
 
