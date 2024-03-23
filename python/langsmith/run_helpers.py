@@ -106,6 +106,7 @@ class LangSmithExtra(TypedDict, total=False):
     tags: Optional[List[str]]
     run_id: Optional[ls_client.ID_TYPE]
     client: Optional[ls_client.Client]
+    on_end: Optional[Callable[[run_trees.RunTree], Any]]
 
 
 class _TraceableContainer(TypedDict, total=False):
@@ -116,6 +117,7 @@ class _TraceableContainer(TypedDict, total=False):
     outer_project: Optional[str]
     outer_metadata: Optional[Dict[str, Any]]
     outer_tags: Optional[List[str]]
+    on_end: Optional[Callable[[run_trees.RunTree], Any]]
 
 
 class _ContainerInput(TypedDict, total=False):
@@ -150,6 +152,12 @@ def _container_end(
             logger.info(f"See trace: {run_tree.get_url()}")
         except Exception:
             pass
+    on_end = container.get("on_end")
+    if on_end is not None and callable(on_end):
+        try:
+            on_end(run_tree)
+        except Exception as e:
+            logger.warning(f"Failed to run on_end function: {e}")
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
@@ -194,6 +202,7 @@ def _setup_run(
             outer_project=outer_project,
             outer_metadata=None,
             outer_tags=None,
+            on_end=langsmith_extra.get("on_end"),
         )
     signature = inspect.signature(func)
     name_ = name or func.__name__
@@ -266,6 +275,7 @@ def _setup_run(
         outer_project=outer_project,
         outer_metadata=outer_metadata,
         outer_tags=outer_tags,
+        on_end=langsmith_extra.get("on_end"),
     )
     _PROJECT_NAME.set(response_container["project_name"])
     _PARENT_RUN_TREE.set(response_container["new_run"])
@@ -291,7 +301,7 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 
     Args:
         *args: Variable length arguments.
-        langsmith_extra (Optional[Dict[str, Any]]): Optional dictionary of
+        langsmith_extra (Optional[LangSmithExtra): Optional dictionary of
             additional parameters for Langsmith.
         **kwargs: Keyword arguments.
 
@@ -302,7 +312,7 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
     def __call__(
         self,
         *args: Any,
-        langsmith_extra: Optional[Dict[str, Any]] = None,
+        langsmith_extra: Optional[LangSmithExtra] = None,
         **kwargs: Any,
     ) -> R:
         """Call the instance when it is called as a function.
