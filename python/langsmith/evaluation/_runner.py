@@ -9,6 +9,7 @@ import logging
 import threading
 import uuid
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Generator,
     Iterable,
@@ -25,9 +26,11 @@ from typing_extensions import TypedDict
 
 import langsmith
 from langsmith import env as ls_env
-from langsmith import evaluation, run_trees, schemas
+from langsmith import run_trees, schemas
 from langsmith import run_helpers as rh
 from langsmith import utils as ls_utils
+
+from langsmith.evaluation.evaluator import EvaluationResult, EvaluationResults, RunEvaluator, run_evaluator
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +40,11 @@ TARGET_T = Union[PIPELINE_T, Callable[[], PIPELINE_T]]
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
 BATCH_EVALUATOR_T = Callable[
     [Sequence[schemas.Run], Sequence[schemas.Example]],
-    Union[evaluation.EvaluationResult, evaluation.EvaluationResults],
+    Union[EvaluationResult, EvaluationResults],
 ]
 EVALUATOR_T = Union[
-    evaluation.RunEvaluator,
-    Callable[[schemas.Run, Optional[schemas.Example]], evaluation.EvaluationResult],
+    RunEvaluator,
+    Callable[[schemas.Run, Optional[schemas.Example]], EvaluationResult],
 ]
 
 
@@ -55,7 +58,7 @@ def evaluate(
     experiment: str | None = None,
     max_concurrency: int | None = None,
     client: langsmith.Client | None = None,
-    stream: bool = False,
+    blocking: bool = False,
 ) -> ExperimentResults:
     manager = _ExperimentManager(
         data, client=client, metadata=metadata, experiment=experiment
@@ -68,23 +71,24 @@ def evaluate(
         manager = manager.with_scores(evaluators, max_concurrency=max_concurrency)
     if batch_evaluators:
         manager = manager.with_batch_scores(batch_evaluators)
-    return ExperimentResults(
+    results = ExperimentResults(
         manager,
-        stream=stream,
     )
+    if blocking:
+        results.wait()
+    return results
 
 
 class ExperimentResultRow(TypedDict):
     run: schemas.Run
     example: schemas.Example
-    evaluation_results: evaluation.EvaluationResults
+    evaluation_results: EvaluationResults
 
 
 class ExperimentResults:
     def __init__(
         self,
         experiment_manager: _ExperimentManager,
-        stream: bool = False,
     ):
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
@@ -93,8 +97,6 @@ class ExperimentResults:
             target=lambda: self._process_data(self._manager)
         )
         self._thread.start()
-        if not stream:
-            self._thread.join()
 
     @property
     def experiment_name(self) -> str:
@@ -147,6 +149,9 @@ class ExperimentResults:
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
 
+    def wait(self) -> None:
+        self._thread.join()
+
 
 class _ExperimentManager:
     def __init__(
@@ -157,8 +162,8 @@ class _ExperimentManager:
         experiment: Optional[Union[str, schemas.TracerSession]] = None,
         metadata: Optional[dict] = None,
         client: Optional[langsmith.Client] = None,
-        evaluation_results: Optional[Iterable[evaluation.EvaluationResults]] = None,
-        aggregate_results: Optional[Iterable[evaluation.EvaluationResults]] = None,
+        evaluation_results: Optional[Iterable[EvaluationResults]] = None,
+        aggregate_results: Optional[Iterable[EvaluationResults]] = None,
     ):
         self._experiment: Optional[schemas.TracerSession] = (
             experiment if isinstance(experiment, schemas.TracerSession) else None
@@ -203,7 +208,7 @@ class _ExperimentManager:
         return examples_iter
 
     @property
-    def evaluation_results(self) -> Iterable[evaluation.EvaluationResults]:
+    def evaluation_results(self) -> Iterable[EvaluationResults]:
         if self._evaluation_results is None:
             return [{"results": []} for _ in self.examples]
         return self._evaluation_results
@@ -294,7 +299,7 @@ class _ExperimentManager:
         evaluators: Sequence[
             Union[
                 EVALUATOR_T,
-                evaluation.RunEvaluator,
+                RunEvaluator,
             ]
         ],
         *,
@@ -402,7 +407,7 @@ class _ExperimentManager:
 
     def _run_evaluators(
         self,
-        evaluators: Sequence[evaluation.RunEvaluator],
+        evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
     ) -> ExperimentResultRow:
         run = current_results["run"]
@@ -434,7 +439,7 @@ class _ExperimentManager:
 
     def _score(
         self,
-        evaluators: Sequence[evaluation.RunEvaluator],
+        evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
     ) -> Iterable[ExperimentResultRow]:
         with cf.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
@@ -453,7 +458,7 @@ class _ExperimentManager:
 
     def _apply_batch_evaluators(
         self, batch_evaluators: Sequence[BATCH_EVALUATOR_T]
-    ) -> Generator[evaluation.EvaluationResults, None, None]:
+    ) -> Generator[EvaluationResults, None, None]:
         runs, examples = [], []
         for run, example in zip(self.runs, self.examples):
             runs.append(run)
@@ -489,13 +494,13 @@ class _ExperimentManager:
 
 def _resolve_evaluators(
     evaluators: Sequence[EVALUATOR_T],
-) -> Sequence[evaluation.RunEvaluator]:
+) -> Sequence[RunEvaluator]:
     results = []
     for evaluator in evaluators:
-        if isinstance(evaluator, evaluation.RunEvaluator):
+        if isinstance(evaluator, RunEvaluator):
             results.append(evaluator)
         else:
-            results.append(evaluation.run_evaluator(evaluator))
+            results.append(run_evaluator(evaluator))
     return results
 
 
