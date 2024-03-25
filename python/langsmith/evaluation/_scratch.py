@@ -1,11 +1,9 @@
-import itertools
 import logging
 
-import langsmith
-from langsmith import traceable
-from langsmith.evaluation import evaluate
-from langsmith.evaluation import LangChainStringEvaluator
 from langchain_anthropic import ChatAnthropic
+
+import langsmith
+from langsmith.evaluation import LangChainStringEvaluator, evaluate
 
 logging.basicConfig(level=logging.INFO)
 
@@ -22,11 +20,21 @@ def equal_length(runs, examples):
     return {"score": len(runs) == len(examples)}
 
 
-
 results = evaluate(
     lambda inputs: {"output": "foo"},
     data="scone-test2",
-    evaluators=[nli, LangChainStringEvaluator("embedding_distance"), LangChainStringEvaluator("criteria", llm=ChatAnthropic(model="claude-3-opus-20240229"))],
+    evaluators=[
+        nli,
+        LangChainStringEvaluator("embedding_distance"),
+        LangChainStringEvaluator(
+            "criteria", config={
+                "criteria": {
+                    "usefulness": "The prediction is useful if it is correct"
+                             " and/or asks a useful followup question."},
+                "llm": ChatAnthropic(model="claude-3-opus-20240229")
+                }
+        ),
+    ],
     batch_evaluators=[equal_length],
 )
 print(results)

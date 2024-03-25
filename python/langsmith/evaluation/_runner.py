@@ -9,7 +9,6 @@ import logging
 import threading
 import uuid
 from typing import (
-    TYPE_CHECKING,
     Callable,
     Generator,
     Iterable,
@@ -26,12 +25,16 @@ from typing_extensions import TypedDict
 
 import langsmith
 from langsmith import env as ls_env
-from langsmith import run_trees, schemas
 from langsmith import run_helpers as rh
+from langsmith import run_trees, schemas
 from langsmith import utils as ls_utils
-
-from langsmith.evaluation.evaluator import EvaluationResult, EvaluationResults, RunEvaluator, run_evaluator
 from langsmith.evaluation._integrations import LangChainStringEvaluator
+from langsmith.evaluation.evaluator import (
+    EvaluationResult,
+    EvaluationResults,
+    RunEvaluator,
+    run_evaluator,
+)
 
 logger = logging.getLogger(__name__)
 
