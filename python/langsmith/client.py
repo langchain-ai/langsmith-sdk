@@ -49,10 +49,11 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.evaluation import evaluator as ls_evaluator
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
+
+    from langsmith.evaluation import evaluator as ls_evaluator
 
 logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
@@ -3115,6 +3116,8 @@ class Client:
         *,
         fn_name: Optional[str] = None,
     ) -> List[ls_evaluator.EvaluationResult]:
+        from langsmith.evaluation import evaluator as ls_evaluator  # noqa: F811
+
         if isinstance(results, ls_evaluator.EvaluationResult):
             results_ = [results]
         elif isinstance(results, dict):

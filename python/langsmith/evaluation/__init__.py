@@ -1,5 +1,7 @@
 """Evaluation Helpers."""
 
+from langsmith.evaluation._integrations import LangChainStringEvaluator
+from langsmith.evaluation._runner import evaluate
 from langsmith.evaluation.evaluator import (
     EvaluationResult,
     EvaluationResults,
@@ -14,4 +16,6 @@ __all__ = [
     "EvaluationResults",
     "RunEvaluator",
     "StringEvaluator",
+    "evaluate",
+    "LangChainStringEvaluator",
 ]
