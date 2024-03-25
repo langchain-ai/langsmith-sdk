@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
 
-from langchain.evaluation.schema import StringEvaluator
 
 from langsmith.evaluation.evaluator import run_evaluator
 from langsmith.run_helpers import traceable
@@ -26,7 +25,7 @@ class SingleEvaluatorInput(TypedDict):
 
 
 class LangChainStringEvaluator:
-    """A class for wrapping a LangChain StringEvaluator.
+    r"""A class for wrapping a LangChain StringEvaluator.
 
     Attributes:
         evaluator (StringEvaluator): The underlying StringEvaluator OR the name
@@ -50,7 +49,7 @@ class LangChainStringEvaluator:
             from langsmith.evaluation import LangChainStringEvaluator
 
             evaluator = LangChainStringEvaluator(
-                "criteria", 
+                "criteria",
                 config={
                     "criteria": {
                         "usefulness": "The prediction is useful if"
@@ -122,9 +121,11 @@ class LangChainStringEvaluator:
                 ],
                 batch_evaluators=[equal_length],
             )
-    """
+    """  # noqa: E501
 
-    def __init__(self, evaluator: Union[StringEvaluator, str], *, config: Optional[dict] = None):
+    def __init__(
+        self, evaluator: Union[StringEvaluator, str], *, config: Optional[dict] = None
+    ):
         """Initialize a LangChainStringEvaluator.
 
         See: https://api.python.langchain.com/en/latest/evaluation/langchain.evaluation.schema.StringEvaluator.html#langchain-evaluation-schema-stringevaluator
@@ -138,27 +139,66 @@ class LangChainStringEvaluator:
             self.evaluator = evaluator
         elif isinstance(evaluator, str):
             from langchain.evaluation import load_evaluator  # noqa: F811
-            self.evaluator = load_evaluator(evaluator, **{config or {}})
+
+            self.evaluator = load_evaluator(evaluator, **(config or {}))
         else:
             raise NotImplementedError(f"Unsupported evaluator type: {type(evaluator)}")
 
     def as_run_evaluator(self) -> RunEvaluator:
-        """Convert the LangChainStringEvaluator to a RunEvaluator,
+        """Convert the LangChainStringEvaluator to a RunEvaluator.
 
-        which is the object used in the LangSmith `evaluate` API.
+        Thiss is the object used in the LangSmith `evaluate` API.
 
         Returns:
             RunEvaluator: The converted RunEvaluator.
         """
+        input_str = (
+            "\n       \"input\": example.inputs['input'],"
+            if self.evaluator.requires_input
+            else ""
+        )
+        reference_str = (
+            "\n       \"reference\": example.outputs['expected']"
+            if self.evaluator.requires_reference
+            else ""
+        )
+        customization_error_str = f"""
+
+lc_evaluator = load_evaluator('<evaluator_type', ...)
+def compute_score(run, example):
+    evaluation_inputs = {{
+        "prediction": run.outputs['my_output'],{reference_str}{input_str}
+    }}
+    return lc_evaluator.evaluate_strings(run.outputs['my_output'])
+"""
 
         @traceable
         def prepare_evaluator_inputs(
             run: Run, example: Optional[Example] = None
         ) -> SingleEvaluatorInput:
+            if run.outputs and len(run.outputs) > 1:
+                raise ValueError(
+                    "The evaluator only supports a single output. "
+                    "Please ensure that the run has a single output."
+                    " Or create a custom evaluator yourself:\n\n"
+                    f"{customization_error_str}"
+                )
             return SingleEvaluatorInput(
                 prediction=next(iter(run.outputs.values())) if run.outputs else None,
-                reference=next(iter(example.outputs.values())) if (self.evaluator.requires_reference and example and example.outputs) else None,
-                input=next(iter(example.inputs.values())) if (self.evaluator.requires_input and example.inputs) else None,
+                reference=(
+                    next(iter(example.outputs.values()))
+                    if (
+                        self.evaluator.requires_reference
+                        and example
+                        and example.outputs
+                    )
+                    else None
+                ),
+                input=(
+                    next(iter(example.inputs.values()))
+                    if (self.evaluator.requires_input and example.inputs)
+                    else None
+                ),
             )
 
         @traceable(name=self.evaluator.evaluation_name)

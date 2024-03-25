@@ -8,6 +8,7 @@ import itertools
 import logging
 import threading
 import uuid
+from typing import Callable
 from typing import (
     Callable,
     Generator,
@@ -39,7 +40,7 @@ from langsmith.evaluation.evaluator import (
 logger = logging.getLogger(__name__)
 
 PIPELINE_T = Callable[[dict], dict]
-TARGET_T = Union[PIPELINE_T, Callable[[], PIPELINE_T]]
+TARGET_T = Union[PIPELINE_T, Iterable[schemas.Run]]
 # dataset-name, dataset_id, or examples
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
 BATCH_EVALUATOR_T = Callable[
@@ -59,25 +60,25 @@ def evaluate(
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     batch_evaluators: Optional[Sequence[BATCH_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    experiment: str | None = None,
-    max_concurrency: int | None = None,
-    client: langsmith.Client | None = None,
-    blocking: bool = False,
+    experiment: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
 ) -> ExperimentResults:
     manager = _ExperimentManager(
-        data, client=client, metadata=metadata, experiment=experiment
+        data,
+        client=client,
+        metadata=metadata,
+        experiment=experiment,
+        runs=None if callable(target) else target,
     ).start()
-    manager = manager.with_predictions(
-        target,
-        max_concurrency=max_concurrency,
-    )
+    if callable(target):
+        manager = manager.with_predictions(target, max_concurrency=max_concurrency)
     if evaluators:
         manager = manager.with_scores(evaluators, max_concurrency=max_concurrency)
     if batch_evaluators:
         manager = manager.with_batch_scores(batch_evaluators)
-    results = ExperimentResults(
-        manager,
-    )
+    results = ExperimentResults(manager)
     if blocking:
         results.wait()
     return results
@@ -117,8 +118,9 @@ class ExperimentResults:
                     break
 
     def _process_data(self, manager: _ExperimentManager) -> None:
+        tqdm = _load_tqdm()
         results = manager.get_results()
-        for item in results:
+        for item in tqdm(results):
             with self._lock:
                 self._results.append(item)
         batch_scores = manager.get_batch_scores()
@@ -128,33 +130,22 @@ class ExperimentResults:
     def __len__(self) -> int:
         return len(self._results)
 
-    # TODO: Implement this
-    # def __getitem__(self, index: int | slice) -> dict | List[dict]:
-    #     if isinstance(index, int):
-    #         with self._lock:
-    #             if index < len(self._results):
-    #                 return self._results[index]
-    #             elif not self._thread.is_alive():
-    #                 raise IndexError("Index out of range")
-    #         self._thread.join()
-    #         return self._results[index]
-    #     elif isinstance(index, slice):
-    #         start, stop, step = index.indices(len(self))
-    #         with self._lock:
-    #             if stop <= len(self._results):
-    #                 return self._results[start:stop:step]
-    #             elif not self._thread.is_alive():
-    #                 return self._results[start:stop:step]
-    #         self._thread.join()
-    #         return self._results[start:stop:step]
-    #     else:
-    #         raise TypeError("Invalid index type")
-
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
 
     def wait(self) -> None:
         self._thread.join()
+
+
+## Private API
+
+
+def _load_tqdm() -> Callable[[Iterable], Iterable]:
+    try:
+        from tqdm.auto import tqdm
+    except ImportError:
+        return lambda x: x
+    return tqdm
 
 
 class _ExperimentManager:
@@ -194,6 +185,11 @@ class _ExperimentManager:
         self._evaluation_results = evaluation_results
         self._aggregate_results = aggregate_results
 
+    def _get_random_name(self) -> str:
+        from langsmith.evaluation._name_generation import generate_name  # noqa: F401
+
+        return generate_name()
+
     @staticmethod
     def _resolve_data(
         data: DATA_T, *, client: langsmith.Client
@@ -230,27 +226,32 @@ class _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
         _examples = itertools.chain([first_example], self.examples)
         if self._experiment is None:
-            try:
-                project_metadata = self._metadata or {}
-                git_info = ls_env.get_git_info()
-                if git_info:
-                    project_metadata = {
-                        **project_metadata,
-                        "git": git_info,
-                    }
-                project = self.client.create_project(
-                    self.experiment_name,
-                    reference_dataset_id=first_example.dataset_id,
-                    metadata=project_metadata,
-                )
-            except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
-                if "already exists " not in str(e):
-                    raise e
-                raise ValueError(
-                    # TODO: Better error
-                    f"Experiment {self.experiment_name} already exists."
-                    " Please use a different name."
-                )
+            if self._runs is None:
+                try:
+                    project_metadata = self._metadata or {}
+                    git_info = ls_env.get_git_info()
+                    if git_info:
+                        project_metadata = {
+                            **project_metadata,
+                            "git": git_info,
+                        }
+                    project = self.client.create_project(
+                        self.experiment_name,
+                        reference_dataset_id=first_example.dataset_id,
+                        metadata=project_metadata,
+                    )
+                except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
+                    if "already exists " not in str(e):
+                        raise e
+                    raise ValueError(
+                        # TODO: Better error
+                        f"Experiment {self.experiment_name} already exists."
+                        " Please use a different name."
+                    )
+            else:
+                self._runs, runs_iter = itertools.tee(self._runs)
+                first_run = next(runs_iter)
+                project = self.client.read_project(project_id=first_run.session_id)
         else:
             project = self._experiment
         if project.url:
@@ -433,7 +434,8 @@ class _ExperimentManager:
             except Exception as e:
                 logger.error(
                     f"Error running evaluator {repr(evaluator)} on"
-                    f" run {run.id}: {repr(e)}"
+                    f" run {run.id}: {repr(e)}",
+                    exc_info=True,
                 )
         return ExperimentResultRow(
             run=run,
