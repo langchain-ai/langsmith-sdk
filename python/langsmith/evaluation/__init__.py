@@ -14,5 +14,4 @@ __all__ = [
     "EvaluationResults",
     "RunEvaluator",
     "StringEvaluator",
-    "EVALUATOR_LIKE",
 ]
