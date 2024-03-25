@@ -1,6 +1,13 @@
+"""Examples using the `evaluate` API to evaluate a target system on a dataset."""
+
+# ruff: noqa: E402
+# mypy: ignore-errors
 # Prerequisites for the following examples:
+from typing import Sequence
+
 from langsmith import Client
 from langsmith.evaluation import evaluate
+from langsmith.schemas import Example, Run
 
 client = Client()
 
@@ -14,7 +21,7 @@ dataset_name = "Evaluate Examples"
 
 
 ## Example (row)-level evaluator
-def accuracy(run, example):
+def accuracy(run: Run, example: Example):
     """Row-level evaluator for accuracy."""
     pred = run.outputs["output"]
     expected = example.outputs["answer"]
@@ -22,8 +29,8 @@ def accuracy(run, example):
 
 
 ## Aggregate "batch" evaluators
-def precision(runs, examples):
-    """Batch-level evaluator for precision.s"""
+def precision(runs: Sequence[Run], examples: Sequence[Example]):
+    """Batch-level evaluator for precision."""
     # TP / (TP + FP)
     predictions = [run.outputs["output"].lower() for run in runs]
     expected = [example.outputs["answer"].lower() for example in examples]
@@ -52,6 +59,16 @@ results = evaluate(
 
 from langsmith.evaluation import LangChainStringEvaluator
 
+
+def prepare_criteria_data(run: Run, example: Example):
+    """Prepare the data for the criteria evaluator."""
+    return {
+        "prediction": run.outputs["output"],
+        "reference": example.outputs["answer"],
+        "input": str(example.inputs),
+    }
+
+
 results = evaluate(
     predict,
     data=dataset_name,
@@ -60,14 +77,14 @@ results = evaluate(
         # Loads the evaluator from LangChain
         LangChainStringEvaluator("embedding_distance"),
         LangChainStringEvaluator(
-            "criteria",
+            "labeled_criteria",
             config={
                 "criteria": {
                     "usefulness": "The prediction is useful if it is correct"
                     " and/or asks a useful followup question."
                 },
             },
-        ),
+        ).as_run_evaluator(prepare_data=prepare_criteria_data),
     ],
     batch_evaluators=[precision],
 )
@@ -75,7 +92,6 @@ results = evaluate(
 # Example 3: evaluating over only a subset of the examples
 import itertools
 import uuid
-
 
 examples = list(itertools.islice(client.list_examples(dataset_name=dataset_name), 5))
 experiment_name = f"My Experiment - {uuid.uuid4().hex[:4]}"
@@ -92,11 +108,13 @@ results = evaluate(
 runs = client.list_runs(project_name=experiment_name, execution_order=1)
 
 
-def predicted_length(run, example):
+def predicted_length(run: Run, example: Example):
+    """Row-level evaluator for the length of the prediction."""
     return {"score": len(next(iter(run.outputs)))}
 
 
-def recall(runs, examples):
+def recall(runs: Sequence[Run], examples: Sequence[Example]):
+    """Batch-level evaluator for recall."""
     predictions = [run.outputs["output"].lower() for run in runs]
     expected = [example.outputs["answer"].lower() for example in examples]
     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
@@ -128,4 +146,5 @@ for i, result in enumerate(results):
 # Maybe something like
 # def preferred(target: Run, baseline: Run):
 #     return {"score": target.outputs["output"] > baseline.outputs["output"]}
-# evaluate_relative(predict, baseline=experiment_name/id/class, evaluators=[predicted_length])
+# evaluate_relative(predict, baseline=experiment_name/id/class,
+# evaluators=[predicted_length])

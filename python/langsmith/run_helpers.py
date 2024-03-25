@@ -48,8 +48,41 @@ _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", defaul
 
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
-    """Get the current run tree context."""
+    """Get the current run tree."""
     return _PARENT_RUN_TREE.get()
+
+
+def get_tracing_context() -> dict:
+    """Get the current tracing context."""
+    return {
+        "parent_run": _PARENT_RUN_TREE.get(),
+        "project_name": _PROJECT_NAME.get(),
+        "tags": _TAGS.get(),
+        "metadata": _METADATA.get(),
+    }
+
+
+@contextlib.contextmanager
+def tracing_context(
+    *,
+    project_name: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    parent_run: Optional[run_trees.RunTree] = None,
+) -> Generator[None, None, None]:
+    """Set the tracing context for a block of code."""
+    parent_run_ = get_run_tree_context()
+    _PROJECT_NAME.set(project_name)
+    _TAGS.set(tags)
+    _METADATA.set(metadata)
+    _PARENT_RUN_TREE.set(parent_run)
+    try:
+        yield
+    finally:
+        _PROJECT_NAME.set(None)
+        _TAGS.set(None)
+        _METADATA.set(None)
+        _PARENT_RUN_TREE.set(parent_run_)
 
 
 get_run_tree_context = get_current_run_tree

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
-
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
 
 from langsmith.evaluation.evaluator import run_evaluator
 from langsmith.run_helpers import traceable
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
 class SingleEvaluatorInput(TypedDict):
     """The input to a `StringEvaluator`."""
 
-    prediction: Optional[str]
+    prediction: str
     """The prediction string."""
     reference: Optional[Any]
     """The reference string."""
@@ -140,11 +139,14 @@ class LangChainStringEvaluator:
         elif isinstance(evaluator, str):
             from langchain.evaluation import load_evaluator  # noqa: F811
 
-            self.evaluator = load_evaluator(evaluator, **(config or {}))
+            self.evaluator = load_evaluator(evaluator, **(config or {}))  # type: ignore[assignment, arg-type]
         else:
             raise NotImplementedError(f"Unsupported evaluator type: {type(evaluator)}")
 
-    def as_run_evaluator(self) -> RunEvaluator:
+    def as_run_evaluator(
+        self,
+        prepare_data: Optional[Callable[[Run, Example], SingleEvaluatorInput]] = None,
+    ) -> RunEvaluator:
         """Convert the LangChainStringEvaluator to a RunEvaluator.
 
         Thiss is the object used in the LangSmith `evaluate` API.
@@ -164,7 +166,7 @@ class LangChainStringEvaluator:
         )
         customization_error_str = f"""
 
-lc_evaluator = load_evaluator('<evaluator_type', ...)
+lc_evaluator = load_evaluator('<evaluator_type>', ...)
 def compute_score(run, example):
     evaluation_inputs = {{
         "prediction": run.outputs['my_output'],{reference_str}{input_str}
@@ -183,8 +185,33 @@ def compute_score(run, example):
                     " Or create a custom evaluator yourself:\n\n"
                     f"{customization_error_str}"
                 )
+            if (
+                self.evaluator.requires_reference
+                and example
+                and example.outputs
+                and len(example.outputs) > 1
+            ):
+                raise ValueError(
+                    "The evaluator only supports a single output. "
+                    "Please ensure that the example has a single output."
+                    " Or create a custom evaluator yourself:\n\n"
+                    f"{customization_error_str}"
+                )
+            if (
+                self.evaluator.requires_input
+                and example
+                and example.inputs
+                and len(example.inputs) > 1
+            ):
+                raise ValueError(
+                    "The evaluator only supports a single input. "
+                    "Please ensure that the example has a single input."
+                    " Or create a custom evaluator yourself:\n\n"
+                    f"{customization_error_str}"
+                )
+
             return SingleEvaluatorInput(
-                prediction=next(iter(run.outputs.values())) if run.outputs else None,
+                prediction=next(iter(run.outputs.values())),
                 reference=(
                     next(iter(example.outputs.values()))
                     if (
@@ -196,14 +223,18 @@ def compute_score(run, example):
                 ),
                 input=(
                     next(iter(example.inputs.values()))
-                    if (self.evaluator.requires_input and example.inputs)
+                    if (self.evaluator.requires_input and example and example.inputs)
                     else None
                 ),
             )
 
         @traceable(name=self.evaluator.evaluation_name)
         def evaluate(run: Run, example: Optional[Example] = None) -> dict:
-            eval_inputs = prepare_evaluator_inputs(run, example)
+            eval_inputs = (
+                prepare_evaluator_inputs(run, example)
+                if prepare_data is None
+                else prepare_data(run, example)
+            )
             results = self.evaluator.evaluate_strings(**eval_inputs)
             return {"key": self.evaluator.evaluation_name, **results}
 

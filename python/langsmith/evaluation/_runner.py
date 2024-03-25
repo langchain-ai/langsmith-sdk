@@ -8,7 +8,6 @@ import itertools
 import logging
 import threading
 import uuid
-from typing import Callable
 from typing import (
     Callable,
     Generator,
@@ -29,13 +28,13 @@ from langsmith import env as ls_env
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
 from langsmith import utils as ls_utils
-from langsmith.evaluation.integrations import LangChainStringEvaluator
 from langsmith.evaluation.evaluator import (
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
     run_evaluator,
 )
+from langsmith.evaluation.integrations import LangChainStringEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -327,7 +326,8 @@ class _ExperimentManager:
         self,
         batch_evaluators: Sequence[BATCH_EVALUATOR_T],
     ) -> _ExperimentManager:
-        aggregate_feedback_gen = self._apply_batch_evaluators(batch_evaluators)
+        wrapped_evaluators = _wrap_batch_evaluators(batch_evaluators)
+        aggregate_feedback_gen = self._apply_batch_evaluators(wrapped_evaluators)
         return _ExperimentManager(
             self.examples,
             experiment=self._experiment,
@@ -415,33 +415,35 @@ class _ExperimentManager:
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
     ) -> ExperimentResultRow:
-        run = current_results["run"]
-        example = current_results["example"]
-        eval_results = current_results["evaluation_results"]
-        for evaluator in evaluators:
-            try:
-                evaluator_response = evaluator.evaluate_run(
-                    run=run,
-                    example=example,
-                )
-                eval_results["results"].extend(
-                    # TODO: This is a hack
-                    self.client._log_evaluation_feedback(
-                        evaluator_response,
+        current_context = rh.get_tracing_context()
+        with rh.tracing_context(**{**current_context, "project_name": "evaluators"}):
+            run = current_results["run"]
+            example = current_results["example"]
+            eval_results = current_results["evaluation_results"]
+            for evaluator in evaluators:
+                try:
+                    evaluator_response = evaluator.evaluate_run(
                         run=run,
+                        example=example,
                     )
-                )
-            except Exception as e:
-                logger.error(
-                    f"Error running evaluator {repr(evaluator)} on"
-                    f" run {run.id}: {repr(e)}",
-                    exc_info=True,
-                )
-        return ExperimentResultRow(
-            run=run,
-            example=example,
-            evaluation_results=eval_results,
-        )
+                    eval_results["results"].extend(
+                        # TODO: This is a hack
+                        self.client._log_evaluation_feedback(
+                            evaluator_response,
+                            run=run,
+                        )
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error running evaluator {repr(evaluator)} on"
+                        f" run {run.id}: {repr(e)}",
+                        exc_info=True,
+                    )
+            return ExperimentResultRow(
+                run=run,
+                example=example,
+                evaluation_results=eval_results,
+            )
 
     def _score(
         self,
@@ -509,6 +511,31 @@ def _resolve_evaluators(
             results.append(evaluator.as_run_evaluator())
         else:
             results.append(run_evaluator(evaluator))
+    return results
+
+
+def _wrap_batch_evaluators(
+    evaluators: Sequence[BATCH_EVALUATOR_T],
+) -> Sequence[BATCH_EVALUATOR_T]:
+    results = []
+
+    def _wrap(evaluator: BATCH_EVALUATOR_T) -> BATCH_EVALUATOR_T:
+        def _wrapper_inner(
+            runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
+        ) -> EvaluationResults:
+            @rh.traceable
+            def _wrapper_super_inner(runs_: str, examples_: str) -> EvaluationResults:
+                return evaluator(runs, examples)
+
+            return _wrapper_super_inner(
+                f"Runs[] (Length={len(runs)})", f"Examples[] (Length={len(examples)})"
+            )
+
+        return _wrapper_inner
+
+    results = []
+    for evaluator in evaluators:
+        results.append(_wrap(evaluator))
     return results
 
 
