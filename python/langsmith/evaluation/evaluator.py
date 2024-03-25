@@ -97,20 +97,32 @@ class DynamicRunEvaluator(RunEvaluator):
             arguments, and returns an `EvaluationResult` or `EvaluationResults`.
         """
         wraps(func)(self)
-        self.func = func
+        from langsmith import run_helpers  # type: ignore
+
+        self.func = cast(
+            run_helpers.SupportsLangsmithExtra,
+            (
+                func
+                if run_helpers.is_traceable_function(func)
+                else run_helpers.traceable()(func)
+            ),
+        )
 
     def _coerce_evaluation_result(
         self,
         result: Union[EvaluationResult, dict],
+        source_run_id: uuid.UUID,
         allow_no_key: bool = False,
     ) -> EvaluationResult:
         if isinstance(result, EvaluationResult):
+            if not result.source_run_id:
+                result.source_run_id = source_run_id
             return result
         try:
             if "key" not in result:
                 if allow_no_key:
-                    result["key"] = self.func.__name__
-            return EvaluationResult(**result)
+                    result["key"] = getattr(self.func, "__name__")
+            return EvaluationResult(**{"source_run_id": source_run_id, **result})
         except ValidationError as e:
             raise ValueError(
                 "Expected an EvaluationResult object, or dict with a metric"
@@ -120,15 +132,19 @@ class DynamicRunEvaluator(RunEvaluator):
     def _coerce_evaluation_results(
         self,
         results: Union[dict, EvaluationResults],
+        source_run_id: uuid.UUID,
     ) -> Union[EvaluationResult, EvaluationResults]:
         if "results" in results:
             cp = results.copy()
             cp["results"] = [
-                self._coerce_evaluation_result(r) for r in results["results"]
+                self._coerce_evaluation_result(r, source_run_id=source_run_id)
+                for r in results["results"]
             ]
             return EvaluationResults(**cp)
 
-        return self._coerce_evaluation_result(cast(dict, results), allow_no_key=True)
+        return self._coerce_evaluation_result(
+            cast(dict, results), allow_no_key=True, source_run_id=source_run_id
+        )
 
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
@@ -144,14 +160,22 @@ class DynamicRunEvaluator(RunEvaluator):
         Returns:
             Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
         """  # noqa: E501
-        result = self.func(run, example)
+        source_run_id = uuid.uuid4()
+        metadata = {"target_run_id": run.id, "experiment": run.session_id}
+        result = self.func(
+            run,
+            example,
+            langsmith_extra={"run_id": source_run_id, "metadata": metadata},
+        )
         if isinstance(result, EvaluationResult):
+            if not result.source_run_id:
+                result.source_run_id = source_run_id
             return result
         if not isinstance(result, dict):
             raise ValueError(
                 f"Expected a dict, EvaluationResult, or EvaluationResults, got {result}"
             )
-        return self._coerce_evaluation_results(result)
+        return self._coerce_evaluation_results(result, source_run_id)
 
     def __call__(
         self, run: Run, example: Optional[Example] = None
