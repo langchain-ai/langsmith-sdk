@@ -3,7 +3,9 @@ import logging
 
 import langsmith
 from langsmith import traceable
-from langsmith.evaluation._runner import evaluate
+from langsmith.evaluation import evaluate
+from langsmith.evaluation import LangChainStringEvaluator
+from langchain_anthropic import ChatAnthropic
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,41 +22,42 @@ def equal_length(runs, examples):
     return {"score": len(runs) == len(examples)}
 
 
+
 results = evaluate(
     lambda inputs: {"output": "foo"},
     data="scone-test2",
-    evaluators=[nli],
+    evaluators=[nli, LangChainStringEvaluator("embedding_distance"), LangChainStringEvaluator("criteria", llm=ChatAnthropic(model="claude-3-opus-20240229"))],
     batch_evaluators=[equal_length],
 )
 print(results)
 
-# Subset
-examples = list(itertools.islice(c.list_examples(dataset_name="scone-test2"), 5))
-results2 = evaluate(
-    lambda inputs: {"output": "foo"},
-    data=examples,
-    evaluators=[nli],
-    batch_evaluators=[equal_length],
-)
-print(results2)
-# Streaming to more easily debug
+# # Subset
+# examples = list(itertools.islice(c.list_examples(dataset_name="scone-test2"), 5))
+# results2 = evaluate(
+#     lambda inputs: {"output": "foo"},
+#     data=examples,
+#     evaluators=[nli],
+#     batch_evaluators=[equal_length],
+# )
+# print(results2)
+# # Streaming to more easily debug
 
 
-@traceable
-def nested_func(inputs):
-    @traceable
-    def foo(inputs):
-        return {"output": "foo"}
+# @traceable
+# def nested_func(inputs):
+#     @traceable
+#     def foo(inputs):
+#         return {"output": "foo"}
 
-    return foo(inputs)
+#     return foo(inputs)
 
 
-results3 = evaluate(
-    nested_func,
-    data=c.list_examples(dataset_name="scone-test2"),
-    evaluators=[nli],
-    batch_evaluators=[equal_length],
-    stream=True,
-)
-for i, result in enumerate(results3):
-    print(i)
+# results3 = evaluate(
+#     nested_func,
+#     data=c.list_examples(dataset_name="scone-test2"),
+#     evaluators=[nli],
+#     batch_evaluators=[equal_length],
+#     blocking=False,
+# )
+# for i, result in enumerate(results3):
+#     print(i)

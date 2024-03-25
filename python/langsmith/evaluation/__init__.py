@@ -1,6 +1,6 @@
 """Evaluation Helpers."""
 
-from langsmith.evaluation._integrations import LangChainStringEvaluator
+from langsmith.evaluation.integrations._langchain import LangChainStringEvaluator
 from langsmith.evaluation._runner import evaluate
 from langsmith.evaluation.evaluator import (
     EvaluationResult,

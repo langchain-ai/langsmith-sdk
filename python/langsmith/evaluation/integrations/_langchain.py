@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict, Union
 
+from langchain.evaluation.schema import StringEvaluator
 from langsmith.evaluation.evaluator import run_evaluator
 from langsmith.run_helpers import traceable
 from langsmith.schemas import Example, Run
+from langchain_core.prompts import BasePromptTemplate
 
 if TYPE_CHECKING:
     from langchain.evaluation.schema import StringEvaluator
@@ -24,24 +26,14 @@ class SingleEvaluatorInput(TypedDict):
     """The input string."""
 
 
-class SingleEvalConfig(TypedDict):
-    """A configuration for a `StringEvaluator`."""
-
-    evaluator: str
-    """The name of the evaluation."""
-    llm: Optional[BaseLanguageModel]
-    """The evaluator."""
-
-
 class LangChainStringEvaluator:
     """A class for wrapping a LangChain StringEvaluator.
 
     Attributes:
-        evaluator (StringEvaluator): The underlying StringEvaluator.
+        evaluator (StringEvaluator): The underlying StringEvaluator OR the name
+            of the evaluator to 
 
     Methods:
-        from_config(config: Union[SingleEvalConfig, dict]) -> LangChainStringEvaluator:
-            Create a LangChainStringEvaluator from a configuration dictionary.
         as_run_evaluator() -> RunEvaluator:
             Convert the LangChainStringEvaluator to a RunEvaluator.
 
@@ -50,13 +42,7 @@ class LangChainStringEvaluator:
 
         .. code-block:: python
 
-            from langchain.evaluation import load_evaluator
-
-            config = {
-                "evaluator": "exact_match",
-                "llm": None
-            }
-            evaluator = LangChainStringEvaluator.from_config(config)
+            evaluator = LangChainStringEvaluator("exact_match")
 
         Converting a LangChainStringEvaluator to a RunEvaluator:
 
@@ -82,7 +68,7 @@ class LangChainStringEvaluator:
             results = evaluate(run, example)
     """
 
-    def __init__(self, evaluator: StringEvaluator):
+    def __init__(self, evaluator: Union[StringEvaluator, str], *, config: Optional[dict] = None):
         """Initialize a LangChainStringEvaluator.
 
         See: https://api.python.langchain.com/en/latest/evaluation/langchain.evaluation.schema.StringEvaluator.html#langchain-evaluation-schema-stringevaluator
@@ -90,24 +76,16 @@ class LangChainStringEvaluator:
         Args:
             evaluator (StringEvaluator): The underlying StringEvaluator.
         """
-        self.evaluator = evaluator
+        from langchain.evaluation.schema import StringEvaluator # noqa: F811
 
-    @classmethod
-    def from_config(
-        cls, config: Union[SingleEvalConfig, dict]
-    ) -> LangChainStringEvaluator:
-        """Create a LangChainStringEvaluator from a configuration dictionary.
+        if isinstance(evaluator, StringEvaluator):
+            self.evaluator = evaluator
+        elif isinstance(evaluator, str):
+            from langchain.evaluation import load_evaluator  # noqa: F811
+            self.evaluator = load_evaluator(evaluator, **{config or {}})
+        else:
+            raise NotImplementedError(f"Unsupported evaluator type: {type(evaluator)}")
 
-        Args:
-            config (Union[SingleEvalConfig, dict]): The configuration to pass to the loader.
-
-        Returns:
-            LangChainStringEvaluator: The created LangChainStringEvaluator.
-        """
-        from langchain.evaluation import load_evaluator  # noqa: F811
-
-        evaluator = load_evaluator(**config)
-        return cls(evaluator)
 
     def as_run_evaluator(self) -> RunEvaluator:
         """Convert the LangChainStringEvaluator to a RunEvaluator,
@@ -167,18 +145,10 @@ class LangChainStringEvaluator:
         def prepare_evaluator_inputs(
             run: Run, example: Optional[Example] = None
         ) -> SingleEvaluatorInput:
-            if self.evaluator.requires_reference and (
-                example is None or not example.outputs
-            ):
-                raise ValueError(
-                    f"Evaluator {self.evaluator.evaluation_name} requires an reference"
-                    " example from the dataset,"
-                    f" but none was provided for run {run.id}."
-                )
             return SingleEvaluatorInput(
                 prediction=next(iter(run.outputs.values())) if run.outputs else None,
-                reference=next(iter(example.outputs.values())) if example else None,
-                input=next(iter(example.inputs.values())) if example.inputs else None,
+                reference=next(iter(example.outputs.values())) if (self.evaluator.requires_reference and example and example.outputs) else None,
+                input=next(iter(example.inputs.values())) if (self.evaluator.requires_input and example.inputs) else None,
             )
 
         @traceable(name=self.evaluator.evaluation_name)
@@ -188,3 +158,25 @@ class LangChainStringEvaluator:
             return {"key": self.evaluator.evaluation_name, **results}
 
         return run_evaluator(evaluate)
+
+
+# TODO: Add classes
+# class CriteriaEvalConfig(TypedDict):
+#     llm: Optional[BaseLanguageModel]
+#     criteria: Optional[Union[str, Dict[str, str]]]
+#     prompt: Optional[BasePromptTemplate]
+
+# class CriteriaEvaluator(LangChainStringEvaluator):
+
+#     def __init__(self, config: Optional[CriteriaEvalConfig] = None):
+#         super().__init__("criteria", config=config)
+
+
+# class ScoreStringEvalConfig(CriteriaEvalConfig):
+#     normalize_by: Optional[float]
+
+
+# class ScoreStringEvaluator(LangChainStringEvaluator):
+
+#     def __init__(self, config: Optional[ScoreStringEvalConfig] = None):
+#         super().__init__("score_string", config=config)
