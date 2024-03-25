@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
 
 from langchain.evaluation.schema import StringEvaluator
+
 from langsmith.evaluation.evaluator import run_evaluator
 from langsmith.run_helpers import traceable
 from langsmith.schemas import Example, Run
-from langchain_core.prompts import BasePromptTemplate
 
 if TYPE_CHECKING:
     from langchain.evaluation.schema import StringEvaluator
-    from langchain_core.language_models import BaseLanguageModel
 
     from langsmith.evaluation.evaluator import RunEvaluator
 
@@ -76,7 +75,7 @@ class LangChainStringEvaluator:
         Args:
             evaluator (StringEvaluator): The underlying StringEvaluator.
         """
-        from langchain.evaluation.schema import StringEvaluator # noqa: F811
+        from langchain.evaluation.schema import StringEvaluator  # noqa: F811
 
         if isinstance(evaluator, StringEvaluator):
             self.evaluator = evaluator
@@ -158,25 +157,3 @@ class LangChainStringEvaluator:
             return {"key": self.evaluator.evaluation_name, **results}
 
         return run_evaluator(evaluate)
-
-
-# TODO: Add classes
-# class CriteriaEvalConfig(TypedDict):
-#     llm: Optional[BaseLanguageModel]
-#     criteria: Optional[Union[str, Dict[str, str]]]
-#     prompt: Optional[BasePromptTemplate]
-
-# class CriteriaEvaluator(LangChainStringEvaluator):
-
-#     def __init__(self, config: Optional[CriteriaEvalConfig] = None):
-#         super().__init__("criteria", config=config)
-
-
-# class ScoreStringEvalConfig(CriteriaEvalConfig):
-#     normalize_by: Optional[float]
-
-
-# class ScoreStringEvaluator(LangChainStringEvaluator):
-
-#     def __init__(self, config: Optional[ScoreStringEvalConfig] = None):
-#         super().__init__("score_string", config=config)
