@@ -30,14 +30,14 @@ class LangChainStringEvaluator:
 
     Attributes:
         evaluator (StringEvaluator): The underlying StringEvaluator OR the name
-            of the evaluator to 
+            of the evaluator to load.
 
     Methods:
         as_run_evaluator() -> RunEvaluator:
             Convert the LangChainStringEvaluator to a RunEvaluator.
 
     Examples:
-        Creating a LangChainStringEvaluator from a configuration dictionary:
+        Creating a simple LangChainStringEvaluator:
 
         .. code-block:: python
 
@@ -47,24 +47,81 @@ class LangChainStringEvaluator:
 
         .. code-block:: python
 
-            evaluator = LangChainStringEvaluator(...)
+            from langsmith.evaluation import LangChainStringEvaluator
+
+            evaluator = LangChainStringEvaluator(
+                "criteria", 
+                config={
+                    "criteria": {
+                        "usefulness": "The prediction is useful if"
+                        " it is correct and/or asks a useful followup question."
+                    },
+            )
             run_evaluator = evaluator.as_run_evaluator()
 
-        Preparing evaluator inputs:
+        Using the `evaluate` API with different evaluators:
 
         .. code-block:: python
 
-            run = Run(...)
-            example = Example(...)
-            inputs = prepare_evaluator_inputs(run, example)
+            from langchain_anthropic import ChatAnthropic
 
-        Evaluating a run using the underlying StringEvaluator:
+            import langsmith
+            from langsmith.evaluation import LangChainStringEvaluator, evaluate
 
-        .. code-block:: python
+            # Criteria evaluator
+            criteria_evaluator = LangChainStringEvaluator(
+                "criteria", config={
+                    "criteria": {
+                        "usefulness": "The prediction is useful if it is correct"
+                                " and/or asks a useful followup question."
+                    },
+                    "llm": ChatAnthropic(model="claude-3-opus-20240229")
+                }
+            )
 
-            run = Run(...)
-            example = Example(...)
-            results = evaluate(run, example)
+            # Embedding distance evaluator
+            embedding_evaluator = LangChainStringEvaluator("embedding_distance")
+
+            # Exact match evaluator
+            exact_match_evaluator = LangChainStringEvaluator("exact_match")
+
+            # Regex match evaluator
+            regex_match_evaluator = LangChainStringEvaluator(
+                "regex_match", config={
+                    "flags": re.IGNORECASE
+                }
+            )
+
+            # Scoring evaluator
+            scoring_evaluator = LangChainStringEvaluator(
+                "scoring", config={
+                    "criteria": {
+                        "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
+                    },
+                    "normalize_by": 10
+                }
+            )
+
+            # String distance evaluator
+            string_distance_evaluator = LangChainStringEvaluator(
+                "string_distance", config={
+                    "distance_metric": "levenshtein"
+                }
+            )
+
+            results = evaluate(
+                lambda inputs: {"prediction": "foo"},
+                data="my-dataset",
+                evaluators=[
+                    embedding_evaluator,
+                    criteria_evaluator,
+                    exact_match_evaluator,
+                    regex_match_evaluator,
+                    scoring_evaluator,
+                    string_distance_evaluator
+                ],
+                batch_evaluators=[equal_length],
+            )
     """
 
     def __init__(self, evaluator: Union[StringEvaluator, str], *, config: Optional[dict] = None):
@@ -85,7 +142,6 @@ class LangChainStringEvaluator:
         else:
             raise NotImplementedError(f"Unsupported evaluator type: {type(evaluator)}")
 
-
     def as_run_evaluator(self) -> RunEvaluator:
         """Convert the LangChainStringEvaluator to a RunEvaluator,
 
@@ -93,51 +149,6 @@ class LangChainStringEvaluator:
 
         Returns:
             RunEvaluator: The converted RunEvaluator.
-
-        Examples:
-            Loading an embedding distance evaluator:
-
-            .. code-block:: python
-
-                from langchain.evaluation import load_evaluator
-
-                evaluator = load_evaluator("embedding_distance")
-
-            Evaluating string similarity using embedding distance:
-
-            .. code-block:: python
-
-                evaluator.evaluate_strings(prediction="I shall go", reference="I shan't go")
-                # Output: {'score': 0.0966466944859925}
-
-                evaluator.evaluate_strings(prediction="I shall go", reference="I will go")
-                # Output: {'score': 0.03761174337464557}
-
-            Loading a regex match evaluator:
-
-            .. code-block:: python
-
-                from langchain.evaluation import load_evaluator
-
-                evaluator = load_evaluator("regex_match")
-
-            Evaluating string matches using regex patterns:
-
-            .. code-block:: python
-
-                evaluator.evaluate_strings(
-                    prediction="The delivery will be made on 2024-01-05",
-                    reference=".*\\b\\d{4}-\\d{2}-\\d{2}\\b.*",
-                )
-                # Output: {'score': 1}
-
-                evaluator.evaluate_strings(
-                    prediction="The delivery will be made on 01-05-2024",
-                    reference="|".join(
-                        [".*\\b\\d{4}-\\d{2}-\\d{2}\\b.*", ".*\\b\\d{2}-\\d{2}-\\d{4}\\b.*"]
-                    ),
-                )
-                # Output: {'score': 1}
         """
 
         @traceable
