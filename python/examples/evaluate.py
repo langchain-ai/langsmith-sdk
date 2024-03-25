@@ -103,8 +103,19 @@ results = evaluate(
     experiment=experiment_name,
 )
 
+# Example 4: Streaming each prediction to more easily + eagerly debug.
+results = evaluate(
+    predict,
+    data=dataset_name,
+    evaluators=[accuracy],
+    batch_evaluators=[precision],
+    blocking=False,
+)
+for i, result in enumerate(results):
+    pass
 
-# Example 4: Adding evaluation results to an existing set of runs (within an experiment)
+
+# Example 5: Adding evaluation results to an existing set of runs (within an experiment)
 runs = client.list_runs(project_name=experiment_name, execution_order=1)
 
 
@@ -127,18 +138,6 @@ evaluate(
 )
 
 
-# Example 5: Streaming each prediction to more easily + eagerly debug.
-results = evaluate(
-    predict,
-    data=dataset_name,
-    evaluators=[accuracy],
-    batch_evaluators=[precision],
-    blocking=False,
-)
-for i, result in enumerate(results):
-    pass
-
-
 # TODO: Comparing against an EXISTING test run
 # I think this should be a separate API honestly to remove ambiguity,
 # since you may want to mix ground truth "correctness" metrics with
@@ -148,3 +147,8 @@ for i, result in enumerate(results):
 #     return {"score": target.outputs["output"] > baseline.outputs["output"]}
 # evaluate_relative(predict, baseline=experiment_name/id/class,
 # evaluators=[predicted_length])
+# TODO: Evaluate against RAW PREDICTIONS
+# If I have a set of predictions like {"output": "foo"}
+# Evaluate COULD create a new experiment with those predictions and then
+# call the evaluators.
+# This could be useful if youw anted to just run inference separately

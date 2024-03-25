@@ -167,7 +167,7 @@ class _ExperimentManager:
         elif isinstance(experiment, schemas.TracerSession) and experiment.name:
             self.experiment_name = experiment.name
         else:
-            self.experiment_name = uuid.uuid4().hex
+            self.experiment_name = _get_random_name()
         metadata = metadata or {}
         if not metadata.get("revision_id"):
             metadata = {
@@ -183,11 +183,6 @@ class _ExperimentManager:
         self._runs = runs
         self._evaluation_results = evaluation_results
         self._aggregate_results = aggregate_results
-
-    def _get_random_name(self) -> str:
-        from langsmith.evaluation._name_generation import generate_name  # noqa: F401
-
-        return generate_name()
 
     @staticmethod
     def _resolve_data(
@@ -383,6 +378,8 @@ class _ExperimentManager:
 
     @staticmethod
     def _wrap_target(target: TARGET_T) -> rh.SupportsLangsmithExtra:
+        if not callable(target):
+            raise ValueError("Target must be a callable function.")
         if rh.is_traceable_function(target):
             fn = cast(rh.SupportsLangsmithExtra, target)
         else:
@@ -516,9 +513,7 @@ def _resolve_evaluators(
 
 def _wrap_batch_evaluators(
     evaluators: Sequence[BATCH_EVALUATOR_T],
-) -> Sequence[BATCH_EVALUATOR_T]:
-    results = []
-
+) -> List[BATCH_EVALUATOR_T]:
     def _wrap(evaluator: BATCH_EVALUATOR_T) -> BATCH_EVALUATOR_T:
         def _wrapper_inner(
             runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
@@ -572,3 +567,9 @@ def _forward(
         run=cast(schemas.Run, run),
         example=example,
     )
+
+
+def _get_random_name() -> str:
+    from langsmith.evaluation._name_generation import random_name  # noqa: F401
+
+    return random_name()

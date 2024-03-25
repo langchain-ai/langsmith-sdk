@@ -145,11 +145,13 @@ class LangChainStringEvaluator:
 
     def as_run_evaluator(
         self,
-        prepare_data: Optional[Callable[[Run, Example], SingleEvaluatorInput]] = None,
+        prepare_data: Optional[
+            Callable[[Run, Optional[Example]], SingleEvaluatorInput]
+        ] = None,
     ) -> RunEvaluator:
         """Convert the LangChainStringEvaluator to a RunEvaluator.
 
-        Thiss is the object used in the LangSmith `evaluate` API.
+        This is the object used in the LangSmith `evaluate` API.
 
         Returns:
             RunEvaluator: The converted RunEvaluator.
@@ -211,7 +213,7 @@ def compute_score(run, example):
                 )
 
             return SingleEvaluatorInput(
-                prediction=next(iter(run.outputs.values())),
+                prediction=next(iter(run.outputs.values())),  # type: ignore[union-attr]
                 reference=(
                     next(iter(example.outputs.values()))
                     if (
