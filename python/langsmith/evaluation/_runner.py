@@ -14,12 +14,14 @@ from contextvars import copy_context
 from typing import (
     Callable,
     DefaultDict,
+    Dict,
     Generator,
     Iterable,
     Iterator,
     List,
     Optional,
     Sequence,
+    Tuple,
     Union,
     cast,
 )
@@ -43,14 +45,16 @@ from langsmith.evaluation.integrations import LangChainStringEvaluator
 
 logger = logging.getLogger(__name__)
 
-PIPELINE_T = Callable[[dict], dict]
-TARGET_T = PIPELINE_T
-# dataset-name, dataset_id, or examples
+TARGET_T = Callable[[dict], dict]
+# Data format: dataset-name, dataset_id, or examples
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
+# Summary evaluator runs over the whole dataset
+# and reports aggregate metric(s)
 SUMMARY_EVALUATOR_T = Callable[
     [Sequence[schemas.Run], Sequence[schemas.Example]],
     Union[EvaluationResult, EvaluationResults],
 ]
+# Row-level evaluator
 EVALUATOR_T = Union[
     RunEvaluator,
     Callable[[schemas.Run, Optional[schemas.Example]], EvaluationResult],
@@ -345,9 +349,9 @@ class ExperimentResults:
         for item in tqdm(results):
             with self._lock:
                 self._results.append(item)
-        batch_scores = manager.get_batch_scores()
+        summary_scores = manager.get_summary_scores()
         with self._lock:
-            self._aggregate_results = batch_scores
+            self._summary_results = summary_scores
 
     def __len__(self) -> int:
         return len(self._results)
@@ -362,7 +366,7 @@ class ExperimentResults:
 ## Private API
 
 
-def _is_callable(target: TARGET_T) -> bool:
+def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run]]) -> bool:
     return callable(target) or (hasattr(target, "invoke") and callable(target.invoke))
 
 
@@ -383,14 +387,16 @@ def _evaluate(
         client=client,
         metadata=metadata,
         experiment_prefix=experiment_prefix,
-        runs=None if _is_callable(target) else target,
+        runs=None if _is_callable(target) else cast(Iterable[schemas.Run], target),
     ).start()
     if _is_callable(target):
-        manager = manager.with_predictions(target, max_concurrency=max_concurrency)
+        manager = manager.with_predictions(
+            cast(TARGET_T, target), max_concurrency=max_concurrency
+        )
     if evaluators:
-        manager = manager.with_scores(evaluators, max_concurrency=max_concurrency)
+        manager = manager.with_evaluators(evaluators, max_concurrency=max_concurrency)
     if summary_evaluators:
-        manager = manager.with_batch_scores(summary_evaluators)
+        manager = manager.with_summary_evaluators(summary_evaluators)
     results = ExperimentResults(manager)
     if blocking:
         results.wait()
@@ -408,6 +414,7 @@ def _is_uuid(value: str) -> bool:
 def _load_nested_traces(
     project: Union[str, uuid.UUID], client: langsmith.Client
 ) -> List[schemas.Run]:
+    """Load nested traces for a given project."""
     if isinstance(project, uuid.UUID) or _is_uuid(project):
         runs = client.list_runs(project_id=project)
     else:
@@ -436,38 +443,52 @@ def _load_tqdm() -> Callable[[Iterable], Iterable]:
 
 
 class _ExperimentManager:
+    """Manage the execution of experiments.
+
+    Supports lazily running predictions and evaluations in parallel to facilitate
+    result streaming and early debugging.
+
+    Args:
+        data (DATA_T): The data used for the experiment. Can be a dataset name or ID OR
+            a generator of examples.
+        runs (Optional[Iterable[schemas.Run]]): The runs associated with the experiment
+            predictions.
+        experiment (Optional[schemas.TracerSession]): The tracer session
+            associated with the experiment.
+        experiment_prefix (Optional[str]): The prefix for the experiment name.
+        metadata (Optional[dict]): Additional metadata for the experiment.
+        client (Optional[langsmith.Client]): The Langsmith client used for
+             the experiment.
+        evaluation_results (Optional[Iterable[EvaluationResults]]): The evaluation
+            sresults for the experiment.
+        summary_results (Optional[Iterable[EvaluationResults]]): The aggregate results
+            for the experiment.
+    """
+
     def __init__(
         self,
         data: DATA_T,
         /,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
         runs: Optional[Iterable[schemas.Run]] = None,
         experiment: Optional[schemas.TracerSession] = None,
-        experiment_prefix: Optional[str] = None,
-        metadata: Optional[dict] = None,
         client: Optional[langsmith.Client] = None,
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
-        aggregate_results: Optional[Iterable[EvaluationResults]] = None,
+        summary_results: Optional[Iterable[EvaluationResults]] = None,
     ):
-        self._experiment: Optional[schemas.TracerSession] = (
-            experiment if isinstance(experiment, schemas.TracerSession) else None
-        )
-        self._runs = runs
         self.client = client or langsmith.Client()
-        if self._experiment is not None:
-            if not self._experiment.name:
-                raise ValueError("Experiment name must be defined if provided.")
-            self.experiment_name: str = self._experiment.name
-        elif self._runs is not None:
-            self._runs, runs_iter = itertools.tee(self._runs)
-            first_run = next(runs_iter)
-            self._experiment = self.client.read_project(project_id=first_run.session_id)
-            if not self._experiment.name:
-                raise ValueError("Experiment name not found for provided runs.")
-            self.experiment_name = self._experiment.name
-        elif isinstance(experiment_prefix, str):
-            self.experiment_name = experiment_prefix + ":" + uuid.uuid4().hex[:7]
-        else:
-            self.experiment_name = _get_random_name()
+        # If we've already created or started the experiment,
+        # use that name.
+        experiment_name, experiment, runs = _resolve_experiment_name(
+            experiment,
+            experiment_prefix,
+            runs,
+            self.client,
+        )
+        self.experiment_name = experiment_name
+        self._experiment = experiment
+        self._runs = runs
         metadata = metadata or {}
         if not metadata.get("revision_id"):
             metadata = {
@@ -480,22 +501,12 @@ class _ExperimentManager:
         self._data = data
         self._examples: Optional[Iterable[schemas.Example]] = None
         self._evaluation_results = evaluation_results
-        self._aggregate_results = aggregate_results
-
-    @staticmethod
-    def _resolve_data(
-        data: DATA_T, *, client: langsmith.Client
-    ) -> Iterable[schemas.Example]:
-        if isinstance(data, str):
-            return client.list_examples(dataset_name=data)
-        elif isinstance(data, uuid.UUID):
-            return client.list_examples(dataset_id=data)
-        return data
+        self._summary_results = summary_results
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
-            self._examples = self._resolve_data(self._data, client=self.client)
+            self._examples = _resolve_data(self._data, client=self.client)
         self._examples, examples_iter = itertools.tee(self._examples)
         return examples_iter
 
@@ -542,7 +553,7 @@ class _ExperimentManager:
         else:
             project = self._experiment
         if project.url:
-            # HACKHACK
+            # TODO: Make this a public API
             project_url = project.url.split("?")[0]
             dataset_id = first_example.dataset_id
             base_url = project_url.split("/projects/p/")[0]
@@ -572,6 +583,7 @@ class _ExperimentManager:
         /,
         max_concurrency: Optional[int] = None,
     ) -> _ExperimentManager:
+        """Lazily apply the target function to the experiment."""
         context = copy_context()
         _experiment_results = context.run(
             self._predict, target, max_concurrency=max_concurrency
@@ -584,12 +596,9 @@ class _ExperimentManager:
             client=self.client,
             runs=(pred["run"] for pred in r2),
             # TODO: Can't do multiple prediction rounds rn.
-            # evaluation_results=(
-            #     pred["evaluation_results"] for pred in _experiment_results
-            # ),
         )
 
-    def with_scores(
+    def with_evaluators(
         self,
         evaluators: Sequence[
             Union[
@@ -600,11 +609,14 @@ class _ExperimentManager:
         *,
         max_concurrency: Optional[int] = None,
     ) -> _ExperimentManager:
+        """Lazily apply the provided evaluators to the experiment."""
         evaluators = _resolve_evaluators(evaluators)
         context = copy_context()
         experiment_results = context.run(
             self._score, evaluators, max_concurrency=max_concurrency
         )
+        # Split the generator into three so the manager
+        # can consume each value individually.
         r1, r2, r3 = itertools.tee(experiment_results, 3)
         return _ExperimentManager(
             (result["example"] for result in r1),
@@ -613,13 +625,14 @@ class _ExperimentManager:
             client=self.client,
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
-            aggregate_results=self._aggregate_results,
+            summary_results=self._summary_results,
         )
 
-    def with_batch_scores(
+    def with_summary_evaluators(
         self,
         summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
     ) -> _ExperimentManager:
+        """Lazily apply the provided summary evaluators to the experiment."""
         wrapped_evaluators = _wrap_summary_evaluators(summary_evaluators)
         context = copy_context()
         aggregate_feedback_gen = context.run(
@@ -632,10 +645,11 @@ class _ExperimentManager:
             client=self.client,
             runs=self.runs,
             evaluation_results=self._evaluation_results,
-            aggregate_results=aggregate_feedback_gen,
+            summary_results=aggregate_feedback_gen,
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
+        """Return the traces, evaluation results, and associated examples."""
         for run, example, evaluation_results in zip(
             self.runs, self.examples, self.evaluation_results
         ):
@@ -645,13 +659,18 @@ class _ExperimentManager:
                 evaluation_results=evaluation_results,
             )
 
-    def get_batch_scores(self):
-        if self._aggregate_results is None:
+    def get_summary_scores(self) -> Dict[str, List[dict]]:
+        """If summary_evaluators were applied, consume and return the results."""
+        if self._summary_results is None:
             return {"results": []}
         # Consume the generator
         return {
-            "results": [res for results in self._aggregate_results for res in results]
+            "results": [
+                res for results in self._summary_results for res in results["results"]
+            ]
         }
+
+    # Private methods.
 
     def _get_experiment(self) -> schemas.TracerSession:
         if self._experiment is None:
@@ -678,20 +697,11 @@ class _ExperimentManager:
             },
         )
 
-    @staticmethod
-    def _wrap_target(target: TARGET_T) -> rh.SupportsLangsmithExtra:
-        if not callable(target):
-            raise ValueError("Target must be a callable function.")
-        if rh.is_traceable_function(target):
-            fn = cast(rh.SupportsLangsmithExtra, target)
-        else:
-            fn = rh.traceable(name="Target")(target)
-        return fn
-
     def _predict(
         self, target: TARGET_T, /, max_concurrency: Optional[int] = None
     ) -> Generator[_ForwardResults, None, None]:
-        fn = self._wrap_target(target)
+        """Run the target function on the examples."""
+        fn = _ensure_traceable(target)
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
@@ -713,7 +723,7 @@ class _ExperimentManager:
                 ]
                 for future in cf.as_completed(futures):
                     yield future.result()
-        # Close out the project
+        # Close out the project.
         self._end()
 
     def _run_evaluators(
@@ -762,6 +772,11 @@ class _ExperimentManager:
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
     ) -> Iterable[ExperimentResultRow]:
+        """Run the evaluators on the prediction stream.
+
+        Expects runs to be available in the manager.
+        (e.g. from a previous prediction step)
+        """
         if max_concurrency == 0:
             for current_results in self.get_results():
                 yield self._run_evaluators(evaluators, current_results)
@@ -792,10 +807,10 @@ class _ExperimentManager:
             project_id = self._get_experiment().id
             for evaluator in summary_evaluators:
                 try:
-                    # HACKHACK
-                    batch_eval_result = evaluator(runs, examples)
+                    summary_eval_result = evaluator(runs, examples)
+                    # TODO: Expose public API for this.
                     flattened_results = self.client._select_eval_results(
-                        batch_eval_result,
+                        summary_eval_result,
                         fn_name=evaluator.__name__,
                     )
                     aggregate_feedback.extend(flattened_results)
@@ -811,7 +826,7 @@ class _ExperimentManager:
                         )
                 except Exception as e:
                     logger.error(
-                        f"Error running batch evaluator {repr(evaluator)}: {e}"
+                        f"Error running summary evaluator {repr(evaluator)}: {e}"
                     )
         yield {"results": aggregate_feedback}
 
@@ -891,6 +906,52 @@ def _forward(
         run=cast(schemas.Run, run),
         example=example,
     )
+
+
+def _resolve_data(
+    data: DATA_T, *, client: langsmith.Client
+) -> Iterable[schemas.Example]:
+    """Return the examples for the given dataset."""
+    if isinstance(data, str):
+        return client.list_examples(dataset_name=data)
+    elif isinstance(data, uuid.UUID):
+        return client.list_examples(dataset_id=data)
+    return data
+
+
+def _ensure_traceable(target: TARGET_T) -> rh.SupportsLangsmithExtra:
+    """Ensure the target function is traceable."""
+    if not callable(target):
+        raise ValueError("Target must be a callable function.")
+    if rh.is_traceable_function(target):
+        fn = cast(rh.SupportsLangsmithExtra, target)
+    else:
+        fn = rh.traceable(name="Target")(target)
+    return fn
+
+
+def _resolve_experiment_name(
+    experiment: Optional[schemas.TracerSession],
+    experiment_prefix: Optional[str],
+    runs: Optional[Iterable[schemas.Run]],
+    client: langsmith.Client,
+) -> Tuple[str, Optional[schemas.TracerSession], Optional[Iterable[schemas.Run]]]:
+    if experiment is not None:
+        if not experiment.name:
+            raise ValueError("Experiment name must be defined if provided.")
+        return experiment.name, experiment, runs
+    # If we have runs, that means the experiment was already started.
+    if runs is not None:
+        runs, runs_iter = itertools.tee(runs)
+        first_run = next(runs_iter)
+        experiment = client.read_project(project_id=first_run.session_id)
+        if not experiment.name:
+            raise ValueError("Experiment name not found for provided runs.")
+        return experiment.name, experiment, runs
+    # Otherwise, we will generate a new experiment name.
+    if isinstance(experiment_prefix, str):
+        return experiment_prefix + ":" + uuid.uuid4().hex[:7], None, None
+    return _get_random_name(), None, None
 
 
 def _get_random_name() -> str:
