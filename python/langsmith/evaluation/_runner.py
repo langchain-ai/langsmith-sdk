@@ -32,6 +32,7 @@ from langsmith import env as ls_env
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
 from langsmith import utils as ls_utils
+from langsmith import beta as ls_beta
 from langsmith.evaluation.evaluator import (
     EvaluationResult,
     EvaluationResults,
@@ -56,6 +57,7 @@ EVALUATOR_T = Union[
 ]
 
 
+@ls_beta.warn_beta
 def evaluate(
     target: TARGET_T,
     /,
@@ -97,7 +99,7 @@ def evaluate(
 
         >>> from typing import Sequence
         >>> from langsmith import Client
-        >>> from langsmith.evaluation import evaluate, evaluate_existing
+        >>> from langsmith.evaluation import evaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
         >>> client.clone_public_dataset(
@@ -224,6 +226,7 @@ def evaluate(
     )
 
 
+@ls_beta.warn_beta
 def evaluate_existing(
     experiment: Union[str, uuid.UUID],
     /,
