@@ -729,7 +729,9 @@ class Client:
                     args = list(e.args)
                     msg = args[1] if len(args) > 1 else ""
                     msg = msg.replace("session", "session (project)")
-                    emsg = "\n".join([args[0]] + [msg] + args[2:])
+                    emsg = "\n".join(
+                        [str(args[0])] + [msg] + [str(arg) for arg in args[2:]]
+                    )
                     raise ls_utils.LangSmithError(
                         f"Failed to {request_method} {url} in LangSmith API. {emsg}"
                     ) from e
