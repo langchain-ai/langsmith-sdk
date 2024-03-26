@@ -329,8 +329,12 @@ class _ExperimentManager:
         self,
         batch_evaluators: Sequence[BATCH_EVALUATOR_T],
     ) -> _ExperimentManager:
+
         wrapped_evaluators = _wrap_batch_evaluators(batch_evaluators)
-        aggregate_feedback_gen = self._apply_batch_evaluators(wrapped_evaluators)
+        context = copy_context()
+        aggregate_feedback_gen = context.run(
+            self._apply_batch_evaluators, wrapped_evaluators
+        )
         return _ExperimentManager(
             self.examples,
             experiment=self._experiment,
@@ -400,13 +404,20 @@ class _ExperimentManager:
         fn = self._wrap_target(target)
         if max_concurrency == 0:
             for example in self.examples:
-                yield _forward(fn, example, self.experiment_name, self._metadata)
+                yield _forward(
+                    fn, example, self.experiment_name, self._metadata, self.client
+                )
 
         else:
             with cf.ThreadPoolExecutor(max_concurrency) as executor:
                 futures = [
                     executor.submit(
-                        _forward, fn, example, self.experiment_name, self._metadata
+                        _forward,
+                        fn,
+                        example,
+                        self.experiment_name,
+                        self._metadata,
+                        self.client,
                     )
                     for example in self.examples
                 ]
@@ -559,6 +570,7 @@ def _forward(
     example: schemas.Example,
     experiment_name: str,
     metadata: dict,
+    client: langsmith.Client,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -574,6 +586,7 @@ def _forward(
                 on_end=_get_run,
                 project_name=experiment_name,
                 metadata=metadata,
+                client=client,
             ),
         )
     except Exception as e:
