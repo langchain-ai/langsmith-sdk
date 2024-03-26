@@ -12,6 +12,9 @@ integration_tests:
 integration_tests_fast:
 	poetry run pytest -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
+doctest:
+	poetry run pytest --doctest-modules langsmith/evaluation/_runner.py
+
 lint:
 	poetry run ruff .
 	poetry run mypy .

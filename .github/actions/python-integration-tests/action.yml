@@ -42,3 +42,12 @@ runs:
       run: make integration_tests_fast
       shell: bash
       working-directory: python
+    
+    - name: Run doctest
+      env:
+        LANGCHAIN_TRACING_V2: "true"
+        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: make doctest
+      shell: bash
+      working-directory: python

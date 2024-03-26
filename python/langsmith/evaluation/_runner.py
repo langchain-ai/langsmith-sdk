@@ -95,139 +95,121 @@ def evaluate(
     Examples:
         Prepare the dataset:
 
-        .. code-block:: python
-
-            from typing import Sequence
-
-            from langsmith import Client
-            from langsmith.evaluation import evaluate, evaluate_existing
-            from langsmith.schemas import Example, Run
-
-            client = Client()
-
-            client.clone_public_dataset(
-                "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
-            )
-            dataset_name = "Evaluate Examples"
-
+        >>> from typing import Sequence
+        >>> from langsmith import Client
+        >>> from langsmith.evaluation import evaluate, evaluate_existing
+        >>> from langsmith.schemas import Example, Run
+        >>> client = Client()
+        >>> client.clone_public_dataset(
+        ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+        ... )
+        >>> dataset_name = "Evaluate Examples"
 
         Basic usage:
 
-        .. code-block:: python
-            # Example (row)-level evaluator
-            def accuracy(run: Run, example: Example):
-                \"\"\"Row-level evaluator for accuracy.\"\"\"
-                pred = run.outputs["output"]
-                expected = example.outputs["answer"]
-                return {"score": expected.lower() == pred.lower()}
-
-
-            # Summary evaluators - define your custom aggregation logic
-            def precision(runs: Sequence[Run], examples: Sequence[Example]):
-                \"\"\"Experiment-level evaluator for precision.\"\"\"
-                # TP / (TP + FP)
-                predictions = [run.outputs["output"].lower() for run in runs]
-                expected = [example.outputs["answer"].lower() for example in examples]
-                # yes and no are the only possible answers
-                tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
-                fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
-                return {"score": tp / (tp + fp)}
-
-
-            # The target system / thing you want to evaluate
-            def predict(inputs: dict) -> dict:
-                "\"\"\This can be any function or just an API call to your app.\""\"
-                return {"output": "Yes"}
-
-
-            results = evaluate(
-                predict,
-                data=dataset_name,
-                evaluators=[accuracy],
-                summary_evaluators=[precision],
-            )
-
+        >>> def accuracy(run: Run, example: Example):
+        ...     # Row-level evaluator for accuracy.
+        ...     pred = run.outputs["output"]
+        ...     expected = example.outputs["answer"]
+        ...     return {"score": expected.lower() == pred.lower()}
+        ...
+        >>> def precision(runs: Sequence[Run], examples: Sequence[Example]):
+        ...     # Experiment-level evaluator for precision.
+        ...     # TP / (TP + FP)
+        ...     predictions = [run.outputs["output"].lower() for run in runs]
+        ...     expected = [example.outputs["answer"].lower() for example in examples]
+        ...     # yes and no are the only possible answers
+        ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+        ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+        ...     return {"score": tp / (tp + fp)}
+        ...
+        >>> def predict(inputs: dict) -> dict:
+        ...     # This can be any function or just an API call to your app.
+        ...     return {"output": "Yes"}
+        ...
+        >>> results = evaluate(
+        ...     predict,
+        ...     data=dataset_name,
+        ...     evaluators=[accuracy],
+        ...     summary_evaluators=[precision],
+        ... ) # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
 
         Evaluating over only a subset of the examples
 
-        .. code-block:: python
-            experiment_name = results.experiment_name
-
-            examples = client.list_examples(dataset_name=dataset_name, limit=5)
-            results = evaluate(
-                predict,
-                data=examples,
-                evaluators=[accuracy],
-                summary_evaluators=[precision],
-                experiment_prefix="My Experiment",
-            )
+        >>> experiment_name = results.experiment_name
+        >>> examples = client.list_examples(dataset_name=dataset_name, limit=5)
+        >>> results = evaluate(
+        ...     predict,
+        ...     data=examples,
+        ...     evaluators=[accuracy],
+        ...     summary_evaluators=[precision],
+        ...     experiment_prefix="My Experiment",
+        ... ) # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
 
         Streaming each prediction to more easily + eagerly debug.
 
-        .. code-block:: python
-            results = evaluate(
-                predict,
-                data=dataset_name,
-                evaluators=[accuracy],
-                summary_evaluators=[precision],
-                blocking=False,
-            )
-            for i, result in enumerate(results):
-                pass
+        >>> results = evaluate(
+        ...     predict,
+        ...     data=dataset_name,
+        ...     evaluators=[accuracy],
+        ...     summary_evaluators=[precision],
+        ...     blocking=False,
+        ... ) # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> for i, result in enumerate(results): # doctest: +ELLIPSIS
+        ...     pass
 
         Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
-        .. code-block:: python
-
-            from langsmith.evaluation import LangChainStringEvaluator
-
-            def prepare_criteria_data(run: Run, example: Example):
-                return {
-                    "prediction": run.outputs["output"],
-                    "reference": example.outputs["answer"],
-                    "input": str(example.inputs),
-                }
-
-            results = evaluate(
-                predict,
-                data=dataset_name,
-                evaluators=[
-                    accuracy,
-                    LangChainStringEvaluator("embedding_distance"),
-                    LangChainStringEvaluator(
-                        "labeled_criteria",
-                        config={
-                            "criteria": {
-                                "usefulness": "The prediction is useful if it is correct"
-                                            " and/or asks a useful followup question."
-                            },
-                        },
-                        prepare_data=prepare_criteria_data
-                    ),
-                ],
-                summary_evaluators=[precision],
-            )
+        >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> def prepare_criteria_data(run: Run, example: Example):
+        ...     return {
+        ...         "prediction": run.outputs["output"],
+        ...         "reference": example.outputs["answer"],
+        ...         "input": str(example.inputs),
+        ...     }
+        ...
+        >>> results = evaluate(
+        ...     predict,
+        ...     data=dataset_name,
+        ...     evaluators=[
+        ...         accuracy,
+        ...         LangChainStringEvaluator("embedding_distance"),
+        ...         LangChainStringEvaluator(
+        ...             "labeled_criteria",
+        ...             config={
+        ...                 "criteria": {
+        ...                     "usefulness": "The prediction is useful if it is correct"
+        ...                                   " and/or asks a useful followup question."
+        ...                 },
+        ...             },
+        ...             prepare_data=prepare_criteria_data
+        ...         ),
+        ...     ],
+        ...     summary_evaluators=[precision],
+        ... ) # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
 
         Evaluating a LangChain object:
 
-        .. code-block:: python
-
-            from langchain_core.runnables import chain as as_runnable
-
-            @as_runnable
-            def nested_predict(inputs):
-                return {"output": "Yes"}
-
-            @as_runnable
-            def lc_predict(inputs):
-                return nested_predict.invoke(inputs)
-
-            results = evaluate(
-                lc_predict.invoke,
-                data=dataset_name,
-                evaluators=[accuracy],
-                summary_evaluators=[precision],
-            )
+        >>> from langchain_core.runnables import chain as as_runnable
+        >>> @as_runnable
+        ... def nested_predict(inputs):
+        ...     return {"output": "Yes"}
+        ...
+        >>> @as_runnable
+        ... def lc_predict(inputs):
+        ...     return nested_predict.invoke(inputs)
+        ...
+        >>> results = evaluate(
+        ...     lc_predict.invoke,
+        ...     data=dataset_name,
+        ...     evaluators=[accuracy],
+        ...     summary_evaluators=[precision],
+        ... ) # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
     """  # noqa: E501
     return _evaluate(
         target,
@@ -270,53 +252,42 @@ def evaluate_existing(
         ExperimentResults: The evaluation results.
 
     Examples:
-        .. code-block:: python
-
-            from langsmith.evaluation import evaluate, evaluate_existing
-
-            # Run predictions without evaluation metrics
-            def predict(inputs: dict) -> dict:
-                "\"\"\This can be any function or just an API call to your app.\""\"
-                return {"output": "Yes"}
-
-            results = evaluate(
-                predict,
-                data=dataset_name,
-            )
-
-
-            # ... wait some time ...
-            # Then add metrics to the existing experiment
-
-            def accuracy(run: Run, example: Example):
-                \"\"\"Row-level evaluator for accuracy.\"\"\"
-                pred = run.outputs["output"]
-                expected = example.outputs["answer"]
-                return {"score": expected.lower() == pred.lower()}
-
-
-            def precision(runs: Sequence[Run], examples: Sequence[Example]):
-                \"\"\"Experiment-level evaluator for precision.\"\"\"
-                # TP / (TP + FP)
-                predictions = [run.outputs["output"].lower() for run in runs]
-                expected = [example.outputs["answer"].lower() for example in examples]
-                # yes and no are the only possible answers
-                tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
-                fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
-                return {"score": tp / (tp + fp)}
-
-            results = evaluate(
-                predict,
-                data=dataset_name,
-                evaluators=[accuracy],
-                summary_evaluators=[precision],
-            )
-
-            results = evaluate_existing(
-                experiment=results.experiment_name,
-                data=dataset_name,
-                summary_evaluators=[precision],
-            )
+        >>> from langsmith.evaluation import evaluate, evaluate_existing
+        >>> dataset_name = "Evaluate Examples"
+        >>> def predict(inputs: dict) -> dict:
+        ...     # This can be any function or just an API call to your app.
+        ...     return {"output": "Yes"}
+        ...
+        >>> # First run inference on the dataset
+        ... results = evaluate(
+        ...     predict,
+        ...     data=dataset_name,
+        ... ) # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> # Then apply evaluators to the experiment
+        ... def accuracy(run: Run, example: Example):
+        ...     # Row-level evaluator for accuracy.
+        ...     pred = run.outputs["output"]
+        ...     expected = example.outputs["answer"]
+        ...     return {"score": expected.lower() == pred.lower()}
+        ...
+        >>> def precision(runs: Sequence[Run], examples: Sequence[Example]):
+        ...     # Experiment-level evaluator for precision.
+        ...     # TP / (TP + FP)
+        ...     predictions = [run.outputs["output"].lower() for run in runs]
+        ...     expected = [example.outputs["answer"].lower() for example in examples]
+        ...     # yes and no are the only possible answers
+        ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+        ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+        ...     return {"score": tp / (tp + fp)}
+        >>> experiment_name = results.experiment_name # Can use the returned experiment name
+        >>> experiment_name = "My Experiment:d9f572e" # Or manually specify
+        >>> results = evaluate_existing(
+        ...     experiment_name,
+        ...     data=dataset_name,
+        ...     summary_evaluators=[precision],
+        ... ) # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
     """  # noqa: E501
     client = client or langsmith.Client()
     runs = _load_nested_traces(experiment, client)
@@ -473,10 +444,19 @@ class _ExperimentManager:
         self._experiment: Optional[schemas.TracerSession] = (
             experiment if isinstance(experiment, schemas.TracerSession) else None
         )
+        self._runs = runs
+        self.client = client or langsmith.Client()
         if self._experiment is not None:
             if not self._experiment.name:
                 raise ValueError("Experiment name must be defined if provided.")
             self.experiment_name: str = self._experiment.name
+        elif self._runs is not None:
+            self._runs, runs_iter = itertools.tee(self._runs)
+            first_run = next(runs_iter)
+            self._experiment = self.client.read_project(project_id=first_run.session_id)
+            if not self._experiment.name:
+                raise ValueError("Experiment name not found for provided runs.")
+            self.experiment_name = self._experiment.name
         elif isinstance(experiment_prefix, str):
             self.experiment_name = experiment_prefix + ":" + uuid.uuid4().hex[:7]
         else:
@@ -490,10 +470,8 @@ class _ExperimentManager:
                 **metadata,
             }
         self._metadata = metadata or {}
-        self.client = client or langsmith.Client()
         self._data = data
         self._examples: Optional[Iterable[schemas.Example]] = None
-        self._runs = runs
         self._evaluation_results = evaluation_results
         self._aggregate_results = aggregate_results
 
@@ -533,32 +511,27 @@ class _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
         _examples = itertools.chain([first_example], self.examples)
         if self._experiment is None:
-            if self._runs is None:
-                try:
-                    project_metadata = self._metadata or {}
-                    git_info = ls_env.get_git_info()
-                    if git_info:
-                        project_metadata = {
-                            **project_metadata,
-                            "git": git_info,
-                        }
-                    project = self.client.create_project(
-                        self.experiment_name,
-                        reference_dataset_id=first_example.dataset_id,
-                        metadata=project_metadata,
-                    )
-                except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
-                    if "already exists " not in str(e):
-                        raise e
-                    raise ValueError(
-                        # TODO: Better error
-                        f"Experiment {self.experiment_name} already exists."
-                        " Please use a different name."
-                    )
-            else:
-                self._runs, runs_iter = itertools.tee(self._runs)
-                first_run = next(runs_iter)
-                project = self.client.read_project(project_id=first_run.session_id)
+            try:
+                project_metadata = self._metadata or {}
+                git_info = ls_env.get_git_info()
+                if git_info:
+                    project_metadata = {
+                        **project_metadata,
+                        "git": git_info,
+                    }
+                project = self.client.create_project(
+                    self.experiment_name,
+                    reference_dataset_id=first_example.dataset_id,
+                    metadata=project_metadata,
+                )
+            except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
+                if "already exists " not in str(e):
+                    raise e
+                raise ValueError(
+                    # TODO: Better error
+                    f"Experiment {self.experiment_name} already exists."
+                    " Please use a different name."
+                )
         else:
             project = self._experiment
         if project.url:
@@ -824,7 +797,7 @@ class _ExperimentManager:
                         evaluator_info = feedback.pop("evaluator_info", None)
                         executor.submit(
                             self.client.create_feedback,
-                            **result.dict(),
+                            **feedback,
                             run_id=None,
                             project_id=project_id,
                             source_info=evaluator_info,
