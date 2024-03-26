@@ -68,32 +68,114 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
-    """Evaluate a target system or function on a given dataset.
+    r"""Evaluate a target system or function on a given dataset.
 
     Args:
-        target (TARGET_T): The target system or function to evaluate.
-        data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
-            examples, or a generator of examples.
-        evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
-            on each example. Defaults to None.
-        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
-            evaluators to run on the entire dataset. Defaults to None.
-        metadata (Optional[dict]): Metadata to attach to the experiment.
-            Defaults to None.
-        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
-            Defaults to None.
-        max_concurrency (Optional[int]): The maximum number of concurrent
-            evaluations to run. Defaults to None.
-        client (Optional[langsmith.Client]): The LangSmith client to use.
-            Defaults to None.
-        blocking (bool): Whether to block until the evaluation is complete.
-            Defaults to True.
+    target (TARGET_T): The target system or function to evaluate.
+    data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
+        examples, or a generator of examples.
+    evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
+        on each example. Defaults to None.
+    summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
+        evaluators to run on the entire dataset. Defaults to None.
+    metadata (Optional[dict]): Metadata to attach to the experiment.
+        Defaults to None.
+    experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+        Defaults to None.
+    max_concurrency (Optional[int]): The maximum number of concurrent
+        evaluations to run. Defaults to None.
+    client (Optional[langsmith.Client]): The LangSmith client to use.
+        Defaults to None.
+    blocking (bool): Whether to block until the evaluation is complete.
+        Defaults to True.
 
     Returns:
         ExperimentResults: The results of the evaluation.
 
     Examples:
-        Using the `evaluate` API with different evaluators:
+        Prepare the dataset:
+
+        .. code-block:: python
+
+            from typing import Sequence
+
+            from langsmith import Client
+            from langsmith.evaluation import evaluate, evaluate_existing
+            from langsmith.schemas import Example, Run
+
+            client = Client()
+
+            client.clone_public_dataset(
+                "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+            )
+            dataset_name = "Evaluate Examples"
+
+
+        Basic usage:
+
+        .. code-block:: python
+            # Example (row)-level evaluator
+            def accuracy(run: Run, example: Example):
+                \"\"\"Row-level evaluator for accuracy.\"\"\"
+                pred = run.outputs["output"]
+                expected = example.outputs["answer"]
+                return {"score": expected.lower() == pred.lower()}
+
+
+            # Summary evaluators - define your custom aggregation logic
+            def precision(runs: Sequence[Run], examples: Sequence[Example]):
+                \"\"\"Experiment-level evaluator for precision.\"\"\"
+                # TP / (TP + FP)
+                predictions = [run.outputs["output"].lower() for run in runs]
+                expected = [example.outputs["answer"].lower() for example in examples]
+                # yes and no are the only possible answers
+                tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+                fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+                return {"score": tp / (tp + fp)}
+
+
+            # The target system / thing you want to evaluate
+            def predict(inputs: dict) -> dict:
+                "\"\"\This can be any function or just an API call to your app.\""\"
+                return {"output": "Yes"}
+
+
+            results = evaluate(
+                predict,
+                data=dataset_name,
+                evaluators=[accuracy],
+                summary_evaluators=[precision],
+            )
+
+
+        Evaluating over only a subset of the examples
+
+        .. code-block:: python
+            experiment_name = results.experiment_name
+
+            examples = client.list_examples(dataset_name=dataset_name, limit=5)
+            results = evaluate(
+                predict,
+                data=examples,
+                evaluators=[accuracy],
+                summary_evaluators=[precision],
+                experiment_prefix="My Experiment",
+            )
+
+        Streaming each prediction to more easily + eagerly debug.
+
+        .. code-block:: python
+            results = evaluate(
+                predict,
+                data=dataset_name,
+                evaluators=[accuracy],
+                summary_evaluators=[precision],
+                blocking=False,
+            )
+            for i, result in enumerate(results):
+                pass
+
+        Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
         .. code-block:: python
 
@@ -117,7 +199,7 @@ def evaluate(
                         config={
                             "criteria": {
                                 "usefulness": "The prediction is useful if it is correct"
-                                " and/or asks a useful followup question."
+                                            " and/or asks a useful followup question."
                             },
                         },
                         prepare_data=prepare_criteria_data
@@ -171,6 +253,71 @@ def evaluate_existing(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
+    r"""Evaluate existing experiment runs.
+
+    Args:
+        experiment (Union[str, uuid.UUID]): The identifier of the experiment to evaluate.
+        data (DATA_T): The data to use for evaluation.
+        evaluators (Optional[Sequence[EVALUATOR_T]]): Optional sequence of evaluators to use for individual run evaluation.
+        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
+            to apply over the entire dataset.
+        metadata (Optional[dict]): Optional metadata to include in the evaluation results.
+        max_concurrency (Optional[int]): Optional maximum number of concurrent evaluations.
+        client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
+        blocking (bool): Whether to block until evaluation is complete.
+
+    Returns:
+        ExperimentResults: The evaluation results.
+
+    Examples:
+        .. code-block:: python
+
+            from langsmith.evaluation import evaluate, evaluate_existing
+
+            # Run predictions without evaluation metrics
+            def predict(inputs: dict) -> dict:
+                "\"\"\This can be any function or just an API call to your app.\""\"
+                return {"output": "Yes"}
+
+            results = evaluate(
+                predict,
+                data=dataset_name,
+            )
+
+
+            # ... wait some time ...
+            # Then add metrics to the existing experiment
+
+            def accuracy(run: Run, example: Example):
+                \"\"\"Row-level evaluator for accuracy.\"\"\"
+                pred = run.outputs["output"]
+                expected = example.outputs["answer"]
+                return {"score": expected.lower() == pred.lower()}
+
+
+            def precision(runs: Sequence[Run], examples: Sequence[Example]):
+                \"\"\"Experiment-level evaluator for precision.\"\"\"
+                # TP / (TP + FP)
+                predictions = [run.outputs["output"].lower() for run in runs]
+                expected = [example.outputs["answer"].lower() for example in examples]
+                # yes and no are the only possible answers
+                tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+                fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+                return {"score": tp / (tp + fp)}
+
+            results = evaluate(
+                predict,
+                data=dataset_name,
+                evaluators=[accuracy],
+                summary_evaluators=[precision],
+            )
+
+            results = evaluate_existing(
+                experiment=results.experiment_name,
+                data=dataset_name,
+                summary_evaluators=[precision],
+            )
+    """  # noqa: E501
     client = client or langsmith.Client()
     runs = _load_nested_traces(experiment, client)
     return _evaluate(
