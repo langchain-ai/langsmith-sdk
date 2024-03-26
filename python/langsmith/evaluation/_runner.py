@@ -284,7 +284,7 @@ def evaluate_existing(
         ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         ...     return {"score": tp / (tp + fp)}
         >>> experiment_name = results.experiment_name # Can use the returned experiment name
-        >>> experiment_name = "My Experiment:d9f572e" # Or manually specify
+        >>> experiment_name = "My Experiment:64e6e91" # Or manually specify
         >>> results = evaluate_existing(
         ...     experiment_name,
         ...     data=dataset_name,
