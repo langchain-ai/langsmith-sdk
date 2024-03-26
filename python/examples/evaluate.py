@@ -162,7 +162,6 @@ def lc_predict(inputs):
 results = evaluate(
     lc_predict.invoke,
     data=dataset_name,
-    # max_concurrency=0,
     evaluators=[accuracy],
     batch_evaluators=[precision],
 )
