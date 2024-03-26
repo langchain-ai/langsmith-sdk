@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import concurrent.futures as cf
 import datetime
 import functools
@@ -12,6 +13,7 @@ import uuid
 from contextvars import copy_context
 from typing import (
     Callable,
+    DefaultDict,
     Generator,
     Iterable,
     Iterator,
@@ -41,7 +43,7 @@ from langsmith.evaluation.integrations import LangChainStringEvaluator
 logger = logging.getLogger(__name__)
 
 PIPELINE_T = Callable[[dict], dict]
-TARGET_T = Union[PIPELINE_T, Iterable[schemas.Run]]
+TARGET_T = PIPELINE_T
 # dataset-name, dataset_id, or examples
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
 BATCH_EVALUATOR_T = Callable[
@@ -66,23 +68,41 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
-    manager = _ExperimentManager(
-        data,
-        client=client,
+    return _evaluate(
+        target,
+        data=data,
+        evaluators=evaluators,
+        batch_evaluators=batch_evaluators,
         metadata=metadata,
         experiment=experiment,
-        runs=None if callable(target) else target,
-    ).start()
-    if callable(target):
-        manager = manager.with_predictions(target, max_concurrency=max_concurrency)
-    if evaluators:
-        manager = manager.with_scores(evaluators, max_concurrency=max_concurrency)
-    if batch_evaluators:
-        manager = manager.with_batch_scores(batch_evaluators)
-    results = ExperimentResults(manager)
-    if blocking:
-        results.wait()
-    return results
+        max_concurrency=max_concurrency,
+        client=client,
+        blocking=blocking,
+    )
+
+
+def evaluate_existing(
+    existing_experiment: Union[str, uuid.UUID],
+    /,
+    data: DATA_T,
+    evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+    batch_evaluators: Optional[Sequence[BATCH_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    max_concurrency: Optional[int] = None,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+) -> ExperimentResults:
+    runs = _load_nested_traces(existing_experiment, client)
+    return _evaluate(
+        runs,
+        data=data,
+        evaluators=evaluators,
+        batch_evaluators=batch_evaluators,
+        metadata=metadata,
+        max_concurrency=max_concurrency,
+        client=client,
+        blocking=blocking,
+    )
 
 
 class ExperimentResultRow(TypedDict):
@@ -139,6 +159,67 @@ class ExperimentResults:
 
 
 ## Private API
+
+
+def _evaluate(
+    target: TARGET_T,
+    /,
+    data: DATA_T,
+    evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+    batch_evaluators: Optional[Sequence[BATCH_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    experiment: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+) -> ExperimentResults:
+    manager = _ExperimentManager(
+        data,
+        client=client,
+        metadata=metadata,
+        experiment=experiment,
+        runs=None if callable(target) else target,
+    ).start()
+    if callable(target):
+        manager = manager.with_predictions(target, max_concurrency=max_concurrency)
+    if evaluators:
+        manager = manager.with_scores(evaluators, max_concurrency=max_concurrency)
+    if batch_evaluators:
+        manager = manager.with_batch_scores(batch_evaluators)
+    results = ExperimentResults(manager)
+    if blocking:
+        results.wait()
+    return results
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _load_nested_traces(
+    project: Union[str, uuid.UUID], client: langsmith.Client
+) -> List[schemas.Run]:
+    if isinstance(project, uuid.UUID) or _is_uuid(project):
+        runs = client.list_runs(project_id=project)
+    else:
+        runs = client.list_runs(project_name=project)
+
+    treemap: DefaultDict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    results = []
+    all_runs = {}
+    for run in runs:
+        if run.parent_run_id is not None:
+            treemap[run.parent_run_id].append(run)
+        else:
+            results.append(run)
+        all_runs[run.id] = run
+    for run_id, child_runs in treemap.items():
+        all_runs[run_id].child_runs = sorted(child_runs, key=lambda r: r.dotted_order)
+    return results
 
 
 def _load_tqdm() -> Callable[[Iterable], Iterable]:
