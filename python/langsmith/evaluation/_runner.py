@@ -317,6 +317,17 @@ class ExperimentResultRow(TypedDict):
 
 
 class ExperimentResults:
+    """Represents the results of an evaluate() call.
+
+    This class provides an iterator interface to iterate over the experiment results
+    as they become available. It also provides methods to access the experiment name,
+    the number of results, and to wait for the results to be processed.
+
+    Methods:
+        experiment_name() -> str: Returns the name of the experiment.
+        wait() -> None: Waits for the experiment data to be processed.
+    """
+
     def __init__(
         self,
         experiment_manager: _ExperimentManager,
@@ -360,6 +371,11 @@ class ExperimentResults:
         return f"<ExperimentResults {self.experiment_name}>"
 
     def wait(self) -> None:
+        """Wait for the evaluation runner to complete.
+
+        This method blocks the current thread until the evaluation runner has
+        finished its execution.
+        """
         self._thread.join()
 
 
@@ -382,23 +398,31 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
+    # Initialize the experiment manager.
     manager = _ExperimentManager(
         data,
         client=client,
         metadata=metadata,
         experiment_prefix=experiment_prefix,
+        # If provided, we don't need to create a new experiment.
         runs=None if _is_callable(target) else cast(Iterable[schemas.Run], target),
+        # Create or resolve the experiment.
     ).start()
     if _is_callable(target):
+        # Add predictions to the experiment.
         manager = manager.with_predictions(
             cast(TARGET_T, target), max_concurrency=max_concurrency
         )
     if evaluators:
+        # Apply evaluators to the predictions.
         manager = manager.with_evaluators(evaluators, max_concurrency=max_concurrency)
     if summary_evaluators:
+        # Apply the experiment-level summary evaluators.
         manager = manager.with_summary_evaluators(summary_evaluators)
+    # Start consuming the results.
     results = ExperimentResults(manager)
     if blocking:
+        # Wait for the evaluation to complete.
         results.wait()
     return results
 
