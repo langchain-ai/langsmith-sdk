@@ -46,7 +46,7 @@ PIPELINE_T = Callable[[dict], dict]
 TARGET_T = PIPELINE_T
 # dataset-name, dataset_id, or examples
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
-BATCH_EVALUATOR_T = Callable[
+SUMMARY_EVALUATOR_T = Callable[
     [Sequence[schemas.Run], Sequence[schemas.Example]],
     Union[EvaluationResult, EvaluationResults],
 ]
@@ -61,20 +61,98 @@ def evaluate(
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
-    batch_evaluators: Optional[Sequence[BATCH_EVALUATOR_T]] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    experiment: Optional[str] = None,
+    experiment_prefix: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
+    """Evaluate a target system or function on a given dataset.
+
+    Args:
+        target (TARGET_T): The target system or function to evaluate.
+        data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
+            examples, or a generator of examples.
+        evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
+            on each example. Defaults to None.
+        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
+            evaluators to run on the entire dataset. Defaults to None.
+        metadata (Optional[dict]): Metadata to attach to the experiment.
+            Defaults to None.
+        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+            Defaults to None.
+        max_concurrency (Optional[int]): The maximum number of concurrent
+            evaluations to run. Defaults to None.
+        client (Optional[langsmith.Client]): The LangSmith client to use.
+            Defaults to None.
+        blocking (bool): Whether to block until the evaluation is complete.
+            Defaults to True.
+
+    Returns:
+        ExperimentResults: The results of the evaluation.
+
+    Examples:
+        Using the `evaluate` API with different evaluators:
+
+        .. code-block:: python
+
+            from langsmith.evaluation import LangChainStringEvaluator
+
+            def prepare_criteria_data(run: Run, example: Example):
+                return {
+                    "prediction": run.outputs["output"],
+                    "reference": example.outputs["answer"],
+                    "input": str(example.inputs),
+                }
+
+            results = evaluate(
+                predict,
+                data=dataset_name,
+                evaluators=[
+                    accuracy,
+                    LangChainStringEvaluator("embedding_distance"),
+                    LangChainStringEvaluator(
+                        "labeled_criteria",
+                        config={
+                            "criteria": {
+                                "usefulness": "The prediction is useful if it is correct"
+                                " and/or asks a useful followup question."
+                            },
+                        },
+                    ).as_run_evaluator(prepare_data=prepare_criteria_data),
+                ],
+                summary_evaluators=[precision],
+            )
+
+        Evaluating a LangChain object:
+
+        .. code-block:: python
+
+            from langchain_core.runnables import chain as as_runnable
+
+            @as_runnable
+            def nested_predict(inputs):
+                return {"output": "Yes"}
+
+            @as_runnable
+            def lc_predict(inputs):
+                return nested_predict.invoke(inputs)
+
+            results = evaluate(
+                lc_predict.invoke,
+                data=dataset_name,
+                evaluators=[accuracy],
+                summary_evaluators=[precision],
+            )
+    """  # noqa: E501
     return _evaluate(
         target,
         data=data,
         evaluators=evaluators,
-        batch_evaluators=batch_evaluators,
+        summary_evaluators=summary_evaluators,
         metadata=metadata,
-        experiment=experiment,
+        experiment_prefix=experiment_prefix,
         max_concurrency=max_concurrency,
         client=client,
         blocking=blocking,
@@ -82,22 +160,23 @@ def evaluate(
 
 
 def evaluate_existing(
-    existing_experiment: Union[str, uuid.UUID],
+    experiment: Union[str, uuid.UUID],
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
-    batch_evaluators: Optional[Sequence[BATCH_EVALUATOR_T]] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
-    runs = _load_nested_traces(existing_experiment, client)
+    client = client or langsmith.Client()
+    runs = _load_nested_traces(experiment, client)
     return _evaluate(
         runs,
         data=data,
         evaluators=evaluators,
-        batch_evaluators=batch_evaluators,
+        summary_evaluators=summary_evaluators,
         metadata=metadata,
         max_concurrency=max_concurrency,
         client=client,
@@ -162,13 +241,13 @@ class ExperimentResults:
 
 
 def _evaluate(
-    target: TARGET_T,
+    target: Union[TARGET_T, Iterable[schemas.Run]],
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
-    batch_evaluators: Optional[Sequence[BATCH_EVALUATOR_T]] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    experiment: Optional[str] = None,
+    experiment_prefix: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -177,15 +256,15 @@ def _evaluate(
         data,
         client=client,
         metadata=metadata,
-        experiment=experiment,
+        experiment_prefix=experiment_prefix,
         runs=None if callable(target) else target,
     ).start()
     if callable(target):
         manager = manager.with_predictions(target, max_concurrency=max_concurrency)
     if evaluators:
         manager = manager.with_scores(evaluators, max_concurrency=max_concurrency)
-    if batch_evaluators:
-        manager = manager.with_batch_scores(batch_evaluators)
+    if summary_evaluators:
+        manager = manager.with_batch_scores(summary_evaluators)
     results = ExperimentResults(manager)
     if blocking:
         results.wait()
@@ -236,7 +315,8 @@ class _ExperimentManager:
         data: DATA_T,
         /,
         runs: Optional[Iterable[schemas.Run]] = None,
-        experiment: Optional[Union[str, schemas.TracerSession]] = None,
+        experiment: Optional[schemas.TracerSession] = None,
+        experiment_prefix: Optional[str] = None,
         metadata: Optional[dict] = None,
         client: Optional[langsmith.Client] = None,
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
@@ -245,10 +325,12 @@ class _ExperimentManager:
         self._experiment: Optional[schemas.TracerSession] = (
             experiment if isinstance(experiment, schemas.TracerSession) else None
         )
-        if isinstance(experiment, str):
-            self.experiment_name: str = experiment
-        elif isinstance(experiment, schemas.TracerSession) and experiment.name:
-            self.experiment_name = experiment.name
+        if self._experiment is not None:
+            if not self._experiment.name:
+                raise ValueError("Experiment name must be defined if provided.")
+            self.experiment_name: str = self._experiment.name
+        elif isinstance(experiment_prefix, str):
+            self.experiment_name = experiment_prefix + ":" + uuid.uuid4().hex[:7]
         else:
             self.experiment_name = _get_random_name()
         metadata = metadata or {}
@@ -340,13 +422,13 @@ class _ExperimentManager:
                 f"{base_url}/datasets/{dataset_id}/compare?"
                 f"selectedSessions={project.id}"
             )
-            logger.info(  # noqa: T201
-                f"View the evaluation results for project '{self.experiment_name}'"
+            print(  # noqa: T201
+                f"View the evaluation results for experiment: '{self.experiment_name}'"
                 f" at:\n{comparison_url}\n\n"
             )
         else:
             # HACKHACK
-            logger.info("Starting evaluation of experiment: %s", self.experiment_name)
+            print("Starting evaluation of experiment: %s", self.experiment_name)
         return _ExperimentManager(
             _examples,
             experiment=project,
@@ -408,12 +490,12 @@ class _ExperimentManager:
 
     def with_batch_scores(
         self,
-        batch_evaluators: Sequence[BATCH_EVALUATOR_T],
+        summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
     ) -> _ExperimentManager:
-        wrapped_evaluators = _wrap_batch_evaluators(batch_evaluators)
+        wrapped_evaluators = _wrap_summary_evaluators(summary_evaluators)
         context = copy_context()
         aggregate_feedback_gen = context.run(
-            self._apply_batch_evaluators, wrapped_evaluators
+            self._apply_summary_evaluators, wrapped_evaluators
         )
         return _ExperimentManager(
             self.examples,
@@ -570,8 +652,8 @@ class _ExperimentManager:
                     result = future.result()
                     yield result
 
-    def _apply_batch_evaluators(
-        self, batch_evaluators: Sequence[BATCH_EVALUATOR_T]
+    def _apply_summary_evaluators(
+        self, summary_evaluators: Sequence[SUMMARY_EVALUATOR_T]
     ) -> Generator[EvaluationResults, None, None]:
         runs, examples = [], []
         for run, example in zip(self.runs, self.examples):
@@ -580,7 +662,7 @@ class _ExperimentManager:
         aggregate_feedback = []
         with cf.ThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id
-            for evaluator in batch_evaluators:
+            for evaluator in summary_evaluators:
                 try:
                     # HACKHACK
                     batch_eval_result = evaluator(runs, examples)
@@ -620,10 +702,10 @@ def _resolve_evaluators(
     return results
 
 
-def _wrap_batch_evaluators(
-    evaluators: Sequence[BATCH_EVALUATOR_T],
-) -> List[BATCH_EVALUATOR_T]:
-    def _wrap(evaluator: BATCH_EVALUATOR_T) -> BATCH_EVALUATOR_T:
+def _wrap_summary_evaluators(
+    evaluators: Sequence[SUMMARY_EVALUATOR_T],
+) -> List[SUMMARY_EVALUATOR_T]:
+    def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
 
         @functools.wraps(evaluator)
