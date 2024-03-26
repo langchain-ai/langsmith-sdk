@@ -196,7 +196,7 @@ class DynamicRunEvaluator(RunEvaluator):
 
     def __repr__(self) -> str:
         """String representation of the DynamicRunEvaluator object."""
-        return f"<DynamicRunEvaluator {self.func.__name__}>"
+        return f"<DynamicRunEvaluator {getattr(self.func, '__name__')}>"
 
 
 def run_evaluator(

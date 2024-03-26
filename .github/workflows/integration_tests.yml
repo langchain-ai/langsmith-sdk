@@ -49,6 +49,7 @@ jobs:
           python-version: 3.11
           langchain-api-key: ${{ secrets.LANGCHAIN_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
   js_integration_test:
     name: JS Integration Test

@@ -169,13 +169,11 @@ class LangChainStringEvaluator:
             else ""
         )
         customization_error_str = f"""
-
-lc_evaluator = load_evaluator('<evaluator_type>', ...)
-def compute_score(run, example):
-    evaluation_inputs = {{
+def prepare_data(run, example):
+    return {{
         "prediction": run.outputs['my_output'],{reference_str}{input_str}
     }}
-    return lc_evaluator.evaluate_strings(run.outputs['my_output'])
+evaluator = LangChainStringEvaluator(..., prepare_data=prepare_data)
 """
 
         @traceable
@@ -184,9 +182,9 @@ def compute_score(run, example):
         ) -> SingleEvaluatorInput:
             if run.outputs and len(run.outputs) > 1:
                 raise ValueError(
-                    f"Evaluator {self.evaluator} only supports a single output. "
-                    "Please ensure that the run has a single output."
-                    " Or create a custom evaluator yourself:\n\n"
+                    f"Evaluator {self.evaluator} only supports a single prediction "
+                    "key. Please ensure that the run has a single output."
+                    " Or initialize with a prepare_data:\n"
                     f"{customization_error_str}"
                 )
             if (
@@ -196,9 +194,9 @@ def compute_score(run, example):
                 and len(example.outputs) > 1
             ):
                 raise ValueError(
-                    f"Evaluator {self.evaluator} nly supports a single output. "
+                    f"Evaluator {self.evaluator} nly supports a single reference key. "
                     "Please ensure that the example has a single output."
-                    " Or create a custom evaluator yourself:\n\n"
+                    " Or create a custom evaluator yourself:\n"
                     f"{customization_error_str}"
                 )
             if (
@@ -208,9 +206,9 @@ def compute_score(run, example):
                 and len(example.inputs) > 1
             ):
                 raise ValueError(
-                    f"Evaluator {self.evaluator} only supports a single input. "
+                    f"Evaluator {self.evaluator} only supports a single input key. "
                     "Please ensure that the example has a single input."
-                    " Or create a custom evaluator yourself:\n\n"
+                    " Or initialize with a prepare_data:\n"
                     f"{customization_error_str}"
                 )
 
