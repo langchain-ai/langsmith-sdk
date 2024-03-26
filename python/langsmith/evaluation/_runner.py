@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import datetime
+import functools
 import itertools
 import logging
 import threading
@@ -35,7 +36,6 @@ from langsmith.evaluation.evaluator import (
     run_evaluator,
 )
 from langsmith.evaluation.integrations import LangChainStringEvaluator
-from contextvars import copy_context
 
 logger = logging.getLogger(__name__)
 
@@ -280,10 +280,7 @@ class _ExperimentManager:
         /,
         max_concurrency: Optional[int] = None,
     ) -> _ExperimentManager:
-        context = copy_context()
-        _experiment_results = context.run(
-            self._predict, target, max_concurrency=max_concurrency
-        )
+        _experiment_results = self._predict(target, max_concurrency=max_concurrency)
         r1, r2 = itertools.tee(_experiment_results, 2)
         return _ExperimentManager(
             (pred["example"] for pred in r1),
@@ -309,10 +306,7 @@ class _ExperimentManager:
         max_concurrency: Optional[int] = None,
     ) -> _ExperimentManager:
         evaluators = _resolve_evaluators(evaluators)
-        context = copy_context()
-        experiment_results = context.run(
-            self._score, evaluators, max_concurrency=max_concurrency
-        )
+        experiment_results = self._score(evaluators, max_concurrency=max_concurrency)
         r1, r2, r3 = itertools.tee(experiment_results, 3)
         return _ExperimentManager(
             (result["example"] for result in r1),
@@ -454,19 +448,23 @@ class _ExperimentManager:
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
     ) -> Iterable[ExperimentResultRow]:
-        with cf.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            futures = []
+        if max_concurrency == 0:
             for current_results in self.get_results():
-                futures.append(
-                    executor.submit(
-                        self._run_evaluators,
-                        evaluators,
-                        current_results,
+                yield self._run_evaluators(evaluators, current_results)
+        else:
+            with cf.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+                futures = []
+                for current_results in self.get_results():
+                    futures.append(
+                        executor.submit(
+                            self._run_evaluators,
+                            evaluators,
+                            current_results,
+                        )
                     )
-                )
-            for future in cf.as_completed(futures):
-                result = future.result()
-                yield result
+                for future in cf.as_completed(futures):
+                    result = future.result()
+                    yield result
 
     def _apply_batch_evaluators(
         self, batch_evaluators: Sequence[BATCH_EVALUATOR_T]
@@ -522,10 +520,13 @@ def _wrap_batch_evaluators(
     evaluators: Sequence[BATCH_EVALUATOR_T],
 ) -> List[BATCH_EVALUATOR_T]:
     def _wrap(evaluator: BATCH_EVALUATOR_T) -> BATCH_EVALUATOR_T:
+        eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
+
+        @functools.wraps(evaluator)
         def _wrapper_inner(
             runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
         ) -> EvaluationResults:
-            @rh.traceable(name=getattr(evaluator, "__name__", "BatchEvaluator"))
+            @rh.traceable(name=eval_name)
             def _wrapper_super_inner(runs_: str, examples_: str) -> EvaluationResults:
                 return evaluator(runs, examples)
 

@@ -225,7 +225,8 @@ def _setup_run(
         or container_input["project_name"]  # at decorator time
         or utils.get_tracer_project()  # default
     )
-    if not parent_run_ and not utils.tracing_is_enabled():
+    id_ = langsmith_extra.get("run_id")
+    if not id_ and not parent_run_ and not utils.tracing_is_enabled():
         utils.log_once(
             logging.DEBUG, "LangSmith tracing is disabled, returning original function."
         )
@@ -237,6 +238,7 @@ def _setup_run(
             outer_tags=None,
             on_end=langsmith_extra.get("on_end"),
         )
+    id_ = id_ or str(uuid.uuid4())
     signature = inspect.signature(func)
     name_ = name or func.__name__
     docstring = func.__doc__
@@ -265,7 +267,6 @@ def _setup_run(
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     _TAGS.set(tags_)
     tags_ += tags or []
-    id_ = langsmith_extra.get("run_id", uuid.uuid4())
     client_ = langsmith_extra.get("client", client)
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
