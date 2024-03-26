@@ -319,7 +319,7 @@ class ExperimentResults:
     ):
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._thread = threading.Thread(
             target=lambda: self._process_data(self._manager)
         )
@@ -362,6 +362,10 @@ class ExperimentResults:
 ## Private API
 
 
+def _is_callable(target: TARGET_T) -> bool:
+    return callable(target) or (hasattr(target, "invoke") and callable(target.invoke))
+
+
 def _evaluate(
     target: Union[TARGET_T, Iterable[schemas.Run]],
     /,
@@ -379,9 +383,9 @@ def _evaluate(
         client=client,
         metadata=metadata,
         experiment_prefix=experiment_prefix,
-        runs=None if callable(target) else target,
+        runs=None if _is_callable(target) else target,
     ).start()
-    if callable(target):
+    if _is_callable(target):
         manager = manager.with_predictions(target, max_concurrency=max_concurrency)
     if evaluators:
         manager = manager.with_scores(evaluators, max_concurrency=max_concurrency)
