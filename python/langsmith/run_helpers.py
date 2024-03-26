@@ -231,7 +231,6 @@ def _setup_run(
     if (
         not project_cv
         and not reference_example_id
-        and not id_
         and not parent_run_
         and not utils.tracing_is_enabled()
     ):
