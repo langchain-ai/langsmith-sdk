@@ -120,7 +120,8 @@ def evaluate(
                                 " and/or asks a useful followup question."
                             },
                         },
-                    ).as_run_evaluator(prepare_data=prepare_criteria_data),
+                        prepare_data=prepare_criteria_data
+                    ),
                 ],
                 summary_evaluators=[precision],
             )

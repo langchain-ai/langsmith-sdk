@@ -123,7 +123,13 @@ class LangChainStringEvaluator:
     """  # noqa: E501
 
     def __init__(
-        self, evaluator: Union[StringEvaluator, str], *, config: Optional[dict] = None
+        self,
+        evaluator: Union[StringEvaluator, str],
+        *,
+        config: Optional[dict] = None,
+        prepare_data: Optional[
+            Callable[[Run, Optional[Example]], SingleEvaluatorInput]
+        ] = None,
     ):
         """Initialize a LangChainStringEvaluator.
 
@@ -143,11 +149,10 @@ class LangChainStringEvaluator:
         else:
             raise NotImplementedError(f"Unsupported evaluator type: {type(evaluator)}")
 
+        self._prepare_data = prepare_data
+
     def as_run_evaluator(
         self,
-        prepare_data: Optional[
-            Callable[[Run, Optional[Example]], SingleEvaluatorInput]
-        ] = None,
     ) -> RunEvaluator:
         """Convert the LangChainStringEvaluator to a RunEvaluator.
 
@@ -234,8 +239,8 @@ def compute_score(run, example):
         def evaluate(run: Run, example: Optional[Example] = None) -> dict:
             eval_inputs = (
                 prepare_evaluator_inputs(run, example)
-                if prepare_data is None
-                else prepare_data(run, example)
+                if self._prepare_data is None
+                else self._prepare_data(run, example)
             )
             results = self.evaluator.evaluate_strings(**eval_inputs)
             return {"key": self.evaluator.evaluation_name, **results}
