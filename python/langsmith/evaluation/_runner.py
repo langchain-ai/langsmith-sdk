@@ -9,6 +9,7 @@ import itertools
 import logging
 import threading
 import uuid
+from contextvars import copy_context
 from typing import (
     Callable,
     Generator,
@@ -280,7 +281,10 @@ class _ExperimentManager:
         /,
         max_concurrency: Optional[int] = None,
     ) -> _ExperimentManager:
-        _experiment_results = self._predict(target, max_concurrency=max_concurrency)
+        context = copy_context()
+        _experiment_results = context.run(
+            self._predict, target, max_concurrency=max_concurrency
+        )
         r1, r2 = itertools.tee(_experiment_results, 2)
         return _ExperimentManager(
             (pred["example"] for pred in r1),
@@ -306,7 +310,10 @@ class _ExperimentManager:
         max_concurrency: Optional[int] = None,
     ) -> _ExperimentManager:
         evaluators = _resolve_evaluators(evaluators)
-        experiment_results = self._score(evaluators, max_concurrency=max_concurrency)
+        context = copy_context()
+        experiment_results = context.run(
+            self._score, evaluators, max_concurrency=max_concurrency
+        )
         r1, r2, r3 = itertools.tee(experiment_results, 3)
         return _ExperimentManager(
             (result["example"] for result in r1),
