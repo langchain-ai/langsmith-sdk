@@ -28,11 +28,11 @@ from requests import HTTPError
 from typing_extensions import TypedDict
 
 import langsmith
+from langsmith import beta as ls_beta
 from langsmith import env as ls_env
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
 from langsmith import utils as ls_utils
-from langsmith import beta as ls_beta
 from langsmith.evaluation.evaluator import (
     EvaluationResult,
     EvaluationResults,

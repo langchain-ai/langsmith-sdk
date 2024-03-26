@@ -37,89 +37,86 @@ class LangChainStringEvaluator:
     Examples:
         Creating a simple LangChainStringEvaluator:
 
-        .. code-block:: python
-
-            evaluator = LangChainStringEvaluator("exact_match")
+        >>> evaluator = LangChainStringEvaluator("exact_match")
 
         Converting a LangChainStringEvaluator to a RunEvaluator:
 
-        .. code-block:: python
-
-            from langsmith.evaluation import LangChainStringEvaluator
-
-            evaluator = LangChainStringEvaluator(
-                "criteria",
-                config={
-                    "criteria": {
-                        "usefulness": "The prediction is useful if"
-                        " it is correct and/or asks a useful followup question."
-                    },
-            )
-            run_evaluator = evaluator.as_run_evaluator()
+        >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> evaluator = LangChainStringEvaluator(
+        ...     "criteria",
+        ...     config={
+        ...         "criteria": {
+        ...             "usefulness": "The prediction is useful if"
+        ...             " it is correct and/or asks a useful followup question."
+        ...         },
+        ...     }
+        ... )
+        >>> run_evaluator = evaluator.as_run_evaluator()
+        >>> run_evaluator # doctest: +ELLIPSIS
+        <DynamicRunEvaluator ...>
 
         Using the `evaluate` API with different evaluators:
-
-        .. code-block:: python
-
-            from langchain_anthropic import ChatAnthropic
-
-            import langsmith
-            from langsmith.evaluation import LangChainStringEvaluator, evaluate
-
-            # Criteria evaluator
-            criteria_evaluator = LangChainStringEvaluator(
-                "criteria", config={
-                    "criteria": {
-                        "usefulness": "The prediction is useful if it is correct"
-                                " and/or asks a useful followup question."
-                    },
-                    "llm": ChatAnthropic(model="claude-3-opus-20240229")
-                }
-            )
-
-            # Embedding distance evaluator
-            embedding_evaluator = LangChainStringEvaluator("embedding_distance")
-
-            # Exact match evaluator
-            exact_match_evaluator = LangChainStringEvaluator("exact_match")
-
-            # Regex match evaluator
-            regex_match_evaluator = LangChainStringEvaluator(
-                "regex_match", config={
-                    "flags": re.IGNORECASE
-                }
-            )
-
-            # Scoring evaluator
-            scoring_evaluator = LangChainStringEvaluator(
-                "scoring", config={
-                    "criteria": {
-                        "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
-                    },
-                    "normalize_by": 10
-                }
-            )
-
-            # String distance evaluator
-            string_distance_evaluator = LangChainStringEvaluator(
-                "string_distance", config={
-                    "distance_metric": "levenshtein"
-                }
-            )
-
-            results = evaluate(
-                lambda inputs: {"prediction": "foo"},
-                data="my-dataset",
-                evaluators=[
-                    embedding_evaluator,
-                    criteria_evaluator,
-                    exact_match_evaluator,
-                    regex_match_evaluator,
-                    scoring_evaluator,
-                    string_distance_evaluator
-                ],
-                batch_evaluators=[equal_length],
-            )
+        >>> def prepare_data(run: Run, example: Example):
+        ...     # Convert the evaluation data into the format expected by the evaluator
+        ...     # Only required for datasets with multiple inputs/output keys
+        ...     return {
+        ...         "prediction": run.outputs["prediction"],
+        ...         "reference": example.outputs["answer"],
+        ...         "input": str(example.inputs),
+        ...     }
+        ...
+        >>> import re
+        >>> from langchain_anthropic import ChatAnthropic
+        >>> import langsmith
+        >>> from langsmith.evaluation import LangChainStringEvaluator, evaluate
+        >>> criteria_evaluator = LangChainStringEvaluator(
+        ...     "criteria", config={
+        ...         "criteria": {
+        ...             "usefulness": "The prediction is useful if it is correct"
+        ...                     " and/or asks a useful followup question."
+        ...         },
+        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229")
+        ...     },
+        ...     prepare_data=prepare_data
+        ... )
+        >>> embedding_evaluator = LangChainStringEvaluator("embedding_distance")
+        >>> exact_match_evaluator = LangChainStringEvaluator("exact_match")
+        >>> regex_match_evaluator = LangChainStringEvaluator(
+        ...     "regex_match", config={
+        ...         "flags": re.IGNORECASE
+        ...     },
+        ...     prepare_data=prepare_data
+        ... )
+        >>> scoring_evaluator = LangChainStringEvaluator(
+        ...     "labeled_score_string", config={
+        ...         "criteria": {
+        ...             "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
+        ...         },
+        ...         "normalize_by": 10
+        ...     },
+        ...     prepare_data=prepare_data
+        ... )
+        >>> string_distance_evaluator = LangChainStringEvaluator(
+        ...     "string_distance", config={
+        ...         "distance_metric": "levenshtein"
+        ...     },
+        ...     prepare_data=prepare_data
+        ... )
+        >>> from langsmith import Client
+        >>> client = Client()
+        >>> results = evaluate(
+        ...     lambda inputs: {"prediction": "foo"},
+        ...     data=client.list_examples(dataset_name="Evaluate Examples", limit=1),
+        ...     evaluators=[
+        ...         embedding_evaluator,
+        ...         criteria_evaluator,
+        ...         exact_match_evaluator,
+        ...         regex_match_evaluator,
+        ...         scoring_evaluator,
+        ...         string_distance_evaluator
+        ...     ],
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
     """  # noqa: E501
 
     def __init__(
@@ -187,7 +184,7 @@ def compute_score(run, example):
         ) -> SingleEvaluatorInput:
             if run.outputs and len(run.outputs) > 1:
                 raise ValueError(
-                    "The evaluator only supports a single output. "
+                    f"Evaluator {self.evaluator} only supports a single output. "
                     "Please ensure that the run has a single output."
                     " Or create a custom evaluator yourself:\n\n"
                     f"{customization_error_str}"
@@ -199,7 +196,7 @@ def compute_score(run, example):
                 and len(example.outputs) > 1
             ):
                 raise ValueError(
-                    "The evaluator only supports a single output. "
+                    f"Evaluator {self.evaluator} nly supports a single output. "
                     "Please ensure that the example has a single output."
                     " Or create a custom evaluator yourself:\n\n"
                     f"{customization_error_str}"
@@ -211,7 +208,7 @@ def compute_score(run, example):
                 and len(example.inputs) > 1
             ):
                 raise ValueError(
-                    "The evaluator only supports a single input. "
+                    f"Evaluator {self.evaluator} only supports a single input. "
                     "Please ensure that the example has a single input."
                     " Or create a custom evaluator yourself:\n\n"
                     f"{customization_error_str}"

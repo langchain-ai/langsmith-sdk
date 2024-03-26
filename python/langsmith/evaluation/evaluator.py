@@ -194,6 +194,10 @@ class DynamicRunEvaluator(RunEvaluator):
         """  # noqa: E501
         return self.evaluate_run(run, example)
 
+    def __repr__(self) -> str:
+        """String representation of the DynamicRunEvaluator object."""
+        return f"<DynamicRunEvaluator {self.func.__name__}>"
+
 
 def run_evaluator(
     func: Callable[
