@@ -219,14 +219,22 @@ def _setup_run(
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
     parent_run_ = langsmith_extra.get("run_tree") or get_run_tree_context()
+    project_cv = _PROJECT_NAME.get()
     selected_project = (
-        _PROJECT_NAME.get()  # From parent trace
+        project_cv  # From parent trace
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
         or utils.get_tracer_project()  # default
     )
+    reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
-    if not id_ and not parent_run_ and not utils.tracing_is_enabled():
+    if (
+        not project_cv
+        and not reference_example_id
+        and not id_
+        and not parent_run_
+        and not utils.tracing_is_enabled()
+    ):
         utils.log_once(
             logging.DEBUG, "LangSmith tracing is disabled, returning original function."
         )
@@ -293,7 +301,7 @@ def _setup_run(
             },
             inputs=inputs,
             run_type=run_type,
-            reference_example_id=langsmith_extra.get("reference_example_id"),
+            reference_example_id=reference_example_id,
             project_name=selected_project,
             extra=extra_inner,
             tags=tags_,

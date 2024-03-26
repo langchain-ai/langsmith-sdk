@@ -329,7 +329,6 @@ class _ExperimentManager:
         self,
         batch_evaluators: Sequence[BATCH_EVALUATOR_T],
     ) -> _ExperimentManager:
-
         wrapped_evaluators = _wrap_batch_evaluators(batch_evaluators)
         context = copy_context()
         aggregate_feedback_gen = context.run(
@@ -432,7 +431,13 @@ class _ExperimentManager:
         current_results: ExperimentResultRow,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
-        with rh.tracing_context(**{**current_context, "project_name": "evaluators"}):
+        metadata = {
+            **(current_context["metadata"] or {}),
+            **{"experiment": self.experiment_name},
+        }
+        with rh.tracing_context(
+            **{**current_context, "project_name": "evaluators", "metadata": metadata}
+        ):
             run = current_results["run"]
             example = current_results["example"]
             eval_results = current_results["evaluation_results"]
