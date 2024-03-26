@@ -1439,6 +1439,7 @@ class Client:
         start_time: Optional[datetime.datetime] = None,
         error: Optional[bool] = None,
         run_ids: Optional[List[ID_TYPE]] = None,
+        limit: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
@@ -1480,6 +1481,8 @@ class Client:
             Whether to filter by error status.
         run_ids : List[str or UUID] or None, default=None
             The IDs of the runs to filter by.
+        limit : int or None, default=None
+            The maximum number of runs to return.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -1572,12 +1575,14 @@ class Client:
             **kwargs,
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}
-        yield from (
-            ls_schemas.Run(**run, _host_url=self._host_url)
-            for run in self._get_cursor_paginated_list(
+        for i, run in enumerate(
+            self._get_cursor_paginated_list(
                 "/runs/query", body=body_query, request_method="post"
             )
-        )
+        ):
+            yield ls_schemas.Run(**run, _host_url=self._host_url)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def get_run_url(
         self,
@@ -1795,6 +1800,7 @@ class Client:
         project_ids: Optional[List[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.TracerSessionResult]:
         """List shared projects.
 
@@ -1807,19 +1813,22 @@ class Client:
                 Name of the project to filter the results, by default None.
             name_contains : str, optional
                 Substring to search for in project names, by default None.
+            limit : int, optional
 
         Yields:
             TracerSessionResult: The shared projects.
         """
         params = {"id": project_ids, "name": name, "name_contains": name_contains}
         share_token = _as_uuid(dataset_share_token, "dataset_share_token")
-        yield from [
-            ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
-            for project in self._get_paginated_list(
+        for i, project in enumerate(
+            self._get_paginated_list(
                 f"/public/{share_token}/datasets/sessions",
                 params=params,
             )
-        ]
+        ):
+            yield ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def create_project(
         self,
@@ -2094,6 +2103,7 @@ class Client:
         reference_dataset_id: Optional[ID_TYPE] = None,
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.TracerSession]:
         """List projects from the LangSmith API.
 
@@ -2111,13 +2121,17 @@ class Client:
             The name of the reference dataset to filter by, by default None
         reference_free : Optional[bool], optional
             Whether to filter for only projects not associated with a dataset.
+        limit : Optional[int], optional
+            The maximum number of projects to return, by default None
 
         Yields:
         ------
         TracerSession
             The projects.
         """
-        params: Dict[str, Any] = {}
+        params: Dict[str, Any] = {
+            "limit": min(limit, 100) if limit is not None else 100
+        }
         if project_ids is not None:
             params["id"] = project_ids
         if name is not None:
@@ -2138,10 +2152,12 @@ class Client:
             params["reference_dataset"] = reference_dataset_id
         if reference_free is not None:
             params["reference_free"] = reference_free
-        yield from (
-            ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
-            for project in self._get_paginated_list("/sessions", params=params)
-        )
+        for i, project in enumerate(
+            self._get_paginated_list("/sessions", params=params)
+        ):
+            yield ls_schemas.TracerSession(**project, _host_url=self._host_url)
+            if limit is not None and i + 1 >= limit:
+                break
 
     @ls_utils.xor_args(("project_name", "project_id"))
     def delete_project(
@@ -2390,6 +2406,7 @@ class Client:
         data_type: Optional[str] = None,
         dataset_name: Optional[str] = None,
         dataset_name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.Dataset]:
         """List the datasets on the LangSmith API.
 
@@ -2398,7 +2415,9 @@ class Client:
         Dataset
             The datasets.
         """
-        params: Dict[str, Any] = {}
+        params: Dict[str, Any] = {
+            "limit": min(limit, 100) if limit is not None else 100
+        }
         if dataset_ids is not None:
             params["id"] = dataset_ids
         if data_type is not None:
@@ -2407,15 +2426,16 @@ class Client:
             params["name"] = dataset_name
         if dataset_name_contains is not None:
             params["name_contains"] = dataset_name_contains
-
-        yield from (
-            ls_schemas.Dataset(
+        for i, dataset in enumerate(
+            self._get_paginated_list("/datasets", params=params)
+        ):
+            yield ls_schemas.Dataset(
                 **dataset,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
-            for dataset in self._get_paginated_list("/datasets", params=params)
-        )
+            if limit is not None and i + 1 >= limit:
+                break
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def delete_dataset(
@@ -2504,6 +2524,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         search: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.DatasetVersion]:
         """List dataset versions.
 
@@ -2511,20 +2532,26 @@ class Client:
             dataset_id (Optional[ID_TYPE]): The ID of the dataset.
             dataset_name (Optional[str]): The name of the dataset.
             search (Optional[str]): The search query.
+            limit (Optional[int]): The maximum number of versions to return.
 
         Returns:
             Iterator[ls_schemas.DatasetVersion]: An iterator of dataset versions.
         """
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-        params = {"search": search}
-        yield from (
-            ls_schemas.DatasetVersion(**version)
-            for version in self._get_paginated_list(
+        params = {
+            "search": search,
+            "limit": min(limit, 100) if limit is not None else 100,
+        }
+        for i, version in enumerate(
+            self._get_paginated_list(
                 f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/versions",
                 params=params,
             )
-        )
+        ):
+            yield ls_schemas.DatasetVersion(**version)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def read_dataset_version(
         self,
@@ -2945,6 +2972,7 @@ class Client:
         example_ids: Optional[Sequence[ID_TYPE]] = None,
         as_of: Optional[Union[datetime.datetime, str]] = None,
         inline_s3_urls: bool = True,
+        limit: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -2962,6 +2990,7 @@ class Client:
                 of the tagged (or timestamped) version.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
+            limit (int, optional): The maximum number of examples to return.
 
         Yields:
             Example: The examples.
@@ -2973,6 +3002,7 @@ class Client:
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
             ),
             "inline_s3_urls": inline_s3_urls,
+            "limit": min(limit, 100) if limit is not None else 100,
         }
         if dataset_id is not None:
             params["dataset"] = dataset_id
@@ -2981,14 +3011,16 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
-        yield from (
-            ls_schemas.Example(
+        for i, example in enumerate(
+            self._get_paginated_list("/examples", params=params)
+        ):
+            yield ls_schemas.Example(
                 **example,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
-            for example in self._get_paginated_list("/examples", params=params)
-        )
+            if limit is not None and i + 1 >= limit:
+                break
 
     def update_example(
         self,
@@ -3452,6 +3484,7 @@ class Client:
         run_ids: Optional[Sequence[ID_TYPE]] = None,
         feedback_key: Optional[Sequence[str]] = None,
         feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
+        limit: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Feedback]:
         """List the feedback objects on the LangSmith API.
@@ -3466,6 +3499,7 @@ class Client:
         feedback_source_type: List[FeedbackSourceType] or None, default=None
             The type of feedback source, such as model
             (for model-generated feedback) or API.
+        limit : int or None, default=None
         **kwargs : Any
             Additional keyword arguments.
 
@@ -3476,16 +3510,19 @@ class Client:
         """
         params: dict = {
             "run": run_ids,
+            "limit": min(limit, 100) if limit is not None else 100,
             **kwargs,
         }
         if feedback_key is not None:
             params["key"] = feedback_key
         if feedback_source_type is not None:
             params["source"] = feedback_source_type
-        yield from (
-            ls_schemas.Feedback(**feedback)
-            for feedback in self._get_paginated_list("/feedback", params=params)
-        )
+        for i, feedback in enumerate(
+            self._get_paginated_list("/feedback", params=params)
+        ):
+            yield ls_schemas.Feedback(**feedback)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def delete_feedback(self, feedback_id: ID_TYPE) -> None:
         """Delete a feedback by ID.
@@ -3618,11 +3655,14 @@ class Client:
     def list_presigned_feedback_tokens(
         self,
         run_id: ID_TYPE,
+        *,
+        limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.FeedbackIngestToken]:
         """List the feedback ingest tokens for a run.
 
         Args:
             run_id: The ID of the run to filter by.
+            limit: The maximum number of tokens to return.
 
         Yields:
             FeedbackIngestToken
@@ -3630,11 +3670,14 @@ class Client:
         """
         params = {
             "run_id": _as_uuid(run_id, "run_id"),
+            "limit": min(limit, 100) if limit is not None else 100,
         }
-        yield from (
-            ls_schemas.FeedbackIngestToken(**token)
-            for token in self._get_paginated_list("/feedback/tokens", params=params)
-        )
+        for i, token in enumerate(
+            self._get_paginated_list("/feedback/tokens", params=params)
+        ):
+            yield ls_schemas.FeedbackIngestToken(**token)
+            if limit is not None and i + 1 >= limit:
+                break
 
     # Annotation Queue API
 
@@ -3644,6 +3687,7 @@ class Client:
         queue_ids: Optional[List[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.AnnotationQueue]:
         """List the annotation queues on the LangSmith API.
 
@@ -3654,6 +3698,7 @@ class Client:
                 The name of the queue to filter by.
             name_contains : str or None, default=None
                 The substring that the queue name should contain.
+            limit : int or None, default=None
 
         Yields:
             AnnotationQueue
@@ -3667,15 +3712,18 @@ class Client:
             ),
             "name": name,
             "name_contains": name_contains,
+            "limit": min(limit, 100) if limit is not None else 100,
         }
-        yield from (
-            ls_schemas.AnnotationQueue(
+        for i, queue in enumerate(
+            self._get_paginated_list("/annotation-queues", params=params)
+        ):
+            yield ls_schemas.AnnotationQueue(
                 **queue,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
-            for queue in self._get_paginated_list("/annotation-queues", params=params)
-        )
+            if limit is not None and i + 1 >= limit:
+                break
 
     def create_annotation_queue(
         self,
@@ -3789,7 +3837,7 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def list_runs_from_annotation_queue(
-        self, queue_id: ID_TYPE
+        self, queue_id: ID_TYPE, *, limit: Optional[int] = None
     ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
         """List runs from an annotation queue with the specified queue ID.
 
@@ -3801,10 +3849,15 @@ class Client:
                 annotation queue.
         """
         path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
-        yield from (
-            ls_schemas.RunWithAnnotationQueueInfo(**run)
-            for run in self._get_paginated_list(path, params={"headers": self._headers})
-        )
+        limit_ = min(limit, 100) if limit is not None else 100
+        for i, run in enumerate(
+            self._get_paginated_list(
+                path, params={"headers": self._headers, "limit": limit_}
+            )
+        ):
+            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
+            if limit is not None and i + 1 >= limit:
+                break
 
     async def arun_on_dataset(
         self,
