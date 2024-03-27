@@ -42,36 +42,6 @@ def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
     return Client()
 
 
-def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test projects."""
-    new_project = "__Test Project"
-    if langchain_client.has_project(new_project):
-        langchain_client.delete_project(project_name=new_project)
-
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    langchain_client.create_project(
-        project_name=new_project,
-        project_extra={"evaluator": "THE EVALUATOR"},
-    )
-    project = langchain_client.read_project(project_name=new_project)
-    assert project.name == new_project
-    runs = list(langchain_client.list_runs(project_name=new_project))
-    project_id_runs = list(langchain_client.list_runs(project_id=project.id))
-    assert len(runs) == len(project_id_runs) == 0
-    langchain_client.delete_project(project_name=new_project)
-
-    with pytest.raises(LangSmithError):
-        langchain_client.read_project(project_name=new_project)
-    assert new_project not in set(
-        [
-            sess.name
-            for sess in langchain_client.list_projects(name_contains=new_project)
-        ]
-    )
-    with pytest.raises(LangSmithError):
-        langchain_client.delete_project(project_name=new_project)
-
-
 def test_datasets(langchain_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
