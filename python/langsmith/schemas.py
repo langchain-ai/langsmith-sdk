@@ -558,7 +558,7 @@ class TracerSessionResult(TracerSession):
     """The start time of the last run in the project."""
     feedback_stats: Optional[Dict[str, Any]]
     """Feedback stats for the project."""
-    reference_dataset_ids: Optional[List[UUID]]
+    reference_dataset_id: Optional[UUID]
     """The reference dataset IDs this project's runs were generated on."""
     run_facets: Optional[List[Dict[str, Any]]]
     """Facets for the runs in the project."""
