@@ -303,11 +303,11 @@ def evaluate_existing(
     data = list(
         client.list_examples(
             dataset_id=project.reference_dataset_id,
-            as_of=runs[0].start_time,
+            as_of=project.metadata.get("dataset_version"),
         )
     )
-    runs = sorted(runs, key=lambda r: r.reference_example_id)
-    data = sorted(data, key=lambda d: d.id)
+    runs = sorted(runs, key=lambda r: str(r.reference_example_id))
+    data = sorted(data, key=lambda d: str(d.id))
     return _evaluate(
         runs,
         data=data,
@@ -943,7 +943,14 @@ def _forward(
                 reference_example_id=example.id,
                 on_end=_get_run,
                 project_name=experiment_name,
-                metadata=metadata,
+                metadata={
+                    **metadata,
+                    "example_version": (
+                        example.modified_at.isoformat()
+                        if example.modified_at
+                        else example.created_at.isoformat()
+                    ),
+                },
                 client=client,
             ),
         )

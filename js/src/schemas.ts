@@ -33,7 +33,7 @@ export interface TracerSessionResult extends TracerSession {
   // Feedback stats for the session.
   feedback_stats?: Record<string, unknown>;
   // The reference dataset ID this session's runs were generated on.
-  reference_dataset_ids: string;
+  reference_dataset_id?: string;
   // Facets for the runs in the session.
   run_facets?: KVMap[];
 }
