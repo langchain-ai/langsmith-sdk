@@ -180,6 +180,8 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
             ("model_dump_json", True),  # Pydantic V2
             ("json", True),  # Pydantic V1
             ("to_json", False),  # dataclass_json
+            ("model_dump", True),  # Pydantic V2 with non-serializable fields
+            ("dict", False),  # Pydantic V1 with non-serializable fields
         ]
         for attr, exclude_none in serialization_methods:
             if hasattr(obj, attr) and callable(getattr(obj, attr)):
