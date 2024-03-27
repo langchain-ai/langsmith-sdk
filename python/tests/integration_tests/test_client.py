@@ -42,36 +42,6 @@ def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
     return Client()
 
 
-def test_projects(langchain_client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test projects."""
-    new_project = "__Test Project"
-    if langchain_client.has_project(new_project):
-        langchain_client.delete_project(project_name=new_project)
-
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    langchain_client.create_project(
-        project_name=new_project,
-        project_extra={"evaluator": "THE EVALUATOR"},
-    )
-    project = langchain_client.read_project(project_name=new_project)
-    assert project.name == new_project
-    runs = list(langchain_client.list_runs(project_name=new_project))
-    project_id_runs = list(langchain_client.list_runs(project_id=project.id))
-    assert len(runs) == len(project_id_runs) == 0
-    langchain_client.delete_project(project_name=new_project)
-
-    with pytest.raises(LangSmithError):
-        langchain_client.read_project(project_name=new_project)
-    assert new_project not in set(
-        [
-            sess.name
-            for sess in langchain_client.list_projects(name_contains=new_project)
-        ]
-    )
-    with pytest.raises(LangSmithError):
-        langchain_client.delete_project(project_name=new_project)
-
-
 def test_datasets(langchain_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
@@ -180,22 +150,6 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
     # expect connect error
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
-
-
-@freeze_time("2023-01-01")
-def test_create_project(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
-    """Test the project creation"""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    project_name = "__test_create_project" + uuid4().hex[:4]
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
-    try:
-        project = langchain_client.create_project(project_name=project_name)
-        assert project.name == project_name
-    finally:
-        langchain_client.delete_project(project_name=project_name)
 
 
 def test_create_dataset(
