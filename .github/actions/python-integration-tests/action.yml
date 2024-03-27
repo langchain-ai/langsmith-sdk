@@ -33,7 +33,7 @@ runs:
     - name: Install dependencies
       run: |
         poetry install --with dev
-        poetry run pip install -U langchain langchain_anthropic tiktoken
+        poetry run pip install -U langchain langchain_anthropic tiktoken rapidfuzz
       shell: bash
       working-directory: python
 
