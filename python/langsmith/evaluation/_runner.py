@@ -77,23 +77,23 @@ def evaluate(
     r"""Evaluate a target system or function on a given dataset.
 
     Args:
-    target (TARGET_T): The target system or function to evaluate.
-    data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
-        examples, or a generator of examples.
-    evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
-        on each example. Defaults to None.
-    summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
-        evaluators to run on the entire dataset. Defaults to None.
-    metadata (Optional[dict]): Metadata to attach to the experiment.
-        Defaults to None.
-    experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
-        Defaults to None.
-    max_concurrency (Optional[int]): The maximum number of concurrent
-        evaluations to run. Defaults to None.
-    client (Optional[langsmith.Client]): The LangSmith client to use.
-        Defaults to None.
-    blocking (bool): Whether to block until the evaluation is complete.
-        Defaults to True.
+        target (TARGET_T): The target system or function to evaluate.
+        data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
+            examples, or a generator of examples.
+        evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
+            on each example. Defaults to None.
+        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
+            evaluators to run on the entire dataset. Defaults to None.
+        metadata (Optional[dict]): Metadata to attach to the experiment.
+            Defaults to None.
+        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+            Defaults to None.
+        max_concurrency (Optional[int]): The maximum number of concurrent
+            evaluations to run. Defaults to None.
+        client (Optional[langsmith.Client]): The LangSmith client to use.
+            Defaults to None.
+        blocking (bool): Whether to block until the evaluation is complete.
+            Defaults to True.
 
     Returns:
         ExperimentResults: The results of the evaluation.
@@ -234,7 +234,6 @@ def evaluate(
 def evaluate_existing(
     experiment: Union[str, uuid.UUID],
     /,
-    data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
@@ -294,13 +293,21 @@ def evaluate_existing(
         >>> experiment_name = "My Experiment:64e6e91" # Or manually specify
         >>> results = evaluate_existing(
         ...     experiment_name,
-        ...     data=dataset_name,
         ...     summary_evaluators=[precision],
         ... ) # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
     client = client or langsmith.Client()
+    project = _load_experiment(experiment, client)
     runs = _load_traces(experiment, client, load_nested=load_nested)
+    data = list(
+        client.list_examples(
+            dataset_id=project.reference_dataset_id,
+            as_of=runs[0].start_time,
+        )
+    )
+    runs = sorted(runs, key=lambda r: r.reference_example_id)
+    data = sorted(data, key=lambda d: d.id)
     return _evaluate(
         runs,
         data=data,
@@ -400,6 +407,7 @@ def _evaluate(
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
+    experiment: Optional[schemas.TracerSession] = None,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     manager = _ExperimentManager(
@@ -407,6 +415,7 @@ def _evaluate(
         client=client,
         metadata=metadata,
         experiment_prefix=experiment_prefix,
+        experiment=experiment,
         # If provided, we don't need to create a new experiment.
         runs=None if _is_callable(target) else cast(Iterable[schemas.Run], target),
         # Create or resolve the experiment.
@@ -438,9 +447,17 @@ def _is_uuid(value: str) -> bool:
         return False
 
 
+def _load_experiment(
+    project: Union[str, uuid.UUID], client: langsmith.Client
+) -> schemas.TracerSession:
+    if isinstance(project, uuid.UUID) or _is_uuid(project):
+        return client.read_project(project_id=project)
+    return client.read_project(project_name=project)
+
+
 def _load_traces(
     project: Union[str, uuid.UUID], client: langsmith.Client, load_nested: bool = False
-) -> Iterable[schemas.Run]:
+) -> List[schemas.Run]:
     """Load nested traces for a given project."""
     execution_order = None if load_nested else 1
     if isinstance(project, uuid.UUID) or _is_uuid(project):
@@ -448,7 +465,7 @@ def _load_traces(
     else:
         runs = client.list_runs(project_name=project, execution_order=execution_order)
     if not load_nested:
-        return runs
+        return list(runs)
 
     treemap: DefaultDict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
     results = []
