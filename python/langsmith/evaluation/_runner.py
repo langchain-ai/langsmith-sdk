@@ -41,7 +41,7 @@ from langsmith.evaluation.evaluator import (
     RunEvaluator,
     run_evaluator,
 )
-from langsmith.evaluation.integrations import LangChainStringEvaluator
+from langsmith.evaluation.integrations._langchain import EvaluatorWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -862,7 +862,7 @@ def _resolve_evaluators(
     for evaluator in evaluators:
         if isinstance(evaluator, RunEvaluator):
             results.append(evaluator)
-        elif isinstance(evaluator, LangChainStringEvaluator):
+        elif isinstance(evaluator, EvaluatorWrapper):
             results.append(evaluator.as_run_evaluator())
         else:
             results.append(run_evaluator(evaluator))

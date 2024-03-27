@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
 
 from langsmith.evaluation.evaluator import run_evaluator
+from langsmith.evaluation.integrations._base import EvaluatorWrapper
 from langsmith.run_helpers import traceable
 from langsmith.schemas import Example, Run
 
@@ -23,7 +24,7 @@ class SingleEvaluatorInput(TypedDict):
     """The input string."""
 
 
-class LangChainStringEvaluator:
+class LangChainStringEvaluator(EvaluatorWrapper):
     r"""A class for wrapping a LangChain StringEvaluator.
 
     Attributes:
