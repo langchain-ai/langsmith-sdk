@@ -188,7 +188,9 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                     json_str = (
                         method(exclude_none=exclude_none) if exclude_none else method()
                     )
-                    return json.loads(json_str)
+                    if isinstance(json_str, str):
+                        return json.loads(json_str)
+                    return orjson.loads(_dumps_json(json_str, depth=depth + 1))
                 except Exception as e:
                     logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
                     pass
