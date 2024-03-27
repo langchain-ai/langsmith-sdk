@@ -1,4 +1,5 @@
 """LangSmith Client."""
+
 from importlib import metadata
 
 try:
