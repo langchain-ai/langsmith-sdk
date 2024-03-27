@@ -163,7 +163,7 @@ class DynamicRunEvaluator(RunEvaluator):
         source_run_id = uuid.uuid4()
         metadata = {"target_run_id": run.id}
         if getattr(run, "session_id"):
-            metadata["experiment"] = run.session_id
+            metadata["experiment"] = str(run.session_id)
         result = self.func(
             run,
             example,
