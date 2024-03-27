@@ -240,6 +240,7 @@ def evaluate_existing(
     metadata: Optional[dict] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
+    load_nested: bool = False,
     blocking: bool = True,
 ) -> ExperimentResults:
     r"""Evaluate existing experiment runs.
@@ -253,6 +254,8 @@ def evaluate_existing(
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
         max_concurrency (Optional[int]): Optional maximum number of concurrent evaluations.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
+        load_nested: Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs.
         blocking (bool): Whether to block until evaluation is complete.
 
     Returns:
@@ -297,7 +300,7 @@ def evaluate_existing(
         View the evaluation results for experiment:...
     """  # noqa: E501
     client = client or langsmith.Client()
-    runs = _load_nested_traces(experiment, client)
+    runs = _load_traces(experiment, client, load_nested=load_nested)
     return _evaluate(
         runs,
         data=data,
@@ -435,14 +438,17 @@ def _is_uuid(value: str) -> bool:
         return False
 
 
-def _load_nested_traces(
-    project: Union[str, uuid.UUID], client: langsmith.Client
-) -> List[schemas.Run]:
+def _load_traces(
+    project: Union[str, uuid.UUID], client: langsmith.Client, load_nested: bool = False
+) -> Iterable[schemas.Run]:
     """Load nested traces for a given project."""
+    execution_order = None if load_nested else 1
     if isinstance(project, uuid.UUID) or _is_uuid(project):
-        runs = client.list_runs(project_id=project)
+        runs = client.list_runs(project_id=project, execution_order=execution_order)
     else:
-        runs = client.list_runs(project_name=project)
+        runs = client.list_runs(project_name=project, execution_order=execution_order)
+    if not load_nested:
+        return runs
 
     treemap: DefaultDict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
     results = []
