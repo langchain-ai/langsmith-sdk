@@ -138,6 +138,9 @@ def evaluate(
         ...     data=dataset_name,
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
+        ...     metadata={
+        ...         "my-prompt-version": "abcd-1234",
+        ...    },
         ... ) # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
@@ -577,13 +580,7 @@ class _ExperimentManager:
         _examples = itertools.chain([first_example], self.examples)
         if self._experiment is None:
             try:
-                project_metadata = self._metadata or {}
-                git_info = ls_env.get_git_info()
-                if git_info:
-                    project_metadata = {
-                        **project_metadata,
-                        "git": git_info,
-                    }
+                project_metadata = self._get_experiment_metadata()
                 project = self.client.create_project(
                     self.experiment_name,
                     reference_dataset_id=first_example.dataset_id,
@@ -719,6 +716,21 @@ class _ExperimentManager:
 
     # Private methods.
 
+    def _get_experiment_metadata(self):
+        project_metadata = self._metadata or {}
+        git_info = ls_env.get_git_info()
+        if git_info:
+            project_metadata = {
+                **project_metadata,
+                "git": git_info,
+            }
+        if self._experiment:
+            project_metadata = {
+                **self._experiment.metadata,
+                **project_metadata,
+            }
+        return project_metadata
+
     def _get_experiment(self) -> schemas.TracerSession:
         if self._experiment is None:
             raise ValueError("Experiment not started yet.")
@@ -733,15 +745,15 @@ class _ExperimentManager:
         # Should always be defined in practice when fetched,
         # but the typing permits None
         max_modified_at = max(modified_at) if modified_at else None
+        project_metadata = self._get_experiment_metadata()
+        project_metadata["dataset_version"] = (
+            max_modified_at.isoformat() if max_modified_at else None
+        )
 
         self.client.update_project(
             experiment.id,
             end_time=datetime.datetime.now(datetime.timezone.utc),
-            metadata={
-                "dataset_version": (
-                    max_modified_at.isoformat() if max_modified_at else None
-                )
-            },
+            metadata=project_metadata,
         )
 
     def _predict(
