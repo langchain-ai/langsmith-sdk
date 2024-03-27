@@ -48,8 +48,41 @@ _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", defaul
 
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
-    """Get the current run tree context."""
+    """Get the current run tree."""
     return _PARENT_RUN_TREE.get()
+
+
+def get_tracing_context() -> dict:
+    """Get the current tracing context."""
+    return {
+        "parent_run": _PARENT_RUN_TREE.get(),
+        "project_name": _PROJECT_NAME.get(),
+        "tags": _TAGS.get(),
+        "metadata": _METADATA.get(),
+    }
+
+
+@contextlib.contextmanager
+def tracing_context(
+    *,
+    project_name: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    parent_run: Optional[run_trees.RunTree] = None,
+) -> Generator[None, None, None]:
+    """Set the tracing context for a block of code."""
+    parent_run_ = get_run_tree_context()
+    _PROJECT_NAME.set(project_name)
+    _TAGS.set(tags)
+    _METADATA.set(metadata)
+    _PARENT_RUN_TREE.set(parent_run)
+    try:
+        yield
+    finally:
+        _PROJECT_NAME.set(None)
+        _TAGS.set(None)
+        _METADATA.set(None)
+        _PARENT_RUN_TREE.set(parent_run_)
 
 
 get_run_tree_context = get_current_run_tree
@@ -106,6 +139,7 @@ class LangSmithExtra(TypedDict, total=False):
     tags: Optional[List[str]]
     run_id: Optional[ls_client.ID_TYPE]
     client: Optional[ls_client.Client]
+    on_end: Optional[Callable[[run_trees.RunTree], Any]]
 
 
 class _TraceableContainer(TypedDict, total=False):
@@ -116,6 +150,7 @@ class _TraceableContainer(TypedDict, total=False):
     outer_project: Optional[str]
     outer_metadata: Optional[Dict[str, Any]]
     outer_tags: Optional[List[str]]
+    on_end: Optional[Callable[[run_trees.RunTree], Any]]
 
 
 class _ContainerInput(TypedDict, total=False):
@@ -150,6 +185,12 @@ def _container_end(
             logger.info(f"See trace: {run_tree.get_url()}")
         except Exception:
             pass
+    on_end = container.get("on_end")
+    if on_end is not None and callable(on_end):
+        try:
+            on_end(run_tree)
+        except Exception as e:
+            logger.warning(f"Failed to run on_end function: {e}")
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
@@ -178,13 +219,21 @@ def _setup_run(
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
     parent_run_ = langsmith_extra.get("run_tree") or get_run_tree_context()
+    project_cv = _PROJECT_NAME.get()
     selected_project = (
-        _PROJECT_NAME.get()  # From parent trace
+        project_cv  # From parent trace
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
         or utils.get_tracer_project()  # default
     )
-    if not parent_run_ and not utils.tracing_is_enabled():
+    reference_example_id = langsmith_extra.get("reference_example_id")
+    id_ = langsmith_extra.get("run_id")
+    if (
+        not project_cv
+        and not reference_example_id
+        and not parent_run_
+        and not utils.tracing_is_enabled()
+    ):
         utils.log_once(
             logging.DEBUG, "LangSmith tracing is disabled, returning original function."
         )
@@ -194,7 +243,9 @@ def _setup_run(
             outer_project=outer_project,
             outer_metadata=None,
             outer_tags=None,
+            on_end=langsmith_extra.get("on_end"),
         )
+    id_ = id_ or str(uuid.uuid4())
     signature = inspect.signature(func)
     name_ = name or func.__name__
     docstring = func.__doc__
@@ -223,7 +274,6 @@ def _setup_run(
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     _TAGS.set(tags_)
     tags_ += tags or []
-    id_ = langsmith_extra.get("run_id", uuid.uuid4())
     client_ = langsmith_extra.get("client", client)
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
@@ -250,7 +300,7 @@ def _setup_run(
             },
             inputs=inputs,
             run_type=run_type,
-            reference_example_id=langsmith_extra.get("reference_example_id"),
+            reference_example_id=reference_example_id,
             project_name=selected_project,
             extra=extra_inner,
             tags=tags_,
@@ -266,6 +316,7 @@ def _setup_run(
         outer_project=outer_project,
         outer_metadata=outer_metadata,
         outer_tags=outer_tags,
+        on_end=langsmith_extra.get("on_end"),
     )
     _PROJECT_NAME.set(response_container["project_name"])
     _PARENT_RUN_TREE.set(response_container["new_run"])
@@ -291,7 +342,7 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 
     Args:
         *args: Variable length arguments.
-        langsmith_extra (Optional[Dict[str, Any]]): Optional dictionary of
+        langsmith_extra (Optional[LangSmithExtra): Optional dictionary of
             additional parameters for Langsmith.
         **kwargs: Keyword arguments.
 
@@ -302,7 +353,7 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
     def __call__(
         self,
         *args: Any,
-        langsmith_extra: Optional[Dict[str, Any]] = None,
+        langsmith_extra: Optional[LangSmithExtra] = None,
         **kwargs: Any,
     ) -> R:
         """Call the instance when it is called as a function.

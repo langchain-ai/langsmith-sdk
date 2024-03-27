@@ -49,10 +49,11 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.evaluation import evaluator as ls_evaluator
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
+
+    from langsmith.evaluation import evaluator as ls_evaluator
 
 logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
@@ -728,7 +729,9 @@ class Client:
                     args = list(e.args)
                     msg = args[1] if len(args) > 1 else ""
                     msg = msg.replace("session", "session (project)")
-                    emsg = "\n".join([args[0]] + [msg] + args[2:])
+                    emsg = "\n".join(
+                        [str(args[0])] + [msg] + [str(arg) for arg in args[2:]]
+                    )
                     raise ls_utils.LangSmithError(
                         f"Failed to {request_method} {url} in LangSmith API. {emsg}"
                     ) from e
@@ -3144,11 +3147,20 @@ class Client:
     def _select_eval_results(
         self,
         results: Union[ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults],
+        *,
+        fn_name: Optional[str] = None,
     ) -> List[ls_evaluator.EvaluationResult]:
+        from langsmith.evaluation import evaluator as ls_evaluator  # noqa: F811
+
         if isinstance(results, ls_evaluator.EvaluationResult):
             results_ = [results]
-        elif isinstance(results, dict) and "results" in results:
-            results_ = cast(List[ls_evaluator.EvaluationResult], results["results"])
+        elif isinstance(results, dict):
+            if "results" in results:
+                results_ = cast(List[ls_evaluator.EvaluationResult], results["results"])
+            else:
+                results_ = [
+                    ls_evaluator.EvaluationResult(**{"key": fn_name, **results})
+                ]
         else:
             raise TypeError(
                 f"Invalid evaluation result type {type(results)}."
@@ -3208,15 +3220,20 @@ class Client:
         evaluator_response: Union[
             ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults
         ],
-        run: ls_schemas.Run,
+        run: Optional[ls_schemas.Run] = None,
         source_info: Optional[Dict[str, Any]] = None,
+        project_id: Optional[ID_TYPE] = None,
     ) -> List[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
         for res in results:
             source_info_ = source_info or {}
             if res.evaluator_info:
                 source_info_ = {**res.evaluator_info, **source_info_}
-            run_id_ = res.target_run_id if res.target_run_id else run.id
+            run_id_ = None
+            if res.target_run_id:
+                run_id_ = res.target_run_id
+            elif run is not None:
+                run_id_ = run.id
             self.create_feedback(
                 run_id_,
                 res.key,
@@ -3227,6 +3244,7 @@ class Client:
                 source_info=source_info_,
                 source_run_id=res.source_run_id,
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
+                project_id=project_id,
             )
         return results
 
