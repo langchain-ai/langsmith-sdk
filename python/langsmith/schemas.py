@@ -104,6 +104,7 @@ class ExampleUpdate(BaseModel):
     dataset_id: Optional[UUID] = None
     inputs: Optional[Dict[str, Any]] = None
     outputs: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
     class Config:
         """Configuration class for the schema."""

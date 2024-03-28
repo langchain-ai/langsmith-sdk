@@ -3047,6 +3047,8 @@ class Client:
             The input values to update.
         outputs : Mapping[str, Any] or None, default=None
             The output values to update.
+        metadata : Dict or None, default=None
+            The metadata to update.
         dataset_id : UUID or None, default=None
             The ID of the dataset to update.
 
