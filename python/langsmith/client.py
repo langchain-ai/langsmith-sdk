@@ -180,8 +180,9 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
             ("model_dump_json", True),  # Pydantic V2
             ("json", True),  # Pydantic V1
             ("to_json", False),  # dataclass_json
+            ("model_dump", True),  # Pydantic V2 with non-serializable fields
+            ("dict", False),  # Pydantic V1 with non-serializable fields
         ]
-
         for attr, exclude_none in serialization_methods:
             if hasattr(obj, attr) and callable(getattr(obj, attr)):
                 try:
@@ -189,18 +190,21 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                     json_str = (
                         method(exclude_none=exclude_none) if exclude_none else method()
                     )
-                    return json.loads(json_str)
+                    if isinstance(json_str, str):
+                        return json.loads(json_str)
+                    return orjson.loads(_dumps_json(json_str, depth=depth + 1))
                 except Exception as e:
                     logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-                    return repr(obj)
+                    pass
+        all_attrs = {}
         if hasattr(obj, "__slots__"):
-            all_attrs = {slot: getattr(obj, slot, None) for slot in obj.__slots__}
-        elif hasattr(obj, "__dict__"):
-            all_attrs = vars(obj)
-        else:
-            return repr(obj)
-        filtered = {k: v if v is not obj else repr(v) for k, v in all_attrs.items()}
-        return orjson.loads(_dumps_json(filtered, depth=depth + 1))
+            all_attrs.update({slot: getattr(obj, slot, None) for slot in obj.__slots__})
+        if hasattr(obj, "__dict__"):
+            all_attrs.update(vars(obj))
+        if all_attrs:
+            filtered = {k: v if v is not obj else repr(v) for k, v in all_attrs.items()}
+            return orjson.loads(_dumps_json(filtered, depth=depth + 1))
+        return repr(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)

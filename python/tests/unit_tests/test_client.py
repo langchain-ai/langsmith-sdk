@@ -647,6 +647,13 @@ def test_serialize_json() -> None:
         FOO = "foo"
         BAR = "bar"
 
+    class ClassWithFakeJson:
+        def json(self):
+            raise ValueError("This should not be called")
+
+        def to_json(self) -> dict:
+            return {"foo": "bar"}
+
     @dataclasses_json.dataclass_json
     @dataclasses.dataclass
     class Person:
@@ -710,6 +717,7 @@ def test_serialize_json() -> None:
         "named_tuple": MyNamedTuple(foo="foo", bar=1),
         "cyclic": CyclicClass(),
         "cyclic2": cycle_2,
+        "fake_json": ClassWithFakeJson(),
     }
     res = orjson.loads(_dumps_json(to_serialize))
     expected = {
@@ -746,6 +754,7 @@ def test_serialize_json() -> None:
         "cyclic": {"cyclic": "SoCyclic"},
         # We don't really care about this case just want to not err
         "cyclic2": lambda _: True,
+        "fake_json": {"foo": "bar"},
     }
     assert set(expected) == set(res)
     for k, v in expected.items():
