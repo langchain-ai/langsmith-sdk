@@ -86,11 +86,11 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
 
     original_client = openai.Client()
     patched_client = wrap_openai(openai.Client())
-    prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
+    prompt = ("Say 'Foo' then stop.",)
     original = original_client.completions.create(
         model="gpt-3.5-turbo-instruct",
         prompt=prompt,
-        max_tokens=5,
+        max_tokens=3,
         temperature=0,
         seed=42,
         stream=stream,
@@ -98,7 +98,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
     patched = patched_client.completions.create(
         model="gpt-3.5-turbo-instruct",
         prompt=prompt,
-        max_tokens=5,
+        max_tokens=3,
         temperature=0,
         seed=42,
         stream=stream,
