@@ -26,6 +26,8 @@ class SingleEvaluatorInput(TypedDict):
 class LangChainStringEvaluator:
     r"""A class for wrapping a LangChain StringEvaluator.
 
+    Requires the `langchain` package to be installed.
+
     Attributes:
         evaluator (StringEvaluator): The underlying StringEvaluator OR the name
             of the evaluator to load.
@@ -49,6 +51,24 @@ class LangChainStringEvaluator:
         ...             "usefulness": "The prediction is useful if"
         ...             " it is correct and/or asks a useful followup question."
         ...         },
+        ...     }
+        ... )
+        >>> run_evaluator = evaluator.as_run_evaluator()
+        >>> run_evaluator # doctest: +ELLIPSIS
+        <DynamicRunEvaluator ...>
+        
+        Customizing the LLM model used by the evaluator:
+
+        >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> from langchain_anthropic import ChatAnthropic
+        >>> evaluator = LangChainStringEvaluator(
+        ...     "criteria",
+        ...     config={
+        ...         "criteria": {
+        ...             "usefulness": "The prediction is useful if"
+        ...             " it is correct and/or asks a useful followup question."
+        ...         },
+        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229")
         ...     }
         ... )
         >>> run_evaluator = evaluator.as_run_evaluator()
