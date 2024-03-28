@@ -162,7 +162,7 @@ class DynamicRunEvaluator(RunEvaluator):
         """  # noqa: E501
         source_run_id = uuid.uuid4()
         metadata: Dict[str, Any] = {"target_run_id": run.id}
-        if getattr(run, "session_id"):
+        if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
         result = self.func(
             run,
@@ -197,7 +197,7 @@ class DynamicRunEvaluator(RunEvaluator):
         return self.evaluate_run(run, example)
 
     def __repr__(self) -> str:
-        """String representation of the DynamicRunEvaluator object."""
+        """Represent the DynamicRunEvaluator object."""
         return f"<DynamicRunEvaluator {getattr(self.func, '__name__')}>"
 
 
