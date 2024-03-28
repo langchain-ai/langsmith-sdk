@@ -16,13 +16,13 @@ doctest:
 	poetry run pytest -n auto --durations=10 --doctest-modules langsmith
 
 lint:
-	poetry run ruff .
+	poetry run ruff check .
 	poetry run mypy .
 	poetry run black . --check
 
 format:
 	poetry run ruff format .
-	poetry run ruff --fix .
+	poetry run ruff check . --fix
 	poetry run black .
 
 build:

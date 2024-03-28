@@ -118,7 +118,6 @@ def evaluate(
         ...     pred = run.outputs["output"]
         ...     expected = example.outputs["answer"]
         ...     return {"score": expected.lower() == pred.lower()}
-        ...
         >>> def precision(runs: Sequence[Run], examples: Sequence[Example]):
         ...     # Experiment-level evaluator for precision.
         ...     # TP / (TP + FP)
@@ -128,11 +127,9 @@ def evaluate(
         ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
         ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         ...     return {"score": tp / (tp + fp)}
-        ...
         >>> def predict(inputs: dict) -> dict:
         ...     # This can be any function or just an API call to your app.
         ...     return {"output": "Yes"}
-        ...
         >>> results = evaluate(
         ...     predict,
         ...     data=dataset_name,
@@ -140,8 +137,8 @@ def evaluate(
         ...     summary_evaluators=[precision],
         ...     metadata={
         ...         "my-prompt-version": "abcd-1234",
-        ...    },
-        ... ) # doctest: +ELLIPSIS
+        ...     },
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
         Evaluating over only a subset of the examples
@@ -154,7 +151,7 @@ def evaluate(
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
         ...     experiment_prefix="My Experiment",
-        ... ) # doctest: +ELLIPSIS
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
         Streaming each prediction to more easily + eagerly debug.
@@ -165,9 +162,9 @@ def evaluate(
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
         ...     blocking=False,
-        ... ) # doctest: +ELLIPSIS
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
-        >>> for i, result in enumerate(results): # doctest: +ELLIPSIS
+        >>> for i, result in enumerate(results):  # doctest: +ELLIPSIS
         ...     pass
 
         Using the `evaluate` API with an off-the-shelf LangChain evaluator:
@@ -179,7 +176,6 @@ def evaluate(
         ...         "reference": example.outputs["answer"],
         ...         "input": str(example.inputs),
         ...     }
-        ...
         >>> results = evaluate(
         ...     predict,
         ...     data=dataset_name,
@@ -191,14 +187,14 @@ def evaluate(
         ...             config={
         ...                 "criteria": {
         ...                     "usefulness": "The prediction is useful if it is correct"
-        ...                                   " and/or asks a useful followup question."
+        ...                     " and/or asks a useful followup question."
         ...                 },
         ...             },
-        ...             prepare_data=prepare_criteria_data
+        ...             prepare_data=prepare_criteria_data,
         ...         ),
         ...     ],
         ...     summary_evaluators=[precision],
-        ... ) # doctest: +ELLIPSIS
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
         Evaluating a LangChain object:
@@ -207,17 +203,15 @@ def evaluate(
         >>> @as_runnable
         ... def nested_predict(inputs):
         ...     return {"output": "Yes"}
-        ...
         >>> @as_runnable
         ... def lc_predict(inputs):
         ...     return nested_predict.invoke(inputs)
-        ...
         >>> results = evaluate(
         ...     lc_predict.invoke,
         ...     data=dataset_name,
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
-        ... ) # doctest: +ELLIPSIS
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
     return _evaluate(
@@ -269,12 +263,11 @@ def evaluate_existing(
         >>> def predict(inputs: dict) -> dict:
         ...     # This can be any function or just an API call to your app.
         ...     return {"output": "Yes"}
-        ...
         >>> # First run inference on the dataset
         ... results = evaluate(
         ...     predict,
         ...     data=dataset_name,
-        ... ) # doctest: +ELLIPSIS
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
         >>> # Then apply evaluators to the experiment
         ... def accuracy(run: Run, example: Example):
@@ -282,7 +275,6 @@ def evaluate_existing(
         ...     pred = run.outputs["output"]
         ...     expected = example.outputs["answer"]
         ...     return {"score": expected.lower() == pred.lower()}
-        ...
         >>> def precision(runs: Sequence[Run], examples: Sequence[Example]):
         ...     # Experiment-level evaluator for precision.
         ...     # TP / (TP + FP)
@@ -292,12 +284,14 @@ def evaluate_existing(
         ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
         ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         ...     return {"score": tp / (tp + fp)}
-        >>> experiment_name = results.experiment_name # Can use the returned experiment name
-        >>> experiment_name = "My Experiment:64e6e91" # Or manually specify
+        >>> experiment_name = (
+        ...     results.experiment_name
+        ... )  # Can use the returned experiment name
+        >>> experiment_name = "My Experiment:64e6e91"  # Or manually specify
         >>> results = evaluate_existing(
         ...     experiment_name,
         ...     summary_evaluators=[precision],
-        ... ) # doctest: +ELLIPSIS
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
     client = client or langsmith.Client()

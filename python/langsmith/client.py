@@ -180,8 +180,9 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
             ("model_dump_json", True),  # Pydantic V2
             ("json", True),  # Pydantic V1
             ("to_json", False),  # dataclass_json
+            ("model_dump", True),  # Pydantic V2 with non-serializable fields
+            ("dict", False),  # Pydantic V1 with non-serializable fields
         ]
-
         for attr, exclude_none in serialization_methods:
             if hasattr(obj, attr) and callable(getattr(obj, attr)):
                 try:
@@ -189,18 +190,21 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                     json_str = (
                         method(exclude_none=exclude_none) if exclude_none else method()
                     )
-                    return json.loads(json_str)
+                    if isinstance(json_str, str):
+                        return json.loads(json_str)
+                    return orjson.loads(_dumps_json(json_str, depth=depth + 1))
                 except Exception as e:
                     logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-                    return repr(obj)
+                    pass
+        all_attrs = {}
         if hasattr(obj, "__slots__"):
-            all_attrs = {slot: getattr(obj, slot, None) for slot in obj.__slots__}
-        elif hasattr(obj, "__dict__"):
-            all_attrs = vars(obj)
-        else:
-            return repr(obj)
-        filtered = {k: v if v is not obj else repr(v) for k, v in all_attrs.items()}
-        return orjson.loads(_dumps_json(filtered, depth=depth + 1))
+            all_attrs.update({slot: getattr(obj, slot, None) for slot in obj.__slots__})
+        if hasattr(obj, "__dict__"):
+            all_attrs.update(vars(obj))
+        if all_attrs:
+            filtered = {k: v if v is not obj else repr(v) for k, v in all_attrs.items()}
+            return orjson.loads(_dumps_json(filtered, depth=depth + 1))
+        return repr(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
@@ -1508,42 +1512,42 @@ class Client:
             )
 
             # List traces in a project
-            root_runs = client.list_runs(
-                project_name="<your_project>",
-                execution_order=1
-            )
+            root_runs = client.list_runs(project_name="<your_project>", execution_order=1)
 
             # List runs without errors
             correct_runs = client.list_runs(project_name="<your_project>", error=False)
 
             # List runs by run ID
-            run_ids = ['a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836','9398e6be-964f-4aa4-8ae9-ad78cd4b7074']
+            run_ids = [
+                "a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836",
+                "9398e6be-964f-4aa4-8ae9-ad78cd4b7074",
+            ]
             selected_runs = client.list_runs(id=run_ids)
 
             # List all "chain" type runs that took more than 10 seconds and had
             # `total_tokens` greater than 5000
             chain_runs = client.list_runs(
                 project_name="<your_project>",
-                filter='and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))'
+                filter='and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))',
             )
 
             # List all runs called "extractor" whose root of the trace was assigned feedback "user_score" score of 1
             good_extractor_runs = client.list_runs(
                 project_name="<your_project>",
                 filter='eq(name, "extractor")',
-                trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))'
+                trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
             )
 
             # List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0
             complex_runs = client.list_runs(
                 project_name="<your_project>",
-                filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
+                filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))',
             )
 
             # List all runs where `tags` include "experimental" or "beta" and `latency` is greater than 2 seconds
             tagged_runs = client.list_runs(
                 project_name="<your_project>",
-                filter='and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))'
+                filter='and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))',
             )
         """  # noqa: E501
         project_ids = []
@@ -3919,15 +3923,14 @@ class Client:
             from langchain.chains import LLMChain
             from langchain.smith import RunEvalConfig
 
+
             # Chains may have memory. Passing in a constructor function lets the
             # evaluation framework avoid cross-contamination between runs.
             def construct_chain():
                 llm = ChatOpenAI(temperature=0)
-                chain = LLMChain.from_string(
-                    llm,
-                    "What's the answer to {your_input_key}"
-                )
+                chain = LLMChain.from_string(llm, "What's the answer to {your_input_key}")
                 return chain
+
 
             # Load off-the-shelf evaluators via config or the EvaluatorType (string or enum)
             evaluation_config = RunEvalConfig(
@@ -3935,9 +3938,11 @@ class Client:
                     "qa",  # "Correctness" against a reference answer
                     "embedding_distance",
                     RunEvalConfig.Criteria("helpfulness"),
-                    RunEvalConfig.Criteria({
-                        "fifth-grader-score": "Do you have to be smarter than a fifth grader to answer this question?"
-                    }),
+                    RunEvalConfig.Criteria(
+                        {
+                            "fifth-grader-score": "Do you have to be smarter than a fifth grader to answer this question?"
+                        }
+                    ),
                 ]
             )
 
@@ -3957,8 +3962,8 @@ class Client:
             from typing import Optional
             from langchain.evaluation import StringEvaluator
 
-            class MyStringEvaluator(StringEvaluator):
 
+            class MyStringEvaluator(StringEvaluator):
                 @property
                 def requires_input(self) -> bool:
                     return False
@@ -3971,12 +3976,14 @@ class Client:
                 def evaluation_name(self) -> str:
                     return "exact_match"
 
-                def _evaluate_strings(self, prediction, reference=None, input=None, **kwargs) -> dict:
+                def _evaluate_strings(
+                    self, prediction, reference=None, input=None, **kwargs
+                ) -> dict:
                     return {"score": prediction == reference}
 
 
             evaluation_config = RunEvalConfig(
-                custom_evaluators = [MyStringEvaluator()],
+                custom_evaluators=[MyStringEvaluator()],
             )
 
             await client.arun_on_dataset(
@@ -4064,15 +4071,14 @@ class Client:
             from langchain.chains import LLMChain
             from langchain.smith import RunEvalConfig
 
+
             # Chains may have memory. Passing in a constructor function lets the
             # evaluation framework avoid cross-contamination between runs.
             def construct_chain():
                 llm = ChatOpenAI(temperature=0)
-                chain = LLMChain.from_string(
-                    llm,
-                    "What's the answer to {your_input_key}"
-                )
+                chain = LLMChain.from_string(llm, "What's the answer to {your_input_key}")
                 return chain
+
 
             # Load off-the-shelf evaluators via config or the EvaluatorType (string or enum)
             evaluation_config = RunEvalConfig(
@@ -4080,9 +4086,11 @@ class Client:
                     "qa",  # "Correctness" against a reference answer
                     "embedding_distance",
                     RunEvalConfig.Criteria("helpfulness"),
-                    RunEvalConfig.Criteria({
-                        "fifth-grader-score": "Do you have to be smarter than a fifth grader to answer this question?"
-                    }),
+                    RunEvalConfig.Criteria(
+                        {
+                            "fifth-grader-score": "Do you have to be smarter than a fifth grader to answer this question?"
+                        }
+                    ),
                 ]
             )
 
@@ -4102,8 +4110,8 @@ class Client:
             from typing import Optional
             from langchain.evaluation import StringEvaluator
 
-            class MyStringEvaluator(StringEvaluator):
 
+            class MyStringEvaluator(StringEvaluator):
                 @property
                 def requires_input(self) -> bool:
                     return False
@@ -4116,12 +4124,14 @@ class Client:
                 def evaluation_name(self) -> str:
                     return "exact_match"
 
-                def _evaluate_strings(self, prediction, reference=None, input=None, **kwargs) -> dict:
+                def _evaluate_strings(
+                    self, prediction, reference=None, input=None, **kwargs
+                ) -> dict:
                     return {"score": prediction == reference}
 
 
             evaluation_config = RunEvalConfig(
-                custom_evaluators = [MyStringEvaluator()],
+                custom_evaluators=[MyStringEvaluator()],
             )
 
             client.run_on_dataset(
