@@ -474,6 +474,7 @@ test.concurrent(
         { output: "hi there 2" },
         { output: "hi there 3" },
       ],
+      metadata: [{ key: "value 1" }, { key: "value 2" }, { key: "value 3" }],
       datasetId: dataset.id,
     });
     const initialExamplesList = await toArray(
@@ -497,6 +498,23 @@ test.concurrent(
     expect(datasetDiff.examples_added.length).toEqual(3);
     expect(datasetDiff.examples_modified.length).toEqual(0);
     expect(datasetDiff.examples_removed.length).toEqual(1);
+
+    // verify the example inputs, outputs, and metadata
+    const example1 = examplesList2.find(
+      (e) => e.inputs.input === "hello world 1"
+    );
+    expect(example1?.outputs?.output).toEqual("hi there 1");
+    expect(example1?.metadata?.key).toEqual("value 1");
+    const example2 = examplesList2.find(
+      (e) => e.inputs.input === "hello world 2"
+    );
+    expect(example2?.outputs?.output).toEqual("hi there 2");
+    expect(example2?.metadata?.key).toEqual("value 2");
+    const example3 = examplesList2.find(
+      (e) => e.inputs.input === "hello world 3"
+    );
+    expect(example3?.outputs?.output).toEqual("hi there 3");
+    expect(example3?.metadata?.key).toEqual("value 3");
 
     await client.deleteDataset({ datasetId: dataset.id });
   },
