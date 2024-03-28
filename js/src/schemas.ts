@@ -57,6 +57,7 @@ export interface BaseExample {
   dataset_id: string;
   inputs: KVMap;
   outputs?: KVMap;
+  metadata?: KVMap;
 }
 
 /**
@@ -222,6 +223,7 @@ export interface ExampleUpdate {
   dataset_id?: string;
   inputs?: KVMap;
   outputs?: KVMap;
+  metadata?: KVMap;
 }
 export interface BaseDataset {
   name: string;

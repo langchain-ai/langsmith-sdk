@@ -91,6 +91,7 @@ def test_datasets(langchain_client: Client) -> None:
         example_id=example.id,
         inputs={"col1": "updatedExampleCol1"},
         outputs={"col2": "updatedExampleCol2"},
+        metadata={"foo": "bar"},
     )
     updated_example = langchain_client.read_example(example.id)
     assert updated_example.id == example.id
@@ -98,6 +99,7 @@ def test_datasets(langchain_client: Client) -> None:
     assert updated_example_value.inputs["col1"] == "updatedExampleCol1"
     assert updated_example_value.outputs is not None
     assert updated_example_value.outputs["col2"] == "updatedExampleCol2"
+    assert updated_example_value.metadata["foo"] == "bar"
 
     langchain_client.delete_example(example.id)
     examples2 = list(
