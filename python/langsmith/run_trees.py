@@ -224,6 +224,8 @@ class RunTree(ls_schemas.RunBase):
 
     def patch(self) -> None:
         """Patch the run tree to the API in a background thread."""
+        if not self.end_time:
+            self.end()
         self.client.update_run(
             run_id=self.id,
             outputs=self.outputs.copy() if self.outputs else None,
