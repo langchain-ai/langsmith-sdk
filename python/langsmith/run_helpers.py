@@ -864,10 +864,7 @@ def trace(
         _PROJECT_NAME.set(outer_project)
         _TAGS.set(outer_tags)
         _METADATA.set(outer_metadata)
-    if new_run.end_time is None:
-        # User didn't call end() on the run, so we'll do it for them
-        new_run.end()
-        new_run.patch()
+    new_run.patch()
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
