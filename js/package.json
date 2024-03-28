@@ -8,24 +8,31 @@
     "client.cjs",
     "client.js",
     "client.d.ts",
+    "client.d.cts",
     "run_trees.cjs",
     "run_trees.js",
     "run_trees.d.ts",
+    "run_trees.d.cts",
     "traceable.cjs",
     "traceable.js",
     "traceable.d.ts",
+    "traceable.d.cts",
     "evaluation.cjs",
     "evaluation.js",
     "evaluation.d.ts",
+    "evaluation.d.cts",
     "schemas.cjs",
     "schemas.js",
     "schemas.d.ts",
+    "schemas.d.cts",
     "wrappers.cjs",
     "wrappers.js",
     "wrappers.d.ts",
+    "wrappers.d.cts",
     "index.cjs",
     "index.js",
-    "index.d.ts"
+    "index.d.ts",
+    "index.d.cts"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -102,37 +109,65 @@
   },
   "exports": {
     ".": {
-      "types": "./index.d.ts",
+      "types": {
+        "import": "./index.d.ts",
+        "require": "./index.d.cts",
+        "default": "./index.d.ts"
+      },
       "import": "./index.js",
       "require": "./index.cjs"
     },
     "./client": {
-      "types": "./client.d.ts",
+      "types": {
+        "import": "./client.d.ts",
+        "require": "./client.d.cts",
+        "default": "./client.d.ts"
+      },
       "import": "./client.js",
       "require": "./client.cjs"
     },
     "./run_trees": {
-      "types": "./run_trees.d.ts",
+      "types": {
+        "import": "./run_trees.d.ts",
+        "require": "./run_trees.d.cts",
+        "default": "./run_trees.d.ts"
+      },
       "import": "./run_trees.js",
       "require": "./run_trees.cjs"
     },
     "./traceable": {
-      "types": "./traceable.d.ts",
+      "types": {
+        "import": "./traceable.d.ts",
+        "require": "./traceable.d.cts",
+        "default": "./traceable.d.ts"
+      },
       "import": "./traceable.js",
       "require": "./traceable.cjs"
     },
     "./evaluation": {
-      "types": "./evaluation.d.ts",
+      "types": {
+        "import": "./evaluation.d.ts",
+        "require": "./evaluation.d.cts",
+        "default": "./evaluation.d.ts"
+      },
       "import": "./evaluation.js",
       "require": "./evaluation.cjs"
     },
     "./schemas": {
-      "types": "./schemas.d.ts",
+      "types": {
+        "import": "./schemas.d.ts",
+        "require": "./schemas.d.cts",
+        "default": "./schemas.d.ts"
+      },
       "import": "./schemas.js",
       "require": "./schemas.cjs"
     },
     "./wrappers": {
-      "types": "./wrappers.d.ts",
+      "types": {
+        "import": "./wrappers.d.ts",
+        "require": "./wrappers.d.cts",
+        "default": "./wrappers.d.ts"
+      },
       "import": "./wrappers.js",
       "require": "./wrappers.cjs"
     },
