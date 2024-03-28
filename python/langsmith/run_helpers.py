@@ -806,6 +806,7 @@ def trace(
     run_tree: Optional[run_trees.RunTree] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
+    client: Optional[ls_client.Client] = None,
     **kwargs: Any,
 ) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
@@ -847,6 +848,7 @@ def trace(
             project_name=project_name_,
             inputs=inputs or {},
             tags=tags_,
+            client=client,
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)
@@ -866,7 +868,7 @@ def trace(
     if new_run.end_time is None:
         # User didn't call end() on the run, so we'll do it for them
         new_run.end()
-    new_run.patch()
+        new_run.patch()
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
