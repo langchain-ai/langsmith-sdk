@@ -60,14 +60,14 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
-select = [
+lint.select = [
   "E",    # pycodestyle
   "F",    # pyflakes
   "I",    # isort
   "D",    # pydocstyle
   "D401", # First line should be in imperative mood
 ]
-ignore = [
+lint.ignore = [
   # Relax the convention by _not_ requiring documentation for every function parameter.
   "D417",
 ]
@@ -77,6 +77,10 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D"]
 "langsmith/cli/*" = ["D"]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 80
 
 [tool.mypy]
 ignore_missing_imports = "True"

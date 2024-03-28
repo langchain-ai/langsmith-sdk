@@ -51,12 +51,12 @@ class LangChainStringEvaluator:
         ...             "usefulness": "The prediction is useful if"
         ...             " it is correct and/or asks a useful followup question."
         ...         },
-        ...     }
+        ...     },
         ... )
         >>> run_evaluator = evaluator.as_run_evaluator()
-        >>> run_evaluator # doctest: +ELLIPSIS
+        >>> run_evaluator  # doctest: +ELLIPSIS
         <DynamicRunEvaluator ...>
-        
+
         Customizing the LLM model used by the evaluator:
 
         >>> from langsmith.evaluation import LangChainStringEvaluator
@@ -68,11 +68,11 @@ class LangChainStringEvaluator:
         ...             "usefulness": "The prediction is useful if"
         ...             " it is correct and/or asks a useful followup question."
         ...         },
-        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229")
-        ...     }
+        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229"),
+        ...     },
         ... )
         >>> run_evaluator = evaluator.as_run_evaluator()
-        >>> run_evaluator # doctest: +ELLIPSIS
+        >>> run_evaluator  # doctest: +ELLIPSIS
         <DynamicRunEvaluator ...>
 
         Using the `evaluate` API with different evaluators:
@@ -84,43 +84,40 @@ class LangChainStringEvaluator:
         ...         "reference": example.outputs["answer"],
         ...         "input": str(example.inputs),
         ...     }
-        ...
         >>> import re
         >>> from langchain_anthropic import ChatAnthropic
         >>> import langsmith
         >>> from langsmith.evaluation import LangChainStringEvaluator, evaluate
         >>> criteria_evaluator = LangChainStringEvaluator(
-        ...     "criteria", config={
+        ...     "criteria",
+        ...     config={
         ...         "criteria": {
         ...             "usefulness": "The prediction is useful if it is correct"
-        ...                     " and/or asks a useful followup question."
+        ...             " and/or asks a useful followup question."
         ...         },
-        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229")
+        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229"),
         ...     },
-        ...     prepare_data=prepare_data
+        ...     prepare_data=prepare_data,
         ... )
         >>> embedding_evaluator = LangChainStringEvaluator("embedding_distance")
         >>> exact_match_evaluator = LangChainStringEvaluator("exact_match")
         >>> regex_match_evaluator = LangChainStringEvaluator(
-        ...     "regex_match", config={
-        ...         "flags": re.IGNORECASE
-        ...     },
-        ...     prepare_data=prepare_data
+        ...     "regex_match", config={"flags": re.IGNORECASE}, prepare_data=prepare_data
         ... )
         >>> scoring_evaluator = LangChainStringEvaluator(
-        ...     "labeled_score_string", config={
+        ...     "labeled_score_string",
+        ...     config={
         ...         "criteria": {
         ...             "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
         ...         },
-        ...         "normalize_by": 10
+        ...         "normalize_by": 10,
         ...     },
-        ...     prepare_data=prepare_data
+        ...     prepare_data=prepare_data,
         ... )
         >>> string_distance_evaluator = LangChainStringEvaluator(
-        ...     "string_distance", config={
-        ...         "distance_metric": "levenshtein"
-        ...     },
-        ...     prepare_data=prepare_data
+        ...     "string_distance",
+        ...     config={"distance_metric": "levenshtein"},
+        ...     prepare_data=prepare_data,
         ... )
         >>> from langsmith import Client
         >>> client = Client()
@@ -133,7 +130,7 @@ class LangChainStringEvaluator:
         ...         exact_match_evaluator,
         ...         regex_match_evaluator,
         ...         scoring_evaluator,
-        ...         string_distance_evaluator
+        ...         string_distance_evaluator,
         ...     ],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...

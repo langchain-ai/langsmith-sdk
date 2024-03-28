@@ -22,7 +22,7 @@ lint:
 
 format:
 	poetry run ruff format .
-	poetry run ruff --fix .
+	poetry run ruff check . --fix
 	poetry run black .
 
 build:

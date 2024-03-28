@@ -494,8 +494,7 @@ def traceable(
 
             # Logging with custom metadata and tags:
             @traceable(
-                metadata={"version": "1.0", "author": "John Doe"},
-                tags=["beta", "test"]
+                metadata={"version": "1.0", "author": "John Doe"}, tags=["beta", "test"]
             )
             def tagged_function(x):
                 return x**2
@@ -890,7 +889,6 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         ... def my_function(input_data):
         ...     # Function implementation
         ...     pass
-        ...
         >>> runnable = as_runnable(my_function)
     """
     try:
