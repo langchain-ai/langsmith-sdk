@@ -15,7 +15,6 @@ services:
     depends_on:
       - langchain-backend
       - langchain-playground
-      - langchain-hub
   langchain-backend:
     image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.19}
     environment:
@@ -62,32 +61,6 @@ services:
       - "saq"
       - "app.async_worker.settings"
       - "--quiet"
-    depends_on:
-      langchain-db:
-        condition: service_healthy
-      langchain-redis:
-        condition: service_healthy
-      clickhouse-setup:
-        condition: service_completed_successfully
-      postgres-setup:
-        condition: service_completed_successfully
-    restart: always
-  langchain-hub:
-    image: langchain/langhub-backend:${_LANGSMITH_IMAGE_VERSION:-0.1.19}
-    environment:
-      - PORT=1985
-      - LANGCHAIN_ENV=local_docker
-      - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-warning}
-      - AUTH_TYPE=${AUTH_TYPE:-none}
-      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
-      - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
-      - API_KEY_SALT=${API_KEY_SALT}
-      - POSTGRES_DATABASE_URI=${POSTGRES_DATABASE_URI:-postgres:postgres@langchain-db:5432/postgres}
-      - REDIS_DATABASE_URI=${REDIS_DATABASE_URI:-redis://langchain-redis:6379}
-    ports:
-      - 1985:1985
     depends_on:
       langchain-db:
         condition: service_healthy
