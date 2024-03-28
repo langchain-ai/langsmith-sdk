@@ -446,12 +446,22 @@ test.concurrent(
       { output: "hi there" },
       {
         datasetId: dataset.id,
+        metadata: { key: "value" },
       }
     );
     const exampleValue = await client.readExample(example.id);
     const initialVersion = exampleValue.modified_at;
     expect(exampleValue.inputs.input).toEqual("hello world");
     expect(exampleValue?.outputs?.output).toEqual("hi there");
+    expect(exampleValue?.metadata?.key).toEqual("value");
+
+    // Update the example by modifying the metadata
+    await client.updateExample(example.id, {
+      metadata: { key: "new value" },
+    });
+    const updatedExampleValue = await client.readExample(example.id);
+    expect(updatedExampleValue?.metadata?.key).toEqual("new value");
+
     // Create multiple
     await client.createExamples({
       inputs: [

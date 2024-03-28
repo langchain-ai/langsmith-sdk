@@ -218,6 +218,8 @@ export type CreateExampleOptions = {
   datasetName?: string;
   createdAt?: Date;
   exampleId?: string;
+
+  metadata?: KVMap;
 };
 
 type AutoBatchQueueItem = {
@@ -1867,7 +1869,7 @@ export class Client {
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    { datasetId, datasetName, createdAt, exampleId }: CreateExampleOptions
+    { datasetId, datasetName, createdAt, exampleId, metadata }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
     if (datasetId_ === undefined && datasetName === undefined) {
@@ -1886,6 +1888,7 @@ export class Client {
       outputs,
       created_at: createdAt_?.toISOString(),
       id: exampleId,
+      metadata,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
