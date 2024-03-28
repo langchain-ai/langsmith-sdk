@@ -116,7 +116,7 @@ def convert_runs_to_test(
         runs = client.list_runs(
             project_name="<your_project>",
             filter='eq(name, "extractor")',
-            trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))'
+            trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
         )
         runs_as_test(runs, dataset_name="Extraction Good")
     """
