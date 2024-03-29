@@ -571,7 +571,6 @@ class _ExperimentManager:
 
     def start(self) -> _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
-        _examples = itertools.chain([first_example], self.examples)
         if self._experiment is None:
             try:
                 project_metadata = self._get_experiment_metadata()
@@ -607,7 +606,7 @@ class _ExperimentManager:
             # HACKHACK
             print("Starting evaluation of experiment: %s", self.experiment_name)
         return _ExperimentManager(
-            _examples,
+            self.examples,
             experiment=project,
             metadata=self._metadata,
             client=self.client,
