@@ -1,14 +1,45 @@
 """Evaluation Helpers."""
 
-from langsmith.evaluation._runner import evaluate, evaluate_existing
-from langsmith.evaluation.evaluator import (
-    EvaluationResult,
-    EvaluationResults,
-    RunEvaluator,
-    run_evaluator,
-)
-from langsmith.evaluation.integrations._langchain import LangChainStringEvaluator
-from langsmith.evaluation.string_evaluator import StringEvaluator
+from typing import Any
+
+
+def __getattr__(name: str) -> Any:
+    if name == "evaluate":
+        from langsmith.evaluation._runner import evaluate
+
+        return evaluate
+    elif name == "evaluate_existing":
+        from langsmith.evaluation._runner import evaluate_existing
+
+        return evaluate_existing
+    elif name == "EvaluationResult":
+        from langsmith.evaluation.evaluator import EvaluationResult
+
+        return EvaluationResult
+    elif name == "EvaluationResults":
+        from langsmith.evaluation.evaluator import EvaluationResults
+
+        return EvaluationResults
+    elif name == "RunEvaluator":
+        from langsmith.evaluation.evaluator import RunEvaluator
+
+        return RunEvaluator
+    elif name == "run_evaluator":
+        from langsmith.evaluation.evaluator import run_evaluator
+
+        return run_evaluator
+    elif name == "StringEvaluator":
+        from langsmith.evaluation.string_evaluator import StringEvaluator
+
+        return StringEvaluator
+    elif name == "LangChainStringEvaluator":
+        from langsmith.evaluation.integrations._langchain import (
+            LangChainStringEvaluator,
+        )
+
+        return LangChainStringEvaluator
+    raise AttributeError(f"module {__name__} has no attribute {name}")
+
 
 __all__ = [
     "run_evaluator",
