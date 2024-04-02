@@ -1,6 +1,6 @@
 """LangSmith Client."""
 
-from typing import Any
+from typing import Any, List
 
 
 def __getattr__(name: str) -> Any:
@@ -38,7 +38,6 @@ def __getattr__(name: str) -> Any:
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-
 __all__ = [
     "Client",
     "RunTree",
@@ -48,3 +47,6 @@ __all__ = [
     "traceable",
     "trace",
 ]
+
+def __dir__() -> List[str]:
+    return __all__

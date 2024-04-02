@@ -51,3 +51,6 @@ __all__ = [
     "evaluate_existing",
     "LangChainStringEvaluator",
 ]
+
+def __dir__() -> List[str]:
+    return __all__
