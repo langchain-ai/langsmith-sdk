@@ -1,6 +1,10 @@
 """LangSmith Client."""
 
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List
+
+if TYPE_CHECKING:
+    from langsmith.client import Client
+    from langsmith.run_helpers import trace, traceable
 
 
 def __getattr__(name: str) -> Any:
@@ -38,6 +42,7 @@ def __getattr__(name: str) -> Any:
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
+
 __all__ = [
     "Client",
     "RunTree",
@@ -47,6 +52,7 @@ __all__ = [
     "traceable",
     "trace",
 ]
+
 
 def __dir__() -> List[str]:
     return __all__

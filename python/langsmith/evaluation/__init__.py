@@ -1,6 +1,16 @@
 """Evaluation Helpers."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from typing import List
+
+    from langsmith.evaluation.evaluator import (
+        EvaluationResult,
+        EvaluationResults,
+        RunEvaluator,
+    )
+    from langsmith.evaluation.integrations._langchain import LangChainStringEvaluator
 
 
 def __getattr__(name: str) -> Any:
@@ -51,6 +61,7 @@ __all__ = [
     "evaluate_existing",
     "LangChainStringEvaluator",
 ]
+
 
 def __dir__() -> List[str]:
     return __all__
