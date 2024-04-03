@@ -67,6 +67,10 @@ interface ListRunsParams {
    * The ID of the trace to filter by.
    */
   traceId?: string;
+  /**
+   * isRoot - Whether to only include root runs.
+   *  */
+  isRoot?: boolean;
 
   /**
    * The execution order to filter by.
@@ -146,6 +150,11 @@ interface ListRunsParams {
    * conjunction with the regular `filter` parameter to let you filter runs by attributes of any run within a trace.
    */
   treeFilter?: string;
+  /**
+   * The values to include in the response.
+   *
+   */
+  select?: string[];
 }
 
 interface UploadCSVParams {
@@ -1026,7 +1035,7 @@ export class Client {
    * @param traceId - The ID of the trace to filter by.
    * @param referenceExampleId - The ID of the reference example to filter by.
    * @param startTime - The start time to filter by.
-   * @param executionOrder - The execution order to filter by.
+   * @param isRoot - Indicates whether to only return root runs.
    * @param runType - The run type to filter by.
    * @param error - Indicates whether to filter by error runs.
    * @param id - The ID of the run to filter by.
@@ -1108,6 +1117,7 @@ export class Client {
       referenceExampleId,
       startTime,
       executionOrder,
+      isRoot,
       runType,
       error,
       id,
@@ -1116,6 +1126,7 @@ export class Client {
       traceFilter,
       treeFilter,
       limit,
+      select,
     } = props;
     let projectIds: string[] = [];
     if (projectId) {
@@ -1132,6 +1143,36 @@ export class Client {
       );
       projectIds.push(...projectIds_);
     }
+    const default_select = [
+      "app_path",
+      "child_run_ids",
+      "completion_cost",
+      "completion_tokens",
+      "dotted_order",
+      "end_time",
+      "error",
+      "events",
+      "extra",
+      "feedback_stats",
+      "first_token_time",
+      "id",
+      "inputs",
+      "name",
+      "outputs",
+      "parent_run_id",
+      "parent_run_ids",
+      "prompt_cost",
+      "prompt_tokens",
+      "reference_example_id",
+      "run_type",
+      "session_id",
+      "start_time",
+      "status",
+      "tags",
+      "total_cost",
+      "total_tokens",
+      "trace_id",
+    ];
     const body = {
       session: projectIds.length ? projectIds : null,
       run_type: runType,
@@ -1147,6 +1188,8 @@ export class Client {
       id,
       limit,
       trace: traceId,
+      select: select ? select : default_select,
+      is_root: isRoot,
     };
 
     for await (const runs of this._getCursorPaginatedList<Run>(
