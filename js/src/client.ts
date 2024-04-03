@@ -67,6 +67,10 @@ interface ListRunsParams {
    * The ID of the trace to filter by.
    */
   traceId?: string;
+  /**
+   * isRoot - Whether to only include root runs.
+   *  */
+  isRoot?: boolean;
 
   /**
    * The execution order to filter by.
@@ -1031,7 +1035,7 @@ export class Client {
    * @param traceId - The ID of the trace to filter by.
    * @param referenceExampleId - The ID of the reference example to filter by.
    * @param startTime - The start time to filter by.
-   * @param executionOrder - The execution order to filter by.
+   * @param isRoot - Indicates whether to only return root runs.
    * @param runType - The run type to filter by.
    * @param error - Indicates whether to filter by error runs.
    * @param id - The ID of the run to filter by.
@@ -1113,6 +1117,7 @@ export class Client {
       referenceExampleId,
       startTime,
       executionOrder,
+      isRoot,
       runType,
       error,
       id,
@@ -1192,6 +1197,7 @@ export class Client {
       limit,
       trace: traceId,
       select: select ? select : default_select,
+      is_root: isRoot,
     };
 
     for await (const runs of this._getCursorPaginatedList<Run>(
