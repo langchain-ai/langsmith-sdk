@@ -146,6 +146,11 @@ interface ListRunsParams {
    * conjunction with the regular `filter` parameter to let you filter runs by attributes of any run within a trace.
    */
   treeFilter?: string;
+  /**
+   * The values to include in the response.
+   *
+   */
+  select?: string[];
 }
 
 interface UploadCSVParams {
@@ -1116,6 +1121,7 @@ export class Client {
       traceFilter,
       treeFilter,
       limit,
+      select,
     } = props;
     let projectIds: string[] = [];
     if (projectId) {
@@ -1132,6 +1138,44 @@ export class Client {
       );
       projectIds.push(...projectIds_);
     }
+    const default_select = [
+      "app_path",
+      "child_run_ids",
+      "completion_cost",
+      "completion_tokens",
+      "dotted_order",
+      "end_time",
+      "error",
+      "events",
+      "extra",
+      "feedback_stats",
+      "first_token_time",
+      "id",
+      "in_dataset",
+      "inputs",
+      "inputs_s3_urls",
+      "last_queued_at",
+      "manifest_id",
+      "manifest_s3_id",
+      "name",
+      "outputs",
+      "outputs_s3_urls",
+      "parent_run_id",
+      "parent_run_ids",
+      "prompt_cost",
+      "prompt_tokens",
+      "reference_example_id",
+      "run_type",
+      "serialized",
+      "session_id",
+      "share_token",
+      "start_time",
+      "status",
+      "tags",
+      "total_cost",
+      "total_tokens",
+      "trace_id",
+    ];
     const body = {
       session: projectIds.length ? projectIds : null,
       run_type: runType,
@@ -1147,6 +1191,7 @@ export class Client {
       id,
       limit,
       trace: traceId,
+      select: select ? select : default_select,
     };
 
     for await (const runs of this._getCursorPaginatedList<Run>(

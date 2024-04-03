@@ -1440,11 +1440,12 @@ class Client:
         filter: Optional[str] = None,
         trace_filter: Optional[str] = None,
         tree_filter: Optional[str] = None,
-        execution_order: Optional[int] = None,
+        is_root: Optional[bool] = None,
         parent_run_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
         error: Optional[bool] = None,
-        run_ids: Optional[List[ID_TYPE]] = None,
+        run_ids: Optional[Sequence[ID_TYPE]] = None,
+        select: Optional[Sequence[str]] = None,
         limit: Optional[int] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
@@ -1475,10 +1476,8 @@ class Client:
             sibling and child runs. This is meant to be used in conjunction with
             the regular `filter` parameter to let you filter runs by attributes
             of any run within a trace.
-        execution_order : int or None, default=None
-            The execution order to filter by. Execution order is the position
-            of the run in the full trace's execution sequence.
-                All root run traces have execution_order 1.
+        is_root : bool or None, default=None
+            Whether to filter by root runs.
         parent_run_id : UUID or None, default=None
             The ID of the parent run to filter by.
         start_time : datetime or None, default=None
@@ -1561,7 +1560,45 @@ class Client:
             project_ids.extend(
                 [self.read_project(project_name=name).id for name in project_name]
             )
-
+        default_select = [
+            "app_path",
+            "child_run_ids",
+            "completion_cost",
+            "completion_tokens",
+            "dotted_order",
+            "end_time",
+            "error",
+            "events",
+            "extra",
+            "feedback_stats",
+            "first_token_time",
+            "id",
+            "in_dataset",
+            "inputs",
+            "inputs_s3_urls",
+            "last_queued_at",
+            "manifest_id",
+            "manifest_s3_id",
+            "name",
+            "outputs",
+            "outputs_s3_urls",
+            "parent_run_id",
+            "parent_run_ids",
+            "prompt_cost",
+            "prompt_tokens",
+            "reference_example_id",
+            "run_type",
+            "serialized",
+            "session_id",
+            "share_token",
+            "start_time",
+            "status",
+            "tags",
+            "total_cost",
+            "total_tokens",
+            "trace_id",
+        ]
+        select = select or default_select
         body_query: Dict[str, Any] = {
             "session": project_ids if project_ids else None,
             "run_type": run_type,
@@ -1572,12 +1609,13 @@ class Client:
             "filter": filter,
             "trace_filter": trace_filter,
             "tree_filter": tree_filter,
-            "execution_order": execution_order,
+            "is_root": is_root,
             "parent_run": parent_run_id,
             "start_time": start_time.isoformat() if start_time else None,
             "error": error,
             "id": run_ids,
             "trace": trace_id,
+            "select": select,
             **kwargs,
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}
