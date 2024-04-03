@@ -168,6 +168,9 @@ export interface Run extends BaseRun {
 
   /** IDs of parent runs, if multiple exist. */
   parent_run_ids?: string[];
+
+  /** Whether the run is included in a dataset. */
+  in_dataset?: boolean;
 }
 
 export interface RunCreate extends BaseRun {
