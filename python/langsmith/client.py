@@ -1510,11 +1510,14 @@ class Client:
                 run_type="llm",
             )
 
-            # List traces in a project
-            root_runs = client.list_runs(project_name="<your_project>", execution_order=1)
+            # List root traces in a project
+            root_runs = client.list_runs(project_name="<your_project>", is_root=1)
 
             # List runs without errors
             correct_runs = client.list_runs(project_name="<your_project>", error=False)
+
+            # List runs and only return their inputs/outputs (to speed up the query)
+            input_output_runs = client.list_runs(project_name="<your_project>", select=["inputs", "outputs"])
 
             # List runs by run ID
             run_ids = [
@@ -2089,7 +2092,7 @@ class Client:
         import pandas as pd  # type: ignore
 
         runs = self.list_runs(
-            project_id=project_id, project_name=project_name, execution_order=1
+            project_id=project_id, project_name=project_name, is_root=True
         )
         results = []
         example_ids = []
