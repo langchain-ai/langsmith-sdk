@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Any, List
 if TYPE_CHECKING:
     from typing import List
 
+    from langsmith.evaluation._runner import evaluate, evaluate_existing
     from langsmith.evaluation.evaluator import (
         EvaluationResult,
         EvaluationResults,
         RunEvaluator,
+        run_evaluator,
     )
     from langsmith.evaluation.integrations._langchain import LangChainStringEvaluator
 

@@ -61,7 +61,6 @@ EVALUATOR_T = Union[
 ]
 
 
-@ls_beta.warn_beta
 def evaluate(
     target: TARGET_T,
     /,
@@ -227,7 +226,6 @@ def evaluate(
     )
 
 
-@ls_beta.warn_beta
 def evaluate_existing(
     experiment: Union[str, uuid.UUID],
     /,
