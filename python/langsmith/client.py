@@ -6,6 +6,7 @@ import collections
 import datetime
 import functools
 import importlib
+import importlib.metadata
 import io
 import json
 import logging
@@ -1517,7 +1518,9 @@ class Client:
             correct_runs = client.list_runs(project_name="<your_project>", error=False)
 
             # List runs and only return their inputs/outputs (to speed up the query)
-            input_output_runs = client.list_runs(project_name="<your_project>", select=["inputs", "outputs"])
+            input_output_runs = client.list_runs(
+                project_name="<your_project>", select=["inputs", "outputs"]
+            )
 
             # List runs by run ID
             run_ids = [
@@ -2361,7 +2364,8 @@ class Client:
             The difference between the two versions of the dataset.
 
         Examples:
-        .. code-block:: python
+        --------
+        ..code-block:: python
 
             # Get the difference between two tagged versions of a dataset
             from_version = "prod"
@@ -2531,6 +2535,7 @@ class Client:
         Examples:
         --------
         .. code-block:: python
+
             dataset_name = "my-dataset"
             # Get the version of a dataset <= a given timestamp
             dataset_version = client.read_dataset_version(
@@ -3927,7 +3932,7 @@ class Client:
             evaluation: Optional evaluation configuration to use when evaluating
             concurrency_level: The number of async tasks to run concurrently.
             project_name: Name of the project to store the traces in.
-                Defaults to {dataset_name}-{chain class name}-{datetime}.
+                Defaults to a randomly generated name.
             project_metadata: Optional metadata to store with the project.
             dataset_version: Optional version identifier to run the dataset on.
                 Can be a timestamp or a string tag.
@@ -4075,7 +4080,7 @@ class Client:
                 results of the chain
             concurrency_level: The number of tasks to execute concurrently.
             project_name: Name of the project to store the traces in.
-                Defaults to {dataset_name}-{chain class name}-{datetime}.
+                Defaults to a randomly generated name.
             project_metadata: Metadata to store with the project.
             dataset_version: Optional version identifier to run the dataset on.
                 Can be a timestamp or a string tag.

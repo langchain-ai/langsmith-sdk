@@ -30,7 +30,6 @@ from requests import HTTPError
 from typing_extensions import TypedDict
 
 import langsmith
-from langsmith import beta as ls_beta
 from langsmith import env as ls_env
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
@@ -61,7 +60,6 @@ EVALUATOR_T = Union[
 ]
 
 
-@ls_beta.warn_beta
 def evaluate(
     target: TARGET_T,
     /,
@@ -227,7 +225,6 @@ def evaluate(
     )
 
 
-@ls_beta.warn_beta
 def evaluate_existing(
     experiment: Union[str, uuid.UUID],
     /,

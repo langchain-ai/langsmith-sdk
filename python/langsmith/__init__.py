@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING, Any, List
 
 if TYPE_CHECKING:
     from langsmith.client import Client
+    from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
     from langsmith.run_helpers import trace, traceable
+    from langsmith.run_trees import RunTree
 
 
 def __getattr__(name: str) -> Any:
