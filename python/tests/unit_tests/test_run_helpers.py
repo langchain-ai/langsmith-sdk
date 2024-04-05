@@ -197,7 +197,7 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
     assert 1 <= len(mock_calls) <= 2
 
     call = mock_calls[0]
-    assert call.args[0] == "post"
+    assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
     body = json.loads(mock_calls[0].kwargs["data"])
     assert body["post"]
@@ -232,7 +232,7 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         assert 1 <= len(mock_calls) <= 2
 
         call = mock_calls[0]
-        assert call.args[0] == "post"
+        assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
         body = json.loads(call.kwargs["data"])
         assert body["post"]
@@ -333,7 +333,7 @@ def test_traceable_project_name() -> None:
         mock_calls = mock_client_.session.request.mock_calls  # type: ignore
         assert 1 <= len(mock_calls) <= 2
         call = mock_calls[0]
-        assert call.args[0] == "post"
+        assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
         body = json.loads(call.kwargs["data"])
         assert body["post"]
@@ -354,7 +354,7 @@ def test_traceable_project_name() -> None:
         mock_calls = mock_client_.session.request.mock_calls  # type: ignore
         assert 1 <= len(mock_calls) <= 2
         call = mock_calls[0]
-        assert call.args[0] == "post"
+        assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
         body = json.loads(call.kwargs["data"])
         assert body["post"]
