@@ -701,9 +701,11 @@ class Client:
                     with ls_utils.filter_logs(_urllib3_logger, logging_filters):
                         response = self.session.request(
                             method,
-                            self.api_url + pathname
-                            if not pathname.startswith("http")
-                            else pathname,
+                            (
+                                self.api_url + pathname
+                                if not pathname.startswith("http")
+                                else pathname
+                            ),
                             stream=False,
                             **request_kwargs,
                         )
@@ -825,7 +827,7 @@ class Client:
         path: str,
         *,
         body: Optional[dict] = None,
-        request_method: str = "post",
+        request_method: Literal["GET", "POST"] = "POST",
         data_key: str = "runs",
     ) -> Iterator[dict]:
         """Get a cursor paginated list of items.
@@ -1623,9 +1625,7 @@ class Client:
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}
         for i, run in enumerate(
-            self._get_cursor_paginated_list(
-                "/runs/query", body=body_query, request_method="post"
-            )
+            self._get_cursor_paginated_list("/runs/query", body=body_query)
         ):
             yield ls_schemas.Run(**run, _host_url=self._host_url)
             if limit is not None and i + 1 >= limit:
@@ -3696,7 +3696,7 @@ class Client:
         response = self.request_with_retries(
             "POST",
             "/feedback/tokens",
-            {"data": _dumps_json(body)},
+            data=_dumps_json(body),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.FeedbackIngestToken(**response.json())
@@ -3803,7 +3803,7 @@ class Client:
         response = self.request_with_retries(
             "POST",
             "/annotation-queues",
-            {"json": {k: v for k, v in body.items() if v is not None}},
+            json={k: v for k, v in body.items() if v is not None},
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.AnnotationQueue(
@@ -3838,11 +3838,9 @@ class Client:
         response = self.request_with_retries(
             "PATCH",
             f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
-            {
-                "json": {
-                    "name": name,
-                    "description": description,
-                },
+            json={
+                "name": name,
+                "description": description,
             },
         )
         ls_utils.raise_for_status_with_text(response)
@@ -3872,11 +3870,7 @@ class Client:
         response = self.request_with_retries(
             "POST",
             f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs",
-            {
-                "json": [
-                    str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)
-                ],
-            },
+            json=[str(_as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)],
         )
         ls_utils.raise_for_status_with_text(response)
 
