@@ -265,8 +265,8 @@ def aiter_with_concurrency(
 
         async def consume():
             async for item in generator:
-                yield item
-
+                yield await item
+ 
         return consume()
     semaphore = asyncio.Semaphore(n) if n is not None else NoLock()
 

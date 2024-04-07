@@ -180,6 +180,8 @@ async def aevaluate(
         ...         experiment_prefix="My Experiment Without Concurrency",
         ...         max_concurrency=0,
         ...     )
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
     """  # noqa: E501
     return await _aevaluate(
         target,

@@ -509,7 +509,7 @@ class _ExperimentManagerMixin:
         if experiment is None:
             self._experiment_name = _get_random_name()
         elif isinstance(experiment, str):
-            self._experiment_name = experiment + "-" + str(uuid.uuid4())
+            self._experiment_name = experiment + "-" + str(uuid.uuid4().hex[:6])
         else:
             self._experiment_name = cast(str, experiment.name)
             self._experiment = experiment

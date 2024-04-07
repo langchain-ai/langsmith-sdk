@@ -92,13 +92,13 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                             "arguments": "",
                         }
                     if chunk.function.name:
-                        message["tool_calls"][index]["function"][
-                            "name"
-                        ] += chunk.function.name
+                        message["tool_calls"][index]["function"]["name"] += (
+                            chunk.function.name
+                        )
                     if chunk.function.arguments:
-                        message["tool_calls"][index]["function"][
-                            "arguments"
-                        ] += chunk.function.arguments
+                        message["tool_calls"][index]["function"]["arguments"] += (
+                            chunk.function.arguments
+                        )
     return {
         "index": choices[0].index,
         "finish_reason": next(
