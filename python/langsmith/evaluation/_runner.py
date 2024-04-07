@@ -450,7 +450,7 @@ def _is_uuid(value: str) -> bool:
 
 def _load_experiment(
     project: Union[str, uuid.UUID], client: langsmith.Client
-) -> schemas.TracerSession:
+) -> schemas.TracerSessionResult:
     if isinstance(project, uuid.UUID) or _is_uuid(project):
         return client.read_project(project_id=project)
     return client.read_project(project_name=project)

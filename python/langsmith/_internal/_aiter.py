@@ -250,7 +250,7 @@ def ensure_async_iterator(
 
 
 def aiter_with_concurrency(
-    n: Optional[int], generator: AsyncGenerator[Coroutine[None, None, T], None]
+    n: Optional[int], generator: AsyncIterator[Coroutine[None, None, T]]
 ) -> AsyncGenerator[T, None]:
     """Process async generator with max parallelism.
 
@@ -266,7 +266,7 @@ def aiter_with_concurrency(
         async def consume():
             async for item in generator:
                 yield await item
- 
+
         return consume()
     semaphore = asyncio.Semaphore(n) if n is not None else NoLock()
 
