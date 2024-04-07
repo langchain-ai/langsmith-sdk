@@ -7,7 +7,6 @@ MIT License
 
 import asyncio
 from collections import deque
-from collections.abc import Coroutine
 from typing import (
     Any,
     AsyncContextManager,
@@ -16,6 +15,7 @@ from typing import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Coroutine,
     Deque,
     Generic,
     Iterable,

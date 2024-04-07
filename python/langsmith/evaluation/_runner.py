@@ -1058,8 +1058,3 @@ def _get_random_name() -> str:
     from langsmith.evaluation._name_generation import random_name  # noqa: F401
 
     return random_name()
-
-
-# # Otherwise, we will generate a new experiment name.
-#     if isinstance(experiment_prefix, str):
-#         return experiment_prefix + ":" + uuid.uuid4().hex[:7], None, None
