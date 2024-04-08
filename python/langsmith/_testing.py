@@ -11,6 +11,7 @@ import uuid
 import weakref
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
+import pytest
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
@@ -204,13 +205,13 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
 
 
 @overload
-def test_case(
+def unit(
     func: Callable,
 ) -> Callable: ...
 
 
 @overload
-def test_case(
+def unit(
     *,
     id: uuid.UUID,
     output_keys: Optional[Sequence[str]] = None,
@@ -221,7 +222,7 @@ def test_case(
 ) -> Callable[[Callable], Callable]: ...
 
 
-def test_case(*args, **kwargs):
+def unit(*args, **kwargs):
     """Decorator for defining a LangSmith test case.
 
     This decorator is used to mark a function as a test case for LangSmith. It ensures
@@ -251,38 +252,51 @@ def test_case(*args, **kwargs):
         Callable: The decorated test function.
 
     Example:
-        To define a test case using the decorator:
+        For basic usage, simply decorate a test function with `@unit`:
 
-        >>> @test_case
-        ... def test_addition(a: int, b: int, expected: int):
-        ...     assert a + b == expected
+        >>> @unit
+        ... def test_addition():
+        ...     assert 3 + 4 == 7
 
-        To define a test case with a specific ID and output keys:
-
-        >>> @test_case(id=uuid.uuid4(), output_keys=["result"])
-        ... def test_multiplication(a: int, b: int, result: int):
-        ...     assert a * b == result
-
-        Using the decorator with pytest fixtures and OpenAI:
-
-        >>> import openai
+    
+        The decorator works natively with pytest fixtures.
+        The values will populate the "inputs" of the corresponding example in LangSmith.
+        
         >>> import pytest
-        >>> from langsmith import test_case
-        >>> from langsmith.wrappers import wrap_openai
-        >>>
-        >>> @test_case
-        ... def test_example():
-        ...     assert True
-        >>>
         >>> @pytest.fixture
         ... def some_input():
         ...     return "Some input"
         >>>
-        >>> @test_case
-        ... def test_other_example(some_input: str):
+        >>> @unit
+        ... def test_with_fixture(some_input: str):
         ...     assert "input" in some_input
         >>>
-        >>> @test_case
+        
+        If you have an expected answer, you can log that to langsmith by clarifying which fixture is the output.
+
+
+        >>> @pytest.fixture
+        ... def expected_output():
+        ...     return "input"
+        >>> @unit(output_keys=["result"])
+        ... def test_with_expected_output(some_input: str, expected_output: str):
+        ...     assert expected_output in some_input
+        
+
+        By default, each test case will be assigned a consistent unique identifier based on the
+        function name and module. You can also provide a custom identifier using the `id` argument:
+
+        >>> @unit(id=uuid.uuid4())
+        ... def test_multiplication():
+        ...     assert 3 * 4 == 12
+
+        Any code that is traced within the test function will be included in the test case:
+        For instance, if you wrap an OpenAI client with a LangSmith wrapper, the LLM run will
+        be rendered in the appropriate location.
+
+        >>> import openai
+        >>> from langsmith.wrappers import wrap_openai
+        >>> @unit
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
         ...     oai_client = wrap_openai(openai.Client())
@@ -296,10 +310,11 @@ def test_case(*args, **kwargs):
         ...     assert "hello" in response.choices[0].message.content.lower()
 
 
-        Run in pytest, or directly run the test functions.
-
-        >>> test_example()
-        >>> test_other_example("Some input")
+        To run these tests, use the pytest CLI. Or directly run the test functions.
+        >>> test_addition()
+        >>> test_with_fixture()
+        >>> test_with_expected_output("Some input")
+        >>> test_multiplication()
         >>> test_openai_says_hello()
     """
     langtest_extra = _UTExtra(
