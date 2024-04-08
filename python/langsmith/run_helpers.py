@@ -128,6 +128,16 @@ def _get_inputs(
     return arguments
 
 
+def _get_inputs_safe(
+    signature: inspect.Signature, *args: Any, **kwargs: Any
+) -> Dict[str, Any]:
+    try:
+        return _get_inputs(signature, *args, **kwargs)
+    except BaseException as e:
+        logger.debug(f"Failed to get inputs for {signature}: {e}")
+        return {"args": args, "kwargs": kwargs}
+
+
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
@@ -259,11 +269,7 @@ def _setup_run(
     metadata_.update(metadata or {})
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
-    try:
-        inputs = _get_inputs(signature, *args, **kwargs)
-    except TypeError as e:
-        logger.debug(f"Failed to infer inputs for {name_}: {e}")
-        inputs = {"args": args, "kwargs": kwargs}
+    inputs = _get_inputs_safe(signature, *args, **kwargs)
     process_inputs = container_input.get("process_inputs")
     if process_inputs:
         try:

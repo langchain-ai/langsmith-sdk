@@ -1,8 +1,9 @@
 """LangSmith Client."""
 
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from langsmith._testing import test_case
     from langsmith.client import Client
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
     from langsmith.run_helpers import trace, traceable
@@ -41,6 +42,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_helpers import traceable
 
         return traceable
+    elif name == "test_case":
+        from langsmith._testing import test_case
+
+        return test_case
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -53,8 +58,5 @@ __all__ = [
     "RunEvaluator",
     "traceable",
     "trace",
+    "test_case",
 ]
-
-
-def __dir__() -> List[str]:
-    return __all__
