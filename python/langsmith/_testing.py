@@ -8,7 +8,7 @@ import logging
 import os
 import threading
 import uuid
-import weakref
+from enum import Enum
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
 from typing_extensions import TypedDict
@@ -67,15 +67,18 @@ def _get_id(func: Callable) -> uuid.UUID:
 
 
 def _end_tests(
-    client: ls_client.Client,
-    experiment: ls_schemas.TracerSessionResult,
-    get_version: Callable[[], Optional[datetime.datetime]],
+    test_suite: _LangSmithTestSuite,
 ):
-    return client.update_project(
-        experiment.id,
+    test_suite.client.update_project(
+        test_suite.experiment_id,
         end_time=datetime.datetime.now(datetime.timezone.utc),
-        metadata={"dataset_version": get_version()},
+        metadata={"dataset_version": test_suite.get_version()},
     )
+
+
+class _TestOp(str, Enum):
+    CREATE = "create"
+    UPDATE = "update"
 
 
 class _LangSmithTestSuite:
@@ -88,18 +91,19 @@ class _LangSmithTestSuite:
         experiment: ls_schemas.TracerSessionResult,
         dataset: ls_schemas.Dataset,
     ):
-        self._client = client or ls_client.Client()
+        self.client = client or ls_client.Client()
         self._experiment = experiment
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
-        weakref.finalize(
-            self, _end_tests, self._client, self._experiment, self.get_version
-        )
-        atexit.register(_end_tests, self._client, self._experiment, self.get_version)
+        atexit.register(_end_tests, self)
 
     @property
     def id(self):
         return self._dataset.id
+
+    @property
+    def experiment_id(self):
+        return self._experiment.id
 
     @classmethod
     def get_singleton(cls, client: Optional[ls_client.Client]):
@@ -145,7 +149,7 @@ def _ensure_example(
     signature = inspect.signature(func)
     # TODO: support
     # 2. Create the example
-    inputs = rh._get_inputs_safe(signature, args, kwargs)
+    inputs = rh._get_inputs_safe(signature, *args, **kwargs)
     outputs = {}
     if output_keys:
         for k in output_keys:
@@ -155,7 +159,7 @@ def _ensure_example(
     try:
         example = client.read_example(example_id=example_id)
         if inputs != example.inputs or outputs != example.outputs:
-            example = client.update_example(
+            client.update_example(
                 example_id=example.id,
                 inputs=inputs,
                 outputs=outputs,
