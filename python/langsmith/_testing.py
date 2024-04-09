@@ -11,7 +11,6 @@ import uuid
 import weakref
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
-import pytest
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
@@ -144,18 +143,24 @@ def _ensure_example(
     example_id = langtest_extra["id"] or _get_id(func)
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
+    # TODO: support
+    # 2. Create the example
+    inputs = rh._get_inputs_safe(signature, args, kwargs)
+    outputs = {}
+    if output_keys:
+        for k in output_keys:
+            outputs[k] = inputs.pop(k, None)
     # TODO: Support multiple test suites
     test_suite = _LangSmithTestSuite.get_singleton(client)
     try:
         example = client.read_example(example_id=example_id)
+        if inputs != example.inputs or outputs != example.outputs:
+            example = client.update_example(
+                example_id=example.id,
+                inputs=inputs,
+                outputs=outputs,
+            )
     except ls_utils.LangSmithNotFoundError:
-        # TODO: support
-        # 2. Create the example
-        inputs = rh._get_inputs_safe(signature, args, kwargs)
-        outputs = {}
-        if output_keys:
-            for k in output_keys:
-                outputs[k] = inputs.pop(k, None)
         example = client.create_example(
             example_id=example_id,
             inputs=inputs,
@@ -223,7 +228,7 @@ def unit(
 
 
 def unit(*args, **kwargs):
-    """Decorator for defining a LangSmith test case.
+    """Create a unit test case in LangSmith.
 
     This decorator is used to mark a function as a test case for LangSmith. It ensures
     that the necessary example data is created and associated with the test function.
@@ -258,10 +263,10 @@ def unit(*args, **kwargs):
         ... def test_addition():
         ...     assert 3 + 4 == 7
 
-    
+
         The decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.
-        
+
         >>> import pytest
         >>> @pytest.fixture
         ... def some_input():
@@ -271,8 +276,9 @@ def unit(*args, **kwargs):
         ... def test_with_fixture(some_input: str):
         ...     assert "input" in some_input
         >>>
-        
-        If you have an expected answer, you can log that to langsmith by clarifying which fixture is the output.
+
+        If you have an expected answer, you can log that to langsmith by
+        clarifying which fixture is the output.
 
 
         >>> @pytest.fixture
@@ -281,18 +287,20 @@ def unit(*args, **kwargs):
         >>> @unit(output_keys=["result"])
         ... def test_with_expected_output(some_input: str, expected_output: str):
         ...     assert expected_output in some_input
-        
 
-        By default, each test case will be assigned a consistent unique identifier based on the
-        function name and module. You can also provide a custom identifier using the `id` argument:
+
+        By default, each test case will be assigned a consistent unique identifier
+        based on the function name and module. You can also provide a custom identifier
+        using the `id` argument:
 
         >>> @unit(id=uuid.uuid4())
         ... def test_multiplication():
         ...     assert 3 * 4 == 12
 
-        Any code that is traced within the test function will be included in the test case:
-        For instance, if you wrap an OpenAI client with a LangSmith wrapper, the LLM run will
-        be rendered in the appropriate location.
+        Any code that is traced within the test function will be included
+        in the test case. For instance, if you wrap an OpenAI client
+        with a LangSmith wrapper, the LLM run will be rendered in
+        the appropriate location.
 
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
