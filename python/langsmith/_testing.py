@@ -4,12 +4,14 @@ import atexit
 import datetime
 import functools
 import inspect
+import json
 import logging
 import os
 import threading
 import uuid
 from enum import Enum
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
+import warnings
 
 from typing_extensions import TypedDict
 
@@ -62,8 +64,12 @@ def _start_experiment(
     return client.create_project(experiment_name, reference_dataset_id=test_suite.id)
 
 
-def _get_id(func: Callable) -> uuid.UUID:
-    return uuid.uuid5(uuid.NAMESPACE_DNS, f"{func.__module__}.{func.__name__}")
+def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
+    input_json = json.dumps(inputs, sort_keys=True)
+    identifier = f"{func.__module__}.{func.__name__}_{input_json}"
+
+    # Generate a UUID based on the identifier
+    return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
 
 
 def _end_tests(
@@ -144,12 +150,12 @@ def _ensure_example(
     # 1. check if the id exists.
     # TODOs: Local cache + prefer a peek operation
     client = langtest_extra["client"] or ls_client.Client()
-    example_id = langtest_extra["id"] or _get_id(func)
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
     # TODO: support
     # 2. Create the example
     inputs = rh._get_inputs_safe(signature, *args, **kwargs)
+    example_id = langtest_extra["id"] or _get_id(func, inputs)
     outputs = {}
     if output_keys:
         for k in output_keys:
@@ -324,17 +330,19 @@ def unit(*args, **kwargs):
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
         >>> test_addition()
-        >>> test_with_fixture()
+        >>> test_with_fixture("Some input")
         >>> test_with_expected_output("Some input")
         >>> test_multiplication()
         >>> test_openai_says_hello()
     """
     langtest_extra = _UTExtra(
-        id=kwargs.get("id"),
-        output_keys=kwargs.get("output_keys "),
-        client=kwargs.get("client"),
-        test_suite_name=kwargs.get("test_suite_name"),
+        id=kwargs.pop("id", None),
+        output_keys=kwargs.pop("output_keys", None),
+        client=kwargs.pop("client", None),
+        test_suite_name=kwargs.pop("test_suite_name", None),
     )
+    if kwargs:
+        warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
     if args and callable(args[0]):
         func = args[0]
 
