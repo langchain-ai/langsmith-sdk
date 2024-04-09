@@ -3079,7 +3079,7 @@ class Client:
 
     def update_example(
         self,
-        example_id: str,
+        example_id: ID_TYPE,
         *,
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,

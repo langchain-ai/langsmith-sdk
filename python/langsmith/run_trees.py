@@ -106,6 +106,19 @@ class RunTree(ls_schemas.RunBase):
         metadata_: dict = self.extra.setdefault("metadata", {})
         metadata_.update(metadata)
 
+    def add_outputs(self, outputs: Dict[str, Any]) -> None:
+        """Upsert the given outputs into the run.
+
+        Args:
+            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
+
+        Returns:
+            None
+        """
+        if self.outputs is None:
+            self.outputs = {}
+        self.outputs.update(outputs)
+
     def add_event(
         self,
         events: Union[
@@ -154,7 +167,10 @@ class RunTree(ls_schemas.RunBase):
         """Set the end time of the run and all child runs."""
         self.end_time = end_time or datetime.now(timezone.utc)
         if outputs is not None:
-            self.outputs = outputs
+            if not self.outputs:
+                self.outputs = outputs
+            else:
+                self.outputs.update(outputs)
         if error is not None:
             self.error = error
         if events is not None:
