@@ -39,8 +39,6 @@ def unit(
     id: Optional[uuid.UUID] = None,
     output_keys: Optional[Sequence[str]] = None,
     client: Optional[ls_client.Client] = None,
-    # TODO: naming should be consistent probably
-    # It's a dataset in the background
     test_suite_name: Optional[str] = None,
 ) -> Callable[[Callable], Callable]: ...
 
@@ -307,7 +305,6 @@ def _ensure_example(
     client = langtest_extra["client"] or ls_client.Client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
-    # TODO: support
     # 2. Create the example
     inputs = rh._get_inputs_safe(signature, *args, **kwargs)
     example_id = langtest_extra["id"] or _get_id(func, inputs)
