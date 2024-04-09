@@ -24,6 +24,7 @@ import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
 from langsmith._internal import _aiter as aitertools
+from langsmith.beta import warn_beta
 from langsmith.evaluation._runner import (
     DATA_T,
     EVALUATOR_T,
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 ATARGET_T = Callable[[dict], Awaitable[dict]]
 
 
+@warn_beta
 async def aevaluate(
     target: Union[ATARGET_T, AsyncIterable[dict]],
     /,
@@ -196,6 +198,7 @@ async def aevaluate(
     )
 
 
+@warn_beta
 async def aevaluate_existing(
     experiment: Union[str, uuid.UUID],
     /,
