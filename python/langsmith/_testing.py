@@ -10,7 +10,6 @@ import os
 import threading
 import uuid
 import warnings
-from enum import Enum
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
 from typing_extensions import TypedDict
@@ -24,198 +23,8 @@ from langsmith import utils as ls_utils
 logger = logging.getLogger(__name__)
 
 
-def _get_experiment_name() -> str:
-    # TODO Make more easily configurable
-    prefix = ls_utils.get_tracer_project(False) or "TestSuite"
-    name = f"{prefix}:{uuid.uuid4().hex[:8]}"
-    return name
-
-
-def _get_test_suite_name() -> str:
-    # TODO: This naming stuff is inelegant
-    test_suite_name = os.environ.get("LANGCHAIN_TEST_SUITE")
-    if test_suite_name:
-        return test_suite_name
-    if __package__:
-        return __package__
-    git_info = ls_env.get_git_info()
-    if git_info:
-        if git_info["remote_url"]:
-            repo_name = git_info["remote_url"].split("/")[-1].split(".")[0]
-            if repo_name:
-                return repo_name
-    raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
-
-
-def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
-    test_suite_name = _get_test_suite_name()
-
-    if client.has_dataset(dataset_name=test_suite_name):
-        return client.read_dataset(dataset_name=test_suite_name)
-    else:
-        return client.create_dataset(dataset_name=test_suite_name)
-
-
-def _start_experiment(
-    client: ls_client.Client,
-    test_suite: ls_schemas.Dataset,
-) -> ls_schemas.TracerSessionResult:
-    experiment_name = _get_experiment_name()
-    return client.create_project(experiment_name, reference_dataset_id=test_suite.id)
-
-
-def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
-    input_json = json.dumps(inputs, sort_keys=True)
-    identifier = f"{func.__module__}.{func.__name__}_{input_json}"
-
-    # Generate a UUID based on the identifier
-    return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
-
-
-def _end_tests(
-    test_suite: _LangSmithTestSuite,
-):
-    test_suite.client.update_project(
-        test_suite.experiment_id,
-        end_time=datetime.datetime.now(datetime.timezone.utc),
-        metadata={"dataset_version": test_suite.get_version()},
-    )
-
-
-class _TestOp(str, Enum):
-    CREATE = "create"
-    UPDATE = "update"
-
-
-class _LangSmithTestSuite:
-    _instance = None
-    _lock = threading.RLock()
-
-    def __init__(
-        self,
-        client: Optional[ls_client.Client],
-        experiment: ls_schemas.TracerSessionResult,
-        dataset: ls_schemas.Dataset,
-    ):
-        self.client = client or ls_client.Client()
-        self._experiment = experiment
-        self._dataset = dataset
-        self._version: Optional[datetime.datetime] = None
-        atexit.register(_end_tests, self)
-
-    @property
-    def id(self):
-        return self._dataset.id
-
-    @property
-    def experiment_id(self):
-        return self._experiment.id
-
-    @classmethod
-    def get_singleton(cls, client: Optional[ls_client.Client]):
-        client = client or ls_client.Client()
-        with cls._lock:
-            if not cls._instance:
-                test_suite = _get_test_suite(client)
-                experiment = _start_experiment(client, test_suite)
-                cls._instance = cls(client, experiment, test_suite)
-        return cls._instance
-
-    @property
-    def name(self):
-        return self._experiment.name
-
-    def update_version(self, version: datetime.datetime) -> None:
-        if self._version is None or version > self._version:
-            self._version = version
-
-    def get_version(self) -> Optional[datetime.datetime]:
-        return self._version
-
-
 T = TypeVar("T")
 U = TypeVar("U")
-
-
-class _UTExtra(TypedDict, total=False):
-    client: Optional[ls_client.Client]
-    id: Optional[uuid.UUID]
-    output_keys: Optional[Sequence[str]]
-    test_suite_name: Optional[str]
-
-
-def _ensure_example(
-    func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
-) -> Tuple[ls_schemas.TracerSession, ls_schemas.Example]:
-    # 1. check if the id exists.
-    # TODOs: Local cache + prefer a peek operation
-    client = langtest_extra["client"] or ls_client.Client()
-    output_keys = langtest_extra["output_keys"]
-    signature = inspect.signature(func)
-    # TODO: support
-    # 2. Create the example
-    inputs = rh._get_inputs_safe(signature, *args, **kwargs)
-    example_id = langtest_extra["id"] or _get_id(func, inputs)
-    outputs = {}
-    if output_keys:
-        for k in output_keys:
-            outputs[k] = inputs.pop(k, None)
-    # TODO: Support multiple test suites
-    test_suite = _LangSmithTestSuite.get_singleton(client)
-    try:
-        example = client.read_example(example_id=example_id)
-        if inputs != example.inputs or outputs != example.outputs:
-            client.update_example(
-                example_id=example.id,
-                inputs=inputs,
-                outputs=outputs,
-            )
-    except ls_utils.LangSmithNotFoundError:
-        example = client.create_example(
-            example_id=example_id,
-            inputs=inputs,
-            outputs=outputs,
-            dataset_id=test_suite.id,
-        )
-    test_suite.update_version(example.modified_at)
-    return test_suite, example
-
-
-def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
-    test_suite, example = _ensure_example(
-        func, *test_args, **test_kwargs, langtest_extra=langtest_extra
-    )
-    run_id = uuid.uuid4()
-
-    try:
-        func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
-        func_(
-            *test_args,
-            **test_kwargs,
-            langsmith_extra={
-                "run_id": run_id,
-                "reference_example_id": example.id,
-                "project_name": test_suite.name,
-            },
-        )
-    except BaseException as e:
-        client = test_kwargs.get("client") or ls_client.Client()
-        client.create_feedback(
-            run_id,
-            key="pass",
-            score=0,
-            comment=f"Error: {repr(e)}",
-        )
-        raise e
-    try:
-        client = test_kwargs.get("client") or ls_client.Client()
-        client.create_feedback(
-            run_id,
-            key="pass",
-            score=1,
-        )
-    except BaseException as e:
-        logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
 
 
 @overload
@@ -373,3 +182,192 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         return wrapper
 
     return decorator
+
+
+## Private functions
+
+
+def _get_experiment_name() -> str:
+    # TODO Make more easily configurable
+    prefix = ls_utils.get_tracer_project(False) or "TestSuite"
+    name = f"{prefix}:{uuid.uuid4().hex[:8]}"
+    return name
+
+
+def _get_test_suite_name() -> str:
+    # TODO: This naming stuff is inelegant
+    test_suite_name = os.environ.get("LANGCHAIN_TEST_SUITE")
+    if test_suite_name:
+        return test_suite_name
+    if __package__:
+        return __package__
+    git_info = ls_env.get_git_info()
+    if git_info:
+        if git_info["remote_url"]:
+            repo_name = git_info["remote_url"].split("/")[-1].split(".")[0]
+            if repo_name:
+                return repo_name
+    raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
+
+
+def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
+    test_suite_name = _get_test_suite_name()
+
+    if client.has_dataset(dataset_name=test_suite_name):
+        return client.read_dataset(dataset_name=test_suite_name)
+    else:
+        return client.create_dataset(dataset_name=test_suite_name)
+
+
+def _start_experiment(
+    client: ls_client.Client,
+    test_suite: ls_schemas.Dataset,
+) -> ls_schemas.TracerSessionResult:
+    experiment_name = _get_experiment_name()
+    return client.create_project(experiment_name, reference_dataset_id=test_suite.id)
+
+
+def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
+    input_json = json.dumps(inputs, sort_keys=True)
+    identifier = f"{func.__module__}.{func.__name__}_{input_json}"
+
+    # Generate a UUID based on the identifier
+    return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
+
+
+def _end_tests(
+    test_suite: _LangSmithTestSuite,
+):
+    git_info = ls_env.get_git_info() or {}
+    test_suite.client.update_project(
+        test_suite.experiment_id,
+        end_time=datetime.datetime.now(datetime.timezone.utc),
+        metadata={**git_info, "dataset_version": test_suite.get_version()},
+    )
+
+
+class _LangSmithTestSuite:
+    _instance = None
+    _lock = threading.RLock()
+
+    def __init__(
+        self,
+        client: Optional[ls_client.Client],
+        experiment: ls_schemas.TracerSessionResult,
+        dataset: ls_schemas.Dataset,
+    ):
+        self.client = client or ls_client.Client()
+        self._experiment = experiment
+        self._dataset = dataset
+        self._version: Optional[datetime.datetime] = None
+        atexit.register(_end_tests, self)
+
+    @property
+    def id(self):
+        return self._dataset.id
+
+    @property
+    def experiment_id(self):
+        return self._experiment.id
+
+    @classmethod
+    def get_singleton(cls, client: Optional[ls_client.Client]):
+        client = client or ls_client.Client()
+        with cls._lock:
+            if not cls._instance:
+                test_suite = _get_test_suite(client)
+                experiment = _start_experiment(client, test_suite)
+                cls._instance = cls(client, experiment, test_suite)
+        return cls._instance
+
+    @property
+    def name(self):
+        return self._experiment.name
+
+    def update_version(self, version: datetime.datetime) -> None:
+        if self._version is None or version > self._version:
+            self._version = version
+
+    def get_version(self) -> Optional[datetime.datetime]:
+        return self._version
+
+
+class _UTExtra(TypedDict, total=False):
+    client: Optional[ls_client.Client]
+    id: Optional[uuid.UUID]
+    output_keys: Optional[Sequence[str]]
+    test_suite_name: Optional[str]
+
+
+def _ensure_example(
+    func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
+) -> Tuple[ls_schemas.TracerSession, ls_schemas.Example]:
+    # 1. check if the id exists.
+    # TODOs: Local cache + prefer a peek operation
+    client = langtest_extra["client"] or ls_client.Client()
+    output_keys = langtest_extra["output_keys"]
+    signature = inspect.signature(func)
+    # TODO: support
+    # 2. Create the example
+    inputs = rh._get_inputs_safe(signature, *args, **kwargs)
+    example_id = langtest_extra["id"] or _get_id(func, inputs)
+    outputs = {}
+    if output_keys:
+        for k in output_keys:
+            outputs[k] = inputs.pop(k, None)
+    # TODO: Support multiple test suites
+    test_suite = _LangSmithTestSuite.get_singleton(client)
+    try:
+        example = client.read_example(example_id=example_id)
+        if inputs != example.inputs or outputs != example.outputs:
+            client.update_example(
+                example_id=example.id,
+                inputs=inputs,
+                outputs=outputs,
+            )
+    except ls_utils.LangSmithNotFoundError:
+        example = client.create_example(
+            example_id=example_id,
+            inputs=inputs,
+            outputs=outputs,
+            dataset_id=test_suite.id,
+        )
+    test_suite.update_version(example.modified_at)
+    return test_suite, example
+
+
+def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
+    test_suite, example = _ensure_example(
+        func, *test_args, **test_kwargs, langtest_extra=langtest_extra
+    )
+    run_id = uuid.uuid4()
+
+    try:
+        func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
+        func_(
+            *test_args,
+            **test_kwargs,
+            langsmith_extra={
+                "run_id": run_id,
+                "reference_example_id": example.id,
+                "project_name": test_suite.name,
+            },
+        )
+    except BaseException as e:
+        client = test_kwargs.get("client") or ls_client.Client()
+        client.create_feedback(
+            run_id,
+            key="pass",
+            score=0,
+            comment=f"Error: {repr(e)}",
+        )
+        raise e
+    try:
+        client = test_kwargs.get("client") or ls_client.Client()
+        client.create_feedback(
+            run_id,
+            key="pass",
+            score=1,
+        )
+    except BaseException as e:
+        logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
