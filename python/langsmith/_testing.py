@@ -328,6 +328,22 @@ def unit(*args, **kwargs):
         ...     assert "hello" in response.choices[0].message.content.lower()
 
 
+        The @unit decorator natively works with hte pytest.parametrize
+        mark as well. Each set of inputs will be treated as a separate
+        test case.
+
+        >>> @unit(output_keys=["expected"])
+        >>> @pytest.mark.parametrize(
+        ...     "a, b, expected",
+        ...     [
+        ...         (1, 2, 3),
+        ...         (3, 4, 7),
+        ...     ],
+        ... )
+        >>> def test_addition_with_multiple_inputs(a: int, b: int, expected: int):
+        >>>     assert a + b == expected
+
+
         To run these tests, use the pytest CLI. Or directly run the test functions.
         >>> test_addition()
         >>> test_with_fixture("Some input")
