@@ -174,7 +174,6 @@ def _ensure_example(
         example = client.create_example(
             example_id=example_id,
             inputs=inputs,
-            # TODO: Handle output_keys
             outputs=outputs,
             dataset_id=test_suite.id,
         )
