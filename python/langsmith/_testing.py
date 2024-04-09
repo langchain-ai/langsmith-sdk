@@ -350,6 +350,7 @@ def unit(*args, **kwargs):
         >>> test_with_expected_output("Some input")
         >>> test_multiplication()
         >>> test_openai_says_hello()
+        >>> test_addition_with_multiple_inputs(1, 2, 3)
     """
     langtest_extra = _UTExtra(
         id=kwargs.pop("id", None),
