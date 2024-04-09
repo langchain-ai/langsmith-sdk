@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import concurrent.futures
 import datetime
 import functools
 import inspect
@@ -242,6 +243,7 @@ def _end_tests(
         end_time=datetime.datetime.now(datetime.timezone.utc),
         metadata={**git_info, "dataset_version": test_suite.get_version()},
     )
+    test_suite.wait()
 
 
 class _LangSmithTestSuite:
@@ -258,6 +260,7 @@ class _LangSmithTestSuite:
         self._experiment = experiment
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         atexit.register(_end_tests, self)
 
     @property
@@ -269,7 +272,7 @@ class _LangSmithTestSuite:
         return self._experiment.id
 
     @classmethod
-    def get_singleton(cls, client: Optional[ls_client.Client]):
+    def get_singleton(cls, client: Optional[ls_client.Client]) -> _LangSmithTestSuite:
         client = client or ls_client.Client()
         with cls._lock:
             if not cls._instance:
@@ -289,6 +292,46 @@ class _LangSmithTestSuite:
     def get_version(self) -> Optional[datetime.datetime]:
         return self._version
 
+    def submit_result(self, run_id: uuid.UUID, error: Optional[str] = None) -> None:
+        self._executor.submit(self._submit_result, run_id, error)
+
+    def _submit_result(self, run_id: uuid.UUID, error: Optional[str] = None) -> None:
+        if error:
+            self.client.create_feedback(
+                run_id, key="pass", score=0, comment=f"Error: {repr(error)}"
+            )
+        else:
+            self.client.create_feedback(
+                run_id,
+                key="pass",
+                score=1,
+            )
+
+    def sync_example(self, example_id: uuid.UUID, inputs: dict, outputs: dict) -> None:
+        self._executor.submit(self._sync_example, example_id, inputs, outputs)
+
+    def _sync_example(self, example_id: uuid.UUID, inputs: dict, outputs: dict) -> None:
+        try:
+            example = self.client.read_example(example_id=example_id)
+            if inputs != example.inputs or outputs != example.outputs:
+                self.client.update_example(
+                    example_id=example.id,
+                    inputs=inputs,
+                    outputs=outputs,
+                )
+        except ls_utils.LangSmithNotFoundError:
+            example = self.client.create_example(
+                example_id=example_id,
+                inputs=inputs,
+                outputs=outputs,
+                dataset_id=self.id,
+            )
+        if example.modified_at:
+            self.update_version(example.modified_at)
+
+    def wait(self):
+        self._executor.shutdown(wait=True)
+
 
 class _UTExtra(TypedDict, total=False):
     client: Optional[ls_client.Client]
@@ -299,14 +342,14 @@ class _UTExtra(TypedDict, total=False):
 
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
-) -> Tuple[ls_schemas.TracerSession, ls_schemas.Example]:
+) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
     # 1. check if the id exists.
     # TODOs: Local cache + prefer a peek operation
     client = langtest_extra["client"] or ls_client.Client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
     # 2. Create the example
-    inputs = rh._get_inputs_safe(signature, *args, **kwargs)
+    inputs: dict = rh._get_inputs_safe(signature, *args, **kwargs)
     example_id = langtest_extra["id"] or _get_id(func, inputs)
     outputs = {}
     if output_keys:
@@ -314,27 +357,12 @@ def _ensure_example(
             outputs[k] = inputs.pop(k, None)
     # TODO: Support multiple test suites
     test_suite = _LangSmithTestSuite.get_singleton(client)
-    try:
-        example = client.read_example(example_id=example_id)
-        if inputs != example.inputs or outputs != example.outputs:
-            client.update_example(
-                example_id=example.id,
-                inputs=inputs,
-                outputs=outputs,
-            )
-    except ls_utils.LangSmithNotFoundError:
-        example = client.create_example(
-            example_id=example_id,
-            inputs=inputs,
-            outputs=outputs,
-            dataset_id=test_suite.id,
-        )
-    test_suite.update_version(example.modified_at)
-    return test_suite, example
+    test_suite.sync_example(example_id, inputs, outputs)
+    return test_suite, example_id
 
 
 def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
-    test_suite, example = _ensure_example(
+    test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
     run_id = uuid.uuid4()
@@ -346,25 +374,14 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
             **test_kwargs,
             langsmith_extra={
                 "run_id": run_id,
-                "reference_example_id": example.id,
+                "reference_example_id": example_id,
                 "project_name": test_suite.name,
             },
         )
     except BaseException as e:
-        client = test_kwargs.get("client") or ls_client.Client()
-        client.create_feedback(
-            run_id,
-            key="pass",
-            score=0,
-            comment=f"Error: {repr(e)}",
-        )
+        test_suite.submit_result(run_id, error=repr(e))
         raise e
     try:
-        client = test_kwargs.get("client") or ls_client.Client()
-        client.create_feedback(
-            run_id,
-            key="pass",
-            score=1,
-        )
+        test_suite.submit_result(run_id, error=None)
     except BaseException as e:
         logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
