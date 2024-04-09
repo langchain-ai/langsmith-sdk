@@ -358,7 +358,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
         assert len(request_calls) >= 1
 
         for call in request_calls:
-            assert call.args[0] == "post"
+            assert call.args[0] == "POST"
             assert call.args[1] == "http://localhost:1984/runs/batch"
         get_calls = [call for call in session.get.mock_calls if call.args]
         # assert len(get_calls) == 1
@@ -369,7 +369,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
 
         assert len(request_calls) == 10
         for call in request_calls:
-            assert call.args[0] == "post"
+            assert call.args[0] == "POST"
             assert call.args[1] == "http://localhost:1984/runs"
         if auto_batch_tracing:
             get_calls = [call for call in session.get.mock_calls if call.args]
@@ -482,7 +482,7 @@ def test_client_gc_after_autoscale() -> None:
     request_calls = [call for call in session.request.mock_calls if call.args]
     assert len(request_calls) >= 500 and len(request_calls) <= 550
     for call in request_calls:
-        assert call.args[0] == "post"
+        assert call.args[0] == "POST"
         assert call.args[1] == "http://localhost:1984/runs/batch"
 
 
@@ -796,7 +796,7 @@ def test_retry_on_connection_error(mock_sleep: MagicMock):
     mock_session.request.side_effect = requests.ConnectionError()
 
     with pytest.raises(ls_utils.LangSmithConnectionError):
-        client.request_with_retries("GET", "https://test.url", {}, stop_after_attempt=2)
+        client.request_with_retries("GET", "https://test.url", stop_after_attempt=2)
     assert mock_session.request.call_count == 2
 
 
@@ -810,7 +810,7 @@ def test_http_status_500_handling(mock_sleep):
     mock_session.request.return_value = mock_response
 
     with pytest.raises(ls_utils.LangSmithAPIError):
-        client.request_with_retries("GET", "https://test.url", {}, stop_after_attempt=2)
+        client.request_with_retries("GET", "https://test.url", stop_after_attempt=2)
     assert mock_session.request.call_count == 2
 
 
@@ -826,7 +826,6 @@ def test_pass_on_409_handling(mock_sleep):
     response = client.request_with_retries(
         "GET",
         "https://test.url",
-        {},
         stop_after_attempt=5,
         to_ignore=[ls_utils.LangSmithConflictError],
     )
@@ -843,7 +842,7 @@ def test_http_status_429_handling(mock_raise_for_status):
     mock_session.request.return_value = mock_response
     mock_raise_for_status.side_effect = HTTPError()
     with pytest.raises(ls_utils.LangSmithRateLimitError):
-        client.request_with_retries("GET", "https://test.url", {})
+        client.request_with_retries("GET", "https://test.url")
 
 
 @patch("langsmith.client.ls_utils.raise_for_status_with_text")
@@ -855,7 +854,7 @@ def test_http_status_401_handling(mock_raise_for_status):
     mock_session.request.return_value = mock_response
     mock_raise_for_status.side_effect = HTTPError()
     with pytest.raises(ls_utils.LangSmithAuthError):
-        client.request_with_retries("GET", "https://test.url", {})
+        client.request_with_retries("GET", "https://test.url")
 
 
 @patch("langsmith.client.ls_utils.raise_for_status_with_text")
@@ -867,7 +866,7 @@ def test_http_status_404_handling(mock_raise_for_status):
     mock_session.request.return_value = mock_response
     mock_raise_for_status.side_effect = HTTPError()
     with pytest.raises(ls_utils.LangSmithNotFoundError):
-        client.request_with_retries("GET", "https://test.url", {})
+        client.request_with_retries("GET", "https://test.url")
 
 
 @patch("langsmith.client.ls_utils.raise_for_status_with_text")
@@ -894,7 +893,7 @@ def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
     assert mock_session.request.call_count >= 3
     # count the number of POST requests
     assert (
-        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "post"])
+        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "POST"])
         == 3
     )
 
@@ -941,7 +940,7 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
     expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
     # count the number of POST requests
     assert (
-        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "post"])
+        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "POST"])
         == expected_num_requests
     )
     request_bodies = [
