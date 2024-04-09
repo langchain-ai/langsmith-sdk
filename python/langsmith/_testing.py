@@ -9,9 +9,9 @@ import logging
 import os
 import threading
 import uuid
+import warnings
 from enum import Enum
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
-import warnings
 
 from typing_extensions import TypedDict
 
@@ -228,7 +228,7 @@ def unit(
 @overload
 def unit(
     *,
-    id: uuid.UUID,
+    id: Optional[uuid.UUID] = None,
     output_keys: Optional[Sequence[str]] = None,
     client: Optional[ls_client.Client] = None,
     # TODO: naming should be consistent probably
@@ -237,7 +237,7 @@ def unit(
 ) -> Callable[[Callable], Callable]: ...
 
 
-def unit(*args, **kwargs):
+def unit(*args: Any, **kwargs: Any) -> Callable:
     """Create a unit test case in LangSmith.
 
     This decorator is used to mark a function as a test case for LangSmith. It ensures
@@ -246,22 +246,18 @@ def unit(*args, **kwargs):
     recorded and reported by LangSmith.
 
     Args:
-        *args: Positional arguments.
-            - If a single callable is provided as a positional argument, it will be
-              treated as the test function to be decorated.
-        **kwargs: Keyword arguments.
-            - id (Optional[uuid.UUID]): A unique identifier for the test case. If not
-              provided, an ID will be generated based on the test function's module
-              and name.
-            - output_keys (Optional[Sequence[str]]): A list of keys to be considered as
-              the output keys for the test case. These keys will be extracted from the
-              test function's inputs and stored as the expected outputs.
-            - client (Optional[ls_client.Client]): An instance of the LangSmith client
-              to be used for communication with the LangSmith service. If not provided,
-              a default client will be used.
-            - test_suite_name (Optional[str]): The name of the test suite to which the
-              test case belongs. If not provided, the test suite name will be determined
-              based on the environment or the package name.
+        - id (Optional[uuid.UUID]): A unique identifier for the test case. If not
+            provided, an ID will be generated based on the test function's module
+            and name.
+        - output_keys (Optional[Sequence[str]]): A list of keys to be considered as
+            the output keys for the test case. These keys will be extracted from the
+            test function's inputs and stored as the expected outputs.
+        - client (Optional[ls_client.Client]): An instance of the LangSmith client
+            to be used for communication with the LangSmith service. If not provided,
+            a default client will be used.
+        - test_suite_name (Optional[str]): The name of the test suite to which the
+            test case belongs. If not provided, the test suite name will be determined
+            based on the environment or the package name.
 
     Returns:
         Callable: The decorated test function.
@@ -274,43 +270,9 @@ def unit(*args, **kwargs):
         ...     assert 3 + 4 == 7
 
 
-        The decorator works natively with pytest fixtures.
-        The values will populate the "inputs" of the corresponding example in LangSmith.
-
-        >>> import pytest
-        >>> @pytest.fixture
-        ... def some_input():
-        ...     return "Some input"
-        >>>
-        >>> @unit
-        ... def test_with_fixture(some_input: str):
-        ...     assert "input" in some_input
-        >>>
-
-        If you have an expected answer, you can log that to langsmith by
-        clarifying which fixture is the output.
-
-
-        >>> @pytest.fixture
-        ... def expected_output():
-        ...     return "input"
-        >>> @unit(output_keys=["result"])
-        ... def test_with_expected_output(some_input: str, expected_output: str):
-        ...     assert expected_output in some_input
-
-
-        By default, each test case will be assigned a consistent unique identifier
-        based on the function name and module. You can also provide a custom identifier
-        using the `id` argument:
-
-        >>> @unit(id=uuid.uuid4())
-        ... def test_multiplication():
-        ...     assert 3 * 4 == 12
-
-        Any code that is traced within the test function will be included
-        in the test case. For instance, if you wrap an OpenAI client
-        with a LangSmith wrapper, the LLM run will be rendered in
-        the appropriate location.
+        Any code that is traced (such as those traced using `@traceable`
+        or `wrap_*` functions) will be traced within the test case for
+        improved visibility and debugging.
 
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
@@ -327,10 +289,21 @@ def unit(*args, **kwargs):
         ...     )
         ...     assert "hello" in response.choices[0].message.content.lower()
 
+        The `@unit` decorator works natively with pytest fixtures.
+        The values will populate the "inputs" of the corresponding example in LangSmith.
 
-        The @unit decorator natively works with hte pytest.parametrize
-        mark as well. Each set of inputs will be treated as a separate
-        test case.
+        >>> import pytest
+        >>> @pytest.fixture
+        ... def some_input():
+        ...     return "Some input"
+        >>>
+        >>> @unit
+        ... def test_with_fixture(some_input: str):
+        ...     assert "input" in some_input
+        >>>
+
+        You can still use pytest.parametrize() as usual to run multiple test cases
+        using the same test function.
 
         >>> @unit(output_keys=["expected"])
         >>> @pytest.mark.parametrize(
@@ -342,6 +315,25 @@ def unit(*args, **kwargs):
         ... )
         >>> def test_addition_with_multiple_inputs(a: int, b: int, expected: int):
         >>>     assert a + b == expected
+
+        By default, each test case will be assigned a consistent, unique identifier
+        based on the function name and module. You can also provide a custom identifier
+        using the `id` argument:
+
+        >>> @unit(id=uuid.uuid4())
+        ... def test_multiplication():
+        ...     assert 3 * 4 == 12
+
+        By default, all unit test inputs are saved as "inputs" to a dataset.
+        You can specify the `output_keys` argument to persist those keys
+        within the dataset's "outputs" fields.
+
+        >>> @pytest.fixture
+        ... def expected_output():
+        ...     return "input"
+        >>> @unit(output_keys=["expected_output"])
+        ... def test_with_expected_output(some_input: str, expected_output: str):
+        ...     assert expected_output in some_input
 
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
