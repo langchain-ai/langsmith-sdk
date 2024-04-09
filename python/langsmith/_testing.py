@@ -113,15 +113,15 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         using the same test function.
 
         >>> @unit(output_keys=["expected"])
-        >>> @pytest.mark.parametrize(
+        ... @pytest.mark.parametrize(
         ...     "a, b, expected",
         ...     [
         ...         (1, 2, 3),
         ...         (3, 4, 7),
         ...     ],
         ... )
-        >>> def test_addition_with_multiple_inputs(a: int, b: int, expected: int):
-        >>>     assert a + b == expected
+        ... def test_addition_with_multiple_inputs(a: int, b: int, expected: int):
+        ...     assert a + b == expected
 
         By default, each test case will be assigned a consistent, unique identifier
         based on the function name and module. You can also provide a custom identifier
@@ -146,7 +146,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         To run these tests, use the pytest CLI. Or directly run the test functions.
         >>> test_addition()
         >>> test_with_fixture("Some input")
-        >>> test_with_expected_output("Some input")
+        >>> test_with_expected_output("Some input", "Some")
         >>> test_multiplication()
         >>> test_openai_says_hello()
         >>> test_addition_with_multiple_inputs(1, 2, 3)
