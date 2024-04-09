@@ -5,7 +5,14 @@ from typing import TYPE_CHECKING, Any, List
 if TYPE_CHECKING:
     from typing import List
 
-    from langsmith.evaluation._runner import evaluate, evaluate_existing
+    from langsmith.evaluation._arunner import (
+        aevaluate,
+        aevaluate_existing,
+    )
+    from langsmith.evaluation._runner import (
+        evaluate,
+        evaluate_existing,
+    )
     from langsmith.evaluation.evaluator import (
         EvaluationResult,
         EvaluationResults,
@@ -16,6 +23,7 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
+    # TODO: Use importlib
     if name == "evaluate":
         from langsmith.evaluation._runner import evaluate
 
@@ -24,6 +32,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation._runner import evaluate_existing
 
         return evaluate_existing
+    elif name == "aevaluate":
+        from langsmith.evaluation._arunner import aevaluate
+
+        return aevaluate
+    elif name == "aevaluate_existing":
+        from langsmith.evaluation._arunner import aevaluate_existing
+
+        return aevaluate_existing
     elif name == "EvaluationResult":
         from langsmith.evaluation.evaluator import EvaluationResult
 
@@ -59,6 +75,8 @@ __all__ = [
     "EvaluationResults",
     "RunEvaluator",
     "StringEvaluator",
+    "aevaluate",
+    "aevaluate_existing",
     "evaluate",
     "evaluate_existing",
     "LangChainStringEvaluator",

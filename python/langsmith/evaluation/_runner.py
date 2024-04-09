@@ -22,6 +22,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    TypeVar,
     Union,
     cast,
 )
@@ -404,14 +405,20 @@ def _evaluate(
     experiment: Optional[schemas.TracerSession] = None,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
+    client = client or langsmith.Client()
+    runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
+    experiment_, runs = _resolve_experiment(
+        experiment,
+        runs,
+        client,
+    )
     manager = _ExperimentManager(
         data,
         client=client,
         metadata=metadata,
-        experiment_prefix=experiment_prefix,
-        experiment=experiment,
+        experiment=experiment_ or experiment_prefix,
         # If provided, we don't need to create a new experiment.
-        runs=None if _is_callable(target) else cast(Iterable[schemas.Run], target),
+        runs=runs,
         # Create or resolve the experiment.
     ).start()
     if _is_callable(target):
@@ -443,7 +450,7 @@ def _is_uuid(value: str) -> bool:
 
 def _load_experiment(
     project: Union[str, uuid.UUID], client: langsmith.Client
-) -> schemas.TracerSession:
+) -> schemas.TracerSessionResult:
     if isinstance(project, uuid.UUID) or _is_uuid(project):
         return client.read_project(project_id=project)
     return client.read_project(project_name=project)
@@ -475,15 +482,119 @@ def _load_traces(
     return results
 
 
-def _load_tqdm() -> Callable[[Iterable], Iterable]:
+IT = TypeVar("IT")
+
+
+def _load_tqdm() -> Callable[[IT], IT]:
     try:
         from tqdm.auto import tqdm
     except ImportError:
         return lambda x: x
-    return tqdm
+    return tqdm  # type: ignore[return-value]
 
 
-class _ExperimentManager:
+ET = TypeVar("ET", bound="_ExperimentManagerMixin")
+
+
+class _ExperimentManagerMixin:
+    def __init__(
+        self,
+        /,
+        experiment: Optional[Union[schemas.TracerSession, str]],
+        metadata: Optional[dict] = None,
+        client: Optional[langsmith.Client] = None,
+    ):
+        self.client = client or langsmith.Client()
+        self._experiment: Optional[schemas.TracerSession] = None
+        if experiment is None:
+            self._experiment_name = _get_random_name()
+        elif isinstance(experiment, str):
+            self._experiment_name = experiment + "-" + str(uuid.uuid4().hex[:6])
+        else:
+            self._experiment_name = cast(str, experiment.name)
+            self._experiment = experiment
+
+        metadata = metadata or {}
+        if not metadata.get("revision_id"):
+            metadata = {
+                "revision_id": ls_env.get_langchain_env_var_metadata().get(
+                    "revision_id"
+                ),
+                **metadata,
+            }
+        self._metadata = metadata or {}
+
+    @property
+    def experiment_name(self) -> str:
+        if self._experiment_name is not None:
+            return self._experiment_name
+        raise ValueError(
+            "Experiment name not provided, and experiment not yet started."
+        )
+
+    def _get_experiment(self) -> schemas.TracerSession:
+        if self._experiment is None:
+            raise ValueError("Experiment not started yet.")
+        return self._experiment
+
+    def _get_experiment_metadata(self):
+        project_metadata = self._metadata or {}
+        git_info = ls_env.get_git_info()
+        if git_info:
+            project_metadata = {
+                **project_metadata,
+                "git": git_info,
+            }
+        if self._experiment:
+            project_metadata = {
+                **self._experiment.metadata,
+                **project_metadata,
+            }
+        return project_metadata
+
+    def _get_project(self, first_example: schemas.Example) -> schemas.TracerSession:
+        if self._experiment is None:
+            try:
+                project_metadata = self._get_experiment_metadata()
+                project = self.client.create_project(
+                    self.experiment_name,
+                    reference_dataset_id=first_example.dataset_id,
+                    metadata=project_metadata,
+                )
+            except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
+                if "already exists " not in str(e):
+                    raise e
+                raise ValueError(
+                    # TODO: Better error
+                    f"Experiment {self.experiment_name} already exists."
+                    " Please use a different name."
+                )
+        else:
+            project = self._experiment
+        return project
+
+    def _print_experiment_start(
+        self, project: schemas.TracerSession, first_example: schemas.Example
+    ) -> None:
+        if project.url:
+            # TODO: Make this a public API
+            project_url = project.url.split("?")[0]
+            dataset_id = first_example.dataset_id
+            base_url = project_url.split("/projects/p/")[0]
+            comparison_url = (
+                f"{base_url}/datasets/{dataset_id}/compare?"
+                f"selectedSessions={project.id}"
+            )
+            print(  # noqa: T201
+                f"View the evaluation results for experiment: '{self.experiment_name}'"
+                f" at:\n{comparison_url}\n\n"
+            )
+        else:
+            # HACKHACK
+            print("Starting evaluation of experiment: %s", self.experiment_name)
+
+
+class _ExperimentManager(_ExperimentManagerMixin):
     """Manage the execution of experiments.
 
     Supports lazily running predictions and evaluations in parallel to facilitate
@@ -510,37 +621,21 @@ class _ExperimentManager:
         self,
         data: DATA_T,
         /,
+        experiment: Optional[Union[schemas.TracerSession, str]],
         metadata: Optional[dict] = None,
-        experiment_prefix: Optional[str] = None,
-        runs: Optional[Iterable[schemas.Run]] = None,
-        experiment: Optional[schemas.TracerSession] = None,
         client: Optional[langsmith.Client] = None,
+        runs: Optional[Iterable[schemas.Run]] = None,
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
         summary_results: Optional[Iterable[EvaluationResults]] = None,
     ):
-        self.client = client or langsmith.Client()
-        # If we've already created or started the experiment,
-        # use that name.
-        experiment_name, experiment, runs = _resolve_experiment_name(
-            experiment,
-            experiment_prefix,
-            runs,
-            self.client,
+        super().__init__(
+            experiment=experiment,
+            metadata=metadata,
+            client=client,
         )
-        self.experiment_name = experiment_name
-        self._experiment = experiment
-        self._runs = runs
-        metadata = metadata or {}
-        if not metadata.get("revision_id"):
-            metadata = {
-                "revision_id": ls_env.get_langchain_env_var_metadata().get(
-                    "revision_id"
-                ),
-                **metadata,
-            }
-        self._metadata = metadata or {}
         self._data = data
         self._examples: Optional[Iterable[schemas.Example]] = None
+        self._runs = runs
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
 
@@ -568,41 +663,9 @@ class _ExperimentManager:
 
     def start(self) -> _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
-        if self._experiment is None:
-            try:
-                project_metadata = self._get_experiment_metadata()
-                project = self.client.create_project(
-                    self.experiment_name,
-                    reference_dataset_id=first_example.dataset_id,
-                    metadata=project_metadata,
-                )
-            except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
-                if "already exists " not in str(e):
-                    raise e
-                raise ValueError(
-                    # TODO: Better error
-                    f"Experiment {self.experiment_name} already exists."
-                    " Please use a different name."
-                )
-        else:
-            project = self._experiment
-        if project.url:
-            # TODO: Make this a public API
-            project_url = project.url.split("?")[0]
-            dataset_id = first_example.dataset_id
-            base_url = project_url.split("/projects/p/")[0]
-            comparison_url = (
-                f"{base_url}/datasets/{dataset_id}/compare?"
-                f"selectedSessions={project.id}"
-            )
-            print(  # noqa: T201
-                f"View the evaluation results for experiment: '{self.experiment_name}'"
-                f" at:\n{comparison_url}\n\n"
-            )
-        else:
-            # HACKHACK
-            print("Starting evaluation of experiment: %s", self.experiment_name)
-        return _ExperimentManager(
+        project = self._get_project(first_example)
+        self._print_experiment_start(project, first_example)
+        return self.__class__(
             self.examples,
             experiment=project,
             metadata=self._metadata,
@@ -704,47 +767,7 @@ class _ExperimentManager:
             ]
         }
 
-    # Private methods.
-
-    def _get_experiment_metadata(self):
-        project_metadata = self._metadata or {}
-        git_info = ls_env.get_git_info()
-        if git_info:
-            project_metadata = {
-                **project_metadata,
-                "git": git_info,
-            }
-        if self._experiment:
-            project_metadata = {
-                **self._experiment.metadata,
-                **project_metadata,
-            }
-        return project_metadata
-
-    def _get_experiment(self) -> schemas.TracerSession:
-        if self._experiment is None:
-            raise ValueError("Experiment not started yet.")
-        return self._experiment
-
-    def _end(self) -> None:
-        experiment = self._experiment
-        if experiment is None:
-            raise ValueError("Experiment not started yet.")
-        examples = list(self.examples)
-        modified_at = [ex.modified_at for ex in examples if ex.modified_at]
-        # Should always be defined in practice when fetched,
-        # but the typing permits None
-        max_modified_at = max(modified_at) if modified_at else None
-        project_metadata = self._get_experiment_metadata()
-        project_metadata["dataset_version"] = (
-            max_modified_at.isoformat() if max_modified_at else None
-        )
-
-        self.client.update_project(
-            experiment.id,
-            end_time=datetime.datetime.now(datetime.timezone.utc),
-            metadata=project_metadata,
-        )
+    # Private methods
 
     def _predict(
         self, target: TARGET_T, /, max_concurrency: Optional[int] = None
@@ -879,6 +902,27 @@ class _ExperimentManager:
                     )
         yield {"results": aggregate_feedback}
 
+    def _get_dataset_version(self) -> Optional[str]:
+        examples = list(self.examples)
+        modified_at = [ex.modified_at for ex in examples if ex.modified_at]
+        # Should always be defined in practice when fetched,
+        # but the typing permits None
+        max_modified_at = max(modified_at) if modified_at else None
+        return max_modified_at.isoformat() if max_modified_at else None
+
+    def _end(self) -> None:
+        experiment = self._experiment
+        if experiment is None:
+            raise ValueError("Experiment not started yet.")
+
+        project_metadata = self._get_experiment_metadata()
+        project_metadata["dataset_version"] = self._get_dataset_version()
+        self.client.update_project(
+            experiment.id,
+            end_time=datetime.datetime.now(datetime.timezone.utc),
+            metadata=project_metadata,
+        )
+
 
 def _resolve_evaluators(
     evaluators: Sequence[EVALUATOR_T],
@@ -986,28 +1030,28 @@ def _ensure_traceable(target: TARGET_T) -> rh.SupportsLangsmithExtra:
     return fn
 
 
-def _resolve_experiment_name(
+def _resolve_experiment(
     experiment: Optional[schemas.TracerSession],
-    experiment_prefix: Optional[str],
     runs: Optional[Iterable[schemas.Run]],
     client: langsmith.Client,
-) -> Tuple[str, Optional[schemas.TracerSession], Optional[Iterable[schemas.Run]]]:
+) -> Tuple[
+    Optional[Union[schemas.TracerSession, str]], Optional[Iterable[schemas.Run]]
+]:
+    # TODO: Remove this, handle outside the manager
     if experiment is not None:
         if not experiment.name:
             raise ValueError("Experiment name must be defined if provided.")
-        return experiment.name, experiment, runs
+        return experiment, None
     # If we have runs, that means the experiment was already started.
     if runs is not None:
-        runs, runs_iter = itertools.tee(runs)
-        first_run = next(runs_iter)
+        if runs is not None:
+            runs_, runs = itertools.tee(runs)
+            first_run = next(runs_)
         experiment = client.read_project(project_id=first_run.session_id)
         if not experiment.name:
             raise ValueError("Experiment name not found for provided runs.")
-        return experiment.name, experiment, runs
-    # Otherwise, we will generate a new experiment name.
-    if isinstance(experiment_prefix, str):
-        return experiment_prefix + ":" + uuid.uuid4().hex[:7], None, None
-    return _get_random_name(), None, None
+        return experiment, runs
+    return None, None
 
 
 def _get_random_name() -> str:
