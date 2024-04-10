@@ -1,16 +1,5 @@
 import { Example, Run, ScoreType, ValueType } from "../schemas.js";
 
-interface Category {
-  /**
-   * The numeric score/ordinal corresponding to this category.
-   */
-  value?: number;
-  /**
-   * The label for this category.
-   * */
-  label: string;
-}
-
 /**
  * Represents a categorical class.
  */
