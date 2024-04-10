@@ -74,7 +74,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         - LANGCHAIN_DISABLE_TEST_TRACKING: Set this variable to 'true' to disable
             LangSmith test tracking. If set to 'true', the test case will be executed
             without any LangSmith-specific functionality.
-        - LANGCHAIN_TEST_CACHE: Set this variable to the path of a directory to enable
+        - LANGCHAIN_TEST_TRACKING: Set this variable to the path of a directory to enable
             caching of test results. This is useful for re-running tests without
             re-executing the code. Requires the 'langsmith[vcr]' package.
 
@@ -194,10 +194,9 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
-    # Handle when the user explicitly turns off the langsmith unit test
-    if os.environ.get("LANGCHAIN_DISABLE_TEST_TRACKING") == "true":
+    if os.environ.get("LANGCHAIN_TEST_TRACKING") == "false":
         warnings.warn(
-            "LANGCHAIN_DISABLE_TEST_TRACKING is set to 'true'."
+            "LANGCHAIN_TEST_TRACKING is set to 'false'."
             " Skipping LangSmith test tracking."
         )
         return lambda f: f
