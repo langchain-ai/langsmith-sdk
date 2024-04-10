@@ -270,7 +270,7 @@ def _start_experiment(
 
 def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
     try:
-        file_path = Path(inspect.getfile(func)).relative_to(Path.cwd())
+        file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
         # Fall back to module name if file path is not available
         file_path = func.__module__
