@@ -201,7 +201,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
             "LANGCHAIN_TEST_TRACKING is set to 'false'."
             " Skipping LangSmith test tracking."
         )
-        
+
     if args and callable(args[0]):
         func = args[0]
         if disable_tracking:
@@ -226,6 +226,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
             _run_test(func, *test_args, **test_kwargs, langtest_extra=langtest_extra)
 
         return wrapper
+
     return decorator
 
 
