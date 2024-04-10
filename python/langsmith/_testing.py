@@ -11,6 +11,7 @@ import os
 import threading
 import uuid
 import warnings
+from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
 from typing_extensions import TypedDict
@@ -259,10 +260,9 @@ def _start_experiment(
 
 
 def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
+    file_path = Path(inspect.getfile(func)).relative_to(Path.cwd())
     input_json = json.dumps(inputs, sort_keys=True)
-    identifier = f"{func.__module__}.{func.__name__}_{input_json}"
-
-    # Generate a UUID based on the identifier
+    identifier = f"{file_path}::{func.__name__}{input_json}"
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
 
 
