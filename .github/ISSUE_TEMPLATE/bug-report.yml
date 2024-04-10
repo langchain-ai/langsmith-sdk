@@ -33,7 +33,7 @@ body:
   - type: checkboxes
     id: platform-environment
     attributes:
-      label: LangSmith Platform Environment
+      label: Host
       description: "Indicate whether you are connected to the hosted LangSmith platform or running locally."
       options:
         - label: "Hosted (https://api.smith.langchain.com)"
