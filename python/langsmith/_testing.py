@@ -268,7 +268,7 @@ def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
 def _start_experiment(
     client: ls_client.Client,
     test_suite: ls_schemas.Dataset,
-) -> ls_schemas.TracerSessionResult:
+) -> ls_schemas.TracerSession:
     experiment_name = _get_experiment_name()
     return client.create_project(experiment_name, reference_dataset_id=test_suite.id)
 
@@ -303,7 +303,7 @@ class _LangSmithTestSuite:
     def __init__(
         self,
         client: Optional[ls_client.Client],
-        experiment: ls_schemas.TracerSessionResult,
+        experiment: ls_schemas.TracerSession,
         dataset: ls_schemas.Dataset,
     ):
         self.client = client or ls_client.Client()

@@ -789,7 +789,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
         # Consume the generator
         return {
             "results": [
-                res for results in self._summary_results for res in results["results"]
+                res  # type: ignore[misc]
+                for results in self._summary_results
+                for res in results["results"]
             ]
         }
 
@@ -977,9 +979,11 @@ def _wrap_summary_evaluators(
         @functools.wraps(evaluator)
         def _wrapper_inner(
             runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
-        ) -> EvaluationResults:
+        ) -> Union[EvaluationResult, EvaluationResults]:
             @rh.traceable(name=eval_name)
-            def _wrapper_super_inner(runs_: str, examples_: str) -> EvaluationResults:
+            def _wrapper_super_inner(
+                runs_: str, examples_: str
+            ) -> Union[EvaluationResult, EvaluationResults]:
                 return evaluator(runs, examples)
 
             return _wrapper_super_inner(

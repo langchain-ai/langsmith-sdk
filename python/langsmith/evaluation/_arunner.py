@@ -425,9 +425,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             if example is None:
                 raise ValueError("No examples found in the dataset.")
             return str(example.dataset_id)
-        return str(
-            cast(schemas.TracerSessionResult, self._experiment).reference_dataset_id
-        )
+        return str(self._experiment.reference_dataset_id)
 
     async def aget_runs(self) -> AsyncIterator[schemas.Run]:
         if self._runs is None:
@@ -537,7 +535,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             return {"results": []}
         return {
             "results": [
-                res
+                res  # type: ignore[misc]
                 async for results in self._summary_results
                 for res in results["results"]
             ]
