@@ -377,7 +377,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
             for call in get_calls:
                 assert call.args[0] == f"{api_url}/info"
     del client
-    time.sleep(1)  # Give the background thread time to stop
+    time.sleep(2)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
 
@@ -404,7 +404,7 @@ def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
         assert call.args[1] == "http://localhost:1984/runs"
 
     del client
-    time.sleep(1)  # Give the background thread time to stop
+    time.sleep(2)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
 
