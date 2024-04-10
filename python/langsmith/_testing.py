@@ -160,7 +160,8 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...             {"role": "user", "content": "Generate a random number."},
         ...         ],
         ...     )
-        ...     assert any(char.isdigit() for char in response.choices[0].message.content)
+        ...     content = response.choices[0].message.content
+        ...     assert any(char.isdigit() for char in content)
 
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
@@ -424,9 +425,10 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
                 "vcrpy is required to use caching. Install with:"
                 'pip install -U "langsmith[vcr]"'
             )
+        cache_dir = os.path.expanduser("~/.cache/langsmith/cassettes")
         ls_vcr = vcr.VCR(
             serializer="yaml",
-            cassette_library_dir="~/.cache/langsmith/cassettes",
+            cassette_library_dir=cache_dir,
             # Replay previous requests, record new ones
             # TODO: Support other modes
             ignore_hosts=[test_suite.client.api_url],

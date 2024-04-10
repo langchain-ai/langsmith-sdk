@@ -611,7 +611,9 @@ class Client:
                 ls_utils.raise_for_status_with_text(response)
                 self._info = ls_schemas.LangSmithInfo(**response.json())
             except BaseException as e:
-                logger.warning(f"Failed to get info from {self.api_url}: {repr(e)}", exc_info=True)
+                logger.warning(
+                    f"Failed to get info from {self.api_url}: {repr(e)}", exc_info=True
+                )
                 self._info = ls_schemas.LangSmithInfo()
         return self._info
 
