@@ -70,13 +70,14 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     Returns:
         Callable: The decorated test function.
 
-    Environment Variables:
-        - LANGCHAIN_DISABLE_TEST_TRACKING: Set this variable to 'true' to disable
-            LangSmith test tracking. If set to 'true', the test case will be executed
-            without any LangSmith-specific functionality.
-        - LANGCHAIN_TEST_TRACKING: Set this variable to the path of a directory to enable
-            caching of test results. This is useful for re-running tests without
-            re-executing the code. Requires the 'langsmith[vcr]' package.
+    Environment:
+        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to
+            save time and costs during testing. Recommended to commit the
+            cache files to your repository for faster CI/CD runs.
+            Requires the 'langsmith[vcr]' package to be installed.
+        - LANGCHAIN_TEST_TRACKING: Set this variable to the path of a directory
+            to enable caching of test results. This is useful for re-running tests
+             without re-executing the code. Requires the 'langsmith[vcr]' package.
 
     Example:
         For basic usage, simply decorate a test function with `@unit`:
@@ -190,7 +191,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         output_keys=kwargs.pop("output_keys", None),
         client=kwargs.pop("client", None),
         test_suite_name=kwargs.pop("test_suite_name", None),
-        cache=_get_cache(kwargs.pop("cache", None)),
+        cache=ls_utils.get_cache_dir(kwargs.pop("cache", None)),
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
@@ -248,12 +249,6 @@ def _get_test_suite_name() -> str:
             if repo_name:
                 return repo_name + " Test Suite"
     raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
-
-
-def _get_cache(cache: Optional[str]) -> Optional[str]:
-    if cache is not None:
-        return cache
-    return os.environ.get("LANGCHAIN_TEST_CACHE")
 
 
 def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
@@ -434,34 +429,12 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
         except BaseException as e:
             logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
 
-    if langtest_extra["cache"]:
-        try:
-            import vcr  # type: ignore[import-untyped]
-        except ImportError:
-            raise ImportError(
-                "vcrpy is required to use caching. Install with:"
-                'pip install -U "langsmith[vcr]"'
-            )
-        ignore_hosts = [test_suite.client.api_url]
-
-        def _filter_request_headers(request: Any) -> Any:
-            if any(request.url.startswith(host) for host in ignore_hosts):
-                return None
-            request.headers = {}
-            return request
-
-        ls_vcr = vcr.VCR(
-            serializer="yaml",
-            cassette_library_dir=langtest_extra["cache"],
-            # Replay previous requests, record new ones
-            # TODO: Support other modes
-            record_mode="new_episodes",
-            match_on=["uri", "method", "path", "body"],
-            filter_headers=["authorization", "Set-Cookie"],
-            before_record_request=_filter_request_headers,
-        )
-
-        with ls_vcr.use_cassette(f"{test_suite.id}.yaml"):
-            _test()
-    else:
+    cache_path = (
+        Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
+        if langtest_extra["cache"]
+        else None
+    )
+    with ls_utils.with_optional_cache(
+        cache_path, ignore_hosts=[test_suite.client.api_url]
+    ):
         _test()

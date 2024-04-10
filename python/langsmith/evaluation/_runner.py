@@ -8,6 +8,7 @@ import datetime
 import functools
 import itertools
 import logging
+import pathlib
 import threading
 import uuid
 from contextvars import copy_context
@@ -255,6 +256,12 @@ def evaluate_existing(
     Returns:
         ExperimentResults: The evaluation results.
 
+    Environment:
+        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to save time and
+            cost during testing. Recommended to commit the cache files to your repository
+            for faster CI/CD runs.
+            Requires the 'langsmith[vcr]' package to be installed.
+
     Examples:
         >>> from langsmith.evaluation import evaluate, evaluate_existing
         >>> dataset_name = "Evaluate Examples"
@@ -412,6 +419,7 @@ def _evaluate(
         runs,
         client,
     )
+
     manager = _ExperimentManager(
         data,
         client=client,
@@ -421,23 +429,30 @@ def _evaluate(
         runs=runs,
         # Create or resolve the experiment.
     ).start()
-    if _is_callable(target):
-        # Add predictions to the experiment.
-        manager = manager.with_predictions(
-            cast(TARGET_T, target), max_concurrency=max_concurrency
-        )
-    if evaluators:
-        # Apply evaluators to the predictions.
-        manager = manager.with_evaluators(evaluators, max_concurrency=max_concurrency)
-    if summary_evaluators:
-        # Apply the experiment-level summary evaluators.
-        manager = manager.with_summary_evaluators(summary_evaluators)
-    # Start consuming the results.
-    results = ExperimentResults(manager)
-    if blocking:
-        # Wait for the evaluation to complete.
-        results.wait()
-    return results
+    cache_dir = ls_utils.get_cache_dir(None)
+    cache_path = (
+        pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml" if cache_dir else None
+    )
+    with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+        if _is_callable(target):
+            # Add predictions to the experiment.
+            manager = manager.with_predictions(
+                cast(TARGET_T, target), max_concurrency=max_concurrency
+            )
+        if evaluators:
+            # Apply evaluators to the predictions.
+            manager = manager.with_evaluators(
+                evaluators, max_concurrency=max_concurrency
+            )
+        if summary_evaluators:
+            # Apply the experiment-level summary evaluators.
+            manager = manager.with_summary_evaluators(summary_evaluators)
+        # Start consuming the results.
+        results = ExperimentResults(manager)
+        if blocking:
+            # Wait for the evaluation to complete.
+            results.wait()
+        return results
 
 
 def _is_uuid(value: str) -> bool:
@@ -645,6 +660,17 @@ class _ExperimentManager(_ExperimentManagerMixin):
             self._examples = _resolve_data(self._data, client=self.client)
         self._examples, examples_iter = itertools.tee(self._examples)
         return examples_iter
+
+    @property
+    def dataset_id(self) -> str:
+        if self._experiment is None or not getattr(
+            self._experiment, "reference_dataset_id", None
+        ):
+            example = next(iter(self.examples))
+            return str(example.dataset_id)
+        return str(
+            cast(schemas.TracerSessionResult, self._experiment).reference_dataset_id
+        )
 
     @property
     def evaluation_results(self) -> Iterable[EvaluationResults]:
