@@ -1,5 +1,5 @@
 name: "\U0001F41B Bug Report"
-description: Submit a bug report to help us improve LangSmith. To report a _security_ issue, please instead use the security option below.
+description: "Submit a bug report to help us improve LangSmith. To report a _security_ issue, please instead use the security option below."
 labels: ["01 Bug Report"]
 body:
   - type: markdown
@@ -23,7 +23,7 @@ body:
   - type: checkboxes
     id: runtime-language
     attributes:
-      label: Runtime Language
+      label: Language
       description: ""
       options:
         - label: "Python"
