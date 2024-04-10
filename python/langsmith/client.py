@@ -3152,6 +3152,7 @@ class Client:
         -------
         Run
             The resolved run.
+        format
 
         Raises:
         ------
