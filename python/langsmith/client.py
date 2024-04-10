@@ -611,7 +611,9 @@ class Client:
                 ls_utils.raise_for_status_with_text(response)
                 self._info = ls_schemas.LangSmithInfo(**response.json())
             except BaseException as e:
-                logger.warning(f"Failed to get info from {self.api_url}: {repr(e)}")
+                logger.warning(
+                    f"Failed to get info from {self.api_url}: {repr(e)}",
+                )
                 self._info = ls_schemas.LangSmithInfo()
         return self._info
 
@@ -810,7 +812,11 @@ class Client:
         params_["limit"] = params_.get("limit", 100)
         while True:
             params_["offset"] = offset
-            response = self.request_with_retries("GET", path, params=params_)
+            response = self.request_with_retries(
+                "GET",
+                path,
+                params=params_,
+            )
             items = response.json()
 
             if not items:
@@ -1012,13 +1018,13 @@ class Client:
             dict: The transformed run object as a dictionary.
         """
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
-            run_create = run.dict()  # type: ignore
+            run_create: dict = run.dict()  # type: ignore
         else:
             run_create = cast(dict, run)
         if "id" not in run_create:
             run_create["id"] = uuid.uuid4()
-        elif isinstance(run["id"], str):
-            run["id"] = uuid.UUID(run["id"])
+        elif isinstance(run_create["id"], str):
+            run_create["id"] = uuid.UUID(run_create["id"])
         if "inputs" in run_create and run_create["inputs"] is not None:
             run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
         if "outputs" in run_create and run_create["outputs"] is not None:
@@ -3161,7 +3167,7 @@ class Client:
         if isinstance(run, (str, uuid.UUID)):
             run_ = self.read_run(run, load_child_runs=load_child_runs)
         else:
-            run_ = run
+            run_ = cast(ls_schemas.Run, run)
         return run_
 
     def _resolve_example_id(

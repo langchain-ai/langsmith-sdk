@@ -11,6 +11,7 @@ import os
 import threading
 import uuid
 import warnings
+from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
 from typing_extensions import TypedDict
@@ -69,6 +70,15 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     Returns:
         Callable: The decorated test function.
 
+    Environment:
+        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to
+            save time and costs during testing. Recommended to commit the
+            cache files to your repository for faster CI/CD runs.
+            Requires the 'langsmith[vcr]' package to be installed.
+        - LANGCHAIN_TEST_TRACKING: Set this variable to the path of a directory
+            to enable caching of test results. This is useful for re-running tests
+             without re-executing the code. Requires the 'langsmith[vcr]' package.
+
     Example:
         For basic usage, simply decorate a test function with `@unit`:
 
@@ -81,6 +91,30 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         or `wrap_*` functions) will be traced within the test case for
         improved visibility and debugging.
 
+        >>> from langsmith import traceable
+        >>> @traceable
+        ... def generate_numbers():
+        ...     return 3, 4
+
+        >>> @unit
+        ... def test_nested():
+        ...     # Traced code will be included in the test case
+        ...     a, b = generate_numbers()
+        ...     assert a + b == 7
+
+        LLM calls are expensive! Cache requests by setting
+        `LANGCHAIN_TEST_CACHE=path/to/cache`. Check in these files to speed up
+        CI/CD pipelines, so your results only change when your prompt or requested
+        model changes.
+
+        Note that this will require that you install langsmith with the `vcr` extra:
+
+        `pip install -U "langsmith[vcr]"`
+
+        Caching is faster if you install libyaml. See
+        https://vcrpy.readthedocs.io/en/latest/installation.html#speed for more details.
+
+        >>> os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
         >>> @unit
@@ -145,6 +179,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
         >>> test_addition()
+        >>> test_nested()
         >>> test_with_fixture("Some input")
         >>> test_with_expected_output("Some input", "Some")
         >>> test_multiplication()
@@ -156,11 +191,21 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         output_keys=kwargs.pop("output_keys", None),
         client=kwargs.pop("client", None),
         test_suite_name=kwargs.pop("test_suite_name", None),
+        cache=ls_utils.get_cache_dir(kwargs.pop("cache", None)),
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
+    disable_tracking = os.environ.get("LANGCHAIN_TEST_TRACKING") == "false"
+    if disable_tracking:
+        warnings.warn(
+            "LANGCHAIN_TEST_TRACKING is set to 'false'."
+            " Skipping LangSmith test tracking."
+        )
+
     if args and callable(args[0]):
         func = args[0]
+        if disable_tracking:
+            return func
 
         @functools.wraps(func)
         def wrapper(*test_args, **test_kwargs):
@@ -176,6 +221,8 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*test_args, **test_kwargs):
+            if disable_tracking:
+                return func(*test_args, **test_kwargs)
             _run_test(func, *test_args, **test_kwargs, langtest_extra=langtest_extra)
 
         return wrapper
@@ -188,7 +235,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
 
 def _get_experiment_name() -> str:
     # TODO Make more easily configurable
-    prefix = ls_utils.get_tracer_project(False) or "TestSuite"
+    prefix = ls_utils.get_tracer_project(False) or "TestSuiteResult"
     name = f"{prefix}:{uuid.uuid4().hex[:8]}"
     return name
 
@@ -199,13 +246,13 @@ def _get_test_suite_name() -> str:
     if test_suite_name:
         return test_suite_name
     if __package__:
-        return __package__
+        return __package__ + " Test Suite"
     git_info = ls_env.get_git_info()
     if git_info:
         if git_info["remote_url"]:
             repo_name = git_info["remote_url"].split("/")[-1].split(".")[0]
             if repo_name:
-                return repo_name
+                return repo_name + " Test Suite"
     raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
 
 
@@ -221,16 +268,19 @@ def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
 def _start_experiment(
     client: ls_client.Client,
     test_suite: ls_schemas.Dataset,
-) -> ls_schemas.TracerSessionResult:
+) -> ls_schemas.TracerSession:
     experiment_name = _get_experiment_name()
     return client.create_project(experiment_name, reference_dataset_id=test_suite.id)
 
 
 def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
+    try:
+        file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
+    except ValueError:
+        # Fall back to module name if file path is not available
+        file_path = func.__module__
     input_json = json.dumps(inputs, sort_keys=True)
-    identifier = f"{func.__module__}.{func.__name__}_{input_json}"
-
-    # Generate a UUID based on the identifier
+    identifier = f"{file_path}::{func.__name__}{input_json}"
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
 
 
@@ -253,7 +303,7 @@ class _LangSmithTestSuite:
     def __init__(
         self,
         client: Optional[ls_client.Client],
-        experiment: ls_schemas.TracerSessionResult,
+        experiment: ls_schemas.TracerSession,
         dataset: ls_schemas.Dataset,
     ):
         self.client = client or ls_client.Client()
@@ -338,6 +388,7 @@ class _UTExtra(TypedDict, total=False):
     id: Optional[uuid.UUID]
     output_keys: Optional[Sequence[str]]
     test_suite_name: Optional[str]
+    cache: Optional[str]
 
 
 def _ensure_example(
@@ -367,21 +418,32 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
     )
     run_id = uuid.uuid4()
 
-    try:
-        func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
-        func_(
-            *test_args,
-            **test_kwargs,
-            langsmith_extra={
-                "run_id": run_id,
-                "reference_example_id": example_id,
-                "project_name": test_suite.name,
-            },
-        )
-    except BaseException as e:
-        test_suite.submit_result(run_id, error=repr(e))
-        raise e
-    try:
-        test_suite.submit_result(run_id, error=None)
-    except BaseException as e:
-        logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+    def _test():
+        try:
+            func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
+            func_(
+                *test_args,
+                **test_kwargs,
+                langsmith_extra={
+                    "run_id": run_id,
+                    "reference_example_id": example_id,
+                    "project_name": test_suite.name,
+                },
+            )
+        except BaseException as e:
+            test_suite.submit_result(run_id, error=repr(e))
+            raise e
+        try:
+            test_suite.submit_result(run_id, error=None)
+        except BaseException as e:
+            logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+
+    cache_path = (
+        Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
+        if langtest_extra["cache"]
+        else None
+    )
+    with ls_utils.with_optional_cache(
+        cache_path, ignore_hosts=[test_suite.client.api_url]
+    ):
+        _test()

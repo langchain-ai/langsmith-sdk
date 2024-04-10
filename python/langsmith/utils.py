@@ -5,6 +5,7 @@ import enum
 import functools
 import logging
 import os
+import pathlib
 import subprocess
 import threading
 from typing import (
@@ -101,7 +102,7 @@ def raise_for_status_with_text(response: requests.Response) -> None:
     try:
         response.raise_for_status()
     except requests.HTTPError as e:
-        raise requests.HTTPError(str(e), response.text) from e
+        raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
 
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
@@ -388,3 +389,70 @@ def filter_logs(
                     logger.removeFilter(filter)
                 except BaseException:
                     _LOGGER.warning("Failed to remove filter")
+
+
+def get_cache_dir(cache: Optional[str]) -> Optional[str]:
+    """Get the testing cache directory.
+
+    Args:
+        cache (Optional[str]): The cache path.
+
+    Returns:
+        Optional[str]: The cache path if provided, otherwise the value
+        from the LANGCHAIN_TEST_CACHE environment variable.
+    """
+    if cache is not None:
+        return cache
+    return os.environ.get("LANGCHAIN_TEST_CACHE")
+
+
+@contextlib.contextmanager
+def with_cache(
+    path: Union[str, pathlib.Path], ignore_hosts: Optional[Sequence[str]] = None
+) -> Generator[None, None, None]:
+    """Use a cache for requests."""
+    try:
+        import vcr  # type: ignore[import-untyped]
+    except ImportError:
+        raise ImportError(
+            "vcrpy is required to use caching. Install with:"
+            'pip install -U "langsmith[vcr]"'
+        )
+
+    def _filter_request_headers(request: Any) -> Any:
+        if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
+            return None
+        request.headers = {}
+        return request
+
+    cache_dir, cache_file = os.path.split(path)
+
+    ls_vcr = vcr.VCR(
+        serializer=(
+            "yaml"
+            if cache_file.endswith(".yaml") or cache_file.endswith(".yml")
+            else "json"
+        ),
+        cassette_library_dir=cache_dir,
+        # Replay previous requests, record new ones
+        # TODO: Support other modes
+        record_mode="new_episodes",
+        match_on=["uri", "method", "path", "body"],
+        filter_headers=["authorization", "Set-Cookie"],
+        before_record_request=_filter_request_headers,
+    )
+    with ls_vcr.use_cassette(cache_file):
+        yield
+
+
+@contextlib.contextmanager
+def with_optional_cache(
+    path: Optional[Union[str, pathlib.Path]],
+    ignore_hosts: Optional[Sequence[str]] = None,
+) -> Generator[None, None, None]:
+    """Use a cache for requests."""
+    if path is not None:
+        with with_cache(path, ignore_hosts):
+            yield
+    else:
+        yield

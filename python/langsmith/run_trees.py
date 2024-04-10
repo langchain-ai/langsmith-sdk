@@ -32,7 +32,7 @@ class RunTree(ls_schemas.RunBase):
         exclude={"__all__": {"parent_run_id"}},
     )
     session_name: str = Field(
-        default_factory=lambda: utils.get_tracer_project(),
+        default_factory=lambda: utils.get_tracer_project() or "default",
         alias="project_name",
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
@@ -41,7 +41,7 @@ class RunTree(ls_schemas.RunBase):
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
-    trace_id: UUID = Field(default="", description="The trace id of the run.")
+    trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
 
     class Config:
         """Pydantic model configuration."""

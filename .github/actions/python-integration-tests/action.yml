@@ -33,7 +33,7 @@ runs:
     - name: Install dependencies
       run: |
         poetry install --with dev
-        poetry run pip install -U langchain langchain_anthropic tiktoken rapidfuzz
+        poetry run pip install -U langchain langchain_anthropic tiktoken rapidfuzz vcrpy
       shell: bash
       working-directory: python
 
@@ -52,6 +52,7 @@ runs:
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        LANGCHAIN_TEST_CACHE: "tests/cassettes"
       run: make doctest
       shell: bash
       working-directory: python
