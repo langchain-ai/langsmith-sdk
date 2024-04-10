@@ -102,7 +102,7 @@ def raise_for_status_with_text(response: requests.Response) -> None:
     try:
         response.raise_for_status()
     except requests.HTTPError as e:
-        raise requests.HTTPError(str(e), response.text) from e
+        raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
 
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
