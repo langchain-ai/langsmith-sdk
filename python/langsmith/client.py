@@ -612,7 +612,7 @@ class Client:
                 self._info = ls_schemas.LangSmithInfo(**response.json())
             except BaseException as e:
                 logger.warning(
-                    f"Failed to get info from {self.api_url}: {repr(e)}", exc_info=True
+                    f"Failed to get info from {self.api_url}: {repr(e)}",
                 )
                 self._info = ls_schemas.LangSmithInfo()
         return self._info
@@ -812,9 +812,7 @@ class Client:
         params_["limit"] = params_.get("limit", 100)
         while True:
             params_["offset"] = offset
-            response = self.request_with_retries(
-                "GET", path, params=params_, stop_after_attempt=2
-            )
+            response = self.request_with_retries("GET", path, params=params_, stop_after_attempt=1)
             items = response.json()
 
             if not items:
