@@ -15,9 +15,9 @@ body:
       label: Tracing Method
       description: "Select whether you are tracing using LangChain or some other method:"
       options:
-        - label: "With LangChain"
         - label: "SDK/Client"
         - label: "REST API"
+        - label: "With LangChain"
         - label: "Other"
 
   - type: checkboxes
@@ -37,7 +37,6 @@ body:
       description: "Indicate whether you are connected to the hosted LangSmith platform or running locally."
       options:
         - label: "Hosted (https://api.smith.langchain.com)"
-        - label: "Local (http://localhost:1984)"
         - label: "Self-hosted"
         - label: "Other"
 
@@ -48,7 +47,7 @@ body:
       description: Please share any other system info with us. You can view this by running `langsmith env` in your terminal.
       placeholder: LangSmith SDK version, client runtime information,
     validations:
-      required: false
+      required: true
 
   - type: textarea
     id: reproduction
