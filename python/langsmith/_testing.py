@@ -269,7 +269,11 @@ def _start_experiment(
 
 
 def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
-    file_path = Path(inspect.getfile(func)).relative_to(Path.cwd())
+    try:
+        file_path = Path(inspect.getfile(func)).relative_to(Path.cwd())
+    except ValueError:
+        # Fall back to module name if file path is not available
+        file_path = func.__module__
     input_json = json.dumps(inputs, sort_keys=True)
     identifier = f"{file_path}::{func.__name__}{input_json}"
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
