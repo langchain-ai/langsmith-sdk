@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+import pathlib
 import uuid
 from typing import (
     AsyncIterable,
@@ -23,6 +24,7 @@ from typing import (
 import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
+from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.beta import warn_beta
 from langsmith.evaluation._runner import (
@@ -86,6 +88,12 @@ async def aevaluate(
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
+
+    Environment:
+        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to save time and
+            cost during testing. Recommended to commit the cache files to your repository
+            for faster CI/CD runs.
+            Requires the 'langsmith[vcr]' package to be installed.
 
     Examples:
         >>> from typing import Sequence
@@ -331,20 +339,27 @@ async def _aevaluate(
         experiment=experiment_ or experiment_prefix,
         runs=runs,
     ).astart()
-    if is_async_target:
-        manager = await manager.awith_predictions(
-            cast(ATARGET_T, target), max_concurrency=max_concurrency
-        )
-    if evaluators:
-        manager = await manager.awith_evaluators(
-            evaluators, max_concurrency=max_concurrency
-        )
-    if summary_evaluators:
-        manager = await manager.awith_summary_evaluators(summary_evaluators)
-    results = AsyncExperimentResults(manager)
-    if blocking:
-        await results.wait()
-    return results
+    cache_dir = ls_utils.get_cache_dir(None)
+    if cache_dir is not None:
+        dsid = await manager.get_dataset_id()
+        cache_path = pathlib.Path(cache_dir) / f"{dsid}.yaml"
+    else:
+        cache_path = None
+    with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+        if is_async_target:
+            manager = await manager.awith_predictions(
+                cast(ATARGET_T, target), max_concurrency=max_concurrency
+            )
+        if evaluators:
+            manager = await manager.awith_evaluators(
+                evaluators, max_concurrency=max_concurrency
+            )
+        if summary_evaluators:
+            manager = await manager.awith_summary_evaluators(summary_evaluators)
+        results = AsyncExperimentResults(manager)
+        if blocking:
+            await results.wait()
+        return results
 
 
 class _AsyncExperimentManager(_ExperimentManagerMixin):
@@ -401,6 +416,16 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             aitertools.ensure_async_iterator(self._examples), 2, lock=asyncio.Lock()
         )
         return examples_iter
+
+    async def get_dataset_id(self) -> str:
+        if self._experiment is None or not getattr(
+            self._experiment, "reference_dataset_id", None
+        ):
+            example = await aitertools.py_anext(self.aget_examples())
+            if example is None:
+                raise ValueError("No examples found in the dataset.")
+            return str(example.dataset_id)
+        return str(self._experiment.reference_dataset_id)
 
     async def aget_runs(self) -> AsyncIterator[schemas.Run]:
         if self._runs is None:
@@ -510,7 +535,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             return {"results": []}
         return {
             "results": [
-                res
+                res  # type: ignore[misc]
                 async for results in self._summary_results
                 for res in results["results"]
             ]

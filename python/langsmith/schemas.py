@@ -509,6 +509,8 @@ class TracerSession(BaseModel):
     """Extra metadata for the project."""
     tenant_id: UUID
     """The tenant ID this project belongs to."""
+    reference_dataset_id: Optional[UUID]
+    """The reference dataset IDs this project's runs were generated on."""
 
     _host_url: Optional[str] = PrivateAttr(default=None)
 
@@ -561,8 +563,6 @@ class TracerSessionResult(TracerSession):
     """The start time of the last run in the project."""
     feedback_stats: Optional[Dict[str, Any]]
     """Feedback stats for the project."""
-    reference_dataset_id: Optional[UUID]
-    """The reference dataset IDs this project's runs were generated on."""
     run_facets: Optional[List[Dict[str, Any]]]
     """Facets for the runs in the project."""
 
