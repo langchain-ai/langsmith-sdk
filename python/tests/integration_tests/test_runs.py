@@ -55,10 +55,6 @@ def test_nested_runs(
     if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
 
-    # We don't require this anymore but we'll use it
-    # to keep testing for backwards compatibility
-    executor = ThreadPoolExecutor(max_workers=1)
-
     @traceable(run_type="chain")
     def my_run(text: str):
         my_llm_run(text)
@@ -68,12 +64,11 @@ def test_nested_runs(
     def my_llm_run(text: str):
         return f"Completed: {text}"
 
-    @traceable(run_type="chain", executor=executor, tags=["foo", "bar"])  # type: ignore
+    @traceable(run_type="chain", tags=["foo", "bar"])  # type: ignore
     def my_chain_run(text: str):
         return my_run(text)
 
     my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
-    executor.shutdown(wait=True)
     for _ in range(15):
         try:
             runs = list(langchain_client.list_runs(project_name=project_name))
@@ -210,7 +205,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
 
     executor = ThreadPoolExecutor(max_workers=1)
 
-    @traceable(run_type="chain", executor=executor)  # type: ignore
+    @traceable(run_type="chain")
     async def my_chain_run(text: str, run_tree: RunTree):
         thread_pool = ThreadPoolExecutor(max_workers=3)
         for i in range(2):
