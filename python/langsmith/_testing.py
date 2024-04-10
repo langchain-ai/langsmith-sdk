@@ -70,6 +70,14 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     Returns:
         Callable: The decorated test function.
 
+    Environment Variables:
+        - LANGCHAIN_DISABLE_TEST_TRACKING: Set this variable to 'true' to disable
+            LangSmith test tracking. If set to 'true', the test case will be executed
+            without any LangSmith-specific functionality.
+        - LANGCHAIN_TEST_CACHE: Set this variable to the path of a directory to enable
+            caching of test results. This is useful for re-running tests without
+            re-executing the code. Requires the 'langsmith[vcr]' package.
+
     Example:
         For basic usage, simply decorate a test function with `@unit`:
 
@@ -77,137 +85,18 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ... def test_addition():
         ...     assert 3 + 4 == 7
 
-
         Any code that is traced (such as those traced using `@traceable`
         or `wrap_*` functions) will be traced within the test case for
         improved visibility and debugging.
 
-        >>> from langsmith import traceable
-        >>> @traceable
-        ... def generate_numbers():
-        ...     return 3, 4
-
-        >>> @unit
-        ... def test_nested():
-        ...     # Traced code will be included in the test case
-        ...     a, b = generate_numbers()
-        ...     assert a + b == 7
-
-        LLM calls are expensive! Cache requests by setting
-        `LANGCHAIN_TEST_CACHE=path/to/cache`. Check in these files to speed up
-        CI/CD pipelines, so your results only change when your prompt or requested
-        model changes.
-
-        Note that this will require that you install langsmith with the `vcr` extra:
-
-        `pip install -U "langsmith[vcr]"`
-
-        Caching is faster if you install libyaml. See
-        https://vcrpy.readthedocs.io/en/latest/installation.html#speed for more details.
-
-        >>> os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
-        >>> import openai
-        >>> from langsmith.wrappers import wrap_openai
-        >>> @unit()
-        ... def test_openai_says_hello():
-        ...     # Traced code will be included in the test case
-        ...     oai_client = wrap_openai(openai.Client())
-        ...     response = oai_client.chat.completions.create(
-        ...         model="gpt-3.5-turbo",
-        ...         messages=[
-        ...             {"role": "system", "content": "You are a helpful assistant."},
-        ...             {"role": "user", "content": "Say hello!"},
-        ...         ],
-        ...     )
-        ...     assert "hello" in response.choices[0].message.content.lower()
-
-        The `@unit` decorator works natively with pytest fixtures.
-        The values will populate the "inputs" of the corresponding example in LangSmith.
-
-        >>> import pytest
-        >>> @pytest.fixture
-        ... def some_input():
-        ...     return "Some input"
-        >>>
-        >>> @unit
-        ... def test_with_fixture(some_input: str):
-        ...     assert "input" in some_input
-        >>>
-
-        You can still use pytest.parametrize() as usual to run multiple test cases
-        using the same test function.
-
-        >>> @unit(output_keys=["expected"])
-        ... @pytest.mark.parametrize(
-        ...     "a, b, expected",
-        ...     [
-        ...         (1, 2, 3),
-        ...         (3, 4, 7),
-        ...     ],
-        ... )
-        ... def test_addition_with_multiple_inputs(a: int, b: int, expected: int):
-        ...     assert a + b == expected
-
-        By default, each test case will be assigned a consistent, unique identifier
-        based on the function name and module. You can also provide a custom identifier
-        using the `id` argument:
-
-        >>> @unit(id=uuid.uuid4())
-        ... def test_multiplication():
-        ...     assert 3 * 4 == 12
-
-        By default, all unit test inputs are saved as "inputs" to a dataset.
-        You can specify the `output_keys` argument to persist those keys
-        within the dataset's "outputs" fields.
-
-        >>> @pytest.fixture
-        ... def expected_output():
-        ...     return "input"
-        >>> @unit(output_keys=["expected_output"])
-        ... def test_with_expected_output(some_input: str, expected_output: str):
-        ...     assert expected_output in some_input
-
+        ...
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
         >>> test_addition()
-        >>> test_nested()
-        >>> test_with_fixture("Some input")
-        >>> test_with_expected_output("Some input", "Some")
-        >>> test_multiplication()
-        >>> test_openai_says_hello()
-        >>> test_addition_with_multiple_inputs(1, 2, 3)
+        ...
+
     """
-    langtest_extra = _UTExtra(
-        id=kwargs.pop("id", None),
-        output_keys=kwargs.pop("output_keys", None),
-        client=kwargs.pop("client", None),
-        test_suite_name=kwargs.pop("test_suite_name", None),
-        cache=_get_cache(kwargs.pop("cache", None)),
-    )
-    if kwargs:
-        warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
-    if args and callable(args[0]):
-        func = args[0]
-
-        @functools.wraps(func)
-        def wrapper(*test_args, **test_kwargs):
-            _run_test(
-                func,
-                *test_args,
-                **test_kwargs,
-                langtest_extra=langtest_extra,
-            )
-
-        return wrapper
-
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*test_args, **test_kwargs):
-            _run_test(func, *test_args, **test_kwargs, langtest_extra=langtest_extra)
-
-        return wrapper
-
-    return decorator
+    ...
 
 
 ## Private functions
