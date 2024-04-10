@@ -49,6 +49,7 @@ pytest-xdist = "^3.5.0"
 pytest-cov = "^4.1.0"
 dataclasses-json = "^0.6.4"
 types-tqdm = "^4.66.0.20240106"
+vcrpy = "^6.0.1"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
