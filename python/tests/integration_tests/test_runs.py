@@ -268,8 +268,8 @@ async def test_context_manager(langchain_client: Client) -> None:
             await asyncio.gather(*runs)
         run_tree.end(outputs={"End val": "my_context2"})
     poll_runs_until_count(langchain_client, project_name, 8)
-    runs = list(langchain_client.list_runs(project_name=project_name))
-    assert len(runs) == 8
+    runs_ = list(langchain_client.list_runs(project_name=project_name))
+    assert len(runs_) == 8
 
 
 async def test_sync_generator(langchain_client: Client):
