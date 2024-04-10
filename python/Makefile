@@ -1,4 +1,4 @@
-.PHONY: tests lint format
+.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals
 
 tests:
 	poetry run pytest -n auto --durations=10 tests/unit_tests
@@ -14,6 +14,9 @@ integration_tests_fast:
 
 doctest:
 	poetry run pytest -n auto --durations=10 --doctest-modules langsmith
+
+evals:
+	poetry run pytest tests/evaluation
 
 lint:
 	poetry run ruff check .

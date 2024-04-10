@@ -71,6 +71,11 @@ def tracing_is_enabled() -> bool:
     )
 
 
+def test_tracking_is_disabled() -> bool:
+    """Return True if testing is enabled."""
+    return os.environ.get("LANGCHAIN_TEST_TRACKING", "").lower() == "false"
+
+
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     """Validate specified keyword args are mutually exclusive."""
 

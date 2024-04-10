@@ -3,8 +3,10 @@
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from langsmith._expect import expect
     from langsmith._testing import unit
     from langsmith.client import Client
+    from langsmith.evaluation import aevaluate, evaluate
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
     from langsmith.run_helpers import trace, traceable
     from langsmith.run_trees import RunTree
@@ -47,6 +49,19 @@ def __getattr__(name: str) -> Any:
 
         return unit
 
+    elif name == "expect":
+        from langsmith._expect import expect
+
+        return expect
+    elif name == "evaluate":
+        from langsmith.evaluation import evaluate
+
+        return evaluate
+    elif name == "aevaluate":
+        from langsmith.evaluation import aevaluate
+
+        return aevaluate
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -59,4 +74,7 @@ __all__ = [
     "traceable",
     "trace",
     "unit",
+    "expect",
+    "evaluate",
+    "aevaluate",
 ]

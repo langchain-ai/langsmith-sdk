@@ -117,10 +117,10 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         >>> os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
+        >>> oai_client = wrap_openai(openai.Client())
         >>> @unit
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
-        ...     oai_client = wrap_openai(openai.Client())
         ...     response = oai_client.chat.completions.create(
         ...         model="gpt-3.5-turbo",
         ...         messages=[
@@ -129,6 +129,36 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...         ],
         ...     )
         ...     assert "hello" in response.choices[0].message.content.lower()
+
+        LLMs are stochastic. Naive assertions are flakey. You can use langsmith's
+        `expect` to score and make approximate assertions on your results.
+        Note that currently the embedding, string distance, and LLM-based
+        expectations rely on `langchain` to run.
+
+        >>> from langsmith import expect
+        >>> @unit
+        ... def test_output_semantically_close():
+        ...     response = oai_client.chat.completions.create(
+        ...         model="gpt-3.5-turbo",
+        ...         messages=[
+        ...             {"role": "system", "content": "You are a helpful assistant."},
+        ...             {"role": "user", "content": "Say hello!"},
+        ...         ],
+        ...     )
+        ...     # The embedding_distance call logs the embedding distance to LangSmith
+        ...     expect.embedding_distance(
+        ...         prediction=response.choices[0].message.content,
+        ...         reference="Hello!",
+        ...         # The following optional assertion logs a
+        ...         # pass/fail score to LangSmith
+        ...         # and raises an AssertionError if the assertion fails.
+        ...     ).to_be_less_than(0.5)
+        ...     # Compute damerau_levenshtein distance
+        ...     expect.edit_distance(
+        ...         prediction=response.choices[0].message.content,
+        ...         reference="Hello!",
+        ...         # And then log a pass/fail score to LangSmith
+        ...     ).to_be_less_than(0.5)
 
         The `@unit` decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.
@@ -178,6 +208,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
 
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
+        >>> test_output_semantically_close()
         >>> test_addition()
         >>> test_nested()
         >>> test_with_fixture("Some input")
@@ -195,7 +226,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
-    disable_tracking = os.environ.get("LANGCHAIN_TEST_TRACKING") == "false"
+    disable_tracking = ls_utils.test_tracking_is_disabled()
     if disable_tracking:
         warnings.warn(
             "LANGCHAIN_TEST_TRACKING is set to 'false'."
@@ -270,7 +301,12 @@ def _start_experiment(
     test_suite: ls_schemas.Dataset,
 ) -> ls_schemas.TracerSession:
     experiment_name = _get_experiment_name()
-    return client.create_project(experiment_name, reference_dataset_id=test_suite.id)
+    try:
+        return client.create_project(
+            experiment_name, reference_dataset_id=test_suite.id
+        )
+    except ls_utils.LangSmithConflictError:
+        return client.read_project(project_name=experiment_name)
 
 
 def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
