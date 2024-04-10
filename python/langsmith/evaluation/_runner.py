@@ -783,9 +783,11 @@ class _ExperimentManager:
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),
-            **{"experiment": self.experiment_name,
+            **{
+                "experiment": self.experiment_name,
                 "reference_example_id": current_results["example"].id,
-                "reference_run_id": current_results["run"].id},
+                "reference_run_id": current_results["run"].id,
+            },
         }
         with rh.tracing_context(
             **{**current_context, "project_name": "evaluators", "metadata": metadata}

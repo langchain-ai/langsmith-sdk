@@ -143,6 +143,26 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...     assert expected_output in some_input
 
 
+        LLM calls can be expensive and slow! To speed up your tests, you can cache
+        the results of your tests using the `cache` argument, or by setting the
+        `LANGCHAIN_TEST_CACHE` environment variable to "true". Note that this will
+        require that you install langsmith with the `vcr` extra:
+
+        pip install -U "langsmith[vcr]"
+
+        >>> @unit(cache=True)
+        ... def test_openai_generates_numbers():
+        ...     oai_client = wrap_openai(openai.Client())
+        ...     response = oai_client.chat.completions.create(
+        ...         model="gpt-3.5-turbo",
+        ...         messages=[
+        ...             {"role": "system", "content": "You are a helpful assistant."},
+        ...             {"role": "user", "content": "Generate a random number."},
+        ...         ],
+        ...     )
+        ...     assert any(char.isdigit() for char in response.choices[0].message.content)
+
+
         To run these tests, use the pytest CLI. Or directly run the test functions.
         >>> test_addition()
         >>> test_with_fixture("Some input")
@@ -150,12 +170,14 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         >>> test_multiplication()
         >>> test_openai_says_hello()
         >>> test_addition_with_multiple_inputs(1, 2, 3)
+        >>> test_openai_generates_numbers()
     """
     langtest_extra = _UTExtra(
         id=kwargs.pop("id", None),
         output_keys=kwargs.pop("output_keys", None),
         client=kwargs.pop("client", None),
         test_suite_name=kwargs.pop("test_suite_name", None),
+        cache=_get_cache(kwargs.pop("cache", None)),
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
@@ -188,7 +210,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
 
 def _get_experiment_name() -> str:
     # TODO Make more easily configurable
-    prefix = ls_utils.get_tracer_project(False) or "TestSuite"
+    prefix = ls_utils.get_tracer_project(False) or "TestSuiteResult"
     name = f"{prefix}:{uuid.uuid4().hex[:8]}"
     return name
 
@@ -199,14 +221,20 @@ def _get_test_suite_name() -> str:
     if test_suite_name:
         return test_suite_name
     if __package__:
-        return __package__
+        return __package__ + " Test Suite"
     git_info = ls_env.get_git_info()
     if git_info:
         if git_info["remote_url"]:
             repo_name = git_info["remote_url"].split("/")[-1].split(".")[0]
             if repo_name:
-                return repo_name
+                return repo_name + " Test Suite"
     raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
+
+
+def _get_cache(do_cache: Optional[bool]) -> bool:
+    if do_cache is not None:
+        return do_cache
+    return os.environ.get("LANGCHAIN_TEST_CACHE", "false") == "true"
 
 
 def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
@@ -338,6 +366,7 @@ class _UTExtra(TypedDict, total=False):
     id: Optional[uuid.UUID]
     output_keys: Optional[Sequence[str]]
     test_suite_name: Optional[str]
+    cache: Optional[bool]
 
 
 def _ensure_example(
@@ -367,21 +396,45 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
     )
     run_id = uuid.uuid4()
 
-    try:
-        func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
-        func_(
-            *test_args,
-            **test_kwargs,
-            langsmith_extra={
-                "run_id": run_id,
-                "reference_example_id": example_id,
-                "project_name": test_suite.name,
-            },
+    def _test():
+        try:
+            func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
+            func_(
+                *test_args,
+                **test_kwargs,
+                langsmith_extra={
+                    "run_id": run_id,
+                    "reference_example_id": example_id,
+                    "project_name": test_suite.name,
+                },
+            )
+        except BaseException as e:
+            test_suite.submit_result(run_id, error=repr(e))
+            raise e
+        try:
+            test_suite.submit_result(run_id, error=None)
+        except BaseException as e:
+            logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+
+    if langtest_extra["cache"] is True:
+        try:
+            import vcr  # type: ignore[import-untyped]
+        except ImportError:
+            raise ImportError(
+                "vcrpy is required to use caching. Install with:"
+                'pip install -U "langsmith[vcr]"'
+            )
+        ls_vcr = vcr.VCR(
+            serializer="yaml",
+            cassette_library_dir="~/.cache/langsmith/cassettes",
+            # Replay previous requests, record new ones
+            # TODO: Support other modes
+            ignore_hosts=[test_suite.client.api_url],
+            record_mode="new_episodes",
+            match_on=["uri", "method", "path", "body"],
         )
-    except BaseException as e:
-        test_suite.submit_result(run_id, error=repr(e))
-        raise e
-    try:
-        test_suite.submit_result(run_id, error=None)
-    except BaseException as e:
-        logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+
+        with ls_vcr.use_cassette(f"{test_suite.id}.yaml"):
+            _test()
+    else:
+        _test()
