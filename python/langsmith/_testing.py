@@ -81,9 +81,33 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         or `wrap_*` functions) will be traced within the test case for
         improved visibility and debugging.
 
+        >>> from langsmith import traceable
+        >>> @traceable
+        ... def generate_numbers():
+        ...     return 3, 4
+
+        >>> @unit
+        ... def test_nested():
+        ...     # Traced code will be included in the test case
+        ...     a, b = generate_numbers()
+        ...     assert a + b == 7
+
+        LLM calls are expensive! Cache requests by setting
+        `LANGCHAIN_TEST_CACHE=path/to/cache`. Check in these files to speed up
+        CI/CD pipelines, so your results only change when your prompt or requested
+        model changes.
+
+        Note that this will require that you install langsmith with the `vcr` extra:
+
+        `pip install -U "langsmith[vcr]"`
+
+        Caching is faster if you install libyaml. See
+        https://vcrpy.readthedocs.io/en/latest/installation.html#speed for more details.
+
+        >>> os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
-        >>> @unit
+        >>> @unit()
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
         ...     oai_client = wrap_openai(openai.Client())
@@ -143,35 +167,14 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...     assert expected_output in some_input
 
 
-        LLM calls can be expensive and slow! To speed up your tests, you can cache
-        the results of your tests using the `cache` argument, or by setting the
-        `LANGCHAIN_TEST_CACHE` environment variable to "true". Note that this will
-        require that you install langsmith with the `vcr` extra:
-
-        pip install -U "langsmith[vcr]"
-
-        >>> @unit(cache=True)
-        ... def test_openai_generates_numbers():
-        ...     oai_client = wrap_openai(openai.Client())
-        ...     response = oai_client.chat.completions.create(
-        ...         model="gpt-3.5-turbo",
-        ...         messages=[
-        ...             {"role": "system", "content": "You are a helpful assistant."},
-        ...             {"role": "user", "content": "Generate a random number."},
-        ...         ],
-        ...     )
-        ...     content = response.choices[0].message.content
-        ...     assert any(char.isdigit() for char in content)
-
-
         To run these tests, use the pytest CLI. Or directly run the test functions.
         >>> test_addition()
+        >>> test_nested()
         >>> test_with_fixture("Some input")
         >>> test_with_expected_output("Some input", "Some")
         >>> test_multiplication()
         >>> test_openai_says_hello()
         >>> test_addition_with_multiple_inputs(1, 2, 3)
-        >>> test_openai_generates_numbers()
     """
     langtest_extra = _UTExtra(
         id=kwargs.pop("id", None),
@@ -232,10 +235,10 @@ def _get_test_suite_name() -> str:
     raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
 
 
-def _get_cache(do_cache: Optional[bool]) -> bool:
-    if do_cache is not None:
-        return do_cache
-    return os.environ.get("LANGCHAIN_TEST_CACHE", "false") == "true"
+def _get_cache(cache: Optional[str]) -> Optional[str]:
+    if cache is not None:
+        return cache
+    return os.environ.get("LANGCHAIN_TEST_CACHE")
 
 
 def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
@@ -367,7 +370,7 @@ class _UTExtra(TypedDict, total=False):
     id: Optional[uuid.UUID]
     output_keys: Optional[Sequence[str]]
     test_suite_name: Optional[str]
-    cache: Optional[bool]
+    cache: Optional[str]
 
 
 def _ensure_example(
@@ -417,7 +420,7 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
         except BaseException as e:
             logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
 
-    if langtest_extra["cache"] is True:
+    if langtest_extra["cache"]:
         try:
             import vcr  # type: ignore[import-untyped]
         except ImportError:
@@ -425,15 +428,23 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
                 "vcrpy is required to use caching. Install with:"
                 'pip install -U "langsmith[vcr]"'
             )
-        cache_dir = os.path.expanduser("~/.cache/langsmith/cassettes")
+        ignore_hosts = [test_suite.client.api_url]
+
+        def _filter_request_headers(request: Any) -> Any:
+            if any(request.url.startswith(host) for host in ignore_hosts):
+                return None
+            request.headers = {}
+            return request
+
         ls_vcr = vcr.VCR(
             serializer="yaml",
-            cassette_library_dir=cache_dir,
-            ignore_hosts=[test_suite.client.api_url],
+            cassette_library_dir=langtest_extra["cache"],
             # Replay previous requests, record new ones
             # TODO: Support other modes
             record_mode="new_episodes",
             match_on=["uri", "method", "path", "body"],
+            filter_headers=["authorization", "Set-Cookie"],
+            before_record_request=_filter_request_headers,
         )
 
         with ls_vcr.use_cassette(f"{test_suite.id}.yaml"):
