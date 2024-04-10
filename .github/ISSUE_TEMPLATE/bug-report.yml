@@ -1,5 +1,5 @@
 name: "\U0001F41B Bug Report"
-description: Submit a bug report to help us improve LangSmith. To report a _security_ issue, please instead use the security option below.
+description: "Submit a bug report to help us improve LangSmith. To report a _security_ issue, please instead use the security option below."
 labels: ["01 Bug Report"]
 body:
   - type: markdown
@@ -15,15 +15,15 @@ body:
       label: Tracing Method
       description: "Select whether you are tracing using LangChain or some other method:"
       options:
-        - label: "With LangChain"
         - label: "SDK/Client"
         - label: "REST API"
+        - label: "With LangChain"
         - label: "Other"
 
   - type: checkboxes
     id: runtime-language
     attributes:
-      label: Runtime Language
+      label: Language
       description: ""
       options:
         - label: "Python"
@@ -33,11 +33,10 @@ body:
   - type: checkboxes
     id: platform-environment
     attributes:
-      label: LangSmith Platform Environment
+      label: Host
       description: "Indicate whether you are connected to the hosted LangSmith platform or running locally."
       options:
         - label: "Hosted (https://api.smith.langchain.com)"
-        - label: "Local (http://localhost:1984)"
         - label: "Self-hosted"
         - label: "Other"
 
@@ -48,7 +47,7 @@ body:
       description: Please share any other system info with us. You can view this by running `langsmith env` in your terminal.
       placeholder: LangSmith SDK version, client runtime information,
     validations:
-      required: false
+      required: true
 
   - type: textarea
     id: reproduction
