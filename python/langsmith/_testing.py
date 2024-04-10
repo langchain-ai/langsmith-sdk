@@ -195,14 +195,17 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
-    if os.environ.get("LANGCHAIN_TEST_TRACKING") == "false":
+    disable_tracking = os.environ.get("LANGCHAIN_TEST_TRACKING") == "false"
+    if disable_tracking:
         warnings.warn(
             "LANGCHAIN_TEST_TRACKING is set to 'false'."
             " Skipping LangSmith test tracking."
         )
-        return lambda f: f
+        
     if args and callable(args[0]):
         func = args[0]
+        if disable_tracking:
+            return func
 
         @functools.wraps(func)
         def wrapper(*test_args, **test_kwargs):
@@ -218,10 +221,11 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*test_args, **test_kwargs):
+            if disable_tracking:
+                return func(*test_args, **test_kwargs)
             _run_test(func, *test_args, **test_kwargs, langtest_extra=langtest_extra)
 
         return wrapper
-
     return decorator
 
 
