@@ -429,9 +429,9 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
         ls_vcr = vcr.VCR(
             serializer="yaml",
             cassette_library_dir=cache_dir,
+            ignore_hosts=[test_suite.client.api_url],
             # Replay previous requests, record new ones
             # TODO: Support other modes
-            ignore_hosts=[test_suite.client.api_url],
             record_mode="new_episodes",
             match_on=["uri", "method", "path", "body"],
         )
