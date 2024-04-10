@@ -117,7 +117,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         >>> os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
-        >>> @unit()
+        >>> @unit
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
         ...     oai_client = wrap_openai(openai.Client())

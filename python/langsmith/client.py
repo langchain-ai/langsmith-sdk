@@ -813,7 +813,9 @@ class Client:
         while True:
             params_["offset"] = offset
             response = self.request_with_retries(
-                "GET", path, params=params_, stop_after_attempt=1
+                "GET", 
+                path, 
+                params=params_, 
             )
             items = response.json()
 
@@ -2330,7 +2332,6 @@ class Client:
         response = self.request_with_retries(
             "GET",
             path,
-            stop_after_attempt=3,
             params=params,
         )
         result = response.json()
@@ -2452,7 +2453,6 @@ class Client:
         response = self.request_with_retries(
             "GET",
             f"{path}/{_as_uuid(dataset_id, 'dataset_id')}/openai_ft",
-            stop_after_attempt=3,
         )
         dataset = [json.loads(line) for line in response.text.strip().split("\n")]
         return dataset
@@ -2659,7 +2659,6 @@ class Client:
         response = self.request_with_retries(
             "GET",
             f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/version",
-            stop_after_attempt=3,
             params={"as_of": as_of, "tag": tag},
         )
         return ls_schemas.DatasetVersion(**response.json())
@@ -3017,7 +3016,6 @@ class Client:
         response = self.request_with_retries(
             "GET",
             f"/examples/{_as_uuid(example_id, 'example_id')}",
-            stop_after_attempt=3,
             params={
                 "as_of": as_of.isoformat() if as_of else None,
             },
@@ -3535,7 +3533,6 @@ class Client:
         response = self.request_with_retries(
             "GET",
             f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
-            stop_after_attempt=3,
         )
         return ls_schemas.Feedback(**response.json())
 
