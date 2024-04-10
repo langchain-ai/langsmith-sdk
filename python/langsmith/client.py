@@ -3304,6 +3304,9 @@ class Client:
                 correction=res.correction,
                 source_info=source_info_,
                 source_run_id=res.source_run_id,
+                feedback_config=cast(
+                    Optional[ls_schemas.FeedbackConfig], res.feedback_config
+                ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id,
             )

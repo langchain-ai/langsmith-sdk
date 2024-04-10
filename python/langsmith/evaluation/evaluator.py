@@ -3,7 +3,9 @@
 import asyncio
 import uuid
 from abc import abstractmethod
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union, cast
+from typing import Any, Callable, Dict, List, Literal, Optional, Union, cast
+
+from typing_extensions import TypedDict
 
 try:
     from pydantic.v1 import BaseModel, Field, ValidationError  # type: ignore[import]
@@ -13,6 +15,30 @@ except ImportError:
 from functools import wraps
 
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
+
+
+class Category(TypedDict):
+    """A category for categorical feedback."""
+
+    value: Optional[Union[float, int]]
+    """The numeric score/ordinal corresponding to this category."""
+    label: str
+    """The label for this category."""
+
+
+class FeedbackConfig(TypedDict, total=False):
+    """Configuration to define a type of feedback.
+
+    Applied on on the first creation of a feedback_key.
+    """
+
+    type: Literal["continuous", "categorical", "freeform"]
+    """The type of feedback."""
+    min: Optional[Union[float, int]]
+    """The minimum permitted value (if continuous type)."""
+    max: Optional[Union[float, int]]
+    """The maximum value permitted value (if continuous type)."""
+    categories: Optional[List[Union[Category, dict]]]
 
 
 class EvaluationResult(BaseModel):
@@ -30,6 +56,8 @@ class EvaluationResult(BaseModel):
     """What the correct value should be, if applicable."""
     evaluator_info: Dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
+    feedback_config: Optional[Union[FeedbackConfig, dict]] = None
+    """The configuration used to generate this feedback."""
     source_run_id: Optional[Union[uuid.UUID, str]] = None
     """The ID of the trace of the evaluator itself."""
     target_run_id: Optional[Union[uuid.UUID, str]] = None
