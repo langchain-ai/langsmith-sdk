@@ -812,7 +812,9 @@ class Client:
         params_["limit"] = params_.get("limit", 100)
         while True:
             params_["offset"] = offset
-            response = self.request_with_retries("GET", path, params=params_, stop_after_attempt=1)
+            response = self.request_with_retries(
+                "GET", path, params=params_, stop_after_attempt=1
+            )
             items = response.json()
 
             if not items:
