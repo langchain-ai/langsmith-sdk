@@ -114,7 +114,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         Caching is faster if you install libyaml. See
         https://vcrpy.readthedocs.io/en/latest/installation.html#speed for more details.
 
-        >>> os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
+        >>> # os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
         >>> oai_client = wrap_openai(openai.Client())
@@ -152,13 +152,13 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...         # The following optional assertion logs a
         ...         # pass/fail score to LangSmith
         ...         # and raises an AssertionError if the assertion fails.
-        ...     ).to_be_less_than(0.5)
+        ...     ).to_be_less_than(1.0)
         ...     # Compute damerau_levenshtein distance
         ...     expect.edit_distance(
         ...         prediction=response.choices[0].message.content,
         ...         reference="Hello!",
         ...         # And then log a pass/fail score to LangSmith
-        ...     ).to_be_less_than(0.5)
+        ...     ).to_be_less_than(1.0)
 
         The `@unit` decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.

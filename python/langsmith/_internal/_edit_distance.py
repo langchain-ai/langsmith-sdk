@@ -24,7 +24,9 @@ class EditDistance:
     ):
         config = config or {}
         metric = config.get("metric") or "damerau_levenshtein"
-        self.metric = self._get_metric(metric, config.get("normalize_score", True))
+        self.metric = self._get_metric(
+            metric, normalize_score=config.get("normalize_score", True)
+        )
 
     def evaluate(
         self,
@@ -34,7 +36,7 @@ class EditDistance:
         return self.metric(prediction, reference)
 
     @staticmethod
-    def _get_metric(distance: str, normalize_score: bool = False) -> Callable:
+    def _get_metric(distance: str, normalize_score: bool = True) -> Callable:
         try:
             from rapidfuzz import (  # type: ignore[import-not-found]
                 distance as rf_distance,

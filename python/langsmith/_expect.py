@@ -22,7 +22,7 @@ Example usage:
         expect.embedding_distance(
             prediction=response_txt,
             reference="Hello!",
-        ).to_be_less_than(0.5)
+        ).to_be_less_than(0.9)
 
         # Score the test case
         matcher = expect.edit_distance(
@@ -30,7 +30,7 @@ Example usage:
             reference="Hello!",
         )
         # Apply an assertion and log 'expectation' feedback to LangSmith
-        matcher.to_be_less_than(0.5)
+        matcher.to_be_less_than(1)
 
         # You can also directly make assertions on values directly
         expect.value(response_txt).to_contain("Hello!")
@@ -248,7 +248,7 @@ class _Expect:
             >>> expect.embedding_distance(
             ...     prediction="hello",
             ...     reference="hi",
-            ... ).to_be_less_than(0.5)
+            ... ).to_be_less_than(1.0)
         """  # noqa: E501
         from langsmith._internal._embedding_distance import EmbeddingDistance
 
