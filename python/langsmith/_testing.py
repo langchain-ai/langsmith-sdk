@@ -268,27 +268,22 @@ def _get_experiment_name() -> str:
     return name
 
 
-def _get_test_suite_name() -> str:
-    # TODO: This naming stuff is inelegant
+def _get_test_suite_name(func: Callable) -> str:
     test_suite_name = ls_utils.get_env_var("TEST_SUITE")
     if test_suite_name:
         return test_suite_name
-    breakpoint()
-    # The test suite should
-    if __package__:
-        return __package__ + " Test Suite"
-    git_info = ls_env.get_git_info()
-    if git_info:
-        if git_info["remote_url"]:
-            repo_name = git_info["remote_url"].split("/")[-1].split(".")[0]
-            if repo_name:
-                return repo_name + " Test Suite"
+    try:
+        rel_path = Path(__file__).relative_to(Path.cwd())
+        return str(rel_path.with_suffix("")).replace("/", ".")
+    except BaseException:
+        logger.debug("Could not determine test suite name from file path.")
+
     raise ValueError("Please set the LANGSMITH_TEST_SUITE environment variable.")
 
 
-def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
-    test_suite_name = _get_test_suite_name()
-
+def _get_test_suite(
+    client: ls_client.Client, test_suite_name: str
+) -> ls_schemas.Dataset:
     if client.has_dataset(dataset_name=test_suite_name):
         return client.read_dataset(dataset_name=test_suite_name)
     else:
@@ -302,7 +297,9 @@ def _start_experiment(
     experiment_name = _get_experiment_name()
     try:
         return client.create_project(
-            experiment_name, reference_dataset_id=test_suite.id
+            experiment_name, 
+            reference_dataset_id=test_suite.id, 
+            description="Test Suite Results from  "
         )
     except ls_utils.LangSmithConflictError:
         return client.read_project(project_name=experiment_name)
@@ -332,7 +329,7 @@ def _end_tests(
 
 
 class _LangSmithTestSuite:
-    _instance = None
+    _instances: Optional[dict] = None
     _lock = threading.RLock()
 
     def __init__(
@@ -361,25 +358,32 @@ class _LangSmithTestSuite:
         return self._experiment
 
     @classmethod
-    def get_singleton(cls, client: Optional[ls_client.Client]) -> _LangSmithTestSuite:
+    def from_test(
+        cls, client: Optional[ls_client.Client], func: Callable
+    ) -> _LangSmithTestSuite:
         client = client or ls_client.Client()
+        test_suite_name = _get_test_suite_name(func)
         with cls._lock:
-            if not cls._instance:
-                test_suite = _get_test_suite(client)
+            if not cls._instances:
+                cls._instances = {}
+            if test_suite_name not in cls._instances:
+                test_suite = _get_test_suite(client, test_suite_name)
                 experiment = _start_experiment(client, test_suite)
-                cls._instance = cls(client, experiment, test_suite)
-        return cls._instance
+                cls._instances[test_suite_name] = cls(client, experiment, test_suite)
+        return cls._instances[test_suite_name]
 
     @property
     def name(self):
         return self._experiment.name
 
     def update_version(self, version: datetime.datetime) -> None:
-        if self._version is None or version > self._version:
-            self._version = version
+        with self._lock:
+            if self._version is None or version > self._version:
+                self._version = version
 
     def get_version(self) -> Optional[datetime.datetime]:
-        return self._version
+        with self._lock:
+            return self._version
 
     def submit_result(self, run_id: uuid.UUID, error: Optional[str] = None) -> None:
         self._executor.submit(self._submit_result, run_id, error)
@@ -396,10 +400,14 @@ class _LangSmithTestSuite:
                 score=1,
             )
 
-    def sync_example(self, example_id: uuid.UUID, inputs: dict, outputs: dict) -> None:
-        self._executor.submit(self._sync_example, example_id, inputs, outputs)
+    def sync_example(
+        self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
+    ) -> None:
+        self._executor.submit(self._sync_example, example_id, inputs, outputs, metadata)
 
-    def _sync_example(self, example_id: uuid.UUID, inputs: dict, outputs: dict) -> None:
+    def _sync_example(
+        self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
+    ) -> None:
         try:
             example = self.client.read_example(example_id=example_id)
             if inputs != example.inputs or outputs != example.outputs:
@@ -407,6 +415,7 @@ class _LangSmithTestSuite:
                     example_id=example.id,
                     inputs=inputs,
                     outputs=outputs,
+                    metadata=metadata,
                 )
         except ls_utils.LangSmithNotFoundError:
             example = self.client.create_example(
@@ -414,6 +423,7 @@ class _LangSmithTestSuite:
                 inputs=inputs,
                 outputs=outputs,
                 dataset_id=self.id,
+                metadata=metadata,
             )
         if example.modified_at:
             self.update_version(example.modified_at)
@@ -445,9 +455,13 @@ def _ensure_example(
     if output_keys:
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
-    # TODO: Support multiple test suites
-    test_suite = _LangSmithTestSuite.get_singleton(client)
-    test_suite.sync_example(example_id, inputs, outputs)
+    test_suite = _LangSmithTestSuite.from_test(client, func)
+    test_suite.sync_example(
+        example_id,
+        inputs,
+        outputs,
+        metadata={"signature": str(signature), "name": getattr(func, "__name__", None)},
+    )
     return test_suite, example_id
 
 
