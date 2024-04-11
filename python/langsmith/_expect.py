@@ -256,11 +256,13 @@ class _Expect:
         encoder_func = "custom" if config.get("encoder") else "openai"
         evaluator = EmbeddingDistance(config=config)
         score = evaluator.evaluate(prediction=prediction, reference=reference)
+        src_info = {"encoder": encoder_func, "metric": evaluator.distance}
         self._submit_feedback(
             "embedding_distance",
             {
                 "score": score,
-                "source_info": {"encoder": encoder_func, "metric": evaluator.distance},
+                "source_info": src_info,
+                "comment": f"Using {encoder_func}, Metric: {evaluator.distance}",
             },
         )
         return _Matcher(
@@ -304,9 +306,14 @@ class _Expect:
         normalize = config.get("normalize_score", True)
         evaluator = EditDistance(config=config)
         score = evaluator.evaluate(prediction=prediction, reference=reference)
+        src_info = {"metric": metric, "normalize": normalize}
         self._submit_feedback(
             "edit_distance",
-            {"score": score, "source_info": {"metric": metric, "normalize": normalize}},
+            {
+                "score": score,
+                "source_info": src_info,
+                "comment": f"Using {metric}, Normalize: {normalize}",
+            },
         )
         return _Matcher(
             self.client,

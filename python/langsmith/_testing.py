@@ -187,8 +187,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         By default, each test case will be assigned a consistent, unique identifier
         based on the function name and module. You can also provide a custom identifier
         using the `id` argument:
-
-        >>> @unit(id=uuid.uuid4())
+        >>> @unit(id="1a77e4b5-1d38-4081-b829-b0442cf3f145")
         ... def test_multiplication():
         ...     assert 3 * 4 == 12
 
@@ -316,14 +315,14 @@ def _start_experiment(
         return client.read_project(project_name=experiment_name)
 
 
-def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
+def _get_id(func: Callable, inputs: dict, suite_id: uuid.UUID) -> uuid.UUID:
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
         # Fall back to module name if file path is not available
         file_path = func.__module__
     input_json = json.dumps(inputs, sort_keys=True)
-    identifier = f"{file_path}::{func.__name__}{input_json}"
+    identifier = f"{suite_id}{file_path}::{func.__name__}{input_json}"
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
 
 
@@ -414,19 +413,27 @@ class _LangSmithTestSuite:
     def sync_example(
         self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
     ) -> None:
-        self._executor.submit(self._sync_example, example_id, inputs, outputs, metadata)
+        self._executor.submit(
+            self._sync_example, example_id, inputs, outputs, metadata.copy()
+        )
+        # self._sync_example(example_id, inputs, outputs, metadata)
 
     def _sync_example(
         self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
     ) -> None:
         try:
             example = self.client.read_example(example_id=example_id)
-            if inputs != example.inputs or outputs != example.outputs:
+            if (
+                inputs != example.inputs
+                or outputs != example.outputs
+                or str(example.dataset_id) != str(self.id)
+            ):
                 self.client.update_example(
                     example_id=example.id,
                     inputs=inputs,
                     outputs=outputs,
                     metadata=metadata,
+                    dataset_id=self.id,
                 )
         except ls_utils.LangSmithNotFoundError:
             example = self.client.create_example(
@@ -451,6 +458,14 @@ class _UTExtra(TypedDict, total=False):
     cache: Optional[str]
 
 
+def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
+    name = getattr(func, "__name__", None) or ""
+    description = getattr(func, "__doc__", None) or ""
+    if description:
+        description = f" - {description.strip()}"
+    return f"{name}{sig}{description}"
+
+
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
 ) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
@@ -461,17 +476,17 @@ def _ensure_example(
     signature = inspect.signature(func)
     # 2. Create the example
     inputs: dict = rh._get_inputs_safe(signature, *args, **kwargs)
-    example_id = langtest_extra["id"] or _get_id(func, inputs)
     outputs = {}
     if output_keys:
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
     test_suite = _LangSmithTestSuite.from_test(client, func)
+    example_id = langtest_extra["id"] or _get_id(func, inputs, test_suite.id)
     test_suite.sync_example(
         example_id,
         inputs,
         outputs,
-        metadata={"signature": str(signature), "name": getattr(func, "__name__", None)},
+        metadata={"signature": _get_test_repr(func, signature)},
     )
     return test_suite, example_id
 
