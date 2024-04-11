@@ -36,7 +36,9 @@ class EditDistance:
     @staticmethod
     def _get_metric(distance: str, normalize_score: bool = False) -> Callable:
         try:
-            from rapidfuzz import distance as rf_distance
+            from rapidfuzz import (  # type: ignore[import-not-found]
+                distance as rf_distance,
+            )
         except ImportError:
             raise ImportError(
                 "This operation requires the rapidfuzz library to use."

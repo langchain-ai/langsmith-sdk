@@ -245,8 +245,11 @@ class _Expect:
 
 
         Examples:
-            >>> expect.embedding_distance("hello", "hi").to_be_less_than(0.5)
-        """
+            >>> expect.embedding_distance(
+            ...     prediction="hello",
+            ...     reference="hi",
+            ... ).to_be_less_than(0.5)
+        """  # noqa: E501
         from langsmith._internal._embedding_distance import EmbeddingDistance
 
         config = config or {}

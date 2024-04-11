@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     List,
     Literal,
@@ -19,9 +20,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
-Matrix = Union[List[List[float]], List[np.ndarray], np.ndarray]
+Matrix = Union[List[List[float]], List[Any], Any]
 
 
 def cosine_similarity(X: Matrix, Y: Matrix) -> np.ndarray:
@@ -137,7 +136,7 @@ class EmbeddingDistance:
         Returns:
             np.ndarray: The cosine distance.
         """
-        return 1.0 - cosine_similarity(a, b)
+        return 1.0 - cosine_similarity([a], [b])
 
     @staticmethod
     def _euclidean_distance(a: np.ndarray, b: np.ndarray) -> np.floating:
