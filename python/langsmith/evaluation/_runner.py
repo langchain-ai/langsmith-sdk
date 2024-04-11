@@ -538,6 +538,7 @@ class _ExperimentManagerMixin:
                 **metadata,
             }
         self._metadata = metadata or {}
+        self._metadata = {**ls_env.get_git_info(), **self._metadata}
 
     @property
     def experiment_name(self) -> str:
