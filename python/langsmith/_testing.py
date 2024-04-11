@@ -273,6 +273,8 @@ def _get_test_suite_name() -> str:
     test_suite_name = ls_utils.get_env_var("TEST_SUITE")
     if test_suite_name:
         return test_suite_name
+    breakpoint()
+    # The test suite should
     if __package__:
         return __package__ + " Test Suite"
     git_info = ls_env.get_git_info()
@@ -353,6 +355,10 @@ class _LangSmithTestSuite:
     @property
     def experiment_id(self):
         return self._experiment.id
+
+    @property
+    def experiment(self):
+        return self._experiment
 
     @classmethod
     def get_singleton(cls, client: Optional[ls_client.Client]) -> _LangSmithTestSuite:
@@ -476,7 +482,17 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
         if langtest_extra["cache"]
         else None
     )
-    with ls_utils.with_optional_cache(
+    current_context = rh.get_tracing_context()
+    metadata = {
+        **(current_context["metadata"] or {}),
+        **{
+            "experiment": test_suite.experiment.name,
+            "reference_example_id": str(example_id),
+        },
+    }
+    with rh.tracing_context(
+        **{**current_context, "project_name": "evaluators", "metadata": metadata}
+    ), ls_utils.with_optional_cache(
         cache_path, ignore_hosts=[test_suite.client.api_url]
     ):
         _test()

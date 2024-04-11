@@ -285,13 +285,13 @@ def _get_tracing_sampling_rate() -> float | None:
     float
         The tracing sampling rate.
     """
-    sampling_rate_str = os.getenv("LANGCHAIN_TRACING_SAMPLING_RATE")
+    sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
     if sampling_rate_str is None:
         return None
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
-            "LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set."
+            "LANGSMITH_TRACING_SAMPLING_RATE must be between 0 and 1 if set."
             f" Got: {sampling_rate}"
         )
     return sampling_rate

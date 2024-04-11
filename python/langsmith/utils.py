@@ -312,7 +312,7 @@ def get_env_var(
     name: str,
     default: Optional[str] = None,
     *,
-    namespaces: Tuple = ("LANGSMITH", "LANGCHAINs"),
+    namespaces: Tuple = ("LANGSMITH", "LANGCHAIN"),
 ) -> Optional[str]:
     """Retrieve an environment variable from a list of namespaces.
 
