@@ -523,12 +523,12 @@ class Client:
         self._hide_inputs = (
             hide_inputs
             if hide_inputs is not None
-            else os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true"
+            else ls_utils.get_env_var("HIDE_INPUTS") == "true"
         )
         self._hide_outputs = (
             hide_outputs
             if hide_outputs is not None
-            else os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true"
+            else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 
     def _repr_html_(self) -> str:

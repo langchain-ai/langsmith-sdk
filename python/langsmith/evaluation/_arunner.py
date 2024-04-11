@@ -90,7 +90,7 @@ async def aevaluate(
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
 
     Environment:
-        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to save time and
+        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to save time and
             cost during testing. Recommended to commit the cache files to your repository
             for faster CI/CD runs.
             Requires the 'langsmith[vcr]' package to be installed.

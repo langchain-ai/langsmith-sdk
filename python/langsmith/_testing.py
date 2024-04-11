@@ -7,7 +7,6 @@ import functools
 import inspect
 import json
 import logging
-import os
 import threading
 import uuid
 import warnings
@@ -71,11 +70,11 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         Callable: The decorated test function.
 
     Environment:
-        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to
+        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to
             save time and costs during testing. Recommended to commit the
             cache files to your repository for faster CI/CD runs.
             Requires the 'langsmith[vcr]' package to be installed.
-        - LANGCHAIN_TEST_TRACKING: Set this variable to the path of a directory
+        - LANGSMITH_TEST_TRACKING: Set this variable to the path of a directory
             to enable caching of test results. This is useful for re-running tests
              without re-executing the code. Requires the 'langsmith[vcr]' package.
 
@@ -103,7 +102,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...     assert a + b == 7
 
         LLM calls are expensive! Cache requests by setting
-        `LANGCHAIN_TEST_CACHE=path/to/cache`. Check in these files to speed up
+        `LANGSMITH_TEST_CACHE=path/to/cache`. Check in these files to speed up
         CI/CD pipelines, so your results only change when your prompt or requested
         model changes.
 
@@ -114,7 +113,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         Caching is faster if you install libyaml. See
         https://vcrpy.readthedocs.io/en/latest/installation.html#speed for more details.
 
-        >>> # os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
+        >>> # os.environ["LANGSMITH_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
         >>> oai_client = wrap_openai(openai.Client())
@@ -132,8 +131,6 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
 
         LLMs are stochastic. Naive assertions are flakey. You can use langsmith's
         `expect` to score and make approximate assertions on your results.
-        Note that currently the embedding, string distance, and LLM-based
-        expectations rely on `langchain` to run.
 
         >>> from langsmith import expect
         >>> @unit
@@ -229,7 +226,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     disable_tracking = ls_utils.test_tracking_is_disabled()
     if disable_tracking:
         warnings.warn(
-            "LANGCHAIN_TEST_TRACKING is set to 'false'."
+            "LANGSMITH_TEST_TRACKING is set to 'false'."
             " Skipping LangSmith test tracking."
         )
 
@@ -273,7 +270,7 @@ def _get_experiment_name() -> str:
 
 def _get_test_suite_name() -> str:
     # TODO: This naming stuff is inelegant
-    test_suite_name = os.environ.get("LANGCHAIN_TEST_SUITE")
+    test_suite_name = ls_utils.get_env_var("TEST_SUITE")
     if test_suite_name:
         return test_suite_name
     if __package__:
@@ -284,7 +281,7 @@ def _get_test_suite_name() -> str:
             repo_name = git_info["remote_url"].split("/")[-1].split(".")[0]
             if repo_name:
                 return repo_name + " Test Suite"
-    raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
+    raise ValueError("Please set the LANGSMITH_TEST_SUITE environment variable.")
 
 
 def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
