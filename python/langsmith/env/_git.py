@@ -22,23 +22,32 @@ def exec_git(command: List[str]) -> Optional[str]:
 
 
 class GitInfo(TypedDict, total=False):
+    repo_name: Optional[str]
     remote_url: Optional[str]
     commit: Optional[str]
     branch: Optional[str]
     author_name: Optional[str]
     author_email: Optional[str]
-    commit_message: Optional[str]
     commit_time: Optional[str]
     dirty: Optional[bool]
     tags: Optional[str]
 
 
 @functools.lru_cache(maxsize=1)
-def get_git_info(remote: str = "origin") -> Optional[GitInfo]:
+def get_git_info(remote: str = "origin") -> GitInfo:
     """Get information about the git repository."""
-
     if not exec_git(["rev-parse", "--is-inside-work-tree"]):
-        return None
+        return GitInfo(
+            remote_url=None,
+            commit=None,
+            branch=None,
+            author_name=None,
+            author_email=None,
+            commit_time=None,
+            dirty=None,
+            tags=None,
+            repo_name=None,
+        ) 
 
     return {
         "remote_url": exec_git(["remote", "get-url", remote]),
@@ -51,4 +60,5 @@ def get_git_info(remote: str = "origin") -> Optional[GitInfo]:
         "dirty": exec_git(["status", "--porcelain"]) != "",
         "author_name": exec_git(["log", "-1", "--format=%an"]),
         "author_email": exec_git(["log", "-1", "--format=%ae"]),
+        "repo_name": (exec_git(["rev-parse", "--show-toplevel"]) or "").split("/")[-1],
     }

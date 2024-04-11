@@ -271,9 +271,11 @@ def _get_test_suite_name(func: Callable) -> str:
     test_suite_name = ls_utils.get_env_var("TEST_SUITE")
     if test_suite_name:
         return test_suite_name
+    repo_name = ls_env.get_git_info()["repo_name"]
     try:
-        rel_path = Path(__file__).relative_to(Path.cwd())
-        return str(rel_path.with_suffix("")).replace("/", ".")
+        mod = inspect.getmodule(func)
+        if mod:
+            return f"{repo_name}.{mod.__name__}"
     except BaseException:
         logger.debug("Could not determine test suite name from file path.")
 
@@ -286,7 +288,7 @@ def _get_test_suite(
     if client.has_dataset(dataset_name=test_suite_name):
         return client.read_dataset(dataset_name=test_suite_name)
     else:
-        repo = ((ls_env.get_git_info() or {}).get("remote_url")) or ""
+        repo = ls_env.get_git_info().get("remote_url") or ""
         description = "Unit test suite"
         if repo:
             description += f" for {repo}"
