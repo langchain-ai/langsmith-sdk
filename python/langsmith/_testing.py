@@ -287,7 +287,13 @@ def _get_test_suite(
     if client.has_dataset(dataset_name=test_suite_name):
         return client.read_dataset(dataset_name=test_suite_name)
     else:
-        return client.create_dataset(dataset_name=test_suite_name)
+        repo = ((ls_env.get_git_info() or {}).get("remote_url")) or ""
+        description = "Unit test suite"
+        if repo:
+            description += f" for {repo}"
+        return client.create_dataset(
+            dataset_name=test_suite_name, description=description
+        )
 
 
 def _start_experiment(
@@ -297,9 +303,14 @@ def _start_experiment(
     experiment_name = _get_experiment_name()
     try:
         return client.create_project(
-            experiment_name, 
-            reference_dataset_id=test_suite.id, 
-            description="Test Suite Results from  "
+            experiment_name,
+            reference_dataset_id=test_suite.id,
+            description="Test Suite Results.",
+            metadata={
+                "revision_id": ls_env.get_langchain_env_var_metadata().get(
+                    "revision_id"
+                )
+            },
         )
     except ls_utils.LangSmithConflictError:
         return client.read_project(project_name=experiment_name)
@@ -505,7 +516,7 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
         },
     }
     with rh.tracing_context(
-        **{**current_context, "project_name": "evaluators", "metadata": metadata}
+        **{**current_context, "metadata": metadata}
     ), ls_utils.with_optional_cache(
         cache_path, ignore_hosts=[test_suite.client.api_url]
     ):
