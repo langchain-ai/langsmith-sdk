@@ -1233,7 +1233,7 @@ class Client:
         if not raw_body["post"] and not raw_body["patch"]:
             return
 
-        self._insert_runtime_env(raw_body["post"])
+        self._insert_runtime_env(raw_body["post"] + raw_body["patch"])
         info = self.info
 
         size_limit_bytes = (info.batch_ingest_config or {}).get(
