@@ -909,29 +909,44 @@ class _ExperimentManager(_ExperimentManagerMixin):
         aggregate_feedback = []
         with cf.ThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id
-            for evaluator in summary_evaluators:
-                try:
-                    summary_eval_result = evaluator(runs, examples)
-                    # TODO: Expose public API for this.
-                    flattened_results = self.client._select_eval_results(
-                        summary_eval_result,
-                        fn_name=evaluator.__name__,
-                    )
-                    aggregate_feedback.extend(flattened_results)
-                    for result in flattened_results:
-                        feedback = result.dict(exclude={"target_run_id"})
-                        evaluator_info = feedback.pop("evaluator_info", None)
-                        executor.submit(
-                            self.client.create_feedback,
-                            **feedback,
-                            run_id=None,
-                            project_id=project_id,
-                            source_info=evaluator_info,
+            current_context = rh.get_tracing_context()
+            metadata = {
+                **(current_context["metadata"] or {}),
+                **{
+                    "experiment": self.experiment_name,
+                    "experiment_id": project_id,
+                },
+            }
+            with rh.tracing_context(
+                **{
+                    **current_context,
+                    "project_name": "evaluators",
+                    "metadata": metadata,
+                }
+            ):
+                for evaluator in summary_evaluators:
+                    try:
+                        summary_eval_result = evaluator(runs, examples)
+                        # TODO: Expose public API for this.
+                        flattened_results = self.client._select_eval_results(
+                            summary_eval_result,
+                            fn_name=evaluator.__name__,
                         )
-                except Exception as e:
-                    logger.error(
-                        f"Error running summary evaluator {repr(evaluator)}: {e}"
-                    )
+                        aggregate_feedback.extend(flattened_results)
+                        for result in flattened_results:
+                            feedback = result.dict(exclude={"target_run_id"})
+                            evaluator_info = feedback.pop("evaluator_info", None)
+                            executor.submit(
+                                self.client.create_feedback,
+                                **feedback,
+                                run_id=None,
+                                project_id=project_id,
+                                source_info=evaluator_info,
+                            )
+                    except Exception as e:
+                        logger.error(
+                            f"Error running summary evaluator {repr(evaluator)}: {e}"
+                        )
         yield {"results": aggregate_feedback}
 
     def _get_dataset_version(self) -> Optional[str]:

@@ -418,7 +418,6 @@ class _LangSmithTestSuite:
         self._executor.submit(
             self._sync_example, example_id, inputs, outputs, metadata.copy()
         )
-        # self._sync_example(example_id, inputs, outputs, metadata)
 
     def _sync_example(
         self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
