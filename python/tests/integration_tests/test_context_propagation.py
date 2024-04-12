@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 from httpx import AsyncClient
+from uvicorn import Config, Server
 
 from langsmith import traceable
 from langsmith.run_helpers import get_current_span
@@ -17,8 +18,6 @@ def event_loop():
 
 @pytest.fixture(scope="module")
 async def fake_server():
-    from uvicorn import Config, Server
-
     config = Config(app=fake_app, loop="asyncio", port=8000, log_level="info")
     server = Server(config=config)
 
@@ -26,8 +25,10 @@ async def fake_server():
     await asyncio.sleep(0.1)
 
     yield
-
-    await server.shutdown()
+    try:
+        await server.shutdown()
+    except RuntimeError:
+        pass
 
 
 @traceable

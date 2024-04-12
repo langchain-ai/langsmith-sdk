@@ -19,6 +19,8 @@ def fake_function():
 
 @fake_app.post("/fake-route")
 async def fake_route(request: Request):
-    with tracing_context(headers=request.headers):
+    with tracing_context(
+        project_name="Definitely-not-your-grandpas-project", headers=request.headers
+    ):
         fake_function()
     return {"message": "Fake route response"}
