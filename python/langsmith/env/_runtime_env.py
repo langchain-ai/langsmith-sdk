@@ -168,7 +168,7 @@ def get_langchain_env_var_metadata() -> dict:
     langchain_metadata = {
         k: v
         for k, v in os.environ.items()
-        if k.startswith("LANGCHAIN_")
+        if (k.startswith("LANGCHAIN_") or k.startswith("LANGSMITH_"))
         and k not in excluded
         and "key" not in k.lower()
         and "secret" not in k.lower()

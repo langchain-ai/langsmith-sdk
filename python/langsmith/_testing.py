@@ -7,7 +7,6 @@ import functools
 import inspect
 import json
 import logging
-import os
 import threading
 import uuid
 import warnings
@@ -71,11 +70,11 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         Callable: The decorated test function.
 
     Environment:
-        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to
+        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to
             save time and costs during testing. Recommended to commit the
             cache files to your repository for faster CI/CD runs.
             Requires the 'langsmith[vcr]' package to be installed.
-        - LANGCHAIN_TEST_TRACKING: Set this variable to the path of a directory
+        - LANGSMITH_TEST_TRACKING: Set this variable to the path of a directory
             to enable caching of test results. This is useful for re-running tests
              without re-executing the code. Requires the 'langsmith[vcr]' package.
 
@@ -103,7 +102,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...     assert a + b == 7
 
         LLM calls are expensive! Cache requests by setting
-        `LANGCHAIN_TEST_CACHE=path/to/cache`. Check in these files to speed up
+        `LANGSMITH_TEST_CACHE=path/to/cache`. Check in these files to speed up
         CI/CD pipelines, so your results only change when your prompt or requested
         model changes.
 
@@ -114,13 +113,13 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         Caching is faster if you install libyaml. See
         https://vcrpy.readthedocs.io/en/latest/installation.html#speed for more details.
 
-        >>> os.environ["LANGCHAIN_TEST_CACHE"] = "tests/cassettes"
+        >>> # os.environ["LANGSMITH_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
+        >>> oai_client = wrap_openai(openai.Client())
         >>> @unit
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
-        ...     oai_client = wrap_openai(openai.Client())
         ...     response = oai_client.chat.completions.create(
         ...         model="gpt-3.5-turbo",
         ...         messages=[
@@ -129,6 +128,34 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...         ],
         ...     )
         ...     assert "hello" in response.choices[0].message.content.lower()
+
+        LLMs are stochastic. Naive assertions are flakey. You can use langsmith's
+        `expect` to score and make approximate assertions on your results.
+
+        >>> from langsmith import expect
+        >>> @unit
+        ... def test_output_semantically_close():
+        ...     response = oai_client.chat.completions.create(
+        ...         model="gpt-3.5-turbo",
+        ...         messages=[
+        ...             {"role": "system", "content": "You are a helpful assistant."},
+        ...             {"role": "user", "content": "Say hello!"},
+        ...         ],
+        ...     )
+        ...     # The embedding_distance call logs the embedding distance to LangSmith
+        ...     expect.embedding_distance(
+        ...         prediction=response.choices[0].message.content,
+        ...         reference="Hello!",
+        ...         # The following optional assertion logs a
+        ...         # pass/fail score to LangSmith
+        ...         # and raises an AssertionError if the assertion fails.
+        ...     ).to_be_less_than(1.0)
+        ...     # Compute damerau_levenshtein distance
+        ...     expect.edit_distance(
+        ...         prediction=response.choices[0].message.content,
+        ...         reference="Hello!",
+        ...         # And then log a pass/fail score to LangSmith
+        ...     ).to_be_less_than(1.0)
 
         The `@unit` decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.
@@ -160,8 +187,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         By default, each test case will be assigned a consistent, unique identifier
         based on the function name and module. You can also provide a custom identifier
         using the `id` argument:
-
-        >>> @unit(id=uuid.uuid4())
+        >>> @unit(id="1a77e4b5-1d38-4081-b829-b0442cf3f145")
         ... def test_multiplication():
         ...     assert 3 * 4 == 12
 
@@ -178,6 +204,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
 
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
+        >>> test_output_semantically_close()
         >>> test_addition()
         >>> test_nested()
         >>> test_with_fixture("Some input")
@@ -195,10 +222,10 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
-    disable_tracking = os.environ.get("LANGCHAIN_TEST_TRACKING") == "false"
+    disable_tracking = ls_utils.test_tracking_is_disabled()
     if disable_tracking:
         warnings.warn(
-            "LANGCHAIN_TEST_TRACKING is set to 'false'."
+            "LANGSMITH_TEST_TRACKING is set to 'false'."
             " Skipping LangSmith test tracking."
         )
 
@@ -240,29 +267,34 @@ def _get_experiment_name() -> str:
     return name
 
 
-def _get_test_suite_name() -> str:
-    # TODO: This naming stuff is inelegant
-    test_suite_name = os.environ.get("LANGCHAIN_TEST_SUITE")
+def _get_test_suite_name(func: Callable) -> str:
+    test_suite_name = ls_utils.get_env_var("TEST_SUITE")
     if test_suite_name:
         return test_suite_name
-    if __package__:
-        return __package__ + " Test Suite"
-    git_info = ls_env.get_git_info()
-    if git_info:
-        if git_info["remote_url"]:
-            repo_name = git_info["remote_url"].split("/")[-1].split(".")[0]
-            if repo_name:
-                return repo_name + " Test Suite"
-    raise ValueError("Please set the LANGCHAIN_TEST_SUITE environment variable.")
+    repo_name = ls_env.get_git_info()["repo_name"]
+    try:
+        mod = inspect.getmodule(func)
+        if mod:
+            return f"{repo_name}.{mod.__name__}"
+    except BaseException:
+        logger.debug("Could not determine test suite name from file path.")
+
+    raise ValueError("Please set the LANGSMITH_TEST_SUITE environment variable.")
 
 
-def _get_test_suite(client: ls_client.Client) -> ls_schemas.Dataset:
-    test_suite_name = _get_test_suite_name()
-
+def _get_test_suite(
+    client: ls_client.Client, test_suite_name: str
+) -> ls_schemas.Dataset:
     if client.has_dataset(dataset_name=test_suite_name):
         return client.read_dataset(dataset_name=test_suite_name)
     else:
-        return client.create_dataset(dataset_name=test_suite_name)
+        repo = ls_env.get_git_info().get("remote_url") or ""
+        description = "Unit test suite"
+        if repo:
+            description += f" for {repo}"
+        return client.create_dataset(
+            dataset_name=test_suite_name, description=description
+        )
 
 
 def _start_experiment(
@@ -270,17 +302,29 @@ def _start_experiment(
     test_suite: ls_schemas.Dataset,
 ) -> ls_schemas.TracerSession:
     experiment_name = _get_experiment_name()
-    return client.create_project(experiment_name, reference_dataset_id=test_suite.id)
+    try:
+        return client.create_project(
+            experiment_name,
+            reference_dataset_id=test_suite.id,
+            description="Test Suite Results.",
+            metadata={
+                "revision_id": ls_env.get_langchain_env_var_metadata().get(
+                    "revision_id"
+                )
+            },
+        )
+    except ls_utils.LangSmithConflictError:
+        return client.read_project(project_name=experiment_name)
 
 
-def _get_id(func: Callable, inputs: dict) -> uuid.UUID:
+def _get_id(func: Callable, inputs: dict, suite_id: uuid.UUID) -> uuid.UUID:
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
         # Fall back to module name if file path is not available
         file_path = func.__module__
     input_json = json.dumps(inputs, sort_keys=True)
-    identifier = f"{file_path}::{func.__name__}{input_json}"
+    identifier = f"{suite_id}{file_path}::{func.__name__}{input_json}"
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
 
 
@@ -297,7 +341,7 @@ def _end_tests(
 
 
 class _LangSmithTestSuite:
-    _instance = None
+    _instances: Optional[dict] = None
     _lock = threading.RLock()
 
     def __init__(
@@ -321,26 +365,37 @@ class _LangSmithTestSuite:
     def experiment_id(self):
         return self._experiment.id
 
+    @property
+    def experiment(self):
+        return self._experiment
+
     @classmethod
-    def get_singleton(cls, client: Optional[ls_client.Client]) -> _LangSmithTestSuite:
+    def from_test(
+        cls, client: Optional[ls_client.Client], func: Callable
+    ) -> _LangSmithTestSuite:
         client = client or ls_client.Client()
+        test_suite_name = _get_test_suite_name(func)
         with cls._lock:
-            if not cls._instance:
-                test_suite = _get_test_suite(client)
+            if not cls._instances:
+                cls._instances = {}
+            if test_suite_name not in cls._instances:
+                test_suite = _get_test_suite(client, test_suite_name)
                 experiment = _start_experiment(client, test_suite)
-                cls._instance = cls(client, experiment, test_suite)
-        return cls._instance
+                cls._instances[test_suite_name] = cls(client, experiment, test_suite)
+        return cls._instances[test_suite_name]
 
     @property
     def name(self):
         return self._experiment.name
 
     def update_version(self, version: datetime.datetime) -> None:
-        if self._version is None or version > self._version:
-            self._version = version
+        with self._lock:
+            if self._version is None or version > self._version:
+                self._version = version
 
     def get_version(self) -> Optional[datetime.datetime]:
-        return self._version
+        with self._lock:
+            return self._version
 
     def submit_result(self, run_id: uuid.UUID, error: Optional[str] = None) -> None:
         self._executor.submit(self._submit_result, run_id, error)
@@ -357,17 +412,29 @@ class _LangSmithTestSuite:
                 score=1,
             )
 
-    def sync_example(self, example_id: uuid.UUID, inputs: dict, outputs: dict) -> None:
-        self._executor.submit(self._sync_example, example_id, inputs, outputs)
+    def sync_example(
+        self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
+    ) -> None:
+        self._executor.submit(
+            self._sync_example, example_id, inputs, outputs, metadata.copy()
+        )
 
-    def _sync_example(self, example_id: uuid.UUID, inputs: dict, outputs: dict) -> None:
+    def _sync_example(
+        self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
+    ) -> None:
         try:
             example = self.client.read_example(example_id=example_id)
-            if inputs != example.inputs or outputs != example.outputs:
+            if (
+                inputs != example.inputs
+                or outputs != example.outputs
+                or str(example.dataset_id) != str(self.id)
+            ):
                 self.client.update_example(
                     example_id=example.id,
                     inputs=inputs,
                     outputs=outputs,
+                    metadata=metadata,
+                    dataset_id=self.id,
                 )
         except ls_utils.LangSmithNotFoundError:
             example = self.client.create_example(
@@ -375,6 +442,7 @@ class _LangSmithTestSuite:
                 inputs=inputs,
                 outputs=outputs,
                 dataset_id=self.id,
+                metadata=metadata,
             )
         if example.modified_at:
             self.update_version(example.modified_at)
@@ -391,6 +459,14 @@ class _UTExtra(TypedDict, total=False):
     cache: Optional[str]
 
 
+def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
+    name = getattr(func, "__name__", None) or ""
+    description = getattr(func, "__doc__", None) or ""
+    if description:
+        description = f" - {description.strip()}"
+    return f"{name}{sig}{description}"
+
+
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
 ) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
@@ -401,14 +477,18 @@ def _ensure_example(
     signature = inspect.signature(func)
     # 2. Create the example
     inputs: dict = rh._get_inputs_safe(signature, *args, **kwargs)
-    example_id = langtest_extra["id"] or _get_id(func, inputs)
     outputs = {}
     if output_keys:
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
-    # TODO: Support multiple test suites
-    test_suite = _LangSmithTestSuite.get_singleton(client)
-    test_suite.sync_example(example_id, inputs, outputs)
+    test_suite = _LangSmithTestSuite.from_test(client, func)
+    example_id = langtest_extra["id"] or _get_id(func, inputs, test_suite.id)
+    test_suite.sync_example(
+        example_id,
+        inputs,
+        outputs,
+        metadata={"signature": _get_test_repr(func, signature)},
+    )
     return test_suite, example_id
 
 
@@ -443,7 +523,17 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
         if langtest_extra["cache"]
         else None
     )
-    with ls_utils.with_optional_cache(
+    current_context = rh.get_tracing_context()
+    metadata = {
+        **(current_context["metadata"] or {}),
+        **{
+            "experiment": test_suite.experiment.name,
+            "reference_example_id": str(example_id),
+        },
+    }
+    with rh.tracing_context(
+        **{**current_context, "metadata": metadata}
+    ), ls_utils.with_optional_cache(
         cache_path, ignore_hosts=[test_suite.client.api_url]
     ):
         _test()

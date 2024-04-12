@@ -8,8 +8,8 @@ To install:
 
 ```bash
 pip install -U langsmith
-export LANGCHAIN_TRACING_V2=true
-export LANGCHAIN_API_KEY=ls_...
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=ls_...
 ```
 
 Then trace:
@@ -68,10 +68,10 @@ Tracing can be activated by setting the following environment variables or by ma
 
 ```python
 import os
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
-os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
-# os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
+os.environ["LANGSMITH_TRACING_V2"] = "true"
+os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
+os.environ["LANGSMITH_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
+# os.environ["LANGSMITH_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
 
 > **Tip:** Projects are groups of traces. All runs are logged to a project. If not specified, the project is set to `default`.
