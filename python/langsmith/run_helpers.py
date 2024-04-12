@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from langchain.schema.runnable import Runnable
 
 logger = logging.getLogger(__name__)
-_PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
+_PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.Span]](
     "_PARENT_RUN_TREE", default=None
 )
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
@@ -47,8 +47,13 @@ _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
 
 
-def get_current_run_tree() -> Optional[run_trees.RunTree]:
+def get_current_span() -> Optional[run_trees.Span]:
     """Get the current run tree."""
+    return _PARENT_RUN_TREE.get()
+
+
+def get_parent_span() -> Optional[run_trees.Span]:
+    """Get the parent run tree."""
     return _PARENT_RUN_TREE.get()
 
 
@@ -68,14 +73,21 @@ def tracing_context(
     project_name: Optional[str] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
-    parent_run: Optional[run_trees.RunTree] = None,
+    parent_run: Optional[run_trees.Span] = None,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code."""
-    parent_run_ = get_run_tree_context()
+    parent_run_ = get_tracing_context()
     _PROJECT_NAME.set(project_name)
     _TAGS.set(tags)
     _METADATA.set(metadata)
-    _PARENT_RUN_TREE.set(parent_run)
+    if parent_run is not None:
+        _PARENT_RUN_TREE.set(parent_run)
+    elif headers is not None:
+        parent_run = run_trees.Span.from_headers(headers)
+        _PARENT_RUN_TREE.set(parent_run)
+    else:
+        _PARENT_RUN_TREE.set(None)
     try:
         yield
     finally:
@@ -85,6 +97,7 @@ def tracing_context(
         _PARENT_RUN_TREE.set(parent_run_)
 
 
+get_current_run_tree = get_current_span
 get_run_tree_context = get_current_run_tree
 
 
@@ -143,24 +156,24 @@ class LangSmithExtra(TypedDict, total=False):
 
     reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
-    run_tree: Optional[run_trees.RunTree]
+    run_tree: Optional[run_trees.Span]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
     run_id: Optional[ls_client.ID_TYPE]
     client: Optional[ls_client.Client]
-    on_end: Optional[Callable[[run_trees.RunTree], Any]]
+    on_end: Optional[Callable[[run_trees.Span], Any]]
 
 
 class _TraceableContainer(TypedDict, total=False):
     """Typed response when initializing a run a traceable."""
 
-    new_run: Optional[run_trees.RunTree]
+    new_run: Optional[run_trees.Span]
     project_name: Optional[str]
     outer_project: Optional[str]
     outer_metadata: Optional[Dict[str, Any]]
     outer_tags: Optional[List[str]]
-    on_end: Optional[Callable[[run_trees.RunTree], Any]]
+    on_end: Optional[Callable[[run_trees.Span], Any]]
 
 
 class _ContainerInput(TypedDict, total=False):
@@ -296,7 +309,7 @@ def _setup_run(
             run_id=id_,
         )
     else:
-        new_run = run_trees.RunTree(
+        new_run = run_trees.Span(
             id=id_,
             name=name_,
             serialized={
@@ -808,12 +821,12 @@ def trace(
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
     project_name: Optional[str] = None,
-    run_tree: Optional[run_trees.RunTree] = None,
+    run_tree: Optional[run_trees.Span] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     client: Optional[ls_client.Client] = None,
     **kwargs: Any,
-) -> Generator[run_trees.RunTree, None, None]:
+) -> Generator[run_trees.Span, None, None]:
     """Context manager for creating a run tree."""
     if kwargs:
         # In case someone was passing an executor before.
@@ -846,7 +859,7 @@ def trace(
             tags=tags_,
         )
     else:
-        new_run = run_trees.RunTree(
+        new_run = run_trees.Span(
             name=name,
             run_type=run_type,
             extra=extra_outer,
@@ -956,8 +969,8 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             )
 
         @staticmethod
-        def _configure_run_tree(callback_manager: Any) -> Optional[run_trees.RunTree]:
-            run_tree: Optional[run_trees.RunTree] = None
+        def _configure_run_tree(callback_manager: Any) -> Optional[run_trees.Span]:
+            run_tree: Optional[run_trees.Span] = None
             if isinstance(callback_manager, (CallbackManager, AsyncCallbackManager)):
                 lc_tracers = [
                     handler
@@ -966,7 +979,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
                 ]
                 if lc_tracers:
                     lc_tracer = lc_tracers[0]
-                    run_tree = run_trees.RunTree(
+                    run_tree = run_trees.Span(
                         id=callback_manager.parent_run_id,
                         session_name=lc_tracer.project_name,
                         name="Wrapping",

@@ -285,13 +285,13 @@ def _get_tracing_sampling_rate() -> float | None:
     float
         The tracing sampling rate.
     """
-    sampling_rate_str = os.getenv("LANGCHAIN_TRACING_SAMPLING_RATE")
+    sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
     if sampling_rate_str is None:
         return None
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
-            "LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set."
+            "LANGSMITH_TRACING_SAMPLING_RATE must be between 0 and 1 if set."
             f" Got: {sampling_rate}"
         )
     return sampling_rate
@@ -523,12 +523,12 @@ class Client:
         self._hide_inputs = (
             hide_inputs
             if hide_inputs is not None
-            else os.environ.get("LANGCHAIN_HIDE_INPUTS") == "true"
+            else ls_utils.get_env_var("HIDE_INPUTS") == "true"
         )
         self._hide_outputs = (
             hide_outputs
             if hide_outputs is not None
-            else os.environ.get("LANGCHAIN_HIDE_OUTPUTS") == "true"
+            else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 
     def _repr_html_(self) -> str:
@@ -1233,7 +1233,7 @@ class Client:
         if not raw_body["post"] and not raw_body["patch"]:
             return
 
-        self._insert_runtime_env(raw_body["post"])
+        self._insert_runtime_env(raw_body["post"] + raw_body["patch"])
         info = self.info
 
         size_limit_bytes = (info.batch_ingest_config or {}).get(

@@ -48,8 +48,8 @@ def pprint_services(services_status: List[Mapping[str, Union[str, List[str]]]]) 
     service_message.append(
         "\nTo connect, set the following environment variables"
         " in your LangChain application:"
-        "\nLANGCHAIN_TRACING_V2=true"
-        "\nLANGCHAIN_ENDPOINT=http://localhost:80/api"
+        "\nLANGSMITH_TRACING_V2=true"
+        "\nLANGSMITH_ENDPOINT=http://localhost:80/api"
     )
     logger.info("\n".join(service_message))
 
@@ -94,8 +94,8 @@ class LangSmithCommand:
             " when running your LangChain application.\n"
         )
 
-        logger.info("\tLANGCHAIN_TRACING_V2=true")
-        logger.info("\tLANGCHAIN_ENDPOINT=http://localhost:80/api\n")
+        logger.info("\tLANGSMITH_TRACING=true")
+        logger.info("\tLANGSMITH_ENDPOINT=http://localhost:80/api\n")
         self._open_browser("http://localhost")
 
     def pull(
