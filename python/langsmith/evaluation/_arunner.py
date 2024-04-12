@@ -90,7 +90,7 @@ async def aevaluate(
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
 
     Environment:
-        - LANGCHAIN_TEST_CACHE: If set, API calls will be cached to disk to save time and
+        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to save time and
             cost during testing. Recommended to commit the cache files to your repository
             for faster CI/CD runs.
             Requires the 'langsmith[vcr]' package to be installed.
@@ -629,26 +629,43 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             examples.append(example)
         aggregate_feedback = []
         project_id = self._get_experiment().id
-        for evaluator in summary_evaluators:
-            try:
-                # TODO: Support async evaluators
-                summary_eval_result = evaluator(runs, examples)
-                flattened_results = self.client._select_eval_results(
-                    summary_eval_result,
-                    fn_name=evaluator.__name__,
-                )
-                aggregate_feedback.extend(flattened_results)
-                for result in flattened_results:
-                    feedback = result.dict(exclude={"target_run_id"})
-                    evaluator_info = feedback.pop("evaluator_info", None)
-                    self.client.create_feedback(
-                        **feedback,
-                        run_id=None,
-                        project_id=project_id,
-                        source_info=evaluator_info,
+        current_context = rh.get_tracing_context()
+        metadata = {
+            **(current_context["metadata"] or {}),
+            **{
+                "experiment": self.experiment_name,
+                "experiment_id": project_id,
+            },
+        }
+        with rh.tracing_context(
+            **{
+                **current_context,
+                "project_name": "evaluators",
+                "metadata": metadata,
+            }
+        ):
+            for evaluator in summary_evaluators:
+                try:
+                    # TODO: Support async evaluators
+                    summary_eval_result = evaluator(runs, examples)
+                    flattened_results = self.client._select_eval_results(
+                        summary_eval_result,
+                        fn_name=evaluator.__name__,
                     )
-            except Exception as e:
-                logger.error(f"Error running summary evaluator {repr(evaluator)}: {e}")
+                    aggregate_feedback.extend(flattened_results)
+                    for result in flattened_results:
+                        feedback = result.dict(exclude={"target_run_id"})
+                        evaluator_info = feedback.pop("evaluator_info", None)
+                        self.client.create_feedback(
+                            **feedback,
+                            run_id=None,
+                            project_id=project_id,
+                            source_info=evaluator_info,
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Error running summary evaluator {repr(evaluator)}: {e}"
+                    )
         yield {"results": aggregate_feedback}
 
     async def _get_dataset_version(self) -> Optional[str]:

@@ -63,12 +63,13 @@ class LangSmithConnectionError(LangSmithError):
 
 def tracing_is_enabled() -> bool:
     """Return True if tracing is enabled."""
-    return (
-        os.environ.get(
-            "LANGCHAIN_TRACING_V2", os.environ.get("LANGCHAIN_TRACING", "")
-        ).lower()
-        == "true"
-    )
+    var_result = get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))
+    return var_result == "true"
+
+
+def test_tracking_is_disabled() -> bool:
+    """Return True if testing is enabled."""
+    return get_env_var("TEST_TRACKING", default="") == "false"
 
 
 def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
@@ -307,6 +308,33 @@ def is_base_message_like(obj: object) -> bool:
     )
 
 
+def get_env_var(
+    name: str,
+    default: Optional[str] = None,
+    *,
+    namespaces: Tuple = ("LANGSMITH", "LANGCHAIN"),
+) -> Optional[str]:
+    """Retrieve an environment variable from a list of namespaces.
+
+    Args:
+        name (str): The name of the environment variable.
+        default (Optional[str], optional): The default value to return if the
+            environment variable is not found. Defaults to None.
+        namespaces (Tuple, optional): A tuple of namespaces to search for the
+            environment variable. Defaults to ("LANGSMITH", "LANGCHAINs").
+
+    Returns:
+        Optional[str]: The value of the environment variable if found,
+            otherwise the default value.
+    """
+    names = [f"{namespace}_{name}" for namespace in namespaces]
+    for name in names:
+        value = os.environ.get(name)
+        if value is not None:
+            return value
+    return default
+
+
 def get_tracer_project(return_default_value=True) -> Optional[str]:
     """Get the project name for a LangSmith tracer."""
     return os.environ.get(
@@ -315,13 +343,12 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
         # for a hosted langserve deployment even if the customer sets some
         # other project name in their environment.
         "HOSTED_LANGSERVE_PROJECT_NAME",
-        os.environ.get(
-            "LANGCHAIN_PROJECT",
-            os.environ.get(
-                # This is the legacy name for a LANGCHAIN_PROJECT, so it
-                # has lower precedence than LANGCHAIN_PROJECT
-                "LANGCHAIN_SESSION",
-                "default" if return_default_value else None,
+        get_env_var(
+            "PROJECT",
+            # This is the legacy name for a LANGCHAIN_PROJECT, so it
+            # has lower precedence than LANGCHAIN_PROJECT
+            default=get_env_var(
+                "SESSION", default="default" if return_default_value else None
             ),
         ),
     )
@@ -399,11 +426,11 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
 
     Returns:
         Optional[str]: The cache path if provided, otherwise the value
-        from the LANGCHAIN_TEST_CACHE environment variable.
+        from the LANGSMITH_TEST_CACHE environment variable.
     """
     if cache is not None:
         return cache
-    return os.environ.get("LANGCHAIN_TEST_CACHE")
+    return get_env_var("TEST_CACHE", default=None)
 
 
 @contextlib.contextmanager
