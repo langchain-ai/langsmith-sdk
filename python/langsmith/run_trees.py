@@ -284,7 +284,7 @@ class Span(ls_schemas.RunBase):
 
         langsmith_trace = headers.get(f"{LANGSMITH_PREFIX}trace")
         if not langsmith_trace:
-            return None
+            return  # type: ignore[return-value]
 
         parent_dotted_order = langsmith_trace.strip()
         parsed_dotted_order = _parse_dotted_order(parent_dotted_order)
@@ -350,11 +350,11 @@ class _Baggage:
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
-                if key == f"{LANGSMITH_PREFIX}-metadata":
+                if key == f"{LANGSMITH_PREFIX}metadata":
                     metadata = json.loads(urllib.parse.unquote(value))
-                elif key == f"{LANGSMITH_PREFIX}-tags":
+                elif key == f"{LANGSMITH_PREFIX}tags":
                     tags = urllib.parse.unquote(value).split(",")
-                elif key == f"{LANGSMITH_PREFIX}-id":
+                elif key == f"{LANGSMITH_PREFIX}id":
                     id_ = UUID(value)
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
@@ -383,7 +383,7 @@ def _parse_dotted_order(dotted_order: str) -> List[Tuple[datetime, UUID]]:
     """Parse the dotted order string."""
     parts = dotted_order.split(".")
     return [
-        (datetime.strptime(part[:23], "%Y%m%dT%H%M%S%fZ"), UUID(part[23:]))
+        (datetime.strptime(part[:-36], "%Y%m%dT%H%M%S%fZ"), UUID(part[-36:]))
         for part in parts
     ]
 

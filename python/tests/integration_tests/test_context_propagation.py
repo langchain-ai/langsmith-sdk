@@ -1,0 +1,47 @@
+import asyncio
+
+import pytest
+from httpx import AsyncClient
+
+from langsmith import traceable
+from langsmith.run_helpers import get_current_span
+from tests.integration_tests.fake_server import fake_app
+
+
+@pytest.fixture(scope="module")
+def event_loop():
+    loop = asyncio.get_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest.fixture(scope="module")
+async def fake_server():
+    from uvicorn import Config, Server
+
+    config = Config(app=fake_app, loop="asyncio", port=8000, log_level="info")
+    server = Server(config=config)
+
+    asyncio.create_task(server.serve())
+    await asyncio.sleep(0.1)
+
+    yield
+
+    await server.shutdown()
+
+
+@traceable
+async def the_parent_function():
+    async with AsyncClient(app=fake_app, base_url="http://localhost:8000") as client:
+        headers = {}
+        if span := get_current_span():
+            headers.update(span.to_headers())
+        return await client.post("/fake-route", headers=headers)
+
+
+@pytest.mark.asyncio
+async def test_tracing_fake_server(fake_server):
+    response = await the_parent_function(
+        langsmith_extra={"metadata": {"some-cool-value": 42}, "tags": ["did-propagate"]}
+    )
+    assert response.status_code == 200

@@ -50,6 +50,8 @@ pytest-cov = "^4.1.0"
 dataclasses-json = "^0.6.4"
 types-tqdm = "^4.66.0.20240106"
 vcrpy = "^6.0.1"
+fastapi = "^0.110.1"
+uvicorn = "^0.29.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"

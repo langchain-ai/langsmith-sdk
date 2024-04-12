@@ -74,20 +74,23 @@ def tracing_context(
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     parent_run: Optional[run_trees.Span] = None,
-    headers: Optional[Dict[str, str]] = None,
+    headers: Optional[Union[Dict[str, str], Any]] = None,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code."""
     parent_run_ = get_current_span()
     _PROJECT_NAME.set(project_name)
-    _TAGS.set(tags)
-    _METADATA.set(metadata)
     if parent_run is not None:
         _PARENT_RUN_TREE.set(parent_run)
     elif headers is not None:
         parent_run = run_trees.Span.from_headers(headers)
+        if parent_run:
+            tags = sorted(set(tags or []) | set(parent_run.tags or []))
+            metadata = {**parent_run.metadata, **(metadata or {})}
         _PARENT_RUN_TREE.set(parent_run)
     else:
         _PARENT_RUN_TREE.set(None)
+    _TAGS.set(tags)
+    _METADATA.set(metadata)
     try:
         yield
     finally:
@@ -95,6 +98,7 @@ def tracing_context(
         _TAGS.set(None)
         _METADATA.set(None)
         _PARENT_RUN_TREE.set(parent_run_)
+
 
 # Alias for backwards compatibility
 get_current_run_tree = get_current_span
