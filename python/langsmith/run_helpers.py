@@ -77,7 +77,7 @@ def tracing_context(
     headers: Optional[Dict[str, str]] = None,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code."""
-    parent_run_ = get_tracing_context()
+    parent_run_ = get_current_span()
     _PROJECT_NAME.set(project_name)
     _TAGS.set(tags)
     _METADATA.set(metadata)
@@ -96,7 +96,7 @@ def tracing_context(
         _METADATA.set(None)
         _PARENT_RUN_TREE.set(parent_run_)
 
-
+# Alias for backwards compatibility
 get_current_run_tree = get_current_span
 get_run_tree_context = get_current_run_tree
 

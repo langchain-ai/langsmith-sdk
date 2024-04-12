@@ -284,7 +284,7 @@ class Span(ls_schemas.RunBase):
 
         langsmith_trace = headers.get(f"{LANGSMITH_PREFIX}trace")
         if not langsmith_trace:
-            return
+            return None
 
         parent_dotted_order = langsmith_trace.strip()
         parsed_dotted_order = _parse_dotted_order(parent_dotted_order)
@@ -347,14 +347,17 @@ class _Baggage:
         metadata = {}
         tags = []
         id_ = None
-        for item in header_value.split(","):
-            key, value = item.split("=", 1)
-            if key == f"{LANGSMITH_PREFIX}-metadata":
-                metadata = json.loads(urllib.parse.unquote(value))
-            elif key == f"{LANGSMITH_PREFIX}-tags":
-                tags = urllib.parse.unquote(value).split(",")
-            elif key == f"{LANGSMITH_PREFIX}-id":
-                id_ = UUID(value)
+        try:
+            for item in header_value.split(","):
+                key, value = item.split("=", 1)
+                if key == f"{LANGSMITH_PREFIX}-metadata":
+                    metadata = json.loads(urllib.parse.unquote(value))
+                elif key == f"{LANGSMITH_PREFIX}-tags":
+                    tags = urllib.parse.unquote(value).split(",")
+                elif key == f"{LANGSMITH_PREFIX}-id":
+                    id_ = UUID(value)
+        except Exception as e:
+            logger.warning(f"Error parsing baggage header: {e}")
 
         return cls(metadata=metadata, tags=tags, id=id_)
 
