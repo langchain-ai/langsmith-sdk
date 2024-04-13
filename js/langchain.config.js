@@ -12,6 +12,7 @@ function abs(relativePath) {
 export const config = {
   internals: [/node\:/],
   entrypoints: {
+    index: "index",
     client: "client",
     run_trees: "run_trees",
     traceable: "traceable",
