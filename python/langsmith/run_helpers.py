@@ -55,7 +55,7 @@ def get_current_run_tree() -> Optional[run_trees.RunTree]:
 def get_tracing_context() -> dict:
     """Get the current tracing context."""
     return {
-        "parent_run": _PARENT_RUN_TREE.get(),
+        "parent": _PARENT_RUN_TREE.get(),
         "project_name": _PROJECT_NAME.get(),
         "tags": _TAGS.get(),
         "metadata": _METADATA.get(),
@@ -156,7 +156,7 @@ class LangSmithExtra(TypedDict, total=False):
     reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
     parent: Optional[Union[run_trees.RunTree, str, Mapping]]
-    run_tree: Optional[run_trees.RunTree] # TODO: Deprecate
+    run_tree: Optional[run_trees.RunTree]  # TODO: Deprecate
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]

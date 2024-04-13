@@ -229,30 +229,28 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
             " Skipping LangSmith test tracking."
         )
 
-    if args and callable(args[0]):
-        func = args[0]
-        if disable_tracking:
-            return func
+    def decorator(func: Callable) -> Callable:
+        if inspect.iscoroutinefunction(func):
+
+            async def async_wrapper(*test_args: Any, **test_kwargs: Any):
+                if disable_tracking:
+                    return await func(*test_args, **test_kwargs)
+                await _arun_test(
+                    func, *test_args, **test_kwargs, langtest_extra=langtest_extra
+                )
+
+            return async_wrapper
 
         @functools.wraps(func)
-        def wrapper(*test_args, **test_kwargs):
-            _run_test(
-                func,
-                *test_args,
-                **test_kwargs,
-                langtest_extra=langtest_extra,
-            )
-
-        return wrapper
-
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*test_args, **test_kwargs):
+        def wrapper(*test_args: Any, **test_kwargs: Any):
             if disable_tracking:
                 return func(*test_args, **test_kwargs)
             _run_test(func, *test_args, **test_kwargs, langtest_extra=langtest_extra)
 
         return wrapper
+
+    if args and callable(args[0]):
+        return decorator(args[0])
 
     return decorator
 
@@ -492,7 +490,9 @@ def _ensure_example(
     return test_suite, example_id
 
 
-def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
+def _run_test(
+    func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
+) -> None:
     test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
@@ -537,3 +537,52 @@ def _run_test(func, *test_args, langtest_extra: _UTExtra, **test_kwargs):
         cache_path, ignore_hosts=[test_suite.client.api_url]
     ):
         _test()
+
+
+async def _arun_test(
+    func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
+) -> None:
+    test_suite, example_id = _ensure_example(
+        func, *test_args, **test_kwargs, langtest_extra=langtest_extra
+    )
+    run_id = uuid.uuid4()
+
+    async def _test():
+        try:
+            func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
+            await func_(
+                *test_args,
+                **test_kwargs,
+                langsmith_extra={
+                    "run_id": run_id,
+                    "reference_example_id": example_id,
+                    "project_name": test_suite.name,
+                },
+            )
+        except BaseException as e:
+            test_suite.submit_result(run_id, error=repr(e))
+            raise e
+        try:
+            test_suite.submit_result(run_id, error=None)
+        except BaseException as e:
+            logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+
+    cache_path = (
+        Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
+        if langtest_extra["cache"]
+        else None
+    )
+    current_context = rh.get_tracing_context()
+    metadata = {
+        **(current_context["metadata"] or {}),
+        **{
+            "experiment": test_suite.experiment.name,
+            "reference_example_id": str(example_id),
+        },
+    }
+    with rh.tracing_context(
+        **{**current_context, "metadata": metadata}
+    ), ls_utils.with_optional_cache(
+        cache_path, ignore_hosts=[test_suite.client.api_url]
+    ):
+        await _test()
