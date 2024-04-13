@@ -31,8 +31,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          # cache: "yarn"
+          # cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
       - name: Check formatting
@@ -50,8 +50,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          # cache: "yarn"
+          # cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
       - name: Check linting
@@ -69,8 +69,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18.x
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          # cache: "yarn"
+          # cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable
       - name: Build and check types
@@ -98,8 +98,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          # cache: "yarn"
+          # cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable
       - name: Build
