@@ -47,7 +47,7 @@ async def the_root_function(foo: str):
 
 @pytest.mark.asyncio
 async def test_tracing_fake_server(fake_server):
-    response = await the_parent_function(
+    response = await the_root_function(
         langsmith_extra={"metadata": {"some-cool-value": 42}, "tags": ["did-propagate"]}
     )
     assert response.status_code == 200
