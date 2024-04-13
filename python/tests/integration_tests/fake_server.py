@@ -12,7 +12,7 @@ def fake_function():
     assert span is not None
     parent_run = span.parent_run
     assert parent_run is not None
-    assert "did-propagate" in span.tags
+    assert "did-propagate" in span.tags or []
     assert span.metadata["some-cool-value"] == 42
     return "Fake function response"
 
@@ -23,7 +23,7 @@ def fake_function_two(foo: str):
     assert span is not None
     parent_run = span.parent_run
     assert parent_run is not None
-    assert "did-propagate" in span.tags
+    assert "did-propagate" in (span.tags or [])
     assert span.metadata["some-cool-value"] == 42
     return "Fake function response"
 
@@ -34,7 +34,7 @@ def fake_function_three(foo: str):
     assert span is not None
     parent_run = span.parent_run
     assert parent_run is not None
-    assert "did-propagate" in span.tags
+    assert "did-propagate" in (span.tags or [])
     assert span.metadata["some-cool-value"] == 42
     return "Fake function response"
 

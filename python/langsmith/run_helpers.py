@@ -154,7 +154,7 @@ class LangSmithExtra(TypedDict, total=False):
 
     reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
-    parent: Optional[Union[run_trees.RunTree, str, dict]]
+    parent: Optional[Union[run_trees.RunTree, str, Mapping]]
     run_tree: Optional[run_trees.RunTree]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
@@ -834,7 +834,7 @@ def trace(
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
     project_name: Optional[str] = None,
-    parent: Optional[Union[run_trees.RunTree, str, dict]] = None,
+    parent: Optional[Union[run_trees.RunTree, str, Mapping]] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     client: Optional[ls_client.Client] = None,
