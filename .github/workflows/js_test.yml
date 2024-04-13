@@ -48,6 +48,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
+          cache-dependency-path: ./js/yarn.lock
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
         working-directory: "js"
