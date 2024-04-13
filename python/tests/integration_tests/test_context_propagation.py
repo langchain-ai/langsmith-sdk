@@ -37,7 +37,9 @@ async def the_parent_function():
         headers = {}
         if span := get_current_run_tree():
             headers.update(span.to_headers())
-        return await client.post("/fake-route", headers=headers)
+        response = await client.post("/fake-route", headers=headers)
+        assert response.status_code == 200
+        return response.json()
 
 
 @traceable
@@ -47,7 +49,11 @@ async def the_root_function(foo: str):
 
 @pytest.mark.asyncio
 async def test_tracing_fake_server(fake_server):
-    response = await the_root_function(
-        langsmith_extra={"metadata": {"some-cool-value": 42}, "tags": ["did-propagate"]}
+    result = await the_root_function(
+        "test input",
+        langsmith_extra={
+            "metadata": {"some-cool-value": 42},
+            "tags": ["did-propagate"],
+        },
     )
-    assert response.status_code == 200
+    assert result["message"] == "Fake route response"
