@@ -22,17 +22,18 @@ from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json
 logger = logging.getLogger(__name__)
 
 LANGSMITH_PREFIX = "langsmith-"
+LANGSMITH_DOTTED_ORDER = f"{LANGSMITH_PREFIX}trace"
 
 
-class Span(ls_schemas.RunBase):
+class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
     name: str
     id: UUID = Field(default_factory=uuid4)
     run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    parent_run: Optional[Span] = Field(default=None, exclude=True)
-    child_runs: List[Span] = Field(
+    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
+    child_runs: List[RunTree] = Field(
         default_factory=list,
         exclude={"__all__": {"parent_run_id"}},
     )
@@ -196,10 +197,10 @@ class Span(ls_schemas.RunBase):
         end_time: Optional[datetime] = None,
         tags: Optional[List[str]] = None,
         extra: Optional[Dict] = None,
-    ) -> Span:
+    ) -> RunTree:
         """Add a child run to the run tree."""
         serialized_ = serialized or {"name": name}
-        run = Span(
+        run = RunTree(
             name=name,
             id=run_id or uuid4(),
             serialized=serialized_,
@@ -270,7 +271,23 @@ class Span(ls_schemas.RunBase):
         return self.client.get_run_url(run=self)
 
     @classmethod
-    def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[Span]:
+    def from_dotted_order(
+        cls,
+        dotted_order: str,
+        **kwargs: Any,
+    ) -> RunTree:
+        """Create a new 'child' span from the provided dotted order.
+
+        Returns:
+            RunTree: The new span.
+        """
+        headers = {
+            f"{LANGSMITH_DOTTED_ORDER}": dotted_order,
+        }
+        return cast(RunTree, cls.from_headers(headers, **kwargs))
+
+    @classmethod
+    def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[RunTree]:
         """Create a new 'parent' span from the provided headers.
 
         Extracts parent span information from the headers and creates a new span.
@@ -278,11 +295,12 @@ class Span(ls_schemas.RunBase):
         The dotted order and trace id are extracted from the trace header.
 
         Returns:
-            Optional[Span]: The new span or None if no parent span information is found.
+            Optional[RunTree]: The new span or None if
+                no parent span information is found.
         """
         init_args = kwargs.copy()
 
-        langsmith_trace = headers.get(f"{LANGSMITH_PREFIX}trace")
+        langsmith_trace = headers.get(f"{LANGSMITH_DOTTED_ORDER}")
         if not langsmith_trace:
             return  # type: ignore[return-value]
 
@@ -290,6 +308,7 @@ class Span(ls_schemas.RunBase):
         parsed_dotted_order = _parse_dotted_order(parent_dotted_order)
         trace_id = parsed_dotted_order[0][1]
         init_args["trace_id"] = trace_id
+        init_args["id"] = parsed_dotted_order[-1][1]
         init_args["dotted_order"] = parent_dotted_order
         # All placeholders. We assume the source process
         # handles the life-cycle of the run.
@@ -309,17 +328,17 @@ class Span(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
-        init_args["id"] = baggage.id
 
-        return Span(**init_args)
+        return RunTree(**init_args)
 
     def to_headers(self) -> Dict[str, str]:
-        """Return the Span as a dictionary of headers."""
+        """Return the RunTree as a dictionary of headers."""
         headers = {}
         if self.trace_id:
-            headers[f"{LANGSMITH_PREFIX}trace"] = self.dotted_order
+            headers[f"{LANGSMITH_DOTTED_ORDER}"] = self.dotted_order
         baggage = _Baggage(
-            metadata=self.extra.get("metadata", {}), tags=self.tags, id=self.id
+            metadata=self.extra.get("metadata", {}),
+            tags=self.tags,
         )
         headers["baggage"] = baggage.to_header()
         return headers
@@ -332,12 +351,10 @@ class _Baggage:
         self,
         metadata: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
-        id: Optional[UUID] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
-        self.id = id or uuid4()
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -346,7 +363,6 @@ class _Baggage:
             return cls()
         metadata = {}
         tags = []
-        id_ = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -354,12 +370,10 @@ class _Baggage:
                     metadata = json.loads(urllib.parse.unquote(value))
                 elif key == f"{LANGSMITH_PREFIX}tags":
                     tags = urllib.parse.unquote(value).split(",")
-                elif key == f"{LANGSMITH_PREFIX}id":
-                    id_ = UUID(value)
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
-        return cls(metadata=metadata, tags=tags, id=id_)
+        return cls(metadata=metadata, tags=tags)
 
     def to_header(self) -> str:
         """Return the Baggage object as a header value."""
@@ -374,8 +388,6 @@ class _Baggage:
             items.append(
                 f"{LANGSMITH_PREFIX}tags={urllib.parse.quote(serialized_tags)}"
             )
-        if self.id:
-            items.append(f"{LANGSMITH_PREFIX}id={self.id}")
         return ",".join(items)
 
 
@@ -397,6 +409,4 @@ def _create_current_dotted_order(
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
 
 
-RunTree = Span  # For backwards compatibility
-
-__all__ = ["Span", "RunTree"]
+__all__ = ["RunTree", "RunTree"]

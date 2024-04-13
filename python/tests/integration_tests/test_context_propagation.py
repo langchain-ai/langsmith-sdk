@@ -5,7 +5,7 @@ from httpx import AsyncClient
 from uvicorn import Config, Server
 
 from langsmith import traceable
-from langsmith.run_helpers import get_current_span
+from langsmith.run_helpers import get_current_run_tree
 from tests.integration_tests.fake_server import fake_app
 
 
@@ -35,9 +35,14 @@ async def fake_server():
 async def the_parent_function():
     async with AsyncClient(app=fake_app, base_url="http://localhost:8000") as client:
         headers = {}
-        if span := get_current_span():
+        if span := get_current_run_tree():
             headers.update(span.to_headers())
         return await client.post("/fake-route", headers=headers)
+
+
+@traceable
+async def the_root_function(foo: str):
+    return await the_parent_function()
 
 
 @pytest.mark.asyncio
