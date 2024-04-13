@@ -161,3 +161,15 @@ cython_debug/
 .DS_Store
 
 .envrc
+
+js/.turbo
+js/.eslintcache
+js/.env
+js/yarn-error.log
+
+js/.yarn/*
+!js/.yarn/patches
+!js/.yarn/plugins
+!js/.yarn/releases
+!js/.yarn/sdks
+!js/.yarn/versions
