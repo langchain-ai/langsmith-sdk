@@ -468,12 +468,9 @@ def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
 ) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
-    # 1. check if the id exists.
-    # TODOs: Local cache + prefer a peek operation
     client = langtest_extra["client"] or ls_client.Client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
-    # 2. Create the example
     inputs: dict = rh._get_inputs_safe(signature, *args, **kwargs)
     outputs = {}
     if output_keys:
