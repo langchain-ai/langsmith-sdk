@@ -67,10 +67,10 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20.x
-          # cache: "yarn"
-          # cache-dependency-path: "js/yarn.lock"
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
-        run: yarn install --immutable
+        run: yarn install --immutable --mode=skip-build --ignore-scripts
       - name: Run JS integration tests
         uses: ./.github/actions/js-integration-tests
         with:
