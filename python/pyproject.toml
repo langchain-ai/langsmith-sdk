@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.46"
+version = "0.1.47"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -50,6 +50,8 @@ pytest-cov = "^4.1.0"
 dataclasses-json = "^0.6.4"
 types-tqdm = "^4.66.0.20240106"
 vcrpy = "^6.0.1"
+fastapi = "^0.110.1"
+uvicorn = "^0.29.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"

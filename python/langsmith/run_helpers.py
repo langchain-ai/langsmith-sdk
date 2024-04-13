@@ -55,7 +55,7 @@ def get_current_run_tree() -> Optional[run_trees.RunTree]:
 def get_tracing_context() -> dict:
     """Get the current tracing context."""
     return {
-        "parent_run": _PARENT_RUN_TREE.get(),
+        "parent": _PARENT_RUN_TREE.get(),
         "project_name": _PROJECT_NAME.get(),
         "tags": _TAGS.get(),
         "metadata": _METADATA.get(),
@@ -68,14 +68,25 @@ def tracing_context(
     project_name: Optional[str] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
-    parent_run: Optional[run_trees.RunTree] = None,
+    parent: Optional[Union[run_trees.RunTree, Mapping, str]] = None,
+    **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code."""
-    parent_run_ = get_run_tree_context()
+    if kwargs:
+        # warn
+        warnings.warn(
+            f"Unrecognized keyword arguments: {kwargs}.",
+            DeprecationWarning,
+        )
+    parent_run_ = get_current_run_tree()
     _PROJECT_NAME.set(project_name)
+    parent_run = _get_parent_run({"parent": parent or kwargs.get("parent_run")})
+    if parent_run is not None:
+        _PARENT_RUN_TREE.set(parent_run)
+        tags = sorted(set(tags or []) | set(parent_run.tags or []))
+        metadata = {**parent_run.metadata, **(metadata or {})}
     _TAGS.set(tags)
     _METADATA.set(metadata)
-    _PARENT_RUN_TREE.set(parent_run)
     try:
         yield
     finally:
@@ -85,6 +96,7 @@ def tracing_context(
         _PARENT_RUN_TREE.set(parent_run_)
 
 
+# Alias for backwards compatibility
 get_run_tree_context = get_current_run_tree
 
 
@@ -143,7 +155,8 @@ class LangSmithExtra(TypedDict, total=False):
 
     reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
-    run_tree: Optional[run_trees.RunTree]
+    parent: Optional[Union[run_trees.RunTree, str, Mapping]]
+    run_tree: Optional[run_trees.RunTree]  # TODO: Deprecate
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
@@ -212,6 +225,20 @@ def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
     return extra_inner
 
 
+def _get_parent_run(langsmith_extra: LangSmithExtra) -> Optional[run_trees.RunTree]:
+    parent = langsmith_extra.get("parent")
+    if isinstance(parent, run_trees.RunTree):
+        return parent
+    if isinstance(parent, dict):
+        return run_trees.RunTree.from_headers(parent)
+    if isinstance(parent, str):
+        return run_trees.RunTree.from_dotted_order(parent)
+    run_tree = langsmith_extra.get("run_tree")
+    if run_tree:
+        return run_tree
+    return get_current_run_tree()
+
+
 def _setup_run(
     func: Callable,
     container_input: _ContainerInput,
@@ -228,7 +255,7 @@ def _setup_run(
     run_type = container_input.get("run_type") or "chain"
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
-    parent_run_ = langsmith_extra.get("run_tree") or get_run_tree_context()
+    parent_run_ = _get_parent_run(langsmith_extra)
     project_cv = _PROJECT_NAME.get()
     selected_project = (
         project_cv  # From parent trace
@@ -577,7 +604,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
-            context_run = get_run_tree_context()
+            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -611,7 +638,7 @@ def traceable(
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            context_run = get_run_tree_context()
+            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -683,7 +710,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
-            context_run = get_run_tree_context()
+            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -717,7 +744,7 @@ def traceable(
         def generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
-            context_run = get_run_tree_context()
+            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -808,7 +835,7 @@ def trace(
     inputs: Optional[Dict] = None,
     extra: Optional[Dict] = None,
     project_name: Optional[str] = None,
-    run_tree: Optional[run_trees.RunTree] = None,
+    parent: Optional[Union[run_trees.RunTree, str, Mapping]] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     client: Optional[ls_client.Client] = None,
@@ -825,7 +852,9 @@ def trace(
     outer_tags = _TAGS.get()
     outer_metadata = _METADATA.get()
     outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
-    parent_run_ = get_run_tree_context() if run_tree is None else run_tree
+    parent_run_ = _get_parent_run(
+        {"parent": parent, "run_tree": kwargs.get("run_tree")}
+    )
 
     # Merge and set context variables
     tags_ = sorted(set((tags or []) + (outer_tags or [])))
