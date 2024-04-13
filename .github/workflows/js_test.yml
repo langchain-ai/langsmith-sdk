@@ -31,16 +31,19 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18.x
-          # cache: "yarn"
-          # cache-dependency-path: "js/yarn.lock"
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
-        run: yarn install --immutable --mode=skip-build
+        run: yarn install --immutable --mode=skip-build --ignore-scripts
       - name: Check formatting
         run: yarn run format:check
 
   lint:
     name: Check linting
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 18.x
@@ -48,13 +51,11 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
-          cache-dependency-path: ./js/yarn.lock
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build --ignore-scripts
-        working-directory: "js"
       - name: Check linting
         run: yarn run lint
-        working-directory: "js"
 
   build:
     name: Build and check types
@@ -68,10 +69,10 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18.x
-          # cache: "yarn"
-          # cache-dependency-path: "js/yarn.lock"
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
-        run: yarn install --immutable
+        run: yarn install --immutable --mode=skip-build --ignore-scripts
       - name: Build and check types
         run: yarn run build
 
@@ -97,10 +98,10 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
-          # cache: "yarn"
-          # cache-dependency-path: "js/yarn.lock"
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
-        run: yarn install --immutable
+        run: yarn install --immutable --mode=skip-build --ignore-scripts
       - name: Build
         run: yarn run build
       - name: Check version

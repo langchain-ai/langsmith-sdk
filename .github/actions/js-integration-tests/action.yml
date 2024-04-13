@@ -20,11 +20,11 @@ runs:
       uses: actions/setup-node@v3
       with:
         node-version: ${{ inputs.node-version }}
-        # cache: "yarn"
-        # cache-dependency-path: "js/yarn.lock"
+        cache: "yarn"
+        cache-dependency-path: "js/yarn.lock"
 
     - name: Install Yarn dependencies
-      run: yarn install
+      run: yarn install --immutable --mode=skip-build --ignore-scripts
       shell: bash
       working-directory: js
 
