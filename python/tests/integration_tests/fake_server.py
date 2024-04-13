@@ -49,6 +49,6 @@ async def fake_route(request: Request):
         fake_function()
     fake_function_two("foo", langsmith_extra={"parent": request.headers})
 
-    with tracing_context(headers=request.headers):
+    with tracing_context(parent=request.headers):
         fake_function_three("foo")
     return {"message": "Fake route response"}

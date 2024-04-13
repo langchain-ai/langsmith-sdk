@@ -68,22 +68,23 @@ def tracing_context(
     project_name: Optional[str] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
-    parent_run: Optional[run_trees.RunTree] = None,
-    headers: Optional[Union[Dict[str, str], Any]] = None,
+    parent: Optional[Union[run_trees.RunTree, Mapping, str]] = None,
+    **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code."""
+    if kwargs:
+        # warn
+        warnings.warn(
+            f"Unrecognized keyword arguments: {kwargs}.",
+            DeprecationWarning,
+        )
     parent_run_ = get_current_run_tree()
     _PROJECT_NAME.set(project_name)
+    parent_run = _get_parent_run({"parent": parent or kwargs.get("parent_run")})
     if parent_run is not None:
         _PARENT_RUN_TREE.set(parent_run)
-    elif headers is not None:
-        parent_run = run_trees.RunTree.from_headers(headers)
-        if parent_run:
-            tags = sorted(set(tags or []) | set(parent_run.tags or []))
-            metadata = {**parent_run.metadata, **(metadata or {})}
-        _PARENT_RUN_TREE.set(parent_run)
-    else:
-        _PARENT_RUN_TREE.set(None)
+        tags = sorted(set(tags or []) | set(parent_run.tags or []))
+        metadata = {**parent_run.metadata, **(metadata or {})}
     _TAGS.set(tags)
     _METADATA.set(metadata)
     try:
