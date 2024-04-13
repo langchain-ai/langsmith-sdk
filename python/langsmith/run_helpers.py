@@ -156,7 +156,7 @@ class LangSmithExtra(TypedDict, total=False):
     reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
     parent: Optional[Union[run_trees.RunTree, str, Mapping]]
-    run_tree: Optional[run_trees.RunTree]
+    run_tree: Optional[run_trees.RunTree] # TODO: Deprecate
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
     tags: Optional[List[str]]
