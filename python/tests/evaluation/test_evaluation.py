@@ -95,3 +95,10 @@ def expected_output():
 @unit(output_keys=["expected_output"])
 def test_bar(some_input: str, expected_output: str):
     expect(some_input).to_contain(expected_output)
+
+
+@unit
+async def test_baz():
+    await asyncio.sleep(0.1)
+    expect(3 + 4).to_equal(7)
+    return 7
