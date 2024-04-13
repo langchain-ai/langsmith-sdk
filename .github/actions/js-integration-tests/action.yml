@@ -20,7 +20,7 @@ runs:
       uses: actions/setup-node@v3
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "yarn"
+        # cache: "yarn"
         # cache-dependency-path: "js/yarn.lock"
 
     - name: Install Yarn dependencies
