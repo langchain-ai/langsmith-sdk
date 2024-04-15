@@ -107,5 +107,28 @@ async def test_baz():
 @unit
 @pytest.mark.parametrize("x, y", [(1, 2), (2, 3)])
 def test_foo_parametrized(x, y):
-    expect(x + y).to_equal(3)
+    expect(x + y).to_be_greater_than(0)
     return x + y
+
+
+@unit(output_keys=["z"])
+@pytest.mark.parametrize("x, y, z", [(1, 2, 3), (2, 3, 5)])
+def test_bar_parametrized(x, y, z):
+    expect(x + y).to_equal(z)
+    return {"z": x + y}
+
+
+@unit
+@pytest.mark.parametrize("x, y", [(1, 2), (2, 3)])
+async def test_foo_async_parametrized(x, y):
+    await asyncio.sleep(0.1)
+    expect(x + y).to_be_greater_than(0)
+    return x + y
+
+
+@unit(output_keys=["z"])
+@pytest.mark.parametrize("x, y, z", [(1, 2, 3), (2, 3, 5)])
+async def test_bar_async_parametrized(x, y, z):
+    await asyncio.sleep(0.1)
+    expect(x + y).to_equal(z)
+    return {"z": x + y}
