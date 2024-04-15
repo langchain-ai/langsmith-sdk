@@ -3387,7 +3387,7 @@ class Client:
             The ID of the run to provide feedback for. Either the run_id OR
             the project_id must be provided.
         key : str
-            The name of the metric, tag, or 'aspect' this feedback is about.
+            The name of the metric or 'aspect' this feedback is about.
         score : float or int or bool or None, default=None
             The score to rate this run on the metric or aspect.
         value : float or int or bool or str or dict or None, default=None
@@ -3395,7 +3395,8 @@ class Client:
         correction : dict or None, default=None
             The proper ground truth for this run.
         comment : str or None, default=None
-            A comment about this feedback.
+            A comment about this feedback, such as a justification for the score or
+            chain-of-thought trajectory for an LLM judge.
         source_info : Dict[str, Any] or None, default=None
             Information about the source of this feedback.
         feedback_source_type : FeedbackSourceType or str, default=FeedbackSourceType.API
