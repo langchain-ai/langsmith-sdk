@@ -140,7 +140,8 @@ class DynamicRunEvaluator(RunEvaluator):
         from langsmith import run_helpers  # type: ignore
 
         if afunc is not None:
-            self.afunc: run_helpers.SupportsLangsmithExtra = afunc  # type: ignore
+            self.afunc = run_helpers.ensure_traceable(afunc)
+            self._name = getattr(afunc, "__name__", "DynamicRunEvaluator")
         if inspect.iscoroutinefunction(func):
             if afunc is not None:
                 raise TypeError(
@@ -149,11 +150,13 @@ class DynamicRunEvaluator(RunEvaluator):
                     "function to avoid ambiguity."
                 )
             self.afunc = run_helpers.ensure_traceable(func)
+            self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
             self.func = cast(
                 run_helpers.SupportsLangsmithExtra[_RUNNABLE_OUTPUT],
                 run_helpers.ensure_traceable(func),
             )
+            self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
     def _coerce_evaluation_result(
         self,
@@ -168,7 +171,7 @@ class DynamicRunEvaluator(RunEvaluator):
         try:
             if "key" not in result:
                 if allow_no_key:
-                    result["key"] = getattr(self.func, "__name__")
+                    result["key"] = self._name
             return EvaluationResult(**{"source_run_id": source_run_id, **result})
         except ValidationError as e:
             raise ValueError(
