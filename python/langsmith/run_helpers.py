@@ -113,6 +113,14 @@ def is_traceable_function(func: Callable) -> bool:
     )
 
 
+def ensure_traceable(func: Callable[..., R]) -> Callable[..., R]:
+    """Ensure that a function is traceable."""
+    return cast(
+        SupportsLangsmithExtra,
+        (func if is_traceable_function(func) else traceable()(func)),
+    )
+
+
 def is_async(func: Callable) -> bool:
     """Inspect function or wrapped function to see if it is async."""
     return inspect.iscoroutinefunction(func) or (

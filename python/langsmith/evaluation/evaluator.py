@@ -1,9 +1,10 @@
 """This module contains the evaluator classes for evaluating runs."""
 
 import asyncio
+import inspect
 import uuid
 from abc import abstractmethod
-from typing import Any, Callable, Dict, List, Literal, Optional, Union, cast
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Union, cast
 
 from typing_extensions import TypedDict
 
@@ -101,6 +102,9 @@ class RunEvaluator:
         )
 
 
+_RUNNABLE_OUTPUT = Union[EvaluationResult, EvaluationResults, dict]
+
+
 class DynamicRunEvaluator(RunEvaluator):
     """A dynamic evaluator that wraps a function and transforms it into a `RunEvaluator`.
 
@@ -115,8 +119,16 @@ class DynamicRunEvaluator(RunEvaluator):
     def __init__(
         self,
         func: Callable[
-            [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults, dict]
+            [Run, Optional[Example]],
+            Union[_RUNNABLE_OUTPUT, Awaitable[_RUNNABLE_OUTPUT]],
         ],
+        # Async function to be used for async evaluation. Optional
+        afunc: Optional[
+            Callable[
+                [Run, Optional[Example]],
+                Awaitable[_RUNNABLE_OUTPUT],
+            ]
+        ] = None,
     ):
         """Initialize the DynamicRunEvaluator with a given function.
 
@@ -127,14 +139,24 @@ class DynamicRunEvaluator(RunEvaluator):
         wraps(func)(self)
         from langsmith import run_helpers  # type: ignore
 
-        self.func = cast(
-            run_helpers.SupportsLangsmithExtra,
-            (
-                func
-                if run_helpers.is_traceable_function(func)
-                else run_helpers.traceable()(func)
-            ),
-        )
+        if afunc is not None:
+            self.afunc = run_helpers.ensure_traceable(afunc)
+            self._name = getattr(afunc, "__name__", "DynamicRunEvaluator")
+        if inspect.iscoroutinefunction(func):
+            if afunc is not None:
+                raise TypeError(
+                    "Func was provided as a coroutine function, but afunc was "
+                    "also provided. If providing both, func should be a regular "
+                    "function to avoid ambiguity."
+                )
+            self.afunc = run_helpers.ensure_traceable(func)
+            self._name = getattr(func, "__name__", "DynamicRunEvaluator")
+        else:
+            self.func = cast(
+                run_helpers.SupportsLangsmithExtra[_RUNNABLE_OUTPUT],
+                run_helpers.ensure_traceable(func),
+            )
+            self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
     def _coerce_evaluation_result(
         self,
@@ -149,7 +171,7 @@ class DynamicRunEvaluator(RunEvaluator):
         try:
             if "key" not in result:
                 if allow_no_key:
-                    result["key"] = getattr(self.func, "__name__")
+                    result["key"] = self._name
             return EvaluationResult(**{"source_run_id": source_run_id, **result})
         except ValidationError as e:
             raise ValueError(
@@ -174,6 +196,30 @@ class DynamicRunEvaluator(RunEvaluator):
             cast(dict, results), allow_no_key=True, source_run_id=source_run_id
         )
 
+    def _format_result(
+        self,
+        result: Union[EvaluationResult, EvaluationResults, dict],
+        source_run_id: uuid.UUID,
+    ) -> Union[EvaluationResult, EvaluationResults]:
+        if isinstance(result, EvaluationResult):
+            if not result.source_run_id:
+                result.source_run_id = source_run_id
+            return result
+        if not isinstance(result, dict):
+            raise ValueError(
+                f"Expected a dict, EvaluationResult, or EvaluationResults, got {result}"
+            )
+        return self._coerce_evaluation_results(result, source_run_id)
+
+    @property
+    def is_async(self) -> bool:
+        """Check if the evaluator function is asynchronous.
+
+        Returns:
+            bool: True if the evaluator function is asynchronous, False otherwise.
+        """
+        return hasattr(self, "afunc")
+
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -188,6 +234,15 @@ class DynamicRunEvaluator(RunEvaluator):
         Returns:
             Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
         """  # noqa: E501
+        if not hasattr(self, "func"):
+            running_loop = asyncio.get_event_loop()
+            if running_loop.is_running():
+                raise RuntimeError(
+                    "Cannot call `evaluate_run` on an async run evaluator from"
+                    " within an running event loop. Use `aevaluate_run` instead."
+                )
+            else:
+                return running_loop.run_until_complete(self.aevaluate_run(run, example))
         source_run_id = uuid.uuid4()
         metadata: Dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
@@ -197,15 +252,34 @@ class DynamicRunEvaluator(RunEvaluator):
             example,
             langsmith_extra={"run_id": source_run_id, "metadata": metadata},
         )
-        if isinstance(result, EvaluationResult):
-            if not result.source_run_id:
-                result.source_run_id = source_run_id
-            return result
-        if not isinstance(result, dict):
-            raise ValueError(
-                f"Expected a dict, EvaluationResult, or EvaluationResults, got {result}"
-            )
-        return self._coerce_evaluation_results(result, source_run_id)
+        return self._format_result(result, source_run_id)
+
+    async def aevaluate_run(self, run: Run, example: Optional[Example] = None):
+        """Evaluate a run asynchronously using the wrapped async function.
+
+        This method directly invokes the wrapped async function with the
+            provided arguments.
+
+        Args:
+            run (Run): The run to be evaluated.
+            example (Optional[Example]): An optional example to be used
+                in the evaluation.
+
+        Returns:
+            Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
+        """
+        if not hasattr(self, "afunc"):
+            return await super().aevaluate_run(run, example)
+        source_run_id = uuid.uuid4()
+        metadata: Dict[str, Any] = {"target_run_id": run.id}
+        if getattr(run, "session_id", None):
+            metadata["experiment"] = str(run.session_id)
+        result = await self.afunc(
+            run,
+            example,
+            langsmith_extra={"run_id": source_run_id, "metadata": metadata},
+        )
+        return self._format_result(result, source_run_id)
 
     def __call__(
         self, run: Run, example: Optional[Example] = None
@@ -231,7 +305,7 @@ class DynamicRunEvaluator(RunEvaluator):
 
 def run_evaluator(
     func: Callable[
-        [Run, Optional[Example]], Union[EvaluationResult, EvaluationResults, dict]
+        [Run, Optional[Example]], Union[_RUNNABLE_OUTPUT, Awaitable[_RUNNABLE_OUTPUT]]
     ],
 ):
     """Create a run evaluator from a function.
