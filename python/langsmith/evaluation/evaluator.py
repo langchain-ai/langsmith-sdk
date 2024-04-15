@@ -234,6 +234,15 @@ class DynamicRunEvaluator(RunEvaluator):
         Returns:
             Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
         """  # noqa: E501
+        if not hasattr(self, "func"):
+            running_loop = asyncio.get_event_loop()
+            if running_loop.is_running():
+                raise RuntimeError(
+                    "Cannot call `evaluate_run` on an async run evaluator from"
+                    " within an running event loop. Use `aevaluate_run` instead."
+                )
+            else:
+                return running_loop.run_until_complete(self.aevaluate_run(run, example))
         source_run_id = uuid.uuid4()
         metadata: Dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):

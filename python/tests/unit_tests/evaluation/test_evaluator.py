@@ -210,19 +210,26 @@ async def test_run_evaluator_decorator_dict_with_comment_async(
 async def test_run_evaluator_decorator_multi_return_async(
     run_1: Run, example_1: Example
 ):
+    _response = {
+        "results": [
+            {"key": "test", "score": 1.0},
+            {"key": "test2", "score": 2.0},
+        ]
+    }
+
     @run_evaluator
     async def sample_evaluator(run: Run, example: Optional[Example]) -> dict:
         await asyncio.sleep(0.01)
-        return {
-            "results": [
-                {"key": "test", "score": 1.0},
-                {"key": "test2", "score": 2.0},
-            ]
-        }
+        return _response
+
+    @run_evaluator
+    def sample_sync_evaluator(run: Run, example: Optional[Example]) -> dict:
+        return _response
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
 
     result = await sample_evaluator.aevaluate_run(run_1, example_1)
+
     assert not isinstance(result, EvaluationResult)
     assert "results" in result
     assert len(result["results"]) == 2
@@ -230,6 +237,14 @@ async def test_run_evaluator_decorator_multi_return_async(
     assert result["results"][0].score == 1.0
     assert result["results"][1].key == "test2"
     assert result["results"][1].score == 2.0
+    aresult = await sample_sync_evaluator.aevaluate_run(run_1, example_1)
+    sresult = sample_sync_evaluator.evaluate_run(run_1, example_1)
+    scores = [result.score for result in result["results"]]
+    assert (
+        scores
+        == [r.score for r in sresult["results"]]
+        == [r.score for r in aresult["results"]]
+    )
 
 
 async def test_run_evaluator_decorator_multi_return_no_key_async(
