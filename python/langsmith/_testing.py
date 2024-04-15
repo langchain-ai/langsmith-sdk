@@ -232,6 +232,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
     def decorator(func: Callable) -> Callable:
         if inspect.iscoroutinefunction(func):
 
+            @functools.wraps(func)
             async def async_wrapper(*test_args: Any, **test_kwargs: Any):
                 if disable_tracking:
                     return await func(*test_args, **test_kwargs)
