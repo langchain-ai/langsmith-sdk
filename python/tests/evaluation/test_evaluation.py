@@ -102,3 +102,10 @@ async def test_baz():
     await asyncio.sleep(0.1)
     expect(3 + 4).to_equal(7)
     return 7
+
+
+@unit
+@pytest.mark.parametrize("x, y", [(1, 2), (2, 3)])
+def test_foo_parametrized(x, y):
+    expect(x + y).to_equal(3)
+    return x + y
