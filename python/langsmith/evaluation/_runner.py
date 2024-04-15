@@ -13,6 +13,7 @@ import threading
 import uuid
 from contextvars import copy_context
 from typing import (
+    Awaitable,
     Callable,
     DefaultDict,
     Dict,
@@ -59,6 +60,12 @@ SUMMARY_EVALUATOR_T = Callable[
 EVALUATOR_T = Union[
     RunEvaluator,
     Callable[[schemas.Run, Optional[schemas.Example]], EvaluationResult],
+]
+AEVALUATOR_T = Union[
+    Callable[
+        [schemas.Run, Optional[schemas.Example]],
+        Awaitable[Union[EvaluationResult, EvaluationResults]],
+    ],
 ]
 
 
@@ -972,7 +979,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
 
 def _resolve_evaluators(
-    evaluators: Sequence[EVALUATOR_T],
+    evaluators: Sequence[Union[EVALUATOR_T, RunEvaluator, AEVALUATOR_T]],
 ) -> Sequence[RunEvaluator]:
     results = []
     for evaluator in evaluators:
