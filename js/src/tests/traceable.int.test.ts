@@ -179,15 +179,16 @@ test.concurrent("Test get run tree method", async () => {
   const langchainClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
+  // Called outside a traceable function
+  expect(() => getCurrentRunTree()).toThrowError();
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper";
   const nestedAddValueTraceable = traceable(
     (a: string, b: number) => {
       const runTree = getCurrentRunTree();
-      console.log(runTree);
-      expect(runTree?.id).toBeDefined();
-      expect(runTree?.id).not.toEqual(runId);
-      expect(runTree?.dotted_order.includes(`${runId}.`)).toBe(true);
+      expect(runTree.id).toBeDefined();
+      expect(runTree.id).not.toEqual(runId);
+      expect(runTree.dotted_order.includes(`${runId}.`)).toBe(true);
       return a + b;
     },
     {
@@ -199,7 +200,7 @@ test.concurrent("Test get run tree method", async () => {
   const addValueTraceable = traceable(
     (a: string, b: number) => {
       const runTree = getCurrentRunTree();
-      expect(runTree?.id).toBe(runId);
+      expect(runTree.id).toBe(runId);
       return nestedAddValueTraceable(a, b);
     },
     {
