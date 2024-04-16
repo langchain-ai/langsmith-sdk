@@ -196,6 +196,16 @@ export function traceable<Func extends (...args: any[]) => any>(
   return traceableFunc as TraceableFunction<Func>;
 }
 
+/**
+ * Return the current run tree from within a traceable-wrapped function.
+ *
+ * @returns The run tree for the given context, or undefined if
+ * not called from a traceable function.
+ */
+export function getCurrentRunTree(): RunTree | undefined {
+  return asyncLocalStorage.getStore();
+}
+
 export function isTraceableFunction(
   x: unknown
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

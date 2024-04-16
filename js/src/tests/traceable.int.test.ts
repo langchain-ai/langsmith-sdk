@@ -2,7 +2,11 @@ import { v4 as uuidv4 } from "uuid";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { FakeStreamingLLM } from "@langchain/core/utils/testing";
 import { Client } from "../client.js";
-import { isTraceableFunction, traceable } from "../traceable.js";
+import {
+  getCurrentRunTree,
+  isTraceableFunction,
+  traceable,
+} from "../traceable.js";
 import { RunTree } from "../run_trees.js";
 
 async function deleteProject(langchainClient: Client, projectName: string) {
@@ -170,3 +174,40 @@ test.concurrent(
   },
   180_000
 );
+
+test.concurrent("Test get run tree method", async () => {
+  const langchainClient = new Client({
+    callerOptions: { maxRetries: 0 },
+  });
+  const runId = uuidv4();
+  const projectName = "__test_traceable_wrapper";
+  const nestedAddValueTraceable = traceable(
+    (a: string, b: number) => {
+      const runTree = getCurrentRunTree();
+      console.log(runTree);
+      expect(runTree?.id).toBeDefined();
+      expect(runTree?.id).not.toEqual(runId);
+      expect(runTree?.dotted_order.includes(`${runId}.`)).toBe(true);
+      return a + b;
+    },
+    {
+      name: "nested_add_value",
+      project_name: projectName,
+      client: langchainClient,
+    }
+  );
+  const addValueTraceable = traceable(
+    (a: string, b: number) => {
+      const runTree = getCurrentRunTree();
+      expect(runTree?.id).toBe(runId);
+      return nestedAddValueTraceable(a, b);
+    },
+    {
+      name: "add_value",
+      project_name: projectName,
+      client: langchainClient,
+      id: runId,
+    }
+  );
+  expect(await addValueTraceable("testing", 9)).toBe("testing9");
+});
