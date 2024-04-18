@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import langsmith
 from langsmith import Client
 from langsmith.run_helpers import (
     _get_inputs,
@@ -465,6 +466,8 @@ async def test_async_generator():
 
     @traceable
     async def another_async_func(query: str) -> str:
+        with langsmith.trace(name="zee-cm", inputs={"query": query}) as run_tree:
+            run_tree.end(outputs={"query": query})
         return query
 
     @traceable
@@ -544,3 +547,4 @@ async def test_async_generator():
         "create_document_context",
         "summarize_answers",
     ]
+    assert len(child_runs[2].child_runs) == 1  # type: ignore
