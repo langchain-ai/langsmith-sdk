@@ -408,7 +408,7 @@ class Client:
         *,
         api_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
-        timeout_ms: Optional[int] = None,
+        timeout_ms: Optional[Union[int, Tuple[int, int]]] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
@@ -486,7 +486,11 @@ class Client:
             _validate_api_key_if_hosted(self.api_url, self.api_key)
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
-        self.timeout_ms = timeout_ms or 10000
+        self.timeout_ms = (
+            (timeout_ms, timeout_ms)
+            if isinstance(timeout_ms, int)
+            else (timeout_ms or (10_000, 90_001))
+        )
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
@@ -606,7 +610,7 @@ class Client:
                 response = self.session.get(
                     self.api_url + "/info",
                     headers={"Accept": "application/json"},
-                    timeout=self.timeout_ms / 1000,
+                    timeout=(self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
                 )
                 ls_utils.raise_for_status_with_text(response)
                 self._info = ls_schemas.LangSmithInfo(**response.json())
@@ -676,7 +680,7 @@ class Client:
                 **request_kwargs.get("headers", {}),
                 **kwargs.get("headers", {}),
             },
-            "timeout": self.timeout_ms / 1000,
+            "timeout": (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
             **request_kwargs,
             **kwargs,
         }
@@ -713,6 +717,14 @@ class Client:
                         )
                     ls_utils.raise_for_status_with_text(response)
                     return response
+                except requests.exceptions.ReadTimeout as e:
+                    logger.debug("Passing on exception %s", e)
+                    if idx + 1 == stop_after_attempt:
+                        raise
+                    sleep_time = 2**idx + (random.random() * 0.5)
+                    time.sleep(sleep_time)
+                    continue
+
                 except requests.HTTPError as e:
                     if response is not None:
                         if handle_response is not None:
