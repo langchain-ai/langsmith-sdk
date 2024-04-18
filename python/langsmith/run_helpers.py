@@ -398,7 +398,7 @@ def traceable(
                 else:
                     fr_coro = func(*args, **kwargs)
                 if accepts_context:
-                    function_result = await asyncio.create_task(
+                    function_result = await asyncio.create_task(  # type: ignore[call-arg]
                         fr_coro, context=run_container["context"]
                     )
                 else:
