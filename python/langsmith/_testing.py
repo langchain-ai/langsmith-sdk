@@ -5,14 +5,15 @@ import concurrent.futures
 import datetime
 import functools
 import inspect
-import json
 import logging
 import threading
 import uuid
 import warnings
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
+import orjson
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
@@ -316,15 +317,28 @@ def _start_experiment(
         return client.read_project(project_name=experiment_name)
 
 
-def _get_id(func: Callable, inputs: dict, suite_id: uuid.UUID) -> uuid.UUID:
+# Track the number of times a parameter has been used in a test
+# This is to ensure that we can uniquely identify each test case
+# defined using pytest.mark.parametrize
+_param_dict = defaultdict(lambda: defaultdict(int))
+
+
+def _get_id(func: Callable, inputs: dict, suite_id: uuid.UUID) -> Tuple[uuid.UUID, str]:
+    global _param_dict
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
         # Fall back to module name if file path is not available
         file_path = func.__module__
-    input_json = json.dumps(inputs, sort_keys=True)
-    identifier = f"{suite_id}{file_path}::{func.__name__}{input_json}"
-    return uuid.uuid5(uuid.NAMESPACE_DNS, identifier)
+    identifier = f"{suite_id}{file_path}::{func.__name__}"
+    input_keys = tuple(sorted(inputs.keys()))
+    arg_indices = []
+    for key in input_keys:
+        _param_dict[identifier][key] += 1
+        arg_indices.append(f"{key}{_param_dict[identifier][key]}")
+    if arg_indices:
+        identifier += f"[{'-'.join(arg_indices)}]"
+    return uuid.uuid5(uuid.NAMESPACE_DNS, identifier), identifier[len(str(suite_id)) :]
 
 
 def _end_tests(
@@ -337,6 +351,17 @@ def _end_tests(
         metadata={**git_info, "dataset_version": test_suite.get_version()},
     )
     test_suite.wait()
+
+
+VT = TypeVar("VT", bound=Optional[dict])
+
+
+def _serde_example_values(values: VT) -> VT:
+    if values is None:
+        return values
+    # Don't try to magically serialize Python objects, just use their REPRs.
+    bts = ls_client._dumps_json(values, serialize_py=False)
+    return orjson.loads(bts)
 
 
 class _LangSmithTestSuite:
@@ -421,25 +446,27 @@ class _LangSmithTestSuite:
     def _sync_example(
         self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
     ) -> None:
+        inputs_ = _serde_example_values(inputs)
+        outputs_ = _serde_example_values(outputs)
         try:
             example = self.client.read_example(example_id=example_id)
             if (
-                inputs != example.inputs
-                or outputs != example.outputs
+                inputs_ != example.inputs
+                or outputs_ != example.outputs
                 or str(example.dataset_id) != str(self.id)
             ):
                 self.client.update_example(
                     example_id=example.id,
-                    inputs=inputs,
-                    outputs=outputs,
+                    inputs=inputs_,
+                    outputs=outputs_,
                     metadata=metadata,
                     dataset_id=self.id,
                 )
         except ls_utils.LangSmithNotFoundError:
             example = self.client.create_example(
                 example_id=example_id,
-                inputs=inputs,
-                outputs=outputs,
+                inputs=inputs_,
+                outputs=outputs_,
                 dataset_id=self.id,
                 metadata=metadata,
             )
@@ -478,12 +505,13 @@ def _ensure_example(
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
     test_suite = _LangSmithTestSuite.from_test(client, func)
-    example_id = langtest_extra["id"] or _get_id(func, inputs, test_suite.id)
+    example_id, example_name = _get_id(func, inputs, test_suite.id)
+    example_id = langtest_extra["id"] or example_id
     test_suite.sync_example(
         example_id,
         inputs,
         outputs,
-        metadata={"signature": _get_test_repr(func, signature)},
+        metadata={"signature": _get_test_repr(func, signature), "name": example_name},
     )
     return test_suite, example_id
 
