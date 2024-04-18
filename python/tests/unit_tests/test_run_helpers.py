@@ -3,6 +3,7 @@ import functools
 import inspect
 import json
 import os
+import sys
 import time
 import warnings
 from typing import Any, AsyncGenerator, Optional, cast
@@ -453,6 +454,12 @@ def test_traceable_too_many_pos_args() -> None:
         assert "only accepts one positional argument" in str(warning_records[0].message)
 
 
+# Really hard to get contextvar propagation right for async generators
+# prior to Python 3.10
+@pytest.mark.skipif(
+    sys.version_info < (3, 9),
+    reason="Skipping for Python 3.8 or earlier",
+)
 async def test_async_generator():
     @traceable
     def some_sync_func(query: str) -> list:
