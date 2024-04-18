@@ -320,7 +320,7 @@ def _start_experiment(
 # Track the number of times a parameter has been used in a test
 # This is to ensure that we can uniquely identify each test case
 # defined using pytest.mark.parametrize
-_param_dict = defaultdict(lambda: defaultdict(int))
+_param_dict: dict = defaultdict(lambda: defaultdict(int))
 
 
 def _get_id(func: Callable, inputs: dict, suite_id: uuid.UUID) -> Tuple[uuid.UUID, str]:

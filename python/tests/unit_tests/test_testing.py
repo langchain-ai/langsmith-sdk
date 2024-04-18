@@ -16,7 +16,7 @@ def test__serde_example_values():
 
 def test__get_id():
     class Foo:
-        bar: str = "baz"
+        bar: str = "baz"  # type: ignore
 
         def __init__(self, a: int, b: int):
             self.a = a
