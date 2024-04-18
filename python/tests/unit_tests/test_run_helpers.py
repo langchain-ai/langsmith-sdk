@@ -515,7 +515,11 @@ async def test_async_generator():
         nonlocal run
         run = r
 
-    chunks = my_answer("some_query", langsmith_extra={"on_end": _get_run})
+    mock_client_ = _get_mock_client()
+
+    chunks = my_answer(
+        "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
+    )
     all_chunks = []
     async for chunk in chunks:
         all_chunks.append(chunk)
