@@ -174,6 +174,8 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                 return repr(obj)
         if isinstance(obj, bytes):
             return obj.decode("utf-8")
+        if isinstance(obj, str):
+            return obj.encode("utf-16", "surrogatepass").decode("utf-16")
         if isinstance(obj, (set, tuple)):
             return orjson.loads(_dumps_json_single(list(obj)))
 
@@ -214,14 +216,21 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
 def _dumps_json_single(
     obj: Any, default: Optional[Callable[[Any], Any]] = None
 ) -> bytes:
-    return orjson.dumps(
-        obj,
-        default=default,
-        option=orjson.OPT_SERIALIZE_NUMPY
-        | orjson.OPT_SERIALIZE_DATACLASS
-        | orjson.OPT_SERIALIZE_UUID
-        | orjson.OPT_NON_STR_KEYS,
-    )
+    try:
+        return orjson.dumps(
+            obj,
+            default=default,
+            option=orjson.OPT_SERIALIZE_NUMPY
+            | orjson.OPT_SERIALIZE_DATACLASS
+            | orjson.OPT_SERIALIZE_UUID
+            | orjson.OPT_NON_STR_KEYS,
+        )
+    except TypeError as e:
+        logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
+        return json.dumps(
+            obj,
+            default=default,
+        ).encode("utf-8")
 
 
 def _dumps_json(obj: Any, depth: int = 0) -> bytes:
