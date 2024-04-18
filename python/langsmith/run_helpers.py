@@ -399,7 +399,6 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
-            parent_run_tree = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -422,15 +421,14 @@ def traceable(
                     )
                 else:
                     # Python < 3.11
-                    copied_context = get_tracing_context(run_container["context"])
-                    with tracing_context(**copied_context):
+                    with tracing_context(
+                        **get_tracing_context(run_container["context"])
+                    ):
                         function_result = await fr_coro
             except Exception as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
                 raise e
-            finally:
-                _unset_context_vars(run_container, parent_run_tree)
             _container_end(run_container, outputs=function_result)
             return function_result
 
@@ -467,7 +465,11 @@ def traceable(
                             async_gen_result, context=run_container["context"]
                         )  # type: ignore
                     else:
-                        async_gen_result = await async_gen_result
+                        # Python < 3.11
+                        with tracing_context(
+                            **get_tracing_context(run_container["context"])
+                        ):
+                            async_gen_result = await async_gen_result
                 try:
                     while True:
                         if accepts_context:
@@ -476,7 +478,11 @@ def traceable(
                                 context=run_container["context"],
                             )
                         else:
-                            item = await aitertools.py_anext(async_gen_result)
+                            # Python < 3.11
+                            with tracing_context(
+                                **get_tracing_context(run_container["context"])
+                            ):
+                                item = await aitertools.py_anext(async_gen_result)
                         if run_type == "llm":
                             if run_container["new_run"]:
                                 run_container["new_run"].add_event(
@@ -883,16 +889,6 @@ class _ContainerInput(TypedDict, total=False):
     project_name: Optional[str]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
-
-
-def _unset_context_vars(
-    container: _TraceableContainer, parent_run_tree: Optional[run_trees.RunTree]
-):
-    """Unset context vars."""
-    _PARENT_RUN_TREE.set(parent_run_tree)
-    _PROJECT_NAME.set(container["outer_project"])
-    _TAGS.set(container["outer_tags"])
-    _METADATA.set(container["outer_metadata"])
 
 
 def _container_end(
