@@ -5,6 +5,7 @@ import io
 import os
 import random
 import string
+import sys
 import time
 from datetime import timedelta
 from typing import Any, Callable, Dict, cast
@@ -12,7 +13,6 @@ from uuid import uuid4
 
 import pytest
 from freezegun import freeze_time
-from langchain.schema import FunctionMessage, HumanMessage
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import DataType
@@ -299,6 +299,8 @@ def test_create_run_with_masked_inputs_outputs(
 def test_create_chat_example(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
+    from langchain.schema import FunctionMessage, HumanMessage
+
     dataset_name = "__createChatExample-test-dataset"
     try:
         existing_dataset = langchain_client.read_dataset(dataset_name=dataset_name)
@@ -489,3 +491,39 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     else:
         assert updated_run.tags == ["tag1", "tag2"]
     assert updated_run.extra["runtime"] == created_run.extra["runtime"]  # type: ignore
+
+
+def test_surrogates():
+    chars = "".join(chr(cp) for cp in range(0, sys.maxunicode + 1))
+    trans_table = str.maketrans("", "", "")
+    all_chars = chars.translate(trans_table)
+    langchain_client = Client()
+    langchain_client.create_run(
+        name="test_run",
+        inputs={
+            "text": [
+                "Hello\ud83d\ude00",
+                "Python\ud83d\udc0d",
+                "Surrogate\ud834\udd1e",
+                "Example\ud83c\udf89",
+                "String\ud83c\udfa7",
+                "With\ud83c\udf08",
+                "Surrogates\ud83d\ude0e",
+                "Embedded\ud83d\udcbb",
+                "In\ud83c\udf0e",
+                "The\ud83d\udcd6",
+                "Text\ud83d\udcac",
+                "收花🙄·到",
+            ]
+        },
+        run_type="llm",
+        end_time=datetime.datetime.now(datetime.timezone.utc),
+    )
+    langchain_client.create_run(
+        name="test_run",
+        inputs={
+            "text": all_chars,
+        },
+        run_type="llm",
+        end_time=datetime.datetime.now(datetime.timezone.utc),
+    )
