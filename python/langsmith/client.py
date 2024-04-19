@@ -179,7 +179,7 @@ def _simple_default(obj: Any) -> Any:
         return repr(obj)
 
 
-def _serialize_json(obj: Any, depth: int = 0) -> Any:
+def _serialize_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> Any:
     try:
         if depth >= _MAX_DEPTH:
             try:
@@ -207,18 +207,29 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                     )
                     if isinstance(json_str, str):
                         return json.loads(json_str)
-                    return orjson.loads(_dumps_json(json_str, depth=depth + 1))
+                    return orjson.loads(
+                        _dumps_json(
+                            json_str, depth=depth + 1, serialize_py=serialize_py
+                        )
+                    )
                 except Exception as e:
                     logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
                     pass
-        all_attrs = {}
-        if hasattr(obj, "__slots__"):
-            all_attrs.update({slot: getattr(obj, slot, None) for slot in obj.__slots__})
-        if hasattr(obj, "__dict__"):
-            all_attrs.update(vars(obj))
-        if all_attrs:
-            filtered = {k: v if v is not obj else repr(v) for k, v in all_attrs.items()}
-            return orjson.loads(_dumps_json(filtered, depth=depth + 1))
+        if serialize_py:
+            all_attrs = {}
+            if hasattr(obj, "__slots__"):
+                all_attrs.update(
+                    {slot: getattr(obj, slot, None) for slot in obj.__slots__}
+                )
+            if hasattr(obj, "__dict__"):
+                all_attrs.update(vars(obj))
+            if all_attrs:
+                filtered = {
+                    k: v if v is not obj else repr(v) for k, v in all_attrs.items()
+                }
+                return orjson.loads(
+                    _dumps_json(filtered, depth=depth + 1, serialize_py=serialize_py)
+                )
         return repr(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
@@ -258,7 +269,7 @@ def _dumps_json_single(
         return result
 
 
-def _dumps_json(obj: Any, depth: int = 0) -> bytes:
+def _dumps_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> bytes:
     """Serialize an object to a JSON formatted string.
 
     Parameters
@@ -273,7 +284,9 @@ def _dumps_json(obj: Any, depth: int = 0) -> bytes:
     str
         The JSON formatted string.
     """
-    return _dumps_json_single(obj, functools.partial(_serialize_json, depth=depth))
+    return _dumps_json_single(
+        obj, functools.partial(_serialize_json, depth=depth, serialize_py=serialize_py)
+    )
 
 
 def close_session(session: requests.Session) -> None:
@@ -442,7 +455,7 @@ class Client:
         *,
         api_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
-        timeout_ms: Optional[int] = None,
+        timeout_ms: Optional[Union[int, Tuple[int, int]]] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
@@ -520,7 +533,11 @@ class Client:
             _validate_api_key_if_hosted(self.api_url, self.api_key)
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
-        self.timeout_ms = timeout_ms or 10000
+        self.timeout_ms = (
+            (timeout_ms, timeout_ms)
+            if isinstance(timeout_ms, int)
+            else (timeout_ms or (10_000, 90_001))
+        )
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
@@ -640,7 +657,7 @@ class Client:
                 response = self.session.get(
                     self.api_url + "/info",
                     headers={"Accept": "application/json"},
-                    timeout=self.timeout_ms / 1000,
+                    timeout=(self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
                 )
                 ls_utils.raise_for_status_with_text(response)
                 self._info = ls_schemas.LangSmithInfo(**response.json())
@@ -710,7 +727,7 @@ class Client:
                 **request_kwargs.get("headers", {}),
                 **kwargs.get("headers", {}),
             },
-            "timeout": self.timeout_ms / 1000,
+            "timeout": (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
             **request_kwargs,
             **kwargs,
         }
@@ -747,6 +764,14 @@ class Client:
                         )
                     ls_utils.raise_for_status_with_text(response)
                     return response
+                except requests.exceptions.ReadTimeout as e:
+                    logger.debug("Passing on exception %s", e)
+                    if idx + 1 == stop_after_attempt:
+                        raise
+                    sleep_time = 2**idx + (random.random() * 0.5)
+                    time.sleep(sleep_time)
+                    continue
+
                 except requests.HTTPError as e:
                     if response is not None:
                         if handle_response is not None:

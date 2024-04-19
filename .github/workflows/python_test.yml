@@ -21,6 +21,7 @@ jobs:
         python-version:
           - "3.8"
           - "3.11"
+          - "3.12"
     defaults:
       run:
         working-directory: python
@@ -61,6 +62,12 @@ jobs:
   test:
     needs: build
     runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        python-version:
+          - "3.8"
+          - "3.11"
+          - "3.12"
     defaults:
       run:
         working-directory: python
