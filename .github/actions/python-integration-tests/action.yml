@@ -63,7 +63,6 @@ runs:
           LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
           OPENAI_API_KEY: ${{ inputs.openai-api-key }}
           ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
-          LANGCHAIN_TEST_CACHE: "tests/cassettes"
       run: make evals
       shell: bash
       working-directory: python
