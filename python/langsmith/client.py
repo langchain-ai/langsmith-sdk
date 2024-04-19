@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import random
+import re
 import socket
 import sys
 import threading
@@ -165,6 +166,19 @@ def _default_retry_config() -> Retry:
 _MAX_DEPTH = 2
 
 
+def _simple_default(obj: Any) -> Any:
+    # Don't traverse into nested objects
+    try:
+        if isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        return json.loads(json.dumps(obj))
+    except BaseException as e:
+        logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
+        return repr(obj)
+
+
 def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
         if depth >= _MAX_DEPTH:
@@ -174,8 +188,6 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                 return repr(obj)
         if isinstance(obj, bytes):
             return obj.decode("utf-8")
-        if isinstance(obj, str):
-            return obj.encode("utf-16", "surrogatepass").decode("utf-16")
         if isinstance(obj, (set, tuple)):
             return orjson.loads(_dumps_json_single(list(obj)))
 
@@ -213,6 +225,12 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
         return repr(obj)
 
 
+def _elide_surrogates(s: bytes) -> bytes:
+    pattern = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
+    result = pattern.sub(b"", s)
+    return result
+
+
 def _dumps_json_single(
     obj: Any, default: Optional[Callable[[Any], Any]] = None
 ) -> bytes:
@@ -226,11 +244,18 @@ def _dumps_json_single(
             | orjson.OPT_NON_STR_KEYS,
         )
     except TypeError as e:
+        # Usually caused by UTF surrogate characters
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
-        return json.dumps(
+        result = json.dumps(
             obj,
-            default=default,
+            default=_simple_default,
+            ensure_ascii=True,
         ).encode("utf-8")
+        try:
+            result = orjson.dumps(orjson.loads(result.decode("utf-8", errors="lossy")))
+        except orjson.JSONDecodeError:
+            result = _elide_surrogates(result)
+        return result
 
 
 def _dumps_json(obj: Any, depth: int = 0) -> bytes:
