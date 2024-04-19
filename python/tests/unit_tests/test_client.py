@@ -7,6 +7,7 @@ import itertools
 import json
 import math
 import os
+import sys
 import threading
 import time
 import uuid
@@ -764,6 +765,18 @@ def test_serialize_json() -> None:
                 assert res[k] == v, f"Failed for {k}"
         except AssertionError:
             raise
+
+
+def test__dumps_json():
+    chars = "".join(chr(cp) for cp in range(0, sys.maxunicode + 1))
+    trans_table = str.maketrans("", "", "")
+    all_chars = chars.translate(trans_table)
+    serialized_json = _dumps_json({"chars": all_chars})
+    assert isinstance(serialized_json, bytes)
+    serialized_str = serialized_json.decode("utf-8")
+    assert '"chars"' in serialized_str
+    assert "\\uD800" not in serialized_str
+    assert "\\uDC00" not in serialized_str
 
 
 @patch("langsmith.client.requests.Session", autospec=True)

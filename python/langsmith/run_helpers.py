@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import contextvars
 import datetime
@@ -11,6 +12,7 @@ import logging
 import traceback
 import uuid
 import warnings
+from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -34,17 +36,24 @@ from typing import (
 
 from langsmith import client as ls_client
 from langsmith import run_trees, utils
+from langsmith._internal import _aiter as aitertools
 
 if TYPE_CHECKING:
     from langchain.schema.runnable import Runnable
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
 _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
+_CONTEXT_KEYS: Dict[str, contextvars.ContextVar] = {
+    "parent": _PARENT_RUN_TREE,
+    "project_name": _PROJECT_NAME,
+    "tags": _TAGS,
+    "metadata": _METADATA,
+}
 
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
@@ -52,14 +61,25 @@ def get_current_run_tree() -> Optional[run_trees.RunTree]:
     return _PARENT_RUN_TREE.get()
 
 
-def get_tracing_context() -> dict:
+def get_tracing_context(
+    context: Optional[contextvars.Context] = None,
+) -> Dict[str, Any]:
     """Get the current tracing context."""
-    return {
-        "parent": _PARENT_RUN_TREE.get(),
-        "project_name": _PROJECT_NAME.get(),
-        "tags": _TAGS.get(),
-        "metadata": _METADATA.get(),
-    }
+    if context is None:
+        return {
+            "parent": _PARENT_RUN_TREE.get(),
+            "project_name": _PROJECT_NAME.get(),
+            "tags": _TAGS.get(),
+            "metadata": _METADATA.get(),
+        }
+    return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
+
+
+def _set_tracing_context(context: Dict[str, Any]):
+    """Set the tracing context."""
+    for k, v in context.items():
+        var = _CONTEXT_KEYS[k]
+        var.set(v)
 
 
 @contextlib.contextmanager
@@ -78,30 +98,28 @@ def tracing_context(
             f"Unrecognized keyword arguments: {kwargs}.",
             DeprecationWarning,
         )
-    parent_run_ = get_current_run_tree()
-    _PROJECT_NAME.set(project_name)
+    current_context = get_tracing_context()
     parent_run = _get_parent_run({"parent": parent or kwargs.get("parent_run")})
     if parent_run is not None:
-        _PARENT_RUN_TREE.set(parent_run)
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
-    _TAGS.set(tags)
-    _METADATA.set(metadata)
+
+    _set_tracing_context(
+        {
+            "parent": parent_run,
+            "project_name": project_name,
+            "tags": tags,
+            "metadata": metadata,
+        }
+    )
     try:
         yield
     finally:
-        _PROJECT_NAME.set(None)
-        _TAGS.set(None)
-        _METADATA.set(None)
-        _PARENT_RUN_TREE.set(parent_run_)
+        _set_tracing_context(current_context)
 
 
 # Alias for backwards compatibility
 get_run_tree_context = get_current_run_tree
-
-
-def _is_traceable_function(func: Callable) -> bool:
-    return getattr(func, "__langsmith_traceable__", False)
 
 
 def is_traceable_function(func: Callable) -> bool:
@@ -128,36 +146,6 @@ def is_async(func: Callable) -> bool:
     )
 
 
-def _get_inputs(
-    signature: inspect.Signature, *args: Any, **kwargs: Any
-) -> Dict[str, Any]:
-    """Return a dictionary of inputs from the function signature."""
-    bound = signature.bind_partial(*args, **kwargs)
-    bound.apply_defaults()
-    arguments = dict(bound.arguments)
-    arguments.pop("self", None)
-    arguments.pop("cls", None)
-    for param_name, param in signature.parameters.items():
-        if param.kind == inspect.Parameter.VAR_KEYWORD:
-            # Update with the **kwargs, and remove the original entry
-            # This is to help flatten out keyword arguments
-            if param_name in arguments:
-                arguments.update(arguments[param_name])
-                arguments.pop(param_name)
-
-    return arguments
-
-
-def _get_inputs_safe(
-    signature: inspect.Signature, *args: Any, **kwargs: Any
-) -> Dict[str, Any]:
-    try:
-        return _get_inputs(signature, *args, **kwargs)
-    except BaseException as e:
-        logger.debug(f"Failed to get inputs for {signature}: {e}")
-        return {"args": args, "kwargs": kwargs}
-
-
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
@@ -173,208 +161,7 @@ class LangSmithExtra(TypedDict, total=False):
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
 
 
-class _TraceableContainer(TypedDict, total=False):
-    """Typed response when initializing a run a traceable."""
-
-    new_run: Optional[run_trees.RunTree]
-    project_name: Optional[str]
-    outer_project: Optional[str]
-    outer_metadata: Optional[Dict[str, Any]]
-    outer_tags: Optional[List[str]]
-    on_end: Optional[Callable[[run_trees.RunTree], Any]]
-
-
-class _ContainerInput(TypedDict, total=False):
-    """Typed response when initializing a run a traceable."""
-
-    extra_outer: Optional[Dict]
-    name: Optional[str]
-    metadata: Optional[Dict[str, Any]]
-    tags: Optional[List[str]]
-    client: Optional[ls_client.Client]
-    reduce_fn: Optional[Callable]
-    project_name: Optional[str]
-    run_type: ls_client.RUN_TYPE_T
-    process_inputs: Optional[Callable[[dict], dict]]
-
-
-def _container_end(
-    container: _TraceableContainer,
-    outputs: Optional[Any] = None,
-    error: Optional[str] = None,
-):
-    """End the run."""
-    run_tree = container.get("new_run")
-    if run_tree is None:
-        # Tracing disabled
-        return
-    outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
-    run_tree.end(outputs=outputs_, error=error)
-    run_tree.patch()
-    if error:
-        try:
-            logger.info(f"See trace: {run_tree.get_url()}")
-        except Exception:
-            pass
-    on_end = container.get("on_end")
-    if on_end is not None and callable(on_end):
-        try:
-            on_end(run_tree)
-        except Exception as e:
-            logger.warning(f"Failed to run on_end function: {e}")
-
-
-def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
-    run_extra = langsmith_extra.get("run_extra", None)
-    if run_extra:
-        extra_inner = {**extra_outer, **run_extra}
-    else:
-        extra_inner = extra_outer
-    return extra_inner
-
-
-def _get_parent_run(langsmith_extra: LangSmithExtra) -> Optional[run_trees.RunTree]:
-    parent = langsmith_extra.get("parent")
-    if isinstance(parent, run_trees.RunTree):
-        return parent
-    if isinstance(parent, dict):
-        return run_trees.RunTree.from_headers(parent)
-    if isinstance(parent, str):
-        return run_trees.RunTree.from_dotted_order(parent)
-    run_tree = langsmith_extra.get("run_tree")
-    if run_tree:
-        return run_tree
-    return get_current_run_tree()
-
-
-def _setup_run(
-    func: Callable,
-    container_input: _ContainerInput,
-    langsmith_extra: Optional[LangSmithExtra] = None,
-    args: Any = None,
-    kwargs: Any = None,
-) -> _TraceableContainer:
-    """Create a new run or create_child() if run is passed in kwargs."""
-    extra_outer = container_input.get("extra_outer") or {}
-    name = container_input.get("name")
-    metadata = container_input.get("metadata")
-    tags = container_input.get("tags")
-    client = container_input.get("client")
-    run_type = container_input.get("run_type") or "chain"
-    outer_project = _PROJECT_NAME.get()
-    langsmith_extra = langsmith_extra or LangSmithExtra()
-    parent_run_ = _get_parent_run(langsmith_extra)
-    project_cv = _PROJECT_NAME.get()
-    selected_project = (
-        project_cv  # From parent trace
-        or langsmith_extra.get("project_name")  # at invocation time
-        or container_input["project_name"]  # at decorator time
-        or utils.get_tracer_project()  # default
-    )
-    reference_example_id = langsmith_extra.get("reference_example_id")
-    id_ = langsmith_extra.get("run_id")
-    if (
-        not project_cv
-        and not reference_example_id
-        and not parent_run_
-        and not utils.tracing_is_enabled()
-    ):
-        utils.log_once(
-            logging.DEBUG, "LangSmith tracing is disabled, returning original function."
-        )
-        return _TraceableContainer(
-            new_run=None,
-            project_name=selected_project,
-            outer_project=outer_project,
-            outer_metadata=None,
-            outer_tags=None,
-            on_end=langsmith_extra.get("on_end"),
-        )
-    id_ = id_ or str(uuid.uuid4())
-    signature = inspect.signature(func)
-    name_ = name or func.__name__
-    docstring = func.__doc__
-    extra_inner = _collect_extra(extra_outer, langsmith_extra)
-    outer_metadata = _METADATA.get()
-    metadata_ = {
-        **(langsmith_extra.get("metadata") or {}),
-        **(outer_metadata or {}),
-    }
-    _METADATA.set(metadata_)
-    metadata_.update(metadata or {})
-    metadata_["ls_method"] = "traceable"
-    extra_inner["metadata"] = metadata_
-    inputs = _get_inputs_safe(signature, *args, **kwargs)
-    process_inputs = container_input.get("process_inputs")
-    if process_inputs:
-        try:
-            inputs = process_inputs(inputs)
-        except Exception as e:
-            logger.error(f"Failed to filter inputs for {name_}: {e}")
-    outer_tags = _TAGS.get()
-    tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
-    _TAGS.set(tags_)
-    tags_ += tags or []
-    client_ = langsmith_extra.get("client", client)
-    if parent_run_ is not None:
-        new_run = parent_run_.create_child(
-            name=name_,
-            run_type=run_type,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
-            inputs=inputs,
-            tags=tags_,
-            extra=extra_inner,
-            run_id=id_,
-        )
-    else:
-        new_run = run_trees.RunTree(
-            id=id_,
-            name=name_,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
-            inputs=inputs,
-            run_type=run_type,
-            reference_example_id=reference_example_id,
-            project_name=selected_project,
-            extra=extra_inner,
-            tags=tags_,
-            client=client_,
-        )
-    try:
-        new_run.post()
-    except Exception as e:
-        logger.error(f"Failed to post run {new_run.id}: {e}")
-    response_container = _TraceableContainer(
-        new_run=new_run,
-        project_name=selected_project,
-        outer_project=outer_project,
-        outer_metadata=outer_metadata,
-        outer_tags=outer_tags,
-        on_end=langsmith_extra.get("on_end"),
-    )
-    _PROJECT_NAME.set(response_container["project_name"])
-    _PARENT_RUN_TREE.set(response_container["new_run"])
-    return response_container
-
-
 R = TypeVar("R", covariant=True)
-
-_VALID_RUN_TYPES = {
-    "tool",
-    "chain",
-    "llm",
-    "retriever",
-    "embedding",
-    "prompt",
-    "parser",
-}
 
 
 @runtime_checkable
@@ -612,7 +399,6 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
-            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -624,21 +410,25 @@ def traceable(
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
             try:
+                accepts_context = aitertools.accepts_context(asyncio.create_task)
                 if func_accepts_parent_run:
-                    function_result = await func(
-                        *args, run_tree=run_container["new_run"], **kwargs
+                    fr_coro = func(*args, run_tree=run_container["new_run"], **kwargs)
+                else:
+                    fr_coro = func(*args, **kwargs)
+                if accepts_context:
+                    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                        fr_coro, context=run_container["context"]
                     )
                 else:
-                    function_result = await func(*args, **kwargs)
+                    # Python < 3.11
+                    with tracing_context(
+                        **get_tracing_context(run_container["context"])
+                    ):
+                        function_result = await fr_coro
             except Exception as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
                 raise e
-            finally:
-                _PARENT_RUN_TREE.set(context_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
-                _TAGS.set(run_container["outer_tags"])
-                _METADATA.set(run_container["outer_metadata"])
             _container_end(run_container, outputs=function_result)
             return function_result
 
@@ -646,7 +436,6 @@ def traceable(
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -668,42 +457,57 @@ def traceable(
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
                     async_gen_result = func(*args, **kwargs)
-                _PARENT_RUN_TREE.set(context_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
-                _TAGS.set(run_container["outer_tags"])
-                _METADATA.set(run_container["outer_metadata"])
                 # Can't iterate through if it's a coroutine
+                accepts_context = aitertools.accepts_context(asyncio.create_task)
                 if inspect.iscoroutine(async_gen_result):
-                    async_gen_result = await async_gen_result
-                async for item in async_gen_result:
-                    if run_type == "llm":
-                        if run_container["new_run"]:
-                            run_container["new_run"].add_event(
-                                {
-                                    "name": "new_token",
-                                    "time": datetime.datetime.now(
-                                        datetime.timezone.utc
-                                    ).isoformat(),
-                                    "kwargs": {"token": item},
-                                }
+                    if accepts_context:
+                        async_gen_result = await asyncio.create_task(
+                            async_gen_result, context=run_container["context"]
+                        )  # type: ignore
+                    else:
+                        # Python < 3.11
+                        with tracing_context(
+                            **get_tracing_context(run_container["context"])
+                        ):
+                            async_gen_result = await async_gen_result
+                try:
+                    while True:
+                        if accepts_context:
+                            item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
+                                aitertools.py_anext(async_gen_result),  # type: ignore[arg-type]
+                                context=run_container["context"],
                             )
-                    results.append(item)
-                    yield item
+                        else:
+                            # Python < 3.11
+                            with tracing_context(
+                                **get_tracing_context(run_container["context"])
+                            ):
+                                item = await aitertools.py_anext(async_gen_result)
+                        if run_type == "llm":
+                            if run_container["new_run"]:
+                                run_container["new_run"].add_event(
+                                    {
+                                        "name": "new_token",
+                                        "time": datetime.datetime.now(
+                                            datetime.timezone.utc
+                                        ).isoformat(),
+                                        "kwargs": {"token": item},
+                                    }
+                                )
+                        results.append(item)
+                        yield item
+                except StopAsyncIteration:
+                    pass
             except BaseException as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
                 raise e
-            finally:
-                _PARENT_RUN_TREE.set(context_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
-                _TAGS.set(run_container["outer_tags"])
-                _METADATA.set(run_container["outer_metadata"])
             if results:
                 if reduce_fn:
                     try:
                         function_result = reduce_fn(results)
                     except Exception as e:
-                        logger.error(e)
+                        LOGGER.error(e)
                         function_result = results
                 else:
                     function_result = results
@@ -718,7 +522,6 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
-            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -731,20 +534,17 @@ def traceable(
             )
             try:
                 if func_accepts_parent_run:
-                    function_result = func(
-                        *args, run_tree=run_container["new_run"], **kwargs
+                    function_result = run_container["context"].run(
+                        func, *args, run_tree=run_container["new_run"], **kwargs
                     )
                 else:
-                    function_result = func(*args, **kwargs)
+                    function_result = run_container["context"].run(
+                        func, *args, **kwargs
+                    )
             except BaseException as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
                 raise e
-            finally:
-                _PARENT_RUN_TREE.set(context_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
-                _TAGS.set(run_container["outer_tags"])
-                _METADATA.set(run_container["outer_metadata"])
             _container_end(run_container, outputs=function_result)
             return function_result
 
@@ -752,7 +552,6 @@ def traceable(
         def generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
-            context_run = get_current_run_tree()
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -766,14 +565,16 @@ def traceable(
             results: List[Any] = []
             try:
                 if func_accepts_parent_run:
-                    generator_result = func(
-                        *args, run_tree=run_container["new_run"], **kwargs
+                    generator_result = run_container["context"].run(
+                        func, *args, run_tree=run_container["new_run"], **kwargs
                     )
                 else:
                     # TODO: Nesting is ambiguous if a nested traceable function is only
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
-                    generator_result = func(*args, **kwargs)
+                    generator_result = run_container["context"].run(
+                        func, *args, **kwargs
+                    )
                 for item in generator_result:
                     if run_type == "llm":
                         if run_container["new_run"]:
@@ -795,17 +596,12 @@ def traceable(
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
                 raise e
-            finally:
-                _PARENT_RUN_TREE.set(context_run)
-                _PROJECT_NAME.set(run_container["outer_project"])
-                _TAGS.set(run_container["outer_tags"])
-                _METADATA.set(run_container["outer_metadata"])
             if results:
                 if reduce_fn:
                     try:
                         function_result = reduce_fn(results)
                     except Exception as e:
-                        logger.error(e)
+                        LOGGER.error(e)
                         function_result = results
                 else:
                     function_result = results
@@ -1054,3 +850,245 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             )
 
     return RunnableTraceable(traceable_fn)
+
+
+## Private Methods and Objects
+
+_VALID_RUN_TYPES = {
+    "tool",
+    "chain",
+    "llm",
+    "retriever",
+    "embedding",
+    "prompt",
+    "parser",
+}
+
+
+class _TraceableContainer(TypedDict, total=False):
+    """Typed response when initializing a run a traceable."""
+
+    new_run: Optional[run_trees.RunTree]
+    project_name: Optional[str]
+    outer_project: Optional[str]
+    outer_metadata: Optional[Dict[str, Any]]
+    outer_tags: Optional[List[str]]
+    on_end: Optional[Callable[[run_trees.RunTree], Any]]
+    context: contextvars.Context
+
+
+class _ContainerInput(TypedDict, total=False):
+    """Typed response when initializing a run a traceable."""
+
+    extra_outer: Optional[Dict]
+    name: Optional[str]
+    metadata: Optional[Dict[str, Any]]
+    tags: Optional[List[str]]
+    client: Optional[ls_client.Client]
+    reduce_fn: Optional[Callable]
+    project_name: Optional[str]
+    run_type: ls_client.RUN_TYPE_T
+    process_inputs: Optional[Callable[[dict], dict]]
+
+
+def _container_end(
+    container: _TraceableContainer,
+    outputs: Optional[Any] = None,
+    error: Optional[str] = None,
+):
+    """End the run."""
+    run_tree = container.get("new_run")
+    if run_tree is None:
+        # Tracing disabled
+        return
+    outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
+    run_tree.end(outputs=outputs_, error=error)
+    run_tree.patch()
+    if error:
+        try:
+            LOGGER.info(f"See trace: {run_tree.get_url()}")
+        except Exception:
+            pass
+    on_end = container.get("on_end")
+    if on_end is not None and callable(on_end):
+        try:
+            on_end(run_tree)
+        except Exception as e:
+            LOGGER.warning(f"Failed to run on_end function: {e}")
+
+
+def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
+    run_extra = langsmith_extra.get("run_extra", None)
+    if run_extra:
+        extra_inner = {**extra_outer, **run_extra}
+    else:
+        extra_inner = extra_outer
+    return extra_inner
+
+
+def _get_parent_run(langsmith_extra: LangSmithExtra) -> Optional[run_trees.RunTree]:
+    parent = langsmith_extra.get("parent")
+    if isinstance(parent, run_trees.RunTree):
+        return parent
+    if isinstance(parent, dict):
+        return run_trees.RunTree.from_headers(parent)
+    if isinstance(parent, str):
+        return run_trees.RunTree.from_dotted_order(parent)
+    run_tree = langsmith_extra.get("run_tree")
+    if run_tree:
+        return run_tree
+    return get_current_run_tree()
+
+
+def _setup_run(
+    func: Callable,
+    container_input: _ContainerInput,
+    langsmith_extra: Optional[LangSmithExtra] = None,
+    args: Any = None,
+    kwargs: Any = None,
+) -> _TraceableContainer:
+    """Create a new run or create_child() if run is passed in kwargs."""
+    extra_outer = container_input.get("extra_outer") or {}
+    name = container_input.get("name")
+    metadata = container_input.get("metadata")
+    tags = container_input.get("tags")
+    client = container_input.get("client")
+    run_type = container_input.get("run_type") or "chain"
+    outer_project = _PROJECT_NAME.get()
+    langsmith_extra = langsmith_extra or LangSmithExtra()
+    parent_run_ = _get_parent_run(langsmith_extra)
+    project_cv = _PROJECT_NAME.get()
+    selected_project = (
+        project_cv  # From parent trace
+        or langsmith_extra.get("project_name")  # at invocation time
+        or container_input["project_name"]  # at decorator time
+        or utils.get_tracer_project()  # default
+    )
+    reference_example_id = langsmith_extra.get("reference_example_id")
+    id_ = langsmith_extra.get("run_id")
+    if (
+        not project_cv
+        and not reference_example_id
+        and not parent_run_
+        and not utils.tracing_is_enabled()
+    ):
+        utils.log_once(
+            logging.DEBUG, "LangSmith tracing is disabled, returning original function."
+        )
+        return _TraceableContainer(
+            new_run=None,
+            project_name=selected_project,
+            outer_project=outer_project,
+            outer_metadata=None,
+            outer_tags=None,
+            on_end=langsmith_extra.get("on_end"),
+            context=copy_context(),
+        )
+    id_ = id_ or str(uuid.uuid4())
+    signature = inspect.signature(func)
+    name_ = name or func.__name__
+    docstring = func.__doc__
+    extra_inner = _collect_extra(extra_outer, langsmith_extra)
+    outer_metadata = _METADATA.get()
+    outer_tags = _TAGS.get()
+    context = copy_context()
+    metadata_ = {
+        **(langsmith_extra.get("metadata") or {}),
+        **(outer_metadata or {}),
+    }
+    context.run(_METADATA.set, metadata_)
+    metadata_.update(metadata or {})
+    metadata_["ls_method"] = "traceable"
+    extra_inner["metadata"] = metadata_
+    inputs = _get_inputs_safe(signature, *args, **kwargs)
+    process_inputs = container_input.get("process_inputs")
+    if process_inputs:
+        try:
+            inputs = process_inputs(inputs)
+        except Exception as e:
+            LOGGER.error(f"Failed to filter inputs for {name_}: {e}")
+    tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
+    context.run(_TAGS.set, tags_)
+    tags_ += tags or []
+    client_ = langsmith_extra.get("client", client)
+    if parent_run_ is not None:
+        new_run = parent_run_.create_child(
+            name=name_,
+            run_type=run_type,
+            serialized={
+                "name": name,
+                "signature": str(signature),
+                "doc": docstring,
+            },
+            inputs=inputs,
+            tags=tags_,
+            extra=extra_inner,
+            run_id=id_,
+        )
+    else:
+        new_run = run_trees.RunTree(
+            id=id_,
+            name=name_,
+            serialized={
+                "name": name,
+                "signature": str(signature),
+                "doc": docstring,
+            },
+            inputs=inputs,
+            run_type=run_type,
+            reference_example_id=reference_example_id,
+            project_name=selected_project,
+            extra=extra_inner,
+            tags=tags_,
+            client=client_,
+        )
+    try:
+        new_run.post()
+    except Exception as e:
+        LOGGER.error(f"Failed to post run {new_run.id}: {e}")
+    response_container = _TraceableContainer(
+        new_run=new_run,
+        project_name=selected_project,
+        outer_project=outer_project,
+        outer_metadata=outer_metadata,
+        outer_tags=outer_tags,
+        on_end=langsmith_extra.get("on_end"),
+        context=context,
+    )
+    context.run(_PROJECT_NAME.set, response_container["project_name"])
+    context.run(_PARENT_RUN_TREE.set, response_container["new_run"])
+    return response_container
+
+
+def _is_traceable_function(func: Callable) -> bool:
+    return getattr(func, "__langsmith_traceable__", False)
+
+
+def _get_inputs(
+    signature: inspect.Signature, *args: Any, **kwargs: Any
+) -> Dict[str, Any]:
+    """Return a dictionary of inputs from the function signature."""
+    bound = signature.bind_partial(*args, **kwargs)
+    bound.apply_defaults()
+    arguments = dict(bound.arguments)
+    arguments.pop("self", None)
+    arguments.pop("cls", None)
+    for param_name, param in signature.parameters.items():
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            # Update with the **kwargs, and remove the original entry
+            # This is to help flatten out keyword arguments
+            if param_name in arguments:
+                arguments.update(arguments[param_name])
+                arguments.pop(param_name)
+
+    return arguments
+
+
+def _get_inputs_safe(
+    signature: inspect.Signature, *args: Any, **kwargs: Any
+) -> Dict[str, Any]:
+    try:
+        return _get_inputs(signature, *args, **kwargs)
+    except BaseException as e:
+        LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
+        return {"args": args, "kwargs": kwargs}
