@@ -1,5 +1,6 @@
 # mypy: disable-error-code="attr-defined, union-attr, arg-type, call-overload"
 import time
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -162,3 +163,45 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
     assert mock_session.return_value.request.call_count >= 1
     for call in mock_session.return_value.request.call_args_list:
         assert call[0][0].upper() == "POST"
+
+
+# @mock.patch("langsmith.client.requests.Session")
+@pytest.mark.parametrize("stream", [False, True])
+def test_openai_assistant_sync_api(
+    stream: bool,
+):
+    import openai
+    
+    patched_client = wrap_openai(openai.Client())
+    try:
+        assistant = patched_client.beta.assistants.create(
+            name="Math Tutor",
+            instructions="You are a personal math tutor. Write"
+            " and run code to answer math questions.",
+            tools=[{"type": "code_interpreter"}],
+            model="gpt-4-turbo",
+        )
+        thread = patched_client.beta.threads.create()
+        patched_client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content="I need to solve the equation `3x + 11 = 14`. Can you help me?",
+        )
+        if stream:
+            with patched_client.beta.threads.runs.stream(
+                thread_id=thread.id,
+                assistant_id=assistant.id,
+                instructions="Please address the user as Jane Doe. "
+                "The user has a premium account.",
+            ) as stream:
+                for chunk in stream:
+                    print(chunk)
+        else:
+            patched_client.beta.threads.runs.create_and_poll(
+                thread_id=thread.id,
+                assistant_id=assistant.id,
+                instructions="Please address the user as Jane Doe. "
+                "The user has a premium account.",
+            )
+    finally:
+        patched_client.beta.assistants.delete(assistant.id)

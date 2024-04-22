@@ -171,6 +171,21 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
     return acreate if run_helpers.is_async(original_create) else create
 
 
+def _wrap_assistant_method(original_method: Callable, name: str) -> Callable:
+    wrapped_method = run_helpers.traceable(name=name)(original_method)
+
+    @functools.wraps(original_method)
+    def new_method(*args, **kwargs):
+        thread_id = kwargs.get("thread_id")
+        langsmith_extra = kwargs.get("langsmith_extra") or {}
+        metadata = langsmith_extra.setdefault("metadata", {})
+        if thread_id and "thread_id" not in metadata:
+            metadata["thread_id"] = thread_id
+        return wrapped_method(*args, **kwargs, langsmith_extra=langsmith_extra)
+
+    return new_method
+
+
 def wrap_openai(client: C) -> C:
     """Patch the OpenAI client to make it traceable.
 
@@ -187,4 +202,25 @@ def wrap_openai(client: C) -> C:
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create, "OpenAI", _reduce_completions
     )
+    # Beta OpenAI assistants methods
+    methods = [
+        ("beta.threads.messages.create", "MessageOpenAI", None),
+        ("beta.threads.runs.create", "RunAssistant", None),
+        ("beta.threads.runs.create_and_poll", "RunAndPollAssistant", None),
+        ("beta.threads.runs.stream", "StreamAssistant", None),
+    ]
+
+    for method, name, reduce_fn in methods:
+        try:
+            root = client
+            methods = method.split(".")
+            for attr in methods[:-1]:
+                root = getattr(root, attr)
+            traced_method = _wrap_assistant_method(
+                getattr(root, methods[-1]), name=name
+            )
+            setattr(root, traced_method)  # type: ignore[attr-defined]
+        except BaseException as e:
+            logger.debug(f"Could not patch {method}: {repr(e)}")
+
     return client
