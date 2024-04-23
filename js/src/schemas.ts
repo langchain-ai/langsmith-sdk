@@ -315,6 +315,9 @@ export interface FeedbackCategory {
 export interface FeedbackConfig {
   /**
    * The type of feedback.
+   * - "continuous": Feedback with a continuous numeric.
+   * - "categorical": Feedback with a categorical value (classes)
+   * - "freeform": Feedback with a freeform text value (notes).
    */
   type: "continuous" | "categorical" | "freeform";
 
@@ -329,6 +332,9 @@ export interface FeedbackConfig {
   max?: number | null;
 
   /**
+   * The categories for categorical feedback.
+   * Each category can be a string or an object with additional properties.
+   *
    * If feedback is categorical, this defines the valid categories the server will accept.
    * Not applicable to continuous or freeform feedback types.
    */
