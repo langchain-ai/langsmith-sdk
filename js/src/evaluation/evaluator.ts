@@ -91,6 +91,17 @@ export type EvaluationResult = {
   feedbackConfig?: FeedbackConfig;
 };
 
+/**
+ * Batch evaluation results, if your evaluator wishes
+ * to return multiple scores.
+ */
+export type EvaluationResults = {
+  /**
+   * The evaluation results.
+   */
+  results: Array<EvaluationResult>;
+};
+
 export interface RunEvaluator {
   evaluateRun(run: Run, example?: Example): Promise<EvaluationResult>;
 }

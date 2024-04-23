@@ -11,6 +11,8 @@ export interface TracerSession {
   description?: string;
   // The name of the project
   name?: string;
+  /** Extra metadata for the project. */
+  extra?: KVMap;
 }
 
 // Fully loaded information about a Tracer Session (also known
