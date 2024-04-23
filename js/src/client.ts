@@ -178,7 +178,7 @@ interface feedback_source {
 
 interface FeedbackCreate {
   id: string;
-  run_id: string;
+  run_id: string | null;
   key: string;
   score?: ScoreType;
   value?: ValueType;
@@ -186,6 +186,7 @@ interface FeedbackCreate {
   comment?: string | null;
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
+  session_id?: string;
 }
 
 interface FeedbackUpdate {
@@ -2193,7 +2194,7 @@ export class Client {
   }
 
   public async createFeedback(
-    runId: string,
+    runId: string | null,
     key: string,
     {
       score,
@@ -2205,6 +2206,7 @@ export class Client {
       sourceRunId,
       feedbackId,
       feedbackConfig,
+      projectId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -2216,8 +2218,15 @@ export class Client {
       sourceRunId?: string;
       feedbackId?: string;
       eager?: boolean;
+      projectId?: string;
     }
   ): Promise<Feedback> {
+    if (!runId && !projectId) {
+      throw new Error("One of runId or projectId must be provided");
+    }
+    if (runId && projectId) {
+      throw new Error("Only one of runId or projectId can be provided");
+    }
     const feedback_source: feedback_source = {
       type: feedbackSourceType ?? "api",
       metadata: sourceInfo ?? {},
@@ -2245,6 +2254,7 @@ export class Client {
       comment,
       feedback_source: feedback_source,
       feedbackConfig,
+      session_id: projectId,
     };
     const url = `${this.apiUrl}/feedback`;
     const response = await this.caller.call(fetch, url, {
@@ -2431,7 +2441,7 @@ export class Client {
     }
   }
 
-  private _selectEvalResults(
+  _selectEvalResults(
     results: EvaluationResult | EvaluationResults
   ): Array<EvaluationResult> {
     let results_: Array<EvaluationResult>;

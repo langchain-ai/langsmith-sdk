@@ -1,10 +1,6 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
-import {
-  TraceableFunction,
-  isTraceableFunction,
-  traceable,
-} from "../traceable.js";
+import { isTraceableFunction, traceable } from "../traceable.js";
 import { getGitInfo } from "../utils/_git.js";
 import { isUUIDv4 } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -320,14 +316,11 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   async withPredictions(
     target: TargetT,
-    maxConcurrency?: number
+    options?: {
+      maxConcurrency?: number;
+    }
   ): Promise<_ExperimentManager> {
-    const context = copyContext();
-    const experimentResults = context.run(
-      this._predict,
-      target,
-      maxConcurrency
-    );
+    const experimentResults = this._predict(target, options);
 
     const results: AsyncIterable<any>[] = [];
     for await (const item of asyncTee(experimentResults, 2)) {
@@ -354,15 +347,12 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   async withEvaluators(
     evaluators: Array<EvaluatorT | RunEvaluator>,
-    maxConcurrency?: number
+    options?: {
+      maxConcurrency?: number;
+    }
   ): Promise<_ExperimentManager> {
-    evaluators = resolveEvaluators(evaluators);
-    const context = copyContext();
-    const experimentResults = context.run(
-      this._score,
-      evaluators,
-      maxConcurrency
-    );
+    const resolvedEvaluators = _resolveEvaluators(evaluators);
+    const experimentResults = this._score(resolvedEvaluators, options);
 
     const results: AsyncIterable<any>[] = [];
     for await (const item of asyncTee(experimentResults, 3)) {
@@ -397,11 +387,8 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     summaryEvaluators: Array<SummaryEvaluatorT>
   ): Promise<_ExperimentManager> {
     const wrappedEvaluators = await wrapSummaryEvaluators(summaryEvaluators);
-    const context = copyContext();
-    const aggregateFeedbackGen = context.run(
-      this._applySummaryEvaluators,
-      wrappedEvaluators
-    );
+    const aggregateFeedbackGen =
+      this._applySummaryEvaluators(wrappedEvaluators);
     return new _ExperimentManager({
       data: this.examples,
       experiment: this._experiment,
@@ -484,7 +471,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       }
 
       for (const future of futures) {
-        yield await future;
+        yield future;
       }
     }
 
@@ -519,17 +506,106 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     };
   }
 
+  /**
+   * Run the evaluators on the prediction stream.
+   * Expects runs to be available in the manager.
+   * (e.g. from a previous prediction step)
+   * @param {Array<RunEvaluator>} evaluators
+   * @param {number} maxConcurrency
+   */
   async *_score(
     evaluators: Array<RunEvaluator>,
-    maxConcurrency?: number
+    options?: {
+      maxConcurrency?: number;
+    }
   ): AsyncIterable<ExperimentResultRow> {
-    throw new Error("Not implemented");
+    const { maxConcurrency = 0 } = options || {};
+
+    if (maxConcurrency === 0) {
+      for await (const currentResults of this.getResults()) {
+        yield this._runEvaluators(evaluators, currentResults);
+      }
+    } else {
+      const caller = new AsyncCaller({
+        maxConcurrency,
+      });
+      const futures: Promise<ExperimentResultRow>[] = [];
+      for await (const currentResults of this.getResults()) {
+        futures.push(
+          caller.call(this._runEvaluators, evaluators, currentResults)
+        );
+      }
+
+      for (const result of futures) {
+        yield result;
+      }
+    }
   }
 
+  /**
+   * @TODO figure out how to apply metadata at top level instead of with context like py does.
+   * inside _runEvaluators and _applySummaryEvaluators
+   */
   async *_applySummaryEvaluators(
     summaryEvaluators: Array<SummaryEvaluatorT>
   ): AsyncGenerator<EvaluationResults> {
-    throw new Error("Not implemented");
+    const runs: Array<Run> = [];
+    const examples: Array<Example> = [];
+
+    const runsIterator = this.runs[Symbol.asyncIterator]();
+    const examplesIterator = this.examples[Symbol.asyncIterator]();
+
+    while (true) {
+      const runResult = await runsIterator.next();
+      const exampleResult = await examplesIterator.next();
+
+      if (runResult.done || exampleResult.done) {
+        break;
+      }
+
+      runs.push(runResult.value);
+      examples.push(exampleResult.value);
+    }
+
+    const aggregateFeedback = [];
+    const projectId = this._getExperiment().id;
+
+    const futures: Promise<unknown>[] = [];
+    const caller = new AsyncCaller({ maxConcurrency: 1 });
+    for (const evaluator of summaryEvaluators) {
+      try {
+        const summaryEvalResult = await evaluator(runs, examples);
+        // TODO: Expose public API for this.
+        const flattenedResults =
+          this.client._selectEvalResults(summaryEvalResult);
+        aggregateFeedback.push(...flattenedResults);
+        for (const result of flattenedResults) {
+          const { targetRunId, ...feedback } = result;
+          const evaluatorInfo = feedback.evaluatorInfo;
+          delete feedback.evaluatorInfo;
+
+          futures.push(
+            caller.call(this.client.createFeedback, null, "key", {
+              ...feedback,
+              projectId: projectId,
+              sourceInfo: evaluatorInfo,
+            })
+          );
+        }
+      } catch (e) {
+        console.error(
+          `Error running summary evaluator ${evaluator.name}: ${JSON.stringify(
+            e,
+            null,
+            2
+          )}`
+        );
+      }
+    }
+
+    yield {
+      results: aggregateFeedback,
+    };
   }
 
   async _getDatasetVersion(): Promise<string | undefined> {
@@ -709,4 +785,22 @@ function wrapFunctionAndEnsureTraceable(target: TargetT) {
     }
   }
   throw new Error("Target must be runnable function");
+}
+
+function _resolveEvaluators(
+  evaluators: Array<EvaluatorT>
+): Array<RunEvaluator> {
+  const results: Array<RunEvaluator> = [];
+  for (const evaluator of evaluators) {
+    if ("evaluateRun" in evaluator) {
+      results.push(evaluator);
+      // todo fix this by porting LangChainStringEvaluator to langsmith sdk
+    } else if (evaluator.name === "LangChainStringEvaluator") {
+      throw new Error("Not yet implemented");
+    } else {
+      // results.push(runEvaluator(evaluator));
+      throw new Error("Not yet implemented");
+    }
+  }
+  return results;
 }
