@@ -1,5 +1,6 @@
 import { Client } from "../index.js";
 import { Example, KVMap, Run, TracerSession } from "../schemas.js";
+import { traceable } from "../traceable.js";
 import { getGitInfo } from "../utils/_git.js";
 import { isUUIDv4 } from "../utils/_uuid.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
@@ -19,7 +20,7 @@ type DataT = string | AsyncIterable<Example>;
 type SummaryEvaluatorT = (
   runs: Array<Run>,
   examples: Array<Example>
-) => EvaluationResult | EvaluationResults;
+) => Promise<EvaluationResult | EvaluationResults>;
 // Row-level evaluator
 type EvaluatorT =
   | RunEvaluator
@@ -204,6 +205,11 @@ class _ExperimentManagerMixin {
   }
 }
 
+interface _ForwardResults {
+  run: Run;
+  example: Example;
+}
+
 interface _ExperimentManagerArgs {
   data: DataT;
   experiment?: TracerSession | string;
@@ -317,7 +323,13 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       target,
       maxConcurrency
     );
-    const [r1, r2] = asyncTee(experimentResults, 2);
+
+    const results: AsyncIterable<any>[] = [];
+    for await (const item of asyncTee(experimentResults, 2)) {
+      results.push(item);
+    }
+    const [r1, r2] = results;
+
     return new _ExperimentManager({
       data: (async function* (): AsyncIterable<Example> {
         for await (const pred of r1) {
@@ -346,7 +358,13 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       evaluators,
       maxConcurrency
     );
-    const [r1, r2, r3] = asyncTee(experimentResults, 3);
+
+    const results: AsyncIterable<any>[] = [];
+    for await (const item of asyncTee(experimentResults, 3)) {
+      results.push(item);
+    }
+    const [r1, r2, r3] = results;
+
     return new _ExperimentManager({
       data: (async function* (): AsyncIterable<Example> {
         for await (const result of r1) {
@@ -373,7 +391,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   async withSummaryEvaluators(
     summaryEvaluators: Array<SummaryEvaluatorT>
   ): Promise<_ExperimentManager> {
-    const wrappedEvaluators = wrapSummaryEvaluators(summaryEvaluators);
+    const wrappedEvaluators = await wrapSummaryEvaluators(summaryEvaluators);
     const context = copyContext();
     const aggregateFeedbackGen = context.run(
       this._applySummaryEvaluators,
@@ -412,6 +430,68 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       };
     }
   }
+
+  // Private methods
+
+  _predict(
+    target: TargetT,
+    options?: {
+      maxConcurrency?: number;
+    }
+  ): AsyncGenerator<_ForwardResults> {
+    throw new Error("Not implemented");
+  }
+
+  _runEvaluators(
+    evaluators: Array<RunEvaluator>,
+    currentResults: ExperimentResultRow
+  ): ExperimentResultRow {
+    throw new Error("Not implemented");
+  }
+
+  _score(
+    evaluators: Array<RunEvaluator>,
+    maxConcurrency?: number
+  ): AsyncIterable<ExperimentResultRow> {
+    throw new Error("Not implemented");
+  }
+
+  _applySummaryEvaluators(
+    summaryEvaluators: Array<SummaryEvaluatorT>
+  ): AsyncGenerator<EvaluationResults> {
+    throw new Error("Not implemented");
+  }
+
+  async _getDatasetVersion(): Promise<string | undefined> {
+    const examples: Example[] = [];
+    for await (const example of this.examples) {
+      examples.push(example);
+    }
+
+    const modifiedAt = examples.map((ex) => ex.modified_at);
+
+    const maxModifiedAt =
+      modifiedAt.length > 0
+        ? new Date(
+            Math.max(...modifiedAt.map((date) => new Date(date).getTime()))
+          )
+        : undefined;
+
+    return maxModifiedAt?.toISOString();
+  }
+
+  async _end(): Promise<void> {
+    const experiment = this._experiment;
+    if (!experiment) {
+      throw new Error("Experiment not yet started.");
+    }
+    const projectMetadata = await this._getExperimentMetadata();
+    projectMetadata["dataset_version"] = this._getDatasetVersion();
+    this.client.updateProject(experiment.id, {
+      endTime: new Date().toISOString(),
+      metadata: projectMetadata,
+    });
+  }
 }
 
 function _resolveData(
@@ -429,28 +509,75 @@ function _resolveData(
   return data;
 }
 
+async function wrapSummaryEvaluators(
+  evaluators: SummaryEvaluatorT[]
+): Promise<SummaryEvaluatorT[]> {
+  async function wrap(
+    evaluator: SummaryEvaluatorT
+  ): Promise<SummaryEvaluatorT> {
+    const evalName = evaluator.name || "BatchEvaluator";
+
+    const wrapperInner = (
+      runs: Run[],
+      examples: Example[]
+    ): Promise<EvaluationResult | EvaluationResults> => {
+      const wrapperSuperInner = traceable(
+        (
+          _runs_: string,
+          _examples_: string
+        ): Promise<EvaluationResult | EvaluationResults> => {
+          return evaluator(runs, examples);
+        },
+        { name: evalName }
+      );
+
+      return Promise.resolve(
+        wrapperSuperInner(
+          `Runs[] (Length=${runs.length})`,
+          `Examples[] (Length=${examples.length})`
+        )
+      );
+    };
+
+    return wrapperInner;
+  }
+
+  const results: SummaryEvaluatorT[] = [];
+  for (const evaluator of evaluators) {
+    results.push(await wrap(evaluator));
+  }
+  return results;
+}
+
 async function* asyncTee<T>(
   iterable: AsyncIterable<T>,
-  n: number
-): AsyncIterableIterator<T>[] {
-  const iterators: AsyncIterableIterator<T>[] = [];
-  const queues: T[][] = Array.from({ length: n }, () => []);
+  n: number = 2
+): AsyncGenerator<AsyncIterable<T>, void, undefined> {
+  const iterators: Array<AsyncIterable<T>> = [];
+  const cache: T[][] = Array.from({ length: n }, () => []);
 
-  for await (const item of iterable) {
-    for (const queue of queues) {
-      queue.push(item);
+  const iterator = iterable[Symbol.asyncIterator]();
+
+  async function* createIterator(
+    index: number
+  ): AsyncGenerator<T, void, unknown> {
+    let item: IteratorResult<T>;
+    let i = 0;
+
+    while (i < cache[index].length) {
+      yield cache[index][i];
+      i++;
+    }
+
+    while (!(item = await iterator.next()).done) {
+      cache.forEach((arr) => arr.push(item.value));
+      yield item.value;
     }
   }
 
   for (let i = 0; i < n; i++) {
-    iterators.push(asyncTeeGenerator(queues[i]));
+    iterators.push(createIterator(i));
   }
 
-  return iterators;
-}
-
-async function* asyncTeeGenerator<T>(queue: T[]): AsyncIterableIterator<T> {
-  while (queue.length > 0) {
-    yield queue.shift()!;
-  }
+  yield* iterators;
 }
