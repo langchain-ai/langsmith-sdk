@@ -1,6 +1,7 @@
 import { Client } from "../index.js";
 import { Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { getGitInfo } from "../utils/_git.js";
+import { isUUIDv4 } from "../utils/_uuid.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
 import { randomName } from "./_random_name.js";
 import {
@@ -12,7 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 
 type TargetT = (input: Record<string, any>) => Record<string, any>;
 // Data format: dataset-name, dataset_id, or examples
-type DataT = string | Array<Example>;
+type DataT = string | AsyncIterable<Example>;
 // Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
 type SummaryEvaluatorT = (
@@ -116,27 +117,25 @@ class _ExperimentManagerMixin {
     }
   }
 
-  constructor(
-    experiment?: TracerSession | string,
-    options?: {
-      metadata?: Record<string, any>;
-      client?: Client;
-    }
-  ) {
-    this.client = options?.client ?? new Client();
-    if (!experiment) {
+  constructor(args: {
+    experiment?: TracerSession | string;
+    metadata?: Record<string, any>;
+    client?: Client;
+  }) {
+    this.client = args.client ?? new Client();
+    if (!args.experiment) {
       this._experimentName = randomName();
-    } else if (typeof experiment === "string") {
-      this._experimentName = `${experiment}-${uuidv4().slice(0, 8)}`;
+    } else if (typeof args.experiment === "string") {
+      this._experimentName = `${args.experiment}-${uuidv4().slice(0, 8)}`;
     } else {
-      if (!experiment.name) {
+      if (!args.experiment.name) {
         throw new Error("Experiment must have a name");
       }
-      this._experimentName = experiment.name;
-      this._experiment = experiment;
+      this._experimentName = args.experiment.name;
+      this._experiment = args.experiment;
     }
 
-    let metadata = options?.metadata || {};
+    let metadata = args.metadata || {};
     if (!("revision_id" in metadata)) {
       metadata = {
         revision_id: getLangChainEnvVarsMetadata().revision_id,
@@ -205,4 +204,253 @@ class _ExperimentManagerMixin {
   }
 }
 
-class _ExperimentManager extends _ExperimentManagerMixin {}
+interface _ExperimentManagerArgs {
+  data: DataT;
+  experiment?: TracerSession | string;
+  metadata?: Record<string, any>;
+  client?: Client;
+  runs?: AsyncIterable<Run>;
+  evaluationResults?: AsyncIterable<EvaluationResults>;
+  summaryResults?: AsyncIterable<EvaluationResults>;
+}
+
+/**
+ * Manage the execution of experiments.
+ *
+ * Supports lazily running predictions and evaluations in parallel to facilitate
+ * result streaming and early debugging.
+ */
+class _ExperimentManager extends _ExperimentManagerMixin {
+  _data: DataT;
+
+  _examples?: AsyncIterable<Example>;
+
+  _runs?: AsyncIterable<Run>;
+
+  _evaluationResults?: AsyncIterable<EvaluationResults>;
+
+  _summaryResults?: AsyncIterable<EvaluationResults>;
+
+  constructor(args: _ExperimentManagerArgs) {
+    super({
+      experiment: args.experiment,
+      metadata: args.metadata,
+      client: args.client,
+    });
+    this._data = args.data;
+    this._runs = args.runs;
+    this._evaluationResults = args.evaluationResults;
+    this._summaryResults = args.summaryResults;
+  }
+
+  get examples(): AsyncIterable<Example> {
+    if (this._examples === undefined) {
+      this._examples = _resolveData(this._data, { client: this.client });
+    }
+    return async function* (this: _ExperimentManager) {
+      for await (const example of this._examples!) {
+        yield example;
+      }
+    }.call(this);
+  }
+
+  get datasetId(): Promise<string> {
+    if (!this._experiment || !this._experiment.reference_dataset_id) {
+      const examplesIterator = this.examples[Symbol.asyncIterator]();
+      return examplesIterator.next().then((result) => {
+        if (result.done) {
+          throw new Error("No examples found in the dataset.");
+        }
+        return result.value.dataset_id;
+      });
+    }
+    return Promise.resolve(this._experiment.reference_dataset_id);
+  }
+
+  get evaluationResults(): AsyncIterable<EvaluationResults> {
+    if (this._evaluationResults === undefined) {
+      return async function* (this: _ExperimentManager) {
+        for await (const _ of this.examples) {
+          yield { results: [] };
+        }
+      }.call(this);
+    }
+    return this._evaluationResults;
+  }
+
+  get runs(): AsyncIterable<Run> {
+    if (this._runs === undefined) {
+      throw new Error(
+        "Runs not provided in this experiment. Please predict first."
+      );
+    }
+    return async function* (this: _ExperimentManager) {
+      for await (const run of this._runs!) {
+        yield run;
+      }
+    }.call(this);
+  }
+
+  async start(): Promise<_ExperimentManager> {
+    const examplesIterator = this.examples[Symbol.asyncIterator]();
+    const firstExample = (await examplesIterator.next()).value;
+    const project = await this._getProject(firstExample);
+    this._printExperimentStart();
+    return new _ExperimentManager({
+      data: this.examples,
+      experiment: project,
+      metadata: this._metadata,
+      client: this.client,
+      runs: this._runs,
+      evaluationResults: this._evaluationResults,
+      summaryResults: this._summaryResults,
+    });
+  }
+
+  async withPredictions(
+    target: TargetT,
+    maxConcurrency?: number
+  ): Promise<_ExperimentManager> {
+    const context = copyContext();
+    const experimentResults = context.run(
+      this._predict,
+      target,
+      maxConcurrency
+    );
+    const [r1, r2] = asyncTee(experimentResults, 2);
+    return new _ExperimentManager({
+      data: (async function* (): AsyncIterable<Example> {
+        for await (const pred of r1) {
+          yield pred.example;
+        }
+      })(),
+      experiment: this._experiment,
+      metadata: this._metadata,
+      client: this.client,
+      runs: (async function* (): AsyncIterable<Run> {
+        for await (const pred of r2) {
+          yield pred.run;
+        }
+      })(),
+    });
+  }
+
+  async withEvaluators(
+    evaluators: Array<EvaluatorT | RunEvaluator>,
+    maxConcurrency?: number
+  ): Promise<_ExperimentManager> {
+    evaluators = resolveEvaluators(evaluators);
+    const context = copyContext();
+    const experimentResults = context.run(
+      this._score,
+      evaluators,
+      maxConcurrency
+    );
+    const [r1, r2, r3] = asyncTee(experimentResults, 3);
+    return new _ExperimentManager({
+      data: (async function* (): AsyncIterable<Example> {
+        for await (const result of r1) {
+          yield result.example;
+        }
+      })(),
+      experiment: this._experiment,
+      metadata: this._metadata,
+      client: this.client,
+      runs: (async function* (): AsyncIterable<Run> {
+        for await (const result of r2) {
+          yield result.run;
+        }
+      })(),
+      evaluationResults: (async function* (): AsyncIterable<EvaluationResults> {
+        for await (const result of r3) {
+          yield result.evaluationResults;
+        }
+      })(),
+      summaryResults: this._summaryResults,
+    });
+  }
+
+  async withSummaryEvaluators(
+    summaryEvaluators: Array<SummaryEvaluatorT>
+  ): Promise<_ExperimentManager> {
+    const wrappedEvaluators = wrapSummaryEvaluators(summaryEvaluators);
+    const context = copyContext();
+    const aggregateFeedbackGen = context.run(
+      this._applySummaryEvaluators,
+      wrappedEvaluators
+    );
+    return new _ExperimentManager({
+      data: this.examples,
+      experiment: this._experiment,
+      metadata: this._metadata,
+      client: this.client,
+      runs: this.runs,
+      evaluationResults: this._evaluationResults,
+      summaryResults: aggregateFeedbackGen,
+    });
+  }
+
+  async *getResults(): AsyncIterable<ExperimentResultRow> {
+    const runsIter = this.runs[Symbol.asyncIterator]();
+    const examplesIter = this.examples[Symbol.asyncIterator]();
+    const evaluationResultsIter =
+      this.evaluationResults[Symbol.asyncIterator]();
+
+    while (true) {
+      const runResult = await runsIter.next();
+      const exampleResult = await examplesIter.next();
+      const evaluationResult = await evaluationResultsIter.next();
+
+      if (runResult.done || exampleResult.done || evaluationResult.done) {
+        break;
+      }
+
+      yield {
+        run: runResult.value,
+        example: exampleResult.value,
+        evaluationResults: evaluationResult.value,
+      };
+    }
+  }
+}
+
+function _resolveData(
+  data: DataT,
+  options: {
+    client: Client;
+  }
+): AsyncIterable<Example> {
+  if (typeof data === "string" && isUUIDv4(data)) {
+    return options.client.listExamples({ datasetId: data });
+  }
+  if (typeof data === "string") {
+    return options.client.listExamples({ datasetName: data });
+  }
+  return data;
+}
+
+async function* asyncTee<T>(
+  iterable: AsyncIterable<T>,
+  n: number
+): AsyncIterableIterator<T>[] {
+  const iterators: AsyncIterableIterator<T>[] = [];
+  const queues: T[][] = Array.from({ length: n }, () => []);
+
+  for await (const item of iterable) {
+    for (const queue of queues) {
+      queue.push(item);
+    }
+  }
+
+  for (let i = 0; i < n; i++) {
+    iterators.push(asyncTeeGenerator(queues[i]));
+  }
+
+  return iterators;
+}
+
+async function* asyncTeeGenerator<T>(queue: T[]): AsyncIterableIterator<T> {
+  while (queue.length > 0) {
+    yield queue.shift()!;
+  }
+}
