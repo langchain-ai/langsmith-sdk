@@ -2,7 +2,7 @@ from enum import Enum
 from itertools import product
 from typing import Literal
 
-import instructor
+import instructor  # type: ignore
 import pytest
 from anthropic import AsyncAnthropic  # type: ignore
 from openai import AsyncOpenAI
