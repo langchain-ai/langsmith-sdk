@@ -33,7 +33,11 @@ import {
   getRuntimeEnvironment,
 } from "./utils/env.js";
 
-import { RunEvaluator } from "./evaluation/evaluator.js";
+import {
+  EvaluationResult,
+  EvaluationResults,
+  RunEvaluator,
+} from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 
 interface ClientConfig {
@@ -2425,5 +2429,52 @@ export class Client {
     )) {
       yield* tokens;
     }
+  }
+
+  private _selectEvalResults(
+    results: EvaluationResult | EvaluationResults
+  ): Array<EvaluationResult> {
+    let results_: Array<EvaluationResult>;
+    if ("results" in results) {
+      results_ = results.results;
+    } else {
+      results_ = [results];
+    }
+    return results_;
+  }
+
+  public async logEvaluationFeedback(
+    evaluatorResponse: EvaluationResult | EvaluationResults,
+    run?: Run,
+    sourceInfo?: { [key: string]: any }
+  ): Promise<EvaluationResult[]> {
+    const results: Array<EvaluationResult> =
+      this._selectEvalResults(evaluatorResponse);
+    for (const res of results) {
+      let sourceInfo_ = sourceInfo || {};
+      if (res.evaluatorInfo) {
+        sourceInfo_ = { ...res.evaluatorInfo, ...sourceInfo_ };
+      }
+      let runId_: string | undefined = undefined;
+      if (res.targetRunId) {
+        runId_ = res.targetRunId;
+      } else if (run) {
+        runId_ = run.id;
+      } else {
+        throw new Error("No run ID provided");
+      }
+
+      await this.createFeedback(runId_, res.key, {
+        score: res.score,
+        value: res.value,
+        comment: res.comment,
+        correction: res.correction,
+        sourceInfo: sourceInfo_,
+        sourceRunId: res.sourceRunId,
+        feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
+        feedbackSourceType: "model",
+      });
+    }
+    return results;
   }
 }

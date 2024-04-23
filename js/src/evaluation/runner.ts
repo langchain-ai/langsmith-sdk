@@ -1,8 +1,13 @@
-import { Client } from "../index.js";
-import { Example, KVMap, Run, TracerSession } from "../schemas.js";
-import { traceable } from "../traceable.js";
+import { Client, RunTree, RunTreeConfig } from "../index.js";
+import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
+import {
+  TraceableFunction,
+  isTraceableFunction,
+  traceable,
+} from "../traceable.js";
 import { getGitInfo } from "../utils/_git.js";
 import { isUUIDv4 } from "../utils/_uuid.js";
+import { AsyncCaller } from "../utils/async_caller.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
 import { randomName } from "./_random_name.js";
 import {
@@ -433,30 +438,95 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   // Private methods
 
-  _predict(
+  /**
+   * Run the target function on the examples.
+   * @param {TargetT} target The target function to evaluate.
+   * @param options
+   * @returns {AsyncGenerator<_ForwardResults>} An async generator of the results.
+   */
+  async *_predict(
     target: TargetT,
     options?: {
       maxConcurrency?: number;
     }
   ): AsyncGenerator<_ForwardResults> {
-    throw new Error("Not implemented");
+    const fn = wrapFunctionAndEnsureTraceable(target);
+    const maxConcurrency = options?.maxConcurrency ?? 0;
+
+    if (maxConcurrency === 0) {
+      for await (const example of this.examples) {
+        yield _forward(
+          fn,
+          example,
+          this.experimentName,
+          this._metadata,
+          this.client
+        );
+      }
+    } else {
+      const caller = new AsyncCaller({
+        maxConcurrency,
+      });
+
+      const futures: Array<Promise<_ForwardResults>> = [];
+
+      for await (const example of this.examples) {
+        futures.push(
+          caller.call(
+            _forward,
+            fn,
+            example,
+            this.experimentName,
+            this._metadata,
+            this.client
+          )
+        );
+      }
+
+      for (const future of futures) {
+        yield await future;
+      }
+    }
+
+    // Close out the project.
+    this._end();
   }
 
-  _runEvaluators(
+  async _runEvaluators(
     evaluators: Array<RunEvaluator>,
     currentResults: ExperimentResultRow
-  ): ExperimentResultRow {
-    throw new Error("Not implemented");
+  ): Promise<ExperimentResultRow> {
+    const { run, example, evaluationResults } = currentResults;
+    for (const evaluator of evaluators) {
+      try {
+        const evaluatorResponse = await evaluator.evaluateRun(run, example);
+        evaluationResults.results.push(
+          ...(await this.client.logEvaluationFeedback(evaluatorResponse, run))
+        );
+      } catch (e) {
+        console.error(
+          `Error running evaluator ${evaluator.evaluateRun.name} on run ${
+            run.id
+          }: ${JSON.stringify(e, null, 2)}`
+        );
+      }
+    }
+
+    return {
+      run,
+      example,
+      evaluationResults,
+    };
   }
 
-  _score(
+  async *_score(
     evaluators: Array<RunEvaluator>,
     maxConcurrency?: number
   ): AsyncIterable<ExperimentResultRow> {
     throw new Error("Not implemented");
   }
 
-  _applySummaryEvaluators(
+  async *_applySummaryEvaluators(
     summaryEvaluators: Array<SummaryEvaluatorT>
   ): AsyncGenerator<EvaluationResults> {
     throw new Error("Not implemented");
@@ -492,6 +562,48 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       metadata: projectMetadata,
     });
   }
+}
+
+async function _forward(
+  fn: (...args: any[]) => any, // TODO fix this type. What is `rh.SupportsLangsmithExtra`?
+  example: Example,
+  experimentName: string,
+  metadata: Record<string, any>,
+  client: Client
+): Promise<_ForwardResults> {
+  let run: BaseRun | null = null;
+
+  const _getRun = (r: RunTree): void => {
+    run = r;
+  };
+
+  try {
+    fn(example.inputs, {
+      reference_example_id: example.id,
+      on_end: _getRun,
+      project_name: experimentName,
+      metadata: {
+        ...metadata,
+        example_version: example.modified_at
+          ? new Date(example.modified_at).toISOString()
+          : new Date(example.created_at).toISOString(),
+      },
+      client,
+    });
+  } catch (e) {
+    console.error(
+      `Error running target function: ${JSON.stringify(e, null, 2)}`
+    );
+  }
+
+  if (!run) {
+    throw new Error("Run not created by target function.");
+  }
+
+  return {
+    run,
+    example,
+  };
 }
 
 function _resolveData(
@@ -580,4 +692,21 @@ async function* asyncTee<T>(
   }
 
   yield* iterators;
+}
+
+interface SupportsLangSmithExtra<R> {
+  (target: TargetT, langSmithExtra?: Partial<RunTreeConfig>): R;
+}
+
+function wrapFunctionAndEnsureTraceable(target: TargetT) {
+  if (typeof target === "function") {
+    if (isTraceableFunction(target)) {
+      return target as SupportsLangSmithExtra<ReturnType<typeof target>>;
+    } else {
+      return traceable(target, {
+        name: "target",
+      });
+    }
+  }
+  throw new Error("Target must be runnable function");
 }
