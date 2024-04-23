@@ -4,7 +4,7 @@ from typing import Literal
 
 import instructor
 import pytest
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic  # type: ignore
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 

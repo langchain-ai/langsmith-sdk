@@ -29,7 +29,7 @@ try:
     SkipException = pytest.skip.Exception
 except:  # noqa
 
-    class SkipException(Exception):
+    class SkipException(Exception): # noqa
         pass
 
 
