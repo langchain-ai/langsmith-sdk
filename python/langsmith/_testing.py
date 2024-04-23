@@ -27,9 +27,9 @@ try:
     import pytest
 
     SkipException = pytest.skip.Exception
-except:  # noqa
+except ImportError:
 
-    class SkipException(Exception): # noqa
+    class SkipException(Exception):  # type: ignore[no-redef]
         pass
 
 
