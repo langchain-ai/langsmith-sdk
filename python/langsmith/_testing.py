@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
 import orjson
+import pytest
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
@@ -21,6 +22,16 @@ from langsmith import env as ls_env
 from langsmith import run_helpers as rh
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+
+try:
+    import pytest
+
+    SkipException = pytest.skip.Exception
+except ImportError:
+
+    class SkipException(Exception):  # type: ignore[no-redef]
+        pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -421,14 +432,27 @@ class _LangSmithTestSuite:
         with self._lock:
             return self._version
 
-    def submit_result(self, run_id: uuid.UUID, error: Optional[str] = None) -> None:
-        self._executor.submit(self._submit_result, run_id, error)
+    def submit_result(
+        self, run_id: uuid.UUID, error: Optional[str] = None, skipped: bool = False
+    ) -> None:
+        self._executor.submit(self._submit_result, run_id, error, skipped=skipped)
 
-    def _submit_result(self, run_id: uuid.UUID, error: Optional[str] = None) -> None:
+    def _submit_result(
+        self, run_id: uuid.UUID, error: Optional[str] = None, skipped: bool = False
+    ) -> None:
         if error:
-            self.client.create_feedback(
-                run_id, key="pass", score=0, comment=f"Error: {repr(error)}"
-            )
+            if skipped:
+                self.client.create_feedback(
+                    run_id,
+                    key="pass",
+                    # Don't factor into aggregate score
+                    score=None,
+                    comment=f"Skipped: {repr(error)}",
+                )
+            else:
+                self.client.create_feedback(
+                    run_id, key="pass", score=0, comment=f"Error: {repr(error)}"
+                )
         else:
             self.client.create_feedback(
                 run_id,
@@ -525,24 +549,39 @@ def _run_test(
     run_id = uuid.uuid4()
 
     def _test():
-        try:
-            func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
-            func_(
-                *test_args,
-                **test_kwargs,
-                langsmith_extra={
-                    "run_id": run_id,
-                    "reference_example_id": example_id,
-                    "project_name": test_suite.name,
-                },
-            )
-        except BaseException as e:
-            test_suite.submit_result(run_id, error=repr(e))
-            raise e
-        try:
-            test_suite.submit_result(run_id, error=None)
-        except BaseException as e:
-            logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+        func_inputs = rh._get_inputs_safe(
+            inspect.signature(func), *test_args, **test_kwargs
+        )
+        with rh.trace(
+            name=getattr(func, "__name__", "Test"),
+            run_id=run_id,
+            reference_example_id=example_id,
+            inputs=func_inputs,
+            project_name=test_suite.name,
+            exceptions_to_handle=(SkipException,),
+        ) as run_tree:
+            try:
+                result = func(*test_args, **test_kwargs)
+                run_tree.end(
+                    outputs=(
+                        result
+                        if result is None or isinstance(result, dict)
+                        else {"output": result}
+                    )
+                )
+            except SkipException as e:
+                test_suite.submit_result(run_id, error=repr(e), skipped=True)
+                run_tree.end(
+                    outputs={"skipped_reason": repr(e)},
+                )
+                raise e
+            except BaseException as e:
+                test_suite.submit_result(run_id, error=repr(e))
+                raise e
+            try:
+                test_suite.submit_result(run_id, error=None)
+            except BaseException as e:
+                logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
 
     cache_path = (
         Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
@@ -574,24 +613,39 @@ async def _arun_test(
     run_id = uuid.uuid4()
 
     async def _test():
-        try:
-            func_ = func if rh.is_traceable_function(func) else rh.traceable(func)
-            await func_(
-                *test_args,
-                **test_kwargs,
-                langsmith_extra={
-                    "run_id": run_id,
-                    "reference_example_id": example_id,
-                    "project_name": test_suite.name,
-                },
-            )
-        except BaseException as e:
-            test_suite.submit_result(run_id, error=repr(e))
-            raise e
-        try:
-            test_suite.submit_result(run_id, error=None)
-        except BaseException as e:
-            logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+        func_inputs = rh._get_inputs_safe(
+            inspect.signature(func), *test_args, **test_kwargs
+        )
+        with rh.trace(
+            name=getattr(func, "__name__", "Test"),
+            run_id=run_id,
+            reference_example_id=example_id,
+            inputs=func_inputs,
+            project_name=test_suite.name,
+            exceptions_to_handle=(SkipException,),
+        ) as run_tree:
+            try:
+                result = await func(*test_args, **test_kwargs)
+                run_tree.end(
+                    outputs=(
+                        result
+                        if result is None or isinstance(result, dict)
+                        else {"output": result}
+                    )
+                )
+            except SkipException as e:
+                test_suite.submit_result(run_id, error=repr(e), skipped=True)
+                run_tree.end(
+                    outputs={"skipped_reason": repr(e)},
+                )
+                raise e
+            except BaseException as e:
+                test_suite.submit_result(run_id, error=repr(e))
+                raise e
+            try:
+                test_suite.submit_result(run_id, error=None)
+            except BaseException as e:
+                logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
 
     cache_path = (
         Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"

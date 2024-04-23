@@ -132,3 +132,13 @@ async def test_bar_async_parametrized(x, y, z):
     await asyncio.sleep(0.1)
     expect(x + y).to_equal(z)
     return {"z": x + y}
+
+
+@unit
+def test_pytest_skip():
+    pytest.skip("Skip this test")
+
+
+@unit
+async def test_async_pytest_skip():
+    pytest.skip("Skip this test")
