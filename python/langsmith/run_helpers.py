@@ -26,6 +26,8 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
+    Tuple,
+    Type,
     TypedDict,
     TypeVar,
     Union,
@@ -425,7 +427,7 @@ def traceable(
                         **get_tracing_context(run_container["context"])
                     ):
                         function_result = await fr_coro
-            except Exception as e:
+            except BaseException as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
                 raise e
@@ -506,7 +508,7 @@ def traceable(
                 if reduce_fn:
                     try:
                         function_result = reduce_fn(results)
-                    except Exception as e:
+                    except BaseException as e:
                         LOGGER.error(e)
                         function_result = results
                 else:
@@ -600,7 +602,7 @@ def traceable(
                 if reduce_fn:
                     try:
                         function_result = reduce_fn(results)
-                    except Exception as e:
+                    except BaseException as e:
                         LOGGER.error(e)
                         function_result = results
                 else:
@@ -643,6 +645,9 @@ def trace(
     tags: Optional[List[str]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     client: Optional[ls_client.Client] = None,
+    run_id: Optional[ls_client.ID_TYPE] = None,
+    reference_example_id: Optional[ls_client.ID_TYPE] = None,
+    exceptions_to_handle: Optional[Tuple[Type[BaseException], ...]] = None,
     **kwargs: Any,
 ) -> Generator[run_trees.RunTree, None, None]:
     """Context manager for creating a run tree."""
@@ -673,6 +678,7 @@ def trace(
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
             name=name,
+            run_id=run_id,
             run_type=run_type,
             extra=extra_outer,
             inputs=inputs,
@@ -681,6 +687,8 @@ def trace(
     else:
         new_run = run_trees.RunTree(
             name=name,
+            run_id=run_id,
+            reference_example_id=reference_example_id,
             run_type=run_type,
             extra=extra_outer,
             project_name=project_name_,
@@ -694,7 +702,10 @@ def trace(
     try:
         yield new_run
     except (Exception, KeyboardInterrupt, BaseException) as e:
-        tb = traceback.format_exc()
+        if exceptions_to_handle and isinstance(e, exceptions_to_handle):
+            tb = None
+        else:
+            tb = traceback.format_exc()
         new_run.end(error=tb)
         new_run.patch()
         raise e
@@ -913,7 +924,7 @@ def _container_end(
     if on_end is not None and callable(on_end):
         try:
             on_end(run_tree)
-        except Exception as e:
+        except BaseException as e:
             LOGGER.warning(f"Failed to run on_end function: {e}")
 
 
@@ -1005,7 +1016,7 @@ def _setup_run(
     if process_inputs:
         try:
             inputs = process_inputs(inputs)
-        except Exception as e:
+        except BaseException as e:
             LOGGER.error(f"Failed to filter inputs for {name_}: {e}")
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     context.run(_TAGS.set, tags_)
@@ -1044,7 +1055,7 @@ def _setup_run(
         )
     try:
         new_run.post()
-    except Exception as e:
+    except BaseException as e:
         LOGGER.error(f"Failed to post run {new_run.id}: {e}")
     response_container = _TraceableContainer(
         new_run=new_run,

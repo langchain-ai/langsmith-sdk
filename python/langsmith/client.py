@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import collections
 import datetime
 import functools
@@ -548,6 +549,7 @@ class Client:
             else ls_schemas.LangSmithInfo(**info)
         )
         weakref.finalize(self, close_session, self.session)
+        atexit.register(close_session, self.session)
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
