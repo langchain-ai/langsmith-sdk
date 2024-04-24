@@ -32,7 +32,7 @@ const execSyncGit = (command: string[]): string | null => {
   }
 };
 
-export const getGitInfoSync = (remote: string = "origin"): GitInfo | null => {
+export const getGitInfoSync = (remote = "origin"): GitInfo | null => {
   const isInsideWorkTree = execSyncGit(["rev-parse", "--is-inside-work-tree"]);
   if (!isInsideWorkTree) {
     return null;
@@ -66,7 +66,7 @@ export const getGitInfoSync = (remote: string = "origin"): GitInfo | null => {
 };
 
 export const getGitInfo = async (
-  remote: string = "origin"
+  remote = "origin"
 ): Promise<GitInfo | null> => {
   const isInsideWorkTree = await execGit([
     "rev-parse",

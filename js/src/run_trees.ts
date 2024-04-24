@@ -41,6 +41,7 @@ export interface RunTreeConfig {
   outputs?: KVMap;
   reference_example_id?: string;
   client?: Client;
+  on_end?: (runTree: RunTree) => void;
 }
 
 export interface RunnableConfigLike {

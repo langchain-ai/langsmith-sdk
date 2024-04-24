@@ -27,63 +27,57 @@ type EvaluatorT =
   | RunEvaluator
   | ((run: Run, example?: Example) => EvaluationResult);
 
+interface EvaluateOptions {
+  /**
+   * The dataset to evaluate on. Can be a dataset name, a list of
+   * examples, or a generator of examples.
+   */
+  data: DataT;
+  /**
+   * A list of evaluators to run on each example.
+   * @default undefined
+   */
+  evaluators?: Array<EvaluatorT>;
+  /**
+   * A list of summary evaluators to run on the entire dataset.
+   * @default undefined
+   */
+  summaryEvaluators?: Array<SummaryEvaluatorT>;
+  /**
+   * Metadata to attach to the experiment.
+   * @default undefined
+   */
+  metadata?: Record<string, any>;
+  /**
+   * A prefix to provide for your experiment name.
+   * @default undefined
+   */
+  experimentPrefix?: string;
+  /**
+   * The maximum number of concurrent evaluations to run.
+   * @default undefined
+   */
+  maxConcurrency?: number;
+  /**
+   * The LangSmith client to use.
+   * @default undefined
+   */
+  client?: Client;
+  /**
+   * Whether to block until the evaluation is complete.
+   * @default true
+   */
+  blocking?: boolean;
+}
+
 export function evaluate(
   /**
    * The target system or function to evaluate.
    */
   target: TargetT,
-  /**
-   * The dataset to evaluate on. Can be a dataset name, a list of
-   * examples, or a generator of examples.
-   */
-  data: DataT,
-  options?: {
-    /**
-     * A list of evaluators to run on each example.
-     * @default undefined
-     */
-    evaluators?: Array<EvaluatorT>;
-    /**
-     * A list of summary evaluators to run on the entire dataset.
-     * @default undefined
-     */
-    summaryEvaluator?: Array<SummaryEvaluatorT>;
-    /**
-     * Metadata to attach to the experiment.
-     * @default undefined
-     */
-    metadata?: Record<string, any>;
-    /**
-     * A prefix to provide for your experiment name.
-     * @default undefined
-     */
-    experimentPrefix?: string;
-    /**
-     * The maximum number of concurrent evaluations to run.
-     * @default undefined
-     */
-    maxConcurrency?: number;
-    /**
-     * The LangSmith client to use.
-     * @default undefined
-     */
-    client?: Client;
-    /**
-     * Whether to block until the evaluation is complete.
-     * @default true
-     */
-    blocking?: boolean;
-  }
+  options: EvaluateOptions
 ): Promise<ExperimentResults> {
-  return _evaluate(target, {
-    data,
-    evaluators: options?.evaluators,
-    summaryEvaluators: options?.summaryEvaluator,
-    metadata: options?.metadata,
-    experimentPrefix: options?.experimentPrefix,
-    maxConcurrency: options?.maxConcurrency,
-    client: options?.client,
-  });
+  return _evaluate(target, options);
 }
 
 interface ExperimentResultRow {
@@ -160,14 +154,7 @@ const _isCallable = (target: TargetT | AsyncIterable<Run>): boolean =>
 
 async function _evaluate(
   target: TargetT | AsyncIterable<Run>,
-  fields: {
-    data: DataT;
-    evaluators?: Array<EvaluatorT>;
-    summaryEvaluators?: Array<SummaryEvaluatorT>;
-    metadata?: Record<string, any>;
-    experimentPrefix?: string;
-    maxConcurrency?: number;
-    client?: Client;
+  fields: EvaluateOptions & {
     experiment?: TracerSession;
   }
 ): Promise<ExperimentResults> {
@@ -362,11 +349,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     } else {
       return this._examples;
     }
-    return async function* (this: _ExperimentManager) {
-      for await (const example of this._examples!) {
-        yield example;
-      }
-    }.call(this);
   }
 
   get datasetId(): Promise<string> {
@@ -389,8 +371,9 @@ class _ExperimentManager extends _ExperimentManagerMixin {
           yield { results: [] };
         }
       }.call(this);
+    } else {
+      return this._evaluationResults;
     }
-    return this._evaluationResults;
   }
 
   get runs(): AsyncIterable<Run> {
@@ -398,12 +381,9 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       throw new Error(
         "Runs not provided in this experiment. Please predict first."
       );
+    } else {
+      return this._runs;
     }
-    return async function* (this: _ExperimentManager) {
-      for await (const run of this._runs!) {
-        yield run;
-      }
-    }.call(this);
   }
 
   async start(): Promise<_ExperimentManager> {
@@ -431,7 +411,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const experimentResults = this._predict(target, options);
 
     const results: AsyncIterable<any>[] = [];
-    for await (const item of asyncTee(experimentResults, 2)) {
+    for await (const item of asyncTee(experimentResults)) {
       results.push(item);
     }
     const [r1, r2] = results;
@@ -509,26 +489,50 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   }
 
   async *getResults(): AsyncIterable<ExperimentResultRow> {
-    const runsIter = this.runs[Symbol.asyncIterator]();
-    const examplesIter = this.examples[Symbol.asyncIterator]();
-    const evaluationResultsIter =
-      this.evaluationResults[Symbol.asyncIterator]();
+    // const runsIter = this.runs[Symbol.asyncIterator]();
+    // const examplesIter = this.examples[Symbol.asyncIterator]();
+    // const evaluationResultsIter =
+    //   this.evaluationResults[Symbol.asyncIterator]();
 
-    while (true) {
-      const runResult = await runsIter.next();
-      const exampleResult = await examplesIter.next();
-      const evaluationResult = await evaluationResultsIter.next();
+    let runs = [];
+    let examples = [];
+    let evaluationResults = [];
+    for await (const run of this.runs) {
+      runs.push(run);
+    }
+    for await (const example of this.examples) {
+      examples.push(example);
+    }
+    for await (const evaluationResult of this.evaluationResults) {
+      evaluationResults.push(evaluationResult);
+    }
 
-      if (runResult.done || exampleResult.done || evaluationResult.done) {
-        break;
-      }
-
+    // return an array of objects with run, example, and evaluationResults
+    for (let i = 0; i < runs.length; i++) {
       yield {
-        run: runResult.value,
-        example: exampleResult.value,
-        evaluationResults: evaluationResult.value,
+        run: runs[i],
+        example: examples[i],
+        evaluationResults: evaluationResults[i],
       };
     }
+
+    // while (true) {
+    //   const runResult = await runsIter.next();
+    //   const exampleResult = await examplesIter.next();
+    //   const evaluationResult = await evaluationResultsIter.next();
+
+    //   console.log("Yielding")
+    //   yield {
+    //     run: runResult.value,
+    //     example: exampleResult.value,
+    //     evaluationResults: evaluationResult.value,
+    //   };
+
+    //   if (runResult.done || exampleResult.done) {
+    //     console.log("Done")
+    //     break;
+    //   }
+    // }
   }
 
   async getSummaryScores(): Promise<EvaluationResults> {
@@ -558,13 +562,13 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       maxConcurrency?: number;
     }
   ): AsyncGenerator<_ForwardResults> {
-    const fn = wrapFunctionAndEnsureTraceable(target);
+    // const fn = wrapFunctionAndEnsureTraceable(target, this.experimentName);
     const maxConcurrency = options?.maxConcurrency ?? 0;
 
     if (maxConcurrency === 0) {
       for await (const example of this.examples) {
         yield await _forward(
-          fn,
+          target,
           example,
           this.experimentName,
           this._metadata,
@@ -582,7 +586,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
         futures.push(
           caller.call(
             _forward,
-            fn,
+            target,
             example,
             this.experimentName,
             this._metadata,
@@ -597,7 +601,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     }
 
     // Close out the project.
-    this._end();
+    await this._end();
   }
 
   async _runEvaluators(
@@ -676,11 +680,13 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const runsIterator = this.runs[Symbol.asyncIterator]();
     const examplesIterator = this.examples[Symbol.asyncIterator]();
 
-    while (true) {
+    let shouldContinue = true;
+    while (shouldContinue) {
       const runResult = await runsIterator.next();
       const exampleResult = await examplesIterator.next();
 
       if (runResult.done || exampleResult.done) {
+        shouldContinue = false;
         break;
       }
 
@@ -754,7 +760,8 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     }
     const projectMetadata = await this._getExperimentMetadata();
     projectMetadata["dataset_version"] = this._getDatasetVersion();
-    this.client.updateProject(experiment.id, {
+
+    await this.client.updateProject(experiment.id, {
       endTime: new Date().toISOString(),
       metadata: projectMetadata,
     });
@@ -762,7 +769,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 }
 
 async function _forward(
-  fn: (...args: any[]) => Promise<any>, // TODO fix this type. What is `rh.SupportsLangsmithExtra`?
+  fn: (...args: any[]) => Promise<any> | any, // TODO fix this type. What is `rh.SupportsLangsmithExtra`?
   example: Example,
   experimentName: string,
   metadata: Record<string, any>,
@@ -774,19 +781,25 @@ async function _forward(
     run = r;
   };
 
+  const options = {
+    reference_example_id: example.id,
+    on_end: _getRun,
+    project_name: experimentName,
+    metadata: {
+      ...metadata,
+      example_version: example.modified_at
+        ? new Date(example.modified_at).toISOString()
+        : new Date(example.created_at).toISOString(),
+    },
+    client,
+  };
+
+  const wrappedFn = wrapFunctionAndEnsureTraceable(fn, options) as ReturnType<
+    typeof traceable
+  >;
+
   try {
-    await fn(example.inputs, {
-      reference_example_id: example.id,
-      on_end: _getRun,
-      project_name: experimentName,
-      metadata: {
-        ...metadata,
-        example_version: example.modified_at
-          ? new Date(example.modified_at).toISOString()
-          : new Date(example.created_at).toISOString(),
-      },
-      client,
-    });
+    await wrappedFn(example.inputs);
   } catch (e) {
     console.error(
       `Error running target function: ${JSON.stringify(e, null, 2)}`
@@ -860,7 +873,7 @@ async function wrapSummaryEvaluators(
 
 async function* asyncTee<T>(
   iterable: AsyncIterable<T>,
-  n: number = 2
+  n = 2
 ): AsyncGenerator<AsyncIterable<T>, void, undefined> {
   const iterators: Array<AsyncIterable<T>> = [];
   const cache: T[][] = Array.from({ length: n }, () => []);
@@ -895,12 +908,16 @@ interface SupportsLangSmithExtra<R> {
   (target: TargetT, langSmithExtra?: Partial<RunTreeConfig>): R;
 }
 
-function wrapFunctionAndEnsureTraceable(target: TargetT) {
+function wrapFunctionAndEnsureTraceable(
+  target: TargetT,
+  options?: Partial<RunTreeConfig>
+) {
   if (typeof target === "function") {
     if (isTraceableFunction(target)) {
       return target as SupportsLangSmithExtra<ReturnType<typeof target>>;
     } else {
       return traceable(target, {
+        ...options,
         name: "target",
       });
     }
