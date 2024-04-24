@@ -100,8 +100,8 @@ interface ExperimentResultRow {
  */
 class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   private manager: _ExperimentManager;
-  private results: ExperimentResultRow[] = [];
-  private processedCount = 0;
+  results: ExperimentResultRow[] = [];
+  processedCount = 0;
   private _summaryResults: EvaluationResults;
 
   get summaryResults(): EvaluationResults {
@@ -110,7 +110,6 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
 
   constructor(experimentManager: _ExperimentManager) {
     this.manager = experimentManager;
-    this.processData(this.manager);
   }
 
   get experimentName(): string {
@@ -131,7 +130,7 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
     }
   }
 
-  private async processData(manager: _ExperimentManager): Promise<void> {
+  async processData(manager: _ExperimentManager): Promise<void> {
     const results = manager.getResults();
     for await (const item of results) {
       this.results.push(item);
@@ -159,7 +158,6 @@ const _isCallable = (target: TargetT | AsyncIterable<Run>): boolean =>
       ("invoke" in target && typeof target.invoke === "function")
   );
 
-
 async function _evaluate(
   target: TargetT | AsyncIterable<Run>,
   fields: {
@@ -174,12 +172,12 @@ async function _evaluate(
   }
 ): Promise<ExperimentResults> {
   const client = fields.client ?? new Client();
-  const runs = _isCallable(target) ? null : target as AsyncIterable<Run>;
+  const runs = _isCallable(target) ? null : (target as AsyncIterable<Run>);
   const [experiment_, newRuns] = await _resolveExperiment(
     fields.experiment ?? null,
     runs,
-    client,
-  )
+    client
+  );
 
   let manager = await new _ExperimentManager({
     data: fields.data,
@@ -204,6 +202,7 @@ async function _evaluate(
   }
   // Start consuming the results.
   const results = new ExperimentResults(manager);
+  await results.processData(manager);
   return results;
 }
 
@@ -359,7 +358,9 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   get examples(): AsyncIterable<Example> {
     if (this._examples === undefined) {
-      this._examples = _resolveData(this._data, { client: this.client });
+      return _resolveData(this._data, { client: this.client });
+    } else {
+      return this._examples;
     }
     return async function* (this: _ExperimentManager) {
       for await (const example of this._examples!) {
@@ -534,12 +535,12 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     if (!this._summaryResults) {
       return { results: [] };
     }
-  
+
     const results: EvaluationResult[] = [];
     for await (const evaluationResults of this._summaryResults) {
       results.push(...evaluationResults.results);
     }
-  
+
     return { results };
   }
 
@@ -562,7 +563,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
     if (maxConcurrency === 0) {
       for await (const example of this.examples) {
-        yield _forward(
+        yield await _forward(
           fn,
           example,
           this.experimentName,
@@ -590,7 +591,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
         );
       }
 
-      for (const future of futures) {
+      for await (const future of futures) {
         yield future;
       }
     }
@@ -761,7 +762,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 }
 
 async function _forward(
-  fn: (...args: any[]) => any, // TODO fix this type. What is `rh.SupportsLangsmithExtra`?
+  fn: (...args: any[]) => Promise<any>, // TODO fix this type. What is `rh.SupportsLangsmithExtra`?
   example: Example,
   experimentName: string,
   metadata: Record<string, any>,
@@ -774,7 +775,7 @@ async function _forward(
   };
 
   try {
-    fn(example.inputs, {
+    await fn(example.inputs, {
       reference_example_id: example.id,
       on_end: _getRun,
       project_name: experimentName,
@@ -928,8 +929,10 @@ function _resolveEvaluators(
 async function _resolveExperiment(
   experiment: TracerSession | null,
   runs: AsyncIterable<Run> | null,
-  client: Client,
-): Promise<[TracerSession | string | undefined, AsyncIterable<Run> | undefined]> {
+  client: Client
+): Promise<
+  [TracerSession | string | undefined, AsyncIterable<Run> | undefined]
+> {
   // TODO: Remove this, handle outside the manager
   if (experiment !== null) {
     if (!experiment.name) {
@@ -947,7 +950,9 @@ async function _resolveExperiment(
     const [runsClone, runsOriginal] = results;
     const runsCloneIterator = runsClone[Symbol.asyncIterator]();
     // todo: this is `any`. does it work properly?
-    const firstRun = await runsCloneIterator.next().then(result => result.value);
+    const firstRun = await runsCloneIterator
+      .next()
+      .then((result) => result.value);
     const retrievedExperiment = await client.readProject(firstRun.sessionId);
     if (!retrievedExperiment.name) {
       throw new Error("Experiment name not found for provided runs.");

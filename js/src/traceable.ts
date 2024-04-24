@@ -147,6 +147,10 @@ export function traceable<Func extends (...args: any[]) => any>(
     return new Promise((resolve, reject) => {
       void asyncLocalStorage.run(currentRunTree, async () => {
         try {
+          const onEnd = args.find((obj) => "on_end" in obj)?.on_end;
+          if (onEnd) {
+            onEnd(currentRunTree);
+          }
           const rawOutput = await wrappedFunc(...rawInputs);
           if (isAsyncIterable(rawOutput)) {
             // eslint-disable-next-line no-inner-declarations
