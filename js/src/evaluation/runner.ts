@@ -367,7 +367,10 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   get evaluationResults(): AsyncIterable<EvaluationResults> {
     if (this._evaluationResults === undefined) {
       return async function* (this: _ExperimentManager) {
-        for await (const _ of this.examples) {
+        // In this case, we need evaluationResults to have the same
+        // number of items as examples. Make a copy of this.examples
+        // with `asyncTee` and yield empty results for each example.
+        for await (const _ of asyncTee(this.examples, 1)) {
           yield { results: [] };
         }
       }.call(this);
@@ -494,18 +497,23 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     // const evaluationResultsIter =
     //   this.evaluationResults[Symbol.asyncIterator]();
 
-    let runs = [];
-    let examples = [];
-    let evaluationResults = [];
-    for await (const run of this.runs) {
-      runs.push(run);
-    }
+    let runs: Run[] = [];
+    let examples: Example[] = [];
+    let evaluationResults: EvaluationResults[] = [];
+
     for await (const example of this.examples) {
       examples.push(example);
+      evaluationResults.push(
+        (await (this.evaluationResults as AsyncGenerator).next()).value
+      );
+      runs.push((await (this.runs as AsyncGenerator).next()).value);
     }
-    for await (const evaluationResult of this.evaluationResults) {
-      evaluationResults.push(evaluationResult);
-    }
+    // for await (const example of this.examples) {
+    //   examples.push(example);
+    // }
+    // for await (const run of this.runs) {
+    //   runs.push(run);
+    // }
 
     // return an array of objects with run, example, and evaluationResults
     for (let i = 0; i < runs.length; i++) {

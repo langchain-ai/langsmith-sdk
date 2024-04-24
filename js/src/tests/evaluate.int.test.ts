@@ -10,18 +10,18 @@ test("evaluate can evaluate", async () => {
   };
 
   const evalRes = await evaluate(evalFunc, { data: dummyDatasetName });
-
+  // console.log(evalRes.results)
   expect(evalRes.results).toHaveLength(2);
 
   expect(evalRes.results[0].run).toBeDefined();
   expect(evalRes.results[0].example).toBeDefined();
-  // expect(evalRes.results[0].evaluationResults).toBeDefined();
+  expect(evalRes.results[0].evaluationResults).toBeDefined();
   const firstRun = evalRes.results[0].run;
   expect(firstRun.outputs).toEqual({ foo: 3 });
 
   expect(evalRes.results[1].run).toBeDefined();
   expect(evalRes.results[1].example).toBeDefined();
-  // expect(evalRes.results[1].evaluationResults).toBeDefined();
+  expect(evalRes.results[1].evaluationResults).toBeDefined();
   const secondRun = evalRes.results[1].run;
   expect(secondRun.outputs).toEqual({ foo: 2 });
 });
