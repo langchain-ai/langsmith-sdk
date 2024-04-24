@@ -27,6 +27,21 @@ type EvaluatorT =
   | RunEvaluator
   | ((run: Run, example?: Example) => EvaluationResult);
 
+interface _ForwardResults {
+  run: Run;
+  example: Example;
+}
+
+interface _ExperimentManagerArgs {
+  data: DataT;
+  experiment?: TracerSession | string;
+  metadata?: Record<string, any>;
+  client?: Client;
+  runs?: AsyncIterable<Run>;
+  evaluationResults?: AsyncIterable<EvaluationResults>;
+  summaryResults?: AsyncIterable<EvaluationResults>;
+}
+
 interface EvaluateOptions {
   /**
    * The dataset to evaluate on. Can be a dataset name, a list of
@@ -84,113 +99,6 @@ interface ExperimentResultRow {
   run: Run;
   example: Example;
   evaluationResults: EvaluationResults;
-}
-
-/**
- * Represents the results of an evaluate() call.
- * This class provides an iterator interface to iterate over the experiment results
- * as they become available. It also provides methods to access the experiment name,
- * the number of results, and to wait for the results to be processed.
- */
-class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
-  private manager: _ExperimentManager;
-  results: ExperimentResultRow[] = [];
-  processedCount = 0;
-  private _summaryResults: EvaluationResults;
-
-  get summaryResults(): EvaluationResults {
-    return this._summaryResults;
-  }
-
-  constructor(experimentManager: _ExperimentManager) {
-    this.manager = experimentManager;
-  }
-
-  get experimentName(): string {
-    return this.manager.experimentName;
-  }
-
-  [Symbol.asyncIterator](): AsyncIterableIterator<ExperimentResultRow> {
-    return this;
-  }
-
-  async next(): Promise<IteratorResult<ExperimentResultRow>> {
-    if (this.processedCount < this.results.length) {
-      const result = this.results[this.processedCount];
-      this.processedCount++;
-      return { value: result, done: false };
-    } else {
-      return { value: undefined, done: true };
-    }
-  }
-
-  async processData(manager: _ExperimentManager): Promise<void> {
-    const results = manager.getResults();
-    for await (const item of results) {
-      this.results.push(item);
-    }
-    this._summaryResults = await manager.getSummaryScores();
-  }
-
-  get length(): number {
-    return this.results.length;
-  }
-
-  toString(): string {
-    return `<ExperimentResults ${this.experimentName}>`;
-  }
-
-  async wait(): Promise<void> {
-    // No need to wait in TypeScript since there are no threads
-    // The processData method is already asynchronous
-  }
-}
-
-const _isCallable = (target: TargetT | AsyncIterable<Run>): boolean =>
-  Boolean(
-    typeof target === "function" ||
-      ("invoke" in target && typeof target.invoke === "function")
-  );
-
-async function _evaluate(
-  target: TargetT | AsyncIterable<Run>,
-  fields: EvaluateOptions & {
-    experiment?: TracerSession;
-  }
-): Promise<ExperimentResults> {
-  const client = fields.client ?? new Client();
-  const runs = _isCallable(target) ? null : (target as AsyncIterable<Run>);
-  const [experiment_, newRuns] = await _resolveExperiment(
-    fields.experiment ?? null,
-    runs,
-    client
-  );
-
-  let manager = await new _ExperimentManager({
-    data: fields.data,
-    client,
-    metadata: fields.metadata,
-    experiment: experiment_ ?? fields.experimentPrefix,
-    runs: newRuns ?? undefined,
-  }).start();
-
-  if (_isCallable(target)) {
-    manager = await manager.withPredictions(target as TargetT, {
-      maxConcurrency: fields.maxConcurrency,
-    });
-  }
-  if (fields.evaluators) {
-    manager = await manager.withEvaluators(fields.evaluators, {
-      maxConcurrency: fields.maxConcurrency,
-    });
-  }
-  if (fields.summaryEvaluators) {
-    manager = await manager.withSummaryEvaluators(fields.summaryEvaluators);
-  }
-  // Start consuming the results.
-  const results = new ExperimentResults(manager);
-  await results.processData(manager);
-  return results;
 }
 
 class _ExperimentManagerMixin {
@@ -297,21 +205,6 @@ class _ExperimentManagerMixin {
     // @TODO log with experiment URL
     console.log(`Starting evaluation of experiment: ${this.experimentName}`);
   }
-}
-
-interface _ForwardResults {
-  run: Run;
-  example: Example;
-}
-
-interface _ExperimentManagerArgs {
-  data: DataT;
-  experiment?: TracerSession | string;
-  metadata?: Record<string, any>;
-  client?: Client;
-  runs?: AsyncIterable<Run>;
-  evaluationResults?: AsyncIterable<EvaluationResults>;
-  summaryResults?: AsyncIterable<EvaluationResults>;
 }
 
 /**
@@ -497,9 +390,9 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     // const evaluationResultsIter =
     //   this.evaluationResults[Symbol.asyncIterator]();
 
-    let runs: Run[] = [];
-    let examples: Example[] = [];
-    let evaluationResults: EvaluationResults[] = [];
+    const runs: Run[] = [];
+    const examples: Example[] = [];
+    const evaluationResults: EvaluationResults[] = [];
 
     for await (const example of this.examples) {
       examples.push(example);
@@ -776,6 +669,113 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   }
 }
 
+/**
+ * Represents the results of an evaluate() call.
+ * This class provides an iterator interface to iterate over the experiment results
+ * as they become available. It also provides methods to access the experiment name,
+ * the number of results, and to wait for the results to be processed.
+ */
+class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
+  private manager: _ExperimentManager;
+  results: ExperimentResultRow[] = [];
+  processedCount = 0;
+  private _summaryResults: EvaluationResults;
+
+  get summaryResults(): EvaluationResults {
+    return this._summaryResults;
+  }
+
+  constructor(experimentManager: _ExperimentManager) {
+    this.manager = experimentManager;
+  }
+
+  get experimentName(): string {
+    return this.manager.experimentName;
+  }
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<ExperimentResultRow> {
+    return this;
+  }
+
+  async next(): Promise<IteratorResult<ExperimentResultRow>> {
+    if (this.processedCount < this.results.length) {
+      const result = this.results[this.processedCount];
+      this.processedCount++;
+      return { value: result, done: false };
+    } else {
+      return { value: undefined, done: true };
+    }
+  }
+
+  async processData(manager: _ExperimentManager): Promise<void> {
+    const results = manager.getResults();
+    for await (const item of results) {
+      this.results.push(item);
+    }
+    this._summaryResults = await manager.getSummaryScores();
+  }
+
+  get length(): number {
+    return this.results.length;
+  }
+
+  toString(): string {
+    return `<ExperimentResults ${this.experimentName}>`;
+  }
+
+  async wait(): Promise<void> {
+    // No need to wait in TypeScript since there are no threads
+    // The processData method is already asynchronous
+  }
+}
+
+const _isCallable = (target: TargetT | AsyncIterable<Run>): boolean =>
+  Boolean(
+    typeof target === "function" ||
+      ("invoke" in target && typeof target.invoke === "function")
+  );
+
+async function _evaluate(
+  target: TargetT | AsyncIterable<Run>,
+  fields: EvaluateOptions & {
+    experiment?: TracerSession;
+  }
+): Promise<ExperimentResults> {
+  const client = fields.client ?? new Client();
+  const runs = _isCallable(target) ? null : (target as AsyncIterable<Run>);
+  const [experiment_, newRuns] = await _resolveExperiment(
+    fields.experiment ?? null,
+    runs,
+    client
+  );
+
+  let manager = await new _ExperimentManager({
+    data: fields.data,
+    client,
+    metadata: fields.metadata,
+    experiment: experiment_ ?? fields.experimentPrefix,
+    runs: newRuns ?? undefined,
+  }).start();
+
+  if (_isCallable(target)) {
+    manager = await manager.withPredictions(target as TargetT, {
+      maxConcurrency: fields.maxConcurrency,
+    });
+  }
+  if (fields.evaluators) {
+    manager = await manager.withEvaluators(fields.evaluators, {
+      maxConcurrency: fields.maxConcurrency,
+    });
+  }
+  if (fields.summaryEvaluators) {
+    manager = await manager.withSummaryEvaluators(fields.summaryEvaluators);
+  }
+  // Start consuming the results.
+  const results = new ExperimentResults(manager);
+  await results.processData(manager);
+  return results;
+}
+
 async function _forward(
   fn: (...args: any[]) => Promise<any> | any, // TODO fix this type. What is `rh.SupportsLangsmithExtra`?
   example: Example,
@@ -910,6 +910,34 @@ async function* asyncTee<T>(
   }
 
   yield* iterators;
+}
+
+/**
+ * @TODO replace asyncTee with atee
+ */
+export function atee<T>(
+  iter: AsyncGenerator<T>,
+  length = 2
+): AsyncGenerator<T>[] {
+  const buffers = Array.from(
+    { length },
+    () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>
+  );
+  return buffers.map(async function* makeIter(buffer) {
+    while (true) {
+      if (buffer.length === 0) {
+        const result = await iter.next();
+        for (const buffer of buffers) {
+          buffer.push(result);
+        }
+      } else if (buffer[0].done) {
+        return;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        yield buffer.shift()!.value;
+      }
+    }
+  });
 }
 
 interface SupportsLangSmithExtra<R> {
