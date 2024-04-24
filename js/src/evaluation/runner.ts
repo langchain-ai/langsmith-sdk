@@ -74,7 +74,17 @@ export function evaluate(
      */
     blocking?: boolean;
   }
-): Promise<ExperimentResults>;
+): Promise<ExperimentResults> {
+  return _evaluate(target, {
+    data,
+    evaluators: options?.evaluators,
+    summaryEvaluators: options?.summaryEvaluator,
+    metadata: options?.metadata,
+    experimentPrefix: options?.experimentPrefix,
+    maxConcurrency: options?.maxConcurrency,
+    client: options?.client,
+  });
+}
 
 interface ExperimentResultRow {
   run: Run;
@@ -88,17 +98,114 @@ interface ExperimentResultRow {
  * as they become available. It also provides methods to access the experiment name,
  * the number of results, and to wait for the results to be processed.
  */
-class ExperimentResults {
-  experimentManager: _ExperimentManager;
+class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
+  private manager: _ExperimentManager;
+  private results: ExperimentResultRow[] = [];
+  private processedCount = 0;
+  private _summaryResults: EvaluationResults;
 
-  constructor(experimentManager: _ExperimentManager) {}
+  get summaryResults(): EvaluationResults {
+    return this._summaryResults;
+  }
+
+  constructor(experimentManager: _ExperimentManager) {
+    this.manager = experimentManager;
+    this.processData(this.manager);
+  }
+
+  get experimentName(): string {
+    return this.manager.experimentName;
+  }
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<ExperimentResultRow> {
+    return this;
+  }
+
+  async next(): Promise<IteratorResult<ExperimentResultRow>> {
+    if (this.processedCount < this.results.length) {
+      const result = this.results[this.processedCount];
+      this.processedCount++;
+      return { value: result, done: false };
+    } else {
+      return { value: undefined, done: true };
+    }
+  }
+
+  private async processData(manager: _ExperimentManager): Promise<void> {
+    const results = manager.getResults();
+    for await (const item of results) {
+      this.results.push(item);
+    }
+    this._summaryResults = await manager.getSummaryScores();
+  }
+
+  get length(): number {
+    return this.results.length;
+  }
+
+  toString(): string {
+    return `<ExperimentResults ${this.experimentName}>`;
+  }
+
+  async wait(): Promise<void> {
+    // No need to wait in TypeScript since there are no threads
+    // The processData method is already asynchronous
+  }
 }
 
-const _isCallable = (target: TargetT | Array<Run>): boolean =>
+const _isCallable = (target: TargetT | AsyncIterable<Run>): boolean =>
   Boolean(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
   );
+
+
+async function _evaluate(
+  target: TargetT | AsyncIterable<Run>,
+  fields: {
+    data: DataT;
+    evaluators?: Array<EvaluatorT>;
+    summaryEvaluators?: Array<SummaryEvaluatorT>;
+    metadata?: Record<string, any>;
+    experimentPrefix?: string;
+    maxConcurrency?: number;
+    client?: Client;
+    experiment?: TracerSession;
+  }
+): Promise<ExperimentResults> {
+  const client = fields.client ?? new Client();
+  const runs = _isCallable(target) ? null : target as AsyncIterable<Run>;
+  const [experiment_, newRuns] = await _resolveExperiment(
+    fields.experiment ?? null,
+    runs,
+    client,
+  )
+
+  let manager = await new _ExperimentManager({
+    data: fields.data,
+    client,
+    metadata: fields.metadata,
+    experiment: experiment_ ?? fields.experimentPrefix,
+    runs: newRuns ?? undefined,
+  }).start();
+
+  if (_isCallable(target)) {
+    manager = await manager.withPredictions(target as TargetT, {
+      maxConcurrency: fields.maxConcurrency,
+    });
+  }
+  if (fields.evaluators) {
+    manager = await manager.withEvaluators(fields.evaluators, {
+      maxConcurrency: fields.maxConcurrency,
+    });
+  }
+  if (fields.summaryEvaluators) {
+    manager = await manager.withSummaryEvaluators(fields.summaryEvaluators);
+  }
+  // Start consuming the results.
+  const results = new ExperimentResults(manager);
+  return results;
+}
 
 class _ExperimentManagerMixin {
   client: Client;
@@ -421,6 +528,19 @@ class _ExperimentManager extends _ExperimentManagerMixin {
         evaluationResults: evaluationResult.value,
       };
     }
+  }
+
+  async getSummaryScores(): Promise<EvaluationResults> {
+    if (!this._summaryResults) {
+      return { results: [] };
+    }
+  
+    const results: EvaluationResult[] = [];
+    for await (const evaluationResults of this._summaryResults) {
+      results.push(...evaluationResults.results);
+    }
+  
+    return { results };
   }
 
   // Private methods
@@ -803,4 +923,37 @@ function _resolveEvaluators(
     }
   }
   return results;
+}
+
+async function _resolveExperiment(
+  experiment: TracerSession | null,
+  runs: AsyncIterable<Run> | null,
+  client: Client,
+): Promise<[TracerSession | string | undefined, AsyncIterable<Run> | undefined]> {
+  // TODO: Remove this, handle outside the manager
+  if (experiment !== null) {
+    if (!experiment.name) {
+      throw new Error("Experiment name must be defined if provided.");
+    }
+    return [experiment, undefined];
+  }
+
+  // If we have runs, that means the experiment was already started.
+  if (runs !== null) {
+    const results: AsyncIterable<Run>[] = [];
+    for await (const item of asyncTee(runs)) {
+      results.push(item);
+    }
+    const [runsClone, runsOriginal] = results;
+    const runsCloneIterator = runsClone[Symbol.asyncIterator]();
+    // todo: this is `any`. does it work properly?
+    const firstRun = await runsCloneIterator.next().then(result => result.value);
+    const retrievedExperiment = await client.readProject(firstRun.sessionId);
+    if (!retrievedExperiment.name) {
+      throw new Error("Experiment name not found for provided runs.");
+    }
+    return [retrievedExperiment, runsOriginal];
+  }
+
+  return [undefined, undefined];
 }

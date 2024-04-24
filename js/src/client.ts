@@ -2465,13 +2465,11 @@ export class Client {
       if (res.evaluatorInfo) {
         sourceInfo_ = { ...res.evaluatorInfo, ...sourceInfo_ };
       }
-      let runId_: string | undefined = undefined;
+      let runId_: string | null = null;
       if (res.targetRunId) {
         runId_ = res.targetRunId;
       } else if (run) {
         runId_ = run.id;
-      } else {
-        throw new Error("No run ID provided");
       }
 
       await this.createFeedback(runId_, res.key, {
