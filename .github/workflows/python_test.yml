@@ -38,10 +38,10 @@ jobs:
         run: |
           poetry install --with dev,lint
           poetry run pip install -U langchain
-      - name: Build
+      - name: Build ${{ matrix.python-version }}
         run: poetry build
-      - name: Lint
+      - name: Lint ${{ matrix.python-version }}
         run: make lint
-      - name: Run tests
+      - name: Run Unit tests ${{ matrix.python-version }}
         run: make tests
         shell: bash
