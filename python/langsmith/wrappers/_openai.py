@@ -10,12 +10,16 @@ from typing import (
     DefaultDict,
     Dict,
     List,
+    Mapping,
     Optional,
     Type,
     TypeVar,
     Union,
 )
 
+from typing_extensions import TypedDict
+
+from langsmith import client as ls_client
 from langsmith import run_helpers
 
 if TYPE_CHECKING:
@@ -172,11 +176,19 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
     return acreate if run_helpers.is_async(original_create) else create
 
 
-def wrap_openai(client: C) -> C:
+class TracingExtra(TypedDict, total=False):
+    metadata: Optional[Mapping[str, Any]]
+    tags: Optional[List[str]]
+    client: Optional[ls_client.Client]
+
+
+def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C:
     """Patch the OpenAI client to make it traceable.
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
+        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
+            Defaults to None.
 
     Returns:
         Union[OpenAI, AsyncOpenAI]: The patched client.
