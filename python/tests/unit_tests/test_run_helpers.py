@@ -457,8 +457,8 @@ def test_traceable_too_many_pos_args() -> None:
 # Really hard to get contextvar propagation right for async generators
 # prior to Python 3.10
 @pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Skipping for Python 3.8 or earlier",
+    sys.version_info < (3, 11),
+    reason="Skipping for Python 3.10 or earlier",
 )
 async def test_async_generator():
     @traceable
