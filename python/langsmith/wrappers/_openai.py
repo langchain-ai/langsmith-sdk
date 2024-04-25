@@ -27,7 +27,8 @@ if TYPE_CHECKING:
     )
     from openai.types.completion import Completion
 
-C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI"])
+# Any is used since it may work with Azure or other providers
+C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI", Any])
 logger = logging.getLogger(__name__)
 
 
