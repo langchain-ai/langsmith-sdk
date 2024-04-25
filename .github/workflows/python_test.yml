@@ -14,7 +14,7 @@ env:
   POETRY_VERSION: "1.4.2"
 
 jobs:
-  build:
+  build_and_test:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
@@ -35,55 +35,13 @@ jobs:
       - name: Install poetry
         run: pipx install poetry==$POETRY_VERSION
       - name: Install dependencies
-        run: poetry install
-
-  lint:
-    needs: build
-    runs-on: ubuntu-20.04
-    defaults:
-      run:
-        working-directory: python
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ needs.build.outputs.python-version }}
-          cache: "pip"
-      - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
-      - name: Install dependencies
         run: |
           poetry install --with dev,lint
           poetry run pip install -U langchain
-      - name: Analysing the code with our lint
+      - name: Build
+        run: poetry build
+      - name: Lint
         run: make lint
-
-  test:
-    needs: build
-    runs-on: ubuntu-20.04
-    strategy:
-      matrix:
-        python-version:
-          - "3.8"
-          - "3.11"
-          - "3.12"
-    defaults:
-      run:
-        working-directory: python
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ needs.build.outputs.python-version }}
-          cache: "pip"
-      - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
-      - name: Install dependencies
-        run: |
-          poetry install --with dev
-          poetry run pip install -U langchain
       - name: Run tests
         run: make tests
         shell: bash
