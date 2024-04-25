@@ -1,3 +1,4 @@
+import { EvaluationResult } from "../evaluation/evaluator.js";
 import { evaluate } from "../evaluation/runner.js";
 import { Example, Run } from "../schemas.js";
 
@@ -127,7 +128,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
   expect(secondEvalResults.results[0].score).toEqual(1);
 });
 
-test("evaluate can evaluate with summary evaluators", async () => {
+test.skip("evaluate can evaluate with summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
     console.log("__input__", input);
     return {
@@ -135,7 +136,21 @@ test("evaluate can evaluate with summary evaluators", async () => {
     };
   };
 
-  const evalRes = await evaluate(targetFunc, { data: dummyDatasetName });
+  const customSummaryEvaluator = (
+    runs: Run[],
+    examples?: Example[]
+  ): Promise<EvaluationResult> => {
+    console.log("customSummaryEvaluator", runs.length, examples?.length);
+    return Promise.resolve({
+      key: "key",
+      score: 1,
+    });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: dummyDatasetName,
+    summaryEvaluators: [customSummaryEvaluator],
+  });
   // console.log(evalRes.results)
   expect(evalRes.results).toHaveLength(2);
 

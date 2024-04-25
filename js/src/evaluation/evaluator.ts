@@ -117,11 +117,8 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
 
   constructor(evaluator: Func) {
     const wrappedFunc = (input: Record<string, any>) => {
-      const newInputs = {
-        run: input.run,
-        example: input.example,
-      };
-      return evaluator(...Object.values(newInputs));
+      const runAndExample = input.langSmithRunAndExample;
+      return evaluator(...Object.values(runAndExample));
     };
     this.func = wrappedFunc as Func;
   }
@@ -192,8 +189,15 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
       options || {},
       "evaluator"
     );
+    // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
+    // inputs. This key is extracted in the wrapped function, with `run` and
+    // `example` passed to evaluator function as arguments.
+    const langSmithRunAndExample = {
+      run,
+      example,
+    };
     const result = await wrappedTraceableFunc(
-      { run, example },
+      { langSmithRunAndExample },
       {
         metadata,
       }

@@ -19,10 +19,15 @@ type TargetT = (input: Record<string, any>) => Record<string, any>;
 type DataT = string | AsyncIterable<Example>;
 // Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
-type SummaryEvaluatorT = (
-  runs: Array<Run>,
-  examples: Array<Example>
-) => Promise<EvaluationResult | EvaluationResults>;
+type SummaryEvaluatorT =
+  | ((
+      runs: Array<Run>,
+      examples: Array<Example>
+    ) => Promise<EvaluationResult | EvaluationResults>)
+  | ((
+      runs: Array<Run>,
+      examples: Array<Example>
+    ) => EvaluationResult | EvaluationResults);
 // Row-level evaluator
 type EvaluatorT =
   | RunEvaluator
@@ -339,7 +344,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const resolvedEvaluators = _resolveEvaluators(evaluators);
     const experimentResults = this._score(resolvedEvaluators, options);
 
-    const results: AsyncIterable<any>[] = [];
+    const results: AsyncIterable<ExperimentResultRow>[] = [];
     for await (const item of asyncTee(experimentResults, 3)) {
       results.push(item);
     }
@@ -371,9 +376,8 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   async withSummaryEvaluators(
     summaryEvaluators: Array<SummaryEvaluatorT>
   ): Promise<_ExperimentManager> {
-    const wrappedEvaluators = await wrapSummaryEvaluators(summaryEvaluators);
     const aggregateFeedbackGen =
-      this._applySummaryEvaluators(wrappedEvaluators);
+      this._applySummaryEvaluators(summaryEvaluators);
     return new _ExperimentManager({
       data: this.examples,
       experiment: this._experiment,
@@ -554,31 +558,47 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   ): AsyncGenerator<EvaluationResults> {
     const runs: Array<Run> = [];
     const examples: Array<Example> = [];
+    const [runsIterOne, runsIterTwo] = atee(
+      this.runs as AsyncGenerator<Run>,
+      2
+    );
+    const [examplesIterOne, examplesIterTwo] = atee(
+      this.examples as AsyncGenerator<Example>,
+      2
+    );
+    // Reset the iterators
+    this._runs = runsIterTwo as AsyncIterable<Run>;
+    this._examples = examplesIterTwo as AsyncIterable<Example>;
 
-    const runsIterator = this.runs[Symbol.asyncIterator]();
-    const examplesIterator = this.examples[Symbol.asyncIterator]();
-
-    let shouldContinue = true;
-    while (shouldContinue) {
-      const runResult = await runsIterator.next();
-      const exampleResult = await examplesIterator.next();
-
-      if (runResult.done || exampleResult.done) {
-        shouldContinue = false;
-        break;
-      }
-
-      runs.push(runResult.value);
-      examples.push(exampleResult.value);
+    for await (const example of examplesIterOne) {
+      examples.push(example);
+      runs.push((await (runsIterOne as AsyncGenerator).next()).value);
     }
 
     const aggregateFeedback = [];
     const projectId = this._getExperiment().id;
 
-    const futures: Promise<unknown>[] = [];
-    const caller = new AsyncCaller({ maxConcurrency: 1 });
-    for (const evaluator of summaryEvaluators) {
+    // how da hell does py do this?
+    // issue -> reference example id passed at call time?
+    // experiment name, experiment id (project id), project name ("evaluators") shall be passed in here!
+    const options = Array.from({ length: summaryEvaluators.length }).map(
+      () => ({
+        project_name: "evaluators",
+        experiment: this.experimentName,
+        projectId: projectId,
+      })
+    );
+    const wrappedEvaluators = await wrapSummaryEvaluators(
+      summaryEvaluators,
+      options
+    );
+
+    // @TODO: implement later
+    // const futures: Promise<unknown>[] = [];
+    // const caller = new AsyncCaller({ maxConcurrency: 1 });
+    for (const evaluator of wrappedEvaluators) {
       try {
+        console.log("Before running evaluator", runs.length, examples.length);
         const summaryEvalResult = await evaluator(runs, examples);
         const flattenedResults =
           this.client._selectEvalResults(summaryEvalResult);
@@ -588,13 +608,19 @@ class _ExperimentManager extends _ExperimentManagerMixin {
           const evaluatorInfo = feedback.evaluatorInfo;
           delete feedback.evaluatorInfo;
 
-          futures.push(
-            caller.call(this.client.createFeedback, null, "key", {
-              ...feedback,
-              projectId: projectId,
-              sourceInfo: evaluatorInfo,
-            })
-          );
+          await this.client.createFeedback(null, "key", {
+            ...feedback,
+            projectId: projectId,
+            sourceInfo: evaluatorInfo,
+          });
+
+          // futures.push(
+          //   caller.call(this.client.createFeedback, null, "key", {
+          //     ...feedback,
+          //     projectId: projectId,
+          //     sourceInfo: evaluatorInfo,
+          //   })
+          // );
         }
       } catch (e) {
         console.error(
@@ -606,6 +632,8 @@ class _ExperimentManager extends _ExperimentManagerMixin {
         );
       }
     }
+
+    // await Promise.all(futures);
 
     yield {
       results: aggregateFeedback,
@@ -815,12 +843,11 @@ function _resolveData(
   return data;
 }
 
-/** @TODO this is not getting options yet. Might be an issue? */
 async function wrapSummaryEvaluators(
   evaluators: SummaryEvaluatorT[],
-  options?: Partial<RunTreeConfig>
+  optionsArray?: Partial<RunTreeConfig>[]
 ): Promise<SummaryEvaluatorT[]> {
-  async function wrap(
+  async function _wrap(
     evaluator: SummaryEvaluatorT
   ): Promise<SummaryEvaluatorT> {
     const evalName = evaluator.name || "BatchEvaluator";
@@ -834,9 +861,14 @@ async function wrapSummaryEvaluators(
           _runs_: string,
           _examples_: string
         ): Promise<EvaluationResult | EvaluationResults> => {
-          return evaluator(runs, examples);
+          console.log(
+            "Running summary evaluator",
+            runs.length,
+            examples.length
+          );
+          return Promise.resolve(evaluator(runs, examples));
         },
-        { ...options, name: evalName }
+        { ...optionsArray, name: evalName }
       );
 
       return Promise.resolve(
@@ -851,8 +883,8 @@ async function wrapSummaryEvaluators(
   }
 
   const results: SummaryEvaluatorT[] = [];
-  for (const evaluator of evaluators) {
-    results.push(await wrap(evaluator));
+  for (let i = 0; i < evaluators.length; i++) {
+    results.push(await _wrap(evaluators[i]));
   }
   return results;
 }
@@ -942,4 +974,26 @@ async function _resolveExperiment(
   }
 
   return [undefined, undefined];
+}
+
+function atee<T>(iter: AsyncGenerator<T>, length = 2): AsyncGenerator<T>[] {
+  const buffers = Array.from(
+    { length },
+    () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>
+  );
+  return buffers.map(async function* makeIter(buffer) {
+    while (true) {
+      if (buffer.length === 0) {
+        const result = await iter.next();
+        for (const buffer of buffers) {
+          buffer.push(result);
+        }
+      } else if (buffer[0].done) {
+        return;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        yield buffer.shift()!.value;
+      }
+    }
+  });
 }
