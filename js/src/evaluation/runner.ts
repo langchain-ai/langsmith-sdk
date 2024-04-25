@@ -269,7 +269,14 @@ class _ExperimentManager extends _ExperimentManagerMixin {
         // In this case, we need evaluationResults to have the same
         // number of items as examples. Make a copy of this.examples
         // with `asyncTee` and yield empty results for each example.
-        for await (const _ of asyncTee(this.examples, 1)) {
+        const examplesResults: AsyncIterable<Example>[] = [];
+        for await (const item of asyncTee(this.examples)) {
+          examplesResults.push(item);
+        }
+        const [examplesClone, examplesOriginal] = examplesResults;
+        this._examples = examplesOriginal;
+
+        for await (const _ of examplesClone) {
           yield { results: [] };
         }
       }.call(this);
@@ -394,14 +401,29 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const examples: Example[] = [];
     const evaluationResults: EvaluationResults[] = [];
 
-    for await (const example of this.examples) {
+    const examplesResults: AsyncIterable<Example>[] = [];
+    for await (const item of asyncTee(this.examples)) {
+      examplesResults.push(item);
+    }
+    const [examplesClone, examplesOriginal] = examplesResults;
+    this._examples = examplesOriginal;
+
+    const runsResults: AsyncIterable<Run>[] = [];
+    for await (const item of asyncTee(this.runs)) {
+      runsResults.push(item);
+    }
+    const [runsClone, runsOriginal] = runsResults;
+    this._runs = runsOriginal;
+
+    for await (const example of examplesClone) {
       examples.push(example);
       evaluationResults.push(
         (await (this.evaluationResults as AsyncGenerator).next()).value
       );
-      runs.push((await (this.runs as AsyncGenerator).next()).value);
+      runs.push((await (runsClone as AsyncGenerator).next()).value);
     }
     for (let i = 0; i < runs.length; i++) {
+      console.log("get results yielding!!")
       yield {
         run: runs[i],
         example: examples[i],
@@ -417,6 +439,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
     const results: EvaluationResult[] = [];
     for await (const evaluationResults of this._summaryResults) {
+      console.log("Trying here ig", evaluationResults)
       results.push(...evaluationResults.results);
     }
 
@@ -558,21 +581,11 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   ): AsyncGenerator<EvaluationResults> {
     const runs: Array<Run> = [];
     const examples: Array<Example> = [];
-    const [runsIterOne, runsIterTwo] = atee(
-      this.runs as AsyncGenerator<Run>,
-      2
-    );
-    const [examplesIterOne, examplesIterTwo] = atee(
-      this.examples as AsyncGenerator<Example>,
-      2
-    );
-    // Reset the iterators
-    this._runs = runsIterTwo as AsyncIterable<Run>;
-    this._examples = examplesIterTwo as AsyncIterable<Example>;
 
-    for await (const example of examplesIterOne) {
+    for await (const example of this.examples) {
+      console.log("examples inside _applySummaryEvaluators", example.id)
       examples.push(example);
-      runs.push((await (runsIterOne as AsyncGenerator).next()).value);
+      runs.push((await (this.runs as AsyncGenerator).next()).value);
     }
 
     const aggregateFeedback = [];
@@ -683,11 +696,7 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   private manager: _ExperimentManager;
   results: ExperimentResultRow[] = [];
   processedCount = 0;
-  private _summaryResults: EvaluationResults;
-
-  get summaryResults(): EvaluationResults {
-    return this._summaryResults;
-  }
+  summaryResults: EvaluationResults;
 
   constructor(experimentManager: _ExperimentManager) {
     this.manager = experimentManager;
@@ -712,11 +721,11 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   }
 
   async processData(manager: _ExperimentManager): Promise<void> {
-    const results = manager.getResults();
-    for await (const item of results) {
+    for await (const item of manager.getResults()) {
       this.results.push(item);
     }
-    this._summaryResults = await manager.getSummaryScores();
+    console.log("Trying to get summaries")
+    this.summaryResults = await manager.getSummaryScores();
   }
 
   get length(): number {
@@ -861,11 +870,6 @@ async function wrapSummaryEvaluators(
           _runs_: string,
           _examples_: string
         ): Promise<EvaluationResult | EvaluationResults> => {
-          console.log(
-            "Running summary evaluator",
-            runs.length,
-            examples.length
-          );
           return Promise.resolve(evaluator(runs, examples));
         },
         { ...optionsArray, name: evalName }
@@ -976,7 +980,7 @@ async function _resolveExperiment(
   return [undefined, undefined];
 }
 
-function atee<T>(iter: AsyncGenerator<T>, length = 2): AsyncGenerator<T>[] {
+export function atee<T>(iter: AsyncGenerator<T>, length = 2): AsyncGenerator<T>[] {
   const buffers = Array.from(
     { length },
     () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>

@@ -22,11 +22,17 @@ test("evaluate can evaluate", async () => {
   const firstRun = evalRes.results[0].run;
   expect(firstRun.outputs).toEqual({ foo: 3 });
 
+  const firstRunResults = evalRes.results[0].evaluationResults;
+  expect(firstRunResults.results).toHaveLength(0);
+
   expect(evalRes.results[1].run).toBeDefined();
   expect(evalRes.results[1].example).toBeDefined();
   expect(evalRes.results[1].evaluationResults).toBeDefined();
   const secondRun = evalRes.results[1].run;
   expect(secondRun.outputs).toEqual({ foo: 2 });
+
+  const secondRunResults = evalRes.results[1].evaluationResults;
+  expect(secondRunResults.results).toHaveLength(0);
 });
 
 test("evaluate can evaluate with RunEvaluator evaluators", async () => {
@@ -140,10 +146,12 @@ test.skip("evaluate can evaluate with summary evaluators", async () => {
     runs: Run[],
     examples?: Example[]
   ): Promise<EvaluationResult> => {
+    const comment = runs.map(({ id }) => id).join(", ");
     console.log("customSummaryEvaluator", runs.length, examples?.length);
     return Promise.resolve({
       key: "key",
       score: 1,
+      comment,
     });
   };
 
@@ -151,18 +159,26 @@ test.skip("evaluate can evaluate with summary evaluators", async () => {
     data: dummyDatasetName,
     summaryEvaluators: [customSummaryEvaluator],
   });
-  // console.log(evalRes.results)
+  // console.log(evalRes)
+
+  expect(evalRes.summaryResults.results).toHaveLength(1);
+  expect(evalRes.summaryResults.results[0].key).toBe("key");
+  expect(evalRes.summaryResults.results[0].score).toBe(1);
+  const allRuns = evalRes.results.map(({ run }) => run);
+  expect(evalRes.summaryResults.results[0].comment).toBe(allRuns.map(({ id }) => id).join(", "));
   expect(evalRes.results).toHaveLength(2);
 
   expect(evalRes.results[0].run).toBeDefined();
   expect(evalRes.results[0].example).toBeDefined();
   expect(evalRes.results[0].evaluationResults).toBeDefined();
+
   const firstRun = evalRes.results[0].run;
   expect(firstRun.outputs).toEqual({ foo: 3 });
 
   expect(evalRes.results[1].run).toBeDefined();
   expect(evalRes.results[1].example).toBeDefined();
   expect(evalRes.results[1].evaluationResults).toBeDefined();
+
   const secondRun = evalRes.results[1].run;
   expect(secondRun.outputs).toEqual({ foo: 2 });
 });
