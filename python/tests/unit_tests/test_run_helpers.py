@@ -2,7 +2,6 @@ import asyncio
 import functools
 import inspect
 import json
-import os
 import sys
 import time
 import warnings
@@ -272,7 +271,7 @@ def test_as_runnable(_: MagicMock, mock_client: Client) -> None:
     def my_function(a, b, d):
         return a + b + d
 
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=False):
         runnable = as_runnable(my_function)
         assert runnable.invoke({"a": 1, "b": 2, "d": 3}) == 6
 
@@ -283,7 +282,7 @@ def test_as_runnable_batch(mock_client: Client) -> None:
     def my_function(a, b, d):
         return a + b + d
 
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=False):
         runnable = as_runnable(my_function)
         assert runnable.batch(
             [
@@ -300,7 +299,7 @@ async def test_as_runnable_async(_: MagicMock) -> None:
         return a + b + d
 
     runnable = as_runnable(my_function)
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=False):
         result = await runnable.ainvoke({"a": 1, "b": 2, "d": 3})
         assert result == 6
 
@@ -312,7 +311,7 @@ async def test_as_runnable_async_batch(_: MagicMock) -> None:
         return a + b + d
 
     runnable = as_runnable(my_function)
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=False):
         result = await runnable.abatch(
             [
                 {"a": 1, "b": 2, "d": 3},
@@ -848,9 +847,7 @@ def test_trace_to_traceable():
         return a + b
 
     mock_client_ = _get_mock_client()
-    with patch.dict(
-        os.environ, {"LANGCHAIN_TRACING_V2": "true", "LANGCHAIN_API_KEY": "test"}
-    ):
+    with tracing_context(enabled=True):
         with langsmith.trace(
             name="parent_fn", inputs={"a": 1, "b": 2}, client=mock_client_
         ) as run:
