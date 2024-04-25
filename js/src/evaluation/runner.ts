@@ -385,11 +385,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   }
 
   async *getResults(): AsyncIterable<ExperimentResultRow> {
-    // const runsIter = this.runs[Symbol.asyncIterator]();
-    // const examplesIter = this.examples[Symbol.asyncIterator]();
-    // const evaluationResultsIter =
-    //   this.evaluationResults[Symbol.asyncIterator]();
-
     const runs: Run[] = [];
     const examples: Example[] = [];
     const evaluationResults: EvaluationResults[] = [];
@@ -401,14 +396,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       );
       runs.push((await (this.runs as AsyncGenerator).next()).value);
     }
-    // for await (const example of this.examples) {
-    //   examples.push(example);
-    // }
-    // for await (const run of this.runs) {
-    //   runs.push(run);
-    // }
-
-    // return an array of objects with run, example, and evaluationResults
     for (let i = 0; i < runs.length; i++) {
       yield {
         run: runs[i],
@@ -416,24 +403,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
         evaluationResults: evaluationResults[i],
       };
     }
-
-    // while (true) {
-    //   const runResult = await runsIter.next();
-    //   const exampleResult = await examplesIter.next();
-    //   const evaluationResult = await evaluationResultsIter.next();
-
-    //   console.log("Yielding")
-    //   yield {
-    //     run: runResult.value,
-    //     example: exampleResult.value,
-    //     evaluationResults: evaluationResult.value,
-    //   };
-
-    //   if (runResult.done || exampleResult.done) {
-    //     console.log("Done")
-    //     break;
-    //   }
-    // }
   }
 
   async getSummaryScores(): Promise<EvaluationResults> {
@@ -463,7 +432,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       maxConcurrency?: number;
     }
   ): AsyncGenerator<_ForwardResults> {
-    // const fn = wrapFunctionAndEnsureTraceable(target, this.experimentName);
     const maxConcurrency = options?.maxConcurrency ?? 0;
 
     if (maxConcurrency === 0) {
@@ -839,8 +807,10 @@ function _resolveData(
   return data;
 }
 
+/** @TODO this is not getting options yet. Might be an issue? */
 async function wrapSummaryEvaluators(
-  evaluators: SummaryEvaluatorT[]
+  evaluators: SummaryEvaluatorT[],
+  options?: Partial<RunTreeConfig>
 ): Promise<SummaryEvaluatorT[]> {
   async function wrap(
     evaluator: SummaryEvaluatorT
@@ -858,7 +828,7 @@ async function wrapSummaryEvaluators(
         ): Promise<EvaluationResult | EvaluationResults> => {
           return evaluator(runs, examples);
         },
-        { name: evalName }
+        { ...options, name: evalName }
       );
 
       return Promise.resolve(
@@ -912,41 +882,13 @@ async function* asyncTee<T>(
   yield* iterators;
 }
 
-/**
- * @TODO replace asyncTee with atee
- */
-export function atee<T>(
-  iter: AsyncGenerator<T>,
-  length = 2
-): AsyncGenerator<T>[] {
-  const buffers = Array.from(
-    { length },
-    () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>
-  );
-  return buffers.map(async function* makeIter(buffer) {
-    while (true) {
-      if (buffer.length === 0) {
-        const result = await iter.next();
-        for (const buffer of buffers) {
-          buffer.push(result);
-        }
-      } else if (buffer[0].done) {
-        return;
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        yield buffer.shift()!.value;
-      }
-    }
-  });
-}
-
 interface SupportsLangSmithExtra<R> {
   (target: TargetT, langSmithExtra?: Partial<RunTreeConfig>): R;
 }
 
 function wrapFunctionAndEnsureTraceable(
   target: TargetT,
-  options?: Partial<RunTreeConfig>
+  options: Partial<RunTreeConfig>
 ) {
   if (typeof target === "function") {
     if (isTraceableFunction(target)) {

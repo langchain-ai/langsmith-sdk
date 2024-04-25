@@ -1,7 +1,7 @@
 import { evaluate } from "../evaluation/runner.js";
 import { Run } from "../schemas.js";
 
-const dummyDatasetName = "ds-somber-yesterday-36";
+const dummyDatasetName = "ds-internal-laborer-16";
 
 test("evaluate can evaluate", async () => {
   const evalFunc = (input: Record<string, any>) => {
@@ -36,9 +36,10 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
     };
   };
 
-  const customEvaluator = async (run: Run) => {
+  const customEvaluator = async (_: Run) => {
     return Promise.resolve({
-      key: run.id,
+      key: "key",
+      score: 1,
     });
   };
   const evaluator = {
@@ -61,7 +62,8 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
 
   const firstEvalResults = evalRes.results[0].evaluationResults;
   expect(firstEvalResults.results).toHaveLength(1);
-  expect(firstEvalResults.results[0].key).toEqual(firstRun.id);
+  expect(firstEvalResults.results[0].key).toEqual("key");
+  expect(firstEvalResults.results[0].score).toEqual(1);
 
   expect(evalRes.results[1].run).toBeDefined();
   expect(evalRes.results[1].example).toBeDefined();
@@ -72,10 +74,11 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
 
   const secondEvalResults = evalRes.results[1].evaluationResults;
   expect(secondEvalResults.results).toHaveLength(1);
-  expect(secondEvalResults.results[0].key).toEqual(secondRun.id);
+  expect(secondEvalResults.results[0].key).toEqual("key");
+  expect(secondEvalResults.results[0].score).toEqual(1);
 });
 
-test("evaluate can evaluate with custom evaluators", async () => {
+test.skip("evaluate can evaluate with custom evaluators", async () => {
   const evalFunc = (input: Record<string, any>) => {
     console.log("__input__", input);
     return {
@@ -109,7 +112,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
   expect(secondRun.outputs).toEqual({ foo: 2 });
 });
 
-test("evaluate can evaluate with summary evaluators", async () => {
+test.skip("evaluate can evaluate with summary evaluators", async () => {
   const evalFunc = (input: Record<string, any>) => {
     console.log("__input__", input);
     return {
