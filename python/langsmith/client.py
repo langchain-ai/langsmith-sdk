@@ -542,14 +542,15 @@ class Client:
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
-        self.session = session if session else requests.Session()
+        session_ = session if session else requests.Session()
+        self.session = session_
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
         weakref.finalize(self, close_session, self.session)
-        atexit.register(close_session, self.session)
+        atexit.register(close_session, session_)
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
