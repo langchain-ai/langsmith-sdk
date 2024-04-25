@@ -80,4 +80,20 @@ def test_tracing_enabled():
         assert not ls_utils.tracing_is_enabled()
         with tracing_context(enabled=True):
             assert ls_utils.tracing_is_enabled()
+            with tracing_context(enabled=False):
+                assert not ls_utils.tracing_is_enabled()
+        with tracing_context(enabled=False):
+            assert not ls_utils.tracing_is_enabled()
         assert not ls_utils.tracing_is_enabled()
+
+
+def test_tracing_disabled():
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+        assert ls_utils.tracing_is_enabled()
+        with tracing_context(enabled=False):
+            assert not ls_utils.tracing_is_enabled()
+        with tracing_context(enabled=True):
+            assert ls_utils.tracing_is_enabled()
+            with tracing_context(enabled=False):
+                assert not ls_utils.tracing_is_enabled()
+        assert ls_utils.tracing_is_enabled()
