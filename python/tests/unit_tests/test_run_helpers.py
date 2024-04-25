@@ -809,7 +809,6 @@ async def test_traceable_async():
 
 
 def test_traceable_to_trace():
-
     @traceable
     def parent_fn(a: int, b: int) -> int:
         with langsmith.trace(name="child_fn", inputs={"a": a, "b": b}) as run_tree:
@@ -832,6 +831,29 @@ def test_traceable_to_trace():
     run = cast(RunTree, run)
     assert run.name == "parent_fn"
     assert run.outputs == {"output": 3}
+    assert run.inputs == {"a": 1, "b": 2}
+    child_runs = run.child_runs
+    assert child_runs
+    assert len(child_runs) == 1
+    assert child_runs[0].name == "child_fn"
+    assert child_runs[0].inputs == {"a": 1, "b": 2}
+
+
+def test_trace_to_traceable():
+    @traceable
+    def child_fn(a: int, b: int) -> int:
+        return a + b
+
+    mock_client_ = _get_mock_client()
+    with langsmith.trace(
+        name="parent_fn", inputs={"a": 1, "b": 2}, client=mock_client_
+    ) as run:
+        result = child_fn(1, 2)
+        run.end(outputs={"result": result})
+
+    assert result == 3
+    assert run.name == "parent_fn"
+    assert run.outputs == {"result": 3}
     assert run.inputs == {"a": 1, "b": 2}
     child_runs = run.child_runs
     assert child_runs
