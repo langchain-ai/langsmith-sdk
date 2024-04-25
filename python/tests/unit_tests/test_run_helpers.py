@@ -18,6 +18,7 @@ from langsmith.run_helpers import (
     as_runnable,
     is_traceable_function,
     traceable,
+    tracing_context,
 )
 from langsmith.run_trees import RunTree
 
@@ -174,7 +175,7 @@ def mock_client() -> Client:
 
 @pytest.mark.parametrize("use_next", [True, False])
 def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
 
         @traceable(client=mock_client)
         def my_iterator_fn(a, b, d):
@@ -209,7 +210,7 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
 
 @pytest.mark.parametrize("use_next", [True, False])
 async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> None:
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
 
         def filter_inputs(kwargs: dict):
             return {"a": "FOOOOOO", "b": kwargs["b"], "d": kwargs["d"]}
@@ -271,7 +272,7 @@ def test_as_runnable(_: MagicMock, mock_client: Client) -> None:
     def my_function(a, b, d):
         return a + b + d
 
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+    with tracing_context(enabled=True):
         runnable = as_runnable(my_function)
         assert runnable.invoke({"a": 1, "b": 2, "d": 3}) == 6
 
@@ -282,7 +283,7 @@ def test_as_runnable_batch(mock_client: Client) -> None:
     def my_function(a, b, d):
         return a + b + d
 
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+    with tracing_context(enabled=True):
         runnable = as_runnable(my_function)
         assert runnable.batch(
             [
@@ -299,7 +300,7 @@ async def test_as_runnable_async(_: MagicMock) -> None:
         return a + b + d
 
     runnable = as_runnable(my_function)
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+    with tracing_context(enabled=True):
         result = await runnable.ainvoke({"a": 1, "b": 2, "d": 3})
         assert result == 6
 
@@ -311,7 +312,7 @@ async def test_as_runnable_async_batch(_: MagicMock) -> None:
         return a + b + d
 
     runnable = as_runnable(my_function)
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+    with tracing_context(enabled=True):
         result = await runnable.abatch(
             [
                 {"a": 1, "b": 2, "d": 3},
@@ -322,7 +323,7 @@ async def test_as_runnable_async_batch(_: MagicMock) -> None:
 
 
 def test_traceable_project_name() -> None:
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
         mock_client_ = _get_mock_client()
 
         @traceable(client=mock_client_, project_name="my foo project")
@@ -526,7 +527,7 @@ async def test_async_generator():
         run = r
 
     mock_client_ = _get_mock_client()
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
         chunks = my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -621,7 +622,7 @@ def test_generator():
 
     mock_client_ = _get_mock_client()
 
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
         chunks = my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -700,7 +701,7 @@ def test_traceable_regular():
         run = r
 
     mock_client_ = _get_mock_client()
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
         all_chunks = my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -781,7 +782,7 @@ async def test_traceable_async():
         run = r
 
     mock_client_ = _get_mock_client()
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
         all_chunks = await my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -823,7 +824,7 @@ def test_traceable_to_trace():
         nonlocal run
         run = r
 
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with tracing_context(enabled=True):
         result = parent_fn(
             1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
         )
