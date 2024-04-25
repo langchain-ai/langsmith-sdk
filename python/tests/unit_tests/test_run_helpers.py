@@ -806,3 +806,34 @@ async def test_traceable_async():
         "summarize_answers",
     ]
     assert len(child_runs[2].child_runs) == 1  # type: ignore
+
+
+def test_traceable_to_trace():
+    @traceable
+    def parent_fn(a: int, b: int) -> int:
+        with langsmith.trace(name="child_fn", inputs={"a": a, "b": b}) as run_tree:
+            result = a + b
+            run_tree.end(outputs={"result": result})
+        return result
+
+    run: Optional[RunTree] = None  # type: ignore
+
+    def _get_run(r: RunTree) -> None:
+        nonlocal run
+        run = r
+
+    result = parent_fn(
+        1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+    )
+
+    assert result == 3
+    assert run is not None
+    run = cast(RunTree, run)
+    assert run.name == "parent_fn"
+    assert run.outputs == {"result": 3}
+    assert run.inputs == {"a": 1, "b": 2}
+    child_runs = run.child_runs
+    assert child_runs
+    assert len(child_runs) == 1
+    assert child_runs[0].name == "child_fn"
+    assert child_runs[0].inputs == {"a": 1, "b": 2}
