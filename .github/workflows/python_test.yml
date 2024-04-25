@@ -33,13 +33,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
       - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
+        run: python -m pipx install poetry==$POETRY_VERSION
       - name: Install dependencies
         run: |
-          poetry install --with dev,lint
-          poetry run pip install -U langchain
+          python -m poetry install --with dev,lint
+          python -m poetry run pip install -U langchain
       - name: Build ${{ matrix.python-version }}
-        run: poetry build
+        run: python -m poetry build
       - name: Lint ${{ matrix.python-version }}
         run: make lint
       - name: Run Unit tests ${{ matrix.python-version }}
