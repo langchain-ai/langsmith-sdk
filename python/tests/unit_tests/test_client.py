@@ -161,12 +161,13 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    client = Client(api_url="http://localhost:1984", api_key="123")
-    assert "x-api-key" in client._headers
-    assert client._headers["x-api-key"] == "123"
+    with patch.dict("os.environ", {}, clear=True):
+        client = Client(api_url="http://localhost:1984", api_key="123")
+        assert "x-api-key" in client._headers
+        assert client._headers["x-api-key"] == "123"
 
-    client_no_key = Client(api_url="http://localhost:1984")
-    assert "x-api-key" not in client_no_key._headers
+        client_no_key = Client(api_url="http://localhost:1984")
+        assert "x-api-key" not in client_no_key._headers
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -257,7 +258,7 @@ def test_get_api_key() -> None:
     assert _get_api_key("'provided_api_key'") == "provided_api_key"
     assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
 
-    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}):
+    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
         assert _get_api_key(None) == "env_api_key"
 
     with patch.dict("os.environ", {}, clear=True):
@@ -376,7 +377,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
             for call in get_calls:
                 assert call.args[0] == f"{api_url}/info"
     del client
-    time.sleep(6)  # Give the background thread time to stop
+    time.sleep(3)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
 
