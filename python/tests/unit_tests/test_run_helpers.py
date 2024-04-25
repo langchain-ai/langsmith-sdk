@@ -6,7 +6,7 @@ import os
 import sys
 import time
 import warnings
-from typing import Any, AsyncGenerator, Optional, cast
+from typing import Any, AsyncGenerator, Generator, Iterable, Optional, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -551,6 +551,100 @@ async def test_async_generator():
         "some_sync_func",
         "some_async_func",
         "another_async_func",
+        "create_document_context",
+        "summarize_answers",
+    ]
+    assert len(child_runs[2].child_runs) == 1  # type: ignore
+
+
+def test_generator():
+    @traceable
+    def some_sync_func(query: str) -> list:
+        return [query, query]
+
+    @traceable
+    def some_func(queries: list) -> Generator[list, None, None]:
+        for query in queries:
+            yield query
+
+    @traceable
+    def another_func(query: str) -> str:
+        with langsmith.trace(name="zee-cm", inputs={"query": query}) as run_tree:
+            run_tree.end(outputs={"query": query})
+        return query
+
+    @traceable
+    def create_document_context(documents: list) -> str:
+        return "\n".join(documents)
+
+    @traceable
+    def summarize_answers(
+        query: str, document_context: str
+    ) -> Generator[str, None, None]:
+        for i in range(3):
+            yield f"Answer {i}"
+
+    @traceable(run_type="chain", name="expand_and_answer_questions")
+    def my_answer(
+        query: str,
+    ) -> Generator[Any, None, None]:
+        expanded_terms = some_sync_func(query=query)
+        docs_gen = some_func(
+            queries=expanded_terms,
+        )
+        documents = []
+        for document in docs_gen:
+            documents.append(document)
+            break
+
+        another_func(query=query)
+
+        for document in documents:
+            yield document
+        for document in docs_gen:
+            documents.append(document)
+            yield document
+
+        document_context = create_document_context(
+            documents=documents,
+        )
+
+        final_answer = summarize_answers(query=query, document_context=document_context)
+        for chunk in final_answer:
+            yield chunk
+
+    run: Optional[RunTree] = None  # type: ignore
+
+    def _get_run(r: RunTree) -> None:
+        nonlocal run
+        run = r
+
+    mock_client_ = _get_mock_client()
+
+    chunks = my_answer(
+        "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
+    )
+    all_chunks = []
+    for chunk in chunks:
+        all_chunks.append(chunk)
+
+    assert all_chunks == [
+        "some_query",
+        "some_query",
+        "Answer 0",
+        "Answer 1",
+        "Answer 2",
+    ]
+    assert run is not None
+    run = cast(RunTree, run)
+    assert run.name == "expand_and_answer_questions"
+    child_runs = run.child_runs
+    assert child_runs and len(child_runs) == 5
+    names = [run.name for run in child_runs]
+    assert names == [
+        "some_sync_func",
+        "some_func",
+        "another_func",
         "create_document_context",
         "summarize_answers",
     ]

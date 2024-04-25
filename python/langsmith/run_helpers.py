@@ -577,23 +577,28 @@ def traceable(
                     generator_result = run_container["context"].run(
                         func, *args, **kwargs
                     )
-                for item in generator_result:
-                    if run_type == "llm":
-                        if run_container["new_run"]:
-                            run_container["new_run"].add_event(
-                                {
-                                    "name": "new_token",
-                                    "time": datetime.datetime.now(
-                                        datetime.timezone.utc
-                                    ).isoformat(),
-                                    "kwargs": {"token": item},
-                                }
-                            )
-                    results.append(item)
-                    try:
-                        yield item
-                    except GeneratorExit:
-                        break
+                try:
+                    while True:
+                        item = run_container["context"].run(next, generator_result)
+                        if run_type == "llm":
+                            if run_container["new_run"]:
+                                run_container["new_run"].add_event(
+                                    {
+                                        "name": "new_token",
+                                        "time": datetime.datetime.now(
+                                            datetime.timezone.utc
+                                        ).isoformat(),
+                                        "kwargs": {"token": item},
+                                    }
+                                )
+                        results.append(item)
+                        try:
+                            yield item
+                        except GeneratorExit:
+                            break
+                except StopIteration:
+                    pass
+
             except BaseException as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
