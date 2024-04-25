@@ -311,7 +311,6 @@ class CallTracker:
         self.counter += 1
 
 
-# Skip for python 3.12
 @pytest.mark.parametrize("supports_batch_endpoint", [True, False])
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> None:
@@ -380,9 +379,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
     del client
     time.sleep(3)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
-    # Flakey in 3.12
-    if sys.version_info < (3, 12):
-        assert tracker.counter == 1, "Client was not garbage collected"
+    assert tracker.counter == 1, "Client was not garbage collected"
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
