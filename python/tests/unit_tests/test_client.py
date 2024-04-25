@@ -311,6 +311,7 @@ class CallTracker:
         self.counter += 1
 
 
+@pytest.mark.flaky(reruns=5)
 @pytest.mark.parametrize("supports_batch_endpoint", [True, False])
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> None:

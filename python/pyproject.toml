@@ -52,6 +52,7 @@ types-tqdm = "^4.66.0.20240106"
 vcrpy = "^6.0.1"
 fastapi = "^0.110.1"
 uvicorn = "^0.29.0"
+pytest-rerunfailures = "^14.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
