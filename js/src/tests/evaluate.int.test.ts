@@ -134,7 +134,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
   expect(secondEvalResults.results[0].score).toEqual(1);
 });
 
-test.skip("evaluate can evaluate with summary evaluators", async () => {
+test("evaluate can evaluate with summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
     console.log("__input__", input);
     return {
