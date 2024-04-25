@@ -165,7 +165,9 @@ test.skip("evaluate can evaluate with summary evaluators", async () => {
   expect(evalRes.summaryResults.results[0].key).toBe("key");
   expect(evalRes.summaryResults.results[0].score).toBe(1);
   const allRuns = evalRes.results.map(({ run }) => run);
-  expect(evalRes.summaryResults.results[0].comment).toBe(allRuns.map(({ id }) => id).join(", "));
+  expect(evalRes.summaryResults.results[0].comment).toBe(
+    allRuns.map(({ id }) => id).join(", ")
+  );
   expect(evalRes.results).toHaveLength(2);
 
   expect(evalRes.results[0].run).toBeDefined();

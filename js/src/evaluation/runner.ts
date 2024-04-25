@@ -423,7 +423,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       runs.push((await (runsClone as AsyncGenerator).next()).value);
     }
     for (let i = 0; i < runs.length; i++) {
-      console.log("get results yielding!!")
+      console.log("get results yielding!!");
       yield {
         run: runs[i],
         example: examples[i],
@@ -439,7 +439,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
     const results: EvaluationResult[] = [];
     for await (const evaluationResults of this._summaryResults) {
-      console.log("Trying here ig", evaluationResults)
+      console.log("Trying here ig", evaluationResults);
       results.push(...evaluationResults.results);
     }
 
@@ -583,7 +583,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const examples: Array<Example> = [];
 
     for await (const example of this.examples) {
-      console.log("examples inside _applySummaryEvaluators", example.id)
+      console.log("examples inside _applySummaryEvaluators", example.id);
       examples.push(example);
       runs.push((await (this.runs as AsyncGenerator).next()).value);
     }
@@ -724,7 +724,7 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
     for await (const item of manager.getResults()) {
       this.results.push(item);
     }
-    console.log("Trying to get summaries")
+    console.log("Trying to get summaries");
     this.summaryResults = await manager.getSummaryScores();
   }
 
@@ -980,7 +980,10 @@ async function _resolveExperiment(
   return [undefined, undefined];
 }
 
-export function atee<T>(iter: AsyncGenerator<T>, length = 2): AsyncGenerator<T>[] {
+export function atee<T>(
+  iter: AsyncGenerator<T>,
+  length = 2
+): AsyncGenerator<T>[] {
   const buffers = Array.from(
     { length },
     () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>
