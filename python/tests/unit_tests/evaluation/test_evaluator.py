@@ -1,6 +1,6 @@
 import asyncio
 from typing import Optional
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -36,8 +36,8 @@ def test_run_evaluator_decorator(run_1: Run, example_1: Example):
         return EvaluationResult(key="test", score=1.0)
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = sample_evaluator.evaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = sample_evaluator.evaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
@@ -49,8 +49,8 @@ def test_run_evaluator_decorator_dict(run_1: Run, example_1: Example):
         return {"key": "test", "score": 1.0}
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = sample_evaluator.evaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = sample_evaluator.evaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
@@ -62,8 +62,8 @@ def test_run_evaluator_decorator_dict_no_key(run_1: Run, example_1: Example):
         return {"score": 1.0}
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = sample_evaluator.evaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = sample_evaluator.evaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "sample_evaluator"
     assert result.score == 1.0
@@ -75,8 +75,8 @@ def test_run_evaluator_decorator_dict_with_comment(run_1: Run, example_1: Exampl
         return {"score": 1.0, "comment": "test"}
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = sample_evaluator.evaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = sample_evaluator.evaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "sample_evaluator"
     assert result.score == 1.0
@@ -94,8 +94,8 @@ def test_run_evaluator_decorator_multi_return(run_1: Run, example_1: Example):
         }
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = sample_evaluator.evaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = sample_evaluator.evaluate_run(run_1, example_1)
     assert not isinstance(result, EvaluationResult)
     assert "results" in result
     assert len(result["results"]) == 2
@@ -117,7 +117,8 @@ def test_run_evaluator_decorator_multi_return_no_key(run_1: Run, example_1: Exam
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
     with pytest.raises(ValueError):
-        sample_evaluator.evaluate_run(run_1, example_1)
+        with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+            sample_evaluator.evaluate_run(run_1, example_1)
 
 
 def test_run_evaluator_decorator_return_multi_evaluation_result(
@@ -133,8 +134,8 @@ def test_run_evaluator_decorator_return_multi_evaluation_result(
         )
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = sample_evaluator.evaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = sample_evaluator.evaluate_run(run_1, example_1)
     assert not isinstance(result, EvaluationResult)
     assert "results" in result
     assert len(result["results"]) == 2
@@ -153,8 +154,8 @@ async def test_run_evaluator_decorator_async(run_1: Run, example_1: Example):
         return EvaluationResult(key="test", score=1.0)
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = await sample_evaluator.aevaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = await sample_evaluator.aevaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
@@ -167,8 +168,8 @@ async def test_run_evaluator_decorator_dict_async(run_1: Run, example_1: Example
         return {"key": "test", "score": 1.0}
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = await sample_evaluator.aevaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = await sample_evaluator.aevaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
@@ -183,8 +184,8 @@ async def test_run_evaluator_decorator_dict_no_key_async(
         return {"score": 1.0}
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = await sample_evaluator.aevaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = await sample_evaluator.aevaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "sample_evaluator"
     assert result.score == 1.0
@@ -199,8 +200,8 @@ async def test_run_evaluator_decorator_dict_with_comment_async(
         return {"score": 1.0, "comment": "test"}
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = await sample_evaluator.aevaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = await sample_evaluator.aevaluate_run(run_1, example_1)
     assert isinstance(result, EvaluationResult)
     assert result.key == "sample_evaluator"
     assert result.score == 1.0
@@ -237,7 +238,8 @@ async def test_run_evaluator_decorator_multi_return_async(
     assert result["results"][0].score == 1.0
     assert result["results"][1].key == "test2"
     assert result["results"][1].score == 2.0
-    aresult = await sample_sync_evaluator.aevaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        aresult = await sample_sync_evaluator.aevaluate_run(run_1, example_1)
     sresult = sample_sync_evaluator.evaluate_run(run_1, example_1)
     scores = [result.score for result in result["results"]]
     assert (
@@ -262,7 +264,8 @@ async def test_run_evaluator_decorator_multi_return_no_key_async(
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
     with pytest.raises(ValueError):
-        await sample_evaluator.aevaluate_run(run_1, example_1)
+        with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+            await sample_evaluator.aevaluate_run(run_1, example_1)
 
 
 async def test_run_evaluator_decorator_return_multi_evaluation_result_async(
@@ -281,8 +284,8 @@ async def test_run_evaluator_decorator_return_multi_evaluation_result_async(
         )
 
     assert isinstance(sample_evaluator, DynamicRunEvaluator)
-
-    result = await sample_evaluator.aevaluate_run(run_1, example_1)
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        result = await sample_evaluator.aevaluate_run(run_1, example_1)
     assert not isinstance(result, EvaluationResult)
     assert "results" in result
     assert len(result["results"]) == 2

@@ -6,7 +6,6 @@ import gc
 import itertools
 import json
 import math
-import os
 import sys
 import threading
 import time
@@ -258,10 +257,10 @@ def test_get_api_key() -> None:
     assert _get_api_key("'provided_api_key'") == "provided_api_key"
     assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
 
-    with patch.dict(os.environ, {"LANGCHAIN_API_KEY": "env_api_key"}):
+    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}):
         assert _get_api_key(None) == "env_api_key"
 
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True):
         assert _get_api_key(None) is None
 
     assert _get_api_key("") is None
@@ -271,16 +270,16 @@ def test_get_api_key() -> None:
 def test_get_api_url() -> None:
     assert _get_api_url("http://provided.url") == "http://provided.url"
 
-    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None) == "http://env.url"
 
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True):
         assert _get_api_url(None) == "https://api.smith.langchain.com"
 
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True):
         assert _get_api_url(None) == "https://api.smith.langchain.com"
 
-    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None) == "http://env.url"
 
     with pytest.raises(ls_utils.LangSmithUserError):
@@ -524,7 +523,7 @@ def test_create_run_includes_langchain_env_var_metadata(
     }
 
     # Set the environment variables just for this test
-    with patch.dict(os.environ, {"LANGCHAIN_REVISION": "abcd2234"}):
+    with patch.dict("os.environ", {"LANGCHAIN_REVISION": "abcd2234"}):
         # Clear the cache to ensure the environment variables are re-read
         ls_env.get_langchain_env_var_metadata.cache_clear()
         id_ = uuid.uuid4()
