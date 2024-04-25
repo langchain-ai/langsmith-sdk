@@ -66,8 +66,8 @@ def tracing_is_enabled() -> bool:
     from langsmith.run_helpers import get_tracing_context
 
     tc = get_tracing_context()
-    if tc["disabled"] is not None:
-        return not tc["disabled"]
+    if tc["enabled"] is not None:
+        return tc["enabled"]
     var_result = get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))
     return var_result == "true"
 

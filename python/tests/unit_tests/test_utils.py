@@ -76,7 +76,7 @@ class LangSmithProjectNameTest(unittest.TestCase):
 
 
 def test_tracing_enabled():
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING": "false"}):
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
         assert not ls_utils.tracing_is_enabled()
         with tracing_context(enabled=True):
             assert ls_utils.tracing_is_enabled()
