@@ -690,6 +690,7 @@ def trace(
             tags=tags_,
         )
     else:
+        # Check
         new_run = run_trees.RunTree(
             name=name,
             run_id=run_id,
