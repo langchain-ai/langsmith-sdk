@@ -1,6 +1,6 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
-import { isTraceableFunction, traceable } from "../traceable.js";
+import { wrapFunctionAndEnsureTraceable, traceable } from "../traceable.js";
 import { getGitInfo } from "../utils/_git.js";
 import { isUUIDv4 } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -10,6 +10,7 @@ import {
   EvaluationResult,
   EvaluationResults,
   RunEvaluator,
+  runEvaluator,
 } from "./evaluator.js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -480,15 +481,27 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const { run, example, evaluationResults } = currentResults;
     for (const evaluator of evaluators) {
       try {
-        const evaluatorResponse = await evaluator.evaluateRun(run, example);
+        const options = {
+          reference_example_id: example.id,
+          project_name: this.experimentName,
+          metadata: {
+            example_version: example.modified_at
+              ? new Date(example.modified_at).toISOString()
+              : new Date(example.created_at).toISOString(),
+          },
+          client: this.client,
+        };
+        const evaluatorResponse = await evaluator.evaluateRun(
+          run,
+          example,
+          options
+        );
         evaluationResults.results.push(
           ...(await this.client.logEvaluationFeedback(evaluatorResponse, run))
         );
       } catch (e) {
         console.error(
-          `Error running evaluator ${evaluator.evaluateRun.name} on run ${
-            run.id
-          }: ${JSON.stringify(e, null, 2)}`
+          `Error running evaluator ${evaluator.evaluateRun.name} on run ${run.id}: ${e}`
         );
       }
     }
@@ -536,10 +549,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     }
   }
 
-  /**
-   * @TODO figure out how to apply metadata at top level instead of with context like py does.
-   * inside _runEvaluators and _applySummaryEvaluators
-   */
   async *_applySummaryEvaluators(
     summaryEvaluators: Array<SummaryEvaluatorT>
   ): AsyncGenerator<EvaluationResults> {
@@ -571,7 +580,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     for (const evaluator of summaryEvaluators) {
       try {
         const summaryEvalResult = await evaluator(runs, examples);
-        // TODO: Expose public API for this.
         const flattenedResults =
           this.client._selectEvalResults(summaryEvalResult);
         aggregateFeedback.push(...flattenedResults);
@@ -882,27 +890,6 @@ async function* asyncTee<T>(
   yield* iterators;
 }
 
-interface SupportsLangSmithExtra<R> {
-  (target: TargetT, langSmithExtra?: Partial<RunTreeConfig>): R;
-}
-
-function wrapFunctionAndEnsureTraceable(
-  target: TargetT,
-  options: Partial<RunTreeConfig>
-) {
-  if (typeof target === "function") {
-    if (isTraceableFunction(target)) {
-      return target as SupportsLangSmithExtra<ReturnType<typeof target>>;
-    } else {
-      return traceable(target, {
-        ...options,
-        name: "target",
-      });
-    }
-  }
-  throw new Error("Target must be runnable function");
-}
-
 function _resolveEvaluators(
   evaluators: Array<EvaluatorT>
 ): Array<RunEvaluator> {
@@ -914,8 +901,7 @@ function _resolveEvaluators(
     } else if (evaluator.name === "LangChainStringEvaluator") {
       throw new Error("Not yet implemented");
     } else {
-      // results.push(runEvaluator(evaluator));
-      throw new Error("Not yet implemented");
+      results.push(runEvaluator(evaluator));
     }
   }
   return results;
