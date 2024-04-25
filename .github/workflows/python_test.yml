@@ -27,19 +27,24 @@ jobs:
         working-directory: python
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
+        name: Setup python ${{ matrix.python-version }}
+        id: setup-python
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
       - name: Install poetry
-        run: python -m pipx install poetry==$POETRY_VERSION
+        shell: bash
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        # Install poetry using the python version installed by setup-python step.
+        run: pipx install "poetry==$POETRY_VERSION" --python '${{ steps.setup-python.outputs.python-path }}' --verbose
       - name: Install dependencies
         run: |
-          python -m poetry install --with dev,lint
-          python -m poetry run pip install -U langchain
+          poetry install --with dev,lint
+          poetry run pip install -U langchain
       - name: Build ${{ matrix.python-version }}
-        run: python -m poetry build
+        run: poetry build
       - name: Lint ${{ matrix.python-version }}
         run: make lint
       - name: Run Unit tests ${{ matrix.python-version }}
