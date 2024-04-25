@@ -249,7 +249,7 @@ def traceable(
             Union[Callable, Callable[[Callable], Callable]]: The decorated function.
 
     Note:
-            - Requires that LANGCHAIN_TRACING_V2 be set to 'true' in the environment.
+            - Requires that LANGSMITH_TRACING_V2 be set to 'true' in the environment.
 
     Examples:
         .. code-block:: python
