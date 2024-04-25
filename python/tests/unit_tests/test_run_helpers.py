@@ -729,141 +729,139 @@ def test_traceable_regular():
 
 
 async def test_traceable_async():
+    @traceable
+    def some_sync_func(query: str) -> list:
+        return [query, query]
+
+    @traceable
+    async def some_async_func(queries: list) -> list:
+        await asyncio.sleep(0.01)
+        return queries
+
+    @traceable
+    async def another_async_func(query: str) -> str:
+        with langsmith.trace(name="zee-cm", inputs={"query": query}) as run_tree:
+            run_tree.end(outputs={"query": query})
+        return query
+
+    @traceable
+    async def create_document_context(documents: list) -> str:
+        await asyncio.sleep(0.01)
+        return "\n".join(documents)
+
+    @traceable
+    async def summarize_answers(query: str, document_context: str) -> list:
+        await asyncio.sleep(0.01)
+        return [f"Answer {i}" for i in range(3)]
+
+    @traceable(run_type="chain", name="expand_and_answer_questions")
+    async def my_answer(
+        query: str,
+    ) -> list:
+        expanded_terms = some_sync_func(query=query)
+        documents = await some_async_func(
+            queries=expanded_terms,
+        )
+
+        await another_async_func(query=query)
+
+        document_context = await create_document_context(
+            documents=documents,
+        )
+
+        final_answer = await summarize_answers(
+            query=query, document_context=document_context
+        )
+        return documents + final_answer
+
+    run: Optional[RunTree] = None  # type: ignore
+
+    def _get_run(r: RunTree) -> None:
+        nonlocal run
+        run = r
+
+    mock_client_ = _get_mock_client()
     with patch.dict(os.environ, {"LANGSMITH_TRACING_V2": "true"}):
-
-        @traceable
-        def some_sync_func(query: str) -> list:
-            return [query, query]
-
-        @traceable
-        async def some_async_func(queries: list) -> list:
-            await asyncio.sleep(0.01)
-            return queries
-
-        @traceable
-        async def another_async_func(query: str) -> str:
-            with langsmith.trace(name="zee-cm", inputs={"query": query}) as run_tree:
-                run_tree.end(outputs={"query": query})
-            return query
-
-        @traceable
-        async def create_document_context(documents: list) -> str:
-            await asyncio.sleep(0.01)
-            return "\n".join(documents)
-
-        @traceable
-        async def summarize_answers(query: str, document_context: str) -> list:
-            await asyncio.sleep(0.01)
-            return [f"Answer {i}" for i in range(3)]
-
-        @traceable(run_type="chain", name="expand_and_answer_questions")
-        async def my_answer(
-            query: str,
-        ) -> list:
-            expanded_terms = some_sync_func(query=query)
-            documents = await some_async_func(
-                queries=expanded_terms,
-            )
-
-            await another_async_func(query=query)
-
-            document_context = await create_document_context(
-                documents=documents,
-            )
-
-            final_answer = await summarize_answers(
-                query=query, document_context=document_context
-            )
-            return documents + final_answer
-
-        run: Optional[RunTree] = None  # type: ignore
-
-        def _get_run(r: RunTree) -> None:
-            nonlocal run
-            run = r
-
-        mock_client_ = _get_mock_client()
-
         all_chunks = await my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
 
-        assert all_chunks == [
-            "some_query",
-            "some_query",
-            "Answer 0",
-            "Answer 1",
-            "Answer 2",
-        ]
-        assert run is not None
-        run = cast(RunTree, run)
-        assert run.name == "expand_and_answer_questions"
-        child_runs = run.child_runs
-        assert child_runs and len(child_runs) == 5
-        names = [run.name for run in child_runs]
-        assert names == [
-            "some_sync_func",
-            "some_async_func",
-            "another_async_func",
-            "create_document_context",
-            "summarize_answers",
-        ]
-        assert len(child_runs[2].child_runs) == 1  # type: ignore
+    assert all_chunks == [
+        "some_query",
+        "some_query",
+        "Answer 0",
+        "Answer 1",
+        "Answer 2",
+    ]
+    assert run is not None
+    run = cast(RunTree, run)
+    assert run.name == "expand_and_answer_questions"
+    child_runs = run.child_runs
+    assert child_runs and len(child_runs) == 5
+    names = [run.name for run in child_runs]
+    assert names == [
+        "some_sync_func",
+        "some_async_func",
+        "another_async_func",
+        "create_document_context",
+        "summarize_answers",
+    ]
+    assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
 def test_traceable_to_trace():
+    @traceable
+    def parent_fn(a: int, b: int) -> int:
+        with langsmith.trace(name="child_fn", inputs={"a": a, "b": b}) as run_tree:
+            result = a + b
+            run_tree.end(outputs={"result": result})
+        return result
+
+    run: Optional[RunTree] = None  # type: ignore
+
+    def _get_run(r: RunTree) -> None:
+        nonlocal run
+        run = r
+
     with patch.dict(os.environ, {"LANGSMITH_TRACING_V2": "true"}):
-
-        @traceable
-        def parent_fn(a: int, b: int) -> int:
-            with langsmith.trace(name="child_fn", inputs={"a": a, "b": b}) as run_tree:
-                result = a + b
-                run_tree.end(outputs={"result": result})
-            return result
-
-        run: Optional[RunTree] = None  # type: ignore
-
-        def _get_run(r: RunTree) -> None:
-            nonlocal run
-            run = r
-
         result = parent_fn(
             1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
         )
 
-        assert result == 3
-        assert run is not None
-        run = cast(RunTree, run)
-        assert run.name == "parent_fn"
-        assert run.outputs == {"output": 3}
-        assert run.inputs == {"a": 1, "b": 2}
-        child_runs = run.child_runs
-        assert child_runs
-        assert len(child_runs) == 1
-        assert child_runs[0].name == "child_fn"
-        assert child_runs[0].inputs == {"a": 1, "b": 2}
+    assert result == 3
+    assert run is not None
+    run = cast(RunTree, run)
+    assert run.name == "parent_fn"
+    assert run.outputs == {"output": 3}
+    assert run.inputs == {"a": 1, "b": 2}
+    child_runs = run.child_runs
+    assert child_runs
+    assert len(child_runs) == 1
+    assert child_runs[0].name == "child_fn"
+    assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
 def test_trace_to_traceable():
-    with patch.dict(os.environ, {"LANGCHAIN_TRACING_V2": "true"}):
+    @traceable
+    def child_fn(a: int, b: int) -> int:
+        return a + b
 
-        @traceable
-        def child_fn(a: int, b: int) -> int:
-            return a + b
-
-        mock_client_ = _get_mock_client()
+    mock_client_ = _get_mock_client()
+    with patch.dict(
+        os.environ, {"LANGSMITH_TRACING_V2": "true", "LANGCHAIN_API_KEY": "test"}
+    ):
         with langsmith.trace(
             name="parent_fn", inputs={"a": 1, "b": 2}, client=mock_client_
         ) as run:
             result = child_fn(1, 2)
             run.end(outputs={"result": result})
 
-        assert result == 3
-        assert run.name == "parent_fn"
-        assert run.outputs == {"result": 3}
-        assert run.inputs == {"a": 1, "b": 2}
-        child_runs = run.child_runs
-        assert child_runs
-        assert len(child_runs) == 1
-        assert child_runs[0].name == "child_fn"
-        assert child_runs[0].inputs == {"a": 1, "b": 2}
+    assert result == 3
+    assert run.name == "parent_fn"
+    assert run.outputs == {"result": 3}
+    assert run.inputs == {"a": 1, "b": 2}
+    child_runs = run.child_runs
+    assert child_runs
+    assert len(child_runs) == 1
+    assert child_runs[0].name == "child_fn"
+    assert child_runs[0].inputs == {"a": 1, "b": 2}
