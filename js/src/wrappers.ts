@@ -1,6 +1,13 @@
+import type { OpenAI } from "openai";
 import type { Client } from "./index.js";
-import { traceable } from "./traceable.js";
+import {
+  isRunnableConfigLike,
+  isRunTree,
+  type RunnableConfigLike,
+} from "./run_trees.js";
+import { traceable, type RunTreeLike } from "./traceable.js";
 
+// Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
   chat: {
     completions: {
@@ -12,28 +19,124 @@ type OpenAIType = {
   };
 };
 
+type PatchedOpenAIClient<T extends OpenAIType> = {
+  [P in keyof T]: T[P];
+} & {
+  chat: {
+    completions: {
+      create: {
+        (
+          arg: OpenAI.ChatCompletionCreateParamsStreaming,
+          arg2?: OpenAI.RequestOptions & {
+            langsmithExtra?: RunnableConfigLike | RunTreeLike;
+          }
+        ): Promise<AsyncGenerator<OpenAI.ChatCompletionChunk>>;
+      } & {
+        (
+          arg: OpenAI.ChatCompletionCreateParamsNonStreaming,
+          arg2?: OpenAI.RequestOptions & {
+            langsmithExtra?: RunnableConfigLike | RunTreeLike;
+          }
+        ): Promise<OpenAI.ChatCompletionChunk>;
+      };
+    };
+  };
+  completions: {
+    create: {
+      (
+        arg: OpenAI.CompletionCreateParamsStreaming,
+        arg2?: OpenAI.RequestOptions & {
+          langsmithExtra?: RunnableConfigLike | RunTreeLike;
+        }
+      ): Promise<AsyncGenerator<OpenAI.Completion>>;
+    } & {
+      (
+        arg: OpenAI.CompletionCreateParamsNonStreaming,
+        arg2?: OpenAI.RequestOptions & {
+          langsmithExtra?: RunnableConfigLike | RunTreeLike;
+        }
+      ): Promise<OpenAI.Completion>;
+    };
+  };
+};
+
 /**
  * Wraps an OpenAI client's completion methods, enabling automatic LangSmith
- * tracing. Method signatures are unchanged.
+ * tracing. Method signatures are unchanged, with the exception that you can pass
+ * an additional and optional "langsmithExtra" field within the second parameter.
  * @param openai An OpenAI client instance.
  * @param options LangSmith options.
- * @returns
+ * @example
+ * ```ts
+ * const patchedStream = await patchedClient.chat.completions.create(
+ *   {
+ *     messages: [{ role: "user", content: `Say 'foo'` }],
+ *     model: "gpt-3.5-turbo",
+ *     stream: true,
+ *   },
+ *   {
+ *     langsmithExtra: {
+ *       metadata: {
+ *         additional_data: "bar",
+ *       },
+ *     },
+ *   },
+ * );
+ * ```
  */
 export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
   options?: { client?: Client }
-): T => {
-  openai.chat.completions.create = traceable(
-    openai.chat.completions.create.bind(openai.chat.completions),
-    Object.assign({ name: "ChatOpenAI", run_type: "llm" }, options?.client)
+): PatchedOpenAIClient<T> => {
+  const originalChatCompletionsFn = openai.chat.completions.create.bind(
+    openai.chat.completions
   );
+  openai.chat.completions.create = async (...args) => {
+    const defaultMetadata = Object.assign(
+      { name: "ChatOpenAI", run_type: "llm" },
+      options?.client
+    );
+    const wrappedMethod = traceable(originalChatCompletionsFn, defaultMetadata);
+    if (
+      isRunTree(args[1]?.langsmithExtra) ||
+      isRunnableConfigLike(args[1]?.langsmithExtra)
+    ) {
+      const { langsmithExtra, ...openAIOptions } = args[1];
+      return wrappedMethod(
+        langsmithExtra,
+        args[0],
+        openAIOptions,
+        args[1].slice(2)
+      );
+    }
+    return wrappedMethod(...args);
+  };
 
-  openai.completions.create = traceable(
-    openai.completions.create.bind(openai.completions),
-    Object.assign({ name: "OpenAI", run_type: "llm" }, options?.client)
+  const originalCompletionsFn = openai.completions.create.bind(
+    openai.chat.completions
   );
+  openai.completions.create = async (...args) => {
+    const defaultMetadata = Object.assign(
+      { name: "OpenAI", run_type: "llm" },
+      options?.client
+    );
+    const wrappedMethod = traceable(originalCompletionsFn, defaultMetadata);
+    if (
+      isRunTree(args[1]?.langsmithExtra) ||
+      isRunnableConfigLike(args[1]?.langsmithExtra)
+    ) {
+      const { langsmithExtra, ...openAIOptions } = args[1];
+      return wrappedMethod(
+        langsmithExtra,
+        args[0],
+        openAIOptions,
+        args[1].slice(2)
+      );
+    }
+    return wrappedMethod(...args);
+  };
 
-  return openai;
+  return openai as PatchedOpenAIClient<T>;
 };
 
 const _wrapClient = <T extends object>(

@@ -55,9 +55,41 @@ test.concurrent("chat.completions", async () => {
   const patchedChoices = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    const _test = chunk.invalidPrompt;
   }
 
   expect(patchedChoices).toEqual(originalChoices);
+  for (const call of callSpy.mock.calls) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((call[2] as any)["method"]).toBe("POST");
+  }
+
+  const patchedStream2 = await patchedClient.chat.completions.create(
+    {
+      messages: [{ role: "user", content: `Say 'foo'` }],
+      temperature: 0,
+      seed: 42,
+      model: "gpt-3.5-turbo",
+      stream: true,
+    },
+    {
+      langsmithExtra: {
+        metadata: {
+          thing1: "thing2",
+        },
+      },
+    }
+  );
+
+  const patchedChoices2 = [];
+  for await (const chunk of patchedStream2) {
+    patchedChoices2.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    const _test = chunk.invalidPrompt;
+  }
+
+  expect(patchedChoices2).toEqual(originalChoices);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((call[2] as any)["method"]).toBe("POST");
@@ -105,6 +137,8 @@ test.concurrent("completions", async () => {
   const originalChoices = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    const _test = chunk.invalidPrompt;
   }
 
   const patchedStream = await patchedClient.completions.create({
@@ -118,6 +152,8 @@ test.concurrent("completions", async () => {
   const patchedChoices = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    const _test = chunk.invalidPrompt;
   }
 
   expect(patchedChoices).toEqual(originalChoices);
