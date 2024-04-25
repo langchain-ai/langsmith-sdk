@@ -10,12 +10,16 @@ from typing import (
     DefaultDict,
     Dict,
     List,
+    Mapping,
     Optional,
     Type,
     TypeVar,
     Union,
 )
 
+from typing_extensions import TypedDict
+
+from langsmith import client as ls_client
 from langsmith import run_helpers
 
 if TYPE_CHECKING:
@@ -27,7 +31,8 @@ if TYPE_CHECKING:
     )
     from openai.types.completion import Completion
 
-C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI"])
+# Any is used since it may work with Azure or other providers
+C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI", Any])
 logger = logging.getLogger(__name__)
 
 
@@ -140,7 +145,14 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
     return d
 
 
-def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> Callable:
+def _get_wrapper(
+    original_create: Callable,
+    name: str,
+    reduce_fn: Callable,
+    tracing_extra: Optional[TracingExtra] = None,
+) -> Callable:
+    textra = tracing_extra or {}
+
     @functools.wraps(original_create)
     def create(*args, stream: bool = False, **kwargs):
         decorator = run_helpers.traceable(
@@ -148,6 +160,7 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
+            **textra,
         )
 
         return decorator(original_create)(*args, stream=stream, **kwargs)
@@ -160,6 +173,7 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
+            **textra,
         )
         if stream:
             # TODO: This slightly alters the output to be a generator instead of the
@@ -171,20 +185,34 @@ def _get_wrapper(original_create: Callable, name: str, reduce_fn: Callable) -> C
     return acreate if run_helpers.is_async(original_create) else create
 
 
-def wrap_openai(client: C) -> C:
+class TracingExtra(TypedDict, total=False):
+    metadata: Optional[Mapping[str, Any]]
+    tags: Optional[List[str]]
+    client: Optional[ls_client.Client]
+
+
+def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C:
     """Patch the OpenAI client to make it traceable.
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
+        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
+            Defaults to None.
 
     Returns:
         Union[OpenAI, AsyncOpenAI]: The patched client.
 
     """
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
-        client.chat.completions.create, "ChatOpenAI", _reduce_chat
+        client.chat.completions.create,
+        "ChatOpenAI",
+        _reduce_chat,
+        tracing_extra=tracing_extra,
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
-        client.completions.create, "OpenAI", _reduce_completions
+        client.completions.create,
+        "OpenAI",
+        _reduce_completions,
+        tracing_extra=tracing_extra,
     )
     return client

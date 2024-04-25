@@ -1,8 +1,10 @@
 import unittest
+from unittest.mock import patch
 
 import pytest
 
 import langsmith.utils as ls_utils
+from langsmith.run_helpers import tracing_context
 
 
 class LangSmithProjectNameTest(unittest.TestCase):
@@ -71,3 +73,27 @@ class LangSmithProjectNameTest(unittest.TestCase):
                         else ls_utils.get_tracer_project(case.return_default_value)
                     )
                     self.assertEqual(project, case.expected_project_name)
+
+
+def test_tracing_enabled():
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        assert not ls_utils.tracing_is_enabled()
+        with tracing_context(enabled=True):
+            assert ls_utils.tracing_is_enabled()
+            with tracing_context(enabled=False):
+                assert not ls_utils.tracing_is_enabled()
+        with tracing_context(enabled=False):
+            assert not ls_utils.tracing_is_enabled()
+        assert not ls_utils.tracing_is_enabled()
+
+
+def test_tracing_disabled():
+    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+        assert ls_utils.tracing_is_enabled()
+        with tracing_context(enabled=False):
+            assert not ls_utils.tracing_is_enabled()
+        with tracing_context(enabled=True):
+            assert ls_utils.tracing_is_enabled()
+            with tracing_context(enabled=False):
+                assert not ls_utils.tracing_is_enabled()
+        assert ls_utils.tracing_is_enabled()

@@ -50,11 +50,15 @@ _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
 _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
+_TRACING_ENABLED = contextvars.ContextVar[Optional[bool]](
+    "_TRACING_ENABLED", default=None
+)
 _CONTEXT_KEYS: Dict[str, contextvars.ContextVar] = {
     "parent": _PARENT_RUN_TREE,
     "project_name": _PROJECT_NAME,
     "tags": _TAGS,
     "metadata": _METADATA,
+    "enabled": _TRACING_ENABLED,
 }
 
 
@@ -73,6 +77,7 @@ def get_tracing_context(
             "project_name": _PROJECT_NAME.get(),
             "tags": _TAGS.get(),
             "metadata": _METADATA.get(),
+            "enabled": _TRACING_ENABLED.get(),
         }
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
 
@@ -91,9 +96,22 @@ def tracing_context(
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str]] = None,
+    enabled: Optional[bool] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
-    """Set the tracing context for a block of code."""
+    """Set the tracing context for a block of code.
+
+    Args:
+        project_name: The name of the project to log the run to. Defaults to None.
+        tags: The tags to add to the run. Defaults to None.
+        metadata: The metadata to add to the run. Defaults to None.
+        parent: The parent run to use for the context. Can be a Run/RunTree object,
+            request headers (for distributed tracing), or the dotted order string.
+            Defaults to None.
+        enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
+            current context value or environment variables.
+
+    """
     if kwargs:
         # warn
         warnings.warn(
@@ -105,6 +123,7 @@ def tracing_context(
     if parent_run is not None:
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
+    enabled = enabled if enabled is not None else current_context.get("enabled")
 
     _set_tracing_context(
         {
@@ -112,6 +131,7 @@ def tracing_context(
             "project_name": project_name,
             "tags": tags,
             "metadata": metadata,
+            "enabled": enabled,
         }
     )
     try:
@@ -249,7 +269,7 @@ def traceable(
             Union[Callable, Callable[[Callable], Callable]]: The decorated function.
 
     Note:
-            - Requires that LANGCHAIN_TRACING_V2 be set to 'true' in the environment.
+            - Requires that LANGSMITH_TRACING_V2 be set to 'true' in the environment.
 
     Examples:
         .. code-block:: python
@@ -577,23 +597,28 @@ def traceable(
                     generator_result = run_container["context"].run(
                         func, *args, **kwargs
                     )
-                for item in generator_result:
-                    if run_type == "llm":
-                        if run_container["new_run"]:
-                            run_container["new_run"].add_event(
-                                {
-                                    "name": "new_token",
-                                    "time": datetime.datetime.now(
-                                        datetime.timezone.utc
-                                    ).isoformat(),
-                                    "kwargs": {"token": item},
-                                }
-                            )
-                    results.append(item)
-                    try:
-                        yield item
-                    except GeneratorExit:
-                        break
+                try:
+                    while True:
+                        item = run_container["context"].run(next, generator_result)
+                        if run_type == "llm":
+                            if run_container["new_run"]:
+                                run_container["new_run"].add_event(
+                                    {
+                                        "name": "new_token",
+                                        "time": datetime.datetime.now(
+                                            datetime.timezone.utc
+                                        ).isoformat(),
+                                        "kwargs": {"token": item},
+                                    }
+                                )
+                        results.append(item)
+                        try:
+                            yield item
+                        except GeneratorExit:
+                            break
+                except StopIteration:
+                    pass
+
             except BaseException as e:
                 stacktrace = traceback.format_exc()
                 _container_end(run_container, error=stacktrace)
@@ -910,7 +935,7 @@ def _container_end(
     """End the run."""
     run_tree = container.get("new_run")
     if run_tree is None:
-        # Tracing disabled
+        # Tracing enabled
         return
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
     run_tree.end(outputs=outputs_, error=error)
@@ -984,7 +1009,7 @@ def _setup_run(
         and not utils.tracing_is_enabled()
     ):
         utils.log_once(
-            logging.DEBUG, "LangSmith tracing is disabled, returning original function."
+            logging.DEBUG, "LangSmith tracing is enabled, returning original function."
         )
         return _TraceableContainer(
             new_run=None,
