@@ -4,7 +4,6 @@ import { Example, Run } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
 
-// const dummyDatasetName = "ds-internal-laborer-16";
 const TESTING_DATASET_NAME = "test_dataset_js_evaluate_123";
 
 beforeAll(async () => {
