@@ -4,6 +4,7 @@ import { wrapFunctionAndEnsureTraceable, traceable } from "../traceable.js";
 import { getGitInfo } from "../utils/_git.js";
 import { isUUIDv4 } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
+import { atee } from "../utils/atee.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
 import { randomName } from "./_random_name.js";
 import {
@@ -14,9 +15,9 @@ import {
 } from "./evaluator.js";
 import { v4 as uuidv4 } from "uuid";
 
-type TargetT = (input: Record<string, any>) => Record<string, any>;
+type TargetT = (input: KVMap) => KVMap;
 // Data format: dataset-name, dataset_id, or examples
-type DataT = string | AsyncIterable<Example> | Array<Example>;
+type DataT = string | AsyncIterable<Example>;
 // Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
 type SummaryEvaluatorT =
@@ -31,7 +32,8 @@ type SummaryEvaluatorT =
 // Row-level evaluator
 type EvaluatorT =
   | RunEvaluator
-  | ((run: Run, example?: Example) => EvaluationResult);
+  | ((run: Run, example?: Example) => EvaluationResult)
+  | ((run: Run, example?: Example) => Promise<EvaluationResult>);
 
 interface _ForwardResults {
   run: Run;
@@ -41,22 +43,20 @@ interface _ForwardResults {
 interface _ExperimentManagerArgs {
   data: DataT;
   experiment?: TracerSession | string;
-  metadata?: Record<string, any>;
+  metadata?: KVMap;
   client?: Client;
   runs?: AsyncGenerator<Run>;
   evaluationResults?: AsyncGenerator<EvaluationResults>;
-  summaryResults?:
-    | AsyncGenerator<EvaluationResults>
-    | AsyncGenerator<
-        (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
-        any,
-        unknown
-      >;
+  summaryResults?: AsyncGenerator<
+    (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
+    any,
+    unknown
+  >;
   _examplesArray?: Example[];
   _runsArray?: Run[];
 }
 
-interface EvaluateOptions {
+export interface EvaluateOptions {
   /**
    * The dataset to evaluate on. Can be a dataset name, a list of
    * examples, or a generator of examples.
@@ -76,7 +76,7 @@ interface EvaluateOptions {
    * Metadata to attach to the experiment.
    * @default undefined
    */
-  metadata?: Record<string, any>;
+  metadata?: KVMap;
   /**
    * A prefix to provide for your experiment name.
    * @default undefined
@@ -122,7 +122,7 @@ class _ExperimentManagerMixin {
 
   _experimentName: string;
 
-  _metadata: Record<string, any>;
+  _metadata: KVMap;
 
   get experimentName(): string {
     if (this._experimentName) {
@@ -136,7 +136,7 @@ class _ExperimentManagerMixin {
 
   constructor(args: {
     experiment?: TracerSession | string;
-    metadata?: Record<string, any>;
+    metadata?: KVMap;
     client?: Client;
   }) {
     this.client = args.client ?? new Client();
@@ -169,7 +169,7 @@ class _ExperimentManagerMixin {
     return this._experiment;
   }
 
-  async _getExperimentMetadata(): Promise<Record<string, any>> {
+  async _getExperimentMetadata(): Promise<KVMap> {
     let projectMetadata = this._metadata ?? {};
     const gitInfo = await getGitInfo();
     if (gitInfo) {
@@ -201,7 +201,7 @@ class _ExperimentManagerMixin {
           referenceDatasetId: firstExample.dataset_id,
           metadata: projectMetadata,
         });
-      } catch (e: any) {
+      } catch (e) {
         if (String(e).includes("already exists")) {
           throw e;
         }
@@ -236,13 +236,11 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   _evaluationResults?: AsyncGenerator<EvaluationResults>;
 
-  _summaryResults?:
-    | AsyncGenerator<EvaluationResults>
-    | AsyncGenerator<
-        (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
-        any,
-        unknown
-      >;
+  _summaryResults?: AsyncGenerator<
+    (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
+    any,
+    unknown
+  >;
 
   _examplesArray?: Example[];
 
@@ -254,18 +252,16 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       metadata: args.metadata,
       client: args.client,
     });
-    if (Array.isArray(args.data)) {
-      this._examplesArray = args.data;
-    } else if (args._examplesArray && args._examplesArray.length) {
+    if (args._examplesArray && args._examplesArray.length) {
       this._examplesArray = args._examplesArray;
     }
     this._data = args.data;
 
     if (args._runsArray && args._runsArray.length) {
-      console.log("Setting runs array", args._runsArray.length);
       this._runsArray = args._runsArray;
     }
     this._runs = args.runs;
+
     this._evaluationResults = args.evaluationResults;
     this._summaryResults = args.summaryResults;
   }
@@ -305,7 +301,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
         // number of items as examples. Make a copy of this.examples
         // with `atee` and yield empty results for each example.
         const examplesResults: AsyncGenerator<Example>[] = [];
-        for await (const item of atee(this.examples)) {
+        for await (const item of atee<Example>(this.examples)) {
           examplesResults.push(item);
         }
         const [examplesClone, examplesOriginal] = examplesResults;
@@ -344,7 +340,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const project = await this._getProject(firstExample);
     this._printExperimentStart();
     return new _ExperimentManager({
-      data: this._examplesArray,
+      data: this.examples,
       _examplesArray: this._examplesArray,
       experiment: project,
       metadata: this._metadata,
@@ -364,8 +360,8 @@ class _ExperimentManager extends _ExperimentManagerMixin {
   ): Promise<_ExperimentManager> {
     const experimentResults = this._predict(target, options);
 
-    const results: AsyncGenerator<any>[] = [];
-    for await (const item of atee(experimentResults)) {
+    const results: AsyncGenerator<_ForwardResults>[] = [];
+    for await (const item of atee<_ForwardResults>(experimentResults)) {
       results.push(item);
     }
     const [r1, r2] = results;
@@ -404,7 +400,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const experimentResults = this._score(resolvedEvaluators, options);
 
     const results: AsyncGenerator<ExperimentResultRow>[] = [];
-    for await (const item of atee(experimentResults, 3)) {
+    for await (const item of atee<ExperimentResultRow>(experimentResults, 3)) {
       results.push(item);
     }
     const [r1, r2, r3] = results;
@@ -441,7 +437,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const aggregateFeedbackGen =
       this._applySummaryEvaluators(summaryEvaluators);
     return new _ExperimentManager({
-      data: this._examplesArray ?? [],
+      data: this.examples,
       _examplesArray: this._examplesArray,
       experiment: this._experiment,
       metadata: this._metadata,
@@ -462,7 +458,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       for await (const run of this.runs) {
         this._runsArray.push(run);
       }
-      console.log("Runs array def is true now", this._runsArray.length);
     }
 
     for await (const evaluationResult of this.evaluationResults) {
@@ -485,14 +480,13 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const results: EvaluationResult[] = [];
     for await (const evaluationResultsGenerator of this._summaryResults) {
       if (typeof evaluationResultsGenerator === "function") {
+        // This is because runs array is not available until after this generator
+        // is set, so we need to pass it like so.
         for await (const evaluationResults of evaluationResultsGenerator(
           this._runsArray ?? []
         )) {
-          console.log("Trying here ig", evaluationResults);
           results.push(...evaluationResults.results);
         }
-      } else {
-        results.push(...evaluationResultsGenerator.results);
       }
     }
 
@@ -556,20 +550,24 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   async _runEvaluators(
     evaluators: Array<RunEvaluator>,
-    currentResults: ExperimentResultRow
+    currentResults: ExperimentResultRow,
+    fields: {
+      experimentName: string;
+      client: Client;
+    }
   ): Promise<ExperimentResultRow> {
     const { run, example, evaluationResults } = currentResults;
     for (const evaluator of evaluators) {
       try {
         const options = {
           reference_example_id: example.id,
-          project_name: this.experimentName,
+          project_name: fields.experimentName,
           metadata: {
             example_version: example.modified_at
               ? new Date(example.modified_at).toISOString()
               : new Date(example.created_at).toISOString(),
           },
-          client: this.client,
+          client: fields.client,
         };
         const evaluatorResponse = await evaluator.evaluateRun(
           run,
@@ -577,7 +575,7 @@ class _ExperimentManager extends _ExperimentManagerMixin {
           options
         );
         evaluationResults.results.push(
-          ...(await this.client.logEvaluationFeedback(evaluatorResponse, run))
+          ...(await fields.client.logEvaluationFeedback(evaluatorResponse, run))
         );
       } catch (e) {
         console.error(
@@ -610,7 +608,10 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
     if (maxConcurrency === 0) {
       for await (const currentResults of this.getResults()) {
-        yield this._runEvaluators(evaluators, currentResults);
+        yield this._runEvaluators(evaluators, currentResults, {
+          experimentName: this.experimentName,
+          client: this.client,
+        });
       }
     } else {
       const caller = new AsyncCaller({
@@ -619,7 +620,10 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       const futures: Promise<ExperimentResultRow>[] = [];
       for await (const currentResults of this.getResults()) {
         futures.push(
-          caller.call(this._runEvaluators, evaluators, currentResults)
+          caller.call(this._runEvaluators, evaluators, currentResults, {
+            experimentName: this.experimentName,
+            client: this.client,
+          })
         );
       }
 
@@ -628,86 +632,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
       }
     }
   }
-
-  // async *_applySummaryEvaluators(
-  //   summaryEvaluators: Array<SummaryEvaluatorT>
-  // ): AsyncGenerator<EvaluationResults> {
-  //   if (!this._runsArray) {
-  //     console.log("__RUNS ARRAY FALSE IN _applySummaryEvaluators___")
-  //   }
-  //   const runs: Array<Run> = this._runsArray ?? []
-  //   const examples: Array<Example> = this._examplesArray ?? []
-
-  //   const aggregateFeedback = [];
-  //   const projectId = this._getExperiment().id;
-
-  //   // how da hell does py do this?
-  //   // issue -> reference example id passed at call time?
-  //   // experiment name, experiment id (project id), project name ("evaluators") shall be passed in here!
-  //   const options = Array.from({ length: summaryEvaluators.length }).map(
-  //     () => ({
-  //       project_name: "evaluators",
-  //       experiment: this.experimentName,
-  //       projectId: projectId,
-  //     })
-  //   );
-  //   const wrappedEvaluators = await wrapSummaryEvaluators(
-  //     summaryEvaluators,
-  //     options
-  //   );
-
-  //     // Wait for _runsArray and _examplesArray to be available
-  //     while (!this._runsArray || !this._examplesArray) {
-  //       console.log("Waiting...")
-  //       await new Promise((resolve) => setTimeout(resolve, 100));
-  //     }
-
-  //   // @TODO: implement later
-  //   // const futures: Promise<unknown>[] = [];
-  //   // const caller = new AsyncCaller({ maxConcurrency: 1 });
-  //   for (const evaluator of wrappedEvaluators) {
-  //     try {
-  //       console.log("Before running evaluator", runs.length, examples.length);
-  //       const summaryEvalResult = await evaluator(runs, examples);
-  //       const flattenedResults =
-  //         this.client._selectEvalResults(summaryEvalResult);
-  //       aggregateFeedback.push(...flattenedResults);
-  //       for (const result of flattenedResults) {
-  //         const { targetRunId, ...feedback } = result;
-  //         const evaluatorInfo = feedback.evaluatorInfo;
-  //         delete feedback.evaluatorInfo;
-
-  //         await this.client.createFeedback(null, "key", {
-  //           ...feedback,
-  //           projectId: projectId,
-  //           sourceInfo: evaluatorInfo,
-  //         });
-
-  //         // futures.push(
-  //         //   caller.call(this.client.createFeedback, null, "key", {
-  //         //     ...feedback,
-  //         //     projectId: projectId,
-  //         //     sourceInfo: evaluatorInfo,
-  //         //   })
-  //         // );
-  //       }
-  //     } catch (e) {
-  //       console.error(
-  //         `Error running summary evaluator ${evaluator.name}: ${JSON.stringify(
-  //           e,
-  //           null,
-  //           2
-  //         )}`
-  //       );
-  //     }
-  //   }
-
-  //   // await Promise.all(futures);
-
-  //   yield {
-  //     results: aggregateFeedback,
-  //   };
-  // }
 
   async *_applySummaryEvaluators(
     summaryEvaluators: Array<SummaryEvaluatorT>
@@ -735,11 +659,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
       for (const evaluator of wrappedEvaluators) {
         try {
-          console.log(
-            "Before running evaluator",
-            runsArray.length,
-            examples.length
-          );
           const summaryEvalResult = await evaluator(runsArray, examples);
           const flattenedResults =
             this.client._selectEvalResults(summaryEvalResult);
@@ -826,39 +745,24 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
     if (this.processedCount < this.results.length) {
       const result = this.results[this.processedCount];
       this.processedCount++;
-      return { value: result, done: false };
+      return Promise.resolve({ value: result, done: false });
     } else {
-      return { value: undefined, done: true };
+      return Promise.resolve({ value: undefined, done: true });
     }
   }
 
   async processData(manager: _ExperimentManager): Promise<void> {
     for await (const item of manager.getResults()) {
       this.results.push(item);
+      this.processedCount++;
     }
-    console.log("Trying to get summaries", manager._runsArray?.length);
     this.summaryResults = await manager.getSummaryScores();
   }
 
   get length(): number {
     return this.results.length;
   }
-
-  toString(): string {
-    return `<ExperimentResults ${this.experimentName}>`;
-  }
-
-  async wait(): Promise<void> {
-    // No need to wait in TypeScript since there are no threads
-    // The processData method is already asynchronous
-  }
 }
-
-const _isCallable = (target: TargetT | AsyncGenerator<Run>): boolean =>
-  Boolean(
-    typeof target === "function" ||
-      ("invoke" in target && typeof target.invoke === "function")
-  );
 
 async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
@@ -905,7 +809,7 @@ async function _forward(
   fn: (...args: any[]) => Promise<any> | any,
   example: Example,
   experimentName: string,
-  metadata: Record<string, any>,
+  metadata: KVMap,
   client: Client
 ): Promise<_ForwardResults> {
   let run: BaseRun | null = null;
@@ -1044,7 +948,7 @@ async function _resolveExperiment(
   // If we have runs, that means the experiment was already started.
   if (runs !== null) {
     const results: AsyncGenerator<Run>[] = [];
-    for await (const item of atee(runs)) {
+    for await (const item of atee<Run>(runs)) {
       results.push(item);
     }
     const [runsClone, runsOriginal] = results;
@@ -1063,24 +967,9 @@ async function _resolveExperiment(
   return [undefined, undefined];
 }
 
-function atee<T>(iter: AsyncGenerator<T>, length = 2): AsyncGenerator<T>[] {
-  const buffers = Array.from(
-    { length },
-    () => [] as Array<IteratorResult<T> | IteratorReturnResult<T>>
+function _isCallable(target: TargetT | AsyncGenerator<Run>): boolean {
+  return Boolean(
+    typeof target === "function" ||
+      ("invoke" in target && typeof target.invoke === "function")
   );
-  return buffers.map(async function* makeIter(buffer) {
-    while (true) {
-      if (buffer.length === 0) {
-        const result = await iter.next();
-        for (const buffer of buffers) {
-          buffer.push(result);
-        }
-      } else if (buffer[0].done) {
-        return;
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        yield buffer.shift()!.value;
-      }
-    }
-  });
 }
