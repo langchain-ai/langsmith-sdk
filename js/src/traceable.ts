@@ -161,8 +161,17 @@ export function traceable<Func extends (...args: any[]) => any>(
                 chunks.push(chunk);
                 yield chunk;
               }
-              const finalOutputs =
-                aggregator === undefined ? chunks : aggregator(chunks);
+              let finalOutputs;
+              if (aggregator !== undefined) {
+                try {
+                  finalOutputs = await aggregator(chunks);
+                } catch (e) {
+                  console.error(`[ERROR]: LangSmith aggregation failed: `, e);
+                  finalOutputs = chunks;
+                }
+              } else {
+                finalOutputs = chunks;
+              }
               await currentRunTree.end({ outputs: finalOutputs });
               await currentRunTree.patchRun();
             }
