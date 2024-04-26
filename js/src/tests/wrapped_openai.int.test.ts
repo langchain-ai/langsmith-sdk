@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
@@ -393,4 +394,18 @@ test.skip("with initialization time config", async () => {
   }
 
   console.log(patchedChoices);
+});
+
+test.skip("no tracing with env var unset", async () => {
+  process.env.LANGCHAIN_TRACING_V2 = undefined;
+  process.env.LANGSMITH_TRACING_V2 = undefined;
+  const patchedClient = wrapOpenAI(new OpenAI());
+  const patched = await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: `Say 'bazqux'` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
+  });
+  expect(patched).toBeDefined();
+  console.log(patched);
 });
