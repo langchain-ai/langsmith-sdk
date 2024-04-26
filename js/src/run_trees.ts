@@ -34,6 +34,7 @@ export interface RunTreeConfig {
   start_time?: number;
   end_time?: number;
   extra?: KVMap;
+  metadata?: KVMap;
   tags?: string[];
   error?: string;
   serialized?: object;
@@ -99,9 +100,15 @@ export class RunTree implements BaseRun {
   trace_id: string;
   dotted_order: string;
 
-  constructor(config: RunTreeConfig) {
+  constructor(originalConfig: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
+    const { metadata, ...config } = originalConfig;
     const client = config.client ?? new Client();
+    const dedupedMetadata = {
+      ...metadata,
+      ...config?.extra?.metadata,
+    };
+    config.extra = { ...config.extra, metadata: dedupedMetadata };
     Object.assign(this, { ...defaultConfig, ...config, client });
     if (!this.trace_id) {
       if (this.parent_run) {
@@ -146,7 +153,7 @@ export class RunTree implements BaseRun {
       parentRun = langChainTracer?.getRun?.(parentRunId);
       projectName = langChainTracer?.projectName;
     }
-    const deduppedTags = [
+    const dedupedTags = [
       ...new Set((parentRun?.tags ?? []).concat(config?.tags ?? [])),
     ];
     const dedupedMetadata = {
@@ -156,7 +163,7 @@ export class RunTree implements BaseRun {
     const rt = new RunTree({
       name: props?.name ?? "<lambda>",
       parent_run: parentRun,
-      tags: deduppedTags,
+      tags: dedupedTags,
       extra: {
         metadata: dedupedMetadata,
       },
