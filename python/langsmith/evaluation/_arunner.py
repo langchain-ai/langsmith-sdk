@@ -28,6 +28,7 @@ from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.beta import warn_beta
 from langsmith.evaluation._runner import (
+    AEVALUATOR_T,
     DATA_T,
     EVALUATOR_T,
     SUMMARY_EVALUATOR_T,
@@ -42,10 +43,7 @@ from langsmith.evaluation._runner import (
     _resolve_experiment,
     _wrap_summary_evaluators,
 )
-from langsmith.evaluation.evaluator import (
-    EvaluationResults,
-    RunEvaluator,
-)
+from langsmith.evaluation.evaluator import EvaluationResults, RunEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +55,7 @@ async def aevaluate(
     target: Union[ATARGET_T, AsyncIterable[dict]],
     /,
     data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example]],
-    evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
@@ -192,6 +190,24 @@ async def aevaluate(
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+
+        Using Async evaluators:
+
+        >>> async def helpfulness(run: Run, example: Example):
+        ...     # Row-level evaluator for helpfulness.
+        ...     await asyncio.sleep(0.1)  # Replace with your LLM API call
+        ...     return {"score": run.outputs["output"] == "Yes"}
+
+        >>> results = asyncio.run(
+        ...     aevaluate(
+        ...         apredict,
+        ...         data=dataset_name,
+        ...         evaluators=[helpfulness],
+        ...         summary_evaluators=[precision],
+        ...         experiment_prefix="My Helpful Experiment",
+        ...     )
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
     """  # noqa: E501
     return await _aevaluate(
         target,
@@ -210,7 +226,7 @@ async def aevaluate(
 async def aevaluate_existing(
     experiment: Union[str, uuid.UUID],
     /,
-    evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     max_concurrency: Optional[int] = None,
@@ -313,7 +329,7 @@ async def _aevaluate(
     target: Union[ATARGET_T, AsyncIterable[dict], Iterable[schemas.Run]],
     /,
     data: Union[DATA_T, AsyncIterable[schemas.Example]],
-    evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
@@ -482,12 +498,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
     async def awith_evaluators(
         self,
-        evaluators: Sequence[
-            Union[
-                EVALUATOR_T,
-                RunEvaluator,
-            ]
-        ],
+        evaluators: Sequence[Union[EVALUATOR_T, AEVALUATOR_T]],
         *,
         max_concurrency: Optional[int] = None,
     ) -> _AsyncExperimentManager:

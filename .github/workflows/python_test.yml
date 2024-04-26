@@ -14,69 +14,39 @@ env:
   POETRY_VERSION: "1.4.2"
 
 jobs:
-  build:
+  build_and_test:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
         python-version:
           - "3.8"
           - "3.11"
+          - "3.12"
     defaults:
       run:
         working-directory: python
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
+        name: Setup python ${{ matrix.python-version }}
+        id: setup-python
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
       - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
-      - name: Install dependencies
-        run: poetry install
-
-  lint:
-    needs: build
-    runs-on: ubuntu-20.04
-    defaults:
-      run:
-        working-directory: python
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ needs.build.outputs.python-version }}
-          cache: "pip"
-      - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
+        shell: bash
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        # Install poetry using the python version installed by setup-python step.
+        run: pipx install "poetry==$POETRY_VERSION" --python '${{ steps.setup-python.outputs.python-path }}' --verbose
       - name: Install dependencies
         run: |
           poetry install --with dev,lint
           poetry run pip install -U langchain
-      - name: Analysing the code with our lint
+      - name: Build ${{ matrix.python-version }}
+        run: poetry build
+      - name: Lint ${{ matrix.python-version }}
         run: make lint
-
-  test:
-    needs: build
-    runs-on: ubuntu-20.04
-    defaults:
-      run:
-        working-directory: python
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ needs.build.outputs.python-version }}
-          cache: "pip"
-      - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
-      - name: Install dependencies
-        run: |
-          poetry install --with dev
-          poetry run pip install -U langchain
-      - name: Run tests
+      - name: Run Unit tests ${{ matrix.python-version }}
         run: make tests
         shell: bash

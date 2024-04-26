@@ -6,7 +6,7 @@ import gc
 import itertools
 import json
 import math
-import os
+import sys
 import threading
 import time
 import uuid
@@ -161,12 +161,13 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    client = Client(api_url="http://localhost:1984", api_key="123")
-    assert "x-api-key" in client._headers
-    assert client._headers["x-api-key"] == "123"
+    with patch.dict("os.environ", {}, clear=True):
+        client = Client(api_url="http://localhost:1984", api_key="123")
+        assert "x-api-key" in client._headers
+        assert client._headers["x-api-key"] == "123"
 
-    client_no_key = Client(api_url="http://localhost:1984")
-    assert "x-api-key" not in client_no_key._headers
+        client_no_key = Client(api_url="http://localhost:1984")
+        assert "x-api-key" not in client_no_key._headers
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -257,10 +258,10 @@ def test_get_api_key() -> None:
     assert _get_api_key("'provided_api_key'") == "provided_api_key"
     assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
 
-    with patch.dict(os.environ, {"LANGCHAIN_API_KEY": "env_api_key"}):
+    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
         assert _get_api_key(None) == "env_api_key"
 
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True):
         assert _get_api_key(None) is None
 
     assert _get_api_key("") is None
@@ -270,16 +271,16 @@ def test_get_api_key() -> None:
 def test_get_api_url() -> None:
     assert _get_api_url("http://provided.url") == "http://provided.url"
 
-    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None) == "http://env.url"
 
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True):
         assert _get_api_url(None) == "https://api.smith.langchain.com"
 
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True):
         assert _get_api_url(None) == "https://api.smith.langchain.com"
 
-    with patch.dict(os.environ, {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
         assert _get_api_url(None) == "http://env.url"
 
     with pytest.raises(ls_utils.LangSmithUserError):
@@ -310,6 +311,7 @@ class CallTracker:
         self.counter += 1
 
 
+@pytest.mark.flaky(reruns=5)
 @pytest.mark.parametrize("supports_batch_endpoint", [True, False])
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> None:
@@ -523,7 +525,7 @@ def test_create_run_includes_langchain_env_var_metadata(
     }
 
     # Set the environment variables just for this test
-    with patch.dict(os.environ, {"LANGCHAIN_REVISION": "abcd2234"}):
+    with patch.dict("os.environ", {"LANGCHAIN_REVISION": "abcd2234"}):
         # Clear the cache to ensure the environment variables are re-read
         ls_env.get_langchain_env_var_metadata.cache_clear()
         id_ = uuid.uuid4()
@@ -764,6 +766,18 @@ def test_serialize_json() -> None:
                 assert res[k] == v, f"Failed for {k}"
         except AssertionError:
             raise
+
+
+def test__dumps_json():
+    chars = "".join(chr(cp) for cp in range(0, sys.maxunicode + 1))
+    trans_table = str.maketrans("", "", "")
+    all_chars = chars.translate(trans_table)
+    serialized_json = _dumps_json({"chars": all_chars})
+    assert isinstance(serialized_json, bytes)
+    serialized_str = serialized_json.decode("utf-8")
+    assert '"chars"' in serialized_str
+    assert "\\uD800" not in serialized_str
+    assert "\\uDC00" not in serialized_str
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
