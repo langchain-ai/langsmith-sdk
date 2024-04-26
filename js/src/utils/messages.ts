@@ -1,6 +1,7 @@
 import { LangChainBaseMessage } from "../schemas.js";
 
 export function isLangChainMessage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   message?: any
 ): message is LangChainBaseMessage {
   return typeof message?._getType === "function";
@@ -9,6 +10,7 @@ export function isLangChainMessage(
 // Add index signature to data object
 interface ConvertedData {
   content: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
