@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
