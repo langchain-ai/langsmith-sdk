@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
 import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
@@ -6,7 +7,6 @@ import { Client } from "../client.js";
 test.concurrent("chat.completions", async () => {
   const client = new Client();
   const callSpy = jest
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .spyOn((client as any).caller, "call")
     .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -56,12 +56,12 @@ test.concurrent("chat.completions", async () => {
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _test = chunk.invalidPrompt;
   }
 
   expect(patchedChoices).toEqual(originalChoices);
   for (const call of callSpy.mock.calls) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((call[2] as any)["method"]).toBe("POST");
   }
 
@@ -86,12 +86,12 @@ test.concurrent("chat.completions", async () => {
   for await (const chunk of patchedStream2) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _test = chunk.invalidPrompt;
   }
 
   expect(patchedChoices2).toEqual(originalChoices);
   for (const call of callSpy.mock.calls) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((call[2] as any)["method"]).toBe("POST");
   }
 });
@@ -276,7 +276,6 @@ test.concurrent("chat completions with tool calling", async () => {
 test.concurrent("completions", async () => {
   const client = new Client();
   const callSpy = jest
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .spyOn((client as any).caller, "call")
     .mockResolvedValue({ ok: true, text: () => "" });
 
@@ -315,6 +314,7 @@ test.concurrent("completions", async () => {
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _test = chunk.invalidPrompt;
   }
 
@@ -330,12 +330,12 @@ test.concurrent("completions", async () => {
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _test = chunk.invalidPrompt;
   }
 
   expect(patchedChoices).toEqual(originalChoices);
   for (const call of callSpy.mock.calls) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((call[2] as any)["method"]).toBe("POST");
   }
 
