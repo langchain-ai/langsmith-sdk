@@ -6,7 +6,7 @@ import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
 
 test.concurrent("chat.completions", async () => {
-  const client = new Client();
+  const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     .spyOn((client as any).caller, "call")
     .mockResolvedValue({ ok: true, text: () => "" });
@@ -62,8 +62,9 @@ test.concurrent("chat.completions", async () => {
   }
 
   expect(patchedChoices).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 
   const patchedStream2 = await patchedClient.chat.completions.create(
@@ -92,13 +93,14 @@ test.concurrent("chat.completions", async () => {
   }
 
   expect(patchedChoices2).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 });
 
 test.concurrent("chat completions with tool calling", async () => {
-  const client = new Client();
+  const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .spyOn((client as any).caller, "call")
@@ -229,9 +231,10 @@ test.concurrent("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices)).toEqual(
     removeToolCallId(originalChoices)
   );
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 
   const patchedStream2 = await patchedClient.chat.completions.create(
@@ -268,14 +271,15 @@ test.concurrent("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices2)).toEqual(
     removeToolCallId(originalChoices)
   );
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 });
 
 test.concurrent("completions", async () => {
-  const client = new Client();
+  const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     .spyOn((client as any).caller, "call")
     .mockResolvedValue({ ok: true, text: () => "" });
@@ -336,8 +340,9 @@ test.concurrent("completions", async () => {
   }
 
   expect(patchedChoices).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 
   const patchedStream2 = await patchedClient.completions.create(
@@ -365,9 +370,10 @@ test.concurrent("completions", async () => {
   }
 
   expect(patchedChoices2).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 });
 

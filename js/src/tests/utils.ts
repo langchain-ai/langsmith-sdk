@@ -96,3 +96,19 @@ export async function waitUntilRunFound(
     5_000
   );
 }
+
+export function sanitizePresignedUrls(payload: unknown) {
+  return JSON.parse(JSON.stringify(payload), (key, value) => {
+    if (key === "presigned_url") {
+      try {
+        const url = new URL(value);
+        url.searchParams.set("Signature", "[SIGNATURE]");
+        url.searchParams.set("Expires", "[EXPIRES]");
+        return url.toString();
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  });
+}
