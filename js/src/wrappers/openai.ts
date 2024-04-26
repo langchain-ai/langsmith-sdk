@@ -282,7 +282,7 @@ const _wrapClient = <T extends object>(
           originalValue.bind(target),
           Object.assign(
             { name: [runName, propKey.toString()].join("."), run_type: "llm" },
-            options?.client
+            options
           )
         );
       } else if (

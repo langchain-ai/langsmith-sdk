@@ -8,8 +8,9 @@ import {
   isRunnableConfigLike,
 } from "./run_trees.js";
 import { KVMap } from "./schemas.js";
+import { getEnvironmentVariable } from "./utils/env.js";
 
-const asyncLocalStorage = new AsyncLocalStorage<RunTree>();
+const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
 
 export type RunTreeLike = RunTree;
 
@@ -78,6 +79,16 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   typeof (x as any)[Symbol.asyncIterator] === "function";
 
+const getTracingRunTree = (runTree: RunTree): RunTree | undefined => {
+  const tracingEnabled =
+    getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true" ||
+    getEnvironmentVariable("LANGCHAIN_TRACING_V2") === "true";
+  if (!tracingEnabled) {
+    return undefined;
+  }
+  return runTree;
+};
+
 /**
  * Higher-order function that takes function as input and returns a
  * "TraceableFunction" - a wrapped version of the input that
@@ -107,7 +118,7 @@ export function traceable<Func extends (...args: any[]) => any>(
   const traceableFunc = async (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ): Promise<Output> => {
-    let currentRunTree: RunTree;
+    let currentRunTree: RunTree | undefined;
     let rawInputs: Inputs;
 
     const ensuredConfig: RunTreeConfig = {
@@ -130,6 +141,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       rawInputs = args as Inputs;
     }
 
+    currentRunTree = getTracingRunTree(currentRunTree);
     let inputs: KVMap;
     const firstInput = rawInputs[0];
     if (firstInput == null) {
@@ -142,11 +154,13 @@ export function traceable<Func extends (...args: any[]) => any>(
       inputs = { input: firstInput };
     }
 
-    currentRunTree.inputs = inputs;
+    if (currentRunTree) {
+      currentRunTree.inputs = inputs;
+    }
 
-    const initialOutputs = currentRunTree.outputs;
-    const initialError = currentRunTree.error;
-    await currentRunTree.postRun();
+    const initialOutputs = currentRunTree?.outputs;
+    const initialError = currentRunTree?.error;
+    await currentRunTree?.postRun();
 
     return new Promise((resolve, reject) => {
       void asyncLocalStorage.run(currentRunTree, async () => {
@@ -180,11 +194,11 @@ export function traceable<Func extends (...args: any[]) => any>(
                 typeof finalOutputs === "object" &&
                 !Array.isArray(finalOutputs)
               ) {
-                await currentRunTree.end(finalOutputs);
+                await currentRunTree?.end(finalOutputs);
               } else {
-                await currentRunTree.end({ outputs: finalOutputs });
+                await currentRunTree?.end({ outputs: finalOutputs });
               }
-              await currentRunTree.patchRun();
+              await currentRunTree?.patchRun();
             }
             return resolve(wrapOutputForTracing() as Output);
           } else {
@@ -192,23 +206,27 @@ export function traceable<Func extends (...args: any[]) => any>(
               ? rawOutput
               : { outputs: rawOutput };
 
-            if (initialOutputs === currentRunTree.outputs) {
-              await currentRunTree.end(outputs);
+            if (initialOutputs === currentRunTree?.outputs) {
+              await currentRunTree?.end(outputs);
             } else {
-              currentRunTree.end_time = Date.now();
+              if (currentRunTree !== undefined) {
+                currentRunTree.end_time = Date.now();
+              }
             }
 
-            await currentRunTree.patchRun();
+            await currentRunTree?.patchRun();
             return resolve(rawOutput);
           }
         } catch (error) {
-          if (initialError === currentRunTree.error) {
-            await currentRunTree.end(initialOutputs, String(error));
+          if (initialError === currentRunTree?.error) {
+            await currentRunTree?.end(initialOutputs, String(error));
           } else {
-            currentRunTree.end_time = Date.now();
+            if (currentRunTree !== undefined) {
+              currentRunTree.end_time = Date.now();
+            }
           }
 
-          await currentRunTree.patchRun();
+          await currentRunTree?.patchRun();
           reject(error);
         }
       });

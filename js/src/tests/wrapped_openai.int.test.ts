@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
 
 test.concurrent("chat.completions", async () => {
-  const client = new Client();
+  const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     .spyOn((client as any).caller, "call")
     .mockResolvedValue({ ok: true, text: () => "" });
@@ -61,8 +62,9 @@ test.concurrent("chat.completions", async () => {
   }
 
   expect(patchedChoices).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 
   const patchedStream2 = await patchedClient.chat.completions.create(
@@ -91,13 +93,14 @@ test.concurrent("chat.completions", async () => {
   }
 
   expect(patchedChoices2).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 });
 
 test.concurrent("chat completions with tool calling", async () => {
-  const client = new Client();
+  const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .spyOn((client as any).caller, "call")
@@ -228,9 +231,10 @@ test.concurrent("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices)).toEqual(
     removeToolCallId(originalChoices)
   );
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 
   const patchedStream2 = await patchedClient.chat.completions.create(
@@ -267,14 +271,15 @@ test.concurrent("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices2)).toEqual(
     removeToolCallId(originalChoices)
   );
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 });
 
 test.concurrent("completions", async () => {
-  const client = new Client();
+  const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     .spyOn((client as any).caller, "call")
     .mockResolvedValue({ ok: true, text: () => "" });
@@ -335,8 +340,9 @@ test.concurrent("completions", async () => {
   }
 
   expect(patchedChoices).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 
   const patchedStream2 = await patchedClient.completions.create(
@@ -364,9 +370,10 @@ test.concurrent("completions", async () => {
   }
 
   expect(patchedChoices2).toEqual(originalChoices);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((call[2] as any)["method"]).toBe("POST");
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
 });
 
@@ -393,4 +400,18 @@ test.skip("with initialization time config", async () => {
   }
 
   console.log(patchedChoices);
+});
+
+test.skip("no tracing with env var unset", async () => {
+  process.env.LANGCHAIN_TRACING_V2 = undefined;
+  process.env.LANGSMITH_TRACING_V2 = undefined;
+  const patchedClient = wrapOpenAI(new OpenAI());
+  const patched = await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: `Say 'bazqux'` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
+  });
+  expect(patched).toBeDefined();
+  console.log(patched);
 });
