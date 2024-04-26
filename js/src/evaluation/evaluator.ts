@@ -146,7 +146,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
   private coerceEvaluationResult(
     result: EvaluationResult | Record<string, any>,
     sourceRunId: string,
-    allowNoKey: boolean = false
+    allowNoKey = false
   ): EvaluationResult {
     if ("key" in result) {
       if (!result.sourceRunId) {
