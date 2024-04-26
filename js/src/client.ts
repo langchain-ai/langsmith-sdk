@@ -39,6 +39,7 @@ import {
   RunEvaluator,
 } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
+import { assertUuid } from "./utils/_uuid.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -319,12 +320,6 @@ function trimQuotes(str?: string): string | undefined {
     .trim()
     .replace(/^"(.*)"$/, "$1")
     .replace(/^'(.*)'$/, "$1");
-}
-
-function assertUuid(str: string): void {
-  if (!uuid.validate(str)) {
-    throw new Error(`Invalid UUID: ${str}`);
-  }
 }
 
 const handle429 = async (response?: Response) => {

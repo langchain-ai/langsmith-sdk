@@ -1,5 +1,7 @@
-export function isUUIDv4(uuid: string): boolean {
-  const uuidV4Regex =
-    /^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i;
-  return uuidV4Regex.test(uuid);
+import * as uuid from "uuid";
+
+export function assertUuid(str: string): void {
+  if (!uuid.validate(str)) {
+    throw new Error(`Invalid UUID: ${str}`);
+  }
 }

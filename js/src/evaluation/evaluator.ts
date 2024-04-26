@@ -90,14 +90,6 @@ export interface RunEvaluator {
   ): Promise<EvaluationResult>;
 }
 
-export type DynamicRunEvaluatorParams = {
-  input: Record<string, unknown>;
-  prediction?: Record<string, unknown>;
-  reference?: Record<string, unknown>;
-  run: Run;
-  example?: Example;
-};
-
 export type RunEvaluatorLike =
   | ((
       run: Run,

@@ -2,7 +2,7 @@ import { Client, RunTree, RunTreeConfig } from "../index.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { wrapFunctionAndEnsureTraceable, traceable } from "../traceable.js";
 import { getGitInfo } from "../utils/_git.js";
-import { isUUIDv4 } from "../utils/_uuid.js";
+import { assertUuid } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { atee } from "../utils/atee.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
@@ -92,11 +92,6 @@ export interface EvaluateOptions {
    * @default undefined
    */
   client?: Client;
-  /**
-   * Whether to block until the evaluation is complete.
-   * @default true
-   */
-  blocking?: boolean;
 }
 
 export function evaluate(
@@ -115,7 +110,31 @@ interface ExperimentResultRow {
   evaluationResults: EvaluationResults;
 }
 
-class _ExperimentManagerMixin {
+/**
+ * Manage the execution of experiments.
+ *
+ * Supports lazily running predictions and evaluations in parallel to facilitate
+ * result streaming and early debugging.
+ */
+class _ExperimentManager {
+  _data?: DataT;
+
+  _examples?: AsyncGenerator<Example>;
+
+  _runs?: AsyncGenerator<Run>;
+
+  _evaluationResults?: AsyncGenerator<EvaluationResults>;
+
+  _summaryResults?: AsyncGenerator<
+    (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
+    any,
+    unknown
+  >;
+
+  _examplesArray?: Example[];
+
+  _runsArray?: Run[];
+
   client: Client;
 
   _experiment?: TracerSession;
@@ -134,11 +153,55 @@ class _ExperimentManagerMixin {
     }
   }
 
-  constructor(args: {
-    experiment?: TracerSession | string;
-    metadata?: KVMap;
-    client?: Client;
-  }) {
+  get examples(): AsyncGenerator<Example> {
+    if (this._examples === undefined) {
+      if (!this._data) {
+        throw new Error("Data not provided in this experiment.");
+      }
+      return _resolveData(this._data, { client: this.client });
+    }
+    return this._examples;
+  }
+
+  get datasetId(): Promise<string> {
+    if (!this._experiment || !this._experiment.reference_dataset_id) {
+      const examplesIterator = this.examples[Symbol.asyncIterator]();
+      return examplesIterator.next().then((result) => {
+        if (result.done) {
+          throw new Error("No examples found in the dataset.");
+        }
+        return result.value.dataset_id;
+      });
+    }
+    return Promise.resolve(this._experiment.reference_dataset_id);
+  }
+
+  get evaluationResults(): AsyncGenerator<EvaluationResults> {
+    if (this._evaluationResults === undefined) {
+      return async function* (this: _ExperimentManager) {
+        for (const _ of this._examplesArray ?? []) {
+          yield { results: [] };
+        }
+      }.call(this);
+    } else {
+      return this._evaluationResults;
+    }
+  }
+
+  get runs(): AsyncGenerator<Run> {
+    if (this._runsArray && this._runsArray.length > 0) {
+      throw new Error("Runs already provided as an array.");
+    }
+    if (this._runs === undefined) {
+      throw new Error(
+        "Runs not provided in this experiment. Please predict first."
+      );
+    } else {
+      return this._runs;
+    }
+  }
+
+  constructor(args: _ExperimentManagerArgs) {
     this.client = args.client ?? new Client();
     if (!args.experiment) {
       this._experimentName = randomName();
@@ -160,6 +223,19 @@ class _ExperimentManagerMixin {
       };
     }
     this._metadata = metadata;
+
+    if (args._examplesArray && args._examplesArray.length) {
+      this._examplesArray = args._examplesArray;
+    }
+    this._data = args.data;
+
+    if (args._runsArray && args._runsArray.length) {
+      this._runsArray = args._runsArray;
+    }
+    this._runs = args.runs;
+
+    this._evaluationResults = args.evaluationResults;
+    this._summaryResults = args.summaryResults;
   }
 
   _getExperiment(): TracerSession {
@@ -218,100 +294,6 @@ class _ExperimentManagerMixin {
   _printExperimentStart(): void {
     // @TODO log with experiment URL
     console.log(`Starting evaluation of experiment: ${this.experimentName}`);
-  }
-}
-
-/**
- * Manage the execution of experiments.
- *
- * Supports lazily running predictions and evaluations in parallel to facilitate
- * result streaming and early debugging.
- */
-class _ExperimentManager extends _ExperimentManagerMixin {
-  _data?: DataT;
-
-  _examples?: AsyncGenerator<Example>;
-
-  _runs?: AsyncGenerator<Run>;
-
-  _evaluationResults?: AsyncGenerator<EvaluationResults>;
-
-  _summaryResults?: AsyncGenerator<
-    (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
-    any,
-    unknown
-  >;
-
-  _examplesArray?: Example[];
-
-  _runsArray?: Run[];
-
-  constructor(args: _ExperimentManagerArgs) {
-    super({
-      experiment: args.experiment,
-      metadata: args.metadata,
-      client: args.client,
-    });
-    if (args._examplesArray && args._examplesArray.length) {
-      this._examplesArray = args._examplesArray;
-    }
-    this._data = args.data;
-
-    if (args._runsArray && args._runsArray.length) {
-      this._runsArray = args._runsArray;
-    }
-    this._runs = args.runs;
-
-    this._evaluationResults = args.evaluationResults;
-    this._summaryResults = args.summaryResults;
-  }
-
-  get examples(): AsyncGenerator<Example> {
-    if (this._examples === undefined) {
-      if (!this._data) {
-        throw new Error("Data not provided in this experiment.");
-      }
-      return _resolveData(this._data, { client: this.client });
-    }
-    return this._examples;
-  }
-
-  get datasetId(): Promise<string> {
-    if (!this._experiment || !this._experiment.reference_dataset_id) {
-      const examplesIterator = this.examples[Symbol.asyncIterator]();
-      return examplesIterator.next().then((result) => {
-        if (result.done) {
-          throw new Error("No examples found in the dataset.");
-        }
-        return result.value.dataset_id;
-      });
-    }
-    return Promise.resolve(this._experiment.reference_dataset_id);
-  }
-
-  get evaluationResults(): AsyncGenerator<EvaluationResults> {
-    if (this._evaluationResults === undefined) {
-      return async function* (this: _ExperimentManager) {
-        for (const _ of this._examplesArray ?? []) {
-          yield { results: [] };
-        }
-      }.call(this);
-    } else {
-      return this._evaluationResults;
-    }
-  }
-
-  get runs(): AsyncGenerator<Run> {
-    if (this._runsArray && this._runsArray.length > 0) {
-      throw new Error("Runs already provided as an array.");
-    }
-    if (this._runs === undefined) {
-      throw new Error(
-        "Runs not provided in this experiment. Please predict first."
-      );
-    } else {
-      return this._runs;
-    }
   }
 
   async start(): Promise<_ExperimentManager> {
@@ -816,7 +798,17 @@ function _resolveData(
     client: Client;
   }
 ): AsyncGenerator<Example> {
-  if (typeof data === "string" && isUUIDv4(data)) {
+  let isUUID = false;
+  try {
+    if (typeof data === "string") {
+      assertUuid(data);
+      isUUID = true;
+    }
+  } catch (_) {
+    isUUID = false;
+  }
+
+  if (typeof data === "string" && isUUID) {
     return options.client.listExamples({
       datasetId: data,
     }) as AsyncGenerator<Example>;
