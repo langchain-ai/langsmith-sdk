@@ -95,10 +95,14 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function traceable<Func extends (...args: any[]) => any>(
   wrappedFunc: Func,
-  config?: Partial<RunTreeConfig>
+  config?: Partial<RunTreeConfig> & {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    aggregator?: (args: any[]) => any;
+  }
 ) {
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
+  const { aggregator, ...runTreeConfig } = config ?? {};
 
   const traceableFunc = async (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -108,7 +112,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     const ensuredConfig: RunTreeConfig = {
       name: wrappedFunc.name || "<lambda>",
-      ...config,
+      ...runTreeConfig,
     };
 
     const previousRunTree = asyncLocalStorage.getStore();
@@ -161,7 +165,18 @@ export function traceable<Func extends (...args: any[]) => any>(
                 chunks.push(chunk);
                 yield chunk;
               }
-              await currentRunTree.end({ outputs: chunks });
+              let finalOutputs;
+              if (aggregator !== undefined) {
+                try {
+                  finalOutputs = await aggregator(chunks);
+                } catch (e) {
+                  console.error(`[ERROR]: LangSmith aggregation failed: `, e);
+                  finalOutputs = chunks;
+                }
+              } else {
+                finalOutputs = chunks;
+              }
+              await currentRunTree.end({ outputs: finalOutputs });
               await currentRunTree.patchRun();
             }
             return resolve(wrapOutputForTracing() as Output);
@@ -194,7 +209,7 @@ export function traceable<Func extends (...args: any[]) => any>(
   };
 
   Object.defineProperty(traceableFunc, "langsmith:traceable", {
-    value: config,
+    value: runTreeConfig,
   });
 
   return traceableFunc as TraceableFunction<Func>;

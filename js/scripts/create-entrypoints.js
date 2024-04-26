@@ -12,7 +12,8 @@ const entrypoints = {
   traceable: "traceable",
   evaluation: "evaluation/index",
   schemas: "schemas",
-  wrappers: "wrappers",
+  wrappers: "wrappers/index",
+  "wrappers/openai": "wrappers/openai",
 };
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
