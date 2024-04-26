@@ -1,5 +1,5 @@
 import type { OpenAI } from "openai";
-import type { Client } from "../index.js";
+import type { Client, RunTreeConfig } from "../index.js";
 import { type RunnableConfigLike } from "../run_trees.js";
 import { traceable, type RunTreeLike } from "../traceable.js";
 
@@ -137,12 +137,12 @@ function _combineChatCompletionChoices(
 async function extractLangSmithExtraAndCall(
   openAIMethod: (...args: any[]) => any,
   args: any[],
-  defaultMetadata: Record<string, any>
+  defaultRunConfig: Partial<RunTreeConfig>
 ) {
   if (args[1]?.langsmithExtra !== undefined) {
     const { langsmithExtra, ...openAIOptions } = args[1];
     const wrappedMethod = traceable(openAIMethod, {
-      ...defaultMetadata,
+      ...defaultRunConfig,
       ...langsmithExtra,
     });
     const finalArgs = [args[0]];
@@ -154,7 +154,7 @@ async function extractLangSmithExtraAndCall(
     }
     return wrappedMethod(...finalArgs);
   }
-  const wrappedMethod = traceable(openAIMethod, defaultMetadata);
+  const wrappedMethod = traceable(openAIMethod, defaultRunConfig);
   return wrappedMethod(...args);
 }
 
@@ -184,7 +184,7 @@ async function extractLangSmithExtraAndCall(
  */
 export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
-  options?: { client?: Client }
+  options?: Partial<RunTreeConfig>
 ): PatchedOpenAIClient<T> => {
   const originalChatCompletionsFn = openai.chat.completions.create.bind(
     openai.chat.completions
@@ -213,14 +213,16 @@ export const wrapOpenAI = <T extends OpenAIType>(
 
       return aggregatedOutput;
     };
-    const defaultMetadata = Object.assign(
-      { name: "ChatOpenAI", run_type: "llm", aggregator },
-      options?.client
-    );
+    const defaultRunConfig = {
+      name: "ChatOpenAI",
+      run_type: "llm",
+      aggregator,
+      ...options,
+    };
     return extractLangSmithExtraAndCall(
       originalChatCompletionsFn,
       args,
-      defaultMetadata
+      defaultRunConfig
     );
   };
 
@@ -249,14 +251,16 @@ export const wrapOpenAI = <T extends OpenAIType>(
       return aggregatedOutput;
     };
 
-    const defaultMetadata = Object.assign(
-      { name: "OpenAI", run_type: "llm", aggregator },
-      options?.client
-    );
+    const defaultRunConfig = {
+      name: "OpenAI",
+      run_type: "llm",
+      aggregator,
+      ...options,
+    };
     return extractLangSmithExtraAndCall(
       originalCompletionsFn,
       args,
-      defaultMetadata
+      defaultRunConfig
     );
   };
 

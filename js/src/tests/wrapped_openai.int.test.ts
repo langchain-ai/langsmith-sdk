@@ -369,3 +369,28 @@ test.concurrent("completions", async () => {
     expect((call[2] as any)["method"]).toBe("POST");
   }
 });
+
+test.skip("with initialization time config", async () => {
+  const patchedClient = wrapOpenAI(new OpenAI(), {
+    project_name: "alternate_project",
+    metadata: {
+      customKey: "customVal",
+    },
+  });
+  const patchedStream = await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: `What is the current weather in SF?` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
+    stream: true,
+  });
+
+  const patchedChoices = [];
+  for await (const chunk of patchedStream) {
+    patchedChoices.push(chunk.choices);
+    // @ts-expect-error Should type check streamed output
+    const _test = chunk.invalidPrompt;
+  }
+
+  console.log(patchedChoices);
+});
