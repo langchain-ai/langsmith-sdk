@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.1.18",
+  "version": "0.1.20",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -52,7 +52,8 @@
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests --testPathIgnorePatterns='\\.int\\.test.[tj]s' --testTimeout 30000",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=\\.int\\.test.ts --testTimeout 100000",
     "test:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --config jest.config.cjs --testTimeout 100000",
-    "lint": "eslint 'src/**/*.{ts,tsx}' --quiet --fix",
+    "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint --cache --ext .ts,.js src/",
+    "lint:fix": "yarn lint --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
     "format:check": "prettier --check 'src/**/*.{ts,tsx}'",
     "precommit": "lint-staged",
