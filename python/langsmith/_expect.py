@@ -36,6 +36,11 @@ Example usage:
         expect.value(response_txt).to_contain("Hello!")
         # Or using a custom check
         expect.value(response_txt).against(lambda x: "Hello" in x)
+
+        # You can even use this for basic metric logging within unit tests
+
+        expect.score(0.8)
+        expect.score(0.7, key="similarity").to_be_greater_than(0.7)
 """  # noqa: E501
 
 from __future__ import annotations
@@ -335,6 +340,36 @@ class _Expect:
            >>> expect.value(10).to_be_less_than(20)
         """
         return _Matcher(self.client, "value", value, _executor=self.executor)
+
+    def score(
+        self,
+        score: Union[float, int],
+        *,
+        key: str = "score",
+        source_run_id: Optional[ls_client.ID_TYPE] = None,
+        comment: Optional[str] = None,
+    ) -> _Matcher:
+        """Log a numeric score to LangSmith.
+
+        Args:
+            score: The score value to log.
+            key: The key to use for logging the score. Defaults to "score".
+
+        Examples:
+            >>> expect.score(0.8)
+
+            >>> expect.score(0.8, key="similarity").to_be_greater_than(0.7)
+        """
+        self._submit_feedback(
+            key,
+            {
+                "score": score,
+                "source_info": {"method": "expect.score"},
+                "source_run_id": source_run_id,
+                "comment": comment,
+            },
+        )
+        return _Matcher(self.client, key, score, _executor=self.executor)
 
     ## Private Methods
 

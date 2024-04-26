@@ -712,7 +712,7 @@ def trace(
     else:
         new_run = run_trees.RunTree(
             name=name,
-            run_id=run_id,
+            id=run_id,
             reference_example_id=reference_example_id,
             run_type=run_type,
             extra=extra_outer,
