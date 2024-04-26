@@ -111,8 +111,6 @@ export type RunEvaluatorLike =
 export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
   implements RunEvaluator
 {
-  // func: ReturnType<typeof wrapFunctionAndEnsureTraceable<Func>>;
-
   func: Func;
 
   constructor(evaluator: Func) {
@@ -129,11 +127,6 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
   ): EvaluationResult {
     if ("results" in results) {
       throw new Error("EvaluationResults not supported yet.");
-      // const cp = { ...results };
-      // cp.results = results.results.map((r: any) =>
-      //   this.coerceEvaluationResult(r, sourceRunId)
-      // );
-      // return cp as EvaluationResults;
     }
 
     return this.coerceEvaluationResult(
