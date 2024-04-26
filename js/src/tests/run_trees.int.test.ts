@@ -111,12 +111,26 @@ test.concurrent(
     const traceRuns = await toArray(traceRunsIter);
     expect(traceRuns.length).toEqual(5);
     // Sort by dotted order and assert runs lists are equal
-    const sortedRuns = runs.sort((a, b) =>
-      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
-    );
-    const sortedTraceRuns = traceRuns.sort((a, b) =>
-      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
-    );
+    const sortedRuns = runs
+      .sort((a, b) =>
+        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+      )
+      .map((run) => {
+        // Remove s3 urls from comparison.
+        // These can be flaky and are not important for this test
+        const { inputs_s3_urls, outputs_s3_urls, ...rest } = run;
+        return rest;
+      });
+    const sortedTraceRuns = traceRuns
+      .sort((a, b) =>
+        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+      )
+      .map((run) => {
+        // Remove s3 urls from comparison.
+        // These can be flaky and are not important for this test
+        const { inputs_s3_urls, outputs_s3_urls, ...rest } = run;
+        return rest;
+      });
     expect(sortedRuns).toEqual(sortedTraceRuns);
     await langchainClient.deleteProject({ projectName });
   },

@@ -127,6 +127,15 @@ export interface BaseRun {
   dotted_order?: string;
 }
 
+type S3URL = {
+  ROOT: {
+    /** A pre-signed URL */
+    presigned_url: string;
+    /** The S3 path to the object in storage */
+    s3_url: string;
+  };
+};
+
 /**
  * Describes properties of a run when loaded from the database.
  * Extends the BaseRun interface.
@@ -173,6 +182,12 @@ export interface Run extends BaseRun {
 
   /** Whether the run is included in a dataset. */
   in_dataset?: boolean;
+
+  /** The output S3 URLs */
+  outputs_s3_urls?: S3URL;
+
+  /** The input S3 URLs */
+  inputs_s3_urls?: S3URL;
 }
 
 export interface RunCreate extends BaseRun {
