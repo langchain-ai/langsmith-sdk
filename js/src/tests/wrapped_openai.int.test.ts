@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 import { OpenAI } from "openai";
-import { wrapOpenAI } from "../wrappers.js";
+import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
 
 test.concurrent("chat.completions", async () => {

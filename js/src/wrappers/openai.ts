@@ -1,11 +1,11 @@
 import type { OpenAI } from "openai";
-import type { Client } from "./index.js";
+import type { Client } from "../index.js";
 import {
   isRunnableConfigLike,
   isRunTree,
   type RunnableConfigLike,
-} from "./run_trees.js";
-import { traceable, type RunTreeLike } from "./traceable.js";
+} from "../run_trees.js";
+import { traceable, type RunTreeLike } from "../traceable.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {

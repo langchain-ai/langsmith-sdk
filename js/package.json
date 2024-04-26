@@ -29,6 +29,10 @@
     "wrappers.js",
     "wrappers.d.ts",
     "wrappers.d.cts",
+    "wrappers/openai.cjs",
+    "wrappers/openai.js",
+    "wrappers/openai.d.ts",
+    "wrappers/openai.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -178,6 +182,15 @@
       },
       "import": "./wrappers.js",
       "require": "./wrappers.cjs"
+    },
+    "./wrappers/openai": {
+      "types": {
+        "import": "./wrappers/openai.d.ts",
+        "require": "./wrappers/openai.d.cts",
+        "default": "./wrappers/openai.d.ts"
+      },
+      "import": "./wrappers/openai.js",
+      "require": "./wrappers/openai.cjs"
     },
     "./package.json": "./package.json"
   }
