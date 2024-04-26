@@ -77,7 +77,7 @@ function _combineChatCompletionChoices(
   } = {};
   for (const c of choices) {
     if (c.delta.content) {
-      message.content += c.delta.content;
+      message.content = message.content.concat(c.delta.content);
     }
     if (c.delta.function_call) {
       if (!message.function_call) {
@@ -105,8 +105,8 @@ function _combineChatCompletionChoices(
       const idx = parseInt(index);
       message.tool_calls[idx] = {
         index: idx,
-        id: toolCallChunks.find((c) => c.id) || null,
-        type: toolCallChunks.find((c) => c.type) || null,
+        id: toolCallChunks.find((c) => c.id)?.id || null,
+        type: toolCallChunks.find((c) => c.type)?.type || null,
       };
       for (const chunk of toolCallChunks) {
         if (chunk.function) {
