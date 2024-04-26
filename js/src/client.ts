@@ -224,6 +224,9 @@ interface ProjectOptions {
   projectId?: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RecordStringAny = Record<string, any>;
+
 export type FeedbackSourceType = "model" | "api" | "app";
 
 export type CreateExampleOptions = {
@@ -410,7 +413,7 @@ export class Client {
 
   private autoBatchAggregationDelayMs = 50;
 
-  private serverInfo: Record<string, any> | undefined;
+  private serverInfo: RecordStringAny | undefined;
 
   private fetchOptions: RequestInit;
 
@@ -595,7 +598,7 @@ export class Client {
   }
   private async *_getCursorPaginatedList<T>(
     path: string,
-    body: Record<string, any> | null = null,
+    body: RecordStringAny | null = null,
     requestMethod = "POST",
     dataKey = "runs"
   ): AsyncIterable<T[]> {
@@ -1399,18 +1402,18 @@ export class Client {
   }: {
     projectName: string;
     description?: string | null;
-    metadata?: Record<string, any> | null;
+    metadata?: RecordStringAny | null;
     upsert?: boolean;
-    projectExtra?: Record<string, any> | null;
+    projectExtra?: RecordStringAny | null;
     referenceDatasetId?: string | null;
   }): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
-    const extra: Record<string, any> = projectExtra || {};
+    const extra: RecordStringAny = projectExtra || {};
     if (metadata) {
       extra["metadata"] = metadata;
     }
-    const body: Record<string, any> = {
+    const body: RecordStringAny = {
       name: projectName,
       extra,
       description,
@@ -1445,8 +1448,8 @@ export class Client {
     }: {
       name?: string | null;
       description?: string | null;
-      metadata?: Record<string, any> | null;
-      projectExtra?: Record<string, any> | null;
+      metadata?: RecordStringAny | null;
+      projectExtra?: RecordStringAny | null;
       endTime?: string | null;
     }
   ): Promise<TracerSession> {
@@ -1455,7 +1458,7 @@ export class Client {
     if (metadata) {
       extra = { ...(extra || {}), metadata };
     }
-    const body: Record<string, any> = {
+    const body: RecordStringAny = {
       name,
       extra,
       description,
@@ -1826,6 +1829,7 @@ export class Client {
   }: {
     datasetId?: string;
     datasetName?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any[]> {
     const path = "/datasets";
     if (datasetId !== undefined) {
