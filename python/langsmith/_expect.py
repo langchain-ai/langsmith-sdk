@@ -77,7 +77,7 @@ class _Matcher:
             max_workers=3
         )
         rt = rh.get_current_run_tree()
-        self._run_id = rt.id if rt else run_id
+        self._run_id = rt.trace_id if rt else run_id
 
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
@@ -389,7 +389,7 @@ class _Expect:
 
     def _submit_feedback(self, key: str, results: dict):
         current_run = rh.get_current_run_tree()
-        run_id = current_run.id if current_run else None
+        run_id = current_run.trace_id if current_run else None
         if not ls_utils.test_tracking_is_disabled():
             self.executor.submit(
                 self.client.create_feedback, run_id=run_id, key=key, **results

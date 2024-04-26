@@ -449,7 +449,7 @@ def traceable(
                         function_result = await fr_coro
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=repr(e) + "\n\n" + stacktrace)
                 raise e
             _container_end(run_container, outputs=function_result)
             return function_result
@@ -522,7 +522,7 @@ def traceable(
                     pass
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=repr(e) + "\n\n" + stacktrace)
                 raise e
             if results:
                 if reduce_fn:
@@ -565,7 +565,7 @@ def traceable(
                     )
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=repr(e) + "\n\n" + stacktrace)
                 raise e
             _container_end(run_container, outputs=function_result)
             return function_result
@@ -621,7 +621,7 @@ def traceable(
 
             except BaseException as e:
                 stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=repr(e) + "\n\n" + stacktrace)
                 raise e
             if results:
                 if reduce_fn:
@@ -731,6 +731,7 @@ def trace(
             tb = None
         else:
             tb = traceback.format_exc()
+            tb = f"{repr(e)}\n\n{tb}"
         new_run.end(error=tb)
         new_run.patch()
         raise e
