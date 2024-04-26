@@ -172,7 +172,14 @@ export function traceable<Func extends (...args: any[]) => any>(
               } else {
                 finalOutputs = chunks;
               }
-              await currentRunTree.end({ outputs: finalOutputs });
+              if (
+                typeof finalOutputs === "object" &&
+                !Array.isArray(finalOutputs)
+              ) {
+                await currentRunTree.end(finalOutputs);
+              } else {
+                await currentRunTree.end({ outputs: finalOutputs });
+              }
               await currentRunTree.patchRun();
             }
             return resolve(wrapOutputForTracing() as Output);
