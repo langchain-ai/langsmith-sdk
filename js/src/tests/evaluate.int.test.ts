@@ -2,8 +2,35 @@ import { EvaluationResult } from "../evaluation/evaluator.js";
 import { evaluate } from "../evaluation/_runner.js";
 import { Example, Run } from "../schemas.js";
 import { Client } from "../index.js";
+import { afterAll, beforeAll } from "@jest/globals";
 
-const dummyDatasetName = "ds-internal-laborer-16";
+// const dummyDatasetName = "ds-internal-laborer-16";
+const TESTING_DATASET_NAME = "test_dataset_js_evaluate_123";
+
+beforeAll(async () => {
+  const client = new Client();
+  // create a new dataset
+  await client.createDataset(TESTING_DATASET_NAME, {
+    description:
+      "For testing purposed. Is created & deleted for each test run.",
+  });
+  // create examples
+  const res = await client.createExamples({
+    inputs: [{ input: 1 }, { input: 2 }],
+    outputs: [{ output: 2 }, { output: 3 }],
+    datasetName: TESTING_DATASET_NAME,
+  });
+  if (res.length !== 2) {
+    throw new Error("Failed to create examples");
+  }
+});
+
+afterAll(async () => {
+  const client = new Client();
+  await client.deleteDataset({
+    datasetName: TESTING_DATASET_NAME,
+  });
+});
 
 test("evaluate can evaluate", async () => {
   const targetFunc = (input: Record<string, any>) => {
@@ -13,7 +40,7 @@ test("evaluate can evaluate", async () => {
     };
   };
 
-  const evalRes = await evaluate(targetFunc, { data: dummyDatasetName });
+  const evalRes = await evaluate(targetFunc, { data: TESTING_DATASET_NAME });
   // console.log(evalRes.results)
   expect(evalRes.results).toHaveLength(2);
 
@@ -21,7 +48,7 @@ test("evaluate can evaluate", async () => {
   expect(evalRes.results[0].example).toBeDefined();
   expect(evalRes.results[0].evaluationResults).toBeDefined();
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 3 });
+  expect(firstRun.outputs).toEqual({ foo: 2 });
 
   const firstRunResults = evalRes.results[0].evaluationResults;
   expect(firstRunResults.results).toHaveLength(0);
@@ -30,7 +57,7 @@ test("evaluate can evaluate", async () => {
   expect(evalRes.results[1].example).toBeDefined();
   expect(evalRes.results[1].evaluationResults).toBeDefined();
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 2 });
+  expect(secondRun.outputs).toEqual({ foo: 3 });
 
   const secondRunResults = evalRes.results[1].evaluationResults;
   expect(secondRunResults.results).toHaveLength(0);
@@ -55,7 +82,7 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
     evaluateRun: customEvaluator,
   };
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     evaluators: [evaluator],
   });
 
@@ -66,7 +93,7 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
   expect(evalRes.results[0].evaluationResults).toBeDefined();
 
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 3 });
+  expect(firstRun.outputs).toEqual({ foo: 2 });
 
   const firstExample = evalRes.results[0].example;
   expect(firstExample).toBeDefined();
@@ -81,7 +108,7 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
   expect(evalRes.results[1].evaluationResults).toBeDefined();
 
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 2 });
+  expect(secondRun.outputs).toEqual({ foo: 3 });
 
   const secondExample = evalRes.results[1].example;
   expect(secondExample).toBeDefined();
@@ -122,7 +149,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
   };
 
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     evaluators: [customEvaluator],
   });
 
@@ -133,7 +160,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
   expect(evalRes.results[0].evaluationResults).toBeDefined();
 
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 3 });
+  expect(firstRun.outputs).toEqual({ foo: 2 });
 
   const firstExample = evalRes.results[0].example;
   expect(firstExample).toBeDefined();
@@ -148,7 +175,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
   expect(evalRes.results[1].evaluationResults).toBeDefined();
 
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 2 });
+  expect(secondRun.outputs).toEqual({ foo: 3 });
 
   const secondExample = evalRes.results[1].example;
   expect(secondExample).toBeDefined();
@@ -194,7 +221,7 @@ test("evaluate can evaluate with summary evaluators", async () => {
   };
 
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     summaryEvaluators: [customSummaryEvaluator],
   });
 
@@ -215,14 +242,14 @@ test("evaluate can evaluate with summary evaluators", async () => {
   expect(evalRes.results[0].evaluationResults).toBeDefined();
 
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 3 });
+  expect(firstRun.outputs).toEqual({ foo: 2 });
 
   expect(evalRes.results[1].run).toBeDefined();
   expect(evalRes.results[1].example).toBeDefined();
   expect(evalRes.results[1].evaluationResults).toBeDefined();
 
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 2 });
+  expect(secondRun.outputs).toEqual({ foo: 3 });
 });
 
 test.skip("can iterate over evaluate results", async () => {
@@ -244,7 +271,7 @@ test.skip("can iterate over evaluate results", async () => {
     evaluateRun: customEvaluator,
   };
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     evaluators: [evaluator],
   });
 
@@ -284,7 +311,7 @@ test("can pass multiple evaluators", async () => {
     },
   ];
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     evaluators: evaluators,
   });
   expect(evalRes.results).toHaveLength(2);
@@ -325,7 +352,7 @@ test("can pass multiple summary evaluators", async () => {
   };
   const summaryEvaluators = [customSummaryEvaluator, customSummaryEvaluator];
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     summaryEvaluators,
   });
   expect(evalRes.results).toHaveLength(2);
@@ -351,7 +378,7 @@ test("can pass multiple summary evaluators", async () => {
 test("can pass AsyncIterable of Example's to evaluator instead of dataset name", async () => {
   const client = new Client();
   const examplesIterator = client.listExamples({
-    datasetName: dummyDatasetName,
+    datasetName: TESTING_DATASET_NAME,
   });
 
   const targetFunc = (input: Record<string, any>) => {
@@ -403,7 +430,7 @@ test("max concurrency works with custom evaluators", async () => {
   };
 
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     evaluators: [customEvaluator],
     maxConcurrency: 1,
   });
@@ -443,7 +470,7 @@ test("max concurrency works with summary evaluators", async () => {
   };
 
   const evalRes = await evaluate(targetFunc, {
-    data: dummyDatasetName,
+    data: TESTING_DATASET_NAME,
     summaryEvaluators: [customSummaryEvaluator],
     maxConcurrency: 1,
   });
