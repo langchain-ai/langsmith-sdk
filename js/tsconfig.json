@@ -37,7 +37,8 @@
       "src/traceable.ts",
       "src/evaluation/index.ts",
       "src/schemas.ts",
-      "src/wrappers.ts"
+      "src/wrappers/index.ts",
+      "src/wrappers/openai.ts"
     ]
   }
 }
