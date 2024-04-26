@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { v4 as uuidv4 } from "uuid";
 import { OpenAI } from "openai";
 // eslint-disable-next-line import/no-extraneous-dependencies
@@ -249,6 +250,7 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
   })) {
     chunks.push(chunk);
     // @ts-expect-error Should have typechecking on streamed output
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _test = chunk.invalidProp;
   }
   console.log(tracedOutput);

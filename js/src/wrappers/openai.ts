@@ -7,10 +7,12 @@ import { traceable, type RunTreeLike } from "../traceable.js";
 type OpenAIType = {
   chat: {
     completions: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       create: (...args: any[]) => any;
     };
   };
   completions: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: (...args: any[]) => any;
   };
 };
