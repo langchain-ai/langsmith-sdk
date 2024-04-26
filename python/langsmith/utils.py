@@ -7,7 +7,9 @@ import logging
 import os
 import pathlib
 import subprocess
+import sys
 import threading
+import traceback
 from typing import (
     Any,
     Callable,
@@ -488,3 +490,9 @@ def with_optional_cache(
             yield
     else:
         yield
+
+
+def _format_exc() -> str:
+    tb_lines = traceback.format_exception(*sys.exc_info())
+    filtered_lines = [line for line in tb_lines if "langsmith/" not in line]
+    return "".join(filtered_lines)
