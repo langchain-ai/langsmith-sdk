@@ -4,7 +4,12 @@ import {
   RunTreeConfig,
   convertToDottedOrderFormat,
 } from "../run_trees.js";
-import { toArray, waitUntil, pollRunsUntilCount } from "./utils.js";
+import {
+  toArray,
+  waitUntil,
+  pollRunsUntilCount,
+  sanitizePresignedUrls,
+} from "./utils.js";
 
 test.concurrent(
   "Test post and patch run",
@@ -111,11 +116,15 @@ test.concurrent(
     const traceRuns = await toArray(traceRunsIter);
     expect(traceRuns.length).toEqual(5);
     // Sort by dotted order and assert runs lists are equal
-    const sortedRuns = runs.sort((a, b) =>
-      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+    const sortedRuns = sanitizePresignedUrls(
+      runs.sort((a, b) =>
+        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+      )
     );
-    const sortedTraceRuns = traceRuns.sort((a, b) =>
-      (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+    const sortedTraceRuns = sanitizePresignedUrls(
+      traceRuns.sort((a, b) =>
+        (a?.dotted_order ?? "").localeCompare(b?.dotted_order ?? "")
+      )
     );
     expect(sortedRuns).toEqual(sortedTraceRuns);
     await langchainClient.deleteProject({ projectName });
