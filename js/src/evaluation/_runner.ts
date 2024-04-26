@@ -41,7 +41,7 @@ interface _ForwardResults {
 }
 
 interface _ExperimentManagerArgs {
-  data: DataT;
+  data?: DataT;
   experiment?: TracerSession | string;
   metadata?: KVMap;
   client?: Client;
@@ -228,7 +228,7 @@ class _ExperimentManagerMixin {
  * result streaming and early debugging.
  */
 class _ExperimentManager extends _ExperimentManagerMixin {
-  _data: DataT;
+  _data?: DataT;
 
   _examples?: AsyncGenerator<Example>;
 
@@ -268,10 +268,12 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   get examples(): AsyncGenerator<Example> {
     if (this._examples === undefined) {
+      if (!this._data) {
+        throw new Error("Data not provided in this experiment.");
+      }
       return _resolveData(this._data, { client: this.client });
-    } else {
-      return this._examples;
     }
+    return this._examples;
   }
 
   get datasetId(): Promise<string> {
@@ -289,25 +291,8 @@ class _ExperimentManager extends _ExperimentManagerMixin {
 
   get evaluationResults(): AsyncGenerator<EvaluationResults> {
     if (this._evaluationResults === undefined) {
-      if (this._examplesArray && this._examplesArray.length > 0) {
-        return async function* (this: _ExperimentManager) {
-          for (const _ of this._examplesArray ?? []) {
-            yield { results: [] };
-          }
-        }.call(this);
-      }
       return async function* (this: _ExperimentManager) {
-        // In this case, we need evaluationResults to have the same
-        // number of items as examples. Make a copy of this.examples
-        // with `atee` and yield empty results for each example.
-        const examplesResults: AsyncGenerator<Example>[] = [];
-        for await (const item of atee<Example>(this.examples)) {
-          examplesResults.push(item);
-        }
-        const [examplesClone, examplesOriginal] = examplesResults;
-        this._examples = examplesOriginal;
-
-        for await (const _ of examplesClone) {
+        for (const _ of this._examplesArray ?? []) {
           yield { results: [] };
         }
       }.call(this);
@@ -340,13 +325,10 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const project = await this._getProject(firstExample);
     this._printExperimentStart();
     return new _ExperimentManager({
-      data: this.examples,
       _examplesArray: this._examplesArray,
       experiment: project,
       metadata: this._metadata,
       client: this.client,
-      runs: this._runs,
-      _runsArray: this._runsArray,
       evaluationResults: this._evaluationResults,
       summaryResults: this._summaryResults,
     });
@@ -359,34 +341,16 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     }
   ): Promise<_ExperimentManager> {
     const experimentResults = this._predict(target, options);
-
-    const results: AsyncGenerator<_ForwardResults>[] = [];
-    for await (const item of atee<_ForwardResults>(experimentResults)) {
-      results.push(item);
-    }
-    const [r1, r2] = results;
-
-    const examplesArr = this._examplesArray ?? [];
-
     return new _ExperimentManager({
-      data: (async function* (): AsyncGenerator<Example> {
-        if (examplesArr.length > 0) {
-          throw new Error("Examples already provided as an array.");
-        }
-        for await (const pred of r1) {
-          yield pred.example;
-        }
-      })(),
       _examplesArray: this._examplesArray,
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
       runs: (async function* (): AsyncGenerator<Run> {
-        for await (const pred of r2) {
+        for await (const pred of experimentResults) {
           yield pred.run;
         }
       })(),
-      _runsArray: this._runsArray,
     });
   }
 
@@ -400,30 +364,24 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const experimentResults = this._score(resolvedEvaluators, options);
 
     const results: AsyncGenerator<ExperimentResultRow>[] = [];
-    for await (const item of atee<ExperimentResultRow>(experimentResults, 3)) {
+    for await (const item of atee<ExperimentResultRow>(experimentResults)) {
       results.push(item);
     }
-    const [r1, r2, r3] = results;
+    const [r1, r2] = results;
 
     return new _ExperimentManager({
-      data: (async function* (): AsyncGenerator<Example> {
-        for await (const result of r1) {
-          yield result.example;
-        }
-      })(),
       _examplesArray: this._examplesArray,
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
       runs: (async function* (): AsyncGenerator<Run> {
-        for await (const result of r2) {
+        for await (const result of r1) {
           yield result.run;
         }
       })(),
-      _runsArray: this._runsArray,
       evaluationResults:
         (async function* (): AsyncGenerator<EvaluationResults> {
-          for await (const result of r3) {
+          for await (const result of r2) {
             yield result.evaluationResults;
           }
         })(),
@@ -437,7 +395,6 @@ class _ExperimentManager extends _ExperimentManagerMixin {
     const aggregateFeedbackGen =
       this._applySummaryEvaluators(summaryEvaluators);
     return new _ExperimentManager({
-      data: this.examples,
       _examplesArray: this._examplesArray,
       experiment: this._experiment,
       metadata: this._metadata,
