@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { OpenAI } from "openai";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { FakeStreamingLLM } from "@langchain/core/utils/testing";
 import { Client } from "../client.js";
@@ -211,4 +212,48 @@ test.concurrent("Test get run tree method", async () => {
     }
   );
   expect(await addValueTraceable("testing", 9)).toBe("testing9");
+});
+
+test.concurrent("Test traceable wrapper with aggregator", async () => {
+  const langchainClient = new Client({
+    callerOptions: { maxRetries: 0 },
+  });
+  const openai = new OpenAI();
+  const runId = uuidv4();
+  const projectName = "__test_traceable_wrapper_aggregator";
+
+  let tracedOutput;
+  const iterableTraceable = traceable(
+    openai.chat.completions.create.bind(openai.chat.completions),
+    {
+      name: "openai_traceable",
+      project_name: projectName,
+      client: langchainClient,
+      id: runId,
+      aggregator: (chunks) => {
+        tracedOutput = chunks
+          .map((chunk) => chunk?.choices[0]?.delta?.content ?? "")
+          .join("");
+        return tracedOutput;
+      },
+    }
+  );
+  expect(isTraceableFunction(iterableTraceable)).toBe(true);
+
+  const chunks = [];
+
+  for await (const chunk of await iterableTraceable({
+    messages: [{ content: "Hello there", role: "user" }],
+    model: "gpt-3.5-turbo",
+    stream: true,
+  })) {
+    chunks.push(chunk);
+    // @ts-expect-error Should have typechecking on streamed output
+    const _test = chunk.invalidProp;
+  }
+  console.log(tracedOutput);
+  expect(typeof tracedOutput).toEqual("string");
+  await waitUntilRunFound(langchainClient, runId, true);
+  const storedRun3 = await langchainClient.readRun(runId);
+  expect(storedRun3.id).toEqual(runId);
 });
