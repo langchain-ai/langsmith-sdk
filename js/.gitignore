@@ -55,6 +55,10 @@ Chinook_Sqlite.sql
 /wrappers.js
 /wrappers.d.ts
 /wrappers.d.cts
+/wrappers/openai.cjs
+/wrappers/openai.js
+/wrappers/openai.d.ts
+/wrappers/openai.d.cts
 /index.cjs
 /index.js
 /index.d.ts
