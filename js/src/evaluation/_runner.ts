@@ -52,7 +52,7 @@ interface _ExperimentManagerArgs {
     any,
     unknown
   >;
-  _examplesArray?: Example[];
+  examples?: Example[];
   _runsArray?: Run[];
 }
 
@@ -119,8 +119,6 @@ interface ExperimentResultRow {
 class _ExperimentManager {
   _data?: DataT;
 
-  _examples?: AsyncGenerator<Example>;
-
   _runs?: AsyncGenerator<Run>;
 
   _evaluationResults?: AsyncGenerator<EvaluationResults>;
@@ -131,7 +129,7 @@ class _ExperimentManager {
     unknown
   >;
 
-  _examplesArray?: Example[];
+  _examples?: Example[];
 
   _runsArray?: Run[];
 
@@ -153,33 +151,44 @@ class _ExperimentManager {
     }
   }
 
-  get examples(): AsyncGenerator<Example> {
-    if (this._examples === undefined) {
+  async getExamples(): Promise<Array<Example>> {
+    if (!this._examples) {
       if (!this._data) {
         throw new Error("Data not provided in this experiment.");
       }
-      return _resolveData(this._data, { client: this.client });
+      const unresolvedData = _resolveData(this._data, { client: this.client });
+      if (!this._examples) {
+        this._examples = [];
+      }
+      const exs = [];
+      for await (const example of unresolvedData) {
+        exs.push(example);
+      }
+      this.setExamples(exs);
     }
     return this._examples;
   }
 
+  setExamples(examples: Example[]): void {
+    this._examples = examples;
+  }
+
   get datasetId(): Promise<string> {
-    if (!this._experiment || !this._experiment.reference_dataset_id) {
-      const examplesIterator = this.examples[Symbol.asyncIterator]();
-      return examplesIterator.next().then((result) => {
-        if (result.done) {
-          throw new Error("No examples found in the dataset.");
-        }
-        return result.value.dataset_id;
-      });
-    }
-    return Promise.resolve(this._experiment.reference_dataset_id);
+    return this.getExamples().then((examples) => {
+      if (examples.length === 0) {
+        throw new Error("No examples found in the dataset.");
+      }
+      if (this._experiment && this._experiment.reference_dataset_id) {
+        return this._experiment.reference_dataset_id;
+      }
+      return examples[0].dataset_id;
+    });
   }
 
   get evaluationResults(): AsyncGenerator<EvaluationResults> {
     if (this._evaluationResults === undefined) {
       return async function* (this: _ExperimentManager) {
-        for (const _ of this._examplesArray ?? []) {
+        for (const _ of await this.getExamples()) {
           yield { results: [] };
         }
       }.call(this);
@@ -224,8 +233,8 @@ class _ExperimentManager {
     }
     this._metadata = metadata;
 
-    if (args._examplesArray && args._examplesArray.length) {
-      this._examplesArray = args._examplesArray;
+    if (args.examples && args.examples.length) {
+      this.setExamples(args.examples);
     }
     this._data = args.data;
 
@@ -297,17 +306,12 @@ class _ExperimentManager {
   }
 
   async start(): Promise<_ExperimentManager> {
-    if (!this._examplesArray) {
-      this._examplesArray = [];
-    }
-    for await (const example of this.examples) {
-      this._examplesArray.push(example);
-    }
-    const firstExample = this._examplesArray[0];
+    const examples = await this.getExamples();
+    const firstExample = examples[0];
     const project = await this._getProject(firstExample);
     this._printExperimentStart();
     return new _ExperimentManager({
-      _examplesArray: this._examplesArray,
+      examples,
       experiment: project,
       metadata: this._metadata,
       client: this.client,
@@ -324,7 +328,7 @@ class _ExperimentManager {
   ): Promise<_ExperimentManager> {
     const experimentResults = this._predict(target, options);
     return new _ExperimentManager({
-      _examplesArray: this._examplesArray,
+      examples: await this.getExamples(),
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
@@ -352,7 +356,7 @@ class _ExperimentManager {
     const [r1, r2] = results;
 
     return new _ExperimentManager({
-      _examplesArray: this._examplesArray,
+      examples: await this.getExamples(),
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
@@ -377,7 +381,7 @@ class _ExperimentManager {
     const aggregateFeedbackGen =
       this._applySummaryEvaluators(summaryEvaluators);
     return new _ExperimentManager({
-      _examplesArray: this._examplesArray,
+      examples: await this.getExamples(),
       experiment: this._experiment,
       metadata: this._metadata,
       client: this.client,
@@ -389,7 +393,7 @@ class _ExperimentManager {
   }
 
   async *getResults(): AsyncGenerator<ExperimentResultRow> {
-    const examples: Example[] = this._examplesArray ?? [];
+    const examples = await this.getExamples();
     const evaluationResults: EvaluationResults[] = [];
 
     if (!this._runsArray) {
@@ -447,9 +451,10 @@ class _ExperimentManager {
     }
   ): AsyncGenerator<_ForwardResults> {
     const maxConcurrency = options?.maxConcurrency ?? 0;
+    const examples = await this.getExamples();
 
     if (maxConcurrency === 0) {
-      for (const example of this._examplesArray ?? []) {
+      for (const example of examples) {
         yield await _forward(
           target,
           example,
@@ -465,7 +470,7 @@ class _ExperimentManager {
 
       const futures: Array<Promise<_ForwardResults>> = [];
 
-      for await (const example of this._examplesArray ?? []) {
+      for await (const example of examples) {
         futures.push(
           caller.call(
             _forward,
@@ -576,7 +581,7 @@ class _ExperimentManager {
     summaryEvaluators: Array<SummaryEvaluatorT>
   ): AsyncGenerator<(runsArray: Run[]) => AsyncGenerator<EvaluationResults>> {
     const projectId = this._getExperiment().id;
-    const examples: Array<Example> = this._examplesArray ?? [];
+    const examples = await this.getExamples();
 
     const options = Array.from({ length: summaryEvaluators.length }).map(
       () => ({
@@ -629,7 +634,8 @@ class _ExperimentManager {
   }
 
   async _getDatasetVersion(): Promise<string | undefined> {
-    const modifiedAt = (this._examplesArray ?? []).map((ex) => ex.modified_at);
+    const examples = await this.getExamples();
+    const modifiedAt = examples.map((ex) => ex.modified_at);
 
     const maxModifiedAt =
       modifiedAt.length > 0
