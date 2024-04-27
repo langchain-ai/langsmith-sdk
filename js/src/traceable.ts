@@ -281,14 +281,10 @@ export function wrapFunctionAndEnsureTraceable<
   Func extends (...args: any[]) => any
 >(target: Func, options: Partial<RunTreeConfig>, name = "target") {
   if (typeof target === "function") {
-    if (isTraceableFunction(target)) {
-      return target;
-    } else {
-      return traceable<Func>(target, {
-        ...options,
-        name,
-      });
-    }
+    return traceable<Func>(target, {
+      ...options,
+      name,
+    });
   }
   throw new Error("Target must be runnable function");
 }
