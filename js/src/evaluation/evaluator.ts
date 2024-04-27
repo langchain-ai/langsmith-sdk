@@ -6,7 +6,7 @@ import {
   ValueType,
 } from "../schemas.js";
 import { v4 as uuidv4 } from "uuid";
-import { wrapFunctionAndEnsureTraceable } from "../traceable.js";
+import { traceable, wrapFunctionAndEnsureTraceable } from "../traceable.js";
 import { RunTreeConfig } from "../run_trees.js";
 
 /**
@@ -169,11 +169,12 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     if ("session_id" in run) {
       metadata["experiment"] = run.session_id;
     }
-    const wrappedTraceableFunc = wrapFunctionAndEnsureTraceable<Func>(
-      this.func,
-      options || {},
-      "evaluator"
-    );
+    const wrappedTraceableFunc: ReturnType<typeof traceable> =
+      wrapFunctionAndEnsureTraceable<Func>(
+        this.func,
+        options || {},
+        "evaluator"
+      );
     // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
     // inputs. This key is extracted in the wrapped function, with `run` and
     // `example` passed to evaluator function as arguments.
@@ -181,19 +182,19 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
       run,
       example,
     };
-    const result = await wrappedTraceableFunc(
+    const result = (await wrappedTraceableFunc(
       { langSmithRunAndExample },
       {
         metadata,
       }
-    );
+    )) as EvaluationResults | Record<string, any>;
 
     // Check the one required property of EvaluationResult since 'instanceof' is not possible
     if ("key" in result) {
       if (!result.sourceRunId) {
         result.sourceRunId = sourceRunId;
       }
-      return result;
+      return result as EvaluationResult;
     }
     if (typeof result !== "object") {
       throw new Error("Evaluator function must return an object.");
