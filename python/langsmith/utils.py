@@ -493,6 +493,7 @@ def with_optional_cache(
 
 
 def _format_exc() -> str:
+    # Used internally to format exceptions without cluttering the traceback
     tb_lines = traceback.format_exception(*sys.exc_info())
     filtered_lines = [line for line in tb_lines if "langsmith/" not in line]
     return "".join(filtered_lines)

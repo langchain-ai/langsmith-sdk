@@ -83,8 +83,6 @@ class RunTree(ls_schemas.RunBase):
     @root_validator(pre=False)
     def ensure_dotted_order(cls, values: dict) -> dict:
         """Ensure the dotted order of the run."""
-        if "id" not in values:
-            values["id"] = uuid4()
         current_dotted_order = values.get("dotted_order")
         if current_dotted_order and current_dotted_order.strip():
             return values

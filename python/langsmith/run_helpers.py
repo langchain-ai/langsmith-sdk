@@ -726,7 +726,7 @@ def trace(
             tb = None
         else:
             tb = utils._format_exc()
-            tb = f"{repr(e)}\n\n{tb}"
+            tb = f"{e.__class__.__name__}: {e}\n\n{tb}"
         new_run.end(error=tb)
         new_run.patch()
         raise e
@@ -926,7 +926,7 @@ class _ContainerInput(TypedDict, total=False):
 def _container_end(
     container: _TraceableContainer,
     outputs: Optional[Any] = None,
-    error: Optional[Exception] = None,
+    error: Optional[BaseException] = None,
 ):
     """End the run."""
     run_tree = container.get("new_run")
