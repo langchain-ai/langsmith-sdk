@@ -10,9 +10,24 @@ import {
 import { KVMap } from "./schemas.js";
 import { getEnvironmentVariable } from "./utils/env.js";
 
+function isPromiseMethod(
+  x: string | symbol
+): x is "then" | "catch" | "finally" {
+  if (x === "then" || x === "catch" || x === "finally") {
+    return true;
+  }
+  return false;
+}
+
 const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
 
 export type RunTreeLike = RunTree;
+
+type SmartPromise<T> = T extends AsyncGenerator
+  ? T
+  : T extends Promise<unknown>
+  ? T
+  : Promise<T>;
 
 type WrapArgReturnPair<Pair> = Pair extends [
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,9 +35,11 @@ type WrapArgReturnPair<Pair> = Pair extends [
   infer Return
 ]
   ? {
-      (...args: Args): Promise<Return>;
-      (...args: [runTree: RunTreeLike, ...rest: Args]): Promise<Return>;
-      (...args: [config: RunnableConfigLike, ...rest: Args]): Promise<Return>;
+      (...args: Args): SmartPromise<Return>;
+      (...args: [runTree: RunTreeLike, ...rest: Args]): SmartPromise<Return>;
+      (
+        ...args: [config: RunnableConfigLike, ...rest: Args]
+      ): SmartPromise<Return>;
     }
   : never;
 
@@ -115,9 +132,9 @@ export function traceable<Func extends (...args: any[]) => any>(
   type Output = ReturnType<Func>;
   const { aggregator, ...runTreeConfig } = config ?? {};
 
-  const traceableFunc = async (
+  const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
-  ): Promise<Output> => {
+  ) => {
     let currentRunTree: RunTree | undefined;
     let rawInputs: Inputs;
 
@@ -134,7 +151,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       currentRunTree = RunTree.fromRunnableConfig(args[0], ensuredConfig);
       rawInputs = args.slice(1) as Inputs;
     } else if (previousRunTree !== undefined) {
-      currentRunTree = await previousRunTree.createChild(ensuredConfig);
+      currentRunTree = previousRunTree.createChild(ensuredConfig);
       rawInputs = args as Inputs;
     } else {
       currentRunTree = new RunTree(ensuredConfig);
@@ -158,23 +175,34 @@ export function traceable<Func extends (...args: any[]) => any>(
       currentRunTree.inputs = inputs;
     }
 
-    const initialOutputs = currentRunTree?.outputs;
-    const initialError = currentRunTree?.error;
-    await currentRunTree?.postRun();
+    return asyncLocalStorage.run(currentRunTree, () => {
+      const postRunPromise = currentRunTree?.postRun();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let returnValue: any;
+      try {
+        returnValue = wrappedFunc(...rawInputs);
+      } catch (err: unknown) {
+        returnValue = Promise.reject(err);
+      }
 
-    return new Promise((resolve, reject) => {
-      void asyncLocalStorage.run(currentRunTree, async () => {
-        try {
-          const rawOutput = await wrappedFunc(...rawInputs);
-          if (isAsyncIterable(rawOutput)) {
+      if (isAsyncIterable(returnValue)) {
             // eslint-disable-next-line no-inner-declarations
             async function* wrapOutputForTracing() {
+          let finished = false;
               const chunks: unknown[] = [];
-              // TypeScript thinks this is unsafe
-              for await (const chunk of rawOutput as AsyncIterable<unknown>) {
+          try {
+            for await (const chunk of returnValue) {
                 chunks.push(chunk);
                 yield chunk;
               }
+            finished = true;
+          } catch (e) {
+            await currentRunTree?.end(undefined, String(e));
+            throw e;
+          } finally {
+            if (!finished) {
+              await currentRunTree?.end(undefined, "Cancelled");
+            }
               let finalOutputs;
               if (aggregator !== undefined) {
                 try {
@@ -194,37 +222,99 @@ export function traceable<Func extends (...args: any[]) => any>(
               } else {
                 await currentRunTree?.end({ outputs: finalOutputs });
               }
+            await postRunPromise;
+            await currentRunTree?.patchRun();
+          }
+        }
+        return wrapOutputForTracing();
+      }
+
+      const tracedPromise = new Promise<Output>((resolve, reject) => {
+        Promise.resolve(returnValue)
+          .then(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            async (rawOutput: any) => {
+              if (isAsyncIterable(rawOutput)) {
+                // eslint-disable-next-line no-inner-declarations
+                async function* wrapOutputForTracing() {
+                  let finished = false;
+                  const chunks: unknown[] = [];
+                  try {
+                    // TypeScript thinks this is unsafe
+                    for await (const chunk of rawOutput as AsyncIterable<unknown>) {
+                      chunks.push(chunk);
+                      yield chunk;
+                    }
+                    finished = true;
+                  } catch (e) {
+                    await currentRunTree?.end(undefined, String(e));
+                    throw e;
+                  } finally {
+                    if (!finished) {
+                      await currentRunTree?.end(undefined, "Cancelled");
+                    }
+                    let finalOutputs;
+                    if (aggregator !== undefined) {
+                      try {
+                        finalOutputs = await aggregator(chunks);
+                      } catch (e) {
+                        console.error(
+                          `[ERROR]: LangSmith aggregation failed: `,
+                          e
+                        );
+                        finalOutputs = chunks;
+                      }
+                    } else {
+                      finalOutputs = chunks;
+                    }
+                    if (
+                      typeof finalOutputs === "object" &&
+                      !Array.isArray(finalOutputs)
+                    ) {
+                      await currentRunTree?.end(finalOutputs);
+                    } else {
+                      await currentRunTree?.end({ outputs: finalOutputs });
+                    }
+                    await postRunPromise;
               await currentRunTree?.patchRun();
+                  }
             }
             return resolve(wrapOutputForTracing() as Output);
           } else {
-            const outputs: KVMap = isKVMap(rawOutput)
-              ? rawOutput
-              : { outputs: rawOutput };
-
-            if (initialOutputs === currentRunTree?.outputs) {
-              await currentRunTree?.end(outputs);
-            } else {
-              if (currentRunTree !== undefined) {
-                currentRunTree.end_time = Date.now();
+                try {
+                  await currentRunTree?.end(
+                    isKVMap(rawOutput) ? rawOutput : { outputs: rawOutput }
+                  );
+                  await postRunPromise;
+                  await currentRunTree?.patchRun();
+                } finally {
+                  // eslint-disable-next-line no-unsafe-finally
+                  return rawOutput;
+                }
               }
-            }
-
+            },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            async (error: any) => {
+              await currentRunTree?.end(undefined, String(error));
+              await postRunPromise;
             await currentRunTree?.patchRun();
-            return resolve(rawOutput);
-          }
-        } catch (error) {
-          if (initialError === currentRunTree?.error) {
-            await currentRunTree?.end(initialOutputs, String(error));
-          } else {
-            if (currentRunTree !== undefined) {
-              currentRunTree.end_time = Date.now();
+              throw error;
             }
-          }
+          )
+          .then(resolve, reject);
+      });
 
-          await currentRunTree?.patchRun();
-          reject(error);
-        }
+      if (typeof returnValue !== "object" || returnValue === null) {
+        return tracedPromise;
+      }
+
+      return new Proxy(returnValue, {
+        get(target, prop, receiver) {
+          if (isPromiseMethod(prop)) {
+            return tracedPromise[prop].bind(tracedPromise);
+            }
+          return Reflect.get(target, prop, receiver);
+        },
       });
     });
   };
