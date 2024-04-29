@@ -82,7 +82,8 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
 const getTracingRunTree = (runTree: RunTree): RunTree | undefined => {
   const tracingEnabled =
     getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true" ||
-    getEnvironmentVariable("LANGCHAIN_TRACING_V2") === "true";
+    getEnvironmentVariable("LANGSMITH_TRACING") === "true" ||
+    getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true";
   if (!tracingEnabled) {
     return undefined;
   }
