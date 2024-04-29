@@ -9,7 +9,6 @@ import datetime
 import functools
 import inspect
 import logging
-import traceback
 import uuid
 import warnings
 from contextvars import copy_context
@@ -448,8 +447,7 @@ def traceable(
                     ):
                         function_result = await fr_coro
             except BaseException as e:
-                stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=e)
                 raise e
             _container_end(run_container, outputs=function_result)
             return function_result
@@ -521,8 +519,7 @@ def traceable(
                 except StopAsyncIteration:
                     pass
             except BaseException as e:
-                stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=e)
                 raise e
             if results:
                 if reduce_fn:
@@ -564,8 +561,7 @@ def traceable(
                         func, *args, **kwargs
                     )
             except BaseException as e:
-                stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=e)
                 raise e
             _container_end(run_container, outputs=function_result)
             return function_result
@@ -620,8 +616,7 @@ def traceable(
                     pass
 
             except BaseException as e:
-                stacktrace = traceback.format_exc()
-                _container_end(run_container, error=stacktrace)
+                _container_end(run_container, error=e)
                 raise e
             if results:
                 if reduce_fn:
@@ -712,7 +707,7 @@ def trace(
     else:
         new_run = run_trees.RunTree(
             name=name,
-            run_id=run_id,
+            id=run_id or uuid.uuid4(),
             reference_example_id=reference_example_id,
             run_type=run_type,
             extra=extra_outer,
@@ -730,7 +725,8 @@ def trace(
         if exceptions_to_handle and isinstance(e, exceptions_to_handle):
             tb = None
         else:
-            tb = traceback.format_exc()
+            tb = utils._format_exc()
+            tb = f"{e.__class__.__name__}: {e}\n\n{tb}"
         new_run.end(error=tb)
         new_run.patch()
         raise e
@@ -930,7 +926,7 @@ class _ContainerInput(TypedDict, total=False):
 def _container_end(
     container: _TraceableContainer,
     outputs: Optional[Any] = None,
-    error: Optional[str] = None,
+    error: Optional[BaseException] = None,
 ):
     """End the run."""
     run_tree = container.get("new_run")
@@ -938,7 +934,11 @@ def _container_end(
         # Tracing enabled
         return
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
-    run_tree.end(outputs=outputs_, error=error)
+    error_ = None
+    if error:
+        stacktrace = utils._format_exc()
+        error_ = f"{repr(error)}\n\n{stacktrace}"
+    run_tree.end(outputs=outputs_, error=error_)
     run_tree.patch()
     if error:
         try:

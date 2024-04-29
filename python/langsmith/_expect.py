@@ -36,6 +36,11 @@ Example usage:
         expect.value(response_txt).to_contain("Hello!")
         # Or using a custom check
         expect.value(response_txt).against(lambda x: "Hello" in x)
+
+        # You can even use this for basic metric logging within unit tests
+
+        expect.score(0.8)
+        expect.score(0.7, key="similarity").to_be_greater_than(0.7)
 """  # noqa: E501
 
 from __future__ import annotations
@@ -72,7 +77,7 @@ class _Matcher:
             max_workers=3
         )
         rt = rh.get_current_run_tree()
-        self._run_id = rt.id if rt else run_id
+        self._run_id = rt.trace_id if rt else run_id
 
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
@@ -336,6 +341,37 @@ class _Expect:
         """
         return _Matcher(self.client, "value", value, _executor=self.executor)
 
+    def score(
+        self,
+        score: Union[float, int],
+        *,
+        key: str = "score",
+        source_run_id: Optional[ls_client.ID_TYPE] = None,
+        comment: Optional[str] = None,
+    ) -> _Matcher:
+        """Log a numeric score to LangSmith.
+
+        Args:
+            score: The score value to log.
+            key: The key to use for logging the score. Defaults to "score".
+
+        Examples:
+            >>> expect.score(0.8) # doctest: +ELLIPSIS
+            <langsmith._expect._Matcher object at ...>
+
+            >>> expect.score(0.8, key="similarity").to_be_greater_than(0.7)
+        """
+        self._submit_feedback(
+            key,
+            {
+                "score": score,
+                "source_info": {"method": "expect.score"},
+                "source_run_id": source_run_id,
+                "comment": comment,
+            },
+        )
+        return _Matcher(self.client, key, score, _executor=self.executor)
+
     ## Private Methods
 
     @overload
@@ -354,7 +390,7 @@ class _Expect:
 
     def _submit_feedback(self, key: str, results: dict):
         current_run = rh.get_current_run_tree()
-        run_id = current_run.id if current_run else None
+        run_id = current_run.trace_id if current_run else None
         if not ls_utils.test_tracking_is_disabled():
             self.executor.submit(
                 self.client.create_feedback, run_id=run_id, key=key, **results
