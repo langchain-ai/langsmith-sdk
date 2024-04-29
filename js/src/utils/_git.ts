@@ -33,7 +33,14 @@ const execGit = (
 export const getGitInfo = async (
   remote = "origin"
 ): Promise<GitInfo | null> => {
-  const { exec } = await importChildProcess();
+  let exec: (...args: any[]) => any;
+  try {
+    const execImport = await importChildProcess();
+    exec = execImport.exec;
+  } catch (e) {
+    // no-op
+    return null;
+  }
 
   const isInsideWorkTree = await execGit(
     ["rev-parse", "--is-inside-work-tree"],
