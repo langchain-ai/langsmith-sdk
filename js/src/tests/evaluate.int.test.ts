@@ -3,6 +3,7 @@ import { evaluate } from "../evaluation/_runner.js";
 import { Example, Run } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
+import { RunnableLambda } from "@langchain/core/runnables";
 
 const TESTING_DATASET_NAME = "test_dataset_js_evaluate_123";
 
@@ -47,7 +48,9 @@ test("evaluate can evaluate", async () => {
   expect(evalRes.results[0].example).toBeDefined();
   expect(evalRes.results[0].evaluationResults).toBeDefined();
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 2 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(firstRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(firstRun.outputs?.foo).toBeLessThanOrEqual(3);
 
   const firstRunResults = evalRes.results[0].evaluationResults;
   expect(firstRunResults.results).toHaveLength(0);
@@ -56,7 +59,9 @@ test("evaluate can evaluate", async () => {
   expect(evalRes.results[1].example).toBeDefined();
   expect(evalRes.results[1].evaluationResults).toBeDefined();
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 3 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(secondRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(secondRun.outputs?.foo).toBeLessThanOrEqual(3);
 
   const secondRunResults = evalRes.results[1].evaluationResults;
   expect(secondRunResults.results).toHaveLength(0);
@@ -92,7 +97,9 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
   expect(evalRes.results[0].evaluationResults).toBeDefined();
 
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 2 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(firstRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(firstRun.outputs?.foo).toBeLessThanOrEqual(3);
 
   const firstExample = evalRes.results[0].example;
   expect(firstExample).toBeDefined();
@@ -107,7 +114,9 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
   expect(evalRes.results[1].evaluationResults).toBeDefined();
 
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 3 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(secondRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(secondRun.outputs?.foo).toBeLessThanOrEqual(3);
 
   const secondExample = evalRes.results[1].example;
   expect(secondExample).toBeDefined();
@@ -159,7 +168,9 @@ test("evaluate can evaluate with custom evaluators", async () => {
   expect(evalRes.results[0].evaluationResults).toBeDefined();
 
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 2 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(firstRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(firstRun.outputs?.foo).toBeLessThanOrEqual(3);
 
   const firstExample = evalRes.results[0].example;
   expect(firstExample).toBeDefined();
@@ -174,7 +185,9 @@ test("evaluate can evaluate with custom evaluators", async () => {
   expect(evalRes.results[1].evaluationResults).toBeDefined();
 
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 3 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(secondRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(secondRun.outputs?.foo).toBeLessThanOrEqual(3);
 
   const secondExample = evalRes.results[1].example;
   expect(secondExample).toBeDefined();
@@ -241,14 +254,18 @@ test("evaluate can evaluate with summary evaluators", async () => {
   expect(evalRes.results[0].evaluationResults).toBeDefined();
 
   const firstRun = evalRes.results[0].run;
-  expect(firstRun.outputs).toEqual({ foo: 2 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(firstRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(firstRun.outputs?.foo).toBeLessThanOrEqual(3);
 
   expect(evalRes.results[1].run).toBeDefined();
   expect(evalRes.results[1].example).toBeDefined();
   expect(evalRes.results[1].evaluationResults).toBeDefined();
 
   const secondRun = evalRes.results[1].run;
-  expect(secondRun.outputs).toEqual({ foo: 3 });
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(secondRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(secondRun.outputs?.foo).toBeLessThanOrEqual(3);
 });
 
 test.skip("can iterate over evaluate results", async () => {
@@ -488,4 +505,91 @@ test("max concurrency works with summary evaluators", async () => {
   const expectedCommentString = `Runs: ${runIds} Examples: ${exampleIds}`;
   // Checks that both evaluators were called with the expected run and example
   expect(receivedCommentStrings).toEqual(expectedCommentString);
+});
+
+test("Target func can be a runnable", async () => {
+  const targetFunc = new RunnableLambda({
+    func: (input: Record<string, any>) => {
+      console.log("__input__", input);
+      return {
+        foo: input.input + 1,
+      };
+    },
+  });
+
+  const customEvaluator = async (run: Run, example?: Example) => {
+    return Promise.resolve({
+      key: "key",
+      score: 1,
+      comment: `Run: ${run.id} Example: ${example?.id}`,
+    });
+  };
+  const evaluator = {
+    evaluateRun: customEvaluator,
+  };
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [evaluator],
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  expect(evalRes.results[0].run).toBeDefined();
+  expect(evalRes.results[0].example).toBeDefined();
+  expect(evalRes.results[0].evaluationResults).toBeDefined();
+
+  const firstRun = evalRes.results[0].run;
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(firstRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(firstRun.outputs?.foo).toBeLessThanOrEqual(3);
+
+  const firstExample = evalRes.results[0].example;
+  expect(firstExample).toBeDefined();
+
+  const firstEvalResults = evalRes.results[0].evaluationResults;
+  expect(firstEvalResults.results).toHaveLength(1);
+  expect(firstEvalResults.results[0].key).toEqual("key");
+  expect(firstEvalResults.results[0].score).toEqual(1);
+});
+
+test("evaluate can accept array of examples", async () => {
+  const client = new Client();
+  const examplesIterator = client.listExamples({
+    datasetName: TESTING_DATASET_NAME,
+  });
+  const examples: Example[] = [];
+  for await (const example of examplesIterator) {
+    examples.push(example);
+  }
+
+  const targetFunc = (input: Record<string, any>) => {
+    console.log("__input__", input);
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const customEvaluator = (run: Run, example?: Example) => {
+    return Promise.resolve({
+      key: "key",
+      score: 1,
+      comment: `Run: ${run.id} Example: ${example?.id}`,
+    });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: examples,
+    evaluators: [customEvaluator],
+  });
+
+  const firstEvalResults = evalRes.results[0];
+  const runId = firstEvalResults.run.id;
+  const exampleId = firstEvalResults.example.id;
+  const expectedCommentStrings = `Run: ${runId} Example: ${exampleId}`;
+  const receivedCommentStrings =
+    firstEvalResults.evaluationResults.results[0].comment;
+
+  expect(evalRes.results).toHaveLength(2);
+  expect(firstEvalResults.evaluationResults.results).toHaveLength(1);
+  expect(receivedCommentStrings).toEqual(expectedCommentStrings);
 });

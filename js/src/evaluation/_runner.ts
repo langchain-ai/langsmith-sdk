@@ -15,9 +15,21 @@ import {
 } from "./evaluator.js";
 import { v4 as uuidv4 } from "uuid";
 
-type TargetT = (input: KVMap) => KVMap;
+type TargetT =
+  | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
+  | ((input: KVMap, config?: KVMap) => KVMap)
+  | {
+      invoke: (input: KVMap, config?: KVMap) => KVMap;
+    }
+  | {
+      invoke: (input: KVMap, config?: KVMap) => Promise<KVMap>;
+    };
+
+type TargetNoInvoke =
+  | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
+  | ((input: KVMap, config?: KVMap) => KVMap);
 // Data format: dataset-name, dataset_id, or examples
-type DataT = string | AsyncIterable<Example>;
+type DataT = string | AsyncIterable<Example> | Example[];
 // Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
 type SummaryEvaluatorT =
@@ -321,7 +333,7 @@ class _ExperimentManager {
   }
 
   async withPredictions(
-    target: TargetT,
+    target: TargetNoInvoke,
     options?: {
       maxConcurrency?: number;
     }
@@ -435,12 +447,12 @@ class _ExperimentManager {
 
   /**
    * Run the target function on the examples.
-   * @param {TargetT} target The target function to evaluate.
+   * @param {TargetNoInvoke} target The target function to evaluate.
    * @param options
    * @returns {AsyncGenerator<_ForwardResults>} An async generator of the results.
    */
   async *_predict(
-    target: TargetT,
+    target: TargetNoInvoke,
     options?: {
       maxConcurrency?: number;
     }
@@ -704,6 +716,19 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   }
 }
 
+function convertInvokeToTopLevel(fn: TargetT): TargetNoInvoke {
+  if ("invoke" in fn) {
+    const wrapper = (
+      input: Record<string, any>,
+      config?: Record<string, any>
+    ) => {
+      return fn.invoke(input, config);
+    };
+    return wrapper;
+  }
+  return fn;
+}
+
 async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
   fields: EvaluateOptions & {
@@ -719,7 +744,8 @@ async function _evaluate(
   );
 
   let manager = await new _ExperimentManager({
-    data: fields.data,
+    data: Array.isArray(fields.data) ? undefined : fields.data,
+    examples: Array.isArray(fields.data) ? fields.data : undefined,
     client,
     metadata: fields.metadata,
     experiment: experiment_ ?? fields.experimentPrefix,
@@ -727,9 +753,12 @@ async function _evaluate(
   }).start();
 
   if (_isCallable(target)) {
-    manager = await manager.withPredictions(target as TargetT, {
-      maxConcurrency: fields.maxConcurrency,
-    });
+    manager = await manager.withPredictions(
+      convertInvokeToTopLevel(target as TargetT),
+      {
+        maxConcurrency: fields.maxConcurrency,
+      }
+    );
   }
   if (fields.evaluators) {
     manager = await manager.withEvaluators(fields.evaluators, {
@@ -745,8 +774,10 @@ async function _evaluate(
   return results;
 }
 
+type ForwardFn = ((...args: any[]) => Promise<any>) | ((...args: any[]) => any);
+
 async function _forward(
-  fn: (...args: any[]) => Promise<any> | any,
+  fn: ForwardFn,
   example: Example,
   experimentName: string,
   metadata: KVMap,
@@ -778,9 +809,7 @@ async function _forward(
   try {
     await wrappedFn(example.inputs);
   } catch (e) {
-    console.error(
-      `Error running target function: ${JSON.stringify(e, null, 2)}`
-    );
+    console.error(`Error running target function: ${e}`);
   }
 
   if (!run) {
