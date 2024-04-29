@@ -718,13 +718,7 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
 
 function convertInvokeToTopLevel(fn: TargetT): TargetNoInvoke {
   if ("invoke" in fn) {
-    const wrapper = (
-      input: Record<string, any>,
-      config?: Record<string, any>
-    ) => {
-      return fn.invoke(input, config);
-    };
-    return wrapper;
+    return fn.invoke.bind(fn);
   }
   return fn;
 }
