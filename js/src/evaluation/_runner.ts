@@ -348,7 +348,7 @@ class _ExperimentManager {
   ): Promise<_ExperimentManager> {
     const resolvedEvaluators = _resolveEvaluators(evaluators);
     const experimentResults = this._score(resolvedEvaluators, options);
-    const [r1, r2] = atee<ExperimentResultRow>(experimentResults)
+    const [r1, r2] = atee<ExperimentResultRow>(experimentResults);
 
     return new _ExperimentManager({
       examples: await this.getExamples(),
