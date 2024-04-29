@@ -168,11 +168,12 @@ export function traceable<Func extends (...args: any[]) => any>(
           const onEnd = config?.on_end;
           if (onEnd) {
             if (!currentRunTree) {
-              throw new Error(
+              console.error(
                 "Can not call 'on_end' if currentRunTree is undefined"
               );
+            } else {
+              onEnd(currentRunTree);
             }
-            onEnd(currentRunTree);
           }
           const rawOutput = await wrappedFunc(...rawInputs);
           if (isAsyncIterable(rawOutput)) {
