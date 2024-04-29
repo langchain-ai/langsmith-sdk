@@ -357,6 +357,7 @@ class _Expect:
 
         Examples:
             >>> expect.score(0.8)
+            ...
 
             >>> expect.score(0.8, key="similarity").to_be_greater_than(0.7)
         """
