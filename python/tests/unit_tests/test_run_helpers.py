@@ -4,6 +4,7 @@ import inspect
 import json
 import sys
 import time
+import uuid
 import warnings
 from typing import Any, AsyncGenerator, Generator, Optional, cast
 from unittest.mock import MagicMock, patch
@@ -473,8 +474,12 @@ async def test_async_generator():
 
     @traceable
     async def another_async_func(query: str) -> str:
-        with langsmith.trace(name="zee-cm", inputs={"query": query}) as run_tree:
+        rid = uuid.uuid4()
+        with langsmith.trace(
+            name="zee-cm", inputs={"query": query}, run_id=rid
+        ) as run_tree:
             run_tree.end(outputs={"query": query})
+            assert run_tree.id == rid
         return query
 
     @traceable
@@ -848,11 +853,13 @@ def test_trace_to_traceable():
 
     mock_client_ = _get_mock_client()
     with tracing_context(enabled=True):
+        rid = uuid.uuid4()
         with langsmith.trace(
-            name="parent_fn", inputs={"a": 1, "b": 2}, client=mock_client_
+            name="parent_fn", inputs={"a": 1, "b": 2}, client=mock_client_, run_id=rid
         ) as run:
             result = child_fn(1, 2)
             run.end(outputs={"result": result})
+            assert run.id == rid
 
     assert result == 3
     assert run.name == "parent_fn"

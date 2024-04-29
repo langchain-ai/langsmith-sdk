@@ -359,7 +359,11 @@ def _end_tests(
     test_suite.client.update_project(
         test_suite.experiment_id,
         end_time=datetime.datetime.now(datetime.timezone.utc),
-        metadata={**git_info, "dataset_version": test_suite.get_version()},
+        metadata={
+            **git_info,
+            "dataset_version": test_suite.get_version(),
+            "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
+        },
     )
     test_suite.wait()
 
