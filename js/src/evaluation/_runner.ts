@@ -348,12 +348,7 @@ class _ExperimentManager {
   ): Promise<_ExperimentManager> {
     const resolvedEvaluators = _resolveEvaluators(evaluators);
     const experimentResults = this._score(resolvedEvaluators, options);
-
-    const results: AsyncGenerator<ExperimentResultRow>[] = [];
-    for await (const item of atee<ExperimentResultRow>(experimentResults)) {
-      results.push(item);
-    }
-    const [r1, r2] = results;
+    const [r1, r2] = atee<ExperimentResultRow>(experimentResults)
 
     return new _ExperimentManager({
       examples: await this.getExamples(),
