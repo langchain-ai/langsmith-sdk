@@ -1,7 +1,7 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { wrapFunctionAndEnsureTraceable, traceable } from "../traceable.js";
-import { getGitInfo } from "../utils/_git.js";
+import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { atee } from "../utils/atee.js";
@@ -660,7 +660,11 @@ class _ExperimentManager {
       throw new Error("Experiment not yet started.");
     }
     const projectMetadata = await this._getExperimentMetadata();
-    projectMetadata["dataset_version"] = this._getDatasetVersion();
+    projectMetadata["dataset_version"] = await this._getDatasetVersion();
+    // Update revision_id if not already set
+    if (!projectMetadata["revision_id"]) {
+      projectMetadata["revision_id"] = await getDefaultRevisionId();
+    }
 
     await this.client.updateProject(experiment.id, {
       endTime: new Date().toISOString(),

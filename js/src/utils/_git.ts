@@ -84,3 +84,20 @@ export const getGitInfo = async (
     authorEmail,
   };
 };
+
+export const getDefaultRevisionId = async (): Promise<string | null> => {
+  let exec: (...args: any[]) => any;
+  try {
+    const execImport = await importChildProcess();
+    exec = execImport.exec;
+  } catch (e) {
+    // no-op
+    return null;
+  }
+
+  const commit = await execGit(["rev-parse", "HEAD"], exec);
+  if (!commit) {
+    return null;
+  }
+  return commit;
+};
