@@ -13,7 +13,9 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
     import openai  # noqa
 
     original_client = openai.Client()
-    patched_client = wrap_openai(openai.Client())
+    patched_client = wrap_openai(
+        openai.Client(), tracing_extra={"name": "sync chat completions"}
+    )
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = original_client.chat.completions.create(
         messages=messages,  # noqa: [arg-type]
@@ -51,7 +53,9 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
     import openai  # noqa
 
     original_client = openai.AsyncClient()
-    patched_client = wrap_openai(openai.AsyncClient())
+    patched_client = wrap_openai(
+        openai.AsyncClient(), tracing_extra={"name": "some chat completions"}
+    )
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = await original_client.chat.completions.create(
         messages=messages, stream=stream, temperature=0, seed=42, model="gpt-3.5-turbo"
@@ -85,7 +89,9 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
     import openai
 
     original_client = openai.Client()
-    patched_client = wrap_openai(openai.Client())
+    patched_client = wrap_openai(
+        openai.Client(), tracing_extra={"name": "the completions"}
+    )
     prompt = ("Say 'Foo' then stop.",)
     original = original_client.completions.create(
         model="gpt-3.5-turbo-instruct",
@@ -125,7 +131,9 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
     import openai
 
     original_client = openai.AsyncClient()
-    patched_client = wrap_openai(openai.AsyncClient())
+    patched_client = wrap_openai(
+        openai.AsyncClient(), tracing_extra={"name": "completions"}
+    )
     prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
     original = await original_client.completions.create(
         model="gpt-3.5-turbo-instruct",

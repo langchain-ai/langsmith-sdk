@@ -151,12 +151,13 @@ def _get_wrapper(
     reduce_fn: Callable,
     tracing_extra: Optional[TracingExtra] = None,
 ) -> Callable:
-    textra = tracing_extra or {}
+    textra = tracing_extra or TracingExtra()
+    if not textra.get("name"):
+        textra["name"] = name
 
     @functools.wraps(original_create)
     def create(*args, stream: bool = False, **kwargs):
         decorator = run_helpers.traceable(
-            name=name,
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
@@ -169,7 +170,6 @@ def _get_wrapper(
     async def acreate(*args, stream: bool = False, **kwargs):
         kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
-            name=name,
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
@@ -186,6 +186,7 @@ def _get_wrapper(
 
 
 class TracingExtra(TypedDict, total=False):
+    name: Optional[str]
     metadata: Optional[Mapping[str, Any]]
     tags: Optional[List[str]]
     client: Optional[ls_client.Client]
