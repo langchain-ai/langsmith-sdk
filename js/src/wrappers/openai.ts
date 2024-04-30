@@ -217,6 +217,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       name: "ChatOpenAI",
       run_type: "llm",
       aggregator: chatAggregator,
+      argsInputPath: [0],
       argsConfigPath: [1, "langsmithExtra"],
       ...options,
     }
@@ -228,6 +229,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       name: "OpenAI",
       run_type: "llm",
       aggregator: textAggregator,
+      argsInputPath: [0],
       argsConfigPath: [1, "langsmithExtra"],
       ...options,
     }
