@@ -193,7 +193,7 @@ export class RunTree implements BaseRun {
     };
   }
 
-  public async createChild(config: RunTreeConfig): Promise<RunTree> {
+  public createChild(config: RunTreeConfig): RunTree {
     const child = new RunTree({
       ...config,
       parent_run: this,
@@ -210,9 +210,9 @@ export class RunTree implements BaseRun {
     error?: string,
     endTime = Date.now()
   ): Promise<void> {
-    this.outputs = outputs;
-    this.error = error;
-    this.end_time = endTime;
+    this.outputs = this.outputs ?? outputs;
+    this.error = this.error ?? error;
+    this.end_time = this.end_time ?? endTime;
   }
 
   private async _convertToCreate(

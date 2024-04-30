@@ -5,6 +5,14 @@ import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
 
+test("wrapOpenAI should return type compatible with OpenAI", async () => {
+  let originalClient = new OpenAI();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  originalClient = wrapOpenAI(originalClient);
+
+  expect(true).toBe(true);
+});
+
 test.concurrent("chat.completions", async () => {
   const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
@@ -30,6 +38,17 @@ test.concurrent("chat.completions", async () => {
   });
 
   expect(patched.choices).toEqual(original.choices);
+
+  const response = await patchedClient.chat.completions
+    .create({
+      messages: [{ role: "user", content: `Say 'foo'` }],
+      temperature: 0,
+      seed: 42,
+      model: "gpt-3.5-turbo",
+    })
+    .asResponse();
+
+  expect(response.ok).toBe(true);
 
   // stream
   const originalStream = await originalClient.chat.completions.create({
@@ -66,8 +85,29 @@ test.concurrent("chat.completions", async () => {
   for (const call of callSpy.mock.calls) {
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
+  callSpy.mockClear();
 
-  const patchedStream2 = await patchedClient.chat.completions.create(
+  const patchedStreamToBreak = await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: `Say 'hello world hello again'` }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-3.5-turbo",
+    stream: true,
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of patchedStreamToBreak) {
+    console.log(_);
+    break;
+  }
+
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+  for (const call of callSpy.mock.calls) {
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+  }
+  callSpy.mockClear();
+
+  const patchedStreamWithMetadata = await patchedClient.chat.completions.create(
     {
       messages: [{ role: "user", content: `Say 'foo'` }],
       temperature: 0,
@@ -85,7 +125,7 @@ test.concurrent("chat.completions", async () => {
   );
 
   const patchedChoices2 = [];
-  for await (const chunk of patchedStream2) {
+  for await (const chunk of patchedStreamWithMetadata) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -97,6 +137,7 @@ test.concurrent("chat.completions", async () => {
   for (const call of callSpy.mock.calls) {
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
+  callSpy.mockClear();
 });
 
 test.concurrent("chat completions with tool calling", async () => {
@@ -236,6 +277,7 @@ test.concurrent("chat completions with tool calling", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
+  callSpy.mockClear();
 
   const patchedStream2 = await patchedClient.chat.completions.create(
     {
@@ -275,7 +317,12 @@ test.concurrent("chat completions with tool calling", async () => {
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
+      thing1: "thing2",
+    });
   }
+  callSpy.mockClear();
 });
 
 test.concurrent("completions", async () => {

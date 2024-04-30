@@ -62,8 +62,15 @@ export class AsyncCaller {
     this.maxConcurrency = params.maxConcurrency ?? Infinity;
     this.maxRetries = params.maxRetries ?? 6;
 
-    const PQueue = "default" in PQueueMod ? PQueueMod.default : PQueueMod;
-    this.queue = new PQueue({ concurrency: this.maxConcurrency });
+    if ("default" in PQueueMod) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.queue = new (PQueueMod.default as any)({
+        concurrency: this.maxConcurrency,
+      });
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.queue = new (PQueueMod as any)({ concurrency: this.maxConcurrency });
+    }
     this.onFailedResponseHook = params?.onFailedResponseHook;
   }
 

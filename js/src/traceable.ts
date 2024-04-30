@@ -10,9 +10,24 @@ import {
 import { KVMap } from "./schemas.js";
 import { getEnvironmentVariable } from "./utils/env.js";
 
+function isPromiseMethod(
+  x: string | symbol
+): x is "then" | "catch" | "finally" {
+  if (x === "then" || x === "catch" || x === "finally") {
+    return true;
+  }
+  return false;
+}
+
 const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
 
 export type RunTreeLike = RunTree;
+
+type SmartPromise<T> = T extends AsyncGenerator
+  ? T
+  : T extends Promise<unknown>
+  ? T
+  : Promise<T>;
 
 type WrapArgReturnPair<Pair> = Pair extends [
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,9 +35,11 @@ type WrapArgReturnPair<Pair> = Pair extends [
   infer Return
 ]
   ? {
-      (...args: Args): Promise<Return>;
-      (...args: [runTree: RunTreeLike, ...rest: Args]): Promise<Return>;
-      (...args: [config: RunnableConfigLike, ...rest: Args]): Promise<Return>;
+      (...args: Args): SmartPromise<Return>;
+      (...args: [runTree: RunTreeLike, ...rest: Args]): SmartPromise<Return>;
+      (
+        ...args: [config: RunnableConfigLike, ...rest: Args]
+      ): SmartPromise<Return>;
     }
   : never;
 
@@ -110,22 +127,69 @@ export function traceable<Func extends (...args: any[]) => any>(
   config?: Partial<RunTreeConfig> & {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
+    argsConfigPath?: [number] | [number, string];
   }
 ) {
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
-  const { aggregator, ...runTreeConfig } = config ?? {};
+  const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
 
-  const traceableFunc = async (
+  const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
-  ): Promise<Output> => {
+  ) => {
     let currentRunTree: RunTree | undefined;
     let rawInputs: Inputs;
 
-    const ensuredConfig: RunTreeConfig = {
-      name: wrappedFunc.name || "<lambda>",
-      ...runTreeConfig,
-    };
+    let ensuredConfig: RunTreeConfig;
+    try {
+      let runtimeConfig: Partial<RunTreeConfig> | undefined;
+      if (argsConfigPath) {
+        const [index, path] = argsConfigPath;
+        if (index === args.length - 1 && !path) {
+          runtimeConfig = args.pop() as Partial<RunTreeConfig>;
+        } else if (
+          index <= args.length &&
+          typeof args[index] === "object" &&
+          args[index] !== null
+        ) {
+          if (path) {
+            const { [path]: extracted, ...rest } = args[index];
+            runtimeConfig = extracted as Partial<RunTreeConfig>;
+            args[index] = rest;
+          } else {
+            runtimeConfig = args[index] as Partial<RunTreeConfig>;
+            args.splice(index, 1);
+          }
+        }
+      }
+
+      ensuredConfig = {
+        name: wrappedFunc.name || "<lambda>",
+        ...runTreeConfig,
+        ...runtimeConfig,
+        tags: [
+          ...new Set([
+            ...(runTreeConfig?.tags ?? []),
+            ...(runtimeConfig?.tags ?? []),
+          ]),
+        ],
+        metadata: {
+          ...runTreeConfig?.metadata,
+          ...runtimeConfig?.metadata,
+        },
+      };
+    } catch (err) {
+      console.warn(
+        `Failed to extract runtime config from args for ${
+          runTreeConfig?.name ?? wrappedFunc.name
+        }`,
+        err
+      );
+      ensuredConfig = {
+        name: wrappedFunc.name || "<lambda>",
+        ...runTreeConfig,
+      };
+    }
 
     const previousRunTree = asyncLocalStorage.getStore();
     if (isRunTree(args[0])) {
@@ -135,7 +199,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       currentRunTree = RunTree.fromRunnableConfig(args[0], ensuredConfig);
       rawInputs = args.slice(1) as Inputs;
     } else if (previousRunTree !== undefined) {
-      currentRunTree = await previousRunTree.createChild(ensuredConfig);
+      currentRunTree = previousRunTree.createChild(ensuredConfig);
       rawInputs = args as Inputs;
     } else {
       currentRunTree = new RunTree(ensuredConfig);
@@ -159,83 +223,186 @@ export function traceable<Func extends (...args: any[]) => any>(
       currentRunTree.inputs = inputs;
     }
 
-    const initialOutputs = currentRunTree?.outputs;
-    const initialError = currentRunTree?.error;
-    await currentRunTree?.postRun();
+    return asyncLocalStorage.run(currentRunTree, () => {
+      const postRunPromise = currentRunTree?.postRun();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let returnValue: any;
+      try {
+        returnValue = wrappedFunc(...rawInputs);
+      } catch (err: unknown) {
+        returnValue = Promise.reject(err);
+      }
 
-    return new Promise((resolve, reject) => {
-      void asyncLocalStorage.run(currentRunTree, async () => {
-        try {
-          const onEnd = config?.on_end;
-          if (onEnd) {
-            if (!currentRunTree) {
-              console.error(
-                "Can not call 'on_end' if currentRunTree is undefined"
-              );
-            } else {
-              onEnd(currentRunTree);
+      if (isAsyncIterable(returnValue)) {
+        // eslint-disable-next-line no-inner-declarations
+        async function* wrapOutputForTracing() {
+          let finished = false;
+          const chunks: unknown[] = [];
+          try {
+            for await (const chunk of returnValue) {
+              chunks.push(chunk);
+              yield chunk;
             }
-          }
-          const rawOutput = await wrappedFunc(...rawInputs);
-          if (isAsyncIterable(rawOutput)) {
-            // eslint-disable-next-line no-inner-declarations
-            async function* wrapOutputForTracing() {
-              const chunks: unknown[] = [];
-              // TypeScript thinks this is unsafe
-              for await (const chunk of rawOutput as AsyncIterable<unknown>) {
-                chunks.push(chunk);
-                yield chunk;
-              }
-              let finalOutputs;
-              if (aggregator !== undefined) {
-                try {
-                  finalOutputs = await aggregator(chunks);
-                } catch (e) {
-                  console.error(`[ERROR]: LangSmith aggregation failed: `, e);
-                  finalOutputs = chunks;
-                }
-              } else {
+            finished = true;
+          } catch (e) {
+            await currentRunTree?.end(undefined, String(e));
+            throw e;
+          } finally {
+            if (!finished) {
+              await currentRunTree?.end(undefined, "Cancelled");
+            }
+            let finalOutputs;
+            if (aggregator !== undefined) {
+              try {
+                finalOutputs = await aggregator(chunks);
+              } catch (e) {
+                console.error(`[ERROR]: LangSmith aggregation failed: `, e);
                 finalOutputs = chunks;
               }
-              if (
-                typeof finalOutputs === "object" &&
-                !Array.isArray(finalOutputs)
-              ) {
-                await currentRunTree?.end(finalOutputs);
-              } else {
-                await currentRunTree?.end({ outputs: finalOutputs });
-              }
-              await currentRunTree?.patchRun();
-            }
-            return resolve(wrapOutputForTracing() as Output);
-          } else {
-            const outputs: KVMap = isKVMap(rawOutput)
-              ? rawOutput
-              : { outputs: rawOutput };
-
-            if (initialOutputs === currentRunTree?.outputs) {
-              await currentRunTree?.end(outputs);
             } else {
-              if (currentRunTree !== undefined) {
-                currentRunTree.end_time = Date.now();
+              finalOutputs = chunks;
+            }
+            if (
+              typeof finalOutputs === "object" &&
+              !Array.isArray(finalOutputs)
+            ) {
+              await currentRunTree?.end(finalOutputs);
+            } else {
+              await currentRunTree?.end({ outputs: finalOutputs });
+            }
+            const onEnd = config?.on_end;
+            if (onEnd) {
+              if (!currentRunTree) {
+                console.error(
+                  "Can not call 'on_end' if currentRunTree is undefined"
+                );
+              } else {
+                onEnd(currentRunTree);
               }
             }
-
+            await postRunPromise;
             await currentRunTree?.patchRun();
-            return resolve(rawOutput);
           }
-        } catch (error) {
-          if (initialError === currentRunTree?.error) {
-            await currentRunTree?.end(initialOutputs, String(error));
-          } else {
-            if (currentRunTree !== undefined) {
-              currentRunTree.end_time = Date.now();
-            }
-          }
-
-          await currentRunTree?.patchRun();
-          reject(error);
         }
+        return wrapOutputForTracing();
+      }
+
+      const tracedPromise = new Promise<Output>((resolve, reject) => {
+        Promise.resolve(returnValue)
+          .then(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            async (rawOutput: any) => {
+              if (isAsyncIterable(rawOutput)) {
+                // eslint-disable-next-line no-inner-declarations
+                async function* wrapOutputForTracing() {
+                  let finished = false;
+                  const chunks: unknown[] = [];
+                  try {
+                    // TypeScript thinks this is unsafe
+                    for await (const chunk of rawOutput as AsyncIterable<unknown>) {
+                      chunks.push(chunk);
+                      yield chunk;
+                    }
+                    finished = true;
+                  } catch (e) {
+                    await currentRunTree?.end(undefined, String(e));
+                    throw e;
+                  } finally {
+                    if (!finished) {
+                      await currentRunTree?.end(undefined, "Cancelled");
+                    }
+                    const onEnd = config?.on_end;
+                    if (onEnd) {
+                      if (!currentRunTree) {
+                        console.error(
+                          "Can not call 'on_end' if currentRunTree is undefined"
+                        );
+                      } else {
+                        onEnd(currentRunTree);
+                      }
+                    }
+                    let finalOutputs;
+                    if (aggregator !== undefined) {
+                      try {
+                        finalOutputs = await aggregator(chunks);
+                      } catch (e) {
+                        console.error(
+                          `[ERROR]: LangSmith aggregation failed: `,
+                          e
+                        );
+                        finalOutputs = chunks;
+                      }
+                    } else {
+                      finalOutputs = chunks;
+                    }
+                    if (
+                      typeof finalOutputs === "object" &&
+                      !Array.isArray(finalOutputs)
+                    ) {
+                      await currentRunTree?.end(finalOutputs);
+                    } else {
+                      await currentRunTree?.end({ outputs: finalOutputs });
+                    }
+                    await postRunPromise;
+                    await currentRunTree?.patchRun();
+                  }
+                }
+                return resolve(wrapOutputForTracing() as Output);
+              } else {
+                try {
+                  await currentRunTree?.end(
+                    isKVMap(rawOutput) ? rawOutput : { outputs: rawOutput }
+                  );
+                  const onEnd = config?.on_end;
+                  if (onEnd) {
+                    if (!currentRunTree) {
+                      console.error(
+                        "Can not call 'on_end' if currentRunTree is undefined"
+                      );
+                    } else {
+                      onEnd(currentRunTree);
+                    }
+                  }
+                  await postRunPromise;
+                  await currentRunTree?.patchRun();
+                } finally {
+                  // eslint-disable-next-line no-unsafe-finally
+                  return rawOutput;
+                }
+              }
+            },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            async (error: any) => {
+              await currentRunTree?.end(undefined, String(error));
+              const onEnd = config?.on_end;
+              if (onEnd) {
+                if (!currentRunTree) {
+                  console.error(
+                    "Can not call 'on_end' if currentRunTree is undefined"
+                  );
+                } else {
+                  onEnd(currentRunTree);
+                }
+              }
+              await postRunPromise;
+              await currentRunTree?.patchRun();
+              throw error;
+            }
+          )
+          .then(resolve, reject);
+      });
+
+      if (typeof returnValue !== "object" || returnValue === null) {
+        return tracedPromise;
+      }
+
+      return new Proxy(returnValue, {
+        get(target, prop, receiver) {
+          if (isPromiseMethod(prop)) {
+            return tracedPromise[prop].bind(tracedPromise);
+          }
+          return Reflect.get(target, prop, receiver);
+        },
       });
     });
   };
