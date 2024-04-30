@@ -126,11 +126,12 @@ export function traceable<Func extends (...args: any[]) => any>(
   config?: Partial<RunTreeConfig> & {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
+    argsConfigPath?: [number] | [number, string];
   }
 ) {
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
-  const { aggregator, ...runTreeConfig } = config ?? {};
+  const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
 
   const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -138,10 +139,56 @@ export function traceable<Func extends (...args: any[]) => any>(
     let currentRunTree: RunTree | undefined;
     let rawInputs: Inputs;
 
-    const ensuredConfig: RunTreeConfig = {
-      name: wrappedFunc.name || "<lambda>",
-      ...runTreeConfig,
-    };
+    let ensuredConfig: RunTreeConfig;
+    try {
+      let runtimeConfig: Partial<RunTreeConfig> | undefined;
+      if (argsConfigPath) {
+        const [index, path] = argsConfigPath;
+        if (index === args.length - 1 && !path) {
+          runtimeConfig = args.pop() as Partial<RunTreeConfig>;
+        } else if (
+          index <= args.length &&
+          typeof args[index] === "object" &&
+          args[index] !== null
+        ) {
+          if (path) {
+            const { [path]: extracted, ...rest } = args[index];
+            runtimeConfig = extracted as Partial<RunTreeConfig>;
+            args[index] = rest;
+          } else {
+            runtimeConfig = args[index] as Partial<RunTreeConfig>;
+            args.splice(index, 1);
+          }
+        }
+      }
+
+      ensuredConfig = {
+        name: wrappedFunc.name || "<lambda>",
+        ...runTreeConfig,
+        ...runtimeConfig,
+        tags: [
+          ...new Set([
+            ...(runTreeConfig?.tags ?? []),
+            ...(runtimeConfig?.tags ?? []),
+          ]),
+        ],
+        metadata: {
+          ...runTreeConfig?.metadata,
+          ...runtimeConfig?.metadata,
+        },
+      };
+    } catch (err) {
+      console.warn(
+        `Failed to extract runtime config from args for ${
+          runTreeConfig?.name ?? wrappedFunc.name
+        }`,
+        err
+      );
+      ensuredConfig = {
+        name: wrappedFunc.name || "<lambda>",
+        ...runTreeConfig,
+      };
+    }
 
     const previousRunTree = asyncLocalStorage.getStore();
     if (isRunTree(args[0])) {
@@ -186,15 +233,15 @@ export function traceable<Func extends (...args: any[]) => any>(
       }
 
       if (isAsyncIterable(returnValue)) {
-            // eslint-disable-next-line no-inner-declarations
-            async function* wrapOutputForTracing() {
+        // eslint-disable-next-line no-inner-declarations
+        async function* wrapOutputForTracing() {
           let finished = false;
-              const chunks: unknown[] = [];
+          const chunks: unknown[] = [];
           try {
             for await (const chunk of returnValue) {
-                chunks.push(chunk);
-                yield chunk;
-              }
+              chunks.push(chunk);
+              yield chunk;
+            }
             finished = true;
           } catch (e) {
             await currentRunTree?.end(undefined, String(e));
@@ -203,25 +250,25 @@ export function traceable<Func extends (...args: any[]) => any>(
             if (!finished) {
               await currentRunTree?.end(undefined, "Cancelled");
             }
-              let finalOutputs;
-              if (aggregator !== undefined) {
-                try {
-                  finalOutputs = await aggregator(chunks);
-                } catch (e) {
-                  console.error(`[ERROR]: LangSmith aggregation failed: `, e);
-                  finalOutputs = chunks;
-                }
-              } else {
+            let finalOutputs;
+            if (aggregator !== undefined) {
+              try {
+                finalOutputs = await aggregator(chunks);
+              } catch (e) {
+                console.error(`[ERROR]: LangSmith aggregation failed: `, e);
                 finalOutputs = chunks;
               }
-              if (
-                typeof finalOutputs === "object" &&
-                !Array.isArray(finalOutputs)
-              ) {
-                await currentRunTree?.end(finalOutputs);
-              } else {
-                await currentRunTree?.end({ outputs: finalOutputs });
-              }
+            } else {
+              finalOutputs = chunks;
+            }
+            if (
+              typeof finalOutputs === "object" &&
+              !Array.isArray(finalOutputs)
+            ) {
+              await currentRunTree?.end(finalOutputs);
+            } else {
+              await currentRunTree?.end({ outputs: finalOutputs });
+            }
             await postRunPromise;
             await currentRunTree?.patchRun();
           }
@@ -276,11 +323,11 @@ export function traceable<Func extends (...args: any[]) => any>(
                       await currentRunTree?.end({ outputs: finalOutputs });
                     }
                     await postRunPromise;
-              await currentRunTree?.patchRun();
+                    await currentRunTree?.patchRun();
                   }
-            }
-            return resolve(wrapOutputForTracing() as Output);
-          } else {
+                }
+                return resolve(wrapOutputForTracing() as Output);
+              } else {
                 try {
                   await currentRunTree?.end(
                     isKVMap(rawOutput) ? rawOutput : { outputs: rawOutput }
@@ -297,7 +344,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             async (error: any) => {
               await currentRunTree?.end(undefined, String(error));
               await postRunPromise;
-            await currentRunTree?.patchRun();
+              await currentRunTree?.patchRun();
               throw error;
             }
           )
@@ -312,7 +359,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         get(target, prop, receiver) {
           if (isPromiseMethod(prop)) {
             return tracedPromise[prop].bind(tracedPromise);
-            }
+          }
           return Reflect.get(target, prop, receiver);
         },
       });
