@@ -321,6 +321,22 @@ test.concurrent("chat completions with tool calling", async () => {
     expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
       thing1: "thing2",
     });
+    if ((call[2] as any)["method"] === "POST") {
+      expect(JSON.parse((call[2] as any).body).inputs).toEqual({
+        messages: [
+          { role: "user", content: `What is the current weather in SF?` },
+        ],
+        temperature: 0,
+        seed: 42,
+        model: "gpt-3.5-turbo",
+        tools: toolDefinition,
+        tool_choice: {
+          type: "function",
+          function: { name: "get_current_weather" },
+        },
+        stream: true,
+      });
+    }
   }
   callSpy.mockClear();
 });
