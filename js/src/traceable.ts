@@ -96,11 +96,27 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   typeof (x as any)[Symbol.asyncIterator] === "function";
 
-const getTracingRunTree = (runTree: RunTree): RunTree | undefined => {
-  const tracingEnabled =
-    getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true" ||
-    getEnvironmentVariable("LANGCHAIN_TRACING_V2") === "true";
-  if (!tracingEnabled) {
+const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
+  if (tracingEnabled !== undefined) {
+    return tracingEnabled;
+  }
+  const envVars = [
+    "LANGSMITH_TRACING_V2",
+    "LANGCHAIN_TRACING_V2",
+    "LANGSMITH_TRACING",
+    "LANGCHAIN_TRACING",
+  ];
+  return Boolean(
+    envVars.find((envVar) => getEnvironmentVariable(envVar) === "true")
+  );
+};
+
+const getTracingRunTree = (
+  runTree: RunTree,
+  tracingEnabled?: boolean
+): RunTree | undefined => {
+  const tracingEnabled_ = tracingIsEnabled(tracingEnabled);
+  if (!tracingEnabled_) {
     return undefined;
   }
   return runTree;
@@ -127,11 +143,13 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+    tracingEnabled?: boolean;
   }
 ) {
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
-  const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
+  const { aggregator, argsConfigPath, tracingEnabled, ...runTreeConfig } =
+    config ?? {};
 
   const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -205,7 +223,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       rawInputs = args as Inputs;
     }
 
-    currentRunTree = getTracingRunTree(currentRunTree);
+    currentRunTree = getTracingRunTree(currentRunTree, tracingEnabled);
     let inputs: KVMap;
     const firstInput = rawInputs[0];
     if (firstInput == null) {
@@ -269,6 +287,16 @@ export function traceable<Func extends (...args: any[]) => any>(
             } else {
               await currentRunTree?.end({ outputs: finalOutputs });
             }
+            const onEnd = config?.on_end;
+            if (onEnd) {
+              if (!currentRunTree) {
+                console.warn(
+                  "Can not call 'on_end' if currentRunTree is undefined"
+                );
+              } else {
+                onEnd(currentRunTree);
+              }
+            }
             await postRunPromise;
             await currentRunTree?.patchRun();
           }
@@ -322,6 +350,16 @@ export function traceable<Func extends (...args: any[]) => any>(
                     } else {
                       await currentRunTree?.end({ outputs: finalOutputs });
                     }
+                    const onEnd = config?.on_end;
+                    if (onEnd) {
+                      if (!currentRunTree) {
+                        console.warn(
+                          "Can not call 'on_end' if currentRunTree is undefined"
+                        );
+                      } else {
+                        onEnd(currentRunTree);
+                      }
+                    }
                     await postRunPromise;
                     await currentRunTree?.patchRun();
                   }
@@ -332,6 +370,16 @@ export function traceable<Func extends (...args: any[]) => any>(
                   await currentRunTree?.end(
                     isKVMap(rawOutput) ? rawOutput : { outputs: rawOutput }
                   );
+                  const onEnd = config?.on_end;
+                  if (onEnd) {
+                    if (!currentRunTree) {
+                      console.warn(
+                        "Can not call 'on_end' if currentRunTree is undefined"
+                      );
+                    } else {
+                      onEnd(currentRunTree);
+                    }
+                  }
                   await postRunPromise;
                   await currentRunTree?.patchRun();
                 } finally {
@@ -343,6 +391,16 @@ export function traceable<Func extends (...args: any[]) => any>(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             async (error: any) => {
               await currentRunTree?.end(undefined, String(error));
+              const onEnd = config?.on_end;
+              if (onEnd) {
+                if (!currentRunTree) {
+                  console.warn(
+                    "Can not call 'on_end' if currentRunTree is undefined"
+                  );
+                } else {
+                  onEnd(currentRunTree);
+                }
+              }
               await postRunPromise;
               await currentRunTree?.patchRun();
               throw error;
@@ -408,4 +466,16 @@ function isKVMap(x: unknown): x is Record<string, unknown> {
     // eslint-disable-next-line no-instanceof/no-instanceof
     !(x instanceof Date)
   );
+}
+
+export function wrapFunctionAndEnsureTraceable<
+  Func extends (...args: any[]) => any
+>(target: Func, options: Partial<RunTreeConfig>, name = "target") {
+  if (typeof target === "function") {
+    return traceable<Func>(target, {
+      ...options,
+      name,
+    });
+  }
+  throw new Error("Target must be runnable function");
 }

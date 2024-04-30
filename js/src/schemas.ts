@@ -11,6 +11,10 @@ export interface TracerSession {
   description?: string;
   // The name of the project
   name?: string;
+  /** Extra metadata for the project. */
+  extra?: KVMap;
+  // The reference dataset ID this session's runs were generated on.
+  reference_dataset_id?: string;
 }
 
 // Fully loaded information about a Tracer Session (also known
@@ -32,8 +36,6 @@ export interface TracerSessionResult extends TracerSession {
   last_run_start_time?: number;
   // Feedback stats for the session.
   feedback_stats?: Record<string, unknown>;
-  // The reference dataset ID this session's runs were generated on.
-  reference_dataset_id?: string;
   // Facets for the runs in the session.
   run_facets?: KVMap[];
 }
@@ -125,6 +127,15 @@ export interface BaseRun {
   dotted_order?: string;
 }
 
+type S3URL = {
+  ROOT: {
+    /** A pre-signed URL */
+    presigned_url: string;
+    /** The S3 path to the object in storage */
+    s3_url: string;
+  };
+};
+
 /**
  * Describes properties of a run when loaded from the database.
  * Extends the BaseRun interface.
@@ -171,6 +182,12 @@ export interface Run extends BaseRun {
 
   /** Whether the run is included in a dataset. */
   in_dataset?: boolean;
+
+  /** The output S3 URLs */
+  outputs_s3_urls?: S3URL;
+
+  /** The input S3 URLs */
+  inputs_s3_urls?: S3URL;
 }
 
 export interface RunCreate extends BaseRun {
@@ -313,6 +330,9 @@ export interface FeedbackCategory {
 export interface FeedbackConfig {
   /**
    * The type of feedback.
+   * - "continuous": Feedback with a continuous numeric.
+   * - "categorical": Feedback with a categorical value (classes)
+   * - "freeform": Feedback with a freeform text value (notes).
    */
   type: "continuous" | "categorical" | "freeform";
 
@@ -327,6 +347,9 @@ export interface FeedbackConfig {
   max?: number | null;
 
   /**
+   * The categories for categorical feedback.
+   * Each category can be a string or an object with additional properties.
+   *
    * If feedback is categorical, this defines the valid categories the server will accept.
    * Not applicable to continuous or freeform feedback types.
    */
