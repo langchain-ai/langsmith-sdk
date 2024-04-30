@@ -47,7 +47,7 @@
     "check-version": "node scripts/check-version.js",
     "check-npm-version": "node scripts/check-npm-version.js",
     "clean": "rm -rf dist/ && node scripts/create-entrypoints.js clean",
-    "build:esm": "rm src/package.json && tsc --outDir dist/ && rm -rf dist/tests dist/**/tests",
+    "build:esm": "rm -f src/package.json && tsc --outDir dist/ && rm -rf dist/tests dist/**/tests",
     "build:cjs": "echo '{}' > src/package.json && tsc --outDir dist-cjs/ -p tsconfig.cjs.json && node scripts/move-cjs-to-dist.js && rm -r dist-cjs src/package.json",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests --testPathIgnorePatterns='\\.int\\.test.[tj]s' --testTimeout 30000",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=\\.int\\.test.ts --testTimeout 100000",
