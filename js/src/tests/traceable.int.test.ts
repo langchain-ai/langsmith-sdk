@@ -83,6 +83,7 @@ test.concurrent("Test traceable wrapper with error thrown", async () => {
       client: langchainClient,
       id: runId,
       on_end: _getRun,
+      tracingEnabled: true,
     }
   );
 
@@ -121,6 +122,7 @@ test.concurrent("Test traceable wrapper with async error thrown", async () => {
       client: langchainClient,
       id: runId,
       on_end: _getRun,
+      tracingEnabled: true,
     }
   );
 
@@ -163,6 +165,7 @@ test.concurrent(
         client: langchainClient,
         id: runId,
         on_end: _getRun,
+        tracingEnabled: true,
       }
     );
 
@@ -229,6 +232,7 @@ test.concurrent(
       on_end: (r: RunTree): void => {
         collectedRun = r;
       },
+      tracingEnabled: true,
     });
     expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -335,6 +339,7 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
         return tracedOutput;
       },
       on_end: _getRun,
+      tracingEnabled: true,
     }
   );
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
@@ -386,6 +391,7 @@ test.concurrent("Test async generator success", async () => {
       return chunks.join(" ");
     },
     on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -433,6 +439,7 @@ test.concurrent("Test async generator throws error", async () => {
       return chunks.join(" ");
     },
     on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -480,6 +487,7 @@ test.concurrent("Test async generator break finishes run", async () => {
       return chunks.join(" ");
     },
     on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -527,6 +535,7 @@ test.concurrent("Test async generator success", async () => {
       return chunks.join(" ");
     },
     on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -576,6 +585,7 @@ test.concurrent("Test promise for async generator success", async () => {
     on_end: (r: RunTree): void => {
       collectedRun = r;
     },
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -630,6 +640,7 @@ test.concurrent(
         return chunks.join(" ");
       },
       on_end: _getRun,
+      tracingEnabled: true,
     });
     expect(isTraceableFunction(iterableTraceable)).toBe(true);
 

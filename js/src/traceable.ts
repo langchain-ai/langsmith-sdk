@@ -97,11 +97,17 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   typeof (x as any)[Symbol.asyncIterator] === "function";
 
 const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
-  return (
-    tracingEnabled ??
-    (getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true" ||
-      getEnvironmentVariable("LANGSMITH_TRACING") === "true" ||
-      getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true")
+  if (tracingEnabled !== undefined) {
+    return tracingEnabled;
+  }
+  const envVars = [
+    "LANGSMITH_TRACING_V2",
+    "LANGCHAIN_TRACING_V2",
+    "LANGSMITH_TRACING",
+    "LANGCHAIN_TRACING",
+  ];
+  return Boolean(
+    envVars.find((envVar) => getEnvironmentVariable(envVar) === "true")
   );
 };
 
