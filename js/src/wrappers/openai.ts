@@ -1,4 +1,5 @@
-import type { OpenAI } from "openai";
+import { OpenAI } from "openai";
+import type { APIPromise } from "openai/core";
 import type { Client, RunTreeConfig } from "../index.js";
 import { type RunnableConfigLike } from "../run_trees.js";
 import { traceable, type RunTreeLike } from "../traceable.js";
@@ -17,51 +18,51 @@ type OpenAIType = {
   };
 };
 
-type PatchedOpenAIClient<T extends OpenAIType> = {
-  [P in keyof T]: T[P];
-} & {
-  chat: {
-    completions: {
+type PatchedOpenAIClient<T extends OpenAIType> = T & {
+  chat: T["chat"] & {
+    completions: T["chat"]["completions"] & {
       create: {
         (
           arg: OpenAI.ChatCompletionCreateParamsStreaming,
           arg2?: OpenAI.RequestOptions & {
             langsmithExtra?: RunnableConfigLike | RunTreeLike;
           }
-        ): Promise<AsyncGenerator<OpenAI.ChatCompletionChunk>>;
+        ): APIPromise<AsyncGenerator<OpenAI.ChatCompletionChunk>>;
       } & {
         (
           arg: OpenAI.ChatCompletionCreateParamsNonStreaming,
           arg2?: OpenAI.RequestOptions & {
             langsmithExtra?: RunnableConfigLike | RunTreeLike;
           }
-        ): Promise<OpenAI.ChatCompletionChunk>;
+        ): APIPromise<OpenAI.ChatCompletionChunk>;
       };
     };
   };
-  completions: {
+  completions: T["completions"] & {
     create: {
       (
         arg: OpenAI.CompletionCreateParamsStreaming,
         arg2?: OpenAI.RequestOptions & {
           langsmithExtra?: RunnableConfigLike | RunTreeLike;
         }
-      ): Promise<AsyncGenerator<OpenAI.Completion>>;
+      ): APIPromise<AsyncGenerator<OpenAI.Completion>>;
     } & {
       (
         arg: OpenAI.CompletionCreateParamsNonStreaming,
         arg2?: OpenAI.RequestOptions & {
           langsmithExtra?: RunnableConfigLike | RunTreeLike;
         }
-      ): Promise<OpenAI.Completion>;
+      ): APIPromise<OpenAI.Completion>;
     };
   };
 };
 
 function _combineChatCompletionChoices(
   choices: OpenAI.ChatCompletionChunk.Choice[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   const reversedChoices = choices.slice().reverse();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const message: { [key: string]: any } = {
     role: "assistant",
     content: "",
@@ -136,29 +137,51 @@ function _combineChatCompletionChoices(
   };
 }
 
-async function extractLangSmithExtraAndCall(
-  openAIMethod: (...args: any[]) => any,
-  args: any[],
-  defaultRunConfig: Partial<RunTreeConfig>
-) {
-  if (args[1]?.langsmithExtra !== undefined) {
-    const { langsmithExtra, ...openAIOptions } = args[1];
-    const wrappedMethod = traceable(openAIMethod, {
-      ...defaultRunConfig,
-      ...langsmithExtra,
-    });
-    const finalArgs = [args[0]];
-    if (args.length > 2) {
-      finalArgs.push(openAIOptions);
-      finalArgs.push(args.slice(2));
-    } else if (Object.keys(openAIOptions).length !== 0) {
-      finalArgs.push(openAIOptions);
-    }
-    return wrappedMethod(...finalArgs);
+const chatAggregator = (chunks: OpenAI.ChatCompletionChunk[]) => {
+  if (!chunks || chunks.length === 0) {
+    return { choices: [{ message: { role: "assistant", content: "" } }] };
   }
-  const wrappedMethod = traceable(openAIMethod, defaultRunConfig);
-  return wrappedMethod(...args);
-}
+  const choicesByIndex: {
+    [index: number]: OpenAI.ChatCompletionChunk.Choice[];
+  } = {};
+  for (const chunk of chunks) {
+    for (const choice of chunk.choices) {
+      if (choicesByIndex[choice.index] === undefined) {
+        choicesByIndex[choice.index] = [];
+      }
+      choicesByIndex[choice.index].push(choice);
+    }
+  }
+
+  const aggregatedOutput = chunks[chunks.length - 1];
+  aggregatedOutput.choices = Object.values(choicesByIndex).map((choices) =>
+    _combineChatCompletionChoices(choices)
+  );
+
+  return aggregatedOutput;
+};
+
+const textAggregator = (
+  allChunks: OpenAI.Completions.Completion[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Record<string, any> => {
+  if (allChunks.length === 0) {
+    return { choices: [{ text: "" }] };
+  }
+  const allContent: string[] = [];
+  for (const chunk of allChunks) {
+    const content = chunk.choices[0].text;
+    if (content != null) {
+      allContent.push(content);
+    }
+  }
+  const content = allContent.join("");
+  const aggregatedOutput = allChunks[allChunks.length - 1];
+  aggregatedOutput.choices = [
+    { ...aggregatedOutput.choices[0], text: content },
+  ];
+  return aggregatedOutput;
+};
 
 /**
  * Wraps an OpenAI client's completion methods, enabling automatic LangSmith
@@ -188,83 +211,27 @@ export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
   options?: Partial<RunTreeConfig>
 ): PatchedOpenAIClient<T> => {
-  const originalChatCompletionsFn = openai.chat.completions.create.bind(
-    openai.chat.completions
-  );
-  openai.chat.completions.create = async (...args) => {
-    const aggregator = (chunks: OpenAI.ChatCompletionChunk[]) => {
-      if (!chunks || chunks.length === 0) {
-        return { choices: [{ message: { role: "assistant", content: "" } }] };
-      }
-      const choicesByIndex: {
-        [index: number]: OpenAI.ChatCompletionChunk.Choice[];
-      } = {};
-      for (const chunk of chunks) {
-        for (const choice of chunk.choices) {
-          if (choicesByIndex[choice.index] === undefined) {
-            choicesByIndex[choice.index] = [];
-          }
-          choicesByIndex[choice.index].push(choice);
-        }
-      }
-
-      const aggregatedOutput = chunks[chunks.length - 1];
-      aggregatedOutput.choices = Object.values(choicesByIndex).map((choices) =>
-        _combineChatCompletionChoices(choices)
-      );
-
-      return aggregatedOutput;
-    };
-    const defaultRunConfig = {
+  openai.chat.completions.create = traceable(
+    openai.chat.completions.create.bind(openai.chat.completions),
+    {
       name: "ChatOpenAI",
       run_type: "llm",
-      aggregator,
+      aggregator: chatAggregator,
+      argsConfigPath: [1, "langsmithExtra"],
       ...options,
-    };
-    return extractLangSmithExtraAndCall(
-      originalChatCompletionsFn,
-      args,
-      defaultRunConfig
-    );
-  };
-
-  const originalCompletionsFn = openai.completions.create.bind(
-    openai.chat.completions
+    }
   );
-  openai.completions.create = async (...args) => {
-    const aggregator = (
-      allChunks: OpenAI.Completions.Completion[]
-    ): Record<string, any> => {
-      if (allChunks.length === 0) {
-        return { choices: [{ text: "" }] };
-      }
-      const allContent: string[] = [];
-      for (const chunk of allChunks) {
-        const content = chunk.choices[0].text;
-        if (content != null) {
-          allContent.push(content);
-        }
-      }
-      const content = allContent.join("");
-      const aggregatedOutput = allChunks[allChunks.length - 1];
-      aggregatedOutput.choices = [
-        { ...aggregatedOutput.choices[0], text: content },
-      ];
-      return aggregatedOutput;
-    };
 
-    const defaultRunConfig = {
+  openai.completions.create = traceable(
+    openai.completions.create.bind(openai.completions),
+    {
       name: "OpenAI",
       run_type: "llm",
-      aggregator,
+      aggregator: textAggregator,
+      argsConfigPath: [1, "langsmithExtra"],
       ...options,
-    };
-    return extractLangSmithExtraAndCall(
-      originalCompletionsFn,
-      args,
-      defaultRunConfig
-    );
-  };
+    }
+  );
 
   return openai as PatchedOpenAIClient<T>;
 };
