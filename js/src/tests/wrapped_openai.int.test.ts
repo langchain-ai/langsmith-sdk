@@ -5,6 +5,14 @@ import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
 
+test("wrapOpenAI should return type compatible with OpenAI", async () => {
+  let originalClient = new OpenAI();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  originalClient = wrapOpenAI(originalClient);
+
+  expect(true).toBe(true);
+});
+
 test.concurrent("chat.completions", async () => {
   const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
