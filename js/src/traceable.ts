@@ -311,16 +311,6 @@ export function traceable<Func extends (...args: any[]) => any>(
                     if (!finished) {
                       await currentRunTree?.end(undefined, "Cancelled");
                     }
-                    const onEnd = config?.on_end;
-                    if (onEnd) {
-                      if (!currentRunTree) {
-                        console.error(
-                          "Can not call 'on_end' if currentRunTree is undefined"
-                        );
-                      } else {
-                        onEnd(currentRunTree);
-                      }
-                    }
                     let finalOutputs;
                     if (aggregator !== undefined) {
                       try {
@@ -342,6 +332,16 @@ export function traceable<Func extends (...args: any[]) => any>(
                       await currentRunTree?.end(finalOutputs);
                     } else {
                       await currentRunTree?.end({ outputs: finalOutputs });
+                    }
+                    const onEnd = config?.on_end;
+                    if (onEnd) {
+                      if (!currentRunTree) {
+                        console.error(
+                          "Can not call 'on_end' if currentRunTree is undefined"
+                        );
+                      } else {
+                        onEnd(currentRunTree);
+                      }
                     }
                     await postRunPromise;
                     await currentRunTree?.patchRun();
