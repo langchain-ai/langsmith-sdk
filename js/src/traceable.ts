@@ -96,12 +96,21 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   typeof (x as any)[Symbol.asyncIterator] === "function";
 
-const getTracingRunTree = (runTree: RunTree): RunTree | undefined => {
-  const tracingEnabled =
-    getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true" ||
-    getEnvironmentVariable("LANGSMITH_TRACING") === "true" ||
-    getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true";
-  if (!tracingEnabled) {
+const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
+  return (
+    tracingEnabled ??
+    (getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true" ||
+      getEnvironmentVariable("LANGSMITH_TRACING") === "true" ||
+      getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true")
+  );
+};
+
+const getTracingRunTree = (
+  runTree: RunTree,
+  tracingEnabled?: boolean
+): RunTree | undefined => {
+  const tracingEnabled_ = tracingIsEnabled(tracingEnabled);
+  if (!tracingEnabled_) {
     return undefined;
   }
   return runTree;
@@ -128,11 +137,13 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+    tracingEnabled?: boolean;
   }
 ) {
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
-  const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
+  const { aggregator, argsConfigPath, tracingEnabled, ...runTreeConfig } =
+    config ?? {};
 
   const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -206,7 +217,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       rawInputs = args as Inputs;
     }
 
-    currentRunTree = getTracingRunTree(currentRunTree);
+    currentRunTree = getTracingRunTree(currentRunTree, tracingEnabled);
     let inputs: KVMap;
     const firstInput = rawInputs[0];
     if (firstInput == null) {

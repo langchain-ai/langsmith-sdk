@@ -1,6 +1,6 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
-import { wrapFunctionAndEnsureTraceable, traceable } from "../traceable.js";
+import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -800,9 +800,10 @@ async function _forward(
     client,
   };
 
-  const wrappedFn = wrapFunctionAndEnsureTraceable(fn, options) as ReturnType<
-    typeof traceable
-  >;
+  const wrappedFn = traceable(fn, {
+    ...options,
+    tracingEnabled: true,
+  }) as ReturnType<typeof traceable>;
 
   try {
     await wrappedFn(example.inputs);
