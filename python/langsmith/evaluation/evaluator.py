@@ -176,7 +176,7 @@ class DynamicRunEvaluator(RunEvaluator):
         except ValidationError as e:
             raise ValueError(
                 "Expected an EvaluationResult object, or dict with a metric"
-                f" 'key' and optional 'score'; got {result}"
+                f" 'key' and optional numeric 'score'; got {result}"
             ) from e
 
     def _coerce_evaluation_results(
