@@ -284,7 +284,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             const onEnd = config?.on_end;
             if (onEnd) {
               if (!currentRunTree) {
-                console.error(
+                console.warn(
                   "Can not call 'on_end' if currentRunTree is undefined"
                 );
               } else {
@@ -347,7 +347,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                     const onEnd = config?.on_end;
                     if (onEnd) {
                       if (!currentRunTree) {
-                        console.error(
+                        console.warn(
                           "Can not call 'on_end' if currentRunTree is undefined"
                         );
                       } else {
@@ -367,7 +367,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   const onEnd = config?.on_end;
                   if (onEnd) {
                     if (!currentRunTree) {
-                      console.error(
+                      console.warn(
                         "Can not call 'on_end' if currentRunTree is undefined"
                       );
                     } else {
@@ -388,7 +388,7 @@ export function traceable<Func extends (...args: any[]) => any>(
               const onEnd = config?.on_end;
               if (onEnd) {
                 if (!currentRunTree) {
-                  console.error(
+                  console.warn(
                     "Can not call 'on_end' if currentRunTree is undefined"
                   );
                 } else {
