@@ -51,7 +51,7 @@ yarn add langchain
 Tracing can be activated by setting the following environment variables or by manually specifying the LangChainTracer.
 
 ```typescript
-process.env["LANGCHAIN_TRACING_V2"] = "true";
+process.env["LANGSMITH_TRACING"] = "true";
 process.env["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com";
 process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>";
 // process.env["LANGCHAIN_PROJECT"] = "My Project Name"; // Optional: "default" is used if not set

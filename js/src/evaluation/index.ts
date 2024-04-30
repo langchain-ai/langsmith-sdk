@@ -5,3 +5,4 @@ export {
   GradingFunctionParams,
   GradingFunctionResult,
 } from "./string_evaluator.js";
+export { evaluate, type EvaluateOptions } from "./_runner.js";

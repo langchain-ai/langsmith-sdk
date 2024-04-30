@@ -33,8 +33,13 @@ import {
   getRuntimeEnvironment,
 } from "./utils/env.js";
 
-import { RunEvaluator } from "./evaluation/evaluator.js";
+import {
+  EvaluationResult,
+  EvaluationResults,
+  RunEvaluator,
+} from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
+import { assertUuid } from "./utils/_uuid.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -152,7 +157,6 @@ interface ListRunsParams {
   treeFilter?: string;
   /**
    * The values to include in the response.
-   *
    */
   select?: string[];
 }
@@ -174,7 +178,7 @@ interface feedback_source {
 
 interface FeedbackCreate {
   id: string;
-  run_id: string;
+  run_id: string | null;
   key: string;
   score?: ScoreType;
   value?: ValueType;
@@ -182,6 +186,7 @@ interface FeedbackCreate {
   comment?: string | null;
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
+  session_id?: string;
 }
 
 interface FeedbackUpdate {
@@ -315,12 +320,6 @@ function trimQuotes(str?: string): string | undefined {
     .trim()
     .replace(/^"(.*)"$/, "$1")
     .replace(/^'(.*)'$/, "$1");
-}
-
-function assertUuid(str: string): void {
-  if (!uuid.validate(str)) {
-    throw new Error(`Invalid UUID: ${str}`);
-  }
 }
 
 const handle429 = async (response?: Response) => {
@@ -2193,7 +2192,7 @@ export class Client {
   }
 
   public async createFeedback(
-    runId: string,
+    runId: string | null,
     key: string,
     {
       score,
@@ -2205,6 +2204,7 @@ export class Client {
       sourceRunId,
       feedbackId,
       feedbackConfig,
+      projectId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -2216,8 +2216,15 @@ export class Client {
       sourceRunId?: string;
       feedbackId?: string;
       eager?: boolean;
+      projectId?: string;
     }
   ): Promise<Feedback> {
+    if (!runId && !projectId) {
+      throw new Error("One of runId or projectId must be provided");
+    }
+    if (runId && projectId) {
+      throw new Error("Only one of runId or projectId can be provided");
+    }
     const feedback_source: feedback_source = {
       type: feedbackSourceType ?? "api",
       metadata: sourceInfo ?? {},
@@ -2245,6 +2252,7 @@ export class Client {
       comment,
       feedback_source: feedback_source,
       feedbackConfig,
+      session_id: projectId,
     };
     const url = `${this.apiUrl}/feedback`;
     const response = await this.caller.call(fetch, url, {
@@ -2429,5 +2437,50 @@ export class Client {
     )) {
       yield* tokens;
     }
+  }
+
+  _selectEvalResults(
+    results: EvaluationResult | EvaluationResults
+  ): Array<EvaluationResult> {
+    let results_: Array<EvaluationResult>;
+    if ("results" in results) {
+      results_ = results.results;
+    } else {
+      results_ = [results];
+    }
+    return results_;
+  }
+
+  public async logEvaluationFeedback(
+    evaluatorResponse: EvaluationResult | EvaluationResults,
+    run?: Run,
+    sourceInfo?: { [key: string]: any }
+  ): Promise<EvaluationResult[]> {
+    const results: Array<EvaluationResult> =
+      this._selectEvalResults(evaluatorResponse);
+    for (const res of results) {
+      let sourceInfo_ = sourceInfo || {};
+      if (res.evaluatorInfo) {
+        sourceInfo_ = { ...res.evaluatorInfo, ...sourceInfo_ };
+      }
+      let runId_: string | null = null;
+      if (res.targetRunId) {
+        runId_ = res.targetRunId;
+      } else if (run) {
+        runId_ = run.id;
+      }
+
+      await this.createFeedback(runId_, res.key, {
+        score: res.score,
+        value: res.value,
+        comment: res.comment,
+        correction: res.correction,
+        sourceInfo: sourceInfo_,
+        sourceRunId: res.sourceRunId,
+        feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
+        feedbackSourceType: "model",
+      });
+    }
+    return results;
   }
 }

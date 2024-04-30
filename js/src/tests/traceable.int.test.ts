@@ -10,6 +10,8 @@ import {
   traceable,
 } from "../traceable.js";
 import { RunTree } from "../run_trees.js";
+import { BaseRun } from "../schemas.js";
+import { expect } from "@jest/globals";
 
 async function deleteProject(langchainClient: Client, projectName: string) {
   try {
@@ -67,6 +69,10 @@ test.concurrent("Test traceable wrapper with error thrown", async () => {
   });
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper";
+  let collectedRun: BaseRun | null = null;
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
   const addValueTraceable = traceable(
     (_: string, __: number) => {
       throw new Error("I am bad");
@@ -76,6 +82,8 @@ test.concurrent("Test traceable wrapper with error thrown", async () => {
       project_name: projectName,
       client: langchainClient,
       id: runId,
+      on_end: _getRun,
+      tracingEnabled: true,
     }
   );
 
@@ -85,7 +93,8 @@ test.concurrent("Test traceable wrapper with error thrown", async () => {
   } catch (e: any) {
     expect(e.message).toEqual("I am bad");
   }
-
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.error).toEqual("Error: I am bad");
   await waitUntilRunFound(langchainClient, runId);
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
@@ -99,6 +108,10 @@ test.concurrent("Test traceable wrapper with async error thrown", async () => {
   });
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper";
+  let collectedRun: BaseRun | null = null;
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
   const addValueTraceable = traceable(
     async (_: string, __: number) => {
       throw new Error("I am bad");
@@ -108,6 +121,8 @@ test.concurrent("Test traceable wrapper with async error thrown", async () => {
       project_name: projectName,
       client: langchainClient,
       id: runId,
+      on_end: _getRun,
+      tracingEnabled: true,
     }
   );
 
@@ -118,6 +133,9 @@ test.concurrent("Test traceable wrapper with async error thrown", async () => {
     expect(e.message).toEqual("I am bad");
   }
 
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.error).toEqual("Error: I am bad");
+  expect(collectedRun!.inputs).toEqual({ args: ["testing", 9] });
   await waitUntilRunFound(langchainClient, runId);
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
@@ -133,6 +151,10 @@ test.concurrent(
     });
     const runId = uuidv4();
     const projectName = "__test_traceable_wrapper";
+    let collectedRun: BaseRun | null = null;
+    const _getRun = (r: RunTree): void => {
+      collectedRun = r;
+    };
     const addValueTraceable = traceable(
       (a: string, b: number) => {
         return a + b;
@@ -142,12 +164,16 @@ test.concurrent(
         project_name: projectName,
         client: langchainClient,
         id: runId,
+        on_end: _getRun,
+        tracingEnabled: true,
       }
     );
 
     expect(await addValueTraceable("testing", 9)).toBe("testing9");
     expect(isTraceableFunction(addValueTraceable)).toBe(true);
 
+    expect(collectedRun).not.toBeNull();
+    expect(collectedRun!.outputs).toEqual({ outputs: "testing9" });
     await waitUntilRunFound(langchainClient, runId, true);
     const storedRun = await langchainClient.readRun(runId);
     expect(storedRun.id).toEqual(runId);
@@ -196,12 +222,17 @@ test.concurrent(
     const runId3 = uuidv4();
 
     const llm = new FakeStreamingLLM({ sleep: 0 });
+    collectedRun = null;
 
     const iterableTraceable = traceable(llm.stream.bind(llm), {
       name: "iterable_traceable",
       project_name: projectName,
       client: langchainClient,
       id: runId3,
+      on_end: (r: RunTree): void => {
+        collectedRun = r;
+      },
+      tracingEnabled: true,
     });
     expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -211,6 +242,8 @@ test.concurrent(
       chunks.push(chunk);
     }
     expect(chunks.join("")).toBe("Hello there");
+    expect(collectedRun).not.toBeNull();
+    expect(collectedRun!.outputs).not.toBeNull();
     await waitUntilRunFound(langchainClient, runId3, true);
     const storedRun3 = await langchainClient.readRun(runId3);
     expect(storedRun3.id).toEqual(runId3);
@@ -287,6 +320,10 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper_aggregator";
 
+  let collectedRun: BaseRun | null = null;
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
   let tracedOutput;
   const iterableTraceable = traceable(
     openai.chat.completions.create.bind(openai.chat.completions),
@@ -301,6 +338,8 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
           .join("");
         return tracedOutput;
       },
+      on_end: _getRun,
+      tracingEnabled: true,
     }
   );
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
@@ -319,6 +358,8 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
   }
   console.log(tracedOutput);
   expect(typeof tracedOutput).toEqual("string");
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: tracedOutput });
   await waitUntilRunFound(langchainClient, runId, true);
   const storedRun3 = await langchainClient.readRun(runId);
   expect(storedRun3.id).toEqual(runId);
@@ -330,6 +371,10 @@ test.concurrent("Test async generator success", async () => {
   });
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper_aggregator";
+  let collectedRun: BaseRun | null = null;
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
 
   async function* giveMeNumbers() {
     for (let i = 0; i < 5; i++) {
@@ -345,6 +390,8 @@ test.concurrent("Test async generator success", async () => {
     aggregator: (chunks) => {
       return chunks.join(" ");
     },
+    on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -352,6 +399,8 @@ test.concurrent("Test async generator success", async () => {
   for await (const _ of iterableTraceable()) {
     // Pass
   }
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: "0 1 2 3 4" });
   await waitUntilRunFound(langchainClient, runId);
   const storedRun3 = await langchainClient.readRun(runId);
   expect(storedRun3.id).toEqual(runId);
@@ -366,6 +415,11 @@ test.concurrent("Test async generator throws error", async () => {
   });
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper_aggregator";
+  let collectedRun: BaseRun | null = null;
+
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
 
   async function* giveMeNumbers() {
     for (let i = 0; i < 5; i++) {
@@ -384,6 +438,8 @@ test.concurrent("Test async generator throws error", async () => {
     aggregator: (chunks) => {
       return chunks.join(" ");
     },
+    on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -395,6 +451,8 @@ test.concurrent("Test async generator throws error", async () => {
   } catch (err: any) {
     expect(err.message).toEqual("I am bad");
   }
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: "0 1 2" });
   await waitUntilRunFound(langchainClient, runId);
   const storedRun3 = await langchainClient.readRun(runId);
   expect(storedRun3.id).toEqual(runId);
@@ -409,6 +467,10 @@ test.concurrent("Test async generator break finishes run", async () => {
   });
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper_aggregator";
+  let collectedRun: BaseRun | null = null;
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
 
   async function* giveMeNumbers() {
     for (let i = 0; i < 5; i++) {
@@ -424,6 +486,8 @@ test.concurrent("Test async generator break finishes run", async () => {
     aggregator: (chunks) => {
       return chunks.join(" ");
     },
+    on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -431,6 +495,9 @@ test.concurrent("Test async generator break finishes run", async () => {
   for await (const _ of iterableTraceable()) {
     break;
   }
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: "0" });
+  expect(collectedRun!.id).toEqual(runId);
   await waitUntilRunFound(langchainClient, runId);
   const storedRun3 = await langchainClient.readRun(runId);
   expect(storedRun3.id).toEqual(runId);
@@ -445,6 +512,10 @@ test.concurrent("Test async generator success", async () => {
   });
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper_aggregator";
+  let collectedRun: BaseRun | null = null;
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
 
   async function giveMeGiveMeNumbers() {
     async function* giveMeNumbers() {
@@ -463,6 +534,8 @@ test.concurrent("Test async generator success", async () => {
     aggregator: (chunks) => {
       return chunks.join(" ");
     },
+    on_end: _getRun,
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -470,6 +543,9 @@ test.concurrent("Test async generator success", async () => {
   for await (const _ of await iterableTraceable()) {
     // Pass
   }
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: "0 1 2 3 4" });
+  expect(collectedRun!.id).toEqual(runId);
   await waitUntilRunFound(langchainClient, runId);
   const storedRun3 = await langchainClient.readRun(runId);
   expect(storedRun3.id).toEqual(runId);
@@ -484,6 +560,7 @@ test.concurrent("Test promise for async generator success", async () => {
   });
   const runId = uuidv4();
   const projectName = "__test_traceable_wrapper_aggregator";
+  let collectedRun: BaseRun | null = null;
 
   async function giveMeGiveMeNumbers() {
     async function* giveMeNumbers() {
@@ -505,6 +582,10 @@ test.concurrent("Test promise for async generator success", async () => {
     aggregator: (chunks) => {
       return chunks.join(" ");
     },
+    on_end: (r: RunTree): void => {
+      collectedRun = r;
+    },
+    tracingEnabled: true,
   });
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -516,6 +597,9 @@ test.concurrent("Test promise for async generator success", async () => {
   } catch (err: any) {
     expect(err.message).toEqual("I am bad");
   }
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: "0 1 2" });
+  expect(collectedRun!.id).toEqual(runId);
   await waitUntilRunFound(langchainClient, runId);
   const storedRun3 = await langchainClient.readRun(runId);
   expect(storedRun3.id).toEqual(runId);
@@ -532,6 +616,11 @@ test.concurrent(
     });
     const runId = uuidv4();
     const projectName = "__test_traceable_wrapper_aggregator";
+    let collectedRun: BaseRun | null = null;
+
+    const _getRun = (r: RunTree): void => {
+      collectedRun = r;
+    };
 
     async function giveMeGiveMeNumbers() {
       async function* giveMeNumbers() {
@@ -550,6 +639,8 @@ test.concurrent(
       aggregator: (chunks) => {
         return chunks.join(" ");
       },
+      on_end: _getRun,
+      tracingEnabled: true,
     });
     expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
@@ -557,6 +648,9 @@ test.concurrent(
     for await (const _ of await iterableTraceable()) {
       break;
     }
+    expect(collectedRun).not.toBeNull();
+    expect(collectedRun!.outputs).toEqual({ outputs: "0" });
+    expect(collectedRun!.id).toEqual(runId);
     await waitUntilRunFound(langchainClient, runId);
     const storedRun3 = await langchainClient.readRun(runId);
     expect(storedRun3.id).toEqual(runId);

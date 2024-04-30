@@ -1,4 +1,13 @@
-import { Example, Run, ScoreType, ValueType } from "../schemas.js";
+import {
+  Example,
+  FeedbackConfig,
+  Run,
+  ScoreType,
+  ValueType,
+} from "../schemas.js";
+import { v4 as uuidv4 } from "uuid";
+import { traceable, wrapFunctionAndEnsureTraceable } from "../traceable.js";
+import { RunTreeConfig } from "../run_trees.js";
 
 /**
  * Represents a categorical class.
@@ -12,35 +21,6 @@ export type Category = {
    * The label of the category.
    */
   label: string;
-};
-
-/**
- * Configuration for feedback.
- */
-export type FeedbackConfig = {
-  /**
-   * The type of feedback.
-   * - "continuous": Feedback with a continuous numeric.
-   * - "categorical": Feedback with a categorical value (classes)
-   * - "freeform": Feedback with a freeform text value (notes).
-   */
-  type: "continuous" | "categorical" | "freeform";
-
-  /**
-   * The minimum value for continuous feedback.
-   */
-  min?: number;
-
-  /**
-   * The maximum value for continuous feedback.
-   */
-  max?: number;
-
-  /**
-   * The categories for categorical feedback.
-   * Each category can be a string or an object with additional properties.
-   */
-  categories?: (Category | Record<string, unknown>)[];
 };
 
 /**
@@ -91,6 +71,139 @@ export type EvaluationResult = {
   feedbackConfig?: FeedbackConfig;
 };
 
+/**
+ * Batch evaluation results, if your evaluator wishes
+ * to return multiple scores.
+ */
+export type EvaluationResults = {
+  /**
+   * The evaluation results.
+   */
+  results: Array<EvaluationResult>;
+};
+
 export interface RunEvaluator {
-  evaluateRun(run: Run, example?: Example): Promise<EvaluationResult>;
+  evaluateRun(
+    run: Run,
+    example?: Example,
+    options?: Partial<RunTreeConfig>
+  ): Promise<EvaluationResult>;
+}
+
+export type RunEvaluatorLike =
+  | ((
+      run: Run,
+      example?: Example
+    ) => Promise<EvaluationResult | EvaluationResults>)
+  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults);
+
+/**
+ * Wraps an evaluator function + implements the RunEvaluator interface.
+ */
+export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
+  implements RunEvaluator
+{
+  func: Func;
+
+  constructor(evaluator: Func) {
+    const wrappedFunc = (input: Record<string, any>) => {
+      const runAndExample = input.langSmithRunAndExample;
+      return evaluator(...Object.values(runAndExample));
+    };
+    this.func = wrappedFunc as Func;
+  }
+
+  private coerceEvaluationResults(
+    results: Record<string, any> | EvaluationResults,
+    sourceRunId: string
+  ): EvaluationResult {
+    if ("results" in results) {
+      throw new Error("EvaluationResults not supported yet.");
+    }
+
+    return this.coerceEvaluationResult(
+      results as Record<string, any>,
+      sourceRunId,
+      true
+    );
+  }
+
+  private coerceEvaluationResult(
+    result: EvaluationResult | Record<string, any>,
+    sourceRunId: string,
+    allowNoKey = false
+  ): EvaluationResult {
+    if ("key" in result) {
+      if (!result.sourceRunId) {
+        result.sourceRunId = sourceRunId;
+      }
+      return result as EvaluationResult;
+    }
+
+    if (!("key" in result)) {
+      if (allowNoKey) {
+        result["key"] = this.func.name;
+      }
+    }
+    return {
+      sourceRunId,
+      ...result,
+    } as EvaluationResult;
+  }
+
+  /**
+   * Evaluates a run with an optional example and returns the evaluation result.
+   * @param run The run to evaluate.
+   * @param example The optional example to use for evaluation.
+   * @returns A promise that extracts to the evaluation result.
+   */
+  async evaluateRun(
+    run: Run,
+    example?: Example,
+    options?: Partial<RunTreeConfig>
+  ): Promise<EvaluationResult> {
+    const sourceRunId = uuidv4();
+    const metadata: Record<string, any> = {
+      targetRunId: run.id,
+    };
+    if ("session_id" in run) {
+      metadata["experiment"] = run.session_id;
+    }
+    const wrappedTraceableFunc: ReturnType<typeof traceable> =
+      wrapFunctionAndEnsureTraceable<Func>(
+        this.func,
+        options || {},
+        "evaluator"
+      );
+    // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
+    // inputs. This key is extracted in the wrapped function, with `run` and
+    // `example` passed to evaluator function as arguments.
+    const langSmithRunAndExample = {
+      run,
+      example,
+    };
+    const result = (await wrappedTraceableFunc(
+      { langSmithRunAndExample },
+      {
+        metadata,
+      }
+    )) as EvaluationResults | Record<string, any>;
+
+    // Check the one required property of EvaluationResult since 'instanceof' is not possible
+    if ("key" in result) {
+      if (!result.sourceRunId) {
+        result.sourceRunId = sourceRunId;
+      }
+      return result as EvaluationResult;
+    }
+    if (typeof result !== "object") {
+      throw new Error("Evaluator function must return an object.");
+    }
+
+    return this.coerceEvaluationResults(result, sourceRunId);
+  }
+}
+
+export function runEvaluator(func: RunEvaluatorLike): RunEvaluator {
+  return new DynamicRunEvaluator(func);
 }
