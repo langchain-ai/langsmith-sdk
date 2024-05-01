@@ -1,0 +1,4 @@
+public/
+.next/
+.turbo
+node_modules/

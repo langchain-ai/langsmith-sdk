@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import { OpenAI } from "openai";
+import { OpenAI } from "openai/index.mjs";
 import { wrapSDK } from "../wrappers/index.js";
 import { Client } from "../client.js";
 

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { v4 as uuidv4 } from "uuid";
-import { OpenAI } from "openai";
+import { OpenAI } from "openai/index.mjs";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { FakeStreamingLLM } from "@langchain/core/utils/testing";
 import { Client } from "../client.js";

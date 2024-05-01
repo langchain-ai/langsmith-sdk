@@ -38,7 +38,7 @@ client.chat.completions.create(
 )
 ```
 
-To get started with the JavaScript / TypeScript SDK, [install the package](https://www.npmjs.com/package/langsmith), then follow the instructions in the [JS README](js/README.md).
+To get started with the JavaScript / TypeScript SDK, [install the package](https://www.npmjs.com/package/langsmith), then follow the instructions in the [JS README](js/langsmith/README.md).
 
 ```bash
 yarn add langsmith
