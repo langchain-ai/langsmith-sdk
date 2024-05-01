@@ -26,12 +26,12 @@ runs:
     - name: Install Yarn dependencies
       run: yarn install
       shell: bash
-      working-directory: js
+      working-directory: js/langsmith
 
     - name: Run JS integration tests
       run: yarn test:integration
       shell: bash
-      working-directory: js
+      working-directory: js/langsmith
       env:
         LANGCHAIN_TRACING_V2: "true"
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
