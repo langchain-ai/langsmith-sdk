@@ -11,7 +11,7 @@
   "plugin": [
     "./typedoc_plugins/hide_underscore_lc.js"
   ],
-  "tsconfig": "../../js/tsconfig.json",
+  "tsconfig": "../langsmith/tsconfig.json",
   "readme": "none",
   "excludePrivate": true,
   "excludeInternal": true,
