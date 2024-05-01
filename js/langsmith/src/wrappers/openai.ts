@@ -1,5 +1,5 @@
-import { OpenAI } from "openai";
-import type { APIPromise } from "openai/core";
+import { OpenAI } from "openai/index.mjs";
+import type { APIPromise } from "openai/core.mjs";
 import type { Client, RunTreeConfig } from "../index.js";
 import { type RunnableConfigLike } from "../run_trees.js";
 import { traceable, type RunTreeLike } from "../traceable.js";
