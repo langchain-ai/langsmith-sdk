@@ -9,7 +9,7 @@ const {
 const fs = require("fs");
 const path = require("path");
 
-const PATH_TO_LANGCHAIN_PKG_JSON = "../../js/package.json";
+const PATH_TO_LANGSMITH_PKG_JSON = "../langsmith/package.json";
 const BASE_OUTPUT_DIR = "./public";
 const SCRIPT_HTML = `<script>
   document.addEventListener('keydown', (e) => {
@@ -40,12 +40,12 @@ function load(application) {
   /**
    * @type {string}
    */
-  let langchainVersion;
+  let langsmithVersion;
   try {
     const langChainPackageJson = fs
-      .readFileSync(PATH_TO_LANGCHAIN_PKG_JSON)
+      .readFileSync(PATH_TO_LANGSMITH_PKG_JSON)
       .toString();
-    langchainVersion = JSON.parse(langChainPackageJson).version;
+    langsmithVersion = JSON.parse(langChainPackageJson).version;
   } catch (e) {
     throw new Error(`Error reading LangChain version for typedoc: ${e}`);
   }
@@ -83,8 +83,8 @@ function load(application) {
    */
   function onBeginRenderEvent(context) {
     const { project } = context;
-    if (project && langchainVersion) {
-      project.packageVersion = langchainVersion;
+    if (project && langsmithVersion) {
+      project.packageVersion = langsmithVersion;
     }
   }
 
