@@ -1,0 +1,62 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env"],
+  "pipeline": {
+    "langsmith#build": {
+      "dependsOn": [],
+      "outputs": ["dist/**", "dist-cjs/**", "*.js", "*.cjs", "*.d.ts"],
+      "inputs": ["src/**", "scripts/**", "package.json", "tsconfig.json"]
+    },
+    "api-refs-js#build": {
+      "dependsOn": ["langsmith#build"],
+      "outputs": ["public/**", "dist-cjs/**", "*.js", "*.cjs", "*.d.ts"],
+      "inputs": ["src/**", "scripts/**", "package.json", "tsconfig.json"]
+    },
+    "build": {
+      "dependsOn": [
+        "langsmith#build",
+        "^build"
+      ],
+      "outputs": ["dist/**", "dist-cjs/**", "*.js", "*.cjs", "*.d.ts"],
+      "inputs": ["src/**", "scripts/**", "package.json", "tsconfig.json"]
+    },
+    "lint": {
+      "outputs": []
+    },
+    "lint:fix": {
+      "outputs": [
+        "langsmith/src/**/*.ts",
+        "api_refs/**/*.ts"
+      ],
+      "inputs": [
+        "langsmith/src/**/*.ts",
+        "api_refs/**/*.ts"
+      ]
+    },
+    "format": {
+      "outputs": []
+    },
+    "format:check": {
+      "outputs": []
+    },
+    "test": {
+      "outputs": [],
+      "dependsOn": ["^build"]
+    },
+    "test:ci": {
+      "outputs": [],
+      "dependsOn": ["test"]
+    },
+    "test:integration": {
+      "outputs": [],
+      "dependsOn": ["^build"]
+    },
+    "precommit": {},
+    "start": {
+      "cache": false
+    },
+    "build:vercel": {
+      "dependsOn": ["^build:vercel"]
+    }
+  }
+}

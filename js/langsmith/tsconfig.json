@@ -7,7 +7,7 @@
       "ES2022.Object",
       "DOM"
     ],
-    "module": "ES2020",
+    "module": "NodeNext",
     "moduleResolution": "nodenext",
     "esModuleInterop": true,
     "declaration": true,
@@ -18,15 +18,27 @@
     "useDefineForClassFields": true,
     "strictPropertyInitialization": false,
     "allowJs": true,
-    "strict": true
+    "strict": true,
+    "outDir": "dist"
   },
   "include": [
-    "langsmith/src/**/*"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
-    "**/dist/",
-    "docs",
-    "langsmith/dist/"
-  ]
+    "dist",
+    "coverage"
+  ],
+  "includeVersion": true,
+  "typedocOptions": {
+    "entryPoints": [
+      "src/client.ts",
+      "src/run_trees.ts",
+      "src/traceable.ts",
+      "src/evaluation/index.ts",
+      "src/schemas.ts",
+      "src/wrappers/index.ts",
+      "src/wrappers/openai.ts"
+    ]
+  }
 }
