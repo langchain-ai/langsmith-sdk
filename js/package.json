@@ -52,6 +52,7 @@
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests --testPathIgnorePatterns='\\.int\\.test.[tj]s' --testTimeout 30000",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=\\.int\\.test.ts --testTimeout 100000",
     "test:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --config jest.config.cjs --testTimeout 100000",
+    "watch:single": "NODE_OPTIONS=--experimental-vm-modules yarn run jest --watch --config jest.config.cjs --testTimeout 100000",
     "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint --cache --ext .ts,.js src/",
     "lint:fix": "yarn lint --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
