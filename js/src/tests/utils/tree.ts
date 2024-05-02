@@ -50,5 +50,8 @@ export function getAssumedTreeFromCalls(calls: unknown[][]) {
   return {
     nodes: idMap.map(getId),
     edges: edges.map(([source, target]) => [getId(source), getId(target)]),
+    data: Object.fromEntries(
+      Object.entries(nodeMap).map(([id, value]) => [getId(id), value] as const)
+    ),
   };
 }
