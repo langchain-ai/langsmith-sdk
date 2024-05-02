@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
 import orjson
-import pytest
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
@@ -24,7 +23,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 
 try:
-    import pytest
+    import pytest  # type: ignore
 
     SkipException = pytest.skip.Exception
 except ImportError:

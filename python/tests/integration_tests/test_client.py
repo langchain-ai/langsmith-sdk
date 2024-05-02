@@ -106,8 +106,66 @@ def test_datasets(langchain_client: Client) -> None:
         langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
     assert len(examples2) == 1
-
     langchain_client.delete_dataset(dataset_id=dataset_id)
+
+
+def test_list_examples(langchain_client: Client) -> None:
+    """Test list_examples."""
+    examples = [
+        ("Shut up, idiot", "Toxic"),
+        ("You're a wonderful person", "Not toxic"),
+        ("This is the worst thing ever", "Toxic"),
+        ("I had a great day today", "Not toxic"),
+        ("Nobody likes you", "Toxic"),
+        ("This is unacceptable. I want to speak to the manager.", "Not toxic"),
+    ]
+
+    dataset_name = "__test_list_examples" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+    inputs, outputs = zip(
+        *[({"text": text}, {"label": label}) for text, label in examples]
+    )
+    langchain_client.create_examples(
+        inputs=inputs, outputs=outputs, dataset_id=dataset.id
+    )
+    example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
+    assert len(example_list) == len(examples)
+
+    langchain_client.create_example(
+        inputs={"text": "What's up!"},
+        outputs={"label": "Not toxic"},
+        metadata={"foo": "bar", "baz": "qux"},
+        dataset_name=dataset_name,
+    )
+
+    example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
+    assert len(example_list) == len(examples) + 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, metadata={"foo": "bar"})
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, metadata={"baz": "qux"})
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, metadata={"foo": "bar", "baz": "qux"}
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, metadata={"foo": "bar", "baz": "quux"}
+        )
+    )
+    assert len(example_list) == 0
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
 @pytest.mark.skip(reason="This test is flaky")
