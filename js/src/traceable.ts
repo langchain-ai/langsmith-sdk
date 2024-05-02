@@ -21,6 +21,8 @@ function isPromiseMethod(
 
 const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
 
+export const ROOT = Symbol("langsmith:traceable:root");
+
 export type RunTreeLike = RunTree;
 
 type SmartPromise<T> = T extends AsyncGenerator
@@ -34,13 +36,19 @@ type WrapArgReturnPair<Pair> = Pair extends [
   infer Args extends any[],
   infer Return
 ]
-  ? {
-      (...args: Args): SmartPromise<Return>;
-      (...args: [runTree: RunTreeLike, ...rest: Args]): SmartPromise<Return>;
-      (
-        ...args: [config: RunnableConfigLike, ...rest: Args]
-      ): SmartPromise<Return>;
-    }
+  ? Args extends [RunTreeLike, ...infer RestArgs]
+    ? {
+        (
+          runTree: RunTreeLike | typeof ROOT,
+          ...args: RestArgs
+        ): SmartPromise<Return>;
+        (config: RunnableConfigLike, ...args: RestArgs): SmartPromise<Return>;
+      }
+    : {
+        (...args: Args): SmartPromise<Return>;
+        (runTree: RunTreeLike, ...rest: Args): SmartPromise<Return>;
+        (config: RunnableConfigLike, ...args: Args): SmartPromise<Return>;
+      }
   : never;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,14 +119,40 @@ const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
   );
 };
 
+const handleRunInputs = (rawInputs: unknown[]): KVMap => {
+  const firstInput = rawInputs[0];
+  if (firstInput == null) {
+    return {};
+  }
+
+  if (rawInputs.length > 1) {
+    return { args: rawInputs };
+  }
+  if (isKVMap(firstInput)) {
+    return firstInput;
+  }
+
+  return { input: firstInput };
+};
+
+const handleRunOutputs = (rawOutputs: unknown): KVMap => {
+  if (isKVMap(rawOutputs)) {
+    return rawOutputs;
+  }
+  return { outputs: rawOutputs };
+};
+
 const getTracingRunTree = (
   runTree: RunTree,
+  inputs: unknown[],
   tracingEnabled?: boolean
 ): RunTree | undefined => {
   const tracingEnabled_ = tracingIsEnabled(tracingEnabled);
   if (!tracingEnabled_) {
     return undefined;
   }
+
+  runTree.inputs = handleRunInputs(inputs);
   return runTree;
 };
 
@@ -154,9 +188,6 @@ export function traceable<Func extends (...args: any[]) => any>(
   const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ) => {
-    let currentRunTree: RunTree | undefined;
-    let rawInputs: Inputs;
-
     let ensuredConfig: RunTreeConfig;
     try {
       let runtimeConfig: Partial<RunTreeConfig> | undefined;
@@ -208,37 +239,66 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
     }
 
-    const previousRunTree = asyncLocalStorage.getStore();
-    if (isRunTree(args[0])) {
-      currentRunTree = args[0];
-      rawInputs = args.slice(1) as Inputs;
-    } else if (isRunnableConfigLike(args[0])) {
-      currentRunTree = RunTree.fromRunnableConfig(args[0], ensuredConfig);
-      rawInputs = args.slice(1) as Inputs;
-    } else if (previousRunTree !== undefined) {
-      currentRunTree = previousRunTree.createChild(ensuredConfig);
-      rawInputs = args as Inputs;
-    } else {
-      currentRunTree = new RunTree(ensuredConfig);
-      rawInputs = args as Inputs;
-    }
+    const [currentRunTree, rawInputs] = ((): [RunTree | undefined, Inputs] => {
+      const [firstArg, ...restArgs] = args;
 
-    currentRunTree = getTracingRunTree(currentRunTree, tracingEnabled);
-    let inputs: KVMap;
-    const firstInput = rawInputs[0];
-    if (firstInput == null) {
-      inputs = {};
-    } else if (rawInputs.length > 1) {
-      inputs = { args: rawInputs };
-    } else if (isKVMap(firstInput)) {
-      inputs = firstInput;
-    } else {
-      inputs = { input: firstInput };
-    }
+      // used for handoff between LangChain.JS and traceable functions
+      if (isRunnableConfigLike(firstArg)) {
+        return [
+          getTracingRunTree(
+            RunTree.fromRunnableConfig(firstArg, ensuredConfig),
+            restArgs,
+            tracingEnabled
+          ),
+          restArgs as Inputs,
+        ];
+      }
 
-    if (currentRunTree) {
-      currentRunTree.inputs = inputs;
-    }
+      // legacy CallbackManagerRunTree used in runOnDataset
+      // override ALS and do not pass-through the run tree
+      if (
+        isRunTree(firstArg) &&
+        "callbackManager" in firstArg &&
+        firstArg.callbackManager != null
+      ) {
+        return [firstArg, restArgs as Inputs];
+      }
+
+      // when ALS is unreliable, users can manually
+      // pass in the run tree
+      if (firstArg === ROOT || isRunTree(firstArg)) {
+        const currentRunTree = getTracingRunTree(
+          firstArg === ROOT
+            ? new RunTree(ensuredConfig)
+            : firstArg.createChild(ensuredConfig),
+          restArgs,
+          tracingEnabled
+        );
+
+        return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
+      }
+
+      // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
+      // to allow storing context
+      const prevRunFromStore = asyncLocalStorage.getStore();
+      if (prevRunFromStore) {
+        return [
+          getTracingRunTree(
+            prevRunFromStore.createChild(ensuredConfig),
+            args,
+            tracingEnabled
+          ),
+          args as Inputs,
+        ];
+      }
+
+      const currentRunTree = getTracingRunTree(
+        new RunTree(ensuredConfig),
+        args,
+        tracingEnabled
+      );
+      return [currentRunTree, args as Inputs];
+    })();
 
     return asyncLocalStorage.run(currentRunTree, () => {
       const postRunPromise = currentRunTree?.postRun();
@@ -367,9 +427,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                 return resolve(wrapOutputForTracing() as Output);
               } else {
                 try {
-                  await currentRunTree?.end(
-                    isKVMap(rawOutput) ? rawOutput : { outputs: rawOutput }
-                  );
+                  await currentRunTree?.end(handleRunOutputs(rawOutput));
                   const onEnd = config?.on_end;
                   if (onEnd) {
                     if (!currentRunTree) {
