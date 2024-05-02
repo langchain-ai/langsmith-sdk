@@ -20,7 +20,7 @@ test("basic traceable implementation", async () => {
     // pass
   }
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toEqual({
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: ["llm:0"],
     edges: [],
   });
@@ -61,7 +61,7 @@ test("nested traceable implementation", async () => {
     answer: "dlrow olleHdlrow olleH",
   });
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toEqual({
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: ["chain:0", "llm:1", "str:2"],
     edges: [
       ["chain:0", "llm:1"],
@@ -94,7 +94,7 @@ test("passing run tree manually", async () => {
 
   await parent(ROOT);
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toEqual({
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: [
       "parent:0",
       "child:1",
@@ -114,3 +114,88 @@ test("passing run tree manually", async () => {
     ],
   });
 });
+
+test("async generators", async () => {
+  const { client, callSpy } = mockClient();
+
+  const iterableTraceable = traceable(
+    async function* giveMeNumbers() {
+      for (let i = 0; i < 5; i++) {
+        yield i;
+      }
+    },
+    { client, tracingEnabled: true }
+  );
+
+  const numbers: number[] = [];
+  for await (const num of iterableTraceable()) {
+    numbers.push(num);
+  }
+
+  expect(numbers).toEqual([0, 1, 2, 3, 4]);
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["giveMeNumbers:0"],
+    edges: [],
+  });
+});
+
+test("async generators error", async () => {
+  const { client, callSpy } = mockClient();
+  const throwTraceable = traceable(
+    async function* () {
+      for (let i = 0; i < 5; i++) {
+        yield i;
+        if (i == 2) throw new Error("I am bad");
+      }
+    },
+    { name: "throwTraceable", client, tracingEnabled: true }
+  );
+
+  await expect(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _ of throwTraceable()) {
+      // pass
+    }
+  }).rejects.toThrow("I am bad");
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["throwTraceable:0"],
+    edges: [],
+    data: {
+      "throwTraceable:0": {
+        error: "Error: I am bad",
+        outputs: { outputs: [0, 1, 2] },
+      },
+    },
+  });
+});
+
+test("async generator break", async () => {
+  const { client, callSpy } = mockClient();
+  const iterableTraceable = traceable(
+    async function* giveMeNumbers() {
+      for (let i = 0; i < 5; i++) {
+        yield i;
+      }
+    },
+    { client, tracingEnabled: true }
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of iterableTraceable()) {
+    break;
+  }
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["giveMeNumbers:0"],
+    edges: [],
+    data: {
+      "giveMeNumbers:0": {
+        outputs: { outputs: [0] },
+        error: "Cancelled",
+      },
+    },
+  });
+});
+
+
