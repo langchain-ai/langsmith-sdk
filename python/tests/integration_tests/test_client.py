@@ -165,6 +165,8 @@ def test_list_examples(langchain_client: Client) -> None:
     )
     assert len(example_list) == 0
 
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
 
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
