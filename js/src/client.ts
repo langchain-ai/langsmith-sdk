@@ -2063,12 +2063,14 @@ export class Client {
     exampleIds,
     asOf,
     inlineS3Urls,
+    metadata,
   }: {
     datasetId?: string;
     datasetName?: string;
     exampleIds?: string[];
     asOf?: string | Date;
     inlineS3Urls?: boolean;
+    metadata?: KVMap;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2096,6 +2098,10 @@ export class Client {
       for (const id_ of exampleIds) {
         params.append("id", id_);
       }
+    }
+    if (metadata !== undefined) {
+      const serializedMetadata = JSON.stringify(metadata);
+      params.append("metadata", serializedMetadata);
     }
     for await (const examples of this._getPaginated<Example>(
       "/examples",

@@ -516,6 +516,44 @@ test.concurrent(
     expect(example3?.outputs?.output).toEqual("hi there 3");
     expect(example3?.metadata?.key).toEqual("value 3");
 
+    await client.createExample(
+      { input: "hello world" },
+      { output: "hi there" },
+      {
+        datasetId: dataset.id,
+        metadata: { foo: "bar", baz: "qux" },
+      }
+    );
+    let examplesList3 = await toArray(
+      client.listExamples({ datasetId: dataset.id, metadata: { foo: "bar" } })
+    );
+    expect(examplesList3.length).toEqual(1);
+    expect(examplesList3[0].metadata?.foo).toEqual("bar");
+    expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
+    examplesList3 = await toArray(
+      client.listExamples({ datasetId: dataset.id, metadata: { foo: "qux" } })
+    );
+    expect(examplesList3.length).toEqual(0);
+
+    examplesList3 = await toArray(
+      client.listExamples({ datasetId: dataset.id, metadata: { baz: "qux" } })
+    );
+    expect(examplesList3.length).toEqual(1);
+
+    expect(examplesList3[0].metadata?.foo).toEqual("bar");
+    expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        metadata: { foo: "bar", baz: "qux" },
+      })
+    );
+    expect(examplesList3.length).toEqual(1);
+    expect(examplesList3[0].metadata?.foo).toEqual("bar");
+    expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
     await client.deleteDataset({ datasetId: dataset.id });
   },
   180_000
