@@ -42,6 +42,7 @@ export interface RunTreeConfig {
   outputs?: KVMap;
   reference_example_id?: string;
   client?: Client;
+  tracingEnabled?: boolean;
   on_end?: (runTree: RunTree) => void;
 }
 
@@ -100,6 +101,8 @@ export class RunTree implements BaseRun {
   events?: KVMap[] | undefined;
   trace_id: string;
   dotted_order: string;
+
+  tracingEnabled?: boolean;
 
   constructor(originalConfig: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
@@ -199,6 +202,7 @@ export class RunTree implements BaseRun {
       parent_run: this,
       project_name: this.project_name,
       client: this.client,
+      tracingEnabled: this.tracingEnabled,
     });
 
     this.child_runs.push(child);

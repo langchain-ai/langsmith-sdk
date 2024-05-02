@@ -1,12 +1,10 @@
-import type { ROOT as TRoot } from "../traceable.js";
 import type { RunTree } from "../run_trees.js";
+import { ROOT, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
-  const { traceable } = await import("../traceable.js");
-
   const llm = traceable(
     async function* llm(input: string) {
       const response = input.repeat(2).split("");
@@ -14,7 +12,7 @@ test("basic traceable implementation", async () => {
         yield char;
       }
     },
-    { client }
+    { client, tracingEnabled: true }
   );
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -30,7 +28,6 @@ test("basic traceable implementation", async () => {
 
 test("nested traceable implementation", async () => {
   const { client, callSpy } = mockClient();
-  const { traceable } = await import("../traceable.js");
 
   const llm = traceable(async function llm(input: string) {
     return input.repeat(2);
@@ -54,7 +51,7 @@ test("nested traceable implementation", async () => {
 
       return { question, answer };
     },
-    { client }
+    { client, tracingEnabled: true }
   );
 
   const result = await chain("Hello world");
@@ -75,8 +72,6 @@ test("nested traceable implementation", async () => {
 
 test("passing run tree manually", async () => {
   const { client, callSpy } = mockClient();
-  const { traceable, ROOT } = await import("../traceable.js");
-
   const child = traceable(
     async (runTree: RunTree, depth = 0): Promise<number> => {
       if (depth < 2) {
@@ -94,10 +89,10 @@ test("passing run tree manually", async () => {
 
       return first + second;
     },
-    { client }
+    { client, tracingEnabled: true }
   );
 
-  await parent(ROOT as typeof TRoot);
+  await parent(ROOT);
 
   expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toEqual({
     nodes: [

@@ -144,10 +144,9 @@ const handleRunOutputs = (rawOutputs: unknown): KVMap => {
 
 const getTracingRunTree = (
   runTree: RunTree,
-  inputs: unknown[],
-  tracingEnabled?: boolean
+  inputs: unknown[]
 ): RunTree | undefined => {
-  const tracingEnabled_ = tracingIsEnabled(tracingEnabled);
+  const tracingEnabled_ = tracingIsEnabled(runTree.tracingEnabled);
   if (!tracingEnabled_) {
     return undefined;
   }
@@ -177,13 +176,11 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
-    tracingEnabled?: boolean;
   }
 ) {
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
-  const { aggregator, argsConfigPath, tracingEnabled, ...runTreeConfig } =
-    config ?? {};
+  const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
 
   const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -247,8 +244,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         return [
           getTracingRunTree(
             RunTree.fromRunnableConfig(firstArg, ensuredConfig),
-            restArgs,
-            tracingEnabled
+            restArgs
           ),
           restArgs as Inputs,
         ];
@@ -271,8 +267,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           firstArg === ROOT
             ? new RunTree(ensuredConfig)
             : firstArg.createChild(ensuredConfig),
-          restArgs,
-          tracingEnabled
+          restArgs
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -283,19 +278,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       const prevRunFromStore = asyncLocalStorage.getStore();
       if (prevRunFromStore) {
         return [
-          getTracingRunTree(
-            prevRunFromStore.createChild(ensuredConfig),
-            args,
-            tracingEnabled
-          ),
+          getTracingRunTree(prevRunFromStore.createChild(ensuredConfig), args),
           args as Inputs,
         ];
       }
 
       const currentRunTree = getTracingRunTree(
         new RunTree(ensuredConfig),
-        args,
-        tracingEnabled
+        args
       );
       return [currentRunTree, args as Inputs];
     })();
