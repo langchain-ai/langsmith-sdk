@@ -3439,6 +3439,8 @@ class Client:
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         stop_after_attempt: int = 10,
         project_id: Optional[ID_TYPE] = None,
+        comparative_experiment_id: Optional[ID_TYPE] = None,
+        feedback_group_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -3478,6 +3480,12 @@ class Client:
         project_id : str or UUID
             The ID of the project_id to provide feedback on. One - and only one - of
             this and run_id must be provided.
+        comparative_experiment_id : str or UUID
+            If this feedback was logged as a part of a comparative experiment, this
+            associates the feedback with that experiment.
+        feedback_group_id : str or UUID
+            When logging preferences, ranking runs, or other comparative feedback,
+            this is used to group feedback together.
         """
         if run_id is None and project_id is None:
             raise ValueError("One of run_id and project_id must be provided")
@@ -3531,6 +3539,8 @@ class Client:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=project_id,
+            comparative_experiment_id=comparative_experiment_id,
+            feedback_group_id=feedback_group_id,
         )
         self.request_with_retries(
             "POST",

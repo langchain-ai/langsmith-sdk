@@ -356,7 +356,7 @@ class _Expect:
             key: The key to use for logging the score. Defaults to "score".
 
         Examples:
-            >>> expect.score(0.8) # doctest: +ELLIPSIS
+            >>> expect.score(0.8)  # doctest: +ELLIPSIS
             <langsmith._expect._Matcher object at ...>
 
             >>> expect.score(0.8, key="similarity").to_be_greater_than(0.7)
