@@ -135,7 +135,7 @@ test.concurrent("Test traceable wrapper with async error thrown", async () => {
 
   expect(collectedRun).not.toBeNull();
   expect(collectedRun!.error).toEqual("Error: I am bad");
-  expect(collectedRun!.inputs).toEqual({ args: ["testing", 9] });
+  expect(collectedRun!.inputs).toEqual({ 0: "testing", 1: 9 });
   await waitUntilRunFound(langchainClient, runId);
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);

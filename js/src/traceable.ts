@@ -143,13 +143,19 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+    argsInputPath?: [number];
     tracingEnabled?: boolean;
   }
 ) {
   type Inputs = Parameters<Func>;
   type Output = ReturnType<Func>;
-  const { aggregator, argsConfigPath, tracingEnabled, ...runTreeConfig } =
-    config ?? {};
+  const {
+    aggregator,
+    argsConfigPath,
+    argsInputPath,
+    tracingEnabled,
+    ...runTreeConfig
+  } = config ?? {};
 
   const traceableFunc = (
     ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -228,8 +234,18 @@ export function traceable<Func extends (...args: any[]) => any>(
     const firstInput = rawInputs[0];
     if (firstInput == null) {
       inputs = {};
+    } else if (argsInputPath) {
+      const [idx] = argsInputPath;
+      if (idx <= rawInputs.length && isKVMap(rawInputs[idx])) {
+        inputs = rawInputs[idx];
+      } else {
+        inputs = { input: rawInputs[idx] };
+      }
     } else if (rawInputs.length > 1) {
-      inputs = { args: rawInputs };
+      inputs = {};
+      for (let i = 0; i < rawInputs.length; i++) {
+        inputs[i] = rawInputs[i];
+      }
     } else if (isKVMap(firstInput)) {
       inputs = firstInput;
     } else {
@@ -469,6 +485,7 @@ function isKVMap(x: unknown): x is Record<string, unknown> {
 }
 
 export function wrapFunctionAndEnsureTraceable<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Func extends (...args: any[]) => any
 >(target: Func, options: Partial<RunTreeConfig>, name = "target") {
   if (typeof target === "function") {
