@@ -66,3 +66,26 @@ test("nested", () => {
   );
   expect(child3.dotted_order).toBe(`${date}1Z${id}0.${date}5Z${id}5`);
 });
+
+test("serializing run tree", () => {
+  const parent = new RunTree({ name: "parent_1" });
+  parent.createChild({ name: "child_1" }).createChild({ name: "child_2" });
+  parent.createChild({ name: "child_3" });
+
+  expect(JSON.parse(JSON.stringify(parent))).toMatchObject({
+    name: "parent_1",
+    run_type: "chain",
+    child_runs: [
+      {
+        name: "child_1",
+        run_type: "chain",
+        child_runs: [{ name: "child_2", run_type: "chain", child_runs: [] }],
+      },
+      {
+        name: "child_3",
+        run_type: "chain",
+        child_runs: [],
+      },
+    ],
+  });
+});
