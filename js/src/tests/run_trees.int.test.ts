@@ -46,7 +46,11 @@ test.concurrent(
     expect(child_llm_run.dotted_order).toEqual(
       parent_run.dotted_order +
         "." +
-        convertToDottedOrderFormat(child_llm_run.start_time, child_llm_run.id)
+        convertToDottedOrderFormat(
+          child_llm_run.start_time,
+          child_llm_run.id,
+          2
+        )
     );
     expect(child_llm_run.trace_id).toEqual(parent_run.trace_id);
     await child_llm_run.postRun();
