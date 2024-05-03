@@ -21,9 +21,9 @@ export function convertToDottedOrderFormat(
   runId: string,
   executionOrder: number
 ) {
-  // use microseconds to break ties
+  // Date only has millisecond precision, so we use the microseconds to break
+  // possible ties, avoiding incorrect run order
   const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
-
   return (
     stripNonAlphanumeric(
       `${new Date(epoch).toISOString().slice(0, -1)}${paddedOrder}Z`
