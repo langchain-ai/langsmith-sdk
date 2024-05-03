@@ -19,7 +19,7 @@ function stripNonAlphanumeric(input: string) {
 export function convertToDottedOrderFormat(
   epoch: number,
   runId: string,
-  executionOrder: number
+  executionOrder = 1
 ) {
   // Date only has millisecond precision, so we use the microseconds to break
   // possible ties, avoiding incorrect run order
