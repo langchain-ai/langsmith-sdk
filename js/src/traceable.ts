@@ -179,7 +179,6 @@ export function traceable<Func extends (...args: any[]) => any>(
   }
 ) {
   type Inputs = Parameters<Func>;
-  type Output = ReturnType<Func>;
   const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
 
   const traceableFunc = (
@@ -292,8 +291,66 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     return asyncLocalStorage.run(currentRunTree, () => {
       const postRunPromise = currentRunTree?.postRun();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let returnValue: any;
+
+      async function handleChunks(chunks: unknown[]) {
+        if (aggregator !== undefined) {
+          try {
+            return await aggregator(chunks);
+          } catch (e) {
+            console.error(`[ERROR]: LangSmith aggregation failed: `, e);
+          }
+        }
+
+        return chunks;
+      }
+
+      async function* wrapAsyncGeneratorForTracing(
+        iterable: AsyncIterable<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        let finished = false;
+        const chunks: unknown[] = [];
+        try {
+          const iterator = iterable[Symbol.asyncIterator]();
+          while (true) {
+            const { value, done } = await (snapshot
+              ? snapshot(() => iterator.next())
+              : iterator.next());
+            if (done) {
+              finished = true;
+              break;
+            }
+            chunks.push(value);
+            yield value;
+          }
+        } catch (e) {
+          await currentRunTree?.end(undefined, String(e));
+          throw e;
+        } finally {
+          if (!finished) await currentRunTree?.end(undefined, "Cancelled");
+          await currentRunTree?.end(
+            handleRunOutputs(await handleChunks(chunks))
+          );
+          await handleEnd();
+        }
+      }
+
+      async function handleEnd() {
+        const onEnd = config?.on_end;
+        if (onEnd) {
+          if (!currentRunTree) {
+            console.warn(
+              "Can not call 'on_end' if currentRunTree is undefined"
+            );
+          } else {
+            onEnd(currentRunTree);
+          }
+        }
+        await postRunPromise;
+        await currentRunTree?.patchRun();
+      }
+
+      let returnValue: unknown;
       try {
         returnValue = wrappedFunc(...rawInputs);
       } catch (err: unknown) {
@@ -301,156 +358,32 @@ export function traceable<Func extends (...args: any[]) => any>(
       }
 
       if (isAsyncIterable(returnValue)) {
-        // eslint-disable-next-line no-inner-declarations
-        async function* wrapOutputForTracing() {
-          let finished = false;
-          const chunks: unknown[] = [];
-          try {
-            for await (const chunk of returnValue) {
-              chunks.push(chunk);
-              yield chunk;
-            }
-            finished = true;
-          } catch (e) {
-            await currentRunTree?.end(undefined, String(e));
-            throw e;
-          } finally {
-            if (!finished) {
-              await currentRunTree?.end(undefined, "Cancelled");
-            }
-            let finalOutputs;
-            if (aggregator !== undefined) {
-              try {
-                finalOutputs = await aggregator(chunks);
-              } catch (e) {
-                console.error(`[ERROR]: LangSmith aggregation failed: `, e);
-                finalOutputs = chunks;
-              }
-            } else {
-              finalOutputs = chunks;
-            }
-            if (
-              typeof finalOutputs === "object" &&
-              !Array.isArray(finalOutputs)
-            ) {
-              await currentRunTree?.end(finalOutputs);
-            } else {
-              await currentRunTree?.end({ outputs: finalOutputs });
-            }
-            const onEnd = config?.on_end;
-            if (onEnd) {
-              if (!currentRunTree) {
-                console.warn(
-                  "Can not call 'on_end' if currentRunTree is undefined"
-                );
-              } else {
-                onEnd(currentRunTree);
-              }
-            }
-            await postRunPromise;
-            await currentRunTree?.patchRun();
-          }
-        }
-        return wrapOutputForTracing();
+        const snapshot = AsyncLocalStorage.snapshot();
+        return wrapAsyncGeneratorForTracing(returnValue, snapshot);
       }
 
-      const tracedPromise = new Promise<Output>((resolve, reject) => {
+      const tracedPromise = new Promise<unknown>((resolve, reject) => {
         Promise.resolve(returnValue)
           .then(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            async (rawOutput: any) => {
+            async (rawOutput) => {
               if (isAsyncIterable(rawOutput)) {
-                // eslint-disable-next-line no-inner-declarations
-                async function* wrapOutputForTracing() {
-                  let finished = false;
-                  const chunks: unknown[] = [];
-                  try {
-                    // TypeScript thinks this is unsafe
-                    for await (const chunk of rawOutput as AsyncIterable<unknown>) {
-                      chunks.push(chunk);
-                      yield chunk;
-                    }
-                    finished = true;
-                  } catch (e) {
-                    await currentRunTree?.end(undefined, String(e));
-                    throw e;
-                  } finally {
-                    if (!finished) {
-                      await currentRunTree?.end(undefined, "Cancelled");
-                    }
-                    let finalOutputs;
-                    if (aggregator !== undefined) {
-                      try {
-                        finalOutputs = await aggregator(chunks);
-                      } catch (e) {
-                        console.error(
-                          `[ERROR]: LangSmith aggregation failed: `,
-                          e
-                        );
-                        finalOutputs = chunks;
-                      }
-                    } else {
-                      finalOutputs = chunks;
-                    }
-                    if (
-                      typeof finalOutputs === "object" &&
-                      !Array.isArray(finalOutputs)
-                    ) {
-                      await currentRunTree?.end(finalOutputs);
-                    } else {
-                      await currentRunTree?.end({ outputs: finalOutputs });
-                    }
-                    const onEnd = config?.on_end;
-                    if (onEnd) {
-                      if (!currentRunTree) {
-                        console.warn(
-                          "Can not call 'on_end' if currentRunTree is undefined"
-                        );
-                      } else {
-                        onEnd(currentRunTree);
-                      }
-                    }
-                    await postRunPromise;
-                    await currentRunTree?.patchRun();
-                  }
-                }
-                return resolve(wrapOutputForTracing() as Output);
+                const snapshot = AsyncLocalStorage.snapshot();
+                return resolve(
+                  wrapAsyncGeneratorForTracing(rawOutput, snapshot)
+                );
               } else {
                 try {
                   await currentRunTree?.end(handleRunOutputs(rawOutput));
-                  const onEnd = config?.on_end;
-                  if (onEnd) {
-                    if (!currentRunTree) {
-                      console.warn(
-                        "Can not call 'on_end' if currentRunTree is undefined"
-                      );
-                    } else {
-                      onEnd(currentRunTree);
-                    }
-                  }
-                  await postRunPromise;
-                  await currentRunTree?.patchRun();
+                  await handleEnd();
                 } finally {
                   // eslint-disable-next-line no-unsafe-finally
                   return rawOutput;
                 }
               }
             },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            async (error: any) => {
+            async (error: unknown) => {
               await currentRunTree?.end(undefined, String(error));
-              const onEnd = config?.on_end;
-              if (onEnd) {
-                if (!currentRunTree) {
-                  console.warn(
-                    "Can not call 'on_end' if currentRunTree is undefined"
-                  );
-                } else {
-                  onEnd(currentRunTree);
-                }
-              }
-              await postRunPromise;
-              await currentRunTree?.patchRun();
+              await handleEnd();
               throw error;
             }
           )
