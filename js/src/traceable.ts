@@ -98,7 +98,7 @@ export type TraceableFunction<Func extends (...args: any[]) => any> =
     ? UnionToIntersection<WrapArgReturnPair<[A1, R1]>>
     : never;
 
-const isAsyncGenerator = (x: unknown): x is AsyncGenerator<unknown> =>
+const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   x != null &&
   typeof x === "object" &&
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -305,16 +305,17 @@ export function traceable<Func extends (...args: any[]) => any>(
       }
 
       async function* wrapAsyncGeneratorForTracing(
-        iterable: AsyncGenerator<unknown>,
+        iterable: AsyncIterable<unknown>,
         snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
       ) {
         let finished = false;
         const chunks: unknown[] = [];
         try {
+          const iterator = iterable[Symbol.asyncIterator]();
           while (true) {
             const { value, done } = await (snapshot
-              ? snapshot(() => iterable.next())
-              : iterable.next());
+              ? snapshot(() => iterator.next())
+              : iterator.next());
             if (done) {
               finished = true;
               break;
@@ -356,7 +357,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         returnValue = Promise.reject(err);
       }
 
-      if (isAsyncGenerator(returnValue)) {
+      if (isAsyncIterable(returnValue)) {
         const snapshot = AsyncLocalStorage.snapshot();
         return wrapAsyncGeneratorForTracing(returnValue, snapshot);
       }
@@ -365,7 +366,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         Promise.resolve(returnValue)
           .then(
             async (rawOutput) => {
-              if (isAsyncGenerator(rawOutput)) {
+              if (isAsyncIterable(rawOutput)) {
                 const snapshot = AsyncLocalStorage.snapshot();
                 return resolve(
                   wrapAsyncGeneratorForTracing(rawOutput, snapshot)
