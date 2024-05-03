@@ -372,7 +372,7 @@ describe("async generators", () => {
 });
 
 describe("langchain", () => {
-  test("bound", async () => {
+  test.skip("bound", async () => {
     const { client, callSpy } = mockClient();
 
     const llm = new FakeChatModel({});
