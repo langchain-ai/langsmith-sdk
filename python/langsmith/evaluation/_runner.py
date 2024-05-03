@@ -162,6 +162,7 @@ def evaluate(
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
         ...     experiment_prefix="My Experiment",
+        ...     description="Just testing a subset synchronously.",
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
@@ -172,6 +173,7 @@ def evaluate(
         ...     data=dataset_name,
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
+        ...     description="I don't even have to block!",
         ...     blocking=False,
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -204,6 +206,7 @@ def evaluate(
         ...             prepare_data=prepare_criteria_data,
         ...         ),
         ...     ],
+        ...     description="Evaluating with off-the-shelf LangChain evaluators.",
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -221,6 +224,7 @@ def evaluate(
         ...     lc_predict.invoke,
         ...     data=dataset_name,
         ...     evaluators=[accuracy],
+        ...     description="This time we're evaluating a LangChain object.",
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...

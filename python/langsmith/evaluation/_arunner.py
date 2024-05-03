@@ -157,6 +157,7 @@ async def aevaluate(
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Subset Experiment",
+        ...         description="Evaluate a subset of examples asynchronously.",
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -170,6 +171,7 @@ async def aevaluate(
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Streaming Experiment",
+        ...         description="Streaming predictions for debugging.",
         ...         blocking=False,
         ...     )
         ... )  # doctest: +ELLIPSIS
@@ -189,6 +191,7 @@ async def aevaluate(
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Experiment Without Concurrency",
+        ...         description="This was run without concurrency.",
         ...         max_concurrency=0,
         ...     )
         ... )  # doctest: +ELLIPSIS
@@ -208,6 +211,7 @@ async def aevaluate(
         ...         evaluators=[helpfulness],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Helpful Experiment",
+        ...         description="Applying async evaluators example.",
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
