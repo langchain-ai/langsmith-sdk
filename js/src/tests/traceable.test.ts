@@ -140,6 +140,11 @@ describe("async generators", () => {
     expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
       nodes: ["giveMeNumbers:0"],
       edges: [],
+      data: {
+        "giveMeNumbers:0": {
+          outputs: { outputs: [0, 1, 2, 3, 4] },
+        },
+      },
     });
   });
 
@@ -149,7 +154,7 @@ describe("async generators", () => {
       async function* () {
         for (let i = 0; i < 5; i++) {
           yield i;
-          if (i == 2) throw new Error("I am bad");
+          if (i === 2) throw new Error("I am bad");
         }
       },
       { name: "throwTraceable", client, tracingEnabled: true }
@@ -203,7 +208,7 @@ describe("async generators", () => {
   });
 
   // https://github.com/nodejs/node/issues/42237
-  test.only("async generators with nested traceable", async () => {
+  test("nested invocation", async () => {
     const { client, callSpy } = mockClient();
     const child = traceable(
       async function* child() {
@@ -222,6 +227,136 @@ describe("async generators", () => {
 
     const numbers: number[] = [];
     for await (const num of parent()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4, 4, 3, 2, 1, 0]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parent:0", "child:1", "child:2"],
+      edges: [
+        ["parent:0", "child:1"],
+        ["parent:0", "child:2"],
+      ],
+    });
+  });
+
+  test("in promise success", async () => {
+    const { client, callSpy } = mockClient();
+    async function giveMeGiveMeNumbers() {
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+        }
+      }
+      return giveMeNumbers();
+    }
+
+    const it = traceable(giveMeGiveMeNumbers, { client, tracingEnabled: true });
+
+    const numbers: number[] = [];
+    for await (const num of await it()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeGiveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeGiveMeNumbers:0": {
+          outputs: { outputs: [0, 1, 2, 3, 4] },
+        },
+      },
+    });
+  });
+
+  test("in promise error", async () => {
+    const { client, callSpy } = mockClient();
+
+    async function giveMeGiveMeNumbers() {
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+          if (i === 2) throw new Error("I am bad");
+        }
+      }
+      return giveMeNumbers();
+    }
+
+    const it = traceable(giveMeGiveMeNumbers, { client, tracingEnabled: true });
+
+    await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of await it()) {
+        // pass
+      }
+    }).rejects.toThrow("I am bad");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeGiveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeGiveMeNumbers:0": {
+          error: "Error: I am bad",
+          outputs: { outputs: [0, 1, 2] },
+        },
+      },
+    });
+  });
+
+  test("in promise break", async () => {
+    const { client, callSpy } = mockClient();
+
+    async function giveMeGiveMeNumbers() {
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+        }
+      }
+      return giveMeNumbers();
+    }
+
+    const it = traceable(giveMeGiveMeNumbers, { client, tracingEnabled: true });
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _ of await it()) {
+      break;
+    }
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeGiveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeGiveMeNumbers:0": {
+          outputs: { outputs: [0] },
+          error: "Cancelled",
+        },
+      },
+    });
+  });
+
+  // https://github.com/nodejs/node/issues/42237
+  test("in promise nested invocation", async () => {
+    const { client, callSpy } = mockClient();
+    const child = traceable(async function child() {
+      async function* child() {
+        for (let i = 0; i < 5; i++) yield i;
+      }
+      return child();
+    });
+
+    async function parent() {
+      async function* parent() {
+        for await (const num of await child()) yield num;
+        for await (const num of await child()) yield 4 - num;
+      }
+      return parent();
+    }
+
+    const it = traceable(parent, { client, tracingEnabled: true });
+
+    const numbers: number[] = [];
+    for await (const num of await it()) {
       numbers.push(num);
     }
 
