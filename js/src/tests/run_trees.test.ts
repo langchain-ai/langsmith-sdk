@@ -3,7 +3,6 @@
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
-import { mockClient } from "./utils/mock_client.js";
 
 const _DATE = 1620000000000;
 Date.now = jest.fn(() => _DATE);
