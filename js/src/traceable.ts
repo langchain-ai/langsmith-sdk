@@ -179,7 +179,6 @@ export function traceable<Func extends (...args: any[]) => any>(
   }
 ) {
   type Inputs = Parameters<Func>;
-  type Output = ReturnType<Func>;
   const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
 
   const traceableFunc = (
