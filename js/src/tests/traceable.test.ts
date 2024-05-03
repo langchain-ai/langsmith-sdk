@@ -369,6 +369,42 @@ describe("async generators", () => {
       ],
     });
   });
+
+  test("ReadableStream", async () => {
+    const { client, callSpy } = mockClient();
+
+    const stream = traceable(
+      async function stream() {
+        const readStream = new ReadableStream({
+          async pull(controller) {
+            for (let i = 0; i < 5; i++) {
+              controller.enqueue(i);
+            }
+            controller.close();
+          },
+        });
+
+        return readStream;
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const numbers: number[] = [];
+    for await (const num of await stream()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["stream:0"],
+      edges: [],
+      data: {
+        "stream:0": {
+          outputs: { outputs: [0, 1, 2, 3, 4] },
+        },
+      },
+    });
+  });
 });
 
 describe("langchain", () => {
