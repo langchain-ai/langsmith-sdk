@@ -53,6 +53,7 @@ export interface RunTreeConfig {
   tracingEnabled?: boolean;
   on_end?: (runTree: RunTree) => void;
   execution_order?: number;
+  child_execution_order?: number;
 }
 
 export interface RunnableConfigLike {
@@ -95,7 +96,7 @@ export class RunTree implements BaseRun {
   name: RunTreeConfig["name"];
   run_type: string;
   project_name: string;
-  parent_run?: BaseRun;
+  parent_run?: RunTree;
   child_runs: RunTree[];
   start_time: number;
   end_time?: number;
@@ -113,6 +114,7 @@ export class RunTree implements BaseRun {
 
   tracingEnabled?: boolean;
   execution_order: number;
+  child_execution_order: number;
 
   constructor(originalConfig: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
@@ -133,6 +135,7 @@ export class RunTree implements BaseRun {
     }
 
     this.execution_order ??= 1;
+    this.child_execution_order ??= 1;
 
     if (!this.dotted_order) {
       const currentDottedOrder = convertToDottedOrderFormat(
@@ -211,7 +214,7 @@ export class RunTree implements BaseRun {
   }
 
   public createChild(config: RunTreeConfig): RunTree {
-    const execution_order = this.child_runs.length + 1;
+    const child_execution_order = this.child_execution_order + 1;
 
     const child = new RunTree({
       ...config,
@@ -219,8 +222,22 @@ export class RunTree implements BaseRun {
       project_name: this.project_name,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
-      execution_order: execution_order,
+      execution_order: child_execution_order,
+      child_execution_order: child_execution_order,
     });
+
+    // propagate child_execution_order upwards
+    const visited = new Set<string>();
+    let current: RunTree | undefined = this as RunTree;
+    while (current != null && !visited.has(current.id)) {
+      visited.add(current.id);
+      current.child_execution_order = Math.max(
+        current.child_execution_order,
+        child_execution_order
+      );
+
+      current = current.parent_run;
+    }
 
     this.child_runs.push(child);
     return child;
