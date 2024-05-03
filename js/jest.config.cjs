@@ -7,7 +7,7 @@ module.exports = {
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
   transform: {
-    "^.+\\.m?[tj]sx?$": ["ts-jest", { useESM: true }],
+    "^.+\\.m?[tj]sx?$": ["ts-jest", { useESM: true, diagnostics: false }],
   },
   setupFiles: ["dotenv/config"],
   testTimeout: 20_000,
