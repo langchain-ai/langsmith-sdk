@@ -2,6 +2,9 @@ import type { RunTree } from "../run_trees.js";
 import { ROOT, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
+import { FakeChatModel } from "@langchain/core/utils/testing";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -20,7 +23,7 @@ test("basic traceable implementation", async () => {
     // pass
   }
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toEqual({
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: ["llm:0"],
     edges: [],
   });
@@ -61,7 +64,7 @@ test("nested traceable implementation", async () => {
     answer: "dlrow olleHdlrow olleH",
   });
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toEqual({
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: ["chain:0", "llm:1", "str:2"],
     edges: [
       ["chain:0", "llm:1"],
@@ -94,7 +97,7 @@ test("passing run tree manually", async () => {
 
   await parent(ROOT);
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toEqual({
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: [
       "parent:0",
       "child:1",
@@ -112,5 +115,329 @@ test("passing run tree manually", async () => {
       ["child:4", "child:5"],
       ["child:5", "child:6"],
     ],
+  });
+});
+
+describe("async generators", () => {
+  test("success", async () => {
+    const { client, callSpy } = mockClient();
+
+    const iterableTraceable = traceable(
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const numbers: number[] = [];
+    for await (const num of iterableTraceable()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeNumbers:0": {
+          outputs: { outputs: [0, 1, 2, 3, 4] },
+        },
+      },
+    });
+  });
+
+  test("error", async () => {
+    const { client, callSpy } = mockClient();
+    const throwTraceable = traceable(
+      async function* () {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+          if (i === 2) throw new Error("I am bad");
+        }
+      },
+      { name: "throwTraceable", client, tracingEnabled: true }
+    );
+
+    await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of throwTraceable()) {
+        // pass
+      }
+    }).rejects.toThrow("I am bad");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["throwTraceable:0"],
+      edges: [],
+      data: {
+        "throwTraceable:0": {
+          error: "Error: I am bad",
+          outputs: { outputs: [0, 1, 2] },
+        },
+      },
+    });
+  });
+
+  test("break", async () => {
+    const { client, callSpy } = mockClient();
+    const iterableTraceable = traceable(
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _ of iterableTraceable()) {
+      break;
+    }
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeNumbers:0": {
+          outputs: { outputs: [0] },
+          error: "Cancelled",
+        },
+      },
+    });
+  });
+
+  // https://github.com/nodejs/node/issues/42237
+  test("nested invocation", async () => {
+    const { client, callSpy } = mockClient();
+    const child = traceable(
+      async function* child() {
+        for (let i = 0; i < 5; i++) yield i;
+      },
+      { name: "child", client, tracingEnabled: true }
+    );
+
+    const parent = traceable(
+      async function* parent() {
+        for await (const num of child()) yield num;
+        for await (const num of child()) yield 4 - num;
+      },
+      { name: "parent", client, tracingEnabled: true }
+    );
+
+    const numbers: number[] = [];
+    for await (const num of parent()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4, 4, 3, 2, 1, 0]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parent:0", "child:1", "child:2"],
+      edges: [
+        ["parent:0", "child:1"],
+        ["parent:0", "child:2"],
+      ],
+    });
+  });
+
+  test("in promise success", async () => {
+    const { client, callSpy } = mockClient();
+    async function giveMeGiveMeNumbers() {
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+        }
+      }
+      return giveMeNumbers();
+    }
+
+    const it = traceable(giveMeGiveMeNumbers, { client, tracingEnabled: true });
+
+    const numbers: number[] = [];
+    for await (const num of await it()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeGiveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeGiveMeNumbers:0": {
+          outputs: { outputs: [0, 1, 2, 3, 4] },
+        },
+      },
+    });
+  });
+
+  test("in promise error", async () => {
+    const { client, callSpy } = mockClient();
+
+    async function giveMeGiveMeNumbers() {
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+          if (i === 2) throw new Error("I am bad");
+        }
+      }
+      return giveMeNumbers();
+    }
+
+    const it = traceable(giveMeGiveMeNumbers, { client, tracingEnabled: true });
+
+    await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of await it()) {
+        // pass
+      }
+    }).rejects.toThrow("I am bad");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeGiveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeGiveMeNumbers:0": {
+          error: "Error: I am bad",
+          outputs: { outputs: [0, 1, 2] },
+        },
+      },
+    });
+  });
+
+  test("in promise break", async () => {
+    const { client, callSpy } = mockClient();
+
+    async function giveMeGiveMeNumbers() {
+      async function* giveMeNumbers() {
+        for (let i = 0; i < 5; i++) {
+          yield i;
+        }
+      }
+      return giveMeNumbers();
+    }
+
+    const it = traceable(giveMeGiveMeNumbers, { client, tracingEnabled: true });
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _ of await it()) {
+      break;
+    }
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["giveMeGiveMeNumbers:0"],
+      edges: [],
+      data: {
+        "giveMeGiveMeNumbers:0": {
+          outputs: { outputs: [0] },
+          error: "Cancelled",
+        },
+      },
+    });
+  });
+
+  // https://github.com/nodejs/node/issues/42237
+  test("in promise nested invocation", async () => {
+    const { client, callSpy } = mockClient();
+    const child = traceable(async function child() {
+      async function* child() {
+        for (let i = 0; i < 5; i++) yield i;
+      }
+      return child();
+    });
+
+    async function parent() {
+      async function* parent() {
+        for await (const num of await child()) yield num;
+        for await (const num of await child()) yield 4 - num;
+      }
+      return parent();
+    }
+
+    const it = traceable(parent, { client, tracingEnabled: true });
+
+    const numbers: number[] = [];
+    for await (const num of await it()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4, 4, 3, 2, 1, 0]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parent:0", "child:1", "child:2"],
+      edges: [
+        ["parent:0", "child:1"],
+        ["parent:0", "child:2"],
+      ],
+    });
+  });
+
+  test("ReadableStream", async () => {
+    const { client, callSpy } = mockClient();
+
+    const stream = traceable(
+      async function stream() {
+        const readStream = new ReadableStream({
+          async pull(controller) {
+            for (let i = 0; i < 5; i++) {
+              controller.enqueue(i);
+            }
+            controller.close();
+          },
+        });
+
+        return readStream;
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const numbers: number[] = [];
+    for await (const num of await stream()) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0, 1, 2, 3, 4]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["stream:0"],
+      edges: [],
+      data: {
+        "stream:0": {
+          outputs: { outputs: [0, 1, 2, 3, 4] },
+        },
+      },
+    });
+  });
+});
+
+describe("langchain", () => {
+  test.skip("bound", async () => {
+    const { client, callSpy } = mockClient();
+
+    const llm = new FakeChatModel({});
+    const prompt = ChatPromptTemplate.fromMessages<{ text: string }>([
+      ["human", "{text}"],
+    ]);
+    const parser = new StringOutputParser();
+    const chain = prompt.pipe(llm).pipe(parser);
+
+    const main = traceable(chain.invoke.bind(chain), {
+      client,
+      tracingEnabled: true,
+    });
+
+    const result = await main({ text: "Hello world" });
+    expect(result).toEqual("Hello world");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "bound invoke:0",
+        "ChatPromptTemplate:1",
+        "FakeChatModel:2",
+        "StringOutputParser:3",
+      ],
+      edges: [
+        ["bound invoke:0", "ChatPromptTemplate:1"],
+        ["ChatPromptTemplate:1", "FakeChatModel:2"],
+        ["FakeChatModel:2", "StringOutputParser:3"],
+      ],
+    });
   });
 });
