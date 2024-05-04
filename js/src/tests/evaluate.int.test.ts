@@ -40,7 +40,10 @@ test("evaluate can evaluate", async () => {
     };
   };
 
-  const evalRes = await evaluate(targetFunc, { data: TESTING_DATASET_NAME });
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    description: "Experiment from evaluate can evaluate integration test",
+  });
   // console.log(evalRes.results)
   expect(evalRes.results).toHaveLength(2);
 
@@ -88,6 +91,7 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
     evaluators: [evaluator],
+    description: "evaluate can evaluate with RunEvaluator evaluators",
   });
 
   expect(evalRes.results).toHaveLength(2);
@@ -159,6 +163,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
     evaluators: [customEvaluator],
+    description: "evaluate can evaluate with custom evaluators",
   });
 
   expect(evalRes.results).toHaveLength(2);
@@ -235,6 +240,7 @@ test("evaluate can evaluate with summary evaluators", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
     summaryEvaluators: [customSummaryEvaluator],
+    description: "evaluate can evaluate with summary evaluators",
   });
 
   expect(evalRes.summaryResults.results).toHaveLength(1);
@@ -289,6 +295,7 @@ test.skip("can iterate over evaluate results", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
     evaluators: [evaluator],
+    description: "can iterate over evaluate results",
   });
 
   for await (const item of evalRes) {
@@ -329,6 +336,7 @@ test("can pass multiple evaluators", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
     evaluators: evaluators,
+    description: "can pass multiple evaluators",
   });
   expect(evalRes.results).toHaveLength(2);
   const firstEvalResults = evalRes.results[0];
@@ -370,6 +378,7 @@ test("can pass multiple summary evaluators", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
     summaryEvaluators,
+    description: "can pass multiple summary evaluators",
   });
   expect(evalRes.results).toHaveLength(2);
 
@@ -415,6 +424,7 @@ test("can pass AsyncIterable of Example's to evaluator instead of dataset name",
   const evalRes = await evaluate(targetFunc, {
     data: examplesIterator,
     evaluators: [customEvaluator],
+    description: "can pass AsyncIterable of Example's to evaluator",
   });
 
   const firstEvalResults = evalRes.results[0];
@@ -449,6 +459,7 @@ test("max concurrency works with custom evaluators", async () => {
     data: TESTING_DATASET_NAME,
     evaluators: [customEvaluator],
     maxConcurrency: 1,
+    description: "max concurrency works with custom evaluators",
   });
 
   expect(evalRes.results).toHaveLength(2);
@@ -489,6 +500,7 @@ test("max concurrency works with summary evaluators", async () => {
     data: TESTING_DATASET_NAME,
     summaryEvaluators: [customSummaryEvaluator],
     maxConcurrency: 1,
+    description: "max concurrency works with summary evaluators",
   });
 
   expect(evalRes.results).toHaveLength(2);
@@ -530,6 +542,7 @@ test("Target func can be a runnable", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
     evaluators: [evaluator],
+    description: "Target func can be a runnable",
   });
 
   expect(evalRes.results).toHaveLength(2);
@@ -580,6 +593,7 @@ test("evaluate can accept array of examples", async () => {
   const evalRes = await evaluate(targetFunc, {
     data: examples,
     evaluators: [customEvaluator],
+    description: "evaluate can accept array of examples",
   });
 
   const firstEvalResults = evalRes.results[0];
