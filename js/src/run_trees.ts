@@ -1,6 +1,10 @@
 import * as uuid from "uuid";
 import { BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
-import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
+import {
+  RuntimeEnvironment,
+  getEnvironmentVariable,
+  getRuntimeEnvironment,
+} from "./utils/env.js";
 import { Client } from "./client.js";
 
 const warnedMessages: Record<string, boolean> = {};
@@ -253,27 +257,28 @@ export class RunTree implements BaseRun {
     this.end_time = this.end_time ?? endTime;
   }
 
-  private async _convertToCreate(
+  private _convertToCreate(
     run: RunTree,
+    runtimeEnv: RuntimeEnvironment | undefined,
     excludeChildRuns = true
-  ): Promise<RunCreate> {
+  ): RunCreate {
     const runExtra = run.extra ?? {};
     if (!runExtra.runtime) {
       runExtra.runtime = {};
     }
-    const runtimeEnv = await getRuntimeEnvironment();
-    for (const [k, v] of Object.entries(runtimeEnv)) {
-      if (!runExtra.runtime[k]) {
-        runExtra.runtime[k] = v;
+    if (runtimeEnv) {
+      for (const [k, v] of Object.entries(runtimeEnv)) {
+        if (!runExtra.runtime[k]) {
+          runExtra.runtime[k] = v;
+        }
       }
     }
+
     let child_runs: RunCreate[];
     let parent_run_id: string | undefined;
     if (!excludeChildRuns) {
-      child_runs = await Promise.all(
-        run.child_runs.map((child_run) =>
-          this._convertToCreate(child_run, excludeChildRuns)
-        )
+      child_runs = run.child_runs.map((child_run) =>
+        this._convertToCreate(child_run, runtimeEnv, excludeChildRuns)
       );
       parent_run_id = undefined;
     } else {
@@ -303,7 +308,8 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
-    const runCreate = await this._convertToCreate(this, true);
+    const runtimeEnv = await getRuntimeEnvironment();
+    const runCreate = await this._convertToCreate(this, runtimeEnv, true);
     await this.client.createRun(runCreate);
 
     if (!excludeChildRuns) {
@@ -331,6 +337,10 @@ export class RunTree implements BaseRun {
     };
 
     await this.client.updateRun(this.id, runUpdate);
+  }
+
+  toJSON() {
+    return this._convertToCreate(this, undefined, false);
   }
 }
 
