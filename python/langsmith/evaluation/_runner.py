@@ -77,6 +77,7 @@ def evaluate(
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -95,6 +96,7 @@ def evaluate(
             Defaults to None.
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
             Defaults to None.
+        description (Optional[str]): A free-form text description for the experiment.
         max_concurrency (Optional[int]): The maximum number of concurrent
             evaluations to run. Defaults to None.
         client (Optional[langsmith.Client]): The LangSmith client to use.
@@ -142,6 +144,8 @@ def evaluate(
         ...     data=dataset_name,
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
+        ...     experiment_prefix="My Experiment",
+        ...     description="Evaluating the accuracy of a simple prediction model.",
         ...     metadata={
         ...         "my-prompt-version": "abcd-1234",
         ...     },
@@ -158,6 +162,7 @@ def evaluate(
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
         ...     experiment_prefix="My Experiment",
+        ...     description="Just testing a subset synchronously.",
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
@@ -168,6 +173,7 @@ def evaluate(
         ...     data=dataset_name,
         ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
+        ...     description="I don't even have to block!",
         ...     blocking=False,
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -200,6 +206,7 @@ def evaluate(
         ...             prepare_data=prepare_criteria_data,
         ...         ),
         ...     ],
+        ...     description="Evaluating with off-the-shelf LangChain evaluators.",
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -217,6 +224,7 @@ def evaluate(
         ...     lc_predict.invoke,
         ...     data=dataset_name,
         ...     evaluators=[accuracy],
+        ...     description="This time we're evaluating a LangChain object.",
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -228,6 +236,7 @@ def evaluate(
         summary_evaluators=summary_evaluators,
         metadata=metadata,
         experiment_prefix=experiment_prefix,
+        description=description,
         max_concurrency=max_concurrency,
         client=client,
         blocking=blocking,
@@ -413,6 +422,7 @@ def _evaluate(
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -432,6 +442,7 @@ def _evaluate(
         client=client,
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
+        description=description,
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -525,6 +536,7 @@ class _ExperimentManagerMixin:
         experiment: Optional[Union[schemas.TracerSession, str]],
         metadata: Optional[dict] = None,
         client: Optional[langsmith.Client] = None,
+        description: Optional[str] = None,
     ):
         self.client = client or langsmith.Client()
         self._experiment: Optional[schemas.TracerSession] = None
@@ -545,6 +557,7 @@ class _ExperimentManagerMixin:
                 **metadata,
             }
         self._metadata = metadata or {}
+        self._description = description
 
     @property
     def experiment_name(self) -> str:
@@ -580,6 +593,7 @@ class _ExperimentManagerMixin:
                 project_metadata = self._get_experiment_metadata()
                 project = self.client.create_project(
                     self.experiment_name,
+                    description=self._description,
                     reference_dataset_id=first_example.dataset_id,
                     metadata=project_metadata,
                 )
@@ -649,11 +663,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
         runs: Optional[Iterable[schemas.Run]] = None,
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
         summary_results: Optional[Iterable[EvaluationResults]] = None,
+        description: Optional[str] = None,
     ):
         super().__init__(
             experiment=experiment,
             metadata=metadata,
             client=client,
+            description=description,
         )
         self._data = data
         self._examples: Optional[Iterable[schemas.Example]] = None

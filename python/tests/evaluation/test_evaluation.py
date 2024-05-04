@@ -34,6 +34,7 @@ def test_evaluate():
         data=dataset_name,
         evaluators=[accuracy],
         summary_evaluators=[precision],
+        description="My sync experiment",
         metadata={
             "my-prompt-version": "abcd-1234",
             "function": "evaluate",
@@ -70,9 +71,10 @@ async def test_aevaluate():
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment_prefix="My Experiment",
+        description="My Experiment Description",
         metadata={
             "my-prompt-version": "abcd-1234",
-            "function": "agevaluate",
+            "function": "aevaluate",
         },
     )
 
