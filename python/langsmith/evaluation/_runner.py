@@ -420,56 +420,122 @@ COMPARATIVE_EVALUATOR_T = Callable[
 def evaluate_comparative(
     experiments: Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]],
     /,
-    evaluators: Sequence[COMPARATIVE_EVALUATOR_T] = None,
-    max_concurrency: Optional[int] = None,  # TODO: Add max_concurrency
+    evaluators: Sequence[COMPARATIVE_EVALUATOR_T],
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: int = 5,
     client: Optional[langsmith.Client] = None,
+    metadata: Optional[dict] = None,
     load_nested: bool = False,
 ) -> ComparativeExperimentResults:
     r"""Evaluate existing experiment runs against each other."""  # noqa: E501
-    if len(experiments) != 2:
-        raise ValueError("Pairwise evaluation requires exactly two experiments.")
+    if len(experiments) < 2:
+        raise ValueError("Comparative evaluation requires at least 2 experiments.")
+    if not evaluators:
+        raise ValueError(
+            "At least one evaluator is required for comparative evaluation."
+        )
+    if max_concurrency < 0:
+        raise ValueError("max_concurrency must be a positive integer.")
     client = client or langsmith.Client()
+
     # TODO: Add information about comparison experiments
-    comparative_experiment_id = uuid.uuid4()
     projects = [_load_experiment(experiment, client) for experiment in experiments]
-    if projects[0].reference_dataset_id != projects[1].reference_dataset_id:
-        raise ValueError("Experiments must have the same reference dataset.")
+    ref_datasets_ = [str(p.reference_dataset_id) for p in projects]
+    if not len(set(ref_datasets_)) == 1:
+        raise ValueError("All experiments must have the same reference dataset.")
+    experiment_ids = [p.id for p in projects]
+    if experiment_prefix is None:
+        experiment_names = [p.name for p in projects]
+        experiment_name = (
+            " vs. ".join(experiment_names) + "-" + str(uuid.uuid4().hex[:4])
+        )
+    else:
+        experiment_name = experiment_prefix + "-" + str(uuid.uuid4().hex[:8])
+    comparative_experiment_id = uuid.uuid4()
+    comparative_experiment = client.create_comparative_experiment(
+        experiment_name,
+        experiments=experiment_ids,
+        description=description,
+        metadata=metadata,
+        id=comparative_experiment_id,
+    )
     runs = [
         _load_traces(experiment, client, load_nested=load_nested)
         for experiment in experiments
     ]
-    # TODO: Warn if different dataset versions, etc. are used
-    data = {
-        e.id: e
+    # Only check intersections for the experiments
+    examples_intersection = None
+    for runs_list in runs:
+        example_ids = {run.reference_example_id for run in runs_list}
+        if examples_intersection is None:
+            examples_intersection = example_ids
+        else:
+            examples_intersection &= example_ids
+    example_ids = list(examples_intersection)
+    # TODO: Warn if different dataset versions, etc. are used in the different
+    # experiments. We aren't providing any training wheels here.
+    batch_size = 99
+    data = {}
+    for i in range(0, len(example_ids), batch_size):
+        example_ids_batch = example_ids[i : i + batch_size]
         for e in client.list_examples(
             dataset_id=projects[0].reference_dataset_id,
             as_of=projects[0].metadata.get("dataset_version"),
-        )
-    }
+            example_ids=example_ids_batch,
+        ):
+            data[e.id] = e
     runs_dict: Dict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
     for runs_list in runs:
         for run in runs_list:
-            runs_dict[cast(uuid.UUID, run.reference_example_id)].append(run)
+            if run.reference_example_id in data:
+                runs_dict[cast(uuid.UUID, run.reference_example_id)].append(run)
 
-    comparators = [comparison_evaluator(evaluator) for evaluator in evaluators]
+    comparators = [comparison_evaluator(evaluator) for evaluator in evaluators or []]
     results: dict = {}
-    for example_id, runs_list in runs_dict.items():
-        results[example_id] = {
-            "runs": runs_list,
-        }
-        for comparator in comparators:
-            feedback_group_id = uuid.uuid4()
-            result = comparator.compare_runs(runs_list, data[example_id])
-            results[example_id][f"feedback.{result.key}"] = result
-            for run_id, score in result.scores.items():
-                client.create_feedback(
-                    run_id=run_id,
-                    key=result.key,
-                    score=score,
-                    comparative_experiment_id=comparative_experiment_id,
-                    source_run_id=result.source_run_id,
-                    feedback_group_id=feedback_group_id,
-                )
+
+    def evaluate_and_submit_feedback(
+        runs_list: list[schemas.Run], example: schemas.Example, executor: cf.Executor
+    ) -> ComparisonEvaluationResult:
+        feedback_group_id = uuid.uuid4()
+        result = comparator.compare_runs(runs_list, example)
+        for run_id, score in result.scores.items():
+            executor.submit(
+                client.create_feedback,
+                run_id=run_id,
+                key=result.key,
+                score=score,
+                comparative_experiment_id=comparative_experiment.id,
+                source_run_id=result.source_run_id,
+                feedback_group_id=feedback_group_id,
+            )
+        return result
+
+    with cf.ThreadPoolExecutor(max_workers=max_concurrency or 1) as executor:
+        futures = []
+        for example_id, runs_list in runs_dict.items():
+            results[example_id] = {
+                "runs": runs_list,
+            }
+            for comparator in comparators:
+                if max_concurrency > 1:
+                    future = executor.submit(
+                        evaluate_and_submit_feedback,
+                        runs_list,
+                        data[example_id],
+                        executor,
+                    )
+                    futures.append(future)
+                else:
+                    result = evaluate_and_submit_feedback(
+                        runs_list, data[example_id], executor
+                    )
+                    results[example_id][f"feedback.{result.key}"] = result
+            if futures:
+                cf.wait(futures)
+                for future in futures:
+                    result = future.result()
+                    results[example_id][f"feedback.{result.key}"] = result
 
     return ComparativeExperimentResults(results)
 

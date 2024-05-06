@@ -3982,6 +3982,64 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    def create_comparative_experiment(
+        self,
+        name: str,
+        experiments: Sequence[ID_TYPE],
+        *,
+        reference_dataset: Optional[ID_TYPE] = None,
+        description: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.ComparativeExperiment:
+        """Create a comparative experiment on the LangSmith API.
+
+        These experiments compare 2 or more experiment results over a shared dataset.
+
+        Args:
+            name: The name of the comparative experiment.
+            experiments: The IDs of the experiments to compare.
+            reference_dataset: The ID of the dataset these experiments are compared on.
+            description: The description of the comparative experiment.
+            created_at: The creation time of the comparative experiment.
+            metadata: Additional metadata for the comparative experiment.
+
+        Returns:
+            The created comparative experiment object.
+        """
+        if not experiments:
+            raise ValueError("At least one experiment is required.")
+        if reference_dataset is None:
+            # Get one of the experiments' reference dataset
+            reference_dataset = self.read_project(
+                project_id=experiments[0]
+            ).reference_dataset_id
+        if not reference_dataset:
+            raise ValueError("A reference dataset is required.")
+        body = {
+            "id": id,
+            "name": name,
+            "experiment_ids": experiments,
+            "reference_dataset_id": reference_dataset,
+            "description": description,
+            # TODO: Fix when endpoint is fixed
+            # "created_at": created_at or datetime.datetime.now(datetime.timezone.utc),
+            "extra": {},
+        }
+        if metadata is not None:
+            body["extra"]["metadata"] = metadata
+        ser = _dumps_json({k: v for k, v in body.items() if v is not None})
+        response = self.request_with_retries(
+            "POST",
+            "/datasets/comparative",
+            request_kwargs={
+                "data": ser,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.ComparativeExperiment(**response.json())
+
     async def arun_on_dataset(
         self,
         dataset_name: str,
