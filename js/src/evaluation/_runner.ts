@@ -95,6 +95,10 @@ export interface EvaluateOptions {
    */
   experimentPrefix?: string;
   /**
+   * A free-form description of the experiment.
+   */
+  description?: string;
+  /**
    * The maximum number of concurrent evaluations to run.
    * @default undefined
    */
@@ -152,6 +156,7 @@ class _ExperimentManager {
   _experimentName: string;
 
   _metadata: KVMap;
+  _description?: string;
 
   get experimentName(): string {
     if (this._experimentName) {
@@ -297,6 +302,7 @@ class _ExperimentManager {
           projectName: this.experimentName,
           referenceDatasetId: firstExample.dataset_id,
           metadata: projectMetadata,
+          description: this._description,
         });
       } catch (e) {
         if (String(e).includes("already exists")) {

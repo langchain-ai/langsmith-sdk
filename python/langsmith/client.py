@@ -3096,6 +3096,7 @@ class Client:
         as_of: Optional[Union[datetime.datetime, str]] = None,
         inline_s3_urls: bool = True,
         limit: Optional[int] = None,
+        metadata: Optional[dict] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3127,6 +3128,8 @@ class Client:
             "inline_s3_urls": inline_s3_urls,
             "limit": min(limit, 100) if limit is not None else 100,
         }
+        if metadata is not None:
+            params["metadata"] = _dumps_json(metadata)
         if dataset_id is not None:
             params["dataset"] = dataset_id
         elif dataset_name is not None:

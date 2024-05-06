@@ -1783,6 +1783,28 @@ export class Client {
     return result;
   }
 
+  public async hasDataset({
+    datasetId,
+    datasetName,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+  }): Promise<boolean> {
+    try {
+      await this.readDataset({ datasetId, datasetName });
+      return true;
+    } catch (e) {
+      if (
+        // eslint-disable-next-line no-instanceof/no-instanceof
+        e instanceof Error &&
+        e.message.toLocaleLowerCase().includes("not found")
+      ) {
+        return false;
+      }
+      throw e;
+    }
+  }
+
   public async diffDatasetVersions({
     datasetId,
     datasetName,
@@ -2063,12 +2085,14 @@ export class Client {
     exampleIds,
     asOf,
     inlineS3Urls,
+    metadata,
   }: {
     datasetId?: string;
     datasetName?: string;
     exampleIds?: string[];
     asOf?: string | Date;
     inlineS3Urls?: boolean;
+    metadata?: KVMap;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2096,6 +2120,10 @@ export class Client {
       for (const id_ of exampleIds) {
         params.append("id", id_);
       }
+    }
+    if (metadata !== undefined) {
+      const serializedMetadata = JSON.stringify(metadata);
+      params.append("metadata", serializedMetadata);
     }
     for await (const examples of this._getPaginated<Example>(
       "/examples",

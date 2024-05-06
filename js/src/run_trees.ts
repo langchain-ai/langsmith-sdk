@@ -1,6 +1,10 @@
 import * as uuid from "uuid";
 import { BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
-import { getEnvironmentVariable, getRuntimeEnvironment } from "./utils/env.js";
+import {
+  RuntimeEnvironment,
+  getEnvironmentVariable,
+  getRuntimeEnvironment,
+} from "./utils/env.js";
 import { Client } from "./client.js";
 
 const warnedMessages: Record<string, boolean> = {};
@@ -16,10 +20,18 @@ function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
 }
 
-export function convertToDottedOrderFormat(epoch: number, runId: string) {
+export function convertToDottedOrderFormat(
+  epoch: number,
+  runId: string,
+  executionOrder = 1
+) {
+  // Date only has millisecond precision, so we use the microseconds to break
+  // possible ties, avoiding incorrect run order
+  const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
   return (
-    stripNonAlphanumeric(`${new Date(epoch).toISOString().slice(0, -1)}000Z`) +
-    runId
+    stripNonAlphanumeric(
+      `${new Date(epoch).toISOString().slice(0, -1)}${paddedOrder}Z`
+    ) + runId
   );
 }
 
@@ -42,7 +54,10 @@ export interface RunTreeConfig {
   outputs?: KVMap;
   reference_example_id?: string;
   client?: Client;
+  tracingEnabled?: boolean;
   on_end?: (runTree: RunTree) => void;
+  execution_order?: number;
+  child_execution_order?: number;
 }
 
 export interface RunnableConfigLike {
@@ -85,7 +100,7 @@ export class RunTree implements BaseRun {
   name: RunTreeConfig["name"];
   run_type: string;
   project_name: string;
-  parent_run?: BaseRun;
+  parent_run?: RunTree;
   child_runs: RunTree[];
   start_time: number;
   end_time?: number;
@@ -100,6 +115,10 @@ export class RunTree implements BaseRun {
   events?: KVMap[] | undefined;
   trace_id: string;
   dotted_order: string;
+
+  tracingEnabled?: boolean;
+  execution_order: number;
+  child_execution_order: number;
 
   constructor(originalConfig: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
@@ -118,10 +137,15 @@ export class RunTree implements BaseRun {
         this.trace_id = this.id;
       }
     }
+
+    this.execution_order ??= 1;
+    this.child_execution_order ??= 1;
+
     if (!this.dotted_order) {
       const currentDottedOrder = convertToDottedOrderFormat(
         this.start_time,
-        this.id
+        this.id,
+        this.execution_order
       );
       if (this.parent_run) {
         this.dotted_order =
@@ -194,12 +218,30 @@ export class RunTree implements BaseRun {
   }
 
   public createChild(config: RunTreeConfig): RunTree {
+    const child_execution_order = this.child_execution_order + 1;
+
     const child = new RunTree({
       ...config,
       parent_run: this,
       project_name: this.project_name,
       client: this.client,
+      tracingEnabled: this.tracingEnabled,
+      execution_order: child_execution_order,
+      child_execution_order: child_execution_order,
     });
+
+    // propagate child_execution_order upwards
+    const visited = new Set<string>();
+    let current: RunTree | undefined = this as RunTree;
+    while (current != null && !visited.has(current.id)) {
+      visited.add(current.id);
+      current.child_execution_order = Math.max(
+        current.child_execution_order,
+        child_execution_order
+      );
+
+      current = current.parent_run;
+    }
 
     this.child_runs.push(child);
     return child;
@@ -215,27 +257,28 @@ export class RunTree implements BaseRun {
     this.end_time = this.end_time ?? endTime;
   }
 
-  private async _convertToCreate(
+  private _convertToCreate(
     run: RunTree,
+    runtimeEnv: RuntimeEnvironment | undefined,
     excludeChildRuns = true
-  ): Promise<RunCreate> {
+  ): RunCreate {
     const runExtra = run.extra ?? {};
     if (!runExtra.runtime) {
       runExtra.runtime = {};
     }
-    const runtimeEnv = await getRuntimeEnvironment();
-    for (const [k, v] of Object.entries(runtimeEnv)) {
-      if (!runExtra.runtime[k]) {
-        runExtra.runtime[k] = v;
+    if (runtimeEnv) {
+      for (const [k, v] of Object.entries(runtimeEnv)) {
+        if (!runExtra.runtime[k]) {
+          runExtra.runtime[k] = v;
+        }
       }
     }
+
     let child_runs: RunCreate[];
     let parent_run_id: string | undefined;
     if (!excludeChildRuns) {
-      child_runs = await Promise.all(
-        run.child_runs.map((child_run) =>
-          this._convertToCreate(child_run, excludeChildRuns)
-        )
+      child_runs = run.child_runs.map((child_run) =>
+        this._convertToCreate(child_run, runtimeEnv, excludeChildRuns)
       );
       parent_run_id = undefined;
     } else {
@@ -265,7 +308,8 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
-    const runCreate = await this._convertToCreate(this, true);
+    const runtimeEnv = await getRuntimeEnvironment();
+    const runCreate = await this._convertToCreate(this, runtimeEnv, true);
     await this.client.createRun(runCreate);
 
     if (!excludeChildRuns) {
@@ -293,6 +337,10 @@ export class RunTree implements BaseRun {
     };
 
     await this.client.updateRun(this.id, runUpdate);
+  }
+
+  toJSON() {
+    return this._convertToCreate(this, undefined, false);
   }
 }
 
