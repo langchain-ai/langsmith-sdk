@@ -104,6 +104,18 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   typeof (x as any)[Symbol.asyncIterator] === "function";
 
+const GeneratorFunction = function* () {}.constructor;
+
+const isIteratorLike = (x: unknown): x is Iterator<unknown> =>
+  x != null &&
+  typeof x === "object" &&
+  "next" in x &&
+  typeof x.next === "function";
+
+const isGenerator = (x: unknown): x is Generator =>
+  // eslint-disable-next-line no-instanceof/no-instanceof
+  x != null && typeof x === "function" && x instanceof GeneratorFunction;
+
 const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
   if (tracingEnabled !== undefined) {
     return tracingEnabled;
@@ -350,6 +362,18 @@ export function traceable<Func extends (...args: any[]) => any>(
         await currentRunTree?.patchRun();
       }
 
+      function gatherAll(iterator: Iterator<unknown>) {
+        const chunks: IteratorResult<unknown>[] = [];
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const next = iterator.next();
+          chunks.push(next);
+          if (next.done) break;
+        }
+
+        return chunks;
+      }
+
       let returnValue: unknown;
       try {
         returnValue = wrappedFunc(...rawInputs);
@@ -371,14 +395,40 @@ export function traceable<Func extends (...args: any[]) => any>(
                 return resolve(
                   wrapAsyncGeneratorForTracing(rawOutput, snapshot)
                 );
-              } else {
-                try {
-                  await currentRunTree?.end(handleRunOutputs(rawOutput));
-                  await handleEnd();
-                } finally {
-                  // eslint-disable-next-line no-unsafe-finally
-                  return rawOutput;
-                }
+              }
+
+              if (isGenerator(wrappedFunc) && isIteratorLike(rawOutput)) {
+                const chunks = gatherAll(rawOutput);
+
+                await currentRunTree?.end(
+                  handleRunOutputs(
+                    await handleChunks(
+                      chunks.reduce<unknown[]>((memo, { value, done }) => {
+                        if (!done || typeof value !== "undefined") {
+                          memo.push(value);
+                        }
+
+                        return memo;
+                      }, [])
+                    )
+                  )
+                );
+                await handleEnd();
+
+                return (function* () {
+                  for (const ret of chunks) {
+                    if (ret.done) return ret.value;
+                    yield ret.value;
+                  }
+                })();
+              }
+
+              try {
+                await currentRunTree?.end(handleRunOutputs(rawOutput));
+                await handleEnd();
+              } finally {
+                // eslint-disable-next-line no-unsafe-finally
+                return rawOutput;
               }
             },
             async (error: unknown) => {

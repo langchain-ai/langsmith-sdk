@@ -441,3 +441,84 @@ describe("langchain", () => {
     });
   });
 });
+
+describe("generator", () => {
+  function gatherAll(iterator: Iterator<unknown>) {
+    const chunks: unknown[] = [];
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const next = iterator.next();
+      chunks.push(next.value);
+      if (next.done) break;
+    }
+
+    return chunks;
+  }
+
+  test("yield", async () => {
+    const { client, callSpy } = mockClient();
+
+    function* generator() {
+      for (let i = 0; i < 3; ++i) yield i;
+    }
+
+    const traced = traceable(generator, { client, tracingEnabled: true });
+
+    expect(gatherAll(await traced())).toEqual(gatherAll(generator()));
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["generator:0"],
+      edges: [],
+      data: {
+        "generator:0": {
+          outputs: { outputs: [0, 1, 2] },
+        },
+      },
+    });
+  });
+
+  test("with return", async () => {
+    const { client, callSpy } = mockClient();
+
+    function* generator() {
+      for (let i = 0; i < 3; ++i) yield i;
+      return 3;
+    }
+
+    const traced = traceable(generator, { client, tracingEnabled: true });
+
+    expect(gatherAll(await traced())).toEqual(gatherAll(generator()));
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["generator:0"],
+      edges: [],
+      data: { "generator:0": { outputs: { outputs: [0, 1, 2, 3] } } },
+    });
+  });
+
+  test("nested", async () => {
+    const { client, callSpy } = mockClient();
+
+    function* generator() {
+      function* child() {
+        for (let i = 0; i < 3; ++i) yield i;
+      }
+
+      for (let i = 0; i < 2; ++i) {
+        for (const num of child()) yield num;
+      }
+
+      return 3;
+    }
+
+    const traced = traceable(generator, { client, tracingEnabled: true });
+    expect(gatherAll(await traced())).toEqual(gatherAll(generator()));
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["generator:0"],
+      edges: [],
+      data: {
+        "generator:0": {
+          outputs: { outputs: [0, 1, 2, 0, 1, 2, 3] },
+        },
+      },
+    });
+  });
+});
