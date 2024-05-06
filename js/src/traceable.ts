@@ -122,6 +122,12 @@ const isThenable = (x: unknown): x is Promise<unknown> =>
   "then" in x &&
   typeof x.then === "function";
 
+const isReadableStream = (x: unknown): x is ReadableStream =>
+  x != null &&
+  typeof x === "object" &&
+  "getReader" in x &&
+  typeof x.getReader === "function";
+
 const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
   if (tracingEnabled !== undefined) {
     return tracingEnabled;
@@ -228,8 +234,23 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
   return promiseProxy as Promise<T> & { toJSON: () => unknown };
 };
 
-// attempt to
 const convertSerializableArg = (arg: unknown): unknown => {
+  if (isReadableStream(arg)) {
+    const proxyState: unknown[] = [];
+    const transform = new TransformStream({
+      start: () => void 0,
+      transform: (chunk, controller) => {
+        proxyState.push(chunk);
+        controller.enqueue(chunk);
+      },
+      flush: () => void 0,
+    });
+
+    const pipeThrough = arg.pipeThrough(transform);
+    Object.assign(pipeThrough, { toJSON: () => proxyState });
+    return pipeThrough;
+  }
+
   if (isAsyncIterable(arg)) {
     const proxyState: {
       current: (Promise<IteratorResult<unknown>> & {
@@ -278,11 +299,11 @@ const convertSerializableArg = (arg: unknown): unknown => {
           return () => {
             const onlyNexts = proxyState.current;
             const serialized = onlyNexts.map(
-              (next) => next.toJSON() as IteratorResult<unknown>
+              (next) => next.toJSON() as IteratorResult<unknown> | undefined
             );
 
             const chunks = serialized.reduce<unknown[]>((memo, next) => {
-              if (next.value) memo.push(next.value);
+              if (next?.value) memo.push(next.value);
               return memo;
             }, []);
 
