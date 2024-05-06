@@ -193,7 +193,9 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
         const boundThen = arg[prop].bind(arg);
         return (
           resolve: (value: unknown) => unknown,
-          reject?: (error: unknown) => unknown
+          reject: (error: unknown) => unknown = (x) => {
+            throw x;
+          }
         ) => {
           return boundThen(
             (value) => {

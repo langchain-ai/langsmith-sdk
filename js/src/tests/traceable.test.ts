@@ -596,6 +596,56 @@ describe("deferred input", () => {
       },
     });
   });
+
+  test("promise rejection", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function parrotStream(input: Promise<string[]>) {
+        return await input;
+      },
+      { client, tracingEnabled: true }
+    );
+
+    await expect(async () => {
+      await parrotStream(Promise.reject(new Error("Rejected!")));
+    }).rejects.toThrow("Rejected!");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: { error: {} } },
+          error: "Error: Rejected!",
+        },
+      },
+    });
+  });
+
+  test("promise rejection, callback handling", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function parrotStream(input: Promise<string[]>) {
+        return input.then((value) => value);
+      },
+      { client, tracingEnabled: true }
+    );
+
+    await expect(async () => {
+      await parrotStream(Promise.reject(new Error("Rejected!")));
+    }).rejects.toThrow("Rejected!");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: { error: {} } },
+          error: "Error: Rejected!",
+        },
+      },
+    });
+  });
 });
 
 describe("langchain", () => {
