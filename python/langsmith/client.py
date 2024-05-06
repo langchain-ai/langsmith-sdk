@@ -2178,7 +2178,7 @@ class Client:
                 "end_time",
             ],
         )
-        results = []
+        results: list[dict] = []
         example_ids = []
 
         def fetch_examples(batch):
