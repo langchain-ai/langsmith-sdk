@@ -116,6 +116,12 @@ const isGenerator = (x: unknown): x is Generator =>
   // eslint-disable-next-line no-instanceof/no-instanceof
   x != null && typeof x === "function" && x instanceof GeneratorFunction;
 
+const isThenable = (x: unknown): x is Promise<unknown> =>
+  x != null &&
+  typeof x === "object" &&
+  "then" in x &&
+  typeof x.then === "function";
+
 const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
   if (tracingEnabled !== undefined) {
     return tracingEnabled;
@@ -133,6 +139,7 @@ const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
 
 const handleRunInputs = (rawInputs: unknown[]): KVMap => {
   const firstInput = rawInputs[0];
+
   if (firstInput == null) {
     return {};
   }
@@ -165,6 +172,169 @@ const getTracingRunTree = (
 
   runTree.inputs = handleRunInputs(inputs);
   return runTree;
+};
+
+// idea: store the state of the promise outside
+// but only when the promise is "consumed"
+const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
+  const proxyState: {
+    current: ["resolve", unknown] | ["reject", unknown] | undefined;
+  } = { current: undefined };
+
+  const promiseProxy = new Proxy(arg, {
+    get(target, prop, receiver) {
+      if (prop === "then") {
+        const boundThen = arg[prop].bind(arg);
+        return (
+          resolve: (value: unknown) => unknown,
+          reject?: (error: unknown) => unknown
+        ) => {
+          return boundThen(
+            (value) => {
+              proxyState.current = ["resolve", value];
+              return resolve(value);
+            },
+            (error) => {
+              proxyState.current = ["reject", error];
+              return reject?.(error);
+            }
+          );
+        };
+      }
+
+      if (prop === "catch") {
+        const boundCatch = arg[prop].bind(arg);
+        return (reject: (error: unknown) => unknown) => {
+          return boundCatch((error) => {
+            proxyState.current = ["reject", error];
+            return reject(error);
+          });
+        };
+      }
+
+      if (prop === "toJSON") {
+        return () => {
+          if (!proxyState.current) return undefined;
+          const [type, value] = proxyState.current ?? [];
+          if (type === "resolve") return value;
+          return { error: value };
+        };
+      }
+
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+
+  return promiseProxy as Promise<T> & { toJSON: () => unknown };
+};
+
+// attempt to
+const convertSerializableArg = (arg: unknown): unknown => {
+  if (isAsyncIterable(arg)) {
+    const proxyState: {
+      current: (Promise<IteratorResult<unknown>> & {
+        toJSON: () => unknown;
+      })[];
+    } = { current: [] };
+
+    return new Proxy(arg, {
+      get(target, prop, receiver) {
+        if (prop === Symbol.asyncIterator) {
+          return () => {
+            const boundIterator = arg[Symbol.asyncIterator].bind(arg);
+            const iterator = boundIterator();
+
+            return new Proxy(iterator, {
+              get(target, prop, receiver) {
+                if (prop === "next" || prop === "return" || prop === "throw") {
+                  const bound = iterator.next.bind(iterator);
+
+                  return (
+                    ...args: Parameters<
+                      Exclude<
+                        AsyncIterator<unknown>["next" | "return" | "throw"],
+                        undefined
+                      >
+                    >
+                  ) => {
+                    // @ts-expect-error TS cannot infer the argument types for the bound function
+                    const wrapped = getSerializablePromise(bound(...args));
+                    proxyState.current.push(wrapped);
+                    return wrapped;
+                  };
+                }
+
+                if (prop === "return" || prop === "throw") {
+                  return iterator.next.bind(iterator);
+                }
+
+                return Reflect.get(target, prop, receiver);
+              },
+            });
+          };
+        }
+
+        if (prop === "toJSON") {
+          return () => {
+            const onlyNexts = proxyState.current;
+            const serialized = onlyNexts.map(
+              (next) => next.toJSON() as IteratorResult<unknown>
+            );
+
+            const chunks = serialized.reduce<unknown[]>((memo, next) => {
+              if (next.value) memo.push(next.value);
+              return memo;
+            }, []);
+
+            return chunks;
+          };
+        }
+
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+
+  if (!Array.isArray(arg) && isIteratorLike(arg)) {
+    const proxyState: Array<IteratorResult<unknown>> = [];
+
+    return new Proxy(arg, {
+      get(target, prop, receiver) {
+        if (prop === "next" || prop === "return" || prop === "throw") {
+          const bound = arg[prop]?.bind(arg);
+          return (
+            ...args: Parameters<
+              Exclude<Iterator<unknown>["next" | "return" | "throw"], undefined>
+            >
+          ) => {
+            // @ts-expect-error TS cannot infer the argument types for the bound function
+            const next = bound?.(...args);
+            if (next != null) proxyState.push(next);
+            return next;
+          };
+        }
+
+        if (prop === "toJSON") {
+          return () => {
+            const chunks = proxyState.reduce<unknown[]>((memo, next) => {
+              if (next.value) memo.push(next.value);
+              return memo;
+            }, []);
+
+            return chunks;
+          };
+        }
+
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+
+  if (isThenable(arg)) {
+    return getSerializablePromise(arg);
+  }
+
+  return arg;
 };
 
 /**
@@ -247,8 +417,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
     }
 
+    // TODO: deal with possible nested promises and async iterables
+    const processedArgs = args as unknown as Inputs;
+    for (let i = 0; i < processedArgs.length; i++) {
+      processedArgs[i] = convertSerializableArg(processedArgs[i]);
+    }
+
     const [currentRunTree, rawInputs] = ((): [RunTree | undefined, Inputs] => {
-      const [firstArg, ...restArgs] = args;
+      const [firstArg, ...restArgs] = processedArgs;
 
       // used for handoff between LangChain.JS and traceable functions
       if (isRunnableConfigLike(firstArg)) {
@@ -289,16 +465,19 @@ export function traceable<Func extends (...args: any[]) => any>(
       const prevRunFromStore = asyncLocalStorage.getStore();
       if (prevRunFromStore) {
         return [
-          getTracingRunTree(prevRunFromStore.createChild(ensuredConfig), args),
-          args as Inputs,
+          getTracingRunTree(
+            prevRunFromStore.createChild(ensuredConfig),
+            processedArgs
+          ),
+          processedArgs as Inputs,
         ];
       }
 
       const currentRunTree = getTracingRunTree(
         new RunTree(ensuredConfig),
-        args
+        processedArgs
       );
-      return [currentRunTree, args as Inputs];
+      return [currentRunTree, processedArgs as Inputs];
     })();
 
     return asyncLocalStorage.run(currentRunTree, () => {
@@ -490,12 +669,17 @@ export function isTraceableFunction(
 }
 
 function isKVMap(x: unknown): x is Record<string, unknown> {
+  if (typeof x !== "object" || x == null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(x);
   return (
-    typeof x === "object" &&
-    x != null &&
-    !Array.isArray(x) &&
-    // eslint-disable-next-line no-instanceof/no-instanceof
-    !(x instanceof Date)
+    (prototype === null ||
+      prototype === Object.prototype ||
+      Object.getPrototypeOf(prototype) === null) &&
+    !(Symbol.toStringTag in x) &&
+    !(Symbol.iterator in x)
   );
 }
 
