@@ -204,7 +204,7 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
             },
             (error) => {
               proxyState.current = ["reject", error];
-              return reject?.(error);
+              return reject(error);
             }
           );
         };
