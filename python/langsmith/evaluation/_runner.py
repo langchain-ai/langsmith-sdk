@@ -482,15 +482,15 @@ def evaluate_comparative(
         ...         messages=[
         ...             {"role": "system", "content": prompt},
         ...             {"role": "user", "content": f"Context: {inputs['context']}"
-                                f"\n\ninputs['question']"},
-                                ],
-                )
+        ...                        f"\n\ninputs['question']"},
+        ...             ],
+        ...     )
         ...     return {"output": completion.choices[0].message.content}
         >>> results_1 = evaluate(
         ...     functools.partial(predict, prompt=prompt_1),
         ...     data=dataset_name,
         ...     description="Evaluating our basic system prompt.",
-        ...     blocking=False,
+        ...     blocking=False, # Run these experiments in parallel
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
         >>> results_2 = evaluate(
@@ -500,8 +500,8 @@ def evaluate_comparative(
         ...     blocking=False,
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
-        >>> results_1.join()
-        >>> results_2.join()
+        >>> results_1.wait()
+        >>> results_2.wait()
 
             Finally, you would compare the two prompts directly:
         >>> import json
@@ -547,19 +547,18 @@ def evaluate_comparative(
         ...     ],
         ...     tools=tools,
         ...     tool_choice={"type": "function", "function": {"name": "rank_preferences"}},
-        ...    )
-        ...    tool_args = completion.choices[0].message.tool_calls[0].function.arguments
-        ...    preference = json.loads(tool_args)['preferred_option']
-        ...    if preference == "A":
-        ...        return {"key": "ranked_preference", "scores": {"A": 1, "B": 0}}
-        ...    else:
-        ...        return {"key": "ranked_preference", "scores": {"A": 0, "B": 1}}
+        ...     )
+        ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
+        ...     preference = json.loads(tool_args)['preferred_option']
+        ...     if preference == "A":
+        ...         return {"key": "ranked_preference", "scores": {"A": 1, "B": 0}}
+        ...     else:
+        ...         return {"key": "ranked_preference", "scores": {"A": 0, "B": 1}}
         >>> results = evaluate_comparative(
         ...     [results_1.experiment_name, results_2.experiment_name],
         ...     evaluators=[score_preferences],
         ...     client=client,
         ... )  # doctest: +ELLIPSIS
-        View the evaluation results for experiment:...
     """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
