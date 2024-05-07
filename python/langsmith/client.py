@@ -3546,10 +3546,6 @@ class Client:
             feedback_group_id=feedback_group_id,
         )
         feedack_block = _dumps_json(feedback.dict(exclude_none=True))
-        if comparative_experiment_id:
-            import sys
-
-            print(feedack_block, file=sys.stderr)
         self.request_with_retries(
             "POST",
             "/feedback",
