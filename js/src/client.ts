@@ -1194,11 +1194,26 @@ export class Client {
       is_root: isRoot,
     };
 
+    let runsYielded = 0;
+    console.log("going to list!");
     for await (const runs of this._getCursorPaginatedList<Run>(
       "/runs/query",
       body
     )) {
-      yield* runs;
+      if (limit) {
+        if (runsYielded >= limit) {
+          break;
+        }
+        if (runs.length + runsYielded > limit) {
+          const newRuns = runs.splice(limit - runsYielded);
+          yield* newRuns;
+          break;
+        }
+        runsYielded += runs.length;
+        yield* runs;
+      } else {
+        yield* runs;
+      }
     }
   }
 

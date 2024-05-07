@@ -3,7 +3,13 @@ import { FunctionMessage, HumanMessage } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
-import { deleteDataset, deleteProject, toArray, waitUntil } from "./utils.js";
+import {
+  createRunsFactory,
+  deleteDataset,
+  deleteProject,
+  toArray,
+  waitUntil,
+} from "./utils.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -558,3 +564,44 @@ test.concurrent(
   },
   180_000
 );
+
+test.concurrent.only("list runs limit arg works", async () => {
+  const client = new Client();
+
+  const projectName = "test-limit-runs-listRuns-endpoint";
+  try {
+    // create a fresh project with 10 runs --default amount created by createRunsFactory
+    await client.createProject({
+      projectName,
+    });
+    await Promise.all(createRunsFactory(projectName).map(client.createRun));
+
+    const limit = 6;
+    let iters = 0;
+    const runsArr: Array<Run> = [];
+    for await (const run of client.listRuns({ limit, projectName })) {
+      expect(run).toBeDefined();
+      runsArr.push(run);
+      iters += 1;
+      if (iters > limit) {
+        throw new Error(
+          `More runs returned than expected.\nExpected: ${limit}\nReceived: ${iters}`
+        );
+      }
+    }
+    expect(runsArr.length).toBe(limit);
+  } catch (e: any) {
+    // cleanup by deleting the project
+    const projectExists = await client.hasProject({ projectName });
+    if (projectExists) {
+      await client.deleteProject({ projectName });
+    }
+
+    // Error thrown by test, rethrow
+    if (e.message.startsWith("More runs returned than expected.")) {
+      throw e;
+    } else {
+      console.error(e);
+    }
+  }
+});
