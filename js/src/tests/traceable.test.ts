@@ -1,4 +1,4 @@
-import type { RunTree } from "../run_trees.js";
+import type { RunTree, RunTreeConfig } from "../run_trees.js";
 import { ROOT, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
@@ -439,5 +439,71 @@ describe("langchain", () => {
         ["FakeChatModel:2", "StringOutputParser:3"],
       ],
     });
+  });
+});
+
+test("metadata", async () => {
+  const { client, callSpy } = mockClient();
+  const main = traceable(async (): Promise<number> => 42, {
+    client,
+    name: "main",
+    metadata: { customValue: "hello" },
+    tracingEnabled: true,
+  });
+
+  await main();
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["main:0"],
+    edges: [],
+    data: {
+      "main:0": {
+        extra: { metadata: { customValue: "hello" } },
+        outputs: { outputs: 42 },
+      },
+    },
+  });
+});
+
+test("argsConfigPath", async () => {
+  const { client, callSpy } = mockClient();
+  const main = traceable(
+    async (
+      value: number,
+      options: {
+        suffix: string;
+        langsmithExtra?: Partial<RunTreeConfig>;
+      }
+    ): Promise<string> => `${value}${options.suffix}`,
+    {
+      client,
+      name: "main",
+      argsConfigPath: [1, "langsmithExtra"],
+      tracingEnabled: true,
+    }
+  );
+
+  await main(1, {
+    suffix: "hello",
+    langsmithExtra: {
+      name: "renamed",
+      tags: ["tag1", "tag2"],
+      metadata: { customValue: "hello" },
+    },
+  });
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["renamed:0"],
+    edges: [],
+    data: {
+      "renamed:0": {
+        extra: { metadata: { customValue: "hello" } },
+        tags: ["tag1", "tag2"],
+        inputs: {
+          args: [1, { suffix: "hello" }],
+        },
+        outputs: { outputs: "1hello" },
+      },
+    },
   });
 });
