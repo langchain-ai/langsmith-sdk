@@ -2,7 +2,11 @@ import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
 import type { Client, RunTreeConfig } from "../index.js";
 import { type RunnableConfigLike } from "../run_trees.js";
-import { traceable, type RunTreeLike } from "../traceable.js";
+import {
+  isTraceableFunction,
+  traceable,
+  type RunTreeLike,
+} from "../traceable.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -211,6 +215,15 @@ export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
   options?: Partial<RunTreeConfig>
 ): PatchedOpenAIClient<T> => {
+  if (
+    isTraceableFunction(openai.chat.completions.create) ||
+    isTraceableFunction(openai.completions.create)
+  ) {
+    throw new Error(
+      "This instance of OpenAI client has already been wrapped once."
+    );
+  }
+
   openai.chat.completions.create = traceable(
     openai.chat.completions.create.bind(openai.chat.completions),
     {
