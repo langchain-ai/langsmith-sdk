@@ -62,11 +62,6 @@ export interface RunTreeConfig {
 
 export interface RunnableConfigLike {
   /**
-   * Name of the traced run, overriding the name provided by the traceable
-   * function.
-   */
-  name?: string;
-  /**
    * Tags for this call and any sub-calls (eg. a Chain calling an LLM).
    * You can use these to filter calls.
    */
