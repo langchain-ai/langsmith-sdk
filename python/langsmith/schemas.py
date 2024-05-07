@@ -437,6 +437,10 @@ class FeedbackBase(BaseModel):
     """The source of the feedback."""
     session_id: Optional[UUID] = None
     """The associated project ID (Session = Project) this feedback is logged for."""
+    comparative_experiment_id: Optional[UUID] = None
+    """The associated comparative experiment ID this feedback is logged for."""
+    feedback_group_id: Optional[UUID] = None
+    """Used to group feedbacks across experiments for comparative experimentation."""
 
     class Config:
         """Configuration class for the schema."""
