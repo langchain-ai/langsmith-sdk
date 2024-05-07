@@ -1195,7 +1195,6 @@ export class Client {
     };
 
     let runsYielded = 0;
-    console.log("going to list!");
     for await (const runs of this._getCursorPaginatedList<Run>(
       "/runs/query",
       body
