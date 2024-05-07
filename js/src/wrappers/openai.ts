@@ -220,7 +220,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
     isTraceableFunction(openai.completions.create)
   ) {
     throw new Error(
-      "This instance of OpenAI client has already been wrapped once."
+      "This instance of OpenAI client has been already wrapped once."
     );
   }
 
