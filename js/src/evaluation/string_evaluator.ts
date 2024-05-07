@@ -1,3 +1,4 @@
+import { RunTreeConfig } from "../run_trees.js";
 import { Example, Run, ScoreType, ValueType } from "../schemas.js";
 import { EvaluationResult, RunEvaluator } from "./evaluator.js";
 
