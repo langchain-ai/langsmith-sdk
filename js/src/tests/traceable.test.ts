@@ -1,5 +1,5 @@
-import type { RunTree, RunnableConfigLike } from "../run_trees.js";
-import { ROOT, RunTreeLike, traceable } from "../traceable.js";
+import type { RunTree, RunTreeConfig } from "../run_trees.js";
+import { ROOT, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 import { FakeChatModel } from "@langchain/core/utils/testing";
@@ -472,7 +472,7 @@ test("argsConfigPath", async () => {
       value: number,
       options: {
         suffix: string;
-        langsmithExtra?: RunTreeLike | RunnableConfigLike;
+        langsmithExtra?: Partial<RunTreeConfig>;
       }
     ): Promise<string> => `${value}${options.suffix}`,
     {

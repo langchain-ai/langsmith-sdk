@@ -1,12 +1,7 @@
 import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
 import type { Client, RunTreeConfig } from "../index.js";
-import { type RunnableConfigLike } from "../run_trees.js";
-import {
-  isTraceableFunction,
-  traceable,
-  type RunTreeLike,
-} from "../traceable.js";
+import { isTraceableFunction, traceable } from "../traceable.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -22,22 +17,23 @@ type OpenAIType = {
   };
 };
 
+type ExtraRunTreeConfig = Pick<
+  Partial<RunTreeConfig>,
+  "name" | "metadata" | "tags"
+>;
+
 type PatchedOpenAIClient<T extends OpenAIType> = T & {
   chat: T["chat"] & {
     completions: T["chat"]["completions"] & {
       create: {
         (
           arg: OpenAI.ChatCompletionCreateParamsStreaming,
-          arg2?: OpenAI.RequestOptions & {
-            langsmithExtra?: RunnableConfigLike | RunTreeLike;
-          }
+          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
         ): APIPromise<AsyncGenerator<OpenAI.ChatCompletionChunk>>;
       } & {
         (
           arg: OpenAI.ChatCompletionCreateParamsNonStreaming,
-          arg2?: OpenAI.RequestOptions & {
-            langsmithExtra?: RunnableConfigLike | RunTreeLike;
-          }
+          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
         ): APIPromise<OpenAI.ChatCompletionChunk>;
       };
     };
@@ -46,16 +42,12 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
     create: {
       (
         arg: OpenAI.CompletionCreateParamsStreaming,
-        arg2?: OpenAI.RequestOptions & {
-          langsmithExtra?: RunnableConfigLike | RunTreeLike;
-        }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
       ): APIPromise<AsyncGenerator<OpenAI.Completion>>;
     } & {
       (
         arg: OpenAI.CompletionCreateParamsNonStreaming,
-        arg2?: OpenAI.RequestOptions & {
-          langsmithExtra?: RunnableConfigLike | RunTreeLike;
-        }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
       ): APIPromise<OpenAI.Completion>;
     };
   };
