@@ -561,9 +561,15 @@ def evaluate_comparative(
         ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
         ...     preference = json.loads(tool_args)["preferred_option"]
         ...     if preference == "A":
-        ...         return {"key": "ranked_preference", "scores": {"A": 1, "B": 0}}
+        ...         return {
+        ...             "key": "ranked_preference",
+        ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...         }
         ...     else:
-        ...         return {"key": "ranked_preference", "scores": {"A": 0, "B": 1}}
+        ...         return {
+        ...             "key": "ranked_preference",
+        ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...         }
         >>> results = evaluate_comparative(
         ...     [results_1.experiment_name, results_2.experiment_name],
         ...     evaluators=[score_preferences],
