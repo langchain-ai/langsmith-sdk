@@ -149,13 +149,13 @@ class DynamicRunEvaluator(RunEvaluator):
         self,
         func: Callable[
             [Run, Optional[Example]],
-            Union[_COMPARISON_OUTPUT, Awaitable[_COMPARISON_OUTPUT]],
+            Union[_RUNNABLE_OUTPUT, Awaitable[_RUNNABLE_OUTPUT]],
         ],
         # Async function to be used for async evaluation. Optional
         afunc: Optional[
             Callable[
                 [Run, Optional[Example]],
-                Awaitable[_COMPARISON_OUTPUT],
+                Awaitable[_RUNNABLE_OUTPUT],
             ]
         ] = None,
     ):
@@ -384,7 +384,7 @@ class DynamicComparisonRunEvaluator:
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
             self.func = cast(
-                run_helpers.SupportsLangsmithExtra[_RUNNABLE_OUTPUT],
+                run_helpers.SupportsLangsmithExtra[_COMPARISON_OUTPUT],
                 run_helpers.ensure_traceable(func),
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
@@ -427,7 +427,7 @@ class DynamicComparisonRunEvaluator:
             example,
             langsmith_extra={"run_id": source_run_id, "tags": tags},
         )
-        return self._format_result(result, source_run_id)
+        return self._format_results(result, source_run_id)
 
     async def acompare_runs(
         self, runs: Sequence[Run], example: Optional[Example] = None
@@ -443,10 +443,10 @@ class DynamicComparisonRunEvaluator:
                 in the evaluation.
 
         Returns:
-            Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
+            ComparisonEvaluationResult: The result of the evaluation.
         """
         if not hasattr(self, "afunc"):
-            return await super().aevaluate_run(runs, example)
+            return self.compare_runs(runs, example)
         source_run_id = uuid.uuid4()
         tags = self._get_tags(runs)
         # TODO: Add metadata for the "comparison experiment" here
@@ -455,11 +455,11 @@ class DynamicComparisonRunEvaluator:
             example,
             langsmith_extra={"run_id": source_run_id, "tags": tags},
         )
-        return self._format_result(result, source_run_id)
+        return self._format_results(result, source_run_id)
 
     def __call__(
         self, runs: Sequence[Run], example: Optional[Example] = None
-    ) -> Union[EvaluationResult, EvaluationResults]:
+    ) -> ComparisonEvaluationResult:
         """Make the evaluator callable, allowing it to be used like a function.
 
         This method enables the evaluator instance to be called directly, forwarding the
@@ -470,9 +470,9 @@ class DynamicComparisonRunEvaluator:
             example (Optional[Example]): An optional example to be used in the evaluation.
 
         Returns:
-            Union[EvaluationResult, EvaluationResults]: The result of the evaluation.
+            ComparisonEvaluationResult: The result of the evaluation.
         """  # noqa: E501
-        return self.evaluate_run(runs, example)
+        return self.compare_runs(runs, example)
 
     def __repr__(self) -> str:
         """Represent the DynamicRunEvaluator object."""
@@ -527,7 +527,7 @@ class DynamicComparisonRunEvaluator:
             cast(dict, results), allow_no_key=True, source_run_id=source_run_id
         )
 
-    def _format_result(
+    def _format_results(
         self,
         result: Union[dict, ComparisonEvaluationResult],
         source_run_id: uuid.UUID,
