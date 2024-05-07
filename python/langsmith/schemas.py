@@ -438,9 +438,11 @@ class FeedbackBase(BaseModel):
     session_id: Optional[UUID] = None
     """The associated project ID (Session = Project) this feedback is logged for."""
     comparative_experiment_id: Optional[UUID] = None
-    """The associated comparative experiment ID this feedback is logged for."""
+    """If logged within a 'comparative experiment', this is the ID of the experiment."""
     feedback_group_id: Optional[UUID] = None
-    """Used to group feedbacks across experiments for comparative experimentation."""
+    """For preference scoring, this group ID is shared across feedbacks for each
+
+    run in the group that was being compared."""
 
     class Config:
         """Configuration class for the schema."""

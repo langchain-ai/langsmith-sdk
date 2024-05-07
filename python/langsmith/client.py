@@ -3545,11 +3545,12 @@ class Client:
             comparative_experiment_id=comparative_experiment_id,
             feedback_group_id=feedback_group_id,
         )
+        feedack_block = _dumps_json(feedback.dict(exclude_none=True))
         self.request_with_retries(
             "POST",
             "/feedback",
             request_kwargs={
-                "data": _dumps_json(feedback.dict(exclude_none=True)),
+                "data": feedack_block,
             },
             stop_after_attempt=stop_after_attempt,
             retry_on=(ls_utils.LangSmithNotFoundError,),
