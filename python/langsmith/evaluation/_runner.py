@@ -707,7 +707,7 @@ class ComparativeExperimentResults:
         self._results = results
 
     def __getitem__(self, key):
-        """Allows indexing directly into the results dictionary."""
+        """Return the result associated with the given key."""
         return self._results[key]
 
 
