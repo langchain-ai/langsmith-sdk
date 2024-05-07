@@ -18,18 +18,16 @@ import { v4 as uuidv4 } from "uuid";
 type TargetT =
   | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
   | ((input: KVMap, config?: KVMap) => KVMap)
-  | {
-      invoke: (input: KVMap, config?: KVMap) => KVMap;
-    }
-  | {
-      invoke: (input: KVMap, config?: KVMap) => Promise<KVMap>;
-    };
+  | { invoke: (input: KVMap, config?: KVMap) => KVMap }
+  | { invoke: (input: KVMap, config?: KVMap) => Promise<KVMap> };
 
 type TargetNoInvoke =
   | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
   | ((input: KVMap, config?: KVMap) => KVMap);
+
 // Data format: dataset-name, dataset_id, or examples
 type DataT = string | AsyncIterable<Example> | Example[];
+
 // Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
 type SummaryEvaluatorT =
@@ -41,6 +39,7 @@ type SummaryEvaluatorT =
       runs: Array<Run>,
       examples: Array<Example>
     ) => EvaluationResult | EvaluationResults);
+
 // Row-level evaluator
 type EvaluatorT =
   | RunEvaluator
@@ -735,9 +734,7 @@ function convertInvokeToTopLevel(fn: TargetT): TargetNoInvoke {
 
 async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
-  fields: EvaluateOptions & {
-    experiment?: TracerSession;
-  }
+  fields: EvaluateOptions & { experiment?: TracerSession }
 ): Promise<ExperimentResults> {
   const client = fields.client ?? new Client();
   const runs = _isCallable(target) ? null : (target as AsyncGenerator<Run>);
@@ -759,11 +756,10 @@ async function _evaluate(
   if (_isCallable(target)) {
     manager = await manager.withPredictions(
       convertInvokeToTopLevel(target as TargetT),
-      {
-        maxConcurrency: fields.maxConcurrency,
-      }
+      { maxConcurrency: fields.maxConcurrency }
     );
   }
+
   if (fields.evaluators) {
     manager = await manager.withEvaluators(fields.evaluators, {
       maxConcurrency: fields.maxConcurrency,

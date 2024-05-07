@@ -361,3 +361,9 @@ export interface DatasetDiffInfo {
   examples_added: string[];
   examples_removed: string[];
 }
+
+export interface ComparisonEvaluationResult {
+  key: string;
+  scores: Record<string, ScoreType>;
+  source_run_id?: string;
+}
