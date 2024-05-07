@@ -413,7 +413,11 @@ class ExperimentResults:
 
 # Row-level evaluator
 COMPARATIVE_EVALUATOR_T = Callable[
-    [List[schemas.Run], Optional[schemas.Example]], ComparisonEvaluationResult
+    [Sequence[schemas.Run], Optional[schemas.Example]],
+    Union[
+        Union[ComparisonEvaluationResult, dict],
+        Awaitable[Union[ComparisonEvaluationResult, dict]],
+    ],
 ]
 
 
@@ -583,7 +587,7 @@ def evaluate_comparative(
         raise ValueError("All experiments must have the same reference dataset.")
     experiment_ids = [p.id for p in projects]
     if experiment_prefix is None:
-        experiment_names = [p.name for p in projects]
+        experiment_names = [p.name for p in projects if p.name is not None]
         experiment_name = (
             " vs. ".join(experiment_names) + "-" + str(uuid.uuid4().hex[:4])
         )
