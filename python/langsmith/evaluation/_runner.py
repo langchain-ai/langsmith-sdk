@@ -481,16 +481,19 @@ def evaluate_comparative(
         ...         model="gpt-3.5-turbo",
         ...         messages=[
         ...             {"role": "system", "content": prompt},
-        ...             {"role": "user", "content": f"Context: {inputs['context']}"
-        ...                        f"\n\ninputs['question']"},
-        ...             ],
+        ...             {
+        ...                 "role": "user",
+        ...                 "content": f"Context: {inputs['context']}"
+        ...                 f"\n\ninputs['question']",
+        ...             },
+        ...         ],
         ...     )
         ...     return {"output": completion.choices[0].message.content}
         >>> results_1 = evaluate(
         ...     functools.partial(predict, prompt=prompt_1),
         ...     data=dataset_name,
         ...     description="Evaluating our basic system prompt.",
-        ...     blocking=False, # Run these experiments in parallel
+        ...     blocking=False,  # Run these experiments in parallel
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
         >>> results_2 = evaluate(
@@ -511,45 +514,48 @@ def evaluate_comparative(
         ...     pred_b = runs[1].outputs["output"]
         ...     ground_truth = example.outputs["answer"]
         ...     tools = [
-        ...        {
-        ...            "type": "function",
-        ...            "function": {
-        ...                "name": "rank_preferences",
-        ...                "description": "Saves the prefered response ('A' or 'B')",
-        ...                "parameters": {
-        ...                    "type": "object",
-        ...                    "properties": {
-        ...                        "reasoning": {
-        ...                            "type": "string",
-        ...                            "description": "The reasoning behind the choice."
-        ...                        },
-        ...                        "preferred_option": {
-        ...                            "type": "string",
-        ...                            "enum": ["A", "B"],
-        ...                            "description": "The preferred option, either 'A' or 'B'"
-        ...                        }
-        ...                    },
-        ...                    "required": ["preferred_option"]
-        ...                },
-        ...            }
-        ...        }
+        ...         {
+        ...             "type": "function",
+        ...             "function": {
+        ...                 "name": "rank_preferences",
+        ...                 "description": "Saves the prefered response ('A' or 'B')",
+        ...                 "parameters": {
+        ...                     "type": "object",
+        ...                     "properties": {
+        ...                         "reasoning": {
+        ...                             "type": "string",
+        ...                             "description": "The reasoning behind the choice.",
+        ...                         },
+        ...                         "preferred_option": {
+        ...                             "type": "string",
+        ...                             "enum": ["A", "B"],
+        ...                             "description": "The preferred option, either 'A' or 'B'",
+        ...                         },
+        ...                     },
+        ...                     "required": ["preferred_option"],
+        ...                 },
+        ...             },
+        ...         }
         ...     ]
         ...     completion = openai.Client().chat.completions.create(
-        ...     model="gpt-3.5-turbo",
-        ...     messages=[
-        ...         {"role": "system", "content": "Select the better response."},
-        ...         {
-        ...             "role": "user",
-        ...             "content": f"Option A: {pred_a}"
-        ...             f"\n\nOption B: {pred_b}"
-        ...             f"\n\nGround Truth: {ground_truth}",
+        ...         model="gpt-3.5-turbo",
+        ...         messages=[
+        ...             {"role": "system", "content": "Select the better response."},
+        ...             {
+        ...                 "role": "user",
+        ...                 "content": f"Option A: {pred_a}"
+        ...                 f"\n\nOption B: {pred_b}"
+        ...                 f"\n\nGround Truth: {ground_truth}",
+        ...             },
+        ...         ],
+        ...         tools=tools,
+        ...         tool_choice={
+        ...             "type": "function",
+        ...             "function": {"name": "rank_preferences"},
         ...         },
-        ...     ],
-        ...     tools=tools,
-        ...     tool_choice={"type": "function", "function": {"name": "rank_preferences"}},
         ...     )
         ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
-        ...     preference = json.loads(tool_args)['preferred_option']
+        ...     preference = json.loads(tool_args)["preferred_option"]
         ...     if preference == "A":
         ...         return {"key": "ranked_preference", "scores": {"A": 1, "B": 0}}
         ...     else:
