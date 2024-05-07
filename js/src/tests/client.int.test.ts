@@ -565,7 +565,7 @@ test.concurrent(
   180_000
 );
 
-test.concurrent.only("list runs limit arg works", async () => {
+test.concurrent("list runs limit arg works", async () => {
   const client = new Client();
 
   const projectName = "test-limit-runs-listRuns-endpoint";
