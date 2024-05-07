@@ -4029,7 +4029,7 @@ class Client:
         }
         if metadata is not None:
             body["extra"]["metadata"] = metadata
-        ser = _dumps_json({k: v for k, v in body.items() if v is not None})
+        ser = _dumps_json({k: v for k, v in body.items()})  # if v is not None})
         response = self.request_with_retries(
             "POST",
             "/datasets/comparative",
@@ -4038,7 +4038,8 @@ class Client:
             },
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.ComparativeExperiment(**response.json())
+        response_d = response.json()
+        return ls_schemas.ComparativeExperiment(**response_d)
 
     async def arun_on_dataset(
         self,

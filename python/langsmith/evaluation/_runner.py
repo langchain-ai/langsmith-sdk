@@ -428,7 +428,139 @@ def evaluate_comparative(
     metadata: Optional[dict] = None,
     load_nested: bool = False,
 ) -> ComparativeExperimentResults:
-    r"""Evaluate existing experiment runs against each other."""  # noqa: E501
+    r"""Evaluate existing experiment runs against each other.
+
+    This lets you use pairwise preference scoring to generate more
+    reliable feedback in your experiments.
+
+    Args:
+        experiments (Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]]):
+            The identifiers of the experiments to compare.
+        evaluators (Sequence[COMPARATIVE_EVALUATOR_T]):
+            A list of evaluators to run on each example.
+        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+            Defaults to None.
+        description (Optional[str]): A free-form text description for the experiment.
+        max_concurrency (int): The maximum number of concurrent evaluations to run.
+            Defaults to 5.
+        client (Optional[langsmith.Client]): The LangSmith client to use.
+            Defaults to None.
+        metadata (Optional[dict]): Metadata to attach to the experiment.
+            Defaults to None.
+        load_nested (bool): Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs.
+
+    Returns:
+        ComparativeExperimentResults: The results of the comparative evaluation.
+
+    Examples:
+        Suppose you want to compare two prompts to see which one is more effective.
+        You would first prepare your dataset:
+
+        >>> from typing import Sequence
+        >>> from langsmith import Client
+        >>> from langsmith.evaluation import evaluate
+        >>> from langsmith.schemas import Example, Run
+        >>> client = Client()
+        >>> client.clone_public_dataset(
+        ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+        ... )
+        >>> dataset_name = "Evaluate Examples"
+
+        Then you would run your different prompts:
+        >>> import functools
+        >>> import openai
+        >>> from langsmith.evaluation import evaluate
+        >>> from langsmith.wrappers import wrap_openai
+        >>> oai_client = openai.Client()
+        >>> wrapped_client = wrap_openai(oai_client)
+        >>> prompt_1 = "You are a helpful assistant."
+        >>> prompt_2 = "You are an exceedingly helpful assistant."
+        >>> def predict(inputs: dict, prompt: str) -> dict:
+        ...     completion = wrapped_client.chat.completions.create(
+        ...         model="gpt-3.5-turbo",
+        ...         messages=[
+        ...             {"role": "system", "content": prompt},
+        ...             {"role": "user", "content": f"Context: {inputs['context']}"
+                                f"\n\ninputs['question']"},
+                                ],
+                )
+        ...     return {"output": completion.choices[0].message.content}
+        >>> results_1 = evaluate(
+        ...     functools.partial(predict, prompt=prompt_1),
+        ...     data=dataset_name,
+        ...     description="Evaluating our basic system prompt.",
+        ...     blocking=False,
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> results_2 = evaluate(
+        ...     functools.partial(predict, prompt=prompt_2),
+        ...     data=dataset_name,
+        ...     description="Evaluating our advanced system prompt.",
+        ...     blocking=False,
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> results_1.join()
+        >>> results_2.join()
+
+            Finally, you would compare the two prompts directly:
+        >>> import json
+        >>> from langsmith.evaluation import evaluate_comparative
+        >>> def score_preferences(runs: list, example):
+        ...     pred_a = runs[0].outputs["output"]
+        ...     pred_b = runs[1].outputs["output"]
+        ...     ground_truth = example.outputs["answer"]
+        ...     tools = [
+        ...        {
+        ...            "type": "function",
+        ...            "function": {
+        ...                "name": "rank_preferences",
+        ...                "description": "Saves the prefered response ('A' or 'B')",
+        ...                "parameters": {
+        ...                    "type": "object",
+        ...                    "properties": {
+        ...                        "reasoning": {
+        ...                            "type": "string",
+        ...                            "description": "The reasoning behind the choice."
+        ...                        },
+        ...                        "preferred_option": {
+        ...                            "type": "string",
+        ...                            "enum": ["A", "B"],
+        ...                            "description": "The preferred option, either 'A' or 'B'"
+        ...                        }
+        ...                    },
+        ...                    "required": ["preferred_option"]
+        ...                },
+        ...            }
+        ...        }
+        ...     ]
+        ...     completion = openai.Client().chat.completions.create(
+        ...     model="gpt-3.5-turbo",
+        ...     messages=[
+        ...         {"role": "system", "content": "Select the better response."},
+        ...         {
+        ...             "role": "user",
+        ...             "content": f"Option A: {pred_a}"
+        ...             f"\n\nOption B: {pred_b}"
+        ...             f"\n\nGround Truth: {ground_truth}",
+        ...         },
+        ...     ],
+        ...     tools=tools,
+        ...     tool_choice={"type": "function", "function": {"name": "rank_preferences"}},
+        ...    )
+        ...    tool_args = completion.choices[0].message.tool_calls[0].function.arguments
+        ...    preference = json.loads(tool_args)['preferred_option']
+        ...    if preference == "A":
+        ...        return {"key": "ranked_preference", "scores": {"A": 1, "B": 0}}
+        ...    else:
+        ...        return {"key": "ranked_preference", "scores": {"A": 0, "B": 1}}
+        >>> results = evaluate_comparative(
+        ...     [results_1.experiment_name, results_2.experiment_name],
+        ...     evaluators=[score_preferences],
+        ...     client=client,
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+    """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
     if not evaluators:
@@ -460,6 +592,7 @@ def evaluate_comparative(
         metadata=metadata,
         id=comparative_experiment_id,
     )
+    # TODO: Print out the URL for the experiment.
     runs = [
         _load_traces(experiment, client, load_nested=load_nested)
         for experiment in experiments
@@ -511,9 +644,10 @@ def evaluate_comparative(
             )
         return result
 
+    tqdm = _load_tqdm()
     with cf.ThreadPoolExecutor(max_workers=max_concurrency or 1) as executor:
         futures = []
-        for example_id, runs_list in runs_dict.items():
+        for example_id, runs_list in tqdm(runs_dict.items()):
             results[example_id] = {
                 "runs": runs_list,
             }
