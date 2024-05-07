@@ -4018,14 +4018,13 @@ class Client:
             ).reference_dataset_id
         if not reference_dataset:
             raise ValueError("A reference dataset is required.")
-        body = {
+        body: Dict[str, Any] = {
             "id": id,
             "name": name,
             "experiment_ids": experiments,
             "reference_dataset_id": reference_dataset,
             "description": description,
-            # TODO: Fix when endpoint is fixed
-            # "created_at": created_at or datetime.datetime.now(datetime.timezone.utc),
+            "created_at": created_at or datetime.datetime.now(datetime.timezone.utc),
             "extra": {},
         }
         if metadata is not None:
