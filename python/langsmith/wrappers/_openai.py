@@ -126,6 +126,16 @@ def _reduce_chat(all_chunks: List[ChatCompletionChunk]) -> dict:
         ]
     else:
         d = {"choices": [{"message": {"role": "assistant", "content": ""}}]}
+    usage = next(
+        (
+            getattr(c, "usage", None)
+            for c in all_chunks
+            if getattr(c, "usage", None) is not None
+        ),
+        None,
+    )
+    if usage:
+        d["usage"] = usage.model_dump()
     return d
 
 
