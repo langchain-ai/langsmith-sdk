@@ -705,8 +705,10 @@ class ComparativeExperimentResults:
         results: dict,
     ):
         self._results = results
-        # TODO Add comparative experiment ID, etc.
-        # this isn't useful rn.
+        
+    def __getitem__(self, key):
+        """Allows indexing directly into the results dictionary."""
+        return self._results[key]
 
 
 ## Private API
