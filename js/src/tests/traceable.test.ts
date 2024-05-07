@@ -370,7 +370,7 @@ describe("async generators", () => {
     });
   });
 
-  test("ReadableStream", async () => {
+  test("readable stream", async () => {
     const { client, callSpy } = mockClient();
 
     const stream = traceable(
@@ -401,6 +401,247 @@ describe("async generators", () => {
       data: {
         "stream:0": {
           outputs: { outputs: [0, 1, 2, 3, 4] },
+        },
+      },
+    });
+  });
+});
+
+describe("deferred input", () => {
+  test("generator", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function* parrotStream(input: Generator<string>) {
+        for (const token of input) {
+          yield token;
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const inputGenerator = function* () {
+      for (const token of "Hello world".split(" ")) {
+        yield token;
+      }
+    };
+
+    const tokens: string[] = [];
+    for await (const token of parrotStream(inputGenerator())) {
+      tokens.push(token);
+    }
+
+    expect(tokens).toEqual(["Hello", "world"]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: ["Hello", "world"] },
+          outputs: { outputs: ["Hello", "world"] },
+        },
+      },
+    });
+  });
+
+  test("async generator", async () => {
+    const { client, callSpy } = mockClient();
+    const inputStream = async function* inputStream() {
+      for (const token of "Hello world".split(" ")) {
+        yield token;
+      }
+    };
+
+    const parrotStream = traceable(
+      async function* parrotStream(input: AsyncGenerator<string>) {
+        for await (const token of input) {
+          yield token;
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const tokens: string[] = [];
+    for await (const token of parrotStream(inputStream())) {
+      tokens.push(token);
+    }
+
+    expect(tokens).toEqual(["Hello", "world"]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: ["Hello", "world"] },
+          outputs: { outputs: ["Hello", "world"] },
+        },
+      },
+    });
+  });
+
+  test("readable stream", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function* parrotStream(input: ReadableStream<string>) {
+        for await (const token of input) {
+          yield token;
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const readStream = new ReadableStream({
+      async start(controller) {
+        for (const token of "Hello world".split(" ")) {
+          controller.enqueue(token);
+        }
+        controller.close();
+      },
+    });
+
+    const tokens: string[] = [];
+    for await (const token of parrotStream(readStream)) {
+      tokens.push(token);
+    }
+
+    expect(tokens).toEqual(["Hello", "world"]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: ["Hello", "world"] },
+          outputs: { outputs: ["Hello", "world"] },
+        },
+      },
+    });
+  });
+
+  test("readable stream reader", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function* parrotStream(input: ReadableStream<string>) {
+        const reader = input.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            yield value;
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const readStream = new ReadableStream({
+      async start(controller) {
+        for (const token of "Hello world".split(" ")) {
+          controller.enqueue(token);
+        }
+        controller.close();
+      },
+    });
+
+    const tokens: string[] = [];
+    for await (const token of parrotStream(readStream)) {
+      tokens.push(token);
+    }
+
+    expect(tokens).toEqual(["Hello", "world"]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: ["Hello", "world"] },
+          outputs: { outputs: ["Hello", "world"] },
+        },
+      },
+    });
+  });
+
+  test("promise", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function* parrotStream(input: Promise<string[]>) {
+        // eslint-disable-next-line no-instanceof/no-instanceof
+        if (!(input instanceof Promise)) {
+          throw new Error("Input must be a promise");
+        }
+
+        for (const token of await input) {
+          yield token;
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const tokens: string[] = [];
+    for await (const token of parrotStream(
+      Promise.resolve(["Hello", "world"])
+    )) {
+      tokens.push(token);
+    }
+
+    expect(tokens).toEqual(["Hello", "world"]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: ["Hello", "world"] },
+          outputs: { outputs: ["Hello", "world"] },
+        },
+      },
+    });
+  });
+
+  test("promise rejection", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function parrotStream(input: Promise<string[]>) {
+        return await input;
+      },
+      { client, tracingEnabled: true }
+    );
+
+    await expect(async () => {
+      await parrotStream(Promise.reject(new Error("Rejected!")));
+    }).rejects.toThrow("Rejected!");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: { error: {} } },
+          error: "Error: Rejected!",
+        },
+      },
+    });
+  });
+
+  test("promise rejection, callback handling", async () => {
+    const { client, callSpy } = mockClient();
+    const parrotStream = traceable(
+      async function parrotStream(input: Promise<string[]>) {
+        return input.then((value) => value);
+      },
+      { client, tracingEnabled: true }
+    );
+
+    await expect(async () => {
+      await parrotStream(Promise.reject(new Error("Rejected!")));
+    }).rejects.toThrow("Rejected!");
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["parrotStream:0"],
+      edges: [],
+      data: {
+        "parrotStream:0": {
+          inputs: { input: { error: {} } },
+          error: "Error: Rejected!",
         },
       },
     });
