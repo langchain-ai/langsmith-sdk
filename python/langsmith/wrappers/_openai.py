@@ -212,6 +212,24 @@ def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C
     Returns:
         Union[OpenAI, AsyncOpenAI]: The patched client.
 
+
+    Examples:
+        from langsmith.wrappers import wrap_openai
+        import openai
+
+
+        client = wrap_openai(openai.Client())
+        chunks = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a chatbot."},
+                {"role": "user", "content": "What are you talking about?"},
+            ],
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        for chunk in chunks:
+            print(chunk)
     """
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
