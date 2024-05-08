@@ -59,6 +59,7 @@ async def aevaluate(
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -77,6 +78,7 @@ async def aevaluate(
             Defaults to None.
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
             Defaults to None.
+        description (Optional[str]): A description of the experiment.
         max_concurrency (Optional[int]): The maximum number of concurrent
             evaluations to run. Defaults to None.
         client (Optional[langsmith.Client]): The LangSmith client to use.
@@ -134,6 +136,7 @@ async def aevaluate(
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Experiment",
+        ...         description="Evaluate the accuracy of the model asynchronously.",
         ...         metadata={
         ...             "my-prompt-version": "abcd-1234",
         ...         },
@@ -154,6 +157,7 @@ async def aevaluate(
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Subset Experiment",
+        ...         description="Evaluate a subset of examples asynchronously.",
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -167,6 +171,7 @@ async def aevaluate(
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Streaming Experiment",
+        ...         description="Streaming predictions for debugging.",
         ...         blocking=False,
         ...     )
         ... )  # doctest: +ELLIPSIS
@@ -186,6 +191,7 @@ async def aevaluate(
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Experiment Without Concurrency",
+        ...         description="This was run without concurrency.",
         ...         max_concurrency=0,
         ...     )
         ... )  # doctest: +ELLIPSIS
@@ -205,6 +211,7 @@ async def aevaluate(
         ...         evaluators=[helpfulness],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Helpful Experiment",
+        ...         description="Applying async evaluators example.",
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
@@ -216,6 +223,7 @@ async def aevaluate(
         summary_evaluators=summary_evaluators,
         metadata=metadata,
         experiment_prefix=experiment_prefix,
+        description=description,
         max_concurrency=max_concurrency,
         client=client,
         blocking=blocking,
@@ -333,6 +341,7 @@ async def _aevaluate(
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -353,6 +362,7 @@ async def _aevaluate(
         client=client,
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
+        description=description,
         runs=runs,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -392,6 +402,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         experiment (Optional[schemas.TracerSession]): The tracer session
             associated with the experiment.
         experiment_prefix (Optional[str]): The prefix for the experiment name.
+        description (Optional[str]): The description for the experiment.
         metadata (Optional[dict]): Additional metadata for the experiment.
         client (Optional[langsmith.Client]): The Langsmith client used for
              the experiment.
@@ -411,11 +422,13 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         client: Optional[langsmith.Client] = None,
         evaluation_results: Optional[AsyncIterable[EvaluationResults]] = None,
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
+        description: Optional[str] = None,
     ):
         super().__init__(
             experiment=experiment,
             metadata=metadata,
             client=client,
+            description=description,
         )
         self._data = data
         self._examples: Optional[AsyncIterable[schemas.Example]] = None

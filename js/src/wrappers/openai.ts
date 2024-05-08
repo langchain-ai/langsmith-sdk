@@ -1,8 +1,7 @@
 import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
 import type { Client, RunTreeConfig } from "../index.js";
-import { type RunnableConfigLike } from "../run_trees.js";
-import { traceable, type RunTreeLike } from "../traceable.js";
+import { isTraceableFunction, traceable } from "../traceable.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -18,22 +17,23 @@ type OpenAIType = {
   };
 };
 
+type ExtraRunTreeConfig = Pick<
+  Partial<RunTreeConfig>,
+  "name" | "metadata" | "tags"
+>;
+
 type PatchedOpenAIClient<T extends OpenAIType> = T & {
   chat: T["chat"] & {
     completions: T["chat"]["completions"] & {
       create: {
         (
           arg: OpenAI.ChatCompletionCreateParamsStreaming,
-          arg2?: OpenAI.RequestOptions & {
-            langsmithExtra?: RunnableConfigLike | RunTreeLike;
-          }
+          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
         ): APIPromise<AsyncGenerator<OpenAI.ChatCompletionChunk>>;
       } & {
         (
           arg: OpenAI.ChatCompletionCreateParamsNonStreaming,
-          arg2?: OpenAI.RequestOptions & {
-            langsmithExtra?: RunnableConfigLike | RunTreeLike;
-          }
+          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
         ): APIPromise<OpenAI.ChatCompletionChunk>;
       };
     };
@@ -42,16 +42,12 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
     create: {
       (
         arg: OpenAI.CompletionCreateParamsStreaming,
-        arg2?: OpenAI.RequestOptions & {
-          langsmithExtra?: RunnableConfigLike | RunTreeLike;
-        }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
       ): APIPromise<AsyncGenerator<OpenAI.Completion>>;
     } & {
       (
         arg: OpenAI.CompletionCreateParamsNonStreaming,
-        arg2?: OpenAI.RequestOptions & {
-          langsmithExtra?: RunnableConfigLike | RunTreeLike;
-        }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
       ): APIPromise<OpenAI.Completion>;
     };
   };
@@ -211,6 +207,15 @@ export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
   options?: Partial<RunTreeConfig>
 ): PatchedOpenAIClient<T> => {
+  if (
+    isTraceableFunction(openai.chat.completions.create) ||
+    isTraceableFunction(openai.completions.create)
+  ) {
+    throw new Error(
+      "This instance of OpenAI client has been already wrapped once."
+    );
+  }
+
   openai.chat.completions.create = traceable(
     openai.chat.completions.create.bind(openai.chat.completions),
     {

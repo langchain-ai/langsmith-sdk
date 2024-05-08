@@ -1797,6 +1797,28 @@ export class Client {
     return result;
   }
 
+  public async hasDataset({
+    datasetId,
+    datasetName,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+  }): Promise<boolean> {
+    try {
+      await this.readDataset({ datasetId, datasetName });
+      return true;
+    } catch (e) {
+      if (
+        // eslint-disable-next-line no-instanceof/no-instanceof
+        e instanceof Error &&
+        e.message.toLocaleLowerCase().includes("not found")
+      ) {
+        return false;
+      }
+      throw e;
+    }
+  }
+
   public async diffDatasetVersions({
     datasetId,
     datasetName,
