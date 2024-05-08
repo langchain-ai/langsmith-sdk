@@ -48,25 +48,29 @@ async function loadTraces(
   return results;
 }
 
-// TODO: handle
+export interface EvaluateComparativeOptions {
+  evaluators: Array<
+    (
+      runs: Run[],
+      example: Example
+    ) => ComparisonEvaluationResult | Promise<ComparisonEvaluationResult>
+  >;
+  client?: Client;
+  metadata?: Record<string, unknown>;
+  experimentPrefix?: string;
+  description?: string;
+  loadNested?: boolean;
+  maxConcurrency?: number;
+}
+
+export interface ComparisonEvaluationResults {
+  results: ComparisonEvaluationResult[];
+}
+
 export async function evaluateComparative(
   experiments: Array<string>,
-  options: {
-    evaluators: Array<
-      (
-        runs: Run[],
-        example: Example
-      ) => ComparisonEvaluationResult | Promise<ComparisonEvaluationResult>
-    >;
-    client?: Client;
-    metadata?: Record<string, unknown>;
-    experimentPrefix?: string;
-    description?: string;
-    loadNested?: boolean;
-  }
-): Promise<{ results: ComparisonEvaluationResult[] }> {
-  // list all
-
+  options: EvaluateComparativeOptions
+): Promise<ComparisonEvaluationResults> {
   if (experiments.length < 2) {
     throw new Error("Comparative evaluation requires at least 2 experiments.");
   }
@@ -75,6 +79,10 @@ export async function evaluateComparative(
     throw new Error(
       "At least one evaluator is required for comparative evaluation."
     );
+  }
+
+  if (options.maxConcurrency && options.maxConcurrency < 0) {
+    throw new Error("maxConcurrency must be a positive number.");
   }
 
   const client = options.client ?? new Client();
@@ -172,6 +180,7 @@ export async function evaluateComparative(
 
   const results: ComparisonEvaluationResult[] = [];
 
+  // TODO: handle maxConcurrency
   for (const [exampleId, runs] of Object.entries(runMapByExampleId)) {
     const example = exampleMap[exampleId];
     if (!example) {
@@ -180,12 +189,13 @@ export async function evaluateComparative(
     }
 
     for (const evaluator of options.evaluators) {
+      const expectedRunIds = new Set(runs.map((r) => r.id));
       const result = await evaluator(runs, example);
       results.push(result);
 
       for (const [runId, score] of Object.entries(result.scores)) {
         // validate if the run id
-        if (!runMapByExampleId[runId]) {
+        if (!expectedRunIds.has(runId)) {
           throw new Error(
             `Returning an invalid run id ${runId} from evaluator.`
           );
