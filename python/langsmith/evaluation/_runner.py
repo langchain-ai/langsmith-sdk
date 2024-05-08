@@ -455,7 +455,7 @@ def evaluate_comparative(
             Defaults to None.
         load_nested (bool): Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
-        randomize_order (bool): Whether to randomize the order of the experiments before evaluation.
+        randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
             Default is False.
 
     Returns:
