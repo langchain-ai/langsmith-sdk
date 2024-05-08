@@ -1204,7 +1204,7 @@ export class Client {
           break;
         }
         if (runs.length + runsYielded > limit) {
-          const newRuns = runs.splice(limit - runsYielded);
+          const newRuns = runs.slice(0, limit - runsYielded);
           yield* newRuns;
           break;
         }

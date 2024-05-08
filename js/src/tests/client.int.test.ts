@@ -569,6 +569,9 @@ test.concurrent("list runs limit arg works", async () => {
   const client = new Client();
 
   const projectName = "test-limit-runs-listRuns-endpoint";
+  const runsArr: Array<Run> = [];
+  const limit = 6;
+
   try {
     // create a fresh project with 10 runs --default amount created by createRunsFactory
     await client.createProject({
@@ -576,9 +579,7 @@ test.concurrent("list runs limit arg works", async () => {
     });
     await Promise.all(createRunsFactory(projectName).map(client.createRun));
 
-    const limit = 6;
     let iters = 0;
-    const runsArr: Array<Run> = [];
     for await (const run of client.listRuns({ limit, projectName })) {
       expect(run).toBeDefined();
       runsArr.push(run);
@@ -589,7 +590,6 @@ test.concurrent("list runs limit arg works", async () => {
         );
       }
     }
-    expect(runsArr.length).toBe(limit);
   } catch (e: any) {
     // cleanup by deleting the project
     const projectExists = await client.hasProject({ projectName });
@@ -604,4 +604,6 @@ test.concurrent("list runs limit arg works", async () => {
       console.error(e);
     }
   }
+
+  expect(runsArr.length).toBe(limit);
 });
