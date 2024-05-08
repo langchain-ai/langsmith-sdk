@@ -9,6 +9,7 @@ import functools
 import itertools
 import logging
 import pathlib
+import random
 import threading
 import uuid
 from contextvars import copy_context
@@ -431,6 +432,7 @@ def evaluate_comparative(
     client: Optional[langsmith.Client] = None,
     metadata: Optional[dict] = None,
     load_nested: bool = False,
+    randomize_order: bool = False,
 ) -> ComparativeExperimentResults:
     r"""Evaluate existing experiment runs against each other.
 
@@ -453,6 +455,8 @@ def evaluate_comparative(
             Defaults to None.
         load_nested (bool): Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
+        randomize_order (bool): Whether to randomize the order of the experiments before evaluation.
+            Default is False.
 
     Returns:
         ComparativeExperimentResults: The results of the comparative evaluation.
@@ -585,6 +589,13 @@ def evaluate_comparative(
     if max_concurrency < 0:
         raise ValueError("max_concurrency must be a positive integer.")
     client = client or langsmith.Client()
+
+    if randomize_order:
+        experiment_list = list(experiments)
+        random.shuffle(experiment_list)
+        experiments = cast(
+            Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]], tuple(experiment_list)
+        )
 
     # TODO: Add information about comparison experiments
     projects = [_load_experiment(experiment, client) for experiment in experiments]
