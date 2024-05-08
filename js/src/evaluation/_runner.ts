@@ -649,14 +649,39 @@ class _ExperimentManager {
     const examples = await this.getExamples();
     const modifiedAt = examples.map((ex) => ex.modified_at);
 
-    const maxModifiedAt =
-      modifiedAt.length > 0
-        ? new Date(
-            Math.max(...modifiedAt.map((date) => new Date(date).getTime()))
-          )
-        : undefined;
+    // Python might return microseconds, which we need
+    // to account for when comparing dates.
+    const modifiedAtTime = modifiedAt.map((date) => {
+      function getMiliseconds(isoString: string) {
+        const time = isoString.split("T").at(1);
+        if (!time) return "";
 
-    return maxModifiedAt?.toISOString();
+        const regex = /[0-9]{2}:[0-9]{2}:[0-9]{2}.([0-9]+)/;
+        const strMiliseconds = time.match(regex)?.[1];
+        return strMiliseconds ?? "";
+      }
+
+      const jsDate = new Date(date);
+
+      let source = getMiliseconds(date);
+      let parsed = getMiliseconds(jsDate.toISOString());
+
+      const length = Math.max(source.length, parsed.length);
+      source = source.padEnd(length, "0");
+      parsed = parsed.padEnd(length, "0");
+
+      const microseconds =
+        (Number.parseInt(source, 10) - Number.parseInt(parsed, 10)) / 1000;
+
+      const time = jsDate.getTime() + microseconds;
+      return { date, time };
+    });
+
+    if (modifiedAtTime.length === 0) return undefined;
+    return modifiedAtTime.reduce(
+      (max, current) => (current.time > max.time ? current : max),
+      modifiedAtTime[0]
+    ).date;
   }
 
   async _end(): Promise<void> {
