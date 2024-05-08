@@ -188,6 +188,7 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
   session_id?: string;
+  comparative_experiment_id?: string;
 }
 
 interface FeedbackUpdate {
@@ -2234,6 +2235,7 @@ export class Client {
       feedbackId,
       feedbackConfig,
       projectId,
+      comparativeExperimentId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -2246,6 +2248,7 @@ export class Client {
       feedbackId?: string;
       eager?: boolean;
       projectId?: string;
+      comparativeExperimentId?: string;
     }
   ): Promise<Feedback> {
     if (!runId && !projectId) {
@@ -2280,6 +2283,7 @@ export class Client {
       correction,
       comment,
       feedback_source: feedback_source,
+      comparative_experiment_id: comparativeExperimentId,
       feedbackConfig,
       session_id: projectId,
     };

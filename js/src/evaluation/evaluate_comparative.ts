@@ -194,6 +194,7 @@ export async function evaluateComparative(
         await client.createFeedback(runId, result.key, {
           score,
           sourceRunId: result.source_run_id,
+          comparativeExperimentId: comparativeExperiment.id,
         });
       }
     }
