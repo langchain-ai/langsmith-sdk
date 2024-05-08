@@ -737,7 +737,7 @@ def _print_comparative_experiment_start(
         base_url = project_url.split("/projects/p/")[0]
         comparison_url = (
             f"{base_url}/datasets/{dataset_id}/compare?"
-            f"selectedSessions={experiments[0].id}%2C{experiments[1].id}"
+            f"selectedSessions={'%2C'.join([str(e.id) for e in experiments])}"
             f"&comparativeExperiment={comparative_experiment.id}"
         )
         print(  # noqa: T201
