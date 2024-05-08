@@ -611,7 +611,13 @@ def evaluate_comparative(
         metadata=metadata,
         id=comparative_experiment_id,
     )
-    _print_comparative_experiment_start(projects, comparative_experiment)
+    _print_comparative_experiment_start(
+        cast(
+            Tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+            tuple(projects),
+        ),
+        comparative_experiment,
+    )
     runs = [
         _load_traces(experiment, client, load_nested=load_nested)
         for experiment in experiments
