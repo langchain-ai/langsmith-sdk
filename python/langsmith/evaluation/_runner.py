@@ -9,6 +9,7 @@ import functools
 import itertools
 import logging
 import pathlib
+import random
 import threading
 import uuid
 from contextvars import copy_context
@@ -431,6 +432,7 @@ def evaluate_comparative(
     client: Optional[langsmith.Client] = None,
     metadata: Optional[dict] = None,
     load_nested: bool = False,
+    randomize_order: bool = False,
 ) -> ComparativeExperimentResults:
     r"""Evaluate existing experiment runs against each other.
 
@@ -453,6 +455,8 @@ def evaluate_comparative(
             Defaults to None.
         load_nested (bool): Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
+        randomize_order (bool): Whether to randomize the order of the experiments before evaluation.
+            Default is False.
 
     Returns:
         ComparativeExperimentResults: The results of the comparative evaluation.
@@ -607,7 +611,13 @@ def evaluate_comparative(
         metadata=metadata,
         id=comparative_experiment_id,
     )
-    # TODO: Print out the URL for the experiment.
+    _print_comparative_experiment_start(
+        cast(
+            Tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+            tuple(projects),
+        ),
+        comparative_experiment,
+    )
     runs = [
         _load_traces(experiment, client, load_nested=load_nested)
         for experiment in experiments
@@ -649,6 +659,8 @@ def evaluate_comparative(
         runs_list: list[schemas.Run], example: schemas.Example, executor: cf.Executor
     ) -> ComparisonEvaluationResult:
         feedback_group_id = uuid.uuid4()
+        if randomize_order:
+            random.shuffle(runs_list)
         result = comparator.compare_runs(runs_list, example)
         if client is None:
             raise ValueError("Client is required to submit feedback.")
@@ -718,6 +730,25 @@ class ComparativeExperimentResults:
 
 
 ## Private API
+
+
+def _print_comparative_experiment_start(
+    experiments: Tuple[schemas.TracerSession, schemas.TracerSession],
+    comparative_experiment: schemas.ComparativeExperiment,
+) -> None:
+    url = experiments[0].url or experiments[1].url
+    if url:
+        project_url = url.split("?")[0]
+        dataset_id = comparative_experiment.reference_dataset_id
+        base_url = project_url.split("/projects/p/")[0]
+        comparison_url = (
+            f"{base_url}/datasets/{dataset_id}/compare?"
+            f"selectedSessions={'%2C'.join([str(e.id) for e in experiments])}"
+            f"&comparativeExperiment={comparative_experiment.id}"
+        )
+        print(  # noqa: T201
+            f"View the pairwise evaluation results at:\n{comparison_url}\n\n"
+        )
 
 
 def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run]]) -> bool:
