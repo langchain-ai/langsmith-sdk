@@ -38,7 +38,6 @@ def wait_for(
 def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
     # monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
     return Client()
 
 
@@ -217,7 +216,6 @@ def test_create_dataset(
 ) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
