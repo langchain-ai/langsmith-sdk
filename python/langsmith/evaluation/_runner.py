@@ -590,13 +590,6 @@ def evaluate_comparative(
         raise ValueError("max_concurrency must be a positive integer.")
     client = client or langsmith.Client()
 
-    if randomize_order:
-        experiment_list = list(experiments)
-        random.shuffle(experiment_list)
-        experiments = cast(
-            Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]], tuple(experiment_list)
-        )
-
     # TODO: Add information about comparison experiments
     projects = [_load_experiment(experiment, client) for experiment in experiments]
     ref_datasets_ = [str(p.reference_dataset_id) for p in projects]
@@ -618,7 +611,7 @@ def evaluate_comparative(
         metadata=metadata,
         id=comparative_experiment_id,
     )
-    # TODO: Print out the URL for the experiment.
+    _print_comparative_experiment_start(projects, comparative_experiment)
     runs = [
         _load_traces(experiment, client, load_nested=load_nested)
         for experiment in experiments
@@ -660,6 +653,8 @@ def evaluate_comparative(
         runs_list: list[schemas.Run], example: schemas.Example, executor: cf.Executor
     ) -> ComparisonEvaluationResult:
         feedback_group_id = uuid.uuid4()
+        if randomize_order:
+            random.shuffle(runs_list)
         result = comparator.compare_runs(runs_list, example)
         if client is None:
             raise ValueError("Client is required to submit feedback.")
@@ -729,6 +724,25 @@ class ComparativeExperimentResults:
 
 
 ## Private API
+
+
+def _print_comparative_experiment_start(
+    experiments: Tuple[schemas.TracerSession, schemas.TracerSession],
+    comparative_experiment: schemas.ComparativeExperiment,
+) -> None:
+    url = experiments[0].url or experiments[1].url
+    if url:
+        project_url = url.split("?")[0]
+        dataset_id = comparative_experiment.reference_dataset_id
+        base_url = project_url.split("/projects/p/")[0]
+        comparison_url = (
+            f"{base_url}/datasets/{dataset_id}/compare?"
+            f"selectedSessions={experiments[0].id}%2C{experiments[1].id}"
+            f"&comparativeExperiment={comparative_experiment.id}"
+        )
+        print(  # noqa: T201
+            f"View the pairwise evaluation results at:\n{comparison_url}\n\n"
+        )
 
 
 def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run]]) -> bool:
