@@ -844,8 +844,6 @@ describe("langchain", () => {
       ],
     });
   });
-
-  test.skip("make sure disabled callback state work correctly", () => {});
 });
 
 describe("generator", () => {

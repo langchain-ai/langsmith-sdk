@@ -486,7 +486,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         ];
       }
 
-      // legacy CallbackManagerRunTree used in runOnDataset
+      // deprecated: legacy CallbackManagerRunTree used in runOnDataset
       // override ALS and do not pass-through the run tree
       if (
         isRunTree(firstArg) &&
