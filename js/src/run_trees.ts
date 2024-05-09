@@ -158,7 +158,7 @@ export class RunTree implements BaseRun {
   }
 
   static fromRunnableConfig(
-    config: RunnableConfigLike,
+    parentConfig: RunnableConfigLike,
     props: {
       name: string;
       tags?: string[];
@@ -166,39 +166,47 @@ export class RunTree implements BaseRun {
     }
   ): RunTree {
     // We only handle the callback manager case for now
-    const callbackManager = config?.callbacks as
+    const callbackManager = parentConfig?.callbacks as
       | CallbackManagerLike
       | undefined;
     let parentRun: RunTree | undefined;
     let projectName: string | undefined;
     let client: Client | undefined;
+
     if (callbackManager) {
       const parentRunId = callbackManager?.getParentRunId?.() ?? "";
       const langChainTracer = callbackManager?.handlers?.find(
         (handler: TracerLike) => handler?.name == "langchain_tracer"
       ) as LangChainTracerLike | undefined;
+
       parentRun = langChainTracer?.getRun?.(parentRunId);
       projectName = langChainTracer?.projectName;
       client = langChainTracer?.client;
     }
-    const dedupedTags = [
-      ...new Set((parentRun?.tags ?? []).concat(config?.tags ?? [])),
-    ];
-    const dedupedMetadata = {
-      ...parentRun?.extra?.metadata,
-      ...config?.metadata,
-    };
-    const rt = new RunTree({
-      name: props?.name ?? "<lambda>",
-      parent_run: parentRun,
-      tags: dedupedTags,
+
+    const parentRunTree = new RunTree({
+      name: parentRun?.name ?? "<parent>",
+      id: parentRun?.id,
       client,
-      extra: {
-        metadata: dedupedMetadata,
-      },
+      // TODO: handle tracing enabled
+      tracingEnabled: true,
       project_name: projectName,
+      tags: [
+        ...new Set((parentRun?.tags ?? []).concat(parentConfig?.tags ?? [])),
+      ],
+      extra: {
+        metadata: {
+          ...parentRun?.extra?.metadata,
+          ...parentConfig?.metadata,
+        },
+      },
     });
-    return rt;
+
+    return parentRunTree.createChild({
+      name: props?.name ?? "<lambda>",
+      tags: props.tags,
+      metadata: props.metadata,
+    });
   }
 
   private static getDefaultConfig(): object {
