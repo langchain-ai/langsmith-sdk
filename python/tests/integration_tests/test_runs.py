@@ -1,11 +1,10 @@
 import asyncio
-import os
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from typing import AsyncGenerator, Generator, Optional
 
-import pytest
+import pytest  # type: ignore
 
 from langsmith import utils as ls_utils
 from langsmith.client import Client
@@ -15,13 +14,7 @@ from langsmith.run_trees import RunTree
 
 @pytest.fixture
 def langchain_client() -> Generator[Client, None, None]:
-    original = os.environ.get("LANGCHAIN_ENDPOINT")
-    os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
     yield Client()
-    if original is None:
-        os.environ.pop("LANGCHAIN_ENDPOINT")
-    else:
-        os.environ["LANGCHAIN_ENDPOINT"] = original
 
 
 def poll_runs_until_count(
