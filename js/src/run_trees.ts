@@ -93,6 +93,7 @@ interface LangChainTracerLike extends TracerLike {
   name: "langchain_tracer";
   projectName: string;
   getRun?: (id: string) => RunTree | undefined;
+  client: Client;
 }
 
 export class RunTree implements BaseRun {
@@ -170,13 +171,16 @@ export class RunTree implements BaseRun {
       | undefined;
     let parentRun: RunTree | undefined;
     let projectName: string | undefined;
+    let client: Client | undefined;
     if (callbackManager) {
       const parentRunId = callbackManager?.getParentRunId?.() ?? "";
+      console.log("obtaining parent run id", parentRunId)
       const langChainTracer = callbackManager?.handlers?.find(
         (handler: TracerLike) => handler?.name == "langchain_tracer"
       ) as LangChainTracerLike | undefined;
       parentRun = langChainTracer?.getRun?.(parentRunId);
       projectName = langChainTracer?.projectName;
+      client = langChainTracer?.client;
     }
     const dedupedTags = [
       ...new Set((parentRun?.tags ?? []).concat(config?.tags ?? [])),
@@ -189,6 +193,7 @@ export class RunTree implements BaseRun {
       name: props?.name ?? "<lambda>",
       parent_run: parentRun,
       tags: dedupedTags,
+      client,
       extra: {
         metadata: dedupedMetadata,
       },
