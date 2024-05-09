@@ -174,7 +174,6 @@ export class RunTree implements BaseRun {
     let client: Client | undefined;
     if (callbackManager) {
       const parentRunId = callbackManager?.getParentRunId?.() ?? "";
-      console.log("obtaining parent run id", parentRunId)
       const langChainTracer = callbackManager?.handlers?.find(
         (handler: TracerLike) => handler?.name == "langchain_tracer"
       ) as LangChainTracerLike | undefined;
