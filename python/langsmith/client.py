@@ -3442,6 +3442,8 @@ class Client:
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         stop_after_attempt: int = 10,
         project_id: Optional[ID_TYPE] = None,
+        comparative_experiment_id: Optional[ID_TYPE] = None,
+        feedback_group_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -3481,6 +3483,12 @@ class Client:
         project_id : str or UUID
             The ID of the project_id to provide feedback on. One - and only one - of
             this and run_id must be provided.
+        comparative_experiment_id : str or UUID
+            If this feedback was logged as a part of a comparative experiment, this
+            associates the feedback with that experiment.
+        feedback_group_id : str or UUID
+            When logging preferences, ranking runs, or other comparative feedback,
+            this is used to group feedback together.
         """
         if run_id is None and project_id is None:
             raise ValueError("One of run_id and project_id must be provided")
@@ -3534,12 +3542,15 @@ class Client:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=project_id,
+            comparative_experiment_id=comparative_experiment_id,
+            feedback_group_id=feedback_group_id,
         )
+        feedack_block = _dumps_json(feedback.dict(exclude_none=True))
         self.request_with_retries(
             "POST",
             "/feedback",
             request_kwargs={
-                "data": _dumps_json(feedback.dict(exclude_none=True)),
+                "data": feedack_block,
             },
             stop_after_attempt=stop_after_attempt,
             retry_on=(ls_utils.LangSmithNotFoundError,),
@@ -3971,6 +3982,64 @@ class Client:
             yield ls_schemas.RunWithAnnotationQueueInfo(**run)
             if limit is not None and i + 1 >= limit:
                 break
+
+    def create_comparative_experiment(
+        self,
+        name: str,
+        experiments: Sequence[ID_TYPE],
+        *,
+        reference_dataset: Optional[ID_TYPE] = None,
+        description: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.ComparativeExperiment:
+        """Create a comparative experiment on the LangSmith API.
+
+        These experiments compare 2 or more experiment results over a shared dataset.
+
+        Args:
+            name: The name of the comparative experiment.
+            experiments: The IDs of the experiments to compare.
+            reference_dataset: The ID of the dataset these experiments are compared on.
+            description: The description of the comparative experiment.
+            created_at: The creation time of the comparative experiment.
+            metadata: Additional metadata for the comparative experiment.
+
+        Returns:
+            The created comparative experiment object.
+        """
+        if not experiments:
+            raise ValueError("At least one experiment is required.")
+        if reference_dataset is None:
+            # Get one of the experiments' reference dataset
+            reference_dataset = self.read_project(
+                project_id=experiments[0]
+            ).reference_dataset_id
+        if not reference_dataset:
+            raise ValueError("A reference dataset is required.")
+        body: Dict[str, Any] = {
+            "id": id,
+            "name": name,
+            "experiment_ids": experiments,
+            "reference_dataset_id": reference_dataset,
+            "description": description,
+            "created_at": created_at or datetime.datetime.now(datetime.timezone.utc),
+            "extra": {},
+        }
+        if metadata is not None:
+            body["extra"]["metadata"] = metadata
+        ser = _dumps_json({k: v for k, v in body.items()})  # if v is not None})
+        response = self.request_with_retries(
+            "POST",
+            "/datasets/comparative",
+            request_kwargs={
+                "data": ser,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        response_d = response.json()
+        return ls_schemas.ComparativeExperiment(**response_d)
 
     async def arun_on_dataset(
         self,
