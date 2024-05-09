@@ -3543,16 +3543,13 @@ kleur@^3.0.3:
   resolved "https://registry.npmjs.org/kleur/-/kleur-3.0.3.tgz"
   integrity sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==
 
+"langsmith@link:.":
+  version "0.0.0"
+  uid ""
+
 langsmith@~0.1.1:
-  version "0.1.3"
-  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.1.3.tgz#b086c5dd0709c41da417bc8b672e8f4a03e80809"
-  integrity sha512-kQMS3QySeU0Qt9A71d9trUXbeKn33HfxpRc7hRjSB967zcdTAngh66NcqYqBflD3nOL4FK6LKmvfb3vbNDEoPg==
-  dependencies:
-    "@types/uuid" "^9.0.1"
-    commander "^10.0.1"
-    p-queue "^6.6.2"
-    p-retry "4"
-    uuid "^9.0.0"
+  version "0.0.0"
+  uid ""
 
 leven@^3.1.0:
   version "3.1.0"
