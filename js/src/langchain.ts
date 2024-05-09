@@ -18,7 +18,11 @@ export async function getLangchainCallbacks(runTree: RunTree) {
   // TODO: CallbackManager.configure() is only async due to LangChainTracer
   // creationg being async, which is unnecessary.
 
-  const callbacks = await CallbackManager.configure();
+  let callbacks = await CallbackManager.configure();
+  if (!callbacks && runTree.tracingEnabled) {
+    callbacks = new CallbackManager();
+  }
+
   let langChainTracer = callbacks?.handlers.find(
     (handler): handler is LangChainTracer =>
       handler?.name === "langchain_tracer"
@@ -169,9 +173,14 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
 
     const runTree = new CallbackManagerRunTree(
       {
+        tracingEnabled: !!tracer,
         ...partialConfig,
         parent_run: callbackManager?._parentRunId
-          ? new RunTree({ name: "<parent>", id: callbackManager?._parentRunId })
+          ? new RunTree({
+              name: "<parent>",
+              id: callbackManager?._parentRunId,
+              tracingEnabled: !!tracer,
+            })
           : undefined,
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore mismatched client version
