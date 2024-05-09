@@ -3,18 +3,12 @@ import { CallbackManager } from "@langchain/core/callbacks/manager";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { RunTree } from "./run_trees.js";
 import { Run } from "./schemas.js";
-import {
-  Runnable,
-  RunnableConfig,
-  getCallbackManagerForConfig,
-} from "@langchain/core/runnables";
+import { Runnable, RunnableConfig } from "@langchain/core/runnables";
 import { TraceableFunction, isTraceableFunction } from "./traceable.js";
 
-// TODO: move this to langchain/smith
 export async function getLangchainCallbacks(runTree: RunTree) {
   // TODO: CallbackManager.configure() is only async due to LangChainTracer
-  // creationg being async, which is unnecessary.
-
+  // factory being unnecessarily async.
   let callbacks = await CallbackManager.configure();
   if (!callbacks && runTree.tracingEnabled) {
     callbacks = new CallbackManager();
@@ -66,6 +60,7 @@ export async function getLangchainCallbacks(runTree: RunTree) {
   return callbacks;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTraceableFunction = TraceableFunction<(...any: any[]) => any>;
 
 export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
@@ -93,6 +88,8 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
   async invoke(input: RunInput, options?: Partial<RunnableConfig>) {
     const [config] = this._getOptionsList(options ?? {}, 1);
 
+    // TODO: move this code to the runOnDataset / evaluate function instead?
+    // seems a bit too magical to be here
     if (
       typeof input === "object" &&
       input != null &&
