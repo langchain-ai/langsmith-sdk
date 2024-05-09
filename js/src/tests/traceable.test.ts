@@ -1,10 +1,15 @@
 import type { RunTree, RunTreeConfig } from "../run_trees.js";
-import { ROOT, traceable } from "../traceable.js";
+import { ROOT, getCurrentRunTree, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 import { FakeChatModel } from "@langchain/core/utils/testing";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import { getLangchainCallbacks } from "../langchain.js";
+import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
+import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -649,7 +654,7 @@ describe("deferred input", () => {
 });
 
 describe("langchain", () => {
-  test.skip("bound", async () => {
+  test("explicit traceable to langchain", async () => {
     const { client, callSpy } = mockClient();
 
     const llm = new FakeChatModel({});
@@ -659,28 +664,249 @@ describe("langchain", () => {
     const parser = new StringOutputParser();
     const chain = prompt.pipe(llm).pipe(parser);
 
-    const main = traceable(chain.invoke.bind(chain), {
-      client,
-      tracingEnabled: true,
-    });
+    const main = traceable(
+      async (input: { text: string }) => {
+        const runTree = getCurrentRunTree();
+        const callbacks = await getLangchainCallbacks(runTree);
+
+        const response = await chain.invoke(input, { callbacks });
+        return response;
+      },
+      {
+        name: "main",
+        client,
+        tracingEnabled: true,
+        tags: ["welcome"],
+        metadata: { hello: "world" },
+      }
+    );
 
     const result = await main({ text: "Hello world" });
     expect(result).toEqual("Hello world");
 
     expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
       nodes: [
-        "bound invoke:0",
-        "ChatPromptTemplate:1",
-        "FakeChatModel:2",
-        "StringOutputParser:3",
+        "main:0",
+        "RunnableSequence:1",
+        "ChatPromptTemplate:2",
+        "FakeChatModel:3",
+        "StrOutputParser:4",
       ],
       edges: [
-        ["bound invoke:0", "ChatPromptTemplate:1"],
-        ["ChatPromptTemplate:1", "FakeChatModel:2"],
-        ["FakeChatModel:2", "StringOutputParser:3"],
+        ["main:0", "RunnableSequence:1"],
+        ["RunnableSequence:1", "ChatPromptTemplate:2"],
+        ["RunnableSequence:1", "FakeChatModel:3"],
+        ["RunnableSequence:1", "StrOutputParser:4"],
+      ],
+      data: {
+        "main:0": {
+          inputs: { text: "Hello world" },
+          outputs: { outputs: "Hello world" },
+          tags: ["welcome"],
+          extra: { metadata: { hello: "world" } },
+        },
+      },
+    });
+  });
+
+  test("explicit langchain to traceable", async () => {
+    const { client, callSpy } = mockClient();
+
+    const llm = new FakeChatModel({});
+    const prompt = ChatPromptTemplate.fromMessages<{ text: string }>([
+      ["human", "{text}"],
+    ]);
+    const parser = new StringOutputParser();
+
+    const addValueTraceable = traceable(
+      (msg: BaseMessage) =>
+        new HumanMessage({ content: msg.content + " world" }),
+      { name: "add_negligible_value" }
+    );
+
+    const chain = prompt
+      .pipe(llm)
+      .pipe(
+        new RunnableLambda({
+          func: (message: BaseMessage, config?: RunnableConfig) =>
+            addValueTraceable(
+              config ?? { callbacks: [] },
+              message as HumanMessage
+            ),
+        })
+      )
+      .pipe(parser);
+
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore client might be of different type
+    const tracer = new LangChainTracer({ client });
+    const response = await chain.invoke(
+      { text: "Hello" },
+      { callbacks: [tracer] }
+    );
+
+    // callbacks are backgrounded by default
+    await awaitAllCallbacks();
+
+    expect(response).toEqual("Hello world");
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "RunnableSequence:0",
+        "ChatPromptTemplate:1",
+        "FakeChatModel:2",
+        "RunnableLambda:3",
+        "StrOutputParser:4",
+      ],
+      edges: [
+        ["RunnableSequence:0", "ChatPromptTemplate:1"],
+        ["RunnableSequence:0", "FakeChatModel:2"],
+        ["RunnableSequence:0", "RunnableLambda:3"],
+        ["RunnableSequence:0", "StrOutputParser:4"],
       ],
     });
   });
+
+  test("explicit simple nested", async () => {
+    const { client, callSpy } = mockClient();
+
+    const wrappedModel = traceable(
+      async (value: { input: string }) => `Wrapped input: ${value.input}`,
+      { name: "wrappedModel" }
+    );
+
+    const lambda = new RunnableLambda({
+      func: async (value: { input: string }, config?: RunnableConfig) => {
+        return await wrappedModel(config ?? { callbacks: [] }, value);
+      },
+    }).withConfig({ runName: "lambda" });
+
+    const main = traceable(
+      async () => {
+        const runTree = getCurrentRunTree();
+        const callbacks = await getLangchainCallbacks(runTree);
+
+        return {
+          response: [
+            await lambda.invoke({ input: "Are you ready?" }, { callbacks }),
+          ],
+        };
+      },
+      { name: "main", client, tracingEnabled: true }
+    );
+
+    const result = await main();
+    await awaitAllCallbacks();
+
+    expect(result).toEqual({
+      response: ["Wrapped input: Are you ready?"],
+    });
+
+    console.dir(callSpy.mock.calls, { depth: null });
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["main:0", "lambda:1", "wrappedModel:2"],
+      edges: [
+        ["main:0", "lambda:1"],
+        ["lambda:1", "wrappedModel:2"],
+      ],
+    });
+  });
+
+  test("explicit nested", async () => {
+    const { client, callSpy } = mockClient();
+
+    const llm = new FakeChatModel({});
+    const prompt = ChatPromptTemplate.fromMessages<{ text: string }>([
+      ["human", "{text}"],
+    ]);
+    const parser = new StringOutputParser();
+    const model = prompt
+      .pipe(llm)
+      .pipe(parser)
+      .withConfig({ runName: "model" });
+
+    const wrappedModel = traceable(
+      async (value: { input: string }) => {
+        const runTree = getCurrentRunTree();
+        const callbacks = await getLangchainCallbacks(runTree);
+        return model.invoke(
+          { text: `Wrapped input: ${value.input}` },
+          { callbacks }
+        );
+      },
+      { name: "wrappedModel" }
+    );
+
+    const lambda = new RunnableLambda({
+      func: async (value: { input: string }, config?: RunnableConfig) => {
+        console.log("lambda", config?.callbacks);
+        return await wrappedModel(config ?? { callbacks: [] }, value);
+      },
+    }).withConfig({ runName: "lambda" });
+
+    const main = traceable(
+      async () => {
+        const runTree = getCurrentRunTree();
+        console.log("main, runTree.id", runTree.id);
+        const callbacks = await getLangchainCallbacks(runTree);
+
+        return {
+          response: [
+            await lambda.invoke({ input: "Are you ready?" }, { callbacks }),
+            await lambda.invoke(
+              { input: "I said, Are. You. Ready?" },
+              { callbacks }
+            ),
+          ],
+        };
+      },
+      { name: "main", client, tracingEnabled: true }
+    );
+
+    const result = await main();
+    await awaitAllCallbacks();
+
+    expect(result).toEqual({
+      response: [
+        "Wrapped input: Are you ready?",
+        "Wrapped input: I said, Are. You. Ready?",
+      ],
+    });
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "main:0",
+        "lambda:1",
+        "wrappedModel:2",
+        "model:3",
+        "ChatPromptTemplate:4",
+        "FakeChatModel:5",
+        "StrOutputParser:6",
+        "lambda:7",
+        "wrappedModel:8",
+        "model:9",
+        "ChatPromptTemplate:10",
+        "FakeChatModel:11",
+        "StrOutputParser:12",
+      ],
+      edges: [
+        ["main:0", "lambda:1"],
+        ["lambda:1", "wrappedModel:2"],
+        ["wrappedModel:2", "model:3"],
+        ["model:3", "ChatPromptTemplate:4"],
+        ["model:3", "FakeChatModel:5"],
+        ["model:3", "StrOutputParser:6"],
+        ["main:0", "lambda:7"],
+        ["lambda:7", "wrappedModel:8"],
+        ["wrappedModel:8", "model:9"],
+        ["model:9", "ChatPromptTemplate:10"],
+        ["model:9", "FakeChatModel:11"],
+        ["model:9", "StrOutputParser:12"],
+      ],
+    });
+  });
+
+  test.skip("make sure disabled callback state work correctly", () => {});
 });
 
 describe("generator", () => {
