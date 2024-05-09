@@ -34,6 +34,10 @@ export async function getLangchainCallbacks(runTree: RunTree) {
     if (current.child_runs) {
       queue.push(...current.child_runs);
     }
+
+    if (current.parent_run) {
+      queue.push(current.parent_run);
+    }
   }
 
   if (callbacks != null) {
