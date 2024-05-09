@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     )
     from langsmith.evaluation._runner import (
         evaluate,
+        evaluate_comparative,
         evaluate_existing,
     )
     from langsmith.evaluation.evaluator import (
@@ -40,6 +41,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation._arunner import aevaluate_existing
 
         return aevaluate_existing
+    elif name == "evaluate_comparative":
+        from langsmith.evaluation._runner import evaluate_comparative
+
+        return evaluate_comparative
     elif name == "EvaluationResult":
         from langsmith.evaluation.evaluator import EvaluationResult
 
@@ -79,6 +84,7 @@ __all__ = [
     "aevaluate_existing",
     "evaluate",
     "evaluate_existing",
+    "evaluate_comparative",
     "LangChainStringEvaluator",
 ]
 

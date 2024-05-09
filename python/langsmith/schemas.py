@@ -437,6 +437,12 @@ class FeedbackBase(BaseModel):
     """The source of the feedback."""
     session_id: Optional[UUID] = None
     """The associated project ID (Session = Project) this feedback is logged for."""
+    comparative_experiment_id: Optional[UUID] = None
+    """If logged within a 'comparative experiment', this is the ID of the experiment."""
+    feedback_group_id: Optional[UUID] = None
+    """For preference scoring, this group ID is shared across feedbacks for each
+
+    run in the group that was being compared."""
 
     class Config:
         """Configuration class for the schema."""
@@ -698,3 +704,29 @@ class DatasetDiffInfo(BaseModel):
     examples_modified: List[UUID]
     examples_added: List[UUID]
     examples_removed: List[UUID]
+
+
+class ComparativeExperiment(BaseModel):
+    """Represents a comparative experiment.
+
+    This information summarizes evaluation results comparing
+    two or more models on a given dataset.
+    """
+
+    id: UUID
+    name: Optional[str] = None
+    description: Optional[str] = None
+    tenant_id: UUID
+    created_at: datetime
+    modified_at: datetime
+    reference_dataset_id: UUID
+    extra: Optional[Dict[str, Any]] = None
+    experiments_info: Optional[List[dict]] = None
+    feedback_stats: Optional[Dict[str, Any]] = None
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        if self.extra is None or "metadata" not in self.extra:
+            return {}
+        return self.extra["metadata"]
