@@ -7,6 +7,9 @@ inputs:
   langchain-api-key:
     description: "Langchain"
     required: true
+  langchain-endpoint:
+    description: "LangSmith Endpoint"
+    required: true
   openai-api-key:
     description: "OpenAI API key"
     required: false
@@ -40,6 +43,7 @@ runs:
     - name: Run integration tests
       env:
         LANGCHAIN_TRACING_V2: "true"
+        LANGCHAIN_ENDPOINT: ${{ inputs.langchain-endpoint }}
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
       run: make integration_tests_fast
@@ -49,6 +53,7 @@ runs:
     - name: Run doctest
       env:
         LANGCHAIN_TRACING_V2: "true"
+        LANGCHAIN_ENDPOINT: ${{ inputs.langchain-endpoint }}
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
@@ -60,6 +65,7 @@ runs:
     - name: Run Evaluation
       env:
           LANGCHAIN_TRACING_V2: "true"
+          LANGCHAIN_ENDPOINT: ${{ inputs.langchain-endpoint }}
           LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
           OPENAI_API_KEY: ${{ inputs.openai-api-key }}
           ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
