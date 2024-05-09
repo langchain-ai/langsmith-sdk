@@ -579,6 +579,7 @@ def evaluate_comparative(
         ...     evaluators=[score_preferences],
         ...     client=client,
         ... )  # doctest: +ELLIPSIS
+        View the pairwise evaluation results at:...
     """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
