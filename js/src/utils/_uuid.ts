@@ -5,7 +5,3 @@ export function assertUuid(str: string): void {
     throw new Error(`Invalid UUID: ${str}`);
   }
 }
-
-export function isValidUuid(str: string): boolean {
-  return uuid.validate(str);
-}
