@@ -125,6 +125,9 @@ export async function evaluateComparative(
     return `${options.experimentPrefix}-${uuid4().slice(0, 4)}`;
   })();
 
+  // TODO: add URL to the comparative experiment
+  console.log(`Starting pairwise evaluation of: ${name}`);
+
   const comparativeExperiment = await client.createComparativeExperiment({
     id,
     name,
@@ -158,6 +161,9 @@ export async function evaluateComparative(
   }
 
   const exampleIds = [...(exampleIdsIntersect ?? [])];
+  if (!exampleIds.length) {
+    throw new Error("No examples found in common between experiments.");
+  }
 
   // TODO: batch only 99 examples at a time
   const exampleMap: Record<string, Example> = {};
@@ -172,7 +178,13 @@ export async function evaluateComparative(
   const runMapByExampleId: Record<string, Run[]> = {};
   for (const runs of experimentRuns) {
     for (const run of runs) {
-      if (run.reference_example_id == null) continue;
+      if (
+        run.reference_example_id == null ||
+        !exampleIds.includes(run.reference_example_id)
+      ) {
+        continue;
+      }
+
       runMapByExampleId[run.reference_example_id] ??= [];
       runMapByExampleId[run.reference_example_id].push(run);
     }
@@ -183,10 +195,7 @@ export async function evaluateComparative(
   // TODO: handle maxConcurrency
   for (const [exampleId, runs] of Object.entries(runMapByExampleId)) {
     const example = exampleMap[exampleId];
-    if (!example) {
-      console.warn(`Example ${exampleId} not found.`);
-      continue;
-    }
+    if (!example) throw new Error(`Example ${exampleId} not found.`);
 
     for (const evaluator of options.evaluators) {
       const expectedRunIds = new Set(runs.map((r) => r.id));
