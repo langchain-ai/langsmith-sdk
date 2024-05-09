@@ -35,9 +35,7 @@ def wait_for(
 
 
 @pytest.fixture
-def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    # monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
+def langchain_client() -> Client:
     return Client()
 
 
