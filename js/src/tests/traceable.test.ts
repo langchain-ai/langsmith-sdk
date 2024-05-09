@@ -6,9 +6,8 @@ import { FakeChatModel } from "@langchain/core/utils/testing";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-import { getLangchainCallbacks } from "../langchain.js";
+import { RunnableTraceable, getLangchainCallbacks } from "../langchain.js";
 import { BaseMessage, HumanMessage } from "@langchain/core/messages";
-import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
 import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 
 test("basic traceable implementation", async () => {
@@ -726,15 +725,7 @@ describe("langchain", () => {
 
     const chain = prompt
       .pipe(llm)
-      .pipe(
-        new RunnableLambda({
-          func: (message: BaseMessage, config?: RunnableConfig) =>
-            addValueTraceable(
-              config ?? { callbacks: [] },
-              message as HumanMessage
-            ),
-        })
-      )
+      .pipe(new RunnableTraceable({ func: addValueTraceable }))
       .pipe(parser);
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -754,60 +745,14 @@ describe("langchain", () => {
         "RunnableSequence:0",
         "ChatPromptTemplate:1",
         "FakeChatModel:2",
-        "RunnableLambda:3",
+        "add_negligible_value:3",
         "StrOutputParser:4",
       ],
       edges: [
         ["RunnableSequence:0", "ChatPromptTemplate:1"],
         ["RunnableSequence:0", "FakeChatModel:2"],
-        ["RunnableSequence:0", "RunnableLambda:3"],
+        ["RunnableSequence:0", "add_negligible_value:3"],
         ["RunnableSequence:0", "StrOutputParser:4"],
-      ],
-    });
-  });
-
-  test("explicit simple nested", async () => {
-    const { client, callSpy } = mockClient();
-
-    const wrappedModel = traceable(
-      async (value: { input: string }) => `Wrapped input: ${value.input}`,
-      { name: "wrappedModel" }
-    );
-
-    const lambda = new RunnableLambda({
-      func: async (value: { input: string }, config?: RunnableConfig) => {
-        return await wrappedModel(config ?? { callbacks: [] }, value);
-      },
-    }).withConfig({ runName: "lambda" });
-
-    const main = traceable(
-      async () => {
-        const runTree = getCurrentRunTree();
-        const callbacks = await getLangchainCallbacks(runTree);
-
-        return {
-          response: [
-            await lambda.invoke({ input: "Are you ready?" }, { callbacks }),
-          ],
-        };
-      },
-      { name: "main", client, tracingEnabled: true }
-    );
-
-    const result = await main();
-    await awaitAllCallbacks();
-
-    expect(result).toEqual({
-      response: ["Wrapped input: Are you ready?"],
-    });
-
-    console.dir(callSpy.mock.calls, { depth: null });
-
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
-      nodes: ["main:0", "lambda:1", "wrappedModel:2"],
-      edges: [
-        ["main:0", "lambda:1"],
-        ["lambda:1", "wrappedModel:2"],
       ],
     });
   });
@@ -820,40 +765,38 @@ describe("langchain", () => {
       ["human", "{text}"],
     ]);
     const parser = new StringOutputParser();
-    const model = prompt
+    const chain = prompt
       .pipe(llm)
       .pipe(parser)
-      .withConfig({ runName: "model" });
+      .withConfig({ runName: "chain" });
 
-    const wrappedModel = traceable(
-      async (value: { input: string }) => {
-        const runTree = getCurrentRunTree();
-        const callbacks = await getLangchainCallbacks(runTree);
-        return model.invoke(
-          { text: `Wrapped input: ${value.input}` },
-          { callbacks }
-        );
-      },
-      { name: "wrappedModel" }
-    );
+    const wrappedModel = new RunnableTraceable({
+      func: traceable(
+        async (value: { input: string }) => {
+          const runTree = getCurrentRunTree();
+          const callbacks = await getLangchainCallbacks(runTree);
 
-    const lambda = new RunnableLambda({
-      func: async (value: { input: string }, config?: RunnableConfig) => {
-        console.log("lambda", config?.callbacks);
-        return await wrappedModel(config ?? { callbacks: [] }, value);
-      },
-    }).withConfig({ runName: "lambda" });
+          return chain.invoke(
+            { text: `Wrapped input: ${value.input}` },
+            { callbacks }
+          );
+        },
+        { name: "wrappedModel" }
+      ),
+    });
 
     const main = traceable(
       async () => {
         const runTree = getCurrentRunTree();
-        console.log("main, runTree.id", runTree.id);
         const callbacks = await getLangchainCallbacks(runTree);
 
         return {
           response: [
-            await lambda.invoke({ input: "Are you ready?" }, { callbacks }),
-            await lambda.invoke(
+            await wrappedModel.invoke(
+              { input: "Are you ready?" },
+              { callbacks }
+            ),
+            await wrappedModel.invoke(
               { input: "I said, Are. You. Ready?" },
               { callbacks }
             ),
@@ -876,32 +819,28 @@ describe("langchain", () => {
     expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
       nodes: [
         "main:0",
-        "lambda:1",
-        "wrappedModel:2",
-        "model:3",
-        "ChatPromptTemplate:4",
-        "FakeChatModel:5",
-        "StrOutputParser:6",
-        "lambda:7",
-        "wrappedModel:8",
-        "model:9",
-        "ChatPromptTemplate:10",
-        "FakeChatModel:11",
-        "StrOutputParser:12",
+        "wrappedModel:1",
+        "chain:2",
+        "ChatPromptTemplate:3",
+        "FakeChatModel:4",
+        "StrOutputParser:5",
+        "wrappedModel:6",
+        "chain:7",
+        "ChatPromptTemplate:8",
+        "FakeChatModel:9",
+        "StrOutputParser:10",
       ],
       edges: [
-        ["main:0", "lambda:1"],
-        ["lambda:1", "wrappedModel:2"],
-        ["wrappedModel:2", "model:3"],
-        ["model:3", "ChatPromptTemplate:4"],
-        ["model:3", "FakeChatModel:5"],
-        ["model:3", "StrOutputParser:6"],
-        ["main:0", "lambda:7"],
-        ["lambda:7", "wrappedModel:8"],
-        ["wrappedModel:8", "model:9"],
-        ["model:9", "ChatPromptTemplate:10"],
-        ["model:9", "FakeChatModel:11"],
-        ["model:9", "StrOutputParser:12"],
+        ["main:0", "wrappedModel:1"],
+        ["wrappedModel:1", "chain:2"],
+        ["chain:2", "ChatPromptTemplate:3"],
+        ["chain:2", "FakeChatModel:4"],
+        ["chain:2", "StrOutputParser:5"],
+        ["main:0", "wrappedModel:6"],
+        ["wrappedModel:6", "chain:7"],
+        ["chain:7", "ChatPromptTemplate:8"],
+        ["chain:7", "FakeChatModel:9"],
+        ["chain:7", "StrOutputParser:10"],
       ],
     });
   });
