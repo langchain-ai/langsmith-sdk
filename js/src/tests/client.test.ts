@@ -91,10 +91,10 @@ describe("Client", () => {
       expect(result).toBe("http://example.com");
     });
 
-    it("should return 'http://localhost' if apiUrl is localhost", () => {
+    it("should return 'http://localhost:3000' if apiUrl is localhost", () => {
       const client = new Client({ apiUrl: "http://localhost/api" });
       const result = (client as any).getHostUrl();
-      expect(result).toBe("http://localhost");
+      expect(result).toBe("http://localhost:3000");
     });
 
     it("should return the webUrl without '/api' if apiUrl contains '/api'", () => {
@@ -127,6 +127,7 @@ describe("Client", () => {
 
   describe("env functions", () => {
     it("should return the env variables correctly", async () => {
+      console.log(process.env)
       // eslint-disable-next-line no-process-env
       process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
       // eslint-disable-next-line no-process-env
