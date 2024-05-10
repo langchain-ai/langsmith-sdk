@@ -127,7 +127,6 @@ describe("Client", () => {
 
   describe("env functions", () => {
     it("should return the env variables correctly", async () => {
-      console.log(process.env)
       // eslint-disable-next-line no-process-env
       process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
       // eslint-disable-next-line no-process-env
