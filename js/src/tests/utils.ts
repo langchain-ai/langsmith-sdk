@@ -77,10 +77,7 @@ export async function deleteDataset(
 export async function waitUntilRunFound(
   client: Client,
   runId: string,
-  checkOutputs = false,
-  options?: {
-    prefix?: string;
-  }
+  checkOutputs = false
 ) {
   return waitUntil(
     async () => {
