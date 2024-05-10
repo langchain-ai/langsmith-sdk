@@ -71,11 +71,8 @@ test("evaluate can evaluate", async () => {
 });
 
 test("evaluate can evaluate with RunEvaluator evaluators", async () => {
-  const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
-    return {
-      foo: input.input + 1,
-    };
+  const targetFunc = (input: { input: number }) => {
+    return { foo: input.input + 1 };
   };
 
   const customEvaluator = async (run: Run, example?: Example) => {
