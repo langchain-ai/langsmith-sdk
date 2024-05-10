@@ -7,8 +7,9 @@ import {
 } from "../schemas.js";
 import { shuffle } from "../utils/shuffle.js";
 import { AsyncCaller } from "../utils/async_caller.js";
-import { type evaluate } from "./index.js";
+import { evaluate } from "./index.js";
 import pRetry from "p-retry";
+import { getCurrentRunTree, traceable } from "../traceable.js";
 
 type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;
 
@@ -332,12 +333,37 @@ export async function evaluateComparative(
     return result;
   }
 
+  const tracedEvaluators = options.evaluators.map((evaluator) =>
+    traceable(
+      async (
+        runs: Run[],
+        example: Example
+      ): Promise<ComparisonEvaluationResultRow> => {
+        const evaluatorRun = getCurrentRunTree();
+        const result = await evaluator(runs, example);
+
+        // sanitise the payload before sending to LangSmith
+        evaluatorRun.inputs = { runs: runs, example: example };
+        evaluatorRun.outputs = result;
+
+        return {
+          ...result,
+          source_run_id: result.source_run_id ?? evaluatorRun.id,
+        };
+      },
+      {
+        project_name: "evaluators",
+        name: evaluator.name || "evaluator",
+      }
+    )
+  );
+
   const promises = Object.entries(runMapByExampleId).flatMap(
     ([exampleId, runs]) => {
       const example = exampleMap[exampleId];
       if (!example) throw new Error(`Example ${exampleId} not found.`);
 
-      return options.evaluators.map((evaluator) =>
+      return tracedEvaluators.map((evaluator) =>
         caller.call(
           evaluateAndSubmitFeedback,
           runs,
