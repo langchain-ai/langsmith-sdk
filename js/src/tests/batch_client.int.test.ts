@@ -1,7 +1,11 @@
 import { Client } from "../client.js";
 import { RunTree, convertToDottedOrderFormat } from "../run_trees.js";
 import { v4 as uuidv4 } from "uuid";
-import { deleteProject, waitUntilRunFound } from "./utils.js";
+import {
+  deleteProject,
+  waitUntilProjectFound,
+  waitUntilRunFound,
+} from "./utils.js";
 
 test.concurrent(
   "Test persist update run",
@@ -11,7 +15,8 @@ test.concurrent(
       callerOptions: { maxRetries: 2 },
       timeout_ms: 30_000,
     });
-    const projectName = "__test_persist_update_run_batch_1";
+    const projectName =
+      "__test_persist_update_run_batch_1" + uuidv4().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
     const runId = uuidv4();
@@ -34,7 +39,12 @@ test.concurrent(
       dotted_order: dottedOrder,
       trace_id: runId,
     });
-    await waitUntilRunFound(langchainClient, runId, true);
+
+    await Promise.all([
+      waitUntilRunFound(langchainClient, runId, true),
+      waitUntilProjectFound(langchainClient, projectName),
+    ]);
+
     const storedRun = await langchainClient.readRun(runId);
     expect(storedRun.id).toEqual(runId);
     await langchainClient.deleteProject({ projectName });
@@ -51,7 +61,9 @@ test.concurrent(
       pendingAutoBatchedRunLimit: 2,
       timeout_ms: 30_000,
     });
-    const projectName = "__test_persist_update_run_batch_above_bs_limit";
+    const projectName =
+      "__test_persist_update_run_batch_above_bs_limit" +
+      uuidv4().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
     const createRun = async () => {
@@ -76,7 +88,11 @@ test.concurrent(
         trace_id: runId,
         end_time: Math.floor(new Date().getTime() / 1000),
       });
-      await waitUntilRunFound(langchainClient, runId, true);
+      await Promise.all([
+        waitUntilRunFound(langchainClient, runId, true),
+        waitUntilProjectFound(langchainClient, projectName),
+      ]);
+
       const storedRun = await langchainClient.readRun(runId);
       expect(storedRun.id).toEqual(runId);
     };
@@ -96,7 +112,8 @@ test.concurrent(
       callerOptions: { maxRetries: 2 },
       timeout_ms: 30_000,
     });
-    const projectName = "__test_persist_update_run_batch_with_delay";
+    const projectName =
+      "__test_persist_update_run_batch_with_delay" + uuidv4().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
     const runId = uuidv4();
@@ -121,7 +138,10 @@ test.concurrent(
       trace_id: runId,
       end_time: Math.floor(new Date().getTime() / 1000),
     });
-    await waitUntilRunFound(langchainClient, runId, true);
+    await Promise.all([
+      waitUntilRunFound(langchainClient, runId, true),
+      waitUntilProjectFound(langchainClient, projectName),
+    ]);
     const storedRun = await langchainClient.readRun(runId);
     expect(storedRun.id).toEqual(runId);
     await langchainClient.deleteProject({ projectName });
@@ -137,7 +157,8 @@ test.concurrent(
       callerOptions: { maxRetries: 2 },
       timeout_ms: 30_000,
     });
-    const projectName = "__test_persist_update_run_tree";
+    const projectName =
+      "__test_persist_update_run_tree" + uuidv4().substring(0, 4);
     await deleteProject(langchainClient, projectName);
     const runId = uuidv4();
     const runTree = new RunTree({
@@ -150,7 +171,10 @@ test.concurrent(
     await runTree.postRun();
     await runTree.end({ output: "foo2" });
     await runTree.patchRun();
-    await waitUntilRunFound(langchainClient, runId, true);
+    await Promise.all([
+      waitUntilRunFound(langchainClient, runId, true),
+      waitUntilProjectFound(langchainClient, projectName),
+    ]);
     const storedRun = await langchainClient.readRun(runId);
     expect(storedRun.id).toEqual(runId);
     expect(storedRun.dotted_order).toEqual(runTree.dotted_order);
