@@ -4,9 +4,16 @@ import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { RunTree } from "./run_trees.js";
 import { Run } from "./schemas.js";
 import { Runnable, RunnableConfig } from "@langchain/core/runnables";
-import { TraceableFunction, isTraceableFunction } from "./traceable.js";
+import {
+  TraceableFunction,
+  getCurrentRunTree,
+  isTraceableFunction,
+} from "./traceable.js";
 
-export async function getLangchainCallbacks(runTree: RunTree) {
+export async function getLangchainCallbacks() {
+  const runTree: RunTree | undefined = getCurrentRunTree();
+  if (!runTree) return undefined;
+
   // TODO: CallbackManager.configure() is only async due to LangChainTracer
   // factory being unnecessarily async.
   let callbacks = await CallbackManager.configure();

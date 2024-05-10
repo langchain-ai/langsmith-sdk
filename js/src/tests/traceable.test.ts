@@ -665,11 +665,9 @@ describe("langchain", () => {
 
     const main = traceable(
       async (input: { text: string }) => {
-        const runTree = getCurrentRunTree();
-        const callbacks = await getLangchainCallbacks(runTree);
-
-        const response = await chain.invoke(input, { callbacks });
-        return response;
+        return chain.invoke(input, {
+          callbacks: await getLangchainCallbacks(),
+        });
       },
       {
         name: "main",
@@ -773,8 +771,7 @@ describe("langchain", () => {
     const wrappedModel = new RunnableTraceable({
       func: traceable(
         async (value: { input: string }) => {
-          const runTree = getCurrentRunTree();
-          const callbacks = await getLangchainCallbacks(runTree);
+          const callbacks = await getLangchainCallbacks();
 
           return chain.invoke(
             { text: `Wrapped input: ${value.input}` },
@@ -787,18 +784,15 @@ describe("langchain", () => {
 
     const main = traceable(
       async () => {
-        const runTree = getCurrentRunTree();
-        const callbacks = await getLangchainCallbacks(runTree);
-
         return {
           response: [
             await wrappedModel.invoke(
               { input: "Are you ready?" },
-              { callbacks }
+              { callbacks: await getLangchainCallbacks() }
             ),
             await wrappedModel.invoke(
               { input: "I said, Are. You. Ready?" },
-              { callbacks }
+              { callbacks: await getLangchainCallbacks() }
             ),
           ],
         };
