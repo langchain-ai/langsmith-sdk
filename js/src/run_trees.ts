@@ -326,6 +326,7 @@ export class RunTree implements BaseRun {
     const runUpdate: RunUpdate = {
       end_time: this.end_time,
       error: this.error,
+      inputs: this.inputs,
       outputs: this.outputs,
       parent_run_id: this.parent_run?.id,
       reference_example_id: this.reference_example_id,
