@@ -18,18 +18,16 @@ import { v4 as uuidv4 } from "uuid";
 type TargetT =
   | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
   | ((input: KVMap, config?: KVMap) => KVMap)
-  | {
-      invoke: (input: KVMap, config?: KVMap) => KVMap;
-    }
-  | {
-      invoke: (input: KVMap, config?: KVMap) => Promise<KVMap>;
-    };
+  | { invoke: (input: KVMap, config?: KVMap) => KVMap }
+  | { invoke: (input: KVMap, config?: KVMap) => Promise<KVMap> };
 
 type TargetNoInvoke =
   | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
   | ((input: KVMap, config?: KVMap) => KVMap);
+
 // Data format: dataset-name, dataset_id, or examples
 type DataT = string | AsyncIterable<Example> | Example[];
+
 // Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
 type SummaryEvaluatorT =
@@ -41,6 +39,7 @@ type SummaryEvaluatorT =
       runs: Array<Run>,
       examples: Array<Example>
     ) => EvaluationResult | EvaluationResults);
+
 // Row-level evaluator
 type EvaluatorT =
   | RunEvaluator
@@ -650,14 +649,39 @@ class _ExperimentManager {
     const examples = await this.getExamples();
     const modifiedAt = examples.map((ex) => ex.modified_at);
 
-    const maxModifiedAt =
-      modifiedAt.length > 0
-        ? new Date(
-            Math.max(...modifiedAt.map((date) => new Date(date).getTime()))
-          )
-        : undefined;
+    // Python might return microseconds, which we need
+    // to account for when comparing dates.
+    const modifiedAtTime = modifiedAt.map((date) => {
+      function getMiliseconds(isoString: string) {
+        const time = isoString.split("T").at(1);
+        if (!time) return "";
 
-    return maxModifiedAt?.toISOString();
+        const regex = /[0-9]{2}:[0-9]{2}:[0-9]{2}.([0-9]+)/;
+        const strMiliseconds = time.match(regex)?.[1];
+        return strMiliseconds ?? "";
+      }
+
+      const jsDate = new Date(date);
+
+      let source = getMiliseconds(date);
+      let parsed = getMiliseconds(jsDate.toISOString());
+
+      const length = Math.max(source.length, parsed.length);
+      source = source.padEnd(length, "0");
+      parsed = parsed.padEnd(length, "0");
+
+      const microseconds =
+        (Number.parseInt(source, 10) - Number.parseInt(parsed, 10)) / 1000;
+
+      const time = jsDate.getTime() + microseconds;
+      return { date, time };
+    });
+
+    if (modifiedAtTime.length === 0) return undefined;
+    return modifiedAtTime.reduce(
+      (max, current) => (current.time > max.time ? current : max),
+      modifiedAtTime[0]
+    ).date;
   }
 
   async _end(): Promise<void> {
@@ -735,9 +759,7 @@ function convertInvokeToTopLevel(fn: TargetT): TargetNoInvoke {
 
 async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
-  fields: EvaluateOptions & {
-    experiment?: TracerSession;
-  }
+  fields: EvaluateOptions & { experiment?: TracerSession }
 ): Promise<ExperimentResults> {
   const client = fields.client ?? new Client();
   const runs = _isCallable(target) ? null : (target as AsyncGenerator<Run>);
@@ -759,11 +781,10 @@ async function _evaluate(
   if (_isCallable(target)) {
     manager = await manager.withPredictions(
       convertInvokeToTopLevel(target as TargetT),
-      {
-        maxConcurrency: fields.maxConcurrency,
-      }
+      { maxConcurrency: fields.maxConcurrency }
     );
   }
+
   if (fields.evaluators) {
     manager = await manager.withEvaluators(fields.evaluators, {
       maxConcurrency: fields.maxConcurrency,
