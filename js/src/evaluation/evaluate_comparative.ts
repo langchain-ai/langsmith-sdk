@@ -211,6 +211,8 @@ export async function evaluateComparative(
     )
   );
 
+  console.dir(experimentRuns, { depth: null });
+
   let exampleIdsIntersect: Set<string> | undefined;
   for (const runs of experimentRuns) {
     const exampleIdsSet = new Set(
