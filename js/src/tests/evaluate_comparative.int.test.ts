@@ -21,8 +21,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // const client = new Client();
-  // await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
+  console.log("Deleting dataset")
+  const client = new Client();
+  await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
 });
 
 describe("evaluate comparative", () => {
@@ -37,6 +38,8 @@ describe("evaluate comparative", () => {
       { data: TESTING_DATASET_NAME }
     );
 
+    console.log("Pairwise starting")
+
     const pairwise = await evaluateComparative(
       [firstEval.experimentName, secondEval.experimentName],
       {
@@ -48,6 +51,8 @@ describe("evaluate comparative", () => {
         ],
       }
     );
+
+    console.log("Pairwise completed")
 
     // TODO: we should a) wait for runs to be persisted, b) allow passing runnables / traceables directly
     expect(pairwise.results.length).toBeGreaterThanOrEqual(1);
