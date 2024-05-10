@@ -1,6 +1,7 @@
 import { v4 as uuid4, validate } from "uuid";
 import { Client } from "../index.js";
 import { ComparisonEvaluationResult, Example, Run } from "../schemas.js";
+import { shuffle } from "../utils/shuffle.js";
 
 function loadExperiment(client: Client, experiment: string) {
   return client.readProject(
@@ -58,6 +59,11 @@ export interface EvaluateComparativeOptions {
       example: Example
     ) => ComparisonEvaluationResult | Promise<ComparisonEvaluationResult>
   >;
+  /**
+   * Randomize the order of outputs for each evaluation
+   * @default false
+   */
+  randomizeOrder?: boolean;
   /**
    * The LangSmith client to use.
    * @default undefined
@@ -228,7 +234,14 @@ export async function evaluateComparative(
 
     for (const evaluator of options.evaluators) {
       const expectedRunIds = new Set(runs.map((r) => r.id));
-      const result = await evaluator(runs, example);
+
+      if (options.randomizeOrder) {
+        runs.sort(() => Math.random() - 0.5);
+      }
+      const result = await evaluator(
+        options.randomizeOrder ? shuffle(runs) : runs,
+        example
+      );
       results.push(result);
 
       for (const [runId, score] of Object.entries(result.scores)) {
