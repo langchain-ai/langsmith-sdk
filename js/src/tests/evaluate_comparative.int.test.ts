@@ -21,7 +21,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const client = new Client();
+  // const client = new Client();
   // await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
 });
 
