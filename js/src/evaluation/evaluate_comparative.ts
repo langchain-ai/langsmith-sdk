@@ -1,7 +1,12 @@
 import { v4 as uuid4, validate } from "uuid";
 import { Client } from "../index.js";
-import { ComparisonEvaluationResult, Example, Run } from "../schemas.js";
+import {
+  ComparisonEvaluationResult as ComparisonEvaluationResultRow,
+  Example,
+  Run,
+} from "../schemas.js";
 import { shuffle } from "../utils/shuffle.js";
+import { AsyncCaller } from "../utils/async_caller.js";
 
 function loadExperiment(client: Client, experiment: string) {
   return client.readProject(
@@ -57,7 +62,7 @@ export interface EvaluateComparativeOptions {
     (
       runs: Run[],
       example: Example
-    ) => ComparisonEvaluationResult | Promise<ComparisonEvaluationResult>
+    ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>
   >;
   /**
    * Randomize the order of outputs for each evaluation
@@ -97,7 +102,8 @@ export interface EvaluateComparativeOptions {
 }
 
 export interface ComparisonEvaluationResults {
-  results: ComparisonEvaluationResult[];
+  experimentName: string;
+  results: ComparisonEvaluationResultRow[];
 }
 
 export async function evaluateComparative(
@@ -170,6 +176,35 @@ export async function evaluateComparative(
     referenceDatasetId: projects.at(0)?.reference_dataset_id,
   });
 
+  const viewUrl = await (async () => {
+    const projectId = projects.at(0)?.id ?? projects.at(1)?.id;
+    const datasetId = comparativeExperiment?.reference_dataset_id;
+
+    if (projectId && datasetId) {
+      const hostUrl = (await client.getProjectUrl({ projectId }))
+        .split("/projects/p/")
+        .at(0);
+
+      const result = new URL(`${hostUrl}/datasets/${datasetId}/compare`);
+      result.searchParams.set(
+        "selectedSessions",
+        projects.map((p) => p.id).join(",")
+      );
+
+      result.searchParams.set(
+        "comparativeExperiment",
+        comparativeExperiment.id
+      );
+      return result.toString();
+    }
+
+    return null;
+  })();
+
+  if (viewUrl != null) {
+    console.log(`View results at: ${viewUrl}`);
+  }
+
   const experimentRuns = await Promise.all(
     projects.map((p) =>
       loadTraces(client, p.id, { loadNested: !!options.loadNested })
@@ -225,41 +260,56 @@ export async function evaluateComparative(
     }
   }
 
-  const results: ComparisonEvaluationResult[] = [];
+  const caller = new AsyncCaller({ maxConcurrency: options.maxConcurrency });
 
-  // TODO: handle maxConcurrency
-  for (const [exampleId, runs] of Object.entries(runMapByExampleId)) {
-    const example = exampleMap[exampleId];
-    if (!example) throw new Error(`Example ${exampleId} not found.`);
+  async function evaluateAndSubmitFeedback(
+    runs: Run[],
+    example: Example,
+    evaluator: (
+      runs: Run[],
+      example: Example
+    ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>
+  ) {
+    const expectedRunIds = new Set(runs.map((r) => r.id));
+    const result = await evaluator(
+      options.randomizeOrder ? shuffle(runs) : runs,
+      example
+    );
 
-    for (const evaluator of options.evaluators) {
-      const expectedRunIds = new Set(runs.map((r) => r.id));
-
-      if (options.randomizeOrder) {
-        runs.sort(() => Math.random() - 0.5);
+    for (const [runId, score] of Object.entries(result.scores)) {
+      // validate if the run id
+      if (!expectedRunIds.has(runId)) {
+        throw new Error(`Returning an invalid run id ${runId} from evaluator.`);
       }
-      const result = await evaluator(
-        options.randomizeOrder ? shuffle(runs) : runs,
-        example
-      );
-      results.push(result);
 
-      for (const [runId, score] of Object.entries(result.scores)) {
-        // validate if the run id
-        if (!expectedRunIds.has(runId)) {
-          throw new Error(
-            `Returning an invalid run id ${runId} from evaluator.`
-          );
-        }
-
-        await client.createFeedback(runId, result.key, {
-          score,
-          sourceRunId: result.source_run_id,
-          comparativeExperimentId: comparativeExperiment.id,
-        });
-      }
+      await client.createFeedback(runId, result.key, {
+        score,
+        sourceRunId: result.source_run_id,
+        comparativeExperimentId: comparativeExperiment.id,
+      });
     }
+
+    return result;
   }
 
-  return { results };
+  const results: ComparisonEvaluationResultRow[] = await Promise.all(
+    Object.entries(runMapByExampleId).flatMap(([exampleId, runs]) => {
+      const example = exampleMap[exampleId];
+      if (!example) throw new Error(`Example ${exampleId} not found.`);
+
+      return options.evaluators.map((evaluator) =>
+        caller.call(
+          evaluateAndSubmitFeedback,
+          runs,
+          exampleMap[exampleId],
+          evaluator
+        )
+      );
+    })
+  );
+
+  return {
+    experimentName: name,
+    results,
+  };
 }

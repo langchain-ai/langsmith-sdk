@@ -459,12 +459,12 @@ export class Client {
     };
   }
 
-  private getHostUrl(): string {
+  public getHostUrl(): string {
     if (this.webUrl) {
       return this.webUrl;
     } else if (isLocalhost(this.apiUrl)) {
-      this.webUrl = "http://localhost";
-      return "http://localhost";
+      this.webUrl = "http://localhost:3000";
+      return this.webUrl;
     } else if (
       this.apiUrl.includes("/api") &&
       !this.apiUrl.split(".", 1)[0].endsWith("api")
@@ -473,10 +473,10 @@ export class Client {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
       this.webUrl = "https://dev.smith.langchain.com";
-      return "https://dev.smith.langchain.com";
+      return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
-      return "https://smith.langchain.com";
+      return this.webUrl;
     }
   }
 
@@ -1566,6 +1566,21 @@ export class Client {
       result = response as TracerSessionResult;
     }
     return result;
+  }
+
+  public async getProjectUrl({
+    projectId,
+    projectName,
+  }: {
+    projectId?: string;
+    projectName?: string;
+  }) {
+    if (projectId === undefined && projectName === undefined) {
+      throw new Error("Must provide either projectName or projectId");
+    }
+    const project = await this.readProject({ projectId, projectName });
+    const tenantId = await this._getTenantId();
+    return `${this.getHostUrl()}/o/${tenantId}/projects/p/${project.id}`;
   }
 
   private async _getTenantId(): Promise<string> {
