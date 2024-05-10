@@ -1,6 +1,7 @@
 import { evaluate } from "../evaluation/_runner.js";
 import { evaluateComparative } from "../evaluation/evaluate_comparative.js";
 import { Client } from "../index.js";
+import { waitUntilRunFound } from "./utils.js";
 
 const TESTING_DATASET_NAME = "test_evaluate_comparative_js";
 
@@ -21,13 +22,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  console.log("Deleting dataset")
+  console.log("Deleting dataset");
   // const client = new Client();
   // await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
 });
 
 describe("evaluate comparative", () => {
   test("basic", async () => {
+    const client = new Client();
+
     const firstEval = await evaluate(
       (input) => ({ foo: `first:${input.input}` }),
       { data: TESTING_DATASET_NAME }
@@ -38,7 +41,11 @@ describe("evaluate comparative", () => {
       { data: TESTING_DATASET_NAME }
     );
 
-    console.log("Pairwise starting")
+    await Promise.all(
+      [firstEval, secondEval].flatMap(({ results }) =>
+        results.flatMap(({ run }) => waitUntilRunFound(client, run.id))
+      )
+    );
 
     const pairwise = await evaluateComparative(
       [firstEval.experimentName, secondEval.experimentName],
@@ -51,8 +58,6 @@ describe("evaluate comparative", () => {
         ],
       }
     );
-
-    console.log("Pairwise completed")
 
     // TODO: we should a) wait for runs to be persisted, b) allow passing runnables / traceables directly
     expect(pairwise.results.length).toBeGreaterThanOrEqual(1);
