@@ -15,15 +15,17 @@ import {
 } from "./evaluator.js";
 import { v4 as uuidv4 } from "uuid";
 
-type TargetT =
-  | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
-  | ((input: KVMap, config?: KVMap) => KVMap)
-  | { invoke: (input: KVMap, config?: KVMap) => KVMap }
-  | { invoke: (input: KVMap, config?: KVMap) => Promise<KVMap> };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TargetT<TInput = any, TOutput = KVMap> =
+  | ((input: TInput, config?: KVMap) => Promise<TOutput>)
+  | ((input: TInput, config?: KVMap) => TOutput)
+  | { invoke: (input: TInput, config?: KVMap) => TOutput }
+  | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
 
-type TargetNoInvoke =
-  | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
-  | ((input: KVMap, config?: KVMap) => KVMap);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TargetNoInvoke<TInput = any, TOutput = KVMap> =
+  | ((input: TInput, config?: KVMap) => Promise<TOutput>)
+  | ((input: TInput, config?: KVMap) => TOutput);
 
 // Data format: dataset-name, dataset_id, or examples
 type DataT = string | AsyncIterable<Example> | Example[];
