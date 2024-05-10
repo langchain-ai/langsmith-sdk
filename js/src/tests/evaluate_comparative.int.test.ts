@@ -22,8 +22,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   console.log("Deleting dataset")
-  const client = new Client();
-  await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
+  // const client = new Client();
+  // await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
 });
 
 describe("evaluate comparative", () => {
