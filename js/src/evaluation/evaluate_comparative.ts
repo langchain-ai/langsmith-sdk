@@ -152,7 +152,7 @@ export async function evaluateComparative(
   const datasetVersion = projects.at(0)?.extra?.metadata?.dataset_version;
 
   const id = uuid4();
-  const name = (() => {
+  const experimentName = (() => {
     if (!options.experimentPrefix) {
       const names = projects
         .map((p) => p.name)
@@ -165,11 +165,11 @@ export async function evaluateComparative(
   })();
 
   // TODO: add URL to the comparative experiment
-  console.log(`Starting pairwise evaluation of: ${name}`);
+  console.log(`Starting pairwise evaluation of: ${experimentName}`);
 
   const comparativeExperiment = await client.createComparativeExperiment({
     id,
-    name,
+    name: experimentName,
     experimentIds: projects.map((p) => p.id),
     description: options.description,
     metadata: options.metadata,
@@ -292,8 +292,8 @@ export async function evaluateComparative(
     return result;
   }
 
-  const results: ComparisonEvaluationResultRow[] = await Promise.all(
-    Object.entries(runMapByExampleId).flatMap(([exampleId, runs]) => {
+  const promises = Object.entries(runMapByExampleId).flatMap(
+    ([exampleId, runs]) => {
       const example = exampleMap[exampleId];
       if (!example) throw new Error(`Example ${exampleId} not found.`);
 
@@ -305,11 +305,9 @@ export async function evaluateComparative(
           evaluator
         )
       );
-    })
+    }
   );
 
-  return {
-    experimentName: name,
-    results,
-  };
+  const results: ComparisonEvaluationResultRow[] = await Promise.all(promises);
+  return { experimentName, results };
 }
