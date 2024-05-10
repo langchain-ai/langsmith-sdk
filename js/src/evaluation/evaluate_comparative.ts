@@ -49,17 +49,44 @@ async function loadTraces(
 }
 
 export interface EvaluateComparativeOptions {
+  /**
+   * A list of evaluators to use for comparative evaluation.
+   */
   evaluators: Array<
     (
       runs: Run[],
       example: Example
     ) => ComparisonEvaluationResult | Promise<ComparisonEvaluationResult>
   >;
+  /**
+   * The LangSmith client to use.
+   * @default undefined
+   */
   client?: Client;
+  /**
+   * Metadata to attach to the experiment.
+   * @default undefined
+   */
   metadata?: Record<string, unknown>;
+  /**
+   * A prefix to use for your experiment name.
+   * @default undefined
+   */
   experimentPrefix?: string;
+  /**
+   * A free-form description of the experiment.
+   * @default undefined
+   */
   description?: string;
+  /**
+   * Whether to load all child runs for the experiment.
+   * @default false
+   */
   loadNested?: boolean;
+  /**
+   * The maximum number of concurrent evaluators to run.
+   * @default undefined
+   */
   maxConcurrency?: number;
 }
 
@@ -165,14 +192,16 @@ export async function evaluateComparative(
     throw new Error("No examples found in common between experiments.");
   }
 
-  // TODO: batch only 99 examples at a time
   const exampleMap: Record<string, Example> = {};
-  for await (const example of client.listExamples({
-    datasetId: referenceDatasetId,
-    exampleIds,
-    asOf: datasetVersion,
-  })) {
-    exampleMap[example.id] = example;
+  for (let start = 0; start < exampleIds.length; start += 99) {
+    const exampleIdsChunk = exampleIds.slice(start, start + 99);
+    for await (const example of client.listExamples({
+      datasetId: referenceDatasetId,
+      exampleIds: exampleIdsChunk,
+      asOf: datasetVersion,
+    })) {
+      exampleMap[example.id] = example;
+    }
   }
 
   const runMapByExampleId: Record<string, Run[]> = {};
