@@ -2,6 +2,7 @@ import * as uuid from "uuid";
 
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
+  ComparativeExperiment,
   DataType,
   Dataset,
   DatasetDiffInfo,
@@ -187,6 +188,7 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
   session_id?: string;
+  comparative_experiment_id?: string;
 }
 
 interface FeedbackUpdate {
@@ -2233,6 +2235,7 @@ export class Client {
       feedbackId,
       feedbackConfig,
       projectId,
+      comparativeExperimentId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -2245,6 +2248,7 @@ export class Client {
       feedbackId?: string;
       eager?: boolean;
       projectId?: string;
+      comparativeExperimentId?: string;
     }
   ): Promise<Feedback> {
     if (!runId && !projectId) {
@@ -2279,6 +2283,7 @@ export class Client {
       correction,
       comment,
       feedback_source: feedback_source,
+      comparative_experiment_id: comparativeExperimentId,
       feedbackConfig,
       session_id: projectId,
     };
@@ -2447,6 +2452,65 @@ export class Client {
     );
     const result = await response.json();
     return result as FeedbackIngestToken;
+  }
+
+  public async createComparativeExperiment({
+    name,
+    experimentIds,
+    referenceDatasetId,
+    createdAt,
+    description,
+    metadata,
+    id,
+  }: {
+    name: string;
+    experimentIds: Array<string>;
+    referenceDatasetId?: string;
+    createdAt?: Date;
+    description?: string;
+    metadata?: Record<string, unknown>;
+    id?: string;
+  }): Promise<ComparativeExperiment> {
+    if (experimentIds.length === 0) {
+      throw new Error("At least one experiment is required");
+    }
+
+    if (!referenceDatasetId) {
+      referenceDatasetId = (
+        await this.readProject({
+          projectId: experimentIds[0],
+        })
+      ).reference_dataset_id;
+    }
+
+    if (!referenceDatasetId == null) {
+      throw new Error("A reference dataset is required");
+    }
+
+    const body = {
+      id,
+      name,
+      experiment_ids: experimentIds,
+      reference_dataset_id: referenceDatasetId,
+      description,
+      created_at: (createdAt ?? new Date())?.toISOString(),
+      extra: {} as Record<string, unknown>,
+    };
+
+    if (metadata) body.extra["metadata"] = metadata;
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/comparative`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    return await response.json();
   }
 
   /**

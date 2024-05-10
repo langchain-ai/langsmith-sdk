@@ -6,7 +6,7 @@ import {
   ValueType,
 } from "../schemas.js";
 import { v4 as uuidv4 } from "uuid";
-import { traceable, wrapFunctionAndEnsureTraceable } from "../traceable.js";
+import { TraceableFunction, traceable } from "../traceable.js";
 import { RunTreeConfig } from "../run_trees.js";
 
 /**
@@ -106,11 +106,12 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
   func: Func;
 
   constructor(evaluator: Func) {
-    const wrappedFunc = (input: Record<string, any>) => {
-      const runAndExample = input.langSmithRunAndExample;
-      return evaluator(...Object.values(runAndExample));
-    };
-    this.func = wrappedFunc as Func;
+    this.func = ((input: {
+      langSmithRunAndExample: { run: Run; example: Example };
+    }) => {
+      const { run, example } = input.langSmithRunAndExample;
+      return evaluator(run, example);
+    }) as Func;
   }
 
   private coerceEvaluationResults(
@@ -169,24 +170,22 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     if ("session_id" in run) {
       metadata["experiment"] = run.session_id;
     }
-    const wrappedTraceableFunc: ReturnType<typeof traceable> =
-      wrapFunctionAndEnsureTraceable<Func>(
-        this.func,
-        options || {},
-        "evaluator"
-      );
-    // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
-    // inputs. This key is extracted in the wrapped function, with `run` and
-    // `example` passed to evaluator function as arguments.
-    const langSmithRunAndExample = {
-      run,
-      example,
-    };
+
+    if (typeof this.func !== "function") {
+      throw new Error("Target must be runnable function");
+    }
+
+    const wrappedTraceableFunc: TraceableFunction<Func> = traceable<Func>(
+      this.func,
+      { project_name: "evaluators", name: "evaluator", ...options }
+    );
+
     const result = (await wrappedTraceableFunc(
-      { langSmithRunAndExample },
-      {
-        metadata,
-      }
+      // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
+      // inputs. This key is extracted in the wrapped function, with `run` and
+      // `example` passed to evaluator function as arguments.
+      { langSmithRunAndExample: { run, example } },
+      { metadata }
     )) as EvaluationResults | Record<string, any>;
 
     // Check the one required property of EvaluationResult since 'instanceof' is not possible

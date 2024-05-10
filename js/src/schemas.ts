@@ -361,3 +361,22 @@ export interface DatasetDiffInfo {
   examples_added: string[];
   examples_removed: string[];
 }
+
+export interface ComparisonEvaluationResult {
+  key: string;
+  scores: Record<string, ScoreType>;
+  source_run_id?: string;
+}
+
+export interface ComparativeExperiment {
+  id: string;
+  name: string;
+  description: string;
+  tenant_id: string;
+  created_at: string;
+  modified_at: string;
+  reference_dataset_id: string;
+  extra?: Record<string, unknown>;
+  experiments_info?: Array<Record<string, unknown>>;
+  feedback_stats?: Record<string, unknown>;
+}
