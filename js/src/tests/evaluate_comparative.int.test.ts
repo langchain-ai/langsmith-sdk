@@ -1,6 +1,7 @@
 import { evaluate } from "../evaluation/_runner.js";
 import { evaluateComparative } from "../evaluation/evaluate_comparative.js";
 import { Client } from "../index.js";
+import { waitUntilRunFound } from "./utils.js";
 
 const TESTING_DATASET_NAME = "test_evaluate_comparative_js";
 
@@ -21,12 +22,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const client = new Client();
-  await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
+  console.log("Deleting dataset");
+  // const client = new Client();
+  // await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
 });
 
 describe("evaluate comparative", () => {
   test("basic", async () => {
+    const client = new Client();
+
     const firstEval = await evaluate(
       (input) => ({ foo: `first:${input.input}` }),
       { data: TESTING_DATASET_NAME }
@@ -35,6 +39,12 @@ describe("evaluate comparative", () => {
     const secondEval = await evaluate(
       (input) => ({ foo: `second:${input.input}` }),
       { data: TESTING_DATASET_NAME }
+    );
+
+    await Promise.all(
+      [firstEval, secondEval].flatMap(({ results }) =>
+        results.flatMap(({ run }) => waitUntilRunFound(client, run.id))
+      )
     );
 
     const pairwise = await evaluateComparative(
