@@ -25,6 +25,10 @@
     "schemas.js",
     "schemas.d.ts",
     "schemas.d.cts",
+    "langchain.cjs",
+    "langchain.js",
+    "langchain.d.ts",
+    "langchain.d.cts",
     "wrappers.cjs",
     "wrappers.js",
     "wrappers.d.ts",
@@ -109,10 +113,14 @@
     "typescript": "^5.4.5"
   },
   "peerDependencies": {
-    "openai": "*"
+    "openai": "*",
+    "@langchain/core": "*"
   },
   "peerDependenciesMeta": {
     "openai": {
+      "optional": true
+    },
+    "@langchain/core": {
       "optional": true
     }
   },
@@ -179,6 +187,15 @@
       },
       "import": "./schemas.js",
       "require": "./schemas.cjs"
+    },
+    "./langchain": {
+      "types": {
+        "import": "./langchain.d.ts",
+        "require": "./langchain.d.cts",
+        "default": "./langchain.d.ts"
+      },
+      "import": "./langchain.js",
+      "require": "./langchain.cjs"
     },
     "./wrappers": {
       "types": {

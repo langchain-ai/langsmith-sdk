@@ -37,6 +37,7 @@
       "src/traceable.ts",
       "src/evaluation/index.ts",
       "src/schemas.ts",
+      "src/langchain.ts",
       "src/wrappers/index.ts",
       "src/wrappers/openai.ts"
     ]

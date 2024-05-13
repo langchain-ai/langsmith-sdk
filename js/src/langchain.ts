@@ -1,17 +1,27 @@
-/* eslint-disable import/no-extraneous-dependencies */
 import { CallbackManager } from "@langchain/core/callbacks/manager";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import { Runnable, RunnableConfig } from "@langchain/core/runnables";
+
 import { RunTree } from "./run_trees.js";
 import { Run } from "./schemas.js";
-import { Runnable, RunnableConfig } from "@langchain/core/runnables";
 import {
   TraceableFunction,
   getCurrentRunTree,
   isTraceableFunction,
 } from "./traceable.js";
 
-export async function getLangchainCallbacks() {
-  const runTree: RunTree | undefined = getCurrentRunTree();
+/**
+ * Converts the current run tree active within a traceable-wrapped function
+ * into a LangChain compatible callback manager. This is useful to handoff tracing
+ * from LangSmith to LangChain Runnables and LLMs.
+ *
+ * @param {RunTree | undefined} currentRunTree Current RunTree from within a traceable-wrapped function. If not provided, the current run tree will be inferred from AsyncLocalStorage.
+ * @returns {CallbackManager | undefined} Callback manager used by LangChain Runnable objects.
+ */
+export async function getLangchainCallbacks(
+  currentRunTree?: RunTree | undefined
+) {
+  const runTree: RunTree | undefined = currentRunTree ?? getCurrentRunTree();
   if (!runTree) return undefined;
 
   // TODO: CallbackManager.configure() is only async due to LangChainTracer
@@ -70,6 +80,10 @@ export async function getLangchainCallbacks() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTraceableFunction = TraceableFunction<(...any: any[]) => any>;
 
+/**
+ * RunnableTraceable is a Runnable that wraps a traceable function.
+ * This allows adding Langsmith traced functions into LangChain sequences.
+ */
 export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
   RunInput,
   RunOutput
@@ -125,5 +139,9 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
     }
 
     return (await this.func(config, input)) as RunOutput;
+  }
+
+  static from(func: AnyTraceableFunction) {
+    return new RunnableTraceable({ func });
   }
 }
