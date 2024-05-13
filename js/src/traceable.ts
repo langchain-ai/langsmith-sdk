@@ -8,7 +8,7 @@ import {
   isRunnableConfigLike,
 } from "./run_trees.js";
 import { InvocationParamsSchema, KVMap } from "./schemas.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { isTracingEnabled } from "./env.js";
 
 function isPromiseMethod(
   x: string | symbol
@@ -128,21 +128,6 @@ const isReadableStream = (x: unknown): x is ReadableStream =>
   "getReader" in x &&
   typeof x.getReader === "function";
 
-const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
-  if (tracingEnabled !== undefined) {
-    return tracingEnabled;
-  }
-  const envVars = [
-    "LANGSMITH_TRACING_V2",
-    "LANGCHAIN_TRACING_V2",
-    "LANGSMITH_TRACING",
-    "LANGCHAIN_TRACING",
-  ];
-  return Boolean(
-    envVars.find((envVar) => getEnvironmentVariable(envVar) === "true")
-  );
-};
-
 const handleRunInputs = (rawInputs: unknown[]): KVMap => {
   const firstInput = rawInputs[0];
 
@@ -174,8 +159,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined
 ): RunTree | undefined => {
-  const tracingEnabled_ = tracingIsEnabled(runTree.tracingEnabled);
-  if (!tracingEnabled_) {
+  if (!isTracingEnabled(runTree.tracingEnabled)) {
     return undefined;
   }
 
