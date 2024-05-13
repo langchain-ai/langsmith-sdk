@@ -51,6 +51,10 @@ Chinook_Sqlite.sql
 /schemas.js
 /schemas.d.ts
 /schemas.d.cts
+/langchain.cjs
+/langchain.js
+/langchain.d.ts
+/langchain.d.cts
 /wrappers.cjs
 /wrappers.js
 /wrappers.d.ts

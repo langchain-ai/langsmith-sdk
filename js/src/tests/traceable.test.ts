@@ -6,9 +6,9 @@ import { FakeChatModel } from "@langchain/core/utils/testing";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-import { RunnableTraceable, getLangchainCallbacks } from "../langchain.js";
 import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
+import { RunnableTraceable, getLangchainCallbacks } from "../langchain.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -723,7 +723,7 @@ describe("langchain", () => {
 
     const chain = prompt
       .pipe(llm)
-      .pipe(new RunnableTraceable({ func: addValueTraceable }))
+      .pipe(RunnableTraceable.from(addValueTraceable))
       .pipe(parser);
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment

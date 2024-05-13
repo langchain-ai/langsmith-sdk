@@ -12,6 +12,7 @@ const entrypoints = {
   traceable: "traceable",
   evaluation: "evaluation/index",
   schemas: "schemas",
+  langchain: "langchain",
   wrappers: "wrappers/index",
   "wrappers/openai": "wrappers/openai",
 };
