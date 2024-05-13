@@ -1,4 +1,8 @@
 import { Client } from "../client.js";
+import { v4 as uuidv4 } from "uuid";
+// eslint-disable-next-line import/no-extraneous-dependencies
+import { faker } from "@faker-js/faker";
+import { RunCreate } from "../schemas.js";
 
 export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
@@ -134,4 +138,27 @@ export function sanitizePresignedUrls(payload: unknown) {
     }
     return value;
   });
+}
+
+/**
+ * Factory which returns a list of `RunCreate` objects.
+ * @param {number} count Number of runs to create (default: 10)
+ * @returns {Array<RunCreate>} List of `RunCreate` objects
+ */
+export function createRunsFactory(
+  projectName: string,
+  count = 10
+): Array<RunCreate> {
+  return Array.from({ length: count }).map((_, idx) => ({
+    id: uuidv4(),
+    name: `${idx}-${faker.lorem.words()}`,
+    run_type: faker.helpers.arrayElement(["tool", "chain", "llm", "runnable"]),
+    inputs: {
+      question: faker.lorem.sentence(),
+    },
+    outputs: {
+      answer: faker.lorem.sentence(),
+    },
+    project_name: projectName,
+  }));
 }
