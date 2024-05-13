@@ -510,7 +510,6 @@ class _ExperimentManager {
     evaluators: Array<RunEvaluator>,
     currentResults: ExperimentResultRow,
     fields: {
-      experimentName: string;
       client: Client;
     }
   ): Promise<ExperimentResultRow> {
@@ -519,7 +518,7 @@ class _ExperimentManager {
       try {
         const options = {
           reference_example_id: example.id,
-          project_name: fields.experimentName,
+          project_name: "evaluators",
           metadata: {
             example_version: example.modified_at
               ? new Date(example.modified_at).toISOString()
@@ -567,7 +566,6 @@ class _ExperimentManager {
     if (maxConcurrency === 0) {
       for await (const currentResults of this.getResults()) {
         yield this._runEvaluators(evaluators, currentResults, {
-          experimentName: this.experimentName,
           client: this.client,
         });
       }
@@ -579,7 +577,6 @@ class _ExperimentManager {
       for await (const currentResults of this.getResults()) {
         futures.push(
           caller.call(this._runEvaluators, evaluators, currentResults, {
-            experimentName: this.experimentName,
             client: this.client,
           })
         );
