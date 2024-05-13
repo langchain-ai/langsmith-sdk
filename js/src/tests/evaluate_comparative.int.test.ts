@@ -22,9 +22,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  console.log("Deleting dataset");
-  // const client = new Client();
-  // await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
+  const client = new Client();
+  await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
 });
 
 describe("evaluate comparative", () => {
@@ -59,7 +58,29 @@ describe("evaluate comparative", () => {
       }
     );
 
-    // TODO: we should a) wait for runs to be persisted, b) allow passing runnables / traceables directly
-    expect(pairwise.results.length).toBeGreaterThanOrEqual(1);
+    expect(pairwise.results.length).toEqual(2);
+  });
+
+  test("pass directly", async () => {
+    const pairwise = await evaluateComparative(
+      [
+        evaluate((input) => ({ foo: `first:${input.input}` }), {
+          data: TESTING_DATASET_NAME,
+        }),
+        evaluate((input) => ({ foo: `second:${input.input}` }), {
+          data: TESTING_DATASET_NAME,
+        }),
+      ],
+      {
+        evaluators: [
+          (runs) => ({
+            key: "latter_precedence",
+            scores: Object.fromEntries(runs.map((run, i) => [run.id, i % 2])),
+          }),
+        ],
+      }
+    );
+
+    expect(pairwise.results.length).toEqual(2);
   });
 });

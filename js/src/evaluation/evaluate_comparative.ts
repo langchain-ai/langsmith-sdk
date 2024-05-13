@@ -7,12 +7,26 @@ import {
 } from "../schemas.js";
 import { shuffle } from "../utils/shuffle.js";
 import { AsyncCaller } from "../utils/async_caller.js";
+import { type evaluate } from "./index.js";
+import pRetry from "p-retry";
 
-function loadExperiment(client: Client, experiment: string) {
+type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;
+
+function isExperimentResultsList(
+  value: ExperimentResults[] | string[]
+): value is ExperimentResults[] {
+  return value.some((x) => typeof x !== "string");
+}
+
+async function loadExperiment(
+  client: Client,
+  experiment: string | ExperimentResults
+) {
+  const value =
+    typeof experiment === "string" ? experiment : experiment.experimentName;
+
   return client.readProject(
-    validate(experiment)
-      ? { projectId: experiment }
-      : { projectName: experiment }
+    validate(value) ? { projectId: value } : { projectName: value }
   );
 }
 
@@ -107,7 +121,9 @@ export interface ComparisonEvaluationResults {
 }
 
 export async function evaluateComparative(
-  experiments: Array<string>,
+  experiments:
+    | Array<string>
+    | Array<Promise<ExperimentResults> | ExperimentResults>,
   options: EvaluateComparativeOptions
 ): Promise<ComparisonEvaluationResults> {
   if (experiments.length < 2) {
@@ -125,10 +141,34 @@ export async function evaluateComparative(
   }
 
   const client = options.client ?? new Client();
+  const resolvedExperiments = await Promise.all(experiments);
 
-  const projects = await Promise.all(
-    experiments.map((experiment) => loadExperiment(client, experiment))
-  );
+  const projects = await (() => {
+    if (!isExperimentResultsList(resolvedExperiments)) {
+      return Promise.all(
+        resolvedExperiments.map((experiment) =>
+          loadExperiment(client, experiment)
+        )
+      );
+    }
+
+    // if we know the number of runs beforehand, check if the
+    // number of runs in the project matches the expected number of runs
+    return Promise.all(
+      resolvedExperiments.map((experiment) =>
+        pRetry(
+          async () => {
+            const project = await loadExperiment(client, experiment);
+            if (project.run_count !== experiment?.results.length) {
+              throw new Error("Experiment is missing runs. Retrying.");
+            }
+            return project;
+          },
+          { factor: 2, minTimeout: 1000, retries: 10 }
+        )
+      )
+    );
+  })();
 
   if (new Set(projects.map((p) => p.reference_dataset_id)).size > 1) {
     throw new Error("All experiments must have the same reference dataset.");
@@ -210,8 +250,6 @@ export async function evaluateComparative(
       loadTraces(client, p.id, { loadNested: !!options.loadNested })
     )
   );
-
-  console.dir(experimentRuns, { depth: null });
 
   let exampleIdsIntersect: Set<string> | undefined;
   for (const runs of experimentRuns) {
