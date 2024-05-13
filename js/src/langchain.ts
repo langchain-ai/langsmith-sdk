@@ -71,7 +71,12 @@ export async function getLangchainCallbacks(
   }
 
   if (langChainTracer != null) {
-    Object.assign(langChainTracer, { runMap, client: runTree.client });
+    Object.assign(langChainTracer, {
+      runMap,
+      client: runTree.client,
+      projectName: runTree.project_name || langChainTracer.projectName,
+      exampleId: runTree.reference_example_id || langChainTracer.exampleId,
+    });
   }
 
   return callbacks;
