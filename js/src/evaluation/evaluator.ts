@@ -177,7 +177,12 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
 
     const wrappedTraceableFunc: TraceableFunction<Func> = traceable<Func>(
       this.func,
-      { project_name: "evaluators", name: "evaluator", ...options }
+      {
+        project_name: "evaluators",
+        name: "evaluator",
+        id: sourceRunId,
+        ...options,
+      }
     );
 
     const result = (await wrappedTraceableFunc(
