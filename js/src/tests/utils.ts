@@ -11,7 +11,8 @@ export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
 export async function waitUntil(
   condition: () => Promise<boolean>,
   timeout: number,
-  interval: number
+  interval: number,
+  prefix?: string
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeout) {
@@ -25,7 +26,9 @@ export async function waitUntil(
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
   const elapsed = Date.now() - start;
-  throw new Error(`Timeout after ${elapsed / 1000}s`);
+  throw new Error(
+    [prefix, `Timeout after ${elapsed / 1000}s`].filter(Boolean).join(": ")
+  );
 }
 
 export async function pollRunsUntilCount(
@@ -93,7 +96,27 @@ export async function waitUntilRunFound(
       }
     },
     30_000,
-    5_000
+    5_000,
+    `Waiting for run "${runId}"`
+  );
+}
+
+export async function waitUntilProjectFound(
+  client: Client,
+  projectName: string
+) {
+  return waitUntil(
+    async () => {
+      try {
+        await client.readProject({ projectName });
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+    10_000,
+    5_000,
+    `Waiting for project "${projectName}"`
   );
 }
 
