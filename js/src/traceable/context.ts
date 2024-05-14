@@ -1,11 +1,16 @@
-import { type AsyncLocalStorage } from "node:async_hooks";
 import { RunTree } from "../run_trees.js";
 
+interface AsyncStorageLike {
+  getStore: () => RunTree | undefined;
+
+  run: (context: RunTree | undefined, fn: () => void) => void;
+}
+
 export const TraceableLocalStorageContext = (() => {
-  let storage: AsyncLocalStorage<RunTree | undefined>;
+  let storage: AsyncStorageLike;
 
   return {
-    register: (value: AsyncLocalStorage<RunTree | undefined>) => {
+    register: (value: AsyncStorageLike) => {
       storage ??= value;
       return storage;
     },
