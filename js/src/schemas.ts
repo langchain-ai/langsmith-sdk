@@ -380,3 +380,14 @@ export interface ComparativeExperiment {
   experiments_info?: Array<Record<string, unknown>>;
   feedback_stats?: Record<string, unknown>;
 }
+
+/**
+ * Represents the expected output schema returned by traceable
+ * or by run tree output for LangSmith to correctly display
+ * documents in the UI
+ */
+export type RetrieverOutput = Array<{
+  page_content: string;
+  type: "Document";
+  metadata?: KVMap;
+}>;
