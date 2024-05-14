@@ -370,10 +370,37 @@ class ExperimentResults:
             target=lambda: self._process_data(self._manager)
         )
         self._thread.start()
+        self._summary_results: Optional[dict] = None
 
     @property
     def experiment_name(self) -> str:
         return self._manager.experiment_name
+
+    @property
+    def summary_results(self) -> Optional[dict]:
+        """Returns the summary results of the evaluation."""
+        self.wait()
+        return self._summary_results
+
+    @property
+    def aggregated_results(self) -> Optional[dict]:
+        """Returns the aggregated results of the evaluation."""
+        # Average over all the feedback + the individual scores
+        self.wait()
+        summary_results = self.summary_results or {"results": []}
+        if not self._results:
+            return summary_results
+        for row in self:
+            for key, value in row["evaluation_results"].items():
+                if key not in summary_results:
+                    summary_results[key] = []
+                summary_results[key].append(value["score"])
+        feedback_results = {
+            key: [r["feedback"][key] for r in self._results if key in r["feedback"]]
+            for key in set(
+                itertools.chain(*[r["feedback"].keys() for r in self._results])
+            )
+        }
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
         processed_count = 0
