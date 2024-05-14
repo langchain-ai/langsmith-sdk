@@ -15,7 +15,7 @@ const entrypoints = {
   langchain: "langchain",
   wrappers: "wrappers/index",
   "wrappers/openai": "wrappers/openai",
-  "traceable/context": "traceable/context",
+  "singletons/traceable": "singletons/traceable",
 };
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
