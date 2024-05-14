@@ -1597,6 +1597,21 @@ export class Client {
     return `${this.getHostUrl()}/o/${tenantId}/projects/p/${project.id}`;
   }
 
+  public async getDatasetUrl({
+    datasetId,
+    datasetName,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+  }) {
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const dataset = await this.readDataset({ datasetId, datasetName });
+    const tenantId = await this._getTenantId();
+    return `${this.getHostUrl()}/o/${tenantId}/datasets/${dataset.id}`;
+  }
+
   private async _getTenantId(): Promise<string> {
     if (this._tenantId !== null) {
       return this._tenantId;

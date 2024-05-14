@@ -319,16 +319,24 @@ class _ExperimentManager {
     return project;
   }
 
-  _printExperimentStart(): void {
-    // @TODO log with experiment URL
+  protected async _printExperimentStart(): Promise<void> {
     console.log(`Starting evaluation of experiment: ${this.experimentName}`);
+
+    const firstExample = this._examples?.[0];
+    const datasetId = firstExample?.dataset_id;
+    if (!datasetId || !this._experiment) return;
+
+    const datasetUrl = await this.client.getDatasetUrl({ datasetId });
+    const compareUrl = `${datasetUrl}/compare?selectedSessions=${this._experiment.id}`;
+
+    console.log(`View results at ${compareUrl}`);
   }
 
   async start(): Promise<_ExperimentManager> {
     const examples = await this.getExamples();
     const firstExample = examples[0];
     const project = await this._getProject(firstExample);
-    this._printExperimentStart();
+    await this._printExperimentStart(project);
     return new _ExperimentManager({
       examples,
       experiment: project,
