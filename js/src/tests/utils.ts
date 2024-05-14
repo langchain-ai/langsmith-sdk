@@ -152,7 +152,7 @@ export function createRunsFactory(
   return Array.from({ length: count }).map((_, idx) => ({
     id: uuidv4(),
     name: `${idx}-${faker.lorem.words()}`,
-    run_type: faker.helpers.arrayElement(["tool", "chain", "llm", "runnable"]),
+    run_type: faker.helpers.arrayElement(["tool", "chain", "llm", "retriever"]),
     inputs: {
       question: faker.lorem.sentence(),
     },
