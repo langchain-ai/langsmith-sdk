@@ -37,6 +37,10 @@
     "wrappers/openai.js",
     "wrappers/openai.d.ts",
     "wrappers/openai.d.cts",
+    "traceable/context.cjs",
+    "traceable/context.js",
+    "traceable/context.d.ts",
+    "traceable/context.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -214,6 +218,15 @@
       },
       "import": "./wrappers/openai.js",
       "require": "./wrappers/openai.cjs"
+    },
+    "./traceable/context": {
+      "types": {
+        "import": "./traceable/context.d.ts",
+        "require": "./traceable/context.d.cts",
+        "default": "./traceable/context.d.ts"
+      },
+      "import": "./traceable/context.js",
+      "require": "./traceable/context.cjs"
     },
     "./package.json": "./package.json"
   }

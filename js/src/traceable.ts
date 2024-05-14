@@ -9,6 +9,7 @@ import {
 } from "./run_trees.js";
 import { InvocationParamsSchema, KVMap } from "./schemas.js";
 import { isTracingEnabled } from "./env.js";
+import { TraceableLocalStorageContext } from "./traceable/context.js";
 
 function isPromiseMethod(
   x: string | symbol
@@ -19,7 +20,9 @@ function isPromiseMethod(
   return false;
 }
 
-const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
+const asyncLocalStorage = TraceableLocalStorageContext.register(
+  new AsyncLocalStorage<RunTree | undefined>()
+);
 
 export const ROOT = Symbol("langsmith:traceable:root");
 
@@ -677,25 +680,7 @@ export function traceable<Func extends (...args: any[]) => any>(
   return traceableFunc as TraceableFunction<Func>;
 }
 
-/**
- * Return the current run tree from within a traceable-wrapped function.
- * Will throw an error if called outside of a traceable function.
- *
- * @returns The run tree for the given context.
- */
-export function getCurrentRunTree(): RunTree {
-  const runTree = asyncLocalStorage.getStore();
-  if (runTree === undefined) {
-    throw new Error(
-      [
-        "Could not get the current run tree.",
-        "",
-        "Please make sure you are calling this method within a traceable function.",
-      ].join("\n")
-    );
-  }
-  return runTree;
-}
+export { getCurrentRunTree } from "./traceable/context.js";
 
 export function isTraceableFunction(
   x: unknown
