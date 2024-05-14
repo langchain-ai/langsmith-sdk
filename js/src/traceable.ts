@@ -9,7 +9,7 @@ import {
 } from "./run_trees.js";
 import { InvocationParamsSchema, KVMap } from "./schemas.js";
 import { isTracingEnabled } from "./env.js";
-import { TraceableLocalStorageContext } from "./traceable/context.js";
+import { TraceableLocalStorageContext } from "./singletons/traceable.js";
 
 function isPromiseMethod(
   x: string | symbol
@@ -680,7 +680,7 @@ export function traceable<Func extends (...args: any[]) => any>(
   return traceableFunc as TraceableFunction<Func>;
 }
 
-export { getCurrentRunTree } from "./traceable/context.js";
+export { getCurrentRunTree } from "./singletons/traceable.js";
 
 export function isTraceableFunction(
   x: unknown
