@@ -39,7 +39,8 @@
       "src/schemas.ts",
       "src/langchain.ts",
       "src/wrappers/index.ts",
-      "src/wrappers/openai.ts"
+      "src/wrappers/openai.ts",
+      "src/traceable/context.ts"
     ]
   }
 }

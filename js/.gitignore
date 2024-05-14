@@ -63,6 +63,10 @@ Chinook_Sqlite.sql
 /wrappers/openai.js
 /wrappers/openai.d.ts
 /wrappers/openai.d.cts
+/traceable/context.cjs
+/traceable/context.js
+/traceable/context.d.ts
+/traceable/context.d.cts
 /index.cjs
 /index.js
 /index.d.ts
