@@ -6,6 +6,7 @@ import { assertUuid } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { atee } from "../utils/atee.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
+import { printErrorStackTrace } from "../utils/error.js";
 import { randomName } from "./_random_name.js";
 import {
   EvaluationResult,
@@ -538,6 +539,7 @@ class _ExperimentManager {
         console.error(
           `Error running evaluator ${evaluator.evaluateRun.name} on run ${run.id}: ${e}`
         );
+        printErrorStackTrace(e);
       }
     }
 
@@ -635,6 +637,7 @@ class _ExperimentManager {
               evaluator.name
             }: ${JSON.stringify(e, null, 2)}`
           );
+          printErrorStackTrace(e);
         }
       }
 
@@ -835,6 +838,7 @@ async function _forward(
     await wrappedFn(example.inputs);
   } catch (e) {
     console.error(`Error running target function: ${e}`);
+    printErrorStackTrace(e);
   }
 
   if (!run) {
