@@ -336,7 +336,7 @@ class _ExperimentManager {
     const examples = await this.getExamples();
     const firstExample = examples[0];
     const project = await this._getProject(firstExample);
-    await this._printExperimentStart(project);
+    await this._printExperimentStart();
     return new _ExperimentManager({
       examples,
       experiment: project,
