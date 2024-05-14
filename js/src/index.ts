@@ -6,6 +6,7 @@ export type {
   TracerSession,
   Run,
   Feedback,
+  RetrieverOutput,
 } from "./schemas.js";
 
 export { RunTree, type RunTreeConfig } from "./run_trees.js";
