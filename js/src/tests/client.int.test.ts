@@ -568,16 +568,25 @@ test.concurrent(
 test.concurrent("list runs limit arg works", async () => {
   const client = new Client();
 
-  const projectName = "test-limit-runs-listRuns-endpoint";
-  const runsArr: Array<Run> = [];
+  const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
   const limit = 6;
 
+  // delete the project just in case
+  if (await client.hasProject({ projectName })) {
+    await client.deleteProject({ projectName });
+  }
+
   try {
+    const runsArr: Array<Run> = [];
     // create a fresh project with 10 runs --default amount created by createRunsFactory
-    await client.createProject({
-      projectName,
-    });
-    await Promise.all(createRunsFactory(projectName).map(client.createRun));
+    await client.createProject({ projectName });
+    await Promise.all(
+      createRunsFactory(projectName).map(async (payload) => {
+        if (!payload.id) payload.id = uuidv4();
+        await client.createRun(payload);
+        await waitUntilRunFound(client, payload.id);
+      })
+    );
 
     let iters = 0;
     for await (const run of client.listRuns({ limit, projectName })) {
@@ -590,20 +599,18 @@ test.concurrent("list runs limit arg works", async () => {
         );
       }
     }
-  } catch (e: any) {
-    // cleanup by deleting the project
-    const projectExists = await client.hasProject({ projectName });
-    if (projectExists) {
-      await client.deleteProject({ projectName });
-    }
 
-    // Error thrown by test, rethrow
+    expect(runsArr.length).toBe(limit);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (e: any) {
     if (e.message.startsWith("More runs returned than expected.")) {
       throw e;
     } else {
       console.error(e);
     }
+  } finally {
+    if (await client.hasProject({ projectName })) {
+      await client.deleteProject({ projectName });
+    }
   }
-
-  expect(runsArr.length).toBe(limit);
 });
