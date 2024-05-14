@@ -113,36 +113,6 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
 
   async invoke(input: RunInput, options?: Partial<RunnableConfig>) {
     const [config] = this._getOptionsList(options ?? {}, 1);
-
-    // TODO: move this code to the runOnDataset / evaluate function instead?
-    // seems a bit too magical to be here
-    if (
-      typeof input === "object" &&
-      input != null &&
-      Object.keys(input).length === 1
-    ) {
-      if ("args" in input && Array.isArray(input)) {
-        return (await this.func(config, ...input)) as RunOutput;
-      }
-
-      if (
-        "input" in input &&
-        !(
-          typeof input === "object" &&
-          input != null &&
-          !Array.isArray(input) &&
-          // eslint-disable-next-line no-instanceof/no-instanceof
-          !(input instanceof Date)
-        )
-      ) {
-        try {
-          return (await this.func(config, input.input)) as RunOutput;
-        } catch (err) {
-          return (await this.func(config, input)) as RunOutput;
-        }
-      }
-    }
-
     return (await this.func(config, input)) as RunOutput;
   }
 
