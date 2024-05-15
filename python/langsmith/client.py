@@ -3118,7 +3118,8 @@ class Client:
                 timestamp to retrieve the examples as of.
                 Response examples will only be those that were present at the time
                 of the tagged (or timestamped) version.
-            splits (List[str], optional): A list of dataset splits to filter by.
+            splits (List[str], optional): A list of dataset splits, which are
+                divisions of your dataset such as 'train', 'test', or 'validation'.
                 Returns examples only from the specified splits.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
