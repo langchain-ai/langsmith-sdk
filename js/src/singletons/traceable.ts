@@ -45,7 +45,7 @@ export const getCurrentRunTree = () => {
   return runTree;
 };
 
-export const ROOT = Symbol("langsmith:traceable:root");
+export const ROOT = Symbol.for("langsmith:traceable:root");
 
 type SmartPromise<T> = T extends AsyncGenerator
   ? T
