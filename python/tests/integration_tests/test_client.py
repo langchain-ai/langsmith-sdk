@@ -109,24 +109,42 @@ def test_datasets(langchain_client: Client) -> None:
 def test_list_examples(langchain_client: Client) -> None:
     """Test list_examples."""
     examples = [
-        ("Shut up, idiot", "Toxic"),
-        ("You're a wonderful person", "Not toxic"),
-        ("This is the worst thing ever", "Toxic"),
-        ("I had a great day today", "Not toxic"),
-        ("Nobody likes you", "Toxic"),
-        ("This is unacceptable. I want to speak to the manager.", "Not toxic"),
+        ("Shut up, idiot", "Toxic", {"dataset_split": "train"}),
+        ("You're a wonderful person", "Not toxic", {"dataset_split": "test"}),
+        ("This is the worst thing ever", "Toxic", {"dataset_split": "train"}),
+        ("I had a great day today", "Not toxic", {"dataset_split": "test"}),
+        ("Nobody likes you", "Toxic", {"dataset_split": "train"}),
+        ("This is unacceptable. I want to speak to the manager.", "Not toxic", {}),
     ]
 
     dataset_name = "__test_list_examples" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(dataset_name=dataset_name)
-    inputs, outputs = zip(
-        *[({"text": text}, {"label": label}) for text, label in examples]
+    inputs, outputs, metadata = zip(
+        *[
+            ({"text": text}, {"label": label}, metadata)
+            for text, label, metadata in examples
+        ]
     )
     langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, dataset_id=dataset.id
+        inputs=inputs, outputs=outputs, metadata=metadata, dataset_id=dataset.id
     )
     example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
     assert len(example_list) == len(examples)
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
+    )
+    assert len(example_list) == 3
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
+    )
+    assert len(example_list) == 2
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train", "test"])
+    )
+    assert len(example_list) == 5
 
     langchain_client.create_example(
         inputs={"text": "What's up!"},

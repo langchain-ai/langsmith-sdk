@@ -3094,6 +3094,7 @@ class Client:
         dataset_name: Optional[str] = None,
         example_ids: Optional[Sequence[ID_TYPE]] = None,
         as_of: Optional[Union[datetime.datetime, str]] = None,
+        splits: Optional[Sequence[str]] = None,
         inline_s3_urls: bool = True,
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
@@ -3112,6 +3113,8 @@ class Client:
                 timestamp to retrieve the examples as of.
                 Response examples will only be those that were present at the time
                 of the tagged (or timestamped) version.
+            splits (List[str], optional): A list of dataset splits to filter by.
+                Returns examples only from the specified splits.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
             limit (int, optional): The maximum number of examples to return.
@@ -3125,6 +3128,7 @@ class Client:
             "as_of": (
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
             ),
+            "splits": splits,
             "inline_s3_urls": inline_s3_urls,
             "limit": min(limit, 100) if limit is not None else 100,
         }
