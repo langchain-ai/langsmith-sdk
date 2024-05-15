@@ -3164,6 +3164,7 @@ class Client:
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Dict] = None,
+        split: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
@@ -3191,6 +3192,7 @@ class Client:
             outputs=outputs,
             dataset_id=dataset_id,
             metadata=metadata,
+            split=split,
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",

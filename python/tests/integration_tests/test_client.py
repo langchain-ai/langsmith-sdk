@@ -109,24 +109,21 @@ def test_datasets(langchain_client: Client) -> None:
 def test_list_examples(langchain_client: Client) -> None:
     """Test list_examples."""
     examples = [
-        ("Shut up, idiot", "Toxic", {"dataset_split": "train"}),
-        ("You're a wonderful person", "Not toxic", {"dataset_split": "test"}),
-        ("This is the worst thing ever", "Toxic", {"dataset_split": "train"}),
-        ("I had a great day today", "Not toxic", {"dataset_split": "test"}),
-        ("Nobody likes you", "Toxic", {"dataset_split": "train"}),
-        ("This is unacceptable. I want to speak to the manager.", "Not toxic", {}),
+        ("Shut up, idiot", "Toxic", "train"),
+        ("You're a wonderful person", "Not toxic", "test"),
+        ("This is the worst thing ever", "Toxic", "train"),
+        ("I had a great day today", "Not toxic", "test"),
+        ("Nobody likes you", "Toxic", "train"),
+        ("This is unacceptable. I want to speak to the manager.", "Not toxic", None),
     ]
 
     dataset_name = "__test_list_examples" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(dataset_name=dataset_name)
-    inputs, outputs, metadata = zip(
-        *[
-            ({"text": text}, {"label": label}, metadata)
-            for text, label, metadata in examples
-        ]
+    inputs, outputs, split = zip(
+        *[({"text": text}, {"label": label}, split) for text, label, split in examples]
     )
     langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, metadata=metadata, dataset_id=dataset.id
+        inputs=inputs, outputs=outputs, split=split, dataset_id=dataset.id
     )
     example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
     assert len(example_list) == len(examples)
@@ -145,6 +142,16 @@ def test_list_examples(langchain_client: Client) -> None:
         langchain_client.list_examples(dataset_id=dataset.id, splits=["train", "test"])
     )
     assert len(example_list) == 5
+
+    langchain_client.update_example(
+        example_id=[
+            example.id
+            for example in example_list
+            if example.metadata is not None
+            and example.metadata.get("dataset_split") == "test"
+        ][0],
+        split="train",
+    )
 
     langchain_client.create_example(
         inputs={"text": "What's up!"},
