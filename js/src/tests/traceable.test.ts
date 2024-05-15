@@ -2,13 +2,6 @@ import type { RunTree, RunTreeConfig } from "../run_trees.js";
 import { ROOT, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
-import { FakeChatModel } from "@langchain/core/utils/testing";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { StringOutputParser } from "@langchain/core/output_parsers";
-import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-import { BaseMessage, HumanMessage } from "@langchain/core/messages";
-import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
-import { RunnableTraceable, getLangchainCallbacks } from "../langchain.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
