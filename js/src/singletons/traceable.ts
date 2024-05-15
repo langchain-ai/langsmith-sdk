@@ -126,18 +126,3 @@ export function isTraceableFunction(
 ): x is TraceableFunction<any> {
   return typeof x === "function" && "langsmith:traceable" in x;
 }
-
-function isKVMap(x: unknown): x is Record<string, unknown> {
-  if (typeof x !== "object" || x == null) {
-    return false;
-  }
-
-  const prototype = Object.getPrototypeOf(x);
-  return (
-    (prototype === null ||
-      prototype === Object.prototype ||
-      Object.getPrototypeOf(prototype) === null) &&
-    !(Symbol.toStringTag in x) &&
-    !(Symbol.iterator in x)
-  );
-}
