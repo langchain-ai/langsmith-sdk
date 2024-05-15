@@ -229,6 +229,7 @@ export interface RunUpdate {
 export interface ExampleCreate extends BaseExample {
   id?: string;
   created_at?: string;
+  split?: string;
 }
 
 export interface Example extends BaseExample {
@@ -244,6 +245,7 @@ export interface ExampleUpdate {
   inputs?: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  split?: string;
 }
 export interface BaseDataset {
   name: string;
