@@ -239,6 +239,7 @@ export type CreateExampleOptions = {
   exampleId?: string;
 
   metadata?: KVMap;
+  split?: string;
 };
 
 type AutoBatchQueueItem = {
@@ -1989,6 +1990,7 @@ export class Client {
       createdAt,
       exampleId,
       metadata,
+      split,
     }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
@@ -2009,6 +2011,7 @@ export class Client {
       created_at: createdAt_?.toISOString(),
       id: exampleId,
       metadata,
+      split,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
@@ -2033,6 +2036,7 @@ export class Client {
     inputs: Array<KVMap>;
     outputs?: Array<KVMap>;
     metadata?: Array<KVMap>;
+    splits?: Array<string>;
     sourceRunIds?: Array<string>;
     exampleIds?: Array<string>;
     datasetId?: string;
@@ -2063,6 +2067,7 @@ export class Client {
         inputs: input,
         outputs: outputs ? outputs[idx] : undefined,
         metadata: metadata ? metadata[idx] : undefined,
+        split: props.splits ? props.splits[idx] : undefined,
         id: exampleIds ? exampleIds[idx] : undefined,
         source_run_id: sourceRunIds ? sourceRunIds[idx] : undefined,
       };
@@ -2130,6 +2135,7 @@ export class Client {
     datasetName,
     exampleIds,
     asOf,
+    splits,
     inlineS3Urls,
     metadata,
   }: {
@@ -2137,6 +2143,7 @@ export class Client {
     datasetName?: string;
     exampleIds?: string[];
     asOf?: string | Date;
+    splits?: string[];
     inlineS3Urls?: boolean;
     metadata?: KVMap;
   } = {}): AsyncIterable<Example> {
@@ -2165,6 +2172,11 @@ export class Client {
     if (exampleIds !== undefined) {
       for (const id_ of exampleIds) {
         params.append("id", id_);
+      }
+    }
+    if (splits !== undefined) {
+      for (const split of splits) {
+        params.append("splits", split);
       }
     }
     if (metadata !== undefined) {

@@ -2936,6 +2936,7 @@ class Client:
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        splits: Optional[Sequence[Optional[str]]] = None,
         source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
@@ -2981,13 +2982,15 @@ class Client:
                 "outputs": out_,
                 "dataset_id": dataset_id,
                 "metadata": metadata_,
+                "split": split_,
                 "id": id_,
                 "source_run_id": source_run_id_,
             }
-            for in_, out_, metadata_, id_, source_run_id_ in zip(
+            for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
                 inputs,
                 outputs or [None] * len(inputs),
                 metadata or [None] * len(inputs),
+                splits or [None] * len(inputs),
                 ids or [None] * len(inputs),
                 source_run_ids or [None] * len(inputs),
             )
@@ -3009,6 +3012,7 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
+        split: Optional[str] = None,
         example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -3045,6 +3049,7 @@ class Client:
             "outputs": outputs,
             "dataset_id": dataset_id,
             "metadata": metadata,
+            "split": split,
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
