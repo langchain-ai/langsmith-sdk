@@ -15,7 +15,7 @@ from typing import (
 from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
-    import numpy as np
+    import numpy as np  # type: ignore
 
 
 logger = logging.getLogger(__name__)
