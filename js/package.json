@@ -128,9 +128,6 @@
       "optional": true
     }
   },
-  "resolutions": {
-    "langsmith": "link:."
-  },
   "lint-staged": {
     "**/*.{ts,tsx}": [
       "prettier --write --ignore-unknown",
