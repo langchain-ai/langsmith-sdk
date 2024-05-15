@@ -45,6 +45,7 @@ from urllib import parse as urllib_parse
 
 import orjson
 import requests
+from deprecated import deprecated
 from requests import adapters as requests_adapters
 from urllib3.util import Retry
 
@@ -645,6 +646,7 @@ class Client:
             headers[X_API_KEY] = self.api_key
         return headers
 
+    @deprecated("This endpoint will be removed in future LangSmith updates")
     @property
     def info(self) -> ls_schemas.LangSmithInfo:
         """Get the information about the LangSmith API.
