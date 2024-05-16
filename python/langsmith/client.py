@@ -2936,6 +2936,7 @@ class Client:
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        splits: Optional[Sequence[Optional[str]]] = None,
         source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
@@ -2981,13 +2982,15 @@ class Client:
                 "outputs": out_,
                 "dataset_id": dataset_id,
                 "metadata": metadata_,
+                "split": split_,
                 "id": id_,
                 "source_run_id": source_run_id_,
             }
-            for in_, out_, metadata_, id_, source_run_id_ in zip(
+            for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
                 inputs,
                 outputs or [None] * len(inputs),
                 metadata or [None] * len(inputs),
+                splits or [None] * len(inputs),
                 ids or [None] * len(inputs),
                 source_run_ids or [None] * len(inputs),
             )
@@ -3009,6 +3012,7 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
+        split: Optional[str] = None,
         example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -3045,6 +3049,7 @@ class Client:
             "outputs": outputs,
             "dataset_id": dataset_id,
             "metadata": metadata,
+            "split": split,
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
@@ -3094,6 +3099,7 @@ class Client:
         dataset_name: Optional[str] = None,
         example_ids: Optional[Sequence[ID_TYPE]] = None,
         as_of: Optional[Union[datetime.datetime, str]] = None,
+        splits: Optional[Sequence[str]] = None,
         inline_s3_urls: bool = True,
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
@@ -3112,6 +3118,9 @@ class Client:
                 timestamp to retrieve the examples as of.
                 Response examples will only be those that were present at the time
                 of the tagged (or timestamped) version.
+            splits (List[str], optional): A list of dataset splits, which are
+                divisions of your dataset such as 'train', 'test', or 'validation'.
+                Returns examples only from the specified splits.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
             limit (int, optional): The maximum number of examples to return.
@@ -3125,6 +3134,7 @@ class Client:
             "as_of": (
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
             ),
+            "splits": splits,
             "inline_s3_urls": inline_s3_urls,
             "limit": min(limit, 100) if limit is not None else 100,
         }
@@ -3155,6 +3165,7 @@ class Client:
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Dict] = None,
+        split: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
@@ -3182,6 +3193,7 @@ class Client:
             outputs=outputs,
             dataset_id=dataset_id,
             metadata=metadata,
+            split=split,
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",

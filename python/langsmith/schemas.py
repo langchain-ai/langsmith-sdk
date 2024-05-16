@@ -63,6 +63,7 @@ class ExampleCreate(ExampleBase):
 
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    split: Optional[str] = None
 
 
 class Example(ExampleBase):
@@ -105,6 +106,7 @@ class ExampleUpdate(BaseModel):
     inputs: Optional[Dict[str, Any]] = None
     outputs: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
+    split: Optional[str] = None
 
     class Config:
         """Configuration class for the schema."""
