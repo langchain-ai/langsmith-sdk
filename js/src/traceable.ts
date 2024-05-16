@@ -11,9 +11,13 @@ import { InvocationParamsSchema, KVMap } from "./schemas.js";
 import { isTracingEnabled } from "./env.js";
 import {
   ROOT,
-  TraceableFunction,
-  TraceableLocalStorageContext,
+  AsyncLocalStorageProviderSingleton,
 } from "./singletons/traceable.js";
+import { TraceableFunction } from "./singletons/types.js";
+
+AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
+  new AsyncLocalStorage<RunTree | undefined>()
+);
 
 function isPromiseMethod(
   x: string | symbol
@@ -24,9 +28,20 @@ function isPromiseMethod(
   return false;
 }
 
-const asyncLocalStorage = TraceableLocalStorageContext.register(
-  new AsyncLocalStorage<RunTree | undefined>()
-);
+function isKVMap(x: unknown): x is Record<string, unknown> {
+  if (typeof x !== "object" || x == null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(x);
+  return (
+    (prototype === null ||
+      prototype === Object.prototype ||
+      Object.getPrototypeOf(prototype) === null) &&
+    !(Symbol.toStringTag in x) &&
+    !(Symbol.iterator in x)
+  );
+}
 
 const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   x != null &&
@@ -34,13 +49,13 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   typeof (x as any)[Symbol.asyncIterator] === "function";
 
-const GeneratorFunction = function* () {}.constructor;
-
 const isIteratorLike = (x: unknown): x is Iterator<unknown> =>
   x != null &&
   typeof x === "object" &&
   "next" in x &&
   typeof x.next === "function";
+
+const GeneratorFunction = function* () {}.constructor;
 
 const isGenerator = (x: unknown): x is Generator =>
   // eslint-disable-next-line no-instanceof/no-instanceof
@@ -379,6 +394,8 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
     }
 
+    const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
+
     // TODO: deal with possible nested promises and async iterables
     const processedArgs = args as unknown as Inputs;
     for (let i = 0; i < processedArgs.length; i++) {
@@ -608,36 +625,9 @@ export function traceable<Func extends (...args: any[]) => any>(
 }
 
 export {
-  type TraceableFunction,
   getCurrentRunTree,
   isTraceableFunction,
   ROOT,
 } from "./singletons/traceable.js";
-export type RunTreeLike = RunTree;
 
-function isKVMap(x: unknown): x is Record<string, unknown> {
-  if (typeof x !== "object" || x == null) {
-    return false;
-  }
-
-  const prototype = Object.getPrototypeOf(x);
-  return (
-    (prototype === null ||
-      prototype === Object.prototype ||
-      Object.getPrototypeOf(prototype) === null) &&
-    !(Symbol.toStringTag in x) &&
-    !(Symbol.iterator in x)
-  );
-}
-
-export function wrapFunctionAndEnsureTraceable<
-  Func extends (...args: any[]) => any
->(target: Func, options: Partial<RunTreeConfig>, name = "target") {
-  if (typeof target === "function") {
-    return traceable<Func>(target, {
-      ...options,
-      name,
-    });
-  }
-  throw new Error("Target must be runnable function");
-}
+export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";

@@ -1,24 +1,42 @@
-import { RunTree, RunnableConfigLike } from "../run_trees.js";
+import { RunTree } from "../run_trees.js";
+import { TraceableFunction } from "./types.js";
 
-interface AsyncStorageLike {
+interface AsyncLocalStorageInterface {
   getStore: () => RunTree | undefined;
 
   run: (context: RunTree | undefined, fn: () => void) => void;
 }
 
-export const TraceableLocalStorageContext = (() => {
-  let storage: AsyncStorageLike;
+class MockAsyncLocalStorage implements AsyncLocalStorageInterface {
+  getStore() {
+    return undefined;
+  }
 
-  return {
-    register: (value: AsyncStorageLike) => {
-      storage ??= value;
-      return storage;
-    },
-    get storage() {
-      return storage;
-    },
-  };
-})();
+  run(_: RunTree | undefined, callback: () => void): void {
+    return callback();
+  }
+}
+
+class AsyncLocalStorageProvider {
+  private asyncLocalStorage: AsyncLocalStorageInterface =
+    new MockAsyncLocalStorage();
+
+  private hasBeenInitialized = false;
+
+  getInstance(): AsyncLocalStorageInterface {
+    return this.asyncLocalStorage;
+  }
+
+  initializeGlobalInstance(instance: AsyncLocalStorageInterface) {
+    if (!this.hasBeenInitialized) {
+      this.hasBeenInitialized = true;
+      this.asyncLocalStorage = instance;
+    }
+  }
+}
+
+export const AsyncLocalStorageProviderSingleton =
+  new AsyncLocalStorageProvider();
 
 /**
  * Return the current run tree from within a traceable-wrapped function.
@@ -27,11 +45,7 @@ export const TraceableLocalStorageContext = (() => {
  * @returns The run tree for the given context.
  */
 export const getCurrentRunTree = () => {
-  if (!TraceableLocalStorageContext.storage) {
-    throw new Error("Could not find the traceable storage context");
-  }
-
-  const runTree = TraceableLocalStorageContext.storage.getStore();
+  const runTree = AsyncLocalStorageProviderSingleton.getInstance().getStore();
   if (runTree === undefined) {
     throw new Error(
       [
@@ -46,79 +60,6 @@ export const getCurrentRunTree = () => {
 };
 
 export const ROOT = Symbol.for("langsmith:traceable:root");
-
-type SmartPromise<T> = T extends AsyncGenerator
-  ? T
-  : T extends Promise<unknown>
-  ? T
-  : Promise<T>;
-
-type WrapArgReturnPair<Pair> = Pair extends [
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  infer Args extends any[],
-  infer Return
-]
-  ? Args extends [RunTree, ...infer RestArgs]
-    ? {
-        (
-          runTree: RunTree | typeof ROOT,
-          ...args: RestArgs
-        ): SmartPromise<Return>;
-        (config: RunnableConfigLike, ...args: RestArgs): SmartPromise<Return>;
-      }
-    : {
-        (...args: Args): SmartPromise<Return>;
-        (runTree: RunTree, ...rest: Args): SmartPromise<Return>;
-        (config: RunnableConfigLike, ...args: Args): SmartPromise<Return>;
-      }
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (
-  x: infer I
-) => void
-  ? I
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TraceableFunction<Func extends (...args: any[]) => any> =
-  // function overloads are represented as intersections rather than unions
-  // matches the behavior introduced in https://github.com/microsoft/TypeScript/pull/54448
-  Func extends {
-    (...args: infer A1): infer R1;
-    (...args: infer A2): infer R2;
-    (...args: infer A3): infer R3;
-    (...args: infer A4): infer R4;
-    (...args: infer A5): infer R5;
-  }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4] | [A5, R5]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-        (...args: infer A4): infer R4;
-      }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1]>>
-    : never;
 
 export function isTraceableFunction(
   x: unknown
