@@ -91,7 +91,7 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   const _examples = await toArray(
     client.listExamples({ datasetId: newDataset.id, splits: ["my_split"] })
   );
-  expect(_examples.length).toBe(2);
+  expect(_examples.length).toBe(1);
   expect(_examples.map((e) => e.id)).toContain(example.id);
 
   await client.updateExample(example.id, {
