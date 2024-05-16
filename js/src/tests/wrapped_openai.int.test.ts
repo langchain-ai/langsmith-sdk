@@ -61,7 +61,7 @@ test.concurrent("chat.completions", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: unknown[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
   }
@@ -74,7 +74,7 @@ test.concurrent("chat.completions", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -126,7 +126,7 @@ test.concurrent("chat.completions", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: unknown[] = [];
   for await (const chunk of patchedStreamWithMetadata) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -246,7 +246,7 @@ test.concurrent("chat completions with tool calling", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: any[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
   }
@@ -264,7 +264,7 @@ test.concurrent("chat completions with tool calling", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: any[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -305,7 +305,7 @@ test.concurrent("chat completions with tool calling", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: any[] = [];
   for await (const chunk of patchedStream2) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -322,6 +322,10 @@ test.concurrent("chat completions with tool calling", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
       thing1: "thing2",
+      ls_model_name: "gpt-3.5-turbo",
+      ls_model_type: "chat",
+      ls_provider: "openai",
+      ls_temperature: 0,
     });
   }
   callSpy.mockClear();
@@ -364,7 +368,7 @@ test.concurrent("completions", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: unknown[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -380,7 +384,7 @@ test.concurrent("completions", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -411,7 +415,7 @@ test.concurrent("completions", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: unknown[] = [];
   for await (const chunk of patchedStream2) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -441,7 +445,7 @@ test.skip("with initialization time config", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
