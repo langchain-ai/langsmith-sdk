@@ -119,11 +119,11 @@ def test_list_examples(langchain_client: Client) -> None:
 
     dataset_name = "__test_list_examples" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(dataset_name=dataset_name)
-    inputs, outputs, split = zip(
+    inputs, outputs, splits = zip(
         *[({"text": text}, {"label": label}, split) for text, label, split in examples]
     )
     langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, split=split, dataset_id=dataset.id
+        inputs=inputs, outputs=outputs, splits=splits, dataset_id=dataset.id
     )
     example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
     assert len(example_list) == len(examples)
