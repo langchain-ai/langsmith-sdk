@@ -6,6 +6,7 @@ import {
   getRuntimeEnvironment,
 } from "./utils/env.js";
 import { Client } from "./client.js";
+import { isTracingEnabled } from "./env.js";
 
 const warnedMessages: Record<string, boolean> = {};
 
@@ -188,8 +189,7 @@ export class RunTree implements BaseRun {
       name: parentRun?.name ?? "<parent>",
       id: parentRun?.id,
       client,
-      // TODO: handle tracing enabled
-      tracingEnabled: true,
+      tracingEnabled: isTracingEnabled(),
       project_name: projectName,
       tags: [
         ...new Set((parentRun?.tags ?? []).concat(parentConfig?.tags ?? [])),
