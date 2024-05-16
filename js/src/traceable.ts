@@ -7,7 +7,7 @@ import {
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
-import { KVMap } from "./schemas.js";
+import { InvocationParamsSchema, KVMap } from "./schemas.js";
 import { getEnvironmentVariable } from "./utils/env.js";
 
 function isPromiseMethod(
@@ -167,9 +167,12 @@ const handleRunOutputs = (rawOutputs: unknown): KVMap => {
   return { outputs: rawOutputs };
 };
 
-const getTracingRunTree = (
+const getTracingRunTree = <Args extends unknown[]>(
   runTree: RunTree,
-  inputs: unknown[]
+  inputs: Args,
+  getInvocationParams:
+    | ((...args: Args) => InvocationParamsSchema | undefined)
+    | undefined
 ): RunTree | undefined => {
   const tracingEnabled_ = tracingIsEnabled(runTree.tracingEnabled);
   if (!tracingEnabled_) {
@@ -177,6 +180,16 @@ const getTracingRunTree = (
   }
 
   runTree.inputs = handleRunInputs(inputs);
+
+  const invocationParams = getInvocationParams?.(...inputs);
+  if (invocationParams != null) {
+    runTree.extra ??= {};
+    runTree.extra.metadata = {
+      ...runTree.extra.metadata,
+      ...invocationParams,
+    };
+  }
+
   return runTree;
 };
 
@@ -381,6 +394,18 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+
+    /**
+     * Extract invocation parameters from the arguments of the traced function.
+     * This is useful for LangSmith to properly track common metadata like
+     * provider, model name and temperature.
+     *
+     * @param args Arguments of the traced function
+     * @returns Key-value map of the invocation parameters, which will be merged with the existing metadata
+     */
+    getInvocationParams?: (
+      ...args: Parameters<Func>
+    ) => InvocationParamsSchema | undefined;
   }
 ) {
   type Inputs = Parameters<Func>;
@@ -454,7 +479,8 @@ export function traceable<Func extends (...args: any[]) => any>(
         return [
           getTracingRunTree(
             RunTree.fromRunnableConfig(firstArg, ensuredConfig),
-            restArgs
+            restArgs as Inputs,
+            config?.getInvocationParams
           ),
           restArgs as Inputs,
         ];
@@ -477,7 +503,8 @@ export function traceable<Func extends (...args: any[]) => any>(
           firstArg === ROOT
             ? new RunTree(ensuredConfig)
             : firstArg.createChild(ensuredConfig),
-          restArgs
+          restArgs as Inputs,
+          config?.getInvocationParams
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -490,7 +517,8 @@ export function traceable<Func extends (...args: any[]) => any>(
         return [
           getTracingRunTree(
             prevRunFromStore.createChild(ensuredConfig),
-            processedArgs
+            processedArgs,
+            config?.getInvocationParams
           ),
           processedArgs as Inputs,
         ];
@@ -498,7 +526,8 @@ export function traceable<Func extends (...args: any[]) => any>(
 
       const currentRunTree = getTracingRunTree(
         new RunTree(ensuredConfig),
-        processedArgs
+        processedArgs,
+        config?.getInvocationParams
       );
       return [currentRunTree, processedArgs as Inputs];
     })();

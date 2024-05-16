@@ -223,6 +223,24 @@ export const wrapOpenAI = <T extends OpenAIType>(
       run_type: "llm",
       aggregator: chatAggregator,
       argsConfigPath: [1, "langsmithExtra"],
+      getInvocationParams: (payload: unknown) => {
+        if (typeof payload !== "object" || payload == null) return undefined;
+        // we can safely do so, as the types are not exported in TSC
+        const params = payload as OpenAI.ChatCompletionCreateParams;
+
+        const ls_stop =
+          (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+          undefined;
+
+        return {
+          ls_provider: "openai",
+          ls_model_type: "chat",
+          ls_model_name: params.model,
+          ls_max_tokens: params.max_tokens ?? undefined,
+          ls_temperature: params.temperature ?? undefined,
+          ls_stop,
+        };
+      },
       ...options,
     }
   );
@@ -234,6 +252,24 @@ export const wrapOpenAI = <T extends OpenAIType>(
       run_type: "llm",
       aggregator: textAggregator,
       argsConfigPath: [1, "langsmithExtra"],
+      getInvocationParams: (payload: unknown) => {
+        if (typeof payload !== "object" || payload == null) return undefined;
+        // we can safely do so, as the types are not exported in TSC
+        const params = payload as OpenAI.CompletionCreateParams;
+
+        const ls_stop =
+          (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+          undefined;
+
+        return {
+          ls_provider: "openai",
+          ls_model_type: "chat",
+          ls_model_name: params.model,
+          ls_max_tokens: params.max_tokens ?? undefined,
+          ls_temperature: params.temperature ?? undefined,
+          ls_stop,
+        };
+      },
       ...options,
     }
   );
