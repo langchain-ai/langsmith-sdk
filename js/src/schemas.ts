@@ -393,3 +393,12 @@ export type RetrieverOutput = Array<{
   type: "Document";
   metadata?: KVMap;
 }>;
+
+export interface InvocationParamsSchema {
+  ls_provider?: string;
+  ls_model_name?: string;
+  ls_model_type: "chat";
+  ls_temperature?: number;
+  ls_max_tokens?: number;
+  ls_stop?: string[];
+}
