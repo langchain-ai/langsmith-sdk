@@ -10,7 +10,5 @@ export const isTracingEnabled = (tracingEnabled?: boolean): boolean => {
     "LANGSMITH_TRACING",
     "LANGCHAIN_TRACING",
   ];
-  return Boolean(
-    envVars.find((envVar) => getEnvironmentVariable(envVar) === "true")
-  );
+  return !!envVars.find((envVar) => getEnvironmentVariable(envVar) === "true");
 };
