@@ -174,6 +174,8 @@ export class RunTree implements BaseRun {
     let projectName: string | undefined;
     let client: Client | undefined;
 
+    let tracingEnabled = isTracingEnabled();
+
     if (callbackManager) {
       const parentRunId = callbackManager?.getParentRunId?.() ?? "";
       const langChainTracer = callbackManager?.handlers?.find(
@@ -183,13 +185,14 @@ export class RunTree implements BaseRun {
       parentRun = langChainTracer?.getRun?.(parentRunId);
       projectName = langChainTracer?.projectName;
       client = langChainTracer?.client;
+      tracingEnabled = tracingEnabled || !!langChainTracer;
     }
 
     const parentRunTree = new RunTree({
       name: parentRun?.name ?? "<parent>",
       id: parentRun?.id,
       client,
-      tracingEnabled: isTracingEnabled(),
+      tracingEnabled,
       project_name: projectName,
       tags: [
         ...new Set((parentRun?.tags ?? []).concat(parentConfig?.tags ?? [])),
