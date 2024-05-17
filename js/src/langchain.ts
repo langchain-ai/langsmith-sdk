@@ -1,6 +1,11 @@
 import { CallbackManager } from "@langchain/core/callbacks/manager";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
-import { Runnable, RunnableConfig } from "@langchain/core/runnables";
+import {
+  Runnable,
+  RunnableConfig,
+  patchConfig,
+  getCallbackManagerForConfig,
+} from "@langchain/core/runnables";
 
 import { RunTree } from "./run_trees.js";
 import { Run } from "./schemas.js";
@@ -9,6 +14,7 @@ import {
   getCurrentRunTree,
   isTraceableFunction,
 } from "./traceable.js";
+import { isAsyncIterable, isIteratorLike } from "./utils/asserts.js";
 
 /**
  * Converts the current run tree active within a traceable-wrapped function
@@ -113,7 +119,41 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
 
   async invoke(input: RunInput, options?: Partial<RunnableConfig>) {
     const [config] = this._getOptionsList(options ?? {}, 1);
-    return (await this.func(config, input)) as RunOutput;
+
+    const callbacks = await getCallbackManagerForConfig(config);
+
+    return (await this.func(
+      patchConfig(config, { callbacks }),
+      input
+    )) as RunOutput;
+  }
+
+  async *_streamIterator(
+    input: RunInput,
+    options?: Partial<RunnableConfig>
+  ): AsyncGenerator<RunOutput> {
+    const result = await this.invoke(input, options);
+
+    if (isAsyncIterable(result)) {
+      const iterator = result[Symbol.asyncIterator]();
+      while (true) {
+        const { done, value } = await iterator.next();
+        if (done) break;
+        yield value as RunOutput;
+      }
+      return;
+    }
+
+    if (isIteratorLike(result)) {
+      while (true) {
+        const state: IteratorResult<unknown> = result.next();
+        if (state.done) break;
+        yield state.value as RunOutput;
+      }
+      return;
+    }
+
+    yield result;
   }
 
   static from(func: AnyTraceableFunction) {

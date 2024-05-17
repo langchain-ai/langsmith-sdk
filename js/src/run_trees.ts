@@ -188,6 +188,17 @@ export class RunTree implements BaseRun {
       tracingEnabled = tracingEnabled || !!langChainTracer;
     }
 
+    if (!parentRun) {
+      return new RunTree({
+        name: props.name,
+        client,
+        tracingEnabled: isTracingEnabled(),
+        project_name: projectName,
+        tags: props.tags,
+        metadata: props.metadata,
+      });
+    }
+
     const parentRunTree = new RunTree({
       name: parentRun?.name ?? "<parent>",
       id: parentRun?.id,
