@@ -2,9 +2,6 @@ import type { RunTree, RunTreeConfig } from "../run_trees.js";
 import { ROOT, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
-import { FakeChatModel } from "@langchain/core/utils/testing";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { StringOutputParser } from "@langchain/core/output_parsers";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -644,41 +641,6 @@ describe("deferred input", () => {
           error: "Error: Rejected!",
         },
       },
-    });
-  });
-});
-
-describe("langchain", () => {
-  test.skip("bound", async () => {
-    const { client, callSpy } = mockClient();
-
-    const llm = new FakeChatModel({});
-    const prompt = ChatPromptTemplate.fromMessages<{ text: string }>([
-      ["human", "{text}"],
-    ]);
-    const parser = new StringOutputParser();
-    const chain = prompt.pipe(llm).pipe(parser);
-
-    const main = traceable(chain.invoke.bind(chain), {
-      client,
-      tracingEnabled: true,
-    });
-
-    const result = await main({ text: "Hello world" });
-    expect(result).toEqual("Hello world");
-
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
-      nodes: [
-        "bound invoke:0",
-        "ChatPromptTemplate:1",
-        "FakeChatModel:2",
-        "StringOutputParser:3",
-      ],
-      edges: [
-        ["bound invoke:0", "ChatPromptTemplate:1"],
-        ["ChatPromptTemplate:1", "FakeChatModel:2"],
-        ["FakeChatModel:2", "StringOutputParser:3"],
-      ],
     });
   });
 });

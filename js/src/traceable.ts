@@ -8,7 +8,16 @@ import {
   isRunnableConfigLike,
 } from "./run_trees.js";
 import { InvocationParamsSchema, KVMap } from "./schemas.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { isTracingEnabled } from "./env.js";
+import {
+  ROOT,
+  AsyncLocalStorageProviderSingleton,
+} from "./singletons/traceable.js";
+import { TraceableFunction } from "./singletons/types.js";
+
+AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
+  new AsyncLocalStorage<RunTree | undefined>()
+);
 
 function isPromiseMethod(
   x: string | symbol
@@ -19,84 +28,20 @@ function isPromiseMethod(
   return false;
 }
 
-const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
-
-export const ROOT = Symbol("langsmith:traceable:root");
-
-export type RunTreeLike = RunTree;
-
-type SmartPromise<T> = T extends AsyncGenerator
-  ? T
-  : T extends Promise<unknown>
-  ? T
-  : Promise<T>;
-
-type WrapArgReturnPair<Pair> = Pair extends [
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  infer Args extends any[],
-  infer Return
-]
-  ? Args extends [RunTreeLike, ...infer RestArgs]
-    ? {
-        (
-          runTree: RunTreeLike | typeof ROOT,
-          ...args: RestArgs
-        ): SmartPromise<Return>;
-        (config: RunnableConfigLike, ...args: RestArgs): SmartPromise<Return>;
-      }
-    : {
-        (...args: Args): SmartPromise<Return>;
-        (runTree: RunTreeLike, ...rest: Args): SmartPromise<Return>;
-        (config: RunnableConfigLike, ...args: Args): SmartPromise<Return>;
-      }
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (
-  x: infer I
-) => void
-  ? I
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TraceableFunction<Func extends (...args: any[]) => any> =
-  // function overloads are represented as intersections rather than unions
-  // matches the behavior introduced in https://github.com/microsoft/TypeScript/pull/54448
-  Func extends {
-    (...args: infer A1): infer R1;
-    (...args: infer A2): infer R2;
-    (...args: infer A3): infer R3;
-    (...args: infer A4): infer R4;
-    (...args: infer A5): infer R5;
+function isKVMap(x: unknown): x is Record<string, unknown> {
+  if (typeof x !== "object" || x == null) {
+    return false;
   }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4] | [A5, R5]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-        (...args: infer A4): infer R4;
-      }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1]>>
-    : never;
+
+  const prototype = Object.getPrototypeOf(x);
+  return (
+    (prototype === null ||
+      prototype === Object.prototype ||
+      Object.getPrototypeOf(prototype) === null) &&
+    !(Symbol.toStringTag in x) &&
+    !(Symbol.iterator in x)
+  );
+}
 
 const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   x != null &&
@@ -104,13 +49,13 @@ const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   typeof (x as any)[Symbol.asyncIterator] === "function";
 
-const GeneratorFunction = function* () {}.constructor;
-
 const isIteratorLike = (x: unknown): x is Iterator<unknown> =>
   x != null &&
   typeof x === "object" &&
   "next" in x &&
   typeof x.next === "function";
+
+const GeneratorFunction = function* () {}.constructor;
 
 const isGenerator = (x: unknown): x is Generator =>
   // eslint-disable-next-line no-instanceof/no-instanceof
@@ -127,21 +72,6 @@ const isReadableStream = (x: unknown): x is ReadableStream =>
   typeof x === "object" &&
   "getReader" in x &&
   typeof x.getReader === "function";
-
-const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
-  if (tracingEnabled !== undefined) {
-    return tracingEnabled;
-  }
-  const envVars = [
-    "LANGSMITH_TRACING_V2",
-    "LANGCHAIN_TRACING_V2",
-    "LANGSMITH_TRACING",
-    "LANGCHAIN_TRACING",
-  ];
-  return Boolean(
-    envVars.find((envVar) => getEnvironmentVariable(envVar) === "true")
-  );
-};
 
 const handleRunInputs = (rawInputs: unknown[]): KVMap => {
   const firstInput = rawInputs[0];
@@ -174,8 +104,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined
 ): RunTree | undefined => {
-  const tracingEnabled_ = tracingIsEnabled(runTree.tracingEnabled);
-  if (!tracingEnabled_) {
+  if (!isTracingEnabled(runTree.tracingEnabled)) {
     return undefined;
   }
 
@@ -412,7 +341,7 @@ export function traceable<Func extends (...args: any[]) => any>(
   const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
 
   const traceableFunc = (
-    ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
+    ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ) => {
     let ensuredConfig: RunTreeConfig;
     try {
@@ -465,6 +394,8 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
     }
 
+    const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
+
     // TODO: deal with possible nested promises and async iterables
     const processedArgs = args as unknown as Inputs;
     for (let i = 0; i < processedArgs.length; i++) {
@@ -486,7 +417,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         ];
       }
 
-      // legacy CallbackManagerRunTree used in runOnDataset
+      // deprecated: legacy CallbackManagerRunTree used in runOnDataset
       // override ALS and do not pass-through the run tree
       if (
         isRunTree(firstArg) &&
@@ -693,56 +624,10 @@ export function traceable<Func extends (...args: any[]) => any>(
   return traceableFunc as TraceableFunction<Func>;
 }
 
-/**
- * Return the current run tree from within a traceable-wrapped function.
- * Will throw an error if called outside of a traceable function.
- *
- * @returns The run tree for the given context.
- */
-export function getCurrentRunTree(): RunTree {
-  const runTree = asyncLocalStorage.getStore();
-  if (runTree === undefined) {
-    throw new Error(
-      [
-        "Could not get the current run tree.",
-        "",
-        "Please make sure you are calling this method within a traceable function.",
-      ].join("\n")
-    );
-  }
-  return runTree;
-}
+export {
+  getCurrentRunTree,
+  isTraceableFunction,
+  ROOT,
+} from "./singletons/traceable.js";
 
-export function isTraceableFunction(
-  x: unknown
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): x is TraceableFunction<any> {
-  return typeof x === "function" && "langsmith:traceable" in x;
-}
-
-function isKVMap(x: unknown): x is Record<string, unknown> {
-  if (typeof x !== "object" || x == null) {
-    return false;
-  }
-
-  const prototype = Object.getPrototypeOf(x);
-  return (
-    (prototype === null ||
-      prototype === Object.prototype ||
-      Object.getPrototypeOf(prototype) === null) &&
-    !(Symbol.toStringTag in x) &&
-    !(Symbol.iterator in x)
-  );
-}
-
-export function wrapFunctionAndEnsureTraceable<
-  Func extends (...args: any[]) => any
->(target: Func, options: Partial<RunTreeConfig>, name = "target") {
-  if (typeof target === "function") {
-    return traceable<Func>(target, {
-      ...options,
-      name,
-    });
-  }
-  throw new Error("Target must be runnable function");
-}
+export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";

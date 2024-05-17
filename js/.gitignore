@@ -51,6 +51,10 @@ Chinook_Sqlite.sql
 /schemas.js
 /schemas.d.ts
 /schemas.d.cts
+/langchain.cjs
+/langchain.js
+/langchain.d.ts
+/langchain.d.cts
 /wrappers.cjs
 /wrappers.js
 /wrappers.d.ts
@@ -59,6 +63,10 @@ Chinook_Sqlite.sql
 /wrappers/openai.js
 /wrappers/openai.d.ts
 /wrappers/openai.d.cts
+/singletons/traceable.cjs
+/singletons/traceable.js
+/singletons/traceable.d.ts
+/singletons/traceable.d.cts
 /index.cjs
 /index.js
 /index.d.ts
