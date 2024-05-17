@@ -63,7 +63,7 @@ describe("to langchain", () => {
     });
   });
 
-  test("to langchain stream", async () => {
+  test("stream", async () => {
     const { client, callSpy } = mockClient();
 
     const main = traceable(
@@ -100,7 +100,7 @@ describe("to langchain", () => {
     });
   });
 
-  test("to langchain batch", async () => {
+  test("batch", async () => {
     const { client, callSpy } = mockClient();
 
     const main = traceable(
@@ -189,6 +189,91 @@ describe("to traceable", () => {
         ["RunnableSequence:0", "add_negligible_value:3"],
         ["RunnableSequence:0", "StrOutputParser:4"],
       ],
+    });
+  });
+
+  test("array stream", async () => {
+    const { client, callSpy } = mockClient();
+
+    const source = RunnableTraceable.from(
+      traceable(function (input: { text: string }) {
+        return input.text.split(" ");
+      })
+    );
+
+    const tokens: unknown[] = [];
+    for await (const chunk of await source.stream(
+      { text: "Hello world" },
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore client might be of different type
+      { callbacks: [new LangChainTracer({ client })] }
+    )) {
+      tokens.push(chunk);
+    }
+
+    expect(tokens).toEqual([["Hello", "world"]]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["<lambda>:0"],
+      edges: [],
+    });
+  });
+
+  test("generator stream", async () => {
+    const { client, callSpy } = mockClient();
+
+    const source = RunnableTraceable.from(
+      traceable(function* (input: { text: string }) {
+        const chunks = input.text.split(" ");
+        for (const chunk of chunks) {
+          yield chunk;
+        }
+      })
+    );
+
+    const tokens: unknown[] = [];
+    for await (const chunk of await source.stream(
+      { text: "Hello world" },
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore client might be of different type
+      { callbacks: [new LangChainTracer({ client })] }
+    )) {
+      tokens.push(chunk);
+    }
+
+    expect(tokens).toEqual(["Hello", "world"]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["<lambda>:0"],
+      edges: [],
+    });
+  });
+
+  test("async generator stream", async () => {
+    const { client, callSpy } = mockClient();
+    const source = RunnableTraceable.from(
+      traceable(async function* (input: { text: string }) {
+        const chunks = input.text.split(" ");
+        for (const chunk of chunks) {
+          yield chunk;
+        }
+      })
+    );
+
+    const tokens: unknown[] = [];
+    for await (const chunk of await source.stream(
+      { text: "Hello world" },
+      {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore client might be of different type
+        callbacks: [new LangChainTracer({ client })],
+      }
+    )) {
+      tokens.push(chunk);
+    }
+
+    expect(tokens).toEqual(["Hello", "world"]);
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["<lambda>:0"],
+      edges: [],
     });
   });
 });
