@@ -153,7 +153,7 @@ def test_list_examples(langchain_client: Client) -> None:
             example.id
             for example in example_list
             if example.metadata is not None
-            and example.metadata.get("dataset_split") == "test"
+            and "test" in example.metadata.get("dataset_split", [])
         ][0],
         split="train",
     )
@@ -161,7 +161,7 @@ def test_list_examples(langchain_client: Client) -> None:
     example_list = list(
         langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
     )
-    assert len(example_list) == 2
+    assert len(example_list) == 1
 
     example_list = list(
         langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])

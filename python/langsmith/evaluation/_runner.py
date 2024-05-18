@@ -1322,6 +1322,23 @@ class _ExperimentManager(_ExperimentManagerMixin):
         max_modified_at = max(modified_at) if modified_at else None
         return max_modified_at.isoformat() if max_modified_at else None
 
+    def _get_dataset_splits(self) -> Optional[list[str]]:
+        examples = list(self.examples)
+        splits = set()
+        for example in examples:
+            if (
+                example.metadata
+                and example.metadata.get("dataset_split")
+                and isinstance(example.metadata["dataset_split"], list)
+            ):
+                for split in example.metadata["dataset_split"]:
+                    if isinstance(split, str):
+                        splits.add(split)
+            else:
+                splits.add("base")
+
+        return list(splits)
+
     def _end(self) -> None:
         experiment = self._experiment
         if experiment is None:
@@ -1329,6 +1346,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
         project_metadata = self._get_experiment_metadata()
         project_metadata["dataset_version"] = self._get_dataset_version()
+        project_metadata["dataset_splits"] = self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
             end_time=datetime.datetime.now(datetime.timezone.utc),

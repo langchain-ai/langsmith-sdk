@@ -1,6 +1,6 @@
 import { EvaluationResult } from "../evaluation/evaluator.js";
 import { evaluate } from "../evaluation/_runner.js";
-import { Example, Run } from "../schemas.js";
+import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
 import { RunnableLambda } from "@langchain/core/runnables";
@@ -30,6 +30,13 @@ afterAll(async () => {
   await client.deleteDataset({
     datasetName: TESTING_DATASET_NAME,
   });
+  try {
+    await client.deleteDataset({
+      datasetName: "my_splits_ds2",
+    });
+  } catch (_) {
+    //pass
+  }
 });
 
 test("evaluate can evaluate", async () => {
@@ -348,6 +355,82 @@ test("can pass multiple evaluators", async () => {
   // Checks that both evaluators were called with the expected run and example
   expect(receivedCommentStrings).toEqual(
     expect.arrayContaining([expectedCommentStrings, expectedCommentStrings])
+  );
+});
+
+test("split info saved correctly", async () => {
+  const client = new Client();
+  // create a new dataset
+  await client.createDataset("my_splits_ds2", {
+    description:
+      "For testing purposed. Is created & deleted for each test run.",
+  });
+  // create examples
+  await client.createExamples({
+    inputs: [{ input: 1 }, { input: 2 }, { input: 3 }],
+    outputs: [{ output: 2 }, { output: 3 }, { output: 4 }],
+    splits: [["test"], ["train"], ["validation", "test"]],
+    datasetName: "my_splits_ds2",
+  });
+
+  const targetFunc = (input: Record<string, any>) => {
+    console.log("__input__", input);
+    return {
+      foo: input.input + 1,
+    };
+  };
+  await evaluate(targetFunc, {
+    data: client.listExamples({ datasetName: "my_splits_ds2" }),
+    description: "splits info saved correctly",
+  });
+
+  const exp = client.listProjects({ referenceDatasetName: "my_splits_ds2" });
+  let myExp: TracerSession | null = null;
+  for await (const session of exp) {
+    myExp = session;
+  }
+  expect(myExp?.extra?.metadata?.dataset_splits.sort()).toEqual(
+    ["test", "train", "validation"].sort()
+  );
+
+  await evaluate(targetFunc, {
+    data: client.listExamples({
+      datasetName: "my_splits_ds2",
+      splits: ["test"],
+    }),
+    description: "splits info saved correctly",
+  });
+
+  const exp2 = client.listProjects({ referenceDatasetName: "my_splits_ds2" });
+  let myExp2: TracerSession | null = null;
+  for await (const session of exp2) {
+    if (myExp2 === null || session.start_time > myExp2.start_time) {
+      myExp2 = session;
+    }
+  }
+
+  expect(myExp2?.extra?.metadata?.dataset_splits.sort()).toEqual(
+    ["test", "validation"].sort()
+  );
+
+  await evaluate(targetFunc, {
+    data: client.listExamples({
+      datasetName: "my_splits_ds2",
+      splits: ["train"],
+    }),
+    description: "splits info saved correctly",
+  });
+
+  const exp3 = client.listProjects({ referenceDatasetName: "my_splits_ds2" });
+  let myExp3: TracerSession | null = null;
+  for await (const session of exp3) {
+    if (myExp3 === null || session.start_time > myExp3.start_time) {
+      myExp3 = session;
+    }
+  }
+
+  expect(myExp3?.extra?.metadata?.dataset_splits.sort()).toEqual(
+    ["train"].sort()
   );
 });
 
