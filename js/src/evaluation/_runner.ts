@@ -694,6 +694,21 @@ class _ExperimentManager {
     ).date;
   }
 
+  async _getDatasetSplits(): Promise<string[] | undefined> {
+    const examples = await this.getExamples();
+    const allSplits = examples.reduce((acc, ex) => {
+      if (ex.metadata && ex.metadata.dataset_split) {
+        if (Array.isArray(ex.metadata.dataset_split)) {
+          ex.metadata.dataset_split.forEach((split) => acc.add(split));
+        } else if (typeof ex.metadata.dataset_split === "string") {
+          acc.add(ex.metadata.dataset_split);
+        }
+      }
+      return acc;
+    }, new Set<string>());
+    return allSplits.size ? Array.from(allSplits) : undefined;
+  }
+
   async _end(): Promise<void> {
     const experiment = this._experiment;
     if (!experiment) {
@@ -701,6 +716,7 @@ class _ExperimentManager {
     }
     const projectMetadata = await this._getExperimentMetadata();
     projectMetadata["dataset_version"] = await this._getDatasetVersion();
+    projectMetadata["dataset_splits"] = await this._getDatasetSplits();
     // Update revision_id if not already set
     if (!projectMetadata["revision_id"]) {
       projectMetadata["revision_id"] = await getDefaultRevisionId();

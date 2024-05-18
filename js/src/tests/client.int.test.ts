@@ -102,7 +102,7 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   // Says 'example updated' or something similar
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
-  expect(newExampleValue.metadata?.dataset_split).toBe(["my_split2"]);
+  expect(newExampleValue.metadata?.dataset_split).toStrictEqual(["my_split2"]);
 
   await client.updateExample(example.id, {
     inputs: { col1: "updatedExampleCol3" },
@@ -112,7 +112,7 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   // Says 'example updated' or something similar
   const newExampleValue2 = await client.readExample(example.id);
   expect(newExampleValue2.inputs.col1).toBe("updatedExampleCol3");
-  expect(newExampleValue2.metadata?.dataset_split).toBe(["my_split3"]);
+  expect(newExampleValue2.metadata?.dataset_split).toStrictEqual(["my_split3"]);
   await client.deleteExample(example.id);
   const examples2 = await toArray(
     client.listExamples({ datasetId: newDataset.id })
