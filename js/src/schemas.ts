@@ -397,7 +397,7 @@ export type RetrieverOutput = Array<{
 export interface InvocationParamsSchema {
   ls_provider?: string;
   ls_model_name?: string;
-  ls_model_type: "chat";
+  ls_model_type: "chat" | "text";
   ls_temperature?: number;
   ls_max_tokens?: number;
   ls_stop?: string[];
