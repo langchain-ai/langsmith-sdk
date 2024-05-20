@@ -67,3 +67,5 @@ export function isTraceableFunction(
 ): x is TraceableFunction<any> {
   return typeof x === "function" && "langsmith:traceable" in x;
 }
+
+export type { TraceableFunction } from "./types.js";
