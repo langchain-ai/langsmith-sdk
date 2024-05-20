@@ -109,9 +109,9 @@ def test_datasets(langchain_client: Client) -> None:
 def test_list_examples(langchain_client: Client) -> None:
     """Test list_examples."""
     examples = [
-        ("Shut up, idiot", "Toxic", "train"),
+        ("Shut up, idiot", "Toxic", ["train", "validation"]),
         ("You're a wonderful person", "Not toxic", "test"),
-        ("This is the worst thing ever", "Toxic", "train"),
+        ("This is the worst thing ever", "Toxic", ["train"]),
         ("I had a great day today", "Not toxic", "test"),
         ("Nobody likes you", "Toxic", "train"),
         ("This is unacceptable. I want to speak to the manager.", "Not toxic", None),
@@ -134,6 +134,11 @@ def test_list_examples(langchain_client: Client) -> None:
     assert len(example_list) == 3
 
     example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["validation"])
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
         langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
     )
     assert len(example_list) == 2
@@ -148,10 +153,20 @@ def test_list_examples(langchain_client: Client) -> None:
             example.id
             for example in example_list
             if example.metadata is not None
-            and example.metadata.get("dataset_split") == "test"
+            and "test" in example.metadata.get("dataset_split", [])
         ][0],
         split="train",
     )
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
+    )
+    assert len(example_list) == 4
 
     langchain_client.create_example(
         inputs={"text": "What's up!"},
