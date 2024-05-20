@@ -237,6 +237,7 @@ def traceable(
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
+    invocation_params_fn: Optional[Callable[[dict], dict]] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
 
 
@@ -404,6 +405,7 @@ def traceable(
         project_name=kwargs.pop("project_name", None),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
+        invocation_params_fn=kwargs.pop("invocation_params_fn", None),
     )
     if kwargs:
         warnings.warn(
@@ -921,6 +923,7 @@ class _ContainerInput(TypedDict, total=False):
     project_name: Optional[str]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
+    invocation_params_fn: Optional[Callable[[dict], dict]]
 
 
 def _container_end(
@@ -1037,6 +1040,16 @@ def _setup_run(
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
     inputs = _get_inputs_safe(signature, *args, **kwargs)
+    invocation_params_fn = container_input.get("invocation_params_fn")
+    if invocation_params_fn:
+        try:
+            invocation_params = {
+                k: v for k, v in invocation_params_fn(inputs).items() if v is not None
+            }
+            if invocation_params and isinstance(invocation_params, dict):
+                metadata_.update(invocation_params)
+        except BaseException as e:
+            LOGGER.error(f"Failed to infer invocation params for {name_}: {e}")
     process_inputs = container_input.get("process_inputs")
     if process_inputs:
         try:
