@@ -306,6 +306,7 @@ class _ExperimentManager {
           metadata: projectMetadata,
           description: this._description,
         });
+        this._experiment = project;
       } catch (e) {
         if (String(e).includes("already exists")) {
           throw e;
