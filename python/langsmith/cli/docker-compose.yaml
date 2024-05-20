@@ -1,11 +1,11 @@
 version: "4"
 services:
   langchain-playground:
-    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.5.1}
+    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
     ports:
       - 3001:3001
   langchain-frontend:
-    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.5.1}
+    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
     environment:
       - VITE_BACKEND_AUTH_TYPE=${AUTH_TYPE:-none}
       - VITE_OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
@@ -16,7 +16,7 @@ services:
       - langchain-backend
       - langchain-playground
   langchain-backend:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.1}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
@@ -49,7 +49,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-platform-backend:
-    image: langchain/langsmith-go-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.1}
+    image: langchain/langsmith-go-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
     environment:
       - PORT=1986
       - LANGCHAIN_ENV=local_docker
@@ -75,7 +75,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-queue:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.1}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
     environment:
       - LANGCHAIN_ENV=local_docker
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
@@ -163,7 +163,7 @@ services:
       timeout: 2s
       retries: 30
   clickhouse-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.1}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
     depends_on:
       langchain-clickhouse:
         condition: service_healthy
@@ -182,7 +182,7 @@ services:
         "migrate -source file://clickhouse/migrations -database 'clickhouse://${CLICKHOUSE_HOST}:${CLICKHOUSE_NATIVE_PORT}?username=${CLICKHOUSE_USER}&password=${CLICKHOUSE_PASSWORD}&database=${CLICKHOUSE_DB}&x-multi-statement=true&x-migrations-table-engine=MergeTree' up",
       ]
   postgres-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.1}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
     depends_on:
       langchain-db:
         condition: service_healthy
