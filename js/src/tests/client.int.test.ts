@@ -97,12 +97,22 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   await client.updateExample(example.id, {
     inputs: { col1: "updatedExampleCol1" },
     outputs: { col2: "updatedExampleCol2" },
-    split: "my_split2",
+    split: ["my_split2"],
   });
   // Says 'example updated' or something similar
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
-  expect(newExampleValue.metadata?.dataset_split).toBe("my_split2");
+  expect(newExampleValue.metadata?.dataset_split).toStrictEqual(["my_split2"]);
+
+  await client.updateExample(example.id, {
+    inputs: { col1: "updatedExampleCol3" },
+    outputs: { col2: "updatedExampleCol4" },
+    split: "my_split3",
+  });
+  // Says 'example updated' or something similar
+  const newExampleValue2 = await client.readExample(example.id);
+  expect(newExampleValue2.inputs.col1).toBe("updatedExampleCol3");
+  expect(newExampleValue2.metadata?.dataset_split).toStrictEqual(["my_split3"]);
   await client.deleteExample(example.id);
   const examples2 = await toArray(
     client.listExamples({ datasetId: newDataset.id })
@@ -489,7 +499,7 @@ test.concurrent(
         { output: "hi there 3" },
       ],
       metadata: [{ key: "value 1" }, { key: "value 2" }, { key: "value 3" }],
-      splits: ["train", "test", "train"],
+      splits: ["train", "test", ["train", "validation"]],
       datasetId: dataset.id,
     });
     const initialExamplesList = await toArray(
@@ -520,19 +530,20 @@ test.concurrent(
     );
     expect(example1?.outputs?.output).toEqual("hi there 1");
     expect(example1?.metadata?.key).toEqual("value 1");
-    expect(example1?.metadata?.dataset_split).toEqual("train");
+    expect(example1?.metadata?.dataset_split).toEqual(["train"]);
     const example2 = examplesList2.find(
       (e) => e.inputs.input === "hello world 2"
     );
     expect(example2?.outputs?.output).toEqual("hi there 2");
     expect(example2?.metadata?.key).toEqual("value 2");
-    expect(example2?.metadata?.dataset_split).toEqual("test");
+    expect(example2?.metadata?.dataset_split).toEqual(["test"]);
     const example3 = examplesList2.find(
       (e) => e.inputs.input === "hello world 3"
     );
     expect(example3?.outputs?.output).toEqual("hi there 3");
     expect(example3?.metadata?.key).toEqual("value 3");
-    expect(example3?.metadata?.dataset_split).toEqual("train");
+    expect(example3?.metadata?.dataset_split).toContain("train");
+    expect(example3?.metadata?.dataset_split).toContain("validation");
 
     await client.createExample(
       { input: "hello world" },

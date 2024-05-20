@@ -239,7 +239,7 @@ export type CreateExampleOptions = {
   exampleId?: string;
 
   metadata?: KVMap;
-  split?: string;
+  split?: string | string[];
 };
 
 type AutoBatchQueueItem = {
@@ -2036,7 +2036,7 @@ export class Client {
     inputs: Array<KVMap>;
     outputs?: Array<KVMap>;
     metadata?: Array<KVMap>;
-    splits?: Array<string>;
+    splits?: Array<string | Array<string>>;
     sourceRunIds?: Array<string>;
     exampleIds?: Array<string>;
     datasetId?: string;

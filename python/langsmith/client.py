@@ -2936,7 +2936,7 @@ class Client:
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        splits: Optional[Sequence[Optional[str]]] = None,
+        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
@@ -2953,6 +2953,9 @@ class Client:
             The output values for the examples.
         metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The metadata for the examples.
+        split :  Optional[Sequence[Optional[str | List[str]]]], default=None
+            The splits for the examples, which are divisions
+            of your dataset such as 'train', 'test', or 'validation'.
         source_run_ids : Optional[Sequence[Optional[ID_TYPE]]], default=None
                 The IDs of the source runs associated with the examples.
         ids : Optional[Sequence[ID_TYPE]], default=None
@@ -3012,7 +3015,7 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
-        split: Optional[str] = None,
+        split: Optional[str | List[str]] = None,
         example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -3034,6 +3037,9 @@ class Client:
                 The output values for the example.
             metadata : Mapping[str, Any] or None, default=None
                 The metadata for the example.
+            split : str or List[str] or None, default=None
+                The splits for the example, which are divisions
+                of your dataset such as 'train', 'test', or 'validation'.
             exemple_id : UUID or None, default=None
                 The ID of the example to create. If not provided, a new
                 example will be created.
@@ -3165,7 +3171,7 @@ class Client:
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Dict] = None,
-        split: Optional[str] = None,
+        split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
@@ -3180,6 +3186,9 @@ class Client:
             The output values to update.
         metadata : Dict or None, default=None
             The metadata to update.
+        split : str or List[str] or None, default=None
+            The dataset split to update, such as
+            'train', 'test', or 'validation'.
         dataset_id : UUID or None, default=None
             The ID of the dataset to update.
 
