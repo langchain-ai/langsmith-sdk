@@ -21,6 +21,10 @@
     "evaluation.js",
     "evaluation.d.ts",
     "evaluation.d.cts",
+    "evaluation/langchain.cjs",
+    "evaluation/langchain.js",
+    "evaluation/langchain.d.ts",
+    "evaluation/langchain.d.cts",
     "schemas.cjs",
     "schemas.js",
     "schemas.d.ts",
@@ -95,8 +99,9 @@
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@jest/globals": "^29.5.0",
-    "@langchain/core": "^0.1.32",
-    "@langchain/langgraph": "^0.0.8",
+    "langchain": "^0.2.0",
+    "@langchain/core": "^0.2.0",
+    "@langchain/langgraph": "^0.0.19",
     "@tsconfig/recommended": "^1.0.2",
     "@types/jest": "^29.5.1",
     "@typescript-eslint/eslint-plugin": "^5.59.8",
@@ -118,15 +123,22 @@
   },
   "peerDependencies": {
     "openai": "*",
+    "langchain": "*",
     "@langchain/core": "*"
   },
   "peerDependenciesMeta": {
     "openai": {
       "optional": true
     },
+    "langchain": {
+      "optional": true
+    },
     "@langchain/core": {
       "optional": true
     }
+  },
+  "resolutions": {
+    "@langchain/core": "0.2.0"
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [
@@ -179,6 +191,15 @@
       },
       "import": "./evaluation.js",
       "require": "./evaluation.cjs"
+    },
+    "./evaluation/langchain": {
+      "types": {
+        "import": "./evaluation/langchain.d.ts",
+        "require": "./evaluation/langchain.d.cts",
+        "default": "./evaluation/langchain.d.ts"
+      },
+      "import": "./evaluation/langchain.js",
+      "require": "./evaluation/langchain.cjs"
     },
     "./schemas": {
       "types": {
