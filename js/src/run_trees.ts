@@ -7,15 +7,7 @@ import {
 } from "./utils/env.js";
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
-
-const warnedMessages: Record<string, boolean> = {};
-
-function warnOnce(message: string): void {
-  if (!warnedMessages[message]) {
-    console.warn(message);
-    warnedMessages[message] = true;
-  }
-}
+import { warnOnce } from "./utils/warn.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
