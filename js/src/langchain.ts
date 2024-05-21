@@ -9,6 +9,7 @@ import {
   getCurrentRunTree,
   isTraceableFunction,
 } from "./traceable.js";
+import { warnOnce } from "./utils/warn.js";
 
 /**
  * Converts the current run tree active within a traceable-wrapped function
@@ -23,6 +24,11 @@ export async function getLangchainCallbacks(
 ) {
   const runTree: RunTree | undefined = currentRunTree ?? getCurrentRunTree();
   if (!runTree) return undefined;
+
+  warnOnce(
+    "Using `getLangchainCallbacks` with newer versions of LangChain might result in unexpected behavior. \n" +
+      "Consider upgrading LangChain to 0.2.x or higher."
+  );
 
   // TODO: CallbackManager.configure() is only async due to LangChainTracer
   // factory being unnecessarily async.
