@@ -134,11 +134,8 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
     const result = await this.invoke(input, options);
 
     if (isAsyncIterable(result)) {
-      const iterator = result[Symbol.asyncIterator]();
-      while (true) {
-        const { done, value } = await iterator.next();
-        if (done) break;
-        yield value as RunOutput;
+      for await (const item of result) {
+        yield item as RunOutput;
       }
       return;
     }
