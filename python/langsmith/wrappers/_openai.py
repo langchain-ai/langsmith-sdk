@@ -178,7 +178,7 @@ def _get_wrapper(
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
-            invocation_params_fn=invocation_params_fn,
+            _invocation_params_fn=invocation_params_fn,
             **textra,
         )
 
@@ -192,7 +192,7 @@ def _get_wrapper(
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
-            invocation_params_fn=invocation_params_fn,
+            _invocation_params_fn=invocation_params_fn,
             **textra,
         )
         if stream:
