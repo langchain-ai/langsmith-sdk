@@ -237,7 +237,7 @@ def traceable(
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
-    invocation_params_fn: Optional[Callable[[dict], dict]] = None,
+    _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
 ) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
 
 
@@ -405,7 +405,7 @@ def traceable(
         project_name=kwargs.pop("project_name", None),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
-        invocation_params_fn=kwargs.pop("invocation_params_fn", None),
+        invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
     )
     if kwargs:
         warnings.warn(
