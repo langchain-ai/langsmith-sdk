@@ -82,6 +82,7 @@ def evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: Optional[int] = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
@@ -106,6 +107,8 @@ def evaluate(
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
+        num_repetitions (int): The number of times to repeat the evaluation.
+            Defaults to 1.
 
     Returns:
         ExperimentResults: The results of the evaluation.
@@ -241,6 +244,7 @@ def evaluate(
         experiment_prefix=experiment_prefix,
         description=description,
         max_concurrency=max_concurrency,
+        num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
     )
@@ -766,6 +770,7 @@ def _evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: Optional[int] = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[schemas.TracerSession] = None,
@@ -785,6 +790,11 @@ def _evaluate(
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
         description=description,
+        num_repetitions=(
+            num_repetitions
+            if num_repetitions is not None and num_repetitions > 0
+            else 1
+        ),
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -981,6 +991,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     Args:
         data (DATA_T): The data used for the experiment. Can be a dataset name or ID OR
             a generator of examples.
+        num_repetitions (int): The number of times to run over the data.
         runs (Optional[Iterable[schemas.Run]]): The runs associated with the experiment
             predictions.
         experiment (Optional[schemas.TracerSession]): The tracer session
@@ -1006,6 +1017,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
+        num_repetitions: int = 1,
     ):
         super().__init__(
             experiment=experiment,
@@ -1018,11 +1030,16 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._runs = runs
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
+        self._num_repetitions = num_repetitions
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
             self._examples = _resolve_data(self._data, client=self.client)
+            if self._num_repetitions > 1:
+                self._examples = itertools.chain.from_iterable(
+                    itertools.tee(self._examples, self._num_repetitions)
+                )
         self._examples, examples_iter = itertools.tee(self._examples)
         return examples_iter
 

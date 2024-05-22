@@ -67,6 +67,7 @@ interface _ExperimentManagerArgs {
     unknown
   >;
   examples?: Example[];
+  numRepetitions?: number;
   _runsArray?: Run[];
 }
 
@@ -110,6 +111,12 @@ export interface EvaluateOptions {
    * @default undefined
    */
   client?: Client;
+  /**
+   * The number of repetitions to perform. Each example
+   * will be run this many times.
+   * @default 1
+   */
+  numRepetitions?: number;
 }
 
 export function evaluate(
@@ -149,6 +156,8 @@ class _ExperimentManager {
 
   _examples?: Example[];
 
+  _numRepetitions?: number;
+
   _runsArray?: Run[];
 
   client: Client;
@@ -183,7 +192,15 @@ class _ExperimentManager {
       for await (const example of unresolvedData) {
         exs.push(example);
       }
-      this.setExamples(exs);
+      if (this._numRepetitions) {
+        const repeatedExamples = [];
+        for (let i = 0; i < this._numRepetitions; i++) {
+          repeatedExamples.push(...exs);
+        }
+        this.setExamples(repeatedExamples);
+      } else {
+        this.setExamples(exs);
+      }
     }
     return this._examples;
   }
@@ -264,6 +281,7 @@ class _ExperimentManager {
 
     this._evaluationResults = args.evaluationResults;
     this._summaryResults = args.summaryResults;
+    this._numRepetitions = args.numRepetitions;
   }
 
   _getExperiment(): TracerSession {
@@ -803,6 +821,7 @@ async function _evaluate(
     metadata: fields.metadata,
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
+    numRepetitions: fields.numRepetitions ?? 1,
   }).start();
 
   if (_isCallable(target)) {

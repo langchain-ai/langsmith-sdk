@@ -77,6 +77,36 @@ test("evaluate can evaluate", async () => {
   expect(secondRunResults.results).toHaveLength(0);
 });
 
+test("evaluate can repeat", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    console.log("__input__", input);
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    description: "Experiment from evaluate can evaluate integration test",
+    numRepetitions: 3,
+  });
+  // console.log(evalRes.results)
+  expect(evalRes.results).toHaveLength(6);
+
+  for (let i = 0; i < 6; i++) {
+    expect(evalRes.results[i].run).toBeDefined();
+    expect(evalRes.results[i].example).toBeDefined();
+    expect(evalRes.results[i].evaluationResults).toBeDefined();
+    const currRun = evalRes.results[i].run;
+    // The examples are not always in the same order, so it should always be 2 or 3
+    expect(currRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+    expect(currRun.outputs?.foo).toBeLessThanOrEqual(3);
+
+    const firstRunResults = evalRes.results[i].evaluationResults;
+    expect(firstRunResults.results).toHaveLength(0);
+  }
+});
+
 test("evaluate can evaluate with RunEvaluator evaluators", async () => {
   const targetFunc = (input: { input: number }) => {
     return { foo: input.input + 1 };
