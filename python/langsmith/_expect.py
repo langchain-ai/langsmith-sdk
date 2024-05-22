@@ -48,7 +48,16 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Literal,
+    Optional,
+    Union,
+    overload,
+    override,
+)
 
 from langsmith import client as ls_client
 from langsmith import run_helpers as rh
@@ -57,6 +66,23 @@ from langsmith import utils as ls_utils
 if TYPE_CHECKING:
     from langsmith._internal._edit_distance import EditDistanceConfig
     from langsmith._internal._embedding_distance import EmbeddingConfig
+
+
+# Sentinel class used until PEP 0661 is accepted
+class _NULL_SENTRY:
+    """A sentinel singleton class used to distinguish omitted keyword arguments
+    from those passed in with the value None (which may have different behavior).
+    """  # noqa: D205
+
+    def __bool__(self) -> Literal[False]:
+        return False
+
+    @override
+    def __repr__(self) -> str:
+        return "NOT_GIVEN"
+
+
+NOT_GIVEN = _NULL_SENTRY()
 
 
 class _Matcher:
@@ -177,6 +203,18 @@ class _Matcher:
             self.value == value,
             f"Expected {self.key} to be equal to {value}, but got {self.value}",
             "to_equal",
+        )
+
+    def to_be_none(self) -> None:
+        """Assert that the expectation value is None.
+
+        Raises:
+            AssertionError: If the expectation value is not None.
+        """
+        self._assert(
+            self.value is None,
+            f"Expected {self.key} to be None, but got {self.value}",
+            "to_be_none",
         )
 
     def to_contain(self, value: Any) -> None:
@@ -381,10 +419,13 @@ class _Expect:
     def __call__(self, /, *, client: ls_client.Client) -> _Expect: ...
 
     def __call__(
-        self, value: Optional[Any] = None, /, client: Optional[ls_client.Client] = None
+        self,
+        value: Optional[Any] = NOT_GIVEN,
+        /,
+        client: Optional[ls_client.Client] = None,
     ) -> Union[_Expect, _Matcher]:
         expected = _Expect(client=client)
-        if value is not None:
+        if value is not NOT_GIVEN:
             return expected.value(value)
         return expected
 
