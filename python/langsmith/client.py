@@ -3839,38 +3839,42 @@ class Client:
         Returns:
             The pre-signed URL for uploading feedback data.
         """
+        # validate
         if feedback_configs is not None and len(feedback_keys) != len(feedback_configs):
             raise ValueError(
                 "The length of feedback_keys and feedback_configs must be the same."
             )
         if not feedback_configs:
             feedback_configs = [None] * len(feedback_keys)
+        # build expiry option
+        expires_in, expires_at = None, None
+        if expiration is None:
+            expires_in = ls_schemas.TimeDeltaInput(
+                days=0,
+                hours=3,
+                minutes=0,
+            )
+        elif isinstance(expiration, datetime.datetime):
+            expires_at = expiration.isoformat()
+        elif isinstance(expiration, datetime.timedelta):
+            expires_in = ls_schemas.TimeDeltaInput(
+                days=expiration.days,
+                hours=expiration.seconds // 3600,
+                minutes=(expiration.seconds // 60) % 60,
+            )
+        else:
+            raise ValueError(f"Unknown expiration type: {type(expiration)}")
+        # assemble body, one entry per key
         body: List[Dict[str, Any]] = [
             {
                 "run_id": run_id,
                 "feedback_key": feedback_key,
                 "feedback_config": feedback_config,
+                "expires_in": expires_in,
+                "expires_at": expires_at,
             }
             for feedback_key, feedback_config in zip(feedback_keys, feedback_configs)
         ]
-        for part in body:
-            if expiration is None:
-                part["expires_in"] = ls_schemas.TimeDeltaInput(
-                    days=0,
-                    hours=3,
-                    minutes=0,
-                )
-            elif isinstance(expiration, datetime.datetime):
-                part["expires_at"] = expiration.isoformat()
-            elif isinstance(expiration, datetime.timedelta):
-                part["expires_in"] = ls_schemas.TimeDeltaInput(
-                    days=expiration.days,
-                    hours=expiration.seconds // 3600,
-                    minutes=(expiration.seconds // 60) % 60,
-                )
-            else:
-                raise ValueError(f"Unknown expiration type: {type(expiration)}")
-
         response = self.request_with_retries(
             "POST",
             "/feedback/tokens",
