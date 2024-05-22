@@ -16,4 +16,4 @@ def test_expect_explicit_none(mock_session_cls: mock.Mock) -> None:
     expect.score(1).to_be_greater_than(0)
     expect.score(1).to_be_between(0, 2)
     expect.score(1).to_be_approximately(1, 2)
-    expect.score({1, 2}).to_contain(1)
+    expect({1, 2}).to_contain(1)

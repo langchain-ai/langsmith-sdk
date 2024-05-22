@@ -56,7 +56,6 @@ from typing import (
     Optional,
     Union,
     overload,
-    override,
 )
 
 from langsmith import client as ls_client
@@ -77,7 +76,6 @@ class _NULL_SENTRY:
     def __bool__(self) -> Literal[False]:
         return False
 
-    @override
     def __repr__(self) -> str:
         return "NOT_GIVEN"
 
