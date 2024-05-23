@@ -83,7 +83,8 @@ async def aevaluate(
         description (Optional[str]): A description of the experiment.
         max_concurrency (Optional[int]): The maximum number of concurrent
             evaluations to run. Defaults to None.
-        num_repetitions (int): The number of times to repeat the evaluation.
+        num_repetitions (int): The number of times to run the evaluation.
+            Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
         client (Optional[langsmith.Client]): The LangSmith client to use.
             Defaults to None.

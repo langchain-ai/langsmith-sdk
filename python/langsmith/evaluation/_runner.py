@@ -107,7 +107,8 @@ def evaluate(
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
-        num_repetitions (int): The number of times to repeat the evaluation.
+        num_repetitions (int): The number of times to run the evaluation.
+            Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
 
     Returns:
