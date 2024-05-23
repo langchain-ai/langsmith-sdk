@@ -1073,6 +1073,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         first_example = next(itertools.islice(self.examples, 1))
         project = self._get_project(first_example)
         self._print_experiment_start(project, first_example)
+        self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
             self.examples,
             experiment=project,

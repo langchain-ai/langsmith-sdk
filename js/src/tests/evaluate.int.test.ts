@@ -90,7 +90,6 @@ test("evaluate can repeat", async () => {
     description: "Experiment from evaluate can evaluate integration test",
     numRepetitions: 3,
   });
-  // console.log(evalRes.results)
   expect(evalRes.results).toHaveLength(6);
 
   for (let i = 0; i < 6; i++) {
