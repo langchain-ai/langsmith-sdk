@@ -62,7 +62,7 @@ async def aevaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
-    num_repetitions: Optional[int] = None,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> AsyncExperimentResults:
@@ -348,7 +348,7 @@ async def _aevaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
-    num_repetitions: Optional[int] = 1,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[schemas.TracerSession] = None,
@@ -369,11 +369,7 @@ async def _aevaluate(
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
         description=description,
-        num_repetitions=(
-            num_repetitions
-            if num_repetitions is not None and num_repetitions > 0
-            else 1
-        ),
+        num_repetitions=num_repetitions,
         runs=runs,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
