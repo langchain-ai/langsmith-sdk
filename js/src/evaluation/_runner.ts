@@ -192,7 +192,7 @@ class _ExperimentManager {
       for await (const example of unresolvedData) {
         exs.push(example);
       }
-      if (this._numRepetitions) {
+      if (this._numRepetitions && this._numRepetitions > 0) {
         const repeatedExamples = [];
         for (let i = 0; i < this._numRepetitions; i++) {
           repeatedExamples.push(...exs);
