@@ -82,7 +82,7 @@ def evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
-    num_repetitions: Optional[int] = 1,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
@@ -770,7 +770,7 @@ def _evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
-    num_repetitions: Optional[int] = 1,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[schemas.TracerSession] = None,
@@ -790,11 +790,7 @@ def _evaluate(
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
         description=description,
-        num_repetitions=(
-            num_repetitions
-            if num_repetitions is not None and num_repetitions > 0
-            else 1
-        ),
+        num_repetitions=num_repetitions,
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
