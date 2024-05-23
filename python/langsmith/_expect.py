@@ -48,7 +48,15 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import inspect
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Literal,
+    Optional,
+    Union,
+    overload,
+)
 
 from langsmith import client as ls_client
 from langsmith import run_helpers as rh
@@ -59,18 +67,34 @@ if TYPE_CHECKING:
     from langsmith._internal._embedding_distance import EmbeddingConfig
 
 
+# Sentinel class used until PEP 0661 is accepted
+class _NULL_SENTRY:
+    """A sentinel singleton class used to distinguish omitted keyword arguments
+    from those passed in with the value None (which may have different behavior).
+    """  # noqa: D205
+
+    def __bool__(self) -> Literal[False]:
+        return False
+
+    def __repr__(self) -> str:
+        return "NOT_GIVEN"
+
+
+NOT_GIVEN = _NULL_SENTRY()
+
+
 class _Matcher:
     """A class for making assertions on expectation values."""
 
     def __init__(
         self,
-        client: ls_client.Client,
+        client: Optional[ls_client.Client],
         key: str,
         value: Any,
         _executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
         run_id: Optional[str] = None,
     ):
-        self.client = client
+        self._client = client
         self.key = key
         self.value = value
         self._executor = _executor or concurrent.futures.ThreadPoolExecutor(
@@ -81,8 +105,10 @@ class _Matcher:
 
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
+            if not self._client:
+                self._client = ls_client.Client()
             self._executor.submit(
-                self.client.create_feedback,
+                self._client.create_feedback,
                 run_id=self._run_id,
                 key="expectation",
                 score=score,
@@ -179,6 +205,18 @@ class _Matcher:
             "to_equal",
         )
 
+    def to_be_none(self) -> None:
+        """Assert that the expectation value is None.
+
+        Raises:
+            AssertionError: If the expectation value is not None.
+        """
+        self._assert(
+            self.value is None,
+            f"Expected {self.key} to be None, but got {self.value}",
+            "to_be_none",
+        )
+
     def to_contain(self, value: Any) -> None:
         """Assert that the expectation value contains the given value.
 
@@ -216,7 +254,7 @@ class _Expect:
     """A class for setting expectations on test results."""
 
     def __init__(self, *, client: Optional[ls_client.Client] = None):
-        self.client = client or ls_client.Client()
+        self._client = client
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
         atexit.register(self.executor.shutdown, wait=True)
 
@@ -271,7 +309,7 @@ class _Expect:
             },
         )
         return _Matcher(
-            self.client, "embedding_distance", score, _executor=self.executor
+            self._client, "embedding_distance", score, _executor=self.executor
         )
 
     def edit_distance(
@@ -321,7 +359,7 @@ class _Expect:
             },
         )
         return _Matcher(
-            self.client,
+            self._client,
             "edit_distance",
             score,
             _executor=self.executor,
@@ -339,7 +377,7 @@ class _Expect:
         Examples:
            >>> expect.value(10).to_be_less_than(20)
         """
-        return _Matcher(self.client, "value", value, _executor=self.executor)
+        return _Matcher(self._client, "value", value, _executor=self.executor)
 
     def score(
         self,
@@ -370,7 +408,7 @@ class _Expect:
                 "comment": comment,
             },
         )
-        return _Matcher(self.client, key, score, _executor=self.executor)
+        return _Matcher(self._client, key, score, _executor=self.executor)
 
     ## Private Methods
 
@@ -381,10 +419,13 @@ class _Expect:
     def __call__(self, /, *, client: ls_client.Client) -> _Expect: ...
 
     def __call__(
-        self, value: Optional[Any] = None, /, client: Optional[ls_client.Client] = None
+        self,
+        value: Optional[Any] = NOT_GIVEN,
+        /,
+        client: Optional[ls_client.Client] = None,
     ) -> Union[_Expect, _Matcher]:
         expected = _Expect(client=client)
-        if value is not None:
+        if value is not NOT_GIVEN:
             return expected.value(value)
         return expected
 
@@ -392,8 +433,10 @@ class _Expect:
         current_run = rh.get_current_run_tree()
         run_id = current_run.trace_id if current_run else None
         if not ls_utils.test_tracking_is_disabled():
+            if not self._client:
+                self._client = ls_client.Client()
             self.executor.submit(
-                self.client.create_feedback, run_id=run_id, key=key, **results
+                self._client.create_feedback, run_id=run_id, key=key, **results
             )
 
 
