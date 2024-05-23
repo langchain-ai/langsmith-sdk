@@ -357,6 +357,7 @@ class _ExperimentManager {
     const firstExample = examples[0];
     const project = await this._getProject(firstExample);
     await this._printExperimentStart();
+    this._metadata["num_repetitions"] = this._numRepetitions;
     return new _ExperimentManager({
       examples,
       experiment: project,
