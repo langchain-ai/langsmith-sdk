@@ -413,9 +413,8 @@ export class RunTree implements BaseRun {
 
     const parentDottedOrder = headerTrace.trim();
     const parsedDottedOrder = parentDottedOrder.split(".").map((part) => {
-      const strTime = part.slice(0, -36);
-      const uuid = part.slice(-36);
-      return { strTime, time: Date.parse(strTime), uuid };
+      const [strTime, uuid] = part.split("Z");
+      return { strTime, time: Date.parse(strTime + "Z"), uuid };
     });
 
     const traceId = parsedDottedOrder[0].uuid;
