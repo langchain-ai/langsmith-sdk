@@ -343,12 +343,15 @@ def test_create_run_mutate() -> None:
         trace_id=id_,
         dotted_order=run_dict["dotted_order"],
     )
-    time.sleep(0.3)  # Give the background thread time to stop
-    request_calls = [call for call in session.request.mock_calls if call.args]
-    batch_requests = [
-        call for call in request_calls if call.args[1].endswith("runs/batch")
-    ]
-    payloads = [json.loads(req[2]["data"]) for req in batch_requests]
+    for _ in range(7):
+        time.sleep(0.1)  # Give the background thread time to stop
+        payloads = [
+            json.loads(call[2]["data"])
+            for call in session.request.mock_calls
+            if call.args and call.args[1].endswith("runs/batch")
+        ]
+        if payloads:
+            break
     posts = [pr for payload in payloads for pr in payload.get("post", [])]
     patches = [pr for payload in payloads for pr in payload.get("patch", [])]
     inputs = next(

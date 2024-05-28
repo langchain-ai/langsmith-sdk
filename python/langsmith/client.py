@@ -1070,11 +1070,14 @@ class Client:
         self,
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
+        copy: bool = False,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
         Args:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
+            update (bool, optional): Whether to update the run. Defaults to False.
+            copy (bool, optional): Whether to copy the run. Defaults to False.
 
         Returns:
             dict: The transformed run object as a dictionary.
@@ -1088,10 +1091,12 @@ class Client:
         elif isinstance(run_create["id"], str):
             run_create["id"] = uuid.UUID(run_create["id"])
         if "inputs" in run_create and run_create["inputs"] is not None:
-            run_create["inputs"] = ls_utils.deepish_copy(run_create["inputs"])
+            if copy:
+                run_create["inputs"] = ls_utils.deepish_copy(run_create["inputs"])
             run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
         if "outputs" in run_create and run_create["outputs"] is not None:
-            run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
+            if copy:
+                run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
@@ -1179,7 +1184,7 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create)
+        run_create = self._run_transform(run_create, copy=True)
         self._insert_runtime_env([run_create])
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
@@ -1414,6 +1419,7 @@ class Client:
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
+            outputs = ls_utils.deepish_copy(outputs)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
