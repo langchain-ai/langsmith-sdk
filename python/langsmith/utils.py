@@ -1,6 +1,7 @@
 """Generic utility functions."""
 
 import contextlib
+import copy
 import enum
 import functools
 import logging
@@ -20,6 +21,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    TypeVar,
     Union,
 )
 
@@ -497,3 +499,57 @@ def _format_exc() -> str:
     tb_lines = traceback.format_exception(*sys.exc_info())
     filtered_lines = [line for line in tb_lines if "langsmith/" not in line]
     return "".join(filtered_lines)
+
+
+T = TypeVar("T")
+
+
+def _middle_copy(
+    val: T, memo: Dict[int, Any], max_depth: int = 4, _depth: int = 0
+) -> T:
+    cls = type(val)
+
+    copier = getattr(cls, "__deepcopy__", None)
+    if copier is not None:
+        try:
+            return copier(memo)
+        except (TypeError, ValueError, RecursionError):
+            pass
+    if _depth >= max_depth:
+        return val
+    if isinstance(val, dict):
+        return {  # type: ignore[return-value]
+            _middle_copy(k, memo, max_depth, _depth + 1): _middle_copy(
+                v, memo, max_depth, _depth + 1
+            )
+            for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [_middle_copy(item, memo, max_depth, _depth + 1) for item in val]  # type: ignore[return-value]
+    if isinstance(val, tuple):
+        return tuple(_middle_copy(item, memo, max_depth, _depth + 1) for item in val)  # type: ignore[return-value]
+    if isinstance(val, set):
+        return {_middle_copy(item, memo, max_depth, _depth + 1) for item in val}  # type: ignore[return-value]
+
+    return val
+
+
+def deepish_copy(val: T) -> T:
+    """Deep copy a value with a compromise for uncopyable objects.
+
+    Args:
+        val: The value to be deep copied.
+
+    Returns:
+        The deep copied value.
+    """
+    memo = {}
+    try:
+        return copy.deepcopy(val, memo)
+    except (TypeError, ValueError, RecursionError) as e:
+        # Generators, locks, etc. cannot be copied
+        # and raise a TypeError (mentioning pickling, since the dunder methods)
+        # are re-used for copying. We'll try to do a compromise and copy
+        # what we can
+        _LOGGER.debug("Failed to deepcopy input: %s", repr(e))
+        return _middle_copy(val, memo)

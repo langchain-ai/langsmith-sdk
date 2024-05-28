@@ -1088,8 +1088,11 @@ class Client:
         elif isinstance(run_create["id"], str):
             run_create["id"] = uuid.UUID(run_create["id"])
         if "inputs" in run_create and run_create["inputs"] is not None:
+            # Copy the inputs to avoid modifying the original
+            run_create["inputs"] = ls_utils.deepish_copy(run_create["inputs"])
             run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
         if "outputs" in run_create and run_create["outputs"] is not None:
+            run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
@@ -1179,7 +1182,6 @@ class Client:
             return
         run_create = self._run_transform(run_create)
         self._insert_runtime_env([run_create])
-
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
