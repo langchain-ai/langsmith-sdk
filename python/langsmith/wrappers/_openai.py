@@ -209,19 +209,25 @@ class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
     tags: Optional[List[str]]
     client: Optional[ls_client.Client]
-    chat_name: Optional[str]
-    """The run name for the chat completions endpoint."""
-    completions_name: Optional[str]
-    """The run name for the completions endpoint."""
 
 
-def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C:
+def wrap_openai(
+    client: C,
+    *,
+    tracing_extra: Optional[TracingExtra] = None,
+    chat_name: str = "ChatOpenAI",
+    completions_name: str = "OpenAI",
+) -> C:
     """Patch the OpenAI client to make it traceable.
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
         tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
             Defaults to None.
+        chat_name (str, optional): The run name for the chat completions endpoint.
+            Defaults to "ChatOpenAI".
+        completions_name (str, optional): The run name for the completions endpoint.
+            Defaults to "OpenAI".
 
     Returns:
         Union[OpenAI, AsyncOpenAI]: The patched client.
@@ -229,22 +235,14 @@ def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C
     """
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
-        (
-            tracing_extra["chat_name"]
-            if tracing_extra and tracing_extra.get("chat_name")
-            else "ChatOpenAI"
-        ),
+        chat_name,
         _reduce_chat,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
-        (
-            tracing_extra["completions_name"]
-            if tracing_extra and tracing_extra.get("completions_name")
-            else "OpenAI"
-        ),
+        completions_name,
         _reduce_completions,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "text"),
