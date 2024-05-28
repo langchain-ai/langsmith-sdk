@@ -350,7 +350,7 @@ def test_traceable_project_name() -> None:
         def my_other_function(run_tree) -> int:
             return my_function(1, 2, 3)
 
-        my_other_function()
+        my_other_function()  # type: ignore
         time.sleep(0.25)
         # Inspect the mock_calls and assert that "my bar project" is in
         # both all POST runs in the single request. We want to ensure
