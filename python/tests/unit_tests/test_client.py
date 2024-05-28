@@ -333,7 +333,7 @@ def test_create_run_mutate() -> None:
             datetime.now(timezone.utc), id_
         ),
     )
-    client.create_run(**run_dict)
+    client.create_run(**run_dict)  # type: ignore
     inputs["messages"].append("there")
     outputs = {"messages": ["hi", "there"]}
     client.update_run(
@@ -353,11 +353,11 @@ def test_create_run_mutate() -> None:
     patches = [pr for payload in payloads for pr in payload.get("patch", [])]
     inputs = next(
         (pr["inputs"] for pr in itertools.chain(posts, patches) if pr.get("inputs")),
-        None,
+        {},
     )
     outputs = next(
         (pr["outputs"] for pr in itertools.chain(posts, patches) if pr.get("outputs")),
-        None,
+        {},
     )
     # Check that the mutated value wasn't posted
     assert inputs == {"messages": ["hi"]}
