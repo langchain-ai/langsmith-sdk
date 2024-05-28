@@ -360,6 +360,7 @@ def test_create_run_mutate() -> None:
         {},
     )
     # Check that the mutated value wasn't posted
+    assert "messages" in inputs
     assert inputs["messages"] == ["hi"]
     assert "mygen" in inputs
     assert inputs["mygen"].startswith(  # type: ignore

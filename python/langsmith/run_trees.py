@@ -225,11 +225,11 @@ class RunTree(ls_schemas.RunBase):
         self_dict = self.dict(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
-        if self.inputs:
-            # shallow copy
+        if self.inputs is not None:
+            # shallow copy. deep copying will occur in the client
             self_dict["inputs"] = self.inputs.copy()
-        if self.outputs:
-            # shallow copy
+        if self.outputs is not None:
+            # shallow copy; deep copying will occur in the client
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
