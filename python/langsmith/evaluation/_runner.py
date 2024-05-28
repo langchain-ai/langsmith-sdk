@@ -1473,9 +1473,7 @@ def _ensure_traceable(target: TARGET_T) -> rh.SupportsLangsmithExtra[[dict], dic
     if rh.is_traceable_function(target):
         fn = target  # type: ignore
     else:
-        dc = rh.traceable(name="Target")
-        fn_ = dc(target)
-        fn = fn_
+        fn = rh.traceable(name="Target")
     return fn
 
 
