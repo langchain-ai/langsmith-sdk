@@ -209,6 +209,10 @@ class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
     tags: Optional[List[str]]
     client: Optional[ls_client.Client]
+    chat_name: Optional[str]
+    """The run name for the chat completions endpoint."""
+    completions_name: Optional[str]
+    """The run name for the completions endpoint."""
 
 
 def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C:
@@ -225,14 +229,22 @@ def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C
     """
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
-        "ChatOpenAI",
+        (
+            tracing_extra["chat_name"]
+            if tracing_extra and tracing_extra.get("chat_name")
+            else "ChatOpenAI"
+        ),
         _reduce_chat,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
-        "OpenAI",
+        (
+            tracing_extra["completions_name"]
+            if tracing_extra and tracing_extra.get("completions_name")
+            else "OpenAI"
+        ),
         _reduce_completions,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "text"),
