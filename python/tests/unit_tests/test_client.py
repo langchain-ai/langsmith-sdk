@@ -305,7 +305,7 @@ def test_create_run_unicode() -> None:
 
 
 def test_create_run_mutate() -> None:
-    inputs = {"messages": ["hi"]}
+    inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
     client = Client(
@@ -334,7 +334,7 @@ def test_create_run_mutate() -> None:
         ),
     )
     client.create_run(**run_dict)  # type: ignore
-    inputs["messages"].append("there")
+    inputs["messages"].append("there")  # type: ignore
     outputs = {"messages": ["hi", "there"]}
     client.update_run(
         id_,
@@ -343,7 +343,7 @@ def test_create_run_mutate() -> None:
         trace_id=id_,
         dotted_order=run_dict["dotted_order"],
     )
-    time.sleep(0.2)
+    time.sleep(0.3)  # Give the background thread time to stop
     request_calls = [call for call in session.request.mock_calls if call.args]
     batch_requests = [
         call for call in request_calls if call.args[1].endswith("runs/batch")
@@ -360,7 +360,11 @@ def test_create_run_mutate() -> None:
         {},
     )
     # Check that the mutated value wasn't posted
-    assert inputs == {"messages": ["hi"]}
+    assert inputs["messages"] == ["hi"]
+    assert "mygen" in inputs
+    assert inputs["mygen"].startswith(  # type: ignore
+        "<generator object test_create_run_mutate.<locals>."
+    )
     assert outputs == {"messages": ["hi", "there"]}
 
 

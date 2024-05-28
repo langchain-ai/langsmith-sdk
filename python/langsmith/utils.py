@@ -543,7 +543,7 @@ def deepish_copy(val: T) -> T:
     Returns:
         The deep copied value.
     """
-    memo = {}
+    memo: dict[int, Any] = {}
     try:
         return copy.deepcopy(val, memo)
     except (TypeError, ValueError, RecursionError) as e:
