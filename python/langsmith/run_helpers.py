@@ -831,7 +831,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
                     for handler in callback_manager.handlers
                     if isinstance(handler, LangChainTracer)
                 ]
-                if lc_tracers:
+                if lc_tracers and callback_manager.parent_run_id:
                     lc_tracer = lc_tracers[0]
                     trace_id, dotted_order = lc_tracer.order_map[
                         callback_manager.parent_run_id
