@@ -833,8 +833,13 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
                 ]
                 if lc_tracers:
                     lc_tracer = lc_tracers[0]
+                    trace_id, dotted_order = lc_tracer.order_map[
+                        callback_manager.parent_run_id
+                    ]
                     run_tree = run_trees.RunTree(
                         id=callback_manager.parent_run_id,
+                        dotted_order=dotted_order,
+                        trace_id=trace_id,
                         session_name=lc_tracer.project_name,
                         name="Wrapping",
                         run_type="chain",
