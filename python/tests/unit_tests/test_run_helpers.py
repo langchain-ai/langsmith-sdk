@@ -10,6 +10,8 @@ from typing import Any, AsyncGenerator, Generator, Optional, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain.callbacks.tracers import LangChainTracer
+from langchain.schema.runnable import RunnableLambda
 
 import langsmith
 from langsmith import Client
@@ -320,6 +322,75 @@ async def test_as_runnable_async_batch(_: MagicMock) -> None:
             ]
         )
         assert result == [6, 7]
+
+
+def test_traceable_parent_from_runnable_config() -> None:
+    with tracing_context(enabled=True):
+        mock_client_ = _get_mock_client()
+
+        @traceable()
+        def my_function(a: int) -> int:
+            return a * 2
+
+        my_function_runnable = RunnableLambda(my_function)
+
+        assert (
+            my_function_runnable.invoke(
+                1, {"callbacks": [LangChainTracer(client=mock_client_)]}
+            )
+            == 2
+        )
+        time.sleep(1)
+        # Inspect the mock_calls and assert that 2 runs were created,
+        # one for the parent and one for the child
+        mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+        posts = []
+        for call in mock_calls:
+            if call.args:
+                assert call.args[0] == "POST"
+                assert call.args[1].startswith("https://api.smith.langchain.com")
+                body = json.loads(call.kwargs["data"])
+                assert body["post"]
+                posts.extend(body["post"])
+        assert len(posts) == 2
+        parent = next(p for p in posts if p["parent_run_id"] is None)
+        child = next(p for p in posts if p["parent_run_id"] is not None)
+        assert child["parent_run_id"] == parent["id"]
+
+
+def test_traceable_parent_from_runnable_config_accepts_config() -> None:
+    with tracing_context(enabled=True):
+        mock_client_ = _get_mock_client()
+
+        @traceable()
+        def my_function(a: int, config: dict) -> int:
+            assert isinstance(config, dict)
+            return a * 2
+
+        my_function_runnable = RunnableLambda(my_function)
+
+        assert (
+            my_function_runnable.invoke(
+                1, {"callbacks": [LangChainTracer(client=mock_client_)]}
+            )
+            == 2
+        )
+        time.sleep(1)
+        # Inspect the mock_calls and assert that 2 runs were created,
+        # one for the parent and one for the child
+        mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+        posts = []
+        for call in mock_calls:
+            if call.args:
+                assert call.args[0] == "POST"
+                assert call.args[1].startswith("https://api.smith.langchain.com")
+                body = json.loads(call.kwargs["data"])
+                assert body["post"]
+                posts.extend(body["post"])
+        assert len(posts) == 2
+        parent = next(p for p in posts if p["parent_run_id"] is None)
+        child = next(p for p in posts if p["parent_run_id"] is not None)
+        assert child["parent_run_id"] == parent["id"]
 
 
 def test_traceable_project_name() -> None:

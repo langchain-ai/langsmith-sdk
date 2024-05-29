@@ -287,6 +287,52 @@ class RunTree(ls_schemas.RunBase):
         return cast(RunTree, cls.from_headers(headers, **kwargs))
 
     @classmethod
+    def from_runnable_config(
+        cls,
+        config: Optional[dict],
+        **kwargs: Any,
+    ) -> Optional[RunTree]:
+        """Create a new 'child' span from the provided runnable config.
+
+        Requires langchain to be installed.
+
+        Returns:
+            Optional[RunTree]: The new span or None if
+                no parent span information is found.
+        """
+        try:
+            from langchain.callbacks.manager import (
+                AsyncCallbackManager,
+                CallbackManager,
+            )
+            from langchain.callbacks.tracers.langchain import LangChainTracer
+            from langchain.schema.runnable.config import ensure_config
+        except ImportError as e:
+            raise ImportError(
+                "RunTree.from_runnable_config requires langchain to be installed. "
+                "You can install it with `pip install langchain`."
+            ) from e
+        config = ensure_config(config if isinstance(config, dict) else None)
+        if (
+            (cb := config.get("callbacks"))
+            and isinstance(cb, (CallbackManager, AsyncCallbackManager))
+            and cb.parent_run_id
+            and (
+                tracer := next(
+                    (t for t in cb.handlers if isinstance(t, LangChainTracer)),
+                    None,
+                )
+            )
+        ):
+            if hasattr(tracer, "order_map"):
+                _, dotted_order = tracer.order_map[cb.parent_run_id]
+            else:
+                dotted_order = tracer.run_map[str(cb.parent_run_id)].dotted_order
+            kwargs["client"] = tracer.client
+            kwargs["project_name"] = tracer.project_name
+            return RunTree.from_dotted_order(dotted_order, **kwargs)
+
+    @classmethod
     def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[RunTree]:
         """Create a new 'parent' span from the provided headers.
 
