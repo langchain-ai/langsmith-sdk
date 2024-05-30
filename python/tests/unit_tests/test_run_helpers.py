@@ -10,8 +10,6 @@ from typing import Any, AsyncGenerator, Generator, Optional, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-from langchain.callbacks.tracers import LangChainTracer
-from langchain.schema.runnable import RunnableLambda
 
 import langsmith
 from langsmith import Client
@@ -325,6 +323,11 @@ async def test_as_runnable_async_batch(_: MagicMock) -> None:
 
 
 def test_traceable_parent_from_runnable_config() -> None:
+    try:
+        from langchain.callbacks.tracers import LangChainTracer
+        from langchain.schema.runnable import RunnableLambda
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
     with tracing_context(enabled=True):
         mock_client_ = _get_mock_client()
 
@@ -359,6 +362,11 @@ def test_traceable_parent_from_runnable_config() -> None:
 
 
 def test_traceable_parent_from_runnable_config_accepts_config() -> None:
+    try:
+        from langchain.callbacks.tracers import LangChainTracer
+        from langchain.schema.runnable import RunnableLambda
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
     with tracing_context(enabled=True):
         mock_client_ = _get_mock_client()
 
