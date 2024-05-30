@@ -13,6 +13,7 @@ try:
 except ImportError:
     from pydantic import Field, root_validator, validator
 
+import threading
 import urllib.parse
 
 from langsmith import schemas as ls_schemas
@@ -23,6 +24,17 @@ logger = logging.getLogger(__name__)
 
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = f"{LANGSMITH_PREFIX}trace"
+_CLIENT: Optional[Client] = None
+_LOCK = threading.Lock()
+
+
+def _get_client() -> Client:
+    global _CLIENT
+    if _CLIENT is None:
+        with _LOCK:
+            if _CLIENT is None:
+                _CLIENT = Client()
+    return _CLIENT
 
 
 class RunTree(ls_schemas.RunBase):
@@ -43,7 +55,7 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=Client, exclude=True)
+    client: Client = Field(default_factory=_get_client, exclude=True)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -60,7 +72,7 @@ class RunTree(ls_schemas.RunBase):
     def validate_client(cls, v: Optional[Client]) -> Client:
         """Ensure the client is specified."""
         if v is None:
-            return Client()
+            return _get_client()
         return v
 
     @root_validator(pre=True)
@@ -285,6 +297,59 @@ class RunTree(ls_schemas.RunBase):
             f"{LANGSMITH_DOTTED_ORDER}": dotted_order,
         }
         return cast(RunTree, cls.from_headers(headers, **kwargs))
+
+    @classmethod
+    def from_runnable_config(
+        cls,
+        config: Optional[dict],
+        **kwargs: Any,
+    ) -> Optional[RunTree]:
+        """Create a new 'child' span from the provided runnable config.
+
+        Requires langchain to be installed.
+
+        Returns:
+            Optional[RunTree]: The new span or None if
+                no parent span information is found.
+        """
+        try:
+            from langchain_core.callbacks.manager import (
+                AsyncCallbackManager,
+                CallbackManager,
+            )
+            from langchain_core.runnables import RunnableConfig, ensure_config
+            from langchain_core.tracers.langchain import LangChainTracer
+        except ImportError as e:
+            raise ImportError(
+                "RunTree.from_runnable_config requires langchain-core to be installed. "
+                "You can install it with `pip install langchain-core`."
+            ) from e
+        config_ = ensure_config(
+            cast(RunnableConfig, config) if isinstance(config, dict) else None
+        )
+        if (
+            (cb := config_.get("callbacks"))
+            and isinstance(cb, (CallbackManager, AsyncCallbackManager))
+            and cb.parent_run_id
+            and (
+                tracer := next(
+                    (t for t in cb.handlers if isinstance(t, LangChainTracer)),
+                    None,
+                )
+            )
+        ):
+            if hasattr(tracer, "order_map"):
+                dotted_order = tracer.order_map[cb.parent_run_id][1]
+            elif (
+                run := tracer.run_map.get(str(cb.parent_run_id))
+            ) and run.dotted_order:
+                dotted_order = run.dotted_order
+            else:
+                return None
+            kwargs["client"] = tracer.client
+            kwargs["project_name"] = tracer.project_name
+            return RunTree.from_dotted_order(dotted_order, **kwargs)
+        return None
 
     @classmethod
     def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[RunTree]:
