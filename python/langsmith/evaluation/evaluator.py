@@ -181,9 +181,8 @@ class DynamicRunEvaluator(RunEvaluator):
             self.afunc = run_helpers.ensure_traceable(func)
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
-            self.func = cast(
-                run_helpers.SupportsLangsmithExtra[_RUNNABLE_OUTPUT],
-                run_helpers.ensure_traceable(func),
+            self.func = run_helpers.ensure_traceable(
+                cast(Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT], func)
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
@@ -383,9 +382,14 @@ class DynamicComparisonRunEvaluator:
             self.afunc = run_helpers.ensure_traceable(func)
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
-            self.func = cast(
-                run_helpers.SupportsLangsmithExtra[_COMPARISON_OUTPUT],
-                run_helpers.ensure_traceable(func),
+            self.func = run_helpers.ensure_traceable(
+                cast(
+                    Callable[
+                        [Sequence[Run], Optional[Example]],
+                        _COMPARISON_OUTPUT,
+                    ],
+                    func,
+                )
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
