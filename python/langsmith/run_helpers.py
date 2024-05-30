@@ -956,10 +956,27 @@ def _get_parent_run(
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
+    crt = get_current_run_tree()
     if _runtime_env.get_langchain_core_version() is not None:
         if rt := run_trees.RunTree.from_runnable_config(config):
-            return rt
-    return get_current_run_tree()
+            # Still need to break ties when alternating between traceable and
+            # LanChain code.
+            # Nesting: LC -> LS -> LS, we want to still use LS as the parent
+            # Otherwise would look like LC -> {LS, LS} (siblings)
+            if (
+                not crt  # Simple LC -> LS
+                # Let user override if manually passed in or invoked in a
+                # RunnableSequence. This is a naive check.
+                or (config is not None and config.get("callbacks"))
+                # If the LangChain dotted order is more nested than the LangSmith
+                # dotted order, use the LangChain run as the parent.
+                # Note that this condition shouldn't be triggered in later
+                # versions of core, since we also update the run_tree context
+                # vars when updating the RunnableConfig context var.
+                or rt.dotted_order > crt.dotted_order
+            ):
+                return rt
+    return crt
 
 
 def _setup_run(
