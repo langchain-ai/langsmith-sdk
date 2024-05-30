@@ -38,6 +38,7 @@ from typing import (
 from langsmith import client as ls_client
 from langsmith import run_trees, utils
 from langsmith._internal import _aiter as aitertools
+from langsmith.env import _runtime_env
 
 if TYPE_CHECKING:
     from langchain.schema.runnable import Runnable
@@ -948,11 +949,12 @@ def _get_parent_run(
         return run_trees.RunTree.from_headers(parent)
     if isinstance(parent, str):
         return run_trees.RunTree.from_dotted_order(parent)
-    if rt := run_trees.RunTree.from_runnable_config(config):
-        return rt
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
+    if _runtime_env.get_langchain_core_version() is not None:
+        if rt := run_trees.RunTree.from_runnable_config(config):
+            return rt
     return get_current_run_tree()
 
 
