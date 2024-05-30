@@ -211,13 +211,23 @@ class TracingExtra(TypedDict, total=False):
     client: Optional[ls_client.Client]
 
 
-def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C:
+def wrap_openai(
+    client: C,
+    *,
+    tracing_extra: Optional[TracingExtra] = None,
+    chat_name: str = "ChatOpenAI",
+    completions_name: str = "OpenAI",
+) -> C:
     """Patch the OpenAI client to make it traceable.
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
         tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
             Defaults to None.
+        chat_name (str, optional): The run name for the chat completions endpoint.
+            Defaults to "ChatOpenAI".
+        completions_name (str, optional): The run name for the completions endpoint.
+            Defaults to "OpenAI".
 
     Returns:
         Union[OpenAI, AsyncOpenAI]: The patched client.
@@ -225,14 +235,14 @@ def wrap_openai(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C
     """
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
-        "ChatOpenAI",
+        chat_name,
         _reduce_chat,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
-        "OpenAI",
+        completions_name,
         _reduce_completions,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "text"),
