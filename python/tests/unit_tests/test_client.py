@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 import weakref
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
 from typing import Any, NamedTuple, Optional
@@ -28,6 +28,8 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
+from langsmith import run_trees
+from langsmith import schemas as ls_schemas
 from langsmith.client import (
     Client,
     _dumps_json,
@@ -37,7 +39,6 @@ from langsmith.client import (
     _is_localhost,
     _serialize_json,
 )
-from langsmith.schemas import Example
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -173,14 +174,14 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
 @mock.patch("langsmith.client.requests.Session")
 def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     dataset_id = str(uuid.uuid4())
-    example_1 = Example(
+    example_1 = ls_schemas.Example(
         id=str(uuid.uuid4()),
         created_at=_CREATED_AT,
         inputs={"input": "1"},
         outputs={"output": "2"},
         dataset_id=dataset_id,
     )
-    example_2 = Example(
+    example_2 = ls_schemas.Example(
         id=str(uuid.uuid4()),
         created_at=_CREATED_AT,
         inputs={"input": "3"},
@@ -301,6 +302,74 @@ def test_create_run_unicode() -> None:
     id_ = uuid.uuid4()
     client.create_run("my_run", inputs=inputs, run_type="llm", id=id_)
     client.update_run(id_, status="completed")
+
+
+def test_create_run_mutate() -> None:
+    inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    id_ = uuid.uuid4()
+    run_dict = dict(
+        id=id_,
+        name="my_run",
+        inputs=inputs,
+        run_type="llm",
+        trace_id=id_,
+        dotted_order=run_trees._create_current_dotted_order(
+            datetime.now(timezone.utc), id_
+        ),
+    )
+    client.create_run(**run_dict)  # type: ignore
+    inputs["messages"].append("there")  # type: ignore
+    outputs = {"messages": ["hi", "there"]}
+    client.update_run(
+        id_,
+        outputs=outputs,
+        end_time=datetime.now(timezone.utc),
+        trace_id=id_,
+        dotted_order=run_dict["dotted_order"],
+    )
+    for _ in range(7):
+        time.sleep(0.1)  # Give the background thread time to stop
+        payloads = [
+            json.loads(call[2]["data"])
+            for call in session.request.mock_calls
+            if call.args and call.args[1].endswith("runs/batch")
+        ]
+        if payloads:
+            break
+    posts = [pr for payload in payloads for pr in payload.get("post", [])]
+    patches = [pr for payload in payloads for pr in payload.get("patch", [])]
+    inputs = next(
+        (pr["inputs"] for pr in itertools.chain(posts, patches) if pr.get("inputs")),
+        {},
+    )
+    outputs = next(
+        (pr["outputs"] for pr in itertools.chain(posts, patches) if pr.get("outputs")),
+        {},
+    )
+    # Check that the mutated value wasn't posted
+    assert "messages" in inputs
+    assert inputs["messages"] == ["hi"]
+    assert "mygen" in inputs
+    assert inputs["mygen"].startswith(  # type: ignore
+        "<generator object test_create_run_mutate.<locals>."
+    )
+    assert outputs == {"messages": ["hi", "there"]}
 
 
 class CallTracker:
