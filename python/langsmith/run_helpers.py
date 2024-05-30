@@ -648,7 +648,7 @@ def traceable(
                     ),
                 ]
             )
-            selected_wrapper.__signature__ = sig
+            selected_wrapper.__signature__ = sig  # type: ignore[attr-defined]
         return selected_wrapper
 
     # If the decorator is called with no arguments, then it's being used as a
@@ -828,7 +828,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             """Wrap a synchronous function to make it asynchronous."""
 
             def wrap_traceable(inputs: dict, config: RunnableConfig) -> Any:
-                run_tree = run_trees.RunTree.from_runnable_config(config)
+                run_tree = run_trees.RunTree.from_runnable_config(cast(dict, config))
                 return func(**inputs, langsmith_extra={"run_tree": run_tree})
 
             return cast(Callable[[Input, RunnableConfig], Output], wrap_traceable)
@@ -849,7 +849,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             afunc_ = cast(Callable[..., Awaitable[Output]], afunc)
 
             async def awrap_traceable(inputs: dict, config: RunnableConfig) -> Any:
-                run_tree = run_trees.RunTree.from_runnable_config(config)
+                run_tree = run_trees.RunTree.from_runnable_config(cast(dict, config))
                 return await afunc_(**inputs, langsmith_extra={"run_tree": run_tree})
 
             return cast(

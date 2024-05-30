@@ -306,15 +306,17 @@ class RunTree(ls_schemas.RunBase):
                 CallbackManager,
             )
             from langchain.callbacks.tracers.langchain import LangChainTracer
-            from langchain.schema.runnable.config import ensure_config
+            from langchain.schema.runnable.config import RunnableConfig, ensure_config
         except ImportError as e:
             raise ImportError(
                 "RunTree.from_runnable_config requires langchain to be installed. "
                 "You can install it with `pip install langchain`."
             ) from e
-        config = ensure_config(config if isinstance(config, dict) else None)
+        config_ = ensure_config(
+            cast(RunnableConfig, config) if isinstance(config, dict) else None
+        )
         if (
-            (cb := config.get("callbacks"))
+            (cb := config_.get("callbacks"))
             and isinstance(cb, (CallbackManager, AsyncCallbackManager))
             and cb.parent_run_id
             and (
@@ -325,12 +327,17 @@ class RunTree(ls_schemas.RunBase):
             )
         ):
             if hasattr(tracer, "order_map"):
-                _, dotted_order = tracer.order_map[cb.parent_run_id]
+                dotted_order = tracer.order_map[cb.parent_run_id][1]
+            elif (
+                run := tracer.run_map.get(str(cb.parent_run_id))
+            ) and run.dotted_order:
+                dotted_order = run.dotted_order
             else:
-                dotted_order = tracer.run_map[str(cb.parent_run_id)].dotted_order
+                return None
             kwargs["client"] = tracer.client
             kwargs["project_name"] = tracer.project_name
             return RunTree.from_dotted_order(dotted_order, **kwargs)
+        return None
 
     @classmethod
     def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[RunTree]:
