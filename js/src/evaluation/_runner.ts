@@ -24,11 +24,6 @@ type TargetT<TInput = any, TOutput = KVMap> =
   | { invoke: (input: TInput, config?: KVMap) => TOutput }
   | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TargetNoInvoke<TInput = any, TOutput = KVMap> =
-  | ((input: TInput, config?: KVMap) => Promise<TOutput>)
-  | ((input: TInput, config?: KVMap) => TOutput);
-
 // Data format: dataset-name, dataset_id, or examples
 type DataT = string | AsyncIterable<Example> | Example[];
 
