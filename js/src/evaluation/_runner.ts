@@ -1,4 +1,5 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
+import { getLangchainCallbacks } from "../langchain.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
@@ -369,7 +370,7 @@ class _ExperimentManager {
   }
 
   async withPredictions(
-    target: TargetNoInvoke,
+    target: TargetT,
     options?: {
       maxConcurrency?: number;
     }
@@ -482,13 +483,13 @@ class _ExperimentManager {
   // Private methods
 
   /**
-   * Run the target function on the examples.
-   * @param {TargetNoInvoke} target The target function to evaluate.
+   * Run the target function or runnable on the examples.
+   * @param {TargetT} target The target function or runnable to evaluate.
    * @param options
    * @returns {AsyncGenerator<_ForwardResults>} An async generator of the results.
    */
   async *_predict(
-    target: TargetNoInvoke,
+    target: TargetT,
     options?: {
       maxConcurrency?: number;
     }
@@ -796,13 +797,6 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   }
 }
 
-function convertInvokeToTopLevel(fn: TargetT): TargetNoInvoke {
-  if ("invoke" in fn) {
-    return fn.invoke.bind(fn);
-  }
-  return fn;
-}
-
 async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
   fields: EvaluateOptions & { experiment?: TracerSession }
@@ -826,10 +820,9 @@ async function _evaluate(
   }).start();
 
   if (_isCallable(target)) {
-    manager = await manager.withPredictions(
-      convertInvokeToTopLevel(target as TargetT),
-      { maxConcurrency: fields.maxConcurrency }
-    );
+    manager = await manager.withPredictions(target, {
+      maxConcurrency: fields.maxConcurrency,
+    });
   }
 
   if (fields.evaluators) {
@@ -846,10 +839,8 @@ async function _evaluate(
   return results;
 }
 
-type ForwardFn = ((...args: any[]) => Promise<any>) | ((...args: any[]) => any);
-
 async function _forward(
-  fn: ForwardFn,
+  fn: TargetT,
   example: Example,
   experimentName: string,
   metadata: KVMap,
@@ -872,12 +863,16 @@ async function _forward(
         : new Date(example.created_at).toISOString(),
     },
     client,
+    tracingEnabled: true,
   };
 
-  const wrappedFn = traceable(fn, {
-    ...options,
-    tracingEnabled: true,
-  }) as ReturnType<typeof traceable>;
+  const wrappedFn =
+    "invoke" in fn
+      ? traceable(async (inputs) => {
+          const callbacks = await getLangchainCallbacks();
+          return fn.invoke(inputs, { callbacks });
+        }, options)
+      : traceable(fn, options);
 
   try {
     await wrappedFn(example.inputs);
@@ -1022,7 +1017,7 @@ async function _resolveExperiment(
   return [undefined, undefined];
 }
 
-function _isCallable(target: TargetT | AsyncGenerator<Run>): boolean {
+function _isCallable(target: TargetT | AsyncGenerator<Run>): target is TargetT {
   return Boolean(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
