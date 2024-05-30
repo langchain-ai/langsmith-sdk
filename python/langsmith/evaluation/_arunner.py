@@ -801,7 +801,7 @@ class AsyncExperimentResults:
 
 
 async def _aforward(
-    fn: rh.SupportsLangsmithExtra[Awaitable],
+    fn: rh.SupportsLangsmithExtra[[dict], Awaitable],
     example: schemas.Example,
     experiment_name: str,
     metadata: dict,
@@ -839,7 +839,9 @@ async def _aforward(
     )
 
 
-def _ensure_async_traceable(target: ATARGET_T) -> rh.SupportsLangsmithExtra[Awaitable]:
+def _ensure_async_traceable(
+    target: ATARGET_T,
+) -> rh.SupportsLangsmithExtra[[dict], Awaitable]:
     if not asyncio.iscoroutinefunction(target):
         raise ValueError(
             "Target must be an async function. For sync functions, use evaluate."

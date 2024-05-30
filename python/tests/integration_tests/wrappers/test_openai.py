@@ -131,7 +131,12 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
     client = langsmith.Client(session=mock_session())
 
     original_client = openai.AsyncClient()
-    patched_client = wrap_openai(openai.AsyncClient(), tracing_extra={"client": client})
+    patched_client = wrap_openai(
+        openai.AsyncClient(),
+        tracing_extra={"client": client},
+        chat_name="chattychat",
+        completions_name="incompletions",
+    )
     prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
     original = await original_client.completions.create(
         model="gpt-3.5-turbo-instruct",

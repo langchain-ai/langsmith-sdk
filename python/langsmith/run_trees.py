@@ -299,6 +299,59 @@ class RunTree(ls_schemas.RunBase):
         return cast(RunTree, cls.from_headers(headers, **kwargs))
 
     @classmethod
+    def from_runnable_config(
+        cls,
+        config: Optional[dict],
+        **kwargs: Any,
+    ) -> Optional[RunTree]:
+        """Create a new 'child' span from the provided runnable config.
+
+        Requires langchain to be installed.
+
+        Returns:
+            Optional[RunTree]: The new span or None if
+                no parent span information is found.
+        """
+        try:
+            from langchain_core.callbacks.manager import (
+                AsyncCallbackManager,
+                CallbackManager,
+            )
+            from langchain_core.runnables import RunnableConfig, ensure_config
+            from langchain_core.tracers.langchain import LangChainTracer
+        except ImportError as e:
+            raise ImportError(
+                "RunTree.from_runnable_config requires langchain-core to be installed. "
+                "You can install it with `pip install langchain-core`."
+            ) from e
+        config_ = ensure_config(
+            cast(RunnableConfig, config) if isinstance(config, dict) else None
+        )
+        if (
+            (cb := config_.get("callbacks"))
+            and isinstance(cb, (CallbackManager, AsyncCallbackManager))
+            and cb.parent_run_id
+            and (
+                tracer := next(
+                    (t for t in cb.handlers if isinstance(t, LangChainTracer)),
+                    None,
+                )
+            )
+        ):
+            if hasattr(tracer, "order_map"):
+                dotted_order = tracer.order_map[cb.parent_run_id][1]
+            elif (
+                run := tracer.run_map.get(str(cb.parent_run_id))
+            ) and run.dotted_order:
+                dotted_order = run.dotted_order
+            else:
+                return None
+            kwargs["client"] = tracer.client
+            kwargs["project_name"] = tracer.project_name
+            return RunTree.from_dotted_order(dotted_order, **kwargs)
+        return None
+
+    @classmethod
     def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[RunTree]:
         """Create a new 'parent' span from the provided headers.
 
