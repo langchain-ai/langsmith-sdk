@@ -13,6 +13,7 @@ try:
 except ImportError:
     from pydantic import Field, root_validator, validator
 
+import threading
 import urllib.parse
 
 from langsmith import schemas as ls_schemas
@@ -23,6 +24,17 @@ logger = logging.getLogger(__name__)
 
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = f"{LANGSMITH_PREFIX}trace"
+_CLIENT: Optional[Client] = None
+_LOCK = threading.Lock()
+
+
+def _get_client() -> Client:
+    global _CLIENT
+    if _CLIENT is None:
+        with _LOCK:
+            if _CLIENT is None:
+                _CLIENT = Client()
+    return _CLIENT
 
 
 class RunTree(ls_schemas.RunBase):
@@ -43,7 +55,7 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=Client, exclude=True)
+    client: Client = Field(default_factory=_get_client, exclude=True)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -60,7 +72,7 @@ class RunTree(ls_schemas.RunBase):
     def validate_client(cls, v: Optional[Client]) -> Client:
         """Ensure the client is specified."""
         if v is None:
-            return Client()
+            return _get_client()
         return v
 
     @root_validator(pre=True)
