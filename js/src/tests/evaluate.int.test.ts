@@ -3,25 +3,27 @@ import { evaluate } from "../evaluation/_runner.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
-import { RunnableLambda } from "@langchain/core/runnables";
+import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 
 const TESTING_DATASET_NAME = "test_dataset_js_evaluate_123";
 
 beforeAll(async () => {
   const client = new Client();
-  // create a new dataset
-  await client.createDataset(TESTING_DATASET_NAME, {
-    description:
-      "For testing purposed. Is created & deleted for each test run.",
-  });
-  // create examples
-  const res = await client.createExamples({
-    inputs: [{ input: 1 }, { input: 2 }],
-    outputs: [{ output: 2 }, { output: 3 }],
-    datasetName: TESTING_DATASET_NAME,
-  });
-  if (res.length !== 2) {
-    throw new Error("Failed to create examples");
+  if (!(await client.hasDataset({ datasetName: TESTING_DATASET_NAME }))) {
+    // create a new dataset
+    await client.createDataset(TESTING_DATASET_NAME, {
+      description:
+        "For testing purposed. Is created & deleted for each test run.",
+    });
+    // create examples
+    const res = await client.createExamples({
+      inputs: [{ input: 1 }, { input: 2 }],
+      outputs: [{ output: 2 }, { output: 3 }],
+      datasetName: TESTING_DATASET_NAME,
+    });
+    if (res.length !== 2) {
+      throw new Error("Failed to create examples");
+    }
   }
 });
 
@@ -34,7 +36,7 @@ afterAll(async () => {
     await client.deleteDataset({
       datasetName: "my_splits_ds2",
     });
-  } catch (_) {
+  } catch {
     //pass
   }
 });
@@ -629,14 +631,14 @@ test("max concurrency works with summary evaluators", async () => {
 });
 
 test("Target func can be a runnable", async () => {
-  const targetFunc = new RunnableLambda({
-    func: (input: Record<string, any>) => {
-      console.log("__input__", input);
-      return {
-        foo: input.input + 1,
-      };
-    },
-  });
+  const targetFunc = RunnableSequence.from([
+    RunnableLambda.from((input: Record<string, any>) => ({
+      foo: input.input + 1,
+    })).withConfig({ runName: "First Step" }),
+    RunnableLambda.from((input: { foo: number }) => ({
+      foo: input.foo + 1,
+    })).withConfig({ runName: "Second Step" }),
+  ]);
 
   const customEvaluator = async (run: Run, example?: Example) => {
     return Promise.resolve({
@@ -672,6 +674,24 @@ test("Target func can be a runnable", async () => {
   expect(firstEvalResults.results).toHaveLength(1);
   expect(firstEvalResults.results[0].key).toEqual("key");
   expect(firstEvalResults.results[0].score).toEqual(1);
+
+  // check if the evaluated function has valid children
+  const gatheredChildRunNames = [];
+  const queue = [firstRun];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current.id)) continue;
+    visited.add(current.id);
+    if (current.child_runs) {
+      gatheredChildRunNames.push(...current.child_runs.map((run) => run.name));
+      queue.push(...current.child_runs);
+    }
+  }
+
+  expect(gatheredChildRunNames).toEqual(
+    expect.arrayContaining(["RunnableSequence", "First Step", "Second Step"])
+  );
 });
 
 test("evaluate can accept array of examples", async () => {
