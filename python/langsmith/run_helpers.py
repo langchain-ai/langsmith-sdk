@@ -35,6 +35,8 @@ from typing import (
     runtime_checkable,
 )
 
+from typing_extensions import ParamSpec, TypeGuard
+
 from langsmith import client as ls_client
 from langsmith import run_trees, utils
 from langsmith._internal import _aiter as aitertools
@@ -144,7 +146,9 @@ def tracing_context(
 get_run_tree_context = get_current_run_tree
 
 
-def is_traceable_function(func: Callable) -> bool:
+def is_traceable_function(
+    func: Callable[P, R],
+) -> TypeGuard[SupportsLangsmithExtra[P, R]]:
     """Check if a function is @traceable decorated."""
     return (
         _is_traceable_function(func)
@@ -153,12 +157,11 @@ def is_traceable_function(func: Callable) -> bool:
     )
 
 
-def ensure_traceable(func: Callable[..., R]) -> Callable[..., R]:
+def ensure_traceable(func: Callable[P, R]) -> SupportsLangsmithExtra[P, R]:
     """Ensure that a function is traceable."""
-    return cast(
-        SupportsLangsmithExtra,
-        (func if is_traceable_function(func) else traceable()(func)),
-    )
+    if is_traceable_function(func):
+        return func
+    return traceable()(func)
 
 
 def is_async(func: Callable) -> bool:
@@ -184,10 +187,11 @@ class LangSmithExtra(TypedDict, total=False):
 
 
 R = TypeVar("R", covariant=True)
+P = ParamSpec("P")
 
 
 @runtime_checkable
-class SupportsLangsmithExtra(Protocol, Generic[R]):
+class SupportsLangsmithExtra(Protocol, Generic[P, R]):
     """Implementations of this Protoc accept an optional langsmith_extra parameter.
 
     Args:
@@ -202,9 +206,9 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 
     def __call__(
         self,
-        *args: Any,
+        *args: P.args,
         langsmith_extra: Optional[LangSmithExtra] = None,
-        **kwargs: Any,
+        **kwargs: P.kwargs,
     ) -> R:
         """Call the instance when it is called as a function.
 
@@ -223,8 +227,8 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 
 @overload
 def traceable(
-    func: Callable[..., R],
-) -> Callable[..., R]: ...
+    func: Callable[P, R],
+) -> SupportsLangsmithExtra[P, R]: ...
 
 
 @overload
@@ -239,7 +243,7 @@ def traceable(
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
+) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
 def traceable(

@@ -1466,12 +1466,14 @@ def _resolve_data(
     return data
 
 
-def _ensure_traceable(target: TARGET_T) -> rh.SupportsLangsmithExtra:
+def _ensure_traceable(
+    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],
+) -> rh.SupportsLangsmithExtra[[dict], dict]:
     """Ensure the target function is traceable."""
     if not callable(target):
         raise ValueError("Target must be a callable function.")
     if rh.is_traceable_function(target):
-        fn = cast(rh.SupportsLangsmithExtra, target)
+        fn = target
     else:
         fn = rh.traceable(name="Target")(target)
     return fn
