@@ -43,7 +43,7 @@ from langsmith._internal import _aiter as aitertools
 from langsmith.env import _runtime_env
 
 if TYPE_CHECKING:
-    from langchain.schema.runnable import Runnable
+    from langchain_core.runnables import Runnable
 
 LOGGER = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
@@ -771,12 +771,12 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         >>> runnable = as_runnable(my_function)
     """
     try:
-        from langchain.schema.runnable import RunnableConfig, RunnableLambda
-        from langchain.schema.runnable.utils import Input, Output
+        from langchain_core.runnables import RunnableConfig, RunnableLambda
+        from langchain_core.runnables.utils import Input, Output
     except ImportError as e:
         raise ImportError(
-            "as_runnable requires langchain to be installed. "
-            "You can install it with `pip install langchain`."
+            "as_runnable requires langchain-core to be installed. "
+            "You can install it with `pip install langchain-core`."
         ) from e
     if not is_traceable_function(traceable_fn):
         try:
