@@ -70,8 +70,8 @@ const getTracingRunTree = <Args extends unknown[]>(
   if (invocationParams != null) {
     runTree.extra ??= {};
     runTree.extra.metadata = {
-      ...runTree.extra.metadata,
       ...invocationParams,
+      ...runTree.extra.metadata,
     };
   }
 
