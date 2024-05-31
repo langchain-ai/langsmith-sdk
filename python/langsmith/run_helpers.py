@@ -647,10 +647,11 @@ def traceable(
         if not sig.parameters.get("config"):
             sig = sig.replace(
                 parameters=[
-                    *sig.parameters.values(),
+                    *(param for param in sig.parameters.values() if param.kind != inspect.Parameter.VAR_KEYWORD),
                     inspect.Parameter(
                         "config", inspect.Parameter.KEYWORD_ONLY, default=None
                     ),
+                    *(param for param in sig.parameters.values() if param.kind == inspect.Parameter.VAR_KEYWORD),
                 ]
             )
             selected_wrapper.__signature__ = sig  # type: ignore[attr-defined]
