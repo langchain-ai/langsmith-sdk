@@ -335,7 +335,7 @@ class RunTree(ls_schemas.RunBase):
                 )
             )
         ):
-            if hasattr(tracer, "order_map"):
+            if hasattr(tracer, "order_map") and cb.parent_run_id in tracer.order_map:
                 dotted_order = tracer.order_map[cb.parent_run_id][1]
             elif (
                 run := tracer.run_map.get(str(cb.parent_run_id))
