@@ -374,6 +374,9 @@ class RunTree(ls_schemas.RunBase):
         init_args["trace_id"] = trace_id
         init_args["id"] = parsed_dotted_order[-1][1]
         init_args["dotted_order"] = parent_dotted_order
+        if len(parsed_dotted_order) >= 2:
+            # Has a parent
+            init_args["parent_run_id"] = parsed_dotted_order[-2][1]
         # All placeholders. We assume the source process
         # handles the life-cycle of the run.
         init_args["start_time"] = init_args.get("start_time") or datetime.now(
