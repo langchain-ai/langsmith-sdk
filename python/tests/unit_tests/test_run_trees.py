@@ -59,3 +59,15 @@ def test_run_tree_accepts_tpe() -> None:
 )
 def test_parse_dotted_order(inputs, expected):
     assert run_trees._parse_dotted_order(inputs) == expected
+
+
+def test_run_tree_events_not_null():
+    mock_client = MagicMock(spec=Client)
+    run_tree = run_trees.RunTree(
+        name="My Chat Bot",
+        inputs={"text": "Summarize this morning's meetings."},
+        client=mock_client,
+        executor=ThreadPoolExecutor(),
+        events=None,
+    )
+    assert run_tree.events == []
