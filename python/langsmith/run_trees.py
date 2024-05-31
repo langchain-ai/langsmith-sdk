@@ -92,6 +92,8 @@ class RunTree(ls_schemas.RunBase):
         cast(dict, values.setdefault("extra", {}))
         if values.get("events") is None:
             values["events"] = []
+        if values.get("tags") is None:
+            values["tags"] = []
         return values
 
     @root_validator(pre=False)
