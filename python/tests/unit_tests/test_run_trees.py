@@ -88,6 +88,7 @@ def test_nested_run_trees_from_dotted_order():
     clone = run_trees.RunTree.from_dotted_order(
         dotted_order=child.dotted_order,
         name="Clone",
+        client=MagicMock(spec=Client),
     )
 
     assert clone.id == child.id
@@ -98,6 +99,7 @@ def test_nested_run_trees_from_dotted_order():
     parent_clone = run_trees.RunTree.from_dotted_order(
         dotted_order=parent.dotted_order,
         name="Parent Clone",
+        client=MagicMock(spec=Client),
     )
     assert parent_clone.id == parent.id
     assert parent_clone.parent_run_id == parent.parent_run_id
@@ -107,6 +109,7 @@ def test_nested_run_trees_from_dotted_order():
     grandparent_clone = run_trees.RunTree.from_dotted_order(
         dotted_order=grandparent.dotted_order,
         name="Grandparent Clone",
+        client=MagicMock(spec=Client),
     )
     assert grandparent_clone.id == grandparent.id
     assert grandparent_clone.parent_run_id is None
