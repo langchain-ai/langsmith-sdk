@@ -90,6 +90,8 @@ class RunTree(ls_schemas.RunBase):
             else:
                 values["trace_id"] = values["id"]
         cast(dict, values.setdefault("extra", {}))
+        if values.get("events") is None:
+            values["events"] = []
         return values
 
     @root_validator(pre=False)
@@ -335,7 +337,7 @@ class RunTree(ls_schemas.RunBase):
                 )
             )
         ):
-            if hasattr(tracer, "order_map"):
+            if hasattr(tracer, "order_map") and cb.parent_run_id in tracer.order_map:
                 dotted_order = tracer.order_map[cb.parent_run_id][1]
             elif (
                 run := tracer.run_map.get(str(cb.parent_run_id))
