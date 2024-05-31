@@ -67,7 +67,6 @@ def test_run_tree_events_not_null():
         name="My Chat Bot",
         inputs={"text": "Summarize this morning's meetings."},
         client=mock_client,
-        executor=ThreadPoolExecutor(),
         events=None,
     )
     assert run_tree.events == []
@@ -77,6 +76,7 @@ def test_nested_run_trees_from_dotted_order():
     grandparent = run_trees.RunTree(
         name="Grandparent",
         inputs={"text": "Summarize this morning's meetings."},
+        client=MagicMock(spec=Client),
     )
     parent = grandparent.create_child(
         name="Parent",
