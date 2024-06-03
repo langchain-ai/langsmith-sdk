@@ -546,7 +546,7 @@ def deepish_copy(val: T) -> T:
     memo: Dict[int, Any] = {}
     try:
         return copy.deepcopy(val, memo)
-    except (TypeError, ValueError, RecursionError) as e:
+    except Exception as e:
         # Generators, locks, etc. cannot be copied
         # and raise a TypeError (mentioning pickling, since the dunder methods)
         # are re-used for copying. We'll try to do a compromise and copy
