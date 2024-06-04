@@ -178,12 +178,13 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
     with tracing_context(enabled=True):
 
         @traceable(client=mock_client)
-        def my_iterator_fn(a, b, d):
+        def my_iterator_fn(a, b, d, **kwargs):
+            assert kwargs == {"e": 5}
             for i in range(a + b + d):
                 yield i
 
         expected = [0, 1, 2, 3, 4, 5]
-        genout = my_iterator_fn(1, 2, 3)
+        genout = my_iterator_fn(1, 2, 3, e=5)
         if use_next:
             results = []
             while True:
@@ -216,12 +217,13 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
             return {"a": "FOOOOOO", "b": kwargs["b"], "d": kwargs["d"]}
 
         @traceable(client=mock_client, process_inputs=filter_inputs)
-        async def my_iterator_fn(a, b, d):
+        async def my_iterator_fn(a, b, d, **kwargs):
+            assert kwargs == {"e": 5}
             for i in range(a + b + d):
                 yield i
 
         expected = [0, 1, 2, 3, 4, 5]
-        genout = my_iterator_fn(1, 2, 3)
+        genout = my_iterator_fn(1, 2, 3, e=5)
         if use_next:
             results = []
             async for item in genout:
@@ -738,7 +740,8 @@ def test_generator():
 
 def test_traceable_regular():
     @traceable
-    def some_sync_func(query: str) -> list:
+    def some_sync_func(query: str, **kwargs: Any) -> list:
+        assert kwargs == {"a": 1, "b": 2}
         return [query, query]
 
     @traceable
@@ -763,7 +766,7 @@ def test_traceable_regular():
     def my_answer(
         query: str,
     ) -> list:
-        expanded_terms = some_sync_func(query=query)
+        expanded_terms = some_sync_func(query=query, a=1, b=2)
         documents = some_func(
             queries=expanded_terms,
         )
@@ -818,7 +821,7 @@ async def test_traceable_async():
         return [query, query]
 
     @traceable
-    async def some_async_func(queries: list) -> list:
+    async def some_async_func(queries: list, **kwargs: Any) -> list:
         await asyncio.sleep(0.01)
         return queries
 
@@ -843,9 +846,7 @@ async def test_traceable_async():
         query: str,
     ) -> list:
         expanded_terms = some_sync_func(query=query)
-        documents = await some_async_func(
-            queries=expanded_terms,
-        )
+        documents = await some_async_func(queries=expanded_terms, a=1, b=2)
 
         await another_async_func(query=query)
 
