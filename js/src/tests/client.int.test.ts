@@ -3,7 +3,13 @@ import { FunctionMessage, HumanMessage } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
-import { deleteDataset, deleteProject, toArray, waitUntil } from "./utils.js";
+import {
+  createRunsFactory,
+  deleteDataset,
+  deleteProject,
+  toArray,
+  waitUntil,
+} from "./utils.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -70,7 +76,7 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   const example = await client.createExample(
     { col1: "addedExampleCol1" },
     { col2: "addedExampleCol2" },
-    { datasetId: newDataset.id }
+    { datasetId: newDataset.id, split: "my_split" }
   );
   const exampleValue = await client.readExample(example.id);
   expect(exampleValue.inputs.col1).toBe("addedExampleCol1");
@@ -82,13 +88,31 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   expect(examples.length).toBe(2);
   expect(examples.map((e) => e.id)).toContain(example.id);
 
+  const _examples = await toArray(
+    client.listExamples({ datasetId: newDataset.id, splits: ["my_split"] })
+  );
+  expect(_examples.length).toBe(1);
+  expect(_examples.map((e) => e.id)).toContain(example.id);
+
   await client.updateExample(example.id, {
     inputs: { col1: "updatedExampleCol1" },
     outputs: { col2: "updatedExampleCol2" },
+    split: ["my_split2"],
   });
   // Says 'example updated' or something similar
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
+  expect(newExampleValue.metadata?.dataset_split).toStrictEqual(["my_split2"]);
+
+  await client.updateExample(example.id, {
+    inputs: { col1: "updatedExampleCol3" },
+    outputs: { col2: "updatedExampleCol4" },
+    split: "my_split3",
+  });
+  // Says 'example updated' or something similar
+  const newExampleValue2 = await client.readExample(example.id);
+  expect(newExampleValue2.inputs.col1).toBe("updatedExampleCol3");
+  expect(newExampleValue2.metadata?.dataset_split).toStrictEqual(["my_split3"]);
   await client.deleteExample(example.id);
   const examples2 = await toArray(
     client.listExamples({ datasetId: newDataset.id })
@@ -475,6 +499,7 @@ test.concurrent(
         { output: "hi there 3" },
       ],
       metadata: [{ key: "value 1" }, { key: "value 2" }, { key: "value 3" }],
+      splits: ["train", "test", ["train", "validation"]],
       datasetId: dataset.id,
     });
     const initialExamplesList = await toArray(
@@ -505,16 +530,20 @@ test.concurrent(
     );
     expect(example1?.outputs?.output).toEqual("hi there 1");
     expect(example1?.metadata?.key).toEqual("value 1");
+    expect(example1?.metadata?.dataset_split).toEqual(["train"]);
     const example2 = examplesList2.find(
       (e) => e.inputs.input === "hello world 2"
     );
     expect(example2?.outputs?.output).toEqual("hi there 2");
     expect(example2?.metadata?.key).toEqual("value 2");
+    expect(example2?.metadata?.dataset_split).toEqual(["test"]);
     const example3 = examplesList2.find(
       (e) => e.inputs.input === "hello world 3"
     );
     expect(example3?.outputs?.output).toEqual("hi there 3");
     expect(example3?.metadata?.key).toEqual("value 3");
+    expect(example3?.metadata?.dataset_split).toContain("train");
+    expect(example3?.metadata?.dataset_split).toContain("validation");
 
     await client.createExample(
       { input: "hello world" },
@@ -554,7 +583,81 @@ test.concurrent(
     expect(examplesList3[0].metadata?.foo).toEqual("bar");
     expect(examplesList3[0].metadata?.baz).toEqual("qux");
 
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        splits: ["train"],
+      })
+    );
+    expect(examplesList3.length).toEqual(2);
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        splits: ["test"],
+      })
+    );
+    expect(examplesList3.length).toEqual(1);
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        splits: ["train", "test"],
+      })
+    );
+    expect(examplesList3.length).toEqual(3);
+
     await client.deleteDataset({ datasetId: dataset.id });
   },
   180_000
 );
+
+test.concurrent("list runs limit arg works", async () => {
+  const client = new Client();
+
+  const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
+  const limit = 6;
+
+  // delete the project just in case
+  if (await client.hasProject({ projectName })) {
+    await client.deleteProject({ projectName });
+  }
+
+  try {
+    const runsArr: Array<Run> = [];
+    // create a fresh project with 10 runs --default amount created by createRunsFactory
+    await client.createProject({ projectName });
+    await Promise.all(
+      createRunsFactory(projectName).map(async (payload) => {
+        if (!payload.id) payload.id = uuidv4();
+        await client.createRun(payload);
+        await waitUntilRunFound(client, payload.id);
+      })
+    );
+
+    let iters = 0;
+    for await (const run of client.listRuns({ limit, projectName })) {
+      expect(run).toBeDefined();
+      runsArr.push(run);
+      iters += 1;
+      if (iters > limit) {
+        throw new Error(
+          `More runs returned than expected.\nExpected: ${limit}\nReceived: ${iters}`
+        );
+      }
+    }
+
+    expect(runsArr.length).toBe(limit);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (e: any) {
+    if (e.message.startsWith("More runs returned than expected.")) {
+      throw e;
+    } else {
+      console.error(e);
+    }
+  } finally {
+    if (await client.hasProject({ projectName })) {
+      await client.deleteProject({ projectName });
+    }
+  }
+});

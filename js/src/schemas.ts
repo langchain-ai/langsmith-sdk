@@ -229,6 +229,7 @@ export interface RunUpdate {
 export interface ExampleCreate extends BaseExample {
   id?: string;
   created_at?: string;
+  split?: string | string[];
 }
 
 export interface Example extends BaseExample {
@@ -244,6 +245,7 @@ export interface ExampleUpdate {
   inputs?: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  split?: string | string[];
 }
 export interface BaseDataset {
   name: string;
@@ -360,4 +362,43 @@ export interface DatasetDiffInfo {
   examples_modified: string[];
   examples_added: string[];
   examples_removed: string[];
+}
+
+export interface ComparisonEvaluationResult {
+  key: string;
+  scores: Record<string, ScoreType>;
+  source_run_id?: string;
+}
+
+export interface ComparativeExperiment {
+  id: string;
+  name: string;
+  description: string;
+  tenant_id: string;
+  created_at: string;
+  modified_at: string;
+  reference_dataset_id: string;
+  extra?: Record<string, unknown>;
+  experiments_info?: Array<Record<string, unknown>>;
+  feedback_stats?: Record<string, unknown>;
+}
+
+/**
+ * Represents the expected output schema returned by traceable
+ * or by run tree output for LangSmith to correctly display
+ * documents in the UI
+ */
+export type RetrieverOutput = Array<{
+  page_content: string;
+  type: "Document";
+  metadata?: KVMap;
+}>;
+
+export interface InvocationParamsSchema {
+  ls_provider?: string;
+  ls_model_name?: string;
+  ls_model_type: "chat" | "text";
+  ls_temperature?: number;
+  ls_max_tokens?: number;
+  ls_stop?: string[];
 }

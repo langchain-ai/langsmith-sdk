@@ -1,8 +1,7 @@
 import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
 import type { Client, RunTreeConfig } from "../index.js";
-import { type RunnableConfigLike } from "../run_trees.js";
-import { traceable, type RunTreeLike } from "../traceable.js";
+import { isTraceableFunction, traceable } from "../traceable.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -18,22 +17,23 @@ type OpenAIType = {
   };
 };
 
+type ExtraRunTreeConfig = Pick<
+  Partial<RunTreeConfig>,
+  "name" | "metadata" | "tags"
+>;
+
 type PatchedOpenAIClient<T extends OpenAIType> = T & {
   chat: T["chat"] & {
     completions: T["chat"]["completions"] & {
       create: {
         (
           arg: OpenAI.ChatCompletionCreateParamsStreaming,
-          arg2?: OpenAI.RequestOptions & {
-            langsmithExtra?: RunnableConfigLike | RunTreeLike;
-          }
+          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
         ): APIPromise<AsyncGenerator<OpenAI.ChatCompletionChunk>>;
       } & {
         (
           arg: OpenAI.ChatCompletionCreateParamsNonStreaming,
-          arg2?: OpenAI.RequestOptions & {
-            langsmithExtra?: RunnableConfigLike | RunTreeLike;
-          }
+          arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
         ): APIPromise<OpenAI.ChatCompletionChunk>;
       };
     };
@@ -42,16 +42,12 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
     create: {
       (
         arg: OpenAI.CompletionCreateParamsStreaming,
-        arg2?: OpenAI.RequestOptions & {
-          langsmithExtra?: RunnableConfigLike | RunTreeLike;
-        }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
       ): APIPromise<AsyncGenerator<OpenAI.Completion>>;
     } & {
       (
         arg: OpenAI.CompletionCreateParamsNonStreaming,
-        arg2?: OpenAI.RequestOptions & {
-          langsmithExtra?: RunnableConfigLike | RunTreeLike;
-        }
+        arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
       ): APIPromise<OpenAI.Completion>;
     };
   };
@@ -211,6 +207,15 @@ export const wrapOpenAI = <T extends OpenAIType>(
   openai: T,
   options?: Partial<RunTreeConfig>
 ): PatchedOpenAIClient<T> => {
+  if (
+    isTraceableFunction(openai.chat.completions.create) ||
+    isTraceableFunction(openai.completions.create)
+  ) {
+    throw new Error(
+      "This instance of OpenAI client has been already wrapped once."
+    );
+  }
+
   openai.chat.completions.create = traceable(
     openai.chat.completions.create.bind(openai.chat.completions),
     {
@@ -218,6 +223,24 @@ export const wrapOpenAI = <T extends OpenAIType>(
       run_type: "llm",
       aggregator: chatAggregator,
       argsConfigPath: [1, "langsmithExtra"],
+      getInvocationParams: (payload: unknown) => {
+        if (typeof payload !== "object" || payload == null) return undefined;
+        // we can safely do so, as the types are not exported in TSC
+        const params = payload as OpenAI.ChatCompletionCreateParams;
+
+        const ls_stop =
+          (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+          undefined;
+
+        return {
+          ls_provider: "openai",
+          ls_model_type: "chat",
+          ls_model_name: params.model,
+          ls_max_tokens: params.max_tokens ?? undefined,
+          ls_temperature: params.temperature ?? undefined,
+          ls_stop,
+        };
+      },
       ...options,
     }
   );
@@ -229,6 +252,24 @@ export const wrapOpenAI = <T extends OpenAIType>(
       run_type: "llm",
       aggregator: textAggregator,
       argsConfigPath: [1, "langsmithExtra"],
+      getInvocationParams: (payload: unknown) => {
+        if (typeof payload !== "object" || payload == null) return undefined;
+        // we can safely do so, as the types are not exported in TSC
+        const params = payload as OpenAI.CompletionCreateParams;
+
+        const ls_stop =
+          (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+          undefined;
+
+        return {
+          ls_provider: "openai",
+          ls_model_type: "text",
+          ls_model_name: params.model,
+          ls_max_tokens: params.max_tokens ?? undefined,
+          ls_temperature: params.temperature ?? undefined,
+          ls_stop,
+        };
+      },
       ...options,
     }
   );

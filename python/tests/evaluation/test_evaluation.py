@@ -29,7 +29,7 @@ def test_evaluate():
     def predict(inputs: dict) -> dict:
         return {"output": "Yes"}
 
-    evaluate(
+    results = evaluate(
         predict,
         data=dataset_name,
         evaluators=[accuracy],
@@ -39,7 +39,13 @@ def test_evaluate():
             "my-prompt-version": "abcd-1234",
             "function": "evaluate",
         },
+        num_repetitions=3,
     )
+    results.wait()
+    assert len(results) == 30
+    examples = client.list_examples(dataset_name=dataset_name)
+    for example in examples:
+        assert len([r for r in results if r["example"].id == example.id]) == 3
 
 
 async def test_aevaluate():
@@ -65,7 +71,7 @@ async def test_aevaluate():
         await asyncio.sleep(0.1)
         return {"output": "Yes"}
 
-    await aevaluate(
+    results = await aevaluate(
         apredict,
         data=dataset_name,
         evaluators=[accuracy],
@@ -76,7 +82,17 @@ async def test_aevaluate():
             "my-prompt-version": "abcd-1234",
             "function": "aevaluate",
         },
+        num_repetitions=2,
     )
+    assert len(results) == 20
+    examples = client.list_examples(dataset_name=dataset_name)
+    all_results = [r async for r in results]
+    for example in examples:
+        count = 0
+        for r in all_results:
+            if r["run"].reference_example_id == example.id:
+                count += 1
+        assert count == 2
 
 
 @unit

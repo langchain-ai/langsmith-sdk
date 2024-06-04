@@ -17,6 +17,7 @@ from typing import (
     List,
     Optional,
     Sequence,
+    TypeVar,
     Union,
     cast,
 )
@@ -61,6 +62,7 @@ async def aevaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> AsyncExperimentResults:
@@ -81,6 +83,9 @@ async def aevaluate(
         description (Optional[str]): A description of the experiment.
         max_concurrency (Optional[int]): The maximum number of concurrent
             evaluations to run. Defaults to None.
+        num_repetitions (int): The number of times to run the evaluation.
+            Each item in the dataset will be run and evaluated this many times.
+            Defaults to 1.
         client (Optional[langsmith.Client]): The LangSmith client to use.
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
@@ -225,6 +230,7 @@ async def aevaluate(
         experiment_prefix=experiment_prefix,
         description=description,
         max_concurrency=max_concurrency,
+        num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
     )
@@ -343,6 +349,7 @@ async def _aevaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[schemas.TracerSession] = None,
@@ -363,6 +370,7 @@ async def _aevaluate(
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
         description=description,
+        num_repetitions=num_repetitions,
         runs=runs,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -423,6 +431,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         evaluation_results: Optional[AsyncIterable[EvaluationResults]] = None,
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
         description: Optional[str] = None,
+        num_repetitions: int = 1,
     ):
         super().__init__(
             experiment=experiment,
@@ -437,10 +446,16 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         )
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
+        self._num_repetitions = num_repetitions
 
-    def aget_examples(self) -> AsyncIterator[schemas.Example]:
+    async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
             self._examples = _aresolve_data(self._data, client=self.client)
+            if self._num_repetitions > 1:
+                self._examples = async_chain_from_iterable(
+                    aitertools.atee(self._examples, self._num_repetitions)
+                )
+
         self._examples, examples_iter = aitertools.atee(
             aitertools.ensure_async_iterator(self._examples), 2, lock=asyncio.Lock()
         )
@@ -450,7 +465,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         if self._experiment is None or not getattr(
             self._experiment, "reference_dataset_id", None
         ):
-            example = await aitertools.py_anext(self.aget_examples())
+            example = await aitertools.py_anext(await self.aget_examples())
             if example is None:
                 raise ValueError("No examples found in the dataset.")
             return str(example.dataset_id)
@@ -467,7 +482,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
     async def aget_evaluation_results(self) -> AsyncIterator[EvaluationResults]:
         if self._evaluation_results is None:
-            async for _ in self.aget_examples():
+            async for _ in await self.aget_examples():
                 yield {"results": []}
         else:
             self._evaluation_results, evaluation_results = aitertools.atee(
@@ -479,13 +494,14 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 yield result
 
     async def astart(self) -> _AsyncExperimentManager:
-        first_example = await aitertools.py_anext(self.aget_examples())
+        first_example = await aitertools.py_anext(await self.aget_examples())
         if not first_example:
             raise ValueError("No examples found in the dataset.")
         project = self._get_project(first_example)
         self._print_experiment_start(project, first_example)
+        self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
-            self.aget_examples(),
+            await self.aget_examples(),
             experiment=project,
             metadata=self._metadata,
             client=self.client,
@@ -535,7 +551,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         wrapped_evaluators = _wrap_summary_evaluators(summary_evaluators)
         aggregate_feedback_gen = self._aapply_summary_evaluators(wrapped_evaluators)
         return _AsyncExperimentManager(
-            self.aget_examples(),
+            await self.aget_examples(),
             experiment=self._experiment,
             metadata=self._metadata,
             client=self.client,
@@ -546,7 +562,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
     async def aget_results(self) -> AsyncIterator[ExperimentResultRow]:
         async for run, example, evaluation_results in aitertools.async_zip(
-            self.aget_runs(), self.aget_examples(), self.aget_evaluation_results()
+            self.aget_runs(), await self.aget_examples(), self.aget_evaluation_results()
         ):
             yield ExperimentResultRow(
                 run=run,
@@ -573,7 +589,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         fn = _ensure_async_traceable(target)
 
         async def predict_all():
-            async for example in self.aget_examples():
+            async for example in await self.aget_examples():
                 # Yield the coroutine to be awaited later
                 yield _aforward(
                     fn, example, self.experiment_name, self._metadata, self.client
@@ -645,7 +661,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self, summary_evaluators: Sequence[SUMMARY_EVALUATOR_T]
     ) -> AsyncIterator[EvaluationResults]:
         runs, examples = [], []
-        async_examples = aitertools.ensure_async_iterator(self.aget_examples())
+        async_examples = aitertools.ensure_async_iterator(await self.aget_examples())
         async for run, example in aitertools.async_zip(
             self.aget_runs(), async_examples
         ):
@@ -694,7 +710,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
     async def _get_dataset_version(self) -> Optional[str]:
         modified_at = []
-        async for example in self.aget_examples():
+        async for example in await self.aget_examples():
             if example.modified_at:
                 # Should always be defined in practice when fetched,
                 # but the typing permits None
@@ -703,6 +719,22 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         max_modified_at = max(modified_at) if modified_at else None
         return max_modified_at.isoformat() if max_modified_at else None
 
+    async def _get_dataset_splits(self) -> Optional[list[str]]:
+        splits = set()
+        async for example in await self.aget_examples():
+            if (
+                example.metadata
+                and example.metadata.get("dataset_split")
+                and isinstance(example.metadata["dataset_split"], list)
+            ):
+                for split in example.metadata["dataset_split"]:
+                    if isinstance(split, str):
+                        splits.add(split)
+            else:
+                splits.add("base")
+
+        return list(splits)
+
     async def _aend(self) -> None:
         experiment = self._experiment
         if experiment is None:
@@ -710,6 +742,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
         project_metadata = self._get_experiment_metadata()
         project_metadata["dataset_version"] = await self._get_dataset_version()
+        project_metadata["dataset_splits"] = await self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
             end_time=datetime.datetime.now(datetime.timezone.utc),
@@ -768,7 +801,7 @@ class AsyncExperimentResults:
 
 
 async def _aforward(
-    fn: rh.SupportsLangsmithExtra[Awaitable],
+    fn: rh.SupportsLangsmithExtra[[dict], Awaitable],
     example: schemas.Example,
     experiment_name: str,
     metadata: dict,
@@ -806,7 +839,9 @@ async def _aforward(
     )
 
 
-def _ensure_async_traceable(target: ATARGET_T) -> rh.SupportsLangsmithExtra[Awaitable]:
+def _ensure_async_traceable(
+    target: ATARGET_T,
+) -> rh.SupportsLangsmithExtra[[dict], Awaitable]:
     if not asyncio.iscoroutinefunction(target):
         raise ValueError(
             "Target must be an async function. For sync functions, use evaluate."
@@ -823,3 +858,15 @@ def _aresolve_data(
     if isinstance(data, AsyncIterable):
         return aitertools.ensure_async_iterator(data)
     return aitertools.ensure_async_iterator(_resolve_data(data, client=client))
+
+
+T = TypeVar("T")
+
+
+async def async_chain_from_iterable(
+    iterable: Iterable[AsyncIterable[T]],
+) -> AsyncIterator[T]:
+    """Chain multiple async iterables."""
+    for sub_iterable in iterable:
+        async for item in sub_iterable:
+            yield item

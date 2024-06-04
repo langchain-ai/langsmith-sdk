@@ -89,3 +89,26 @@ test("serializing run tree", () => {
     ],
   });
 });
+
+test("distributed", () => {
+  const parent = new RunTree({
+    name: "parent_1",
+    id: "00000000-0000-0000-0000-00000000000",
+    start_time: Date.parse("2021-05-03T00:00:00.000Z"),
+  });
+
+  const serialized = parent.toHeaders();
+
+  const child2 = RunTree.fromHeaders(serialized)?.createChild({
+    name: "child_2",
+    id: "00000000-0000-0000-0000-00000000001",
+    start_time: Date.parse("2021-05-03T00:00:01.000Z"),
+  });
+
+  expect(JSON.parse(JSON.stringify(child2))).toMatchObject({
+    name: "child_2",
+    run_type: "chain",
+    dotted_order:
+      "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001",
+  });
+});

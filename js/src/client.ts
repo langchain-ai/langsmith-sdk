@@ -2,6 +2,7 @@ import * as uuid from "uuid";
 
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
+  ComparativeExperiment,
   DataType,
   Dataset,
   DatasetDiffInfo,
@@ -187,6 +188,7 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
   session_id?: string;
+  comparative_experiment_id?: string;
 }
 
 interface FeedbackUpdate {
@@ -237,6 +239,7 @@ export type CreateExampleOptions = {
   exampleId?: string;
 
   metadata?: KVMap;
+  split?: string | string[];
 };
 
 type AutoBatchQueueItem = {
@@ -457,12 +460,12 @@ export class Client {
     };
   }
 
-  private getHostUrl(): string {
+  public getHostUrl(): string {
     if (this.webUrl) {
       return this.webUrl;
     } else if (isLocalhost(this.apiUrl)) {
-      this.webUrl = "http://localhost";
-      return "http://localhost";
+      this.webUrl = "http://localhost:3000";
+      return this.webUrl;
     } else if (
       this.apiUrl.includes("/api") &&
       !this.apiUrl.split(".", 1)[0].endsWith("api")
@@ -471,10 +474,10 @@ export class Client {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
       this.webUrl = "https://dev.smith.langchain.com";
-      return "https://dev.smith.langchain.com";
+      return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
-      return "https://smith.langchain.com";
+      return this.webUrl;
     }
   }
 
@@ -1194,11 +1197,25 @@ export class Client {
       is_root: isRoot,
     };
 
+    let runsYielded = 0;
     for await (const runs of this._getCursorPaginatedList<Run>(
       "/runs/query",
       body
     )) {
-      yield* runs;
+      if (limit) {
+        if (runsYielded >= limit) {
+          break;
+        }
+        if (runs.length + runsYielded > limit) {
+          const newRuns = runs.slice(0, limit - runsYielded);
+          yield* newRuns;
+          break;
+        }
+        runsYielded += runs.length;
+        yield* runs;
+      } else {
+        yield* runs;
+      }
     }
   }
 
@@ -1564,6 +1581,36 @@ export class Client {
       result = response as TracerSessionResult;
     }
     return result;
+  }
+
+  public async getProjectUrl({
+    projectId,
+    projectName,
+  }: {
+    projectId?: string;
+    projectName?: string;
+  }) {
+    if (projectId === undefined && projectName === undefined) {
+      throw new Error("Must provide either projectName or projectId");
+    }
+    const project = await this.readProject({ projectId, projectName });
+    const tenantId = await this._getTenantId();
+    return `${this.getHostUrl()}/o/${tenantId}/projects/p/${project.id}`;
+  }
+
+  public async getDatasetUrl({
+    datasetId,
+    datasetName,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+  }) {
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const dataset = await this.readDataset({ datasetId, datasetName });
+    const tenantId = await this._getTenantId();
+    return `${this.getHostUrl()}/o/${tenantId}/datasets/${dataset.id}`;
   }
 
   private async _getTenantId(): Promise<string> {
@@ -1943,6 +1990,7 @@ export class Client {
       createdAt,
       exampleId,
       metadata,
+      split,
     }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
@@ -1963,6 +2011,7 @@ export class Client {
       created_at: createdAt_?.toISOString(),
       id: exampleId,
       metadata,
+      split,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
@@ -1987,6 +2036,7 @@ export class Client {
     inputs: Array<KVMap>;
     outputs?: Array<KVMap>;
     metadata?: Array<KVMap>;
+    splits?: Array<string | Array<string>>;
     sourceRunIds?: Array<string>;
     exampleIds?: Array<string>;
     datasetId?: string;
@@ -2017,6 +2067,7 @@ export class Client {
         inputs: input,
         outputs: outputs ? outputs[idx] : undefined,
         metadata: metadata ? metadata[idx] : undefined,
+        split: props.splits ? props.splits[idx] : undefined,
         id: exampleIds ? exampleIds[idx] : undefined,
         source_run_id: sourceRunIds ? sourceRunIds[idx] : undefined,
       };
@@ -2084,6 +2135,7 @@ export class Client {
     datasetName,
     exampleIds,
     asOf,
+    splits,
     inlineS3Urls,
     metadata,
   }: {
@@ -2091,6 +2143,7 @@ export class Client {
     datasetName?: string;
     exampleIds?: string[];
     asOf?: string | Date;
+    splits?: string[];
     inlineS3Urls?: boolean;
     metadata?: KVMap;
   } = {}): AsyncIterable<Example> {
@@ -2119,6 +2172,11 @@ export class Client {
     if (exampleIds !== undefined) {
       for (const id_ of exampleIds) {
         params.append("id", id_);
+      }
+    }
+    if (splits !== undefined) {
+      for (const split of splits) {
+        params.append("splits", split);
       }
     }
     if (metadata !== undefined) {
@@ -2233,6 +2291,7 @@ export class Client {
       feedbackId,
       feedbackConfig,
       projectId,
+      comparativeExperimentId,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -2245,6 +2304,7 @@ export class Client {
       feedbackId?: string;
       eager?: boolean;
       projectId?: string;
+      comparativeExperimentId?: string;
     }
   ): Promise<Feedback> {
     if (!runId && !projectId) {
@@ -2279,6 +2339,7 @@ export class Client {
       correction,
       comment,
       feedback_source: feedback_source,
+      comparative_experiment_id: comparativeExperimentId,
       feedbackConfig,
       session_id: projectId,
     };
@@ -2447,6 +2508,65 @@ export class Client {
     );
     const result = await response.json();
     return result as FeedbackIngestToken;
+  }
+
+  public async createComparativeExperiment({
+    name,
+    experimentIds,
+    referenceDatasetId,
+    createdAt,
+    description,
+    metadata,
+    id,
+  }: {
+    name: string;
+    experimentIds: Array<string>;
+    referenceDatasetId?: string;
+    createdAt?: Date;
+    description?: string;
+    metadata?: Record<string, unknown>;
+    id?: string;
+  }): Promise<ComparativeExperiment> {
+    if (experimentIds.length === 0) {
+      throw new Error("At least one experiment is required");
+    }
+
+    if (!referenceDatasetId) {
+      referenceDatasetId = (
+        await this.readProject({
+          projectId: experimentIds[0],
+        })
+      ).reference_dataset_id;
+    }
+
+    if (!referenceDatasetId == null) {
+      throw new Error("A reference dataset is required");
+    }
+
+    const body = {
+      id,
+      name,
+      experiment_ids: experimentIds,
+      reference_dataset_id: referenceDatasetId,
+      description,
+      created_at: (createdAt ?? new Date())?.toISOString(),
+      extra: {} as Record<string, unknown>,
+    };
+
+    if (metadata) body.extra["metadata"] = metadata;
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/comparative`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    return await response.json();
   }
 
   /**

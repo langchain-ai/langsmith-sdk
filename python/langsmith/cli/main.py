@@ -101,12 +101,12 @@ class LangSmithCommand:
     def pull(
         self,
         *,
-        version: str = "0.2.17",
+        version: str = "0.5.7",
     ) -> None:
         """Pull the latest LangSmith images.
 
         Args:
-            version: The LangSmith version to use for LangSmith. Defaults to 0.2.17
+            version: The LangSmith version to use for LangSmith. Defaults to 0.5.7
         """
         os.environ["_LANGSMITH_IMAGE_VERSION"] = version
         subprocess.run(
@@ -123,7 +123,7 @@ class LangSmithCommand:
         *,
         openai_api_key: Optional[str] = None,
         langsmith_license_key: str,
-        version: str = "0.2.17",
+        version: str = "0.5.7",
     ) -> None:
         """Run the LangSmith server locally.
 
@@ -251,8 +251,8 @@ def main() -> None:
     )
     server_start_parser.add_argument(
         "--version",
-        default="0.2.17",
-        help="The LangSmith version to use for LangSmith. Defaults to 0.2.17.",
+        default="0.5.7",
+        help="The LangSmith version to use for LangSmith. Defaults to 0.5.7.",
     )
     server_start_parser.set_defaults(
         func=lambda args: server_command.start(
@@ -279,8 +279,8 @@ def main() -> None:
     )
     server_pull_parser.add_argument(
         "--version",
-        default="0.2.17",
-        help="The LangSmith version to use for LangSmith. Defaults to 0.2.17.",
+        default="0.5.7",
+        help="The LangSmith version to use for LangSmith. Defaults to 0.5.7.",
     )
     server_pull_parser.set_defaults(
         func=lambda args: server_command.pull(version=args.version)

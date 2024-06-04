@@ -42,12 +42,13 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --with dev
-          poetry run pip install -U langchain
+          poetry run pip install -U langchain langchain_anthropic langchain_openai rapidfuzz
       - name: Run Python integration tests
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
-          langchain-api-key: ${{ secrets.LANGCHAIN_API_KEY }}
+          langchain-endpoint: https://api.smith.langchain.com
+          langchain-api-key: ${{ secrets.LANGSMITH_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
@@ -75,5 +76,6 @@ jobs:
         uses: ./.github/actions/js-integration-tests
         with:
           node-version: 20.x
-          langchain-api-key: ${{ secrets.LANGCHAIN_API_KEY }}
+          langchain-endpoint: https://api.smith.langchain.com
+          langchain-api-key: ${{ secrets.LANGSMITH_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

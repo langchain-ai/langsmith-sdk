@@ -35,10 +35,7 @@ def wait_for(
 
 
 @pytest.fixture
-def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    # monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
+def langchain_client() -> Client:
     return Client()
 
 
@@ -112,24 +109,64 @@ def test_datasets(langchain_client: Client) -> None:
 def test_list_examples(langchain_client: Client) -> None:
     """Test list_examples."""
     examples = [
-        ("Shut up, idiot", "Toxic"),
-        ("You're a wonderful person", "Not toxic"),
-        ("This is the worst thing ever", "Toxic"),
-        ("I had a great day today", "Not toxic"),
-        ("Nobody likes you", "Toxic"),
-        ("This is unacceptable. I want to speak to the manager.", "Not toxic"),
+        ("Shut up, idiot", "Toxic", ["train", "validation"]),
+        ("You're a wonderful person", "Not toxic", "test"),
+        ("This is the worst thing ever", "Toxic", ["train"]),
+        ("I had a great day today", "Not toxic", "test"),
+        ("Nobody likes you", "Toxic", "train"),
+        ("This is unacceptable. I want to speak to the manager.", "Not toxic", None),
     ]
 
     dataset_name = "__test_list_examples" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(dataset_name=dataset_name)
-    inputs, outputs = zip(
-        *[({"text": text}, {"label": label}) for text, label in examples]
+    inputs, outputs, splits = zip(
+        *[({"text": text}, {"label": label}, split) for text, label, split in examples]
     )
     langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, dataset_id=dataset.id
+        inputs=inputs, outputs=outputs, splits=splits, dataset_id=dataset.id
     )
     example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
     assert len(example_list) == len(examples)
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
+    )
+    assert len(example_list) == 3
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["validation"])
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
+    )
+    assert len(example_list) == 2
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train", "test"])
+    )
+    assert len(example_list) == 5
+
+    langchain_client.update_example(
+        example_id=[
+            example.id
+            for example in example_list
+            if example.metadata is not None
+            and "test" in example.metadata.get("dataset_split", [])
+        ][0],
+        split="train",
+    )
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
+    )
+    assert len(example_list) == 4
 
     langchain_client.create_example(
         inputs={"text": "What's up!"},
@@ -217,7 +254,6 @@ def test_create_dataset(
 ) -> None:
     """Test persisting runs and adding feedback."""
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)

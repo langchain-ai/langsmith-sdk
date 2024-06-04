@@ -11,9 +11,12 @@ const entrypoints = {
   run_trees: "run_trees",
   traceable: "traceable",
   evaluation: "evaluation/index",
+  "evaluation/langchain": "evaluation/langchain",
   schemas: "schemas",
+  langchain: "langchain",
   wrappers: "wrappers/index",
   "wrappers/openai": "wrappers/openai",
+  "singletons/traceable": "singletons/traceable",
 };
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();

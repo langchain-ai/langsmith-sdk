@@ -35,12 +35,15 @@ from typing import (
     runtime_checkable,
 )
 
+from typing_extensions import ParamSpec, TypeGuard
+
 from langsmith import client as ls_client
 from langsmith import run_trees, utils
 from langsmith._internal import _aiter as aitertools
+from langsmith.env import _runtime_env
 
 if TYPE_CHECKING:
-    from langchain.schema.runnable import Runnable
+    from langchain_core.runnables import Runnable
 
 LOGGER = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
@@ -143,7 +146,9 @@ def tracing_context(
 get_run_tree_context = get_current_run_tree
 
 
-def is_traceable_function(func: Callable) -> bool:
+def is_traceable_function(
+    func: Callable[P, R],
+) -> TypeGuard[SupportsLangsmithExtra[P, R]]:
     """Check if a function is @traceable decorated."""
     return (
         _is_traceable_function(func)
@@ -152,12 +157,11 @@ def is_traceable_function(func: Callable) -> bool:
     )
 
 
-def ensure_traceable(func: Callable[..., R]) -> Callable[..., R]:
+def ensure_traceable(func: Callable[P, R]) -> SupportsLangsmithExtra[P, R]:
     """Ensure that a function is traceable."""
-    return cast(
-        SupportsLangsmithExtra,
-        (func if is_traceable_function(func) else traceable()(func)),
-    )
+    if is_traceable_function(func):
+        return func
+    return traceable()(func)
 
 
 def is_async(func: Callable) -> bool:
@@ -183,10 +187,11 @@ class LangSmithExtra(TypedDict, total=False):
 
 
 R = TypeVar("R", covariant=True)
+P = ParamSpec("P")
 
 
 @runtime_checkable
-class SupportsLangsmithExtra(Protocol, Generic[R]):
+class SupportsLangsmithExtra(Protocol, Generic[P, R]):
     """Implementations of this Protoc accept an optional langsmith_extra parameter.
 
     Args:
@@ -201,9 +206,9 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 
     def __call__(
         self,
-        *args: Any,
+        *args: P.args,
         langsmith_extra: Optional[LangSmithExtra] = None,
-        **kwargs: Any,
+        **kwargs: P.kwargs,
     ) -> R:
         """Call the instance when it is called as a function.
 
@@ -222,8 +227,8 @@ class SupportsLangsmithExtra(Protocol, Generic[R]):
 
 @overload
 def traceable(
-    func: Callable[..., R],
-) -> Callable[..., R]: ...
+    func: Callable[P, R],
+) -> SupportsLangsmithExtra[P, R]: ...
 
 
 @overload
@@ -237,7 +242,8 @@ def traceable(
     reduce_fn: Optional[Callable] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
-) -> Callable[[Callable[..., R]], SupportsLangsmithExtra[R]]: ...
+    _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
+) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
 def traceable(
@@ -404,6 +410,7 @@ def traceable(
         project_name=kwargs.pop("project_name", None),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
+        invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
     )
     if kwargs:
         warnings.warn(
@@ -413,6 +420,10 @@ def traceable(
         )
 
     def decorator(func: Callable):
+        func_sig = inspect.signature(func)
+        func_accepts_parent_run = func_sig.parameters.get("run_tree", None) is not None
+        func_accepts_config = func_sig.parameters.get("config", None) is not None
+
         @functools.wraps(func)
         async def async_wrapper(
             *args: Any,
@@ -427,15 +438,14 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-            func_accepts_parent_run = (
-                inspect.signature(func).parameters.get("run_tree", None) is not None
-            )
+
             try:
                 accepts_context = aitertools.accepts_context(asyncio.create_task)
                 if func_accepts_parent_run:
-                    fr_coro = func(*args, run_tree=run_container["new_run"], **kwargs)
-                else:
-                    fr_coro = func(*args, **kwargs)
+                    kwargs["run_tree"] = run_container["new_run"]
+                if not func_accepts_config:
+                    kwargs.pop("config", None)
+                fr_coro = func(*args, **kwargs)
                 if accepts_context:
                     function_result = await asyncio.create_task(  # type: ignore[call-arg]
                         fr_coro, context=run_container["context"]
@@ -463,20 +473,16 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-            func_accepts_parent_run = (
-                inspect.signature(func).parameters.get("run_tree", None) is not None
-            )
             results: List[Any] = []
             try:
                 if func_accepts_parent_run:
-                    async_gen_result = func(
-                        *args, run_tree=run_container["new_run"], **kwargs
-                    )
-                else:
+                    kwargs["run_tree"] = run_container["new_run"]
                     # TODO: Nesting is ambiguous if a nested traceable function is only
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
-                    async_gen_result = func(*args, **kwargs)
+                if not func_accepts_config:
+                    kwargs.pop("config", None)
+                async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
                 accepts_context = aitertools.accepts_context(asyncio.create_task)
                 if inspect.iscoroutine(async_gen_result):
@@ -553,13 +559,10 @@ def traceable(
             )
             try:
                 if func_accepts_parent_run:
-                    function_result = run_container["context"].run(
-                        func, *args, run_tree=run_container["new_run"], **kwargs
-                    )
-                else:
-                    function_result = run_container["context"].run(
-                        func, *args, **kwargs
-                    )
+                    kwargs["run_tree"] = run_container["new_run"]
+                if not func_accepts_config:
+                    kwargs.pop("config", None)
+                function_result = run_container["context"].run(func, *args, **kwargs)
             except BaseException as e:
                 _container_end(run_container, error=e)
                 raise e
@@ -583,16 +586,13 @@ def traceable(
             results: List[Any] = []
             try:
                 if func_accepts_parent_run:
-                    generator_result = run_container["context"].run(
-                        func, *args, run_tree=run_container["new_run"], **kwargs
-                    )
-                else:
+                    kwargs["run_tree"] = run_container["new_run"]
                     # TODO: Nesting is ambiguous if a nested traceable function is only
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
-                    generator_result = run_container["context"].run(
-                        func, *args, **kwargs
-                    )
+                if not func_accepts_config:
+                    kwargs.pop("config", None)
+                generator_result = run_container["context"].run(func, *args, **kwargs)
                 try:
                     while True:
                         item = run_container["context"].run(next, generator_result)
@@ -643,6 +643,17 @@ def traceable(
         else:
             selected_wrapper = wrapper
         setattr(selected_wrapper, "__langsmith_traceable__", True)
+        sig = inspect.signature(selected_wrapper)
+        if not sig.parameters.get("config"):
+            sig = sig.replace(
+                parameters=[
+                    *sig.parameters.values(),
+                    inspect.Parameter(
+                        "config", inspect.Parameter.KEYWORD_ONLY, default=None
+                    ),
+                ]
+            )
+            selected_wrapper.__signature__ = sig  # type: ignore[attr-defined]
         return selected_wrapper
 
     # If the decorator is called with no arguments, then it's being used as a
@@ -760,17 +771,12 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         >>> runnable = as_runnable(my_function)
     """
     try:
-        from langchain.callbacks.manager import (
-            AsyncCallbackManager,
-            CallbackManager,
-        )
-        from langchain.callbacks.tracers.langchain import LangChainTracer
-        from langchain.schema.runnable import RunnableConfig, RunnableLambda
-        from langchain.schema.runnable.utils import Input, Output
+        from langchain_core.runnables import RunnableConfig, RunnableLambda
+        from langchain_core.runnables.utils import Input, Output
     except ImportError as e:
         raise ImportError(
-            "as_runnable requires langchain to be installed. "
-            "You can install it with `pip install langchain`."
+            "as_runnable requires langchain-core to be installed. "
+            "You can install it with `pip install langchain-core`."
         ) from e
     if not is_traceable_function(traceable_fn):
         try:
@@ -821,37 +827,13 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             )
 
         @staticmethod
-        def _configure_run_tree(callback_manager: Any) -> Optional[run_trees.RunTree]:
-            run_tree: Optional[run_trees.RunTree] = None
-            if isinstance(callback_manager, (CallbackManager, AsyncCallbackManager)):
-                lc_tracers = [
-                    handler
-                    for handler in callback_manager.handlers
-                    if isinstance(handler, LangChainTracer)
-                ]
-                if lc_tracers:
-                    lc_tracer = lc_tracers[0]
-                    run_tree = run_trees.RunTree(
-                        id=callback_manager.parent_run_id,
-                        session_name=lc_tracer.project_name,
-                        name="Wrapping",
-                        run_type="chain",
-                        inputs={},
-                        tags=callback_manager.tags,
-                        extra={"metadata": callback_manager.metadata},
-                    )
-            return run_tree
-
-        @staticmethod
         def _wrap_sync(
             func: Callable[..., Output],
         ) -> Callable[[Input, RunnableConfig], Output]:
             """Wrap a synchronous function to make it asynchronous."""
 
             def wrap_traceable(inputs: dict, config: RunnableConfig) -> Any:
-                run_tree = RunnableTraceable._configure_run_tree(
-                    config.get("callbacks")
-                )
+                run_tree = run_trees.RunTree.from_runnable_config(cast(dict, config))
                 return func(**inputs, langsmith_extra={"run_tree": run_tree})
 
             return cast(Callable[[Input, RunnableConfig], Output], wrap_traceable)
@@ -872,9 +854,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
             afunc_ = cast(Callable[..., Awaitable[Output]], afunc)
 
             async def awrap_traceable(inputs: dict, config: RunnableConfig) -> Any:
-                run_tree = RunnableTraceable._configure_run_tree(
-                    config.get("callbacks")
-                )
+                run_tree = run_trees.RunTree.from_runnable_config(cast(dict, config))
                 return await afunc_(**inputs, langsmith_extra={"run_tree": run_tree})
 
             return cast(
@@ -921,6 +901,7 @@ class _ContainerInput(TypedDict, total=False):
     project_name: Optional[str]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
+    invocation_params_fn: Optional[Callable[[dict], dict]]
 
 
 def _container_end(
@@ -962,7 +943,9 @@ def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
     return extra_inner
 
 
-def _get_parent_run(langsmith_extra: LangSmithExtra) -> Optional[run_trees.RunTree]:
+def _get_parent_run(
+    langsmith_extra: LangSmithExtra, config: Optional[dict] = None
+) -> Optional[run_trees.RunTree]:
     parent = langsmith_extra.get("parent")
     if isinstance(parent, run_trees.RunTree):
         return parent
@@ -973,7 +956,27 @@ def _get_parent_run(langsmith_extra: LangSmithExtra) -> Optional[run_trees.RunTr
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
-    return get_current_run_tree()
+    crt = get_current_run_tree()
+    if _runtime_env.get_langchain_core_version() is not None:
+        if rt := run_trees.RunTree.from_runnable_config(config):
+            # Still need to break ties when alternating between traceable and
+            # LanChain code.
+            # Nesting: LC -> LS -> LS, we want to still use LS as the parent
+            # Otherwise would look like LC -> {LS, LS} (siblings)
+            if (
+                not crt  # Simple LC -> LS
+                # Let user override if manually passed in or invoked in a
+                # RunnableSequence. This is a naive check.
+                or (config is not None and config.get("callbacks"))
+                # If the LangChain dotted order is more nested than the LangSmith
+                # dotted order, use the LangChain run as the parent.
+                # Note that this condition shouldn't be triggered in later
+                # versions of core, since we also update the run_tree context
+                # vars when updating the RunnableConfig context var.
+                or rt.dotted_order > crt.dotted_order
+            ):
+                return rt
+    return crt
 
 
 def _setup_run(
@@ -992,7 +995,7 @@ def _setup_run(
     run_type = container_input.get("run_type") or "chain"
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
-    parent_run_ = _get_parent_run(langsmith_extra)
+    parent_run_ = _get_parent_run(langsmith_extra, kwargs.get("config"))
     project_cv = _PROJECT_NAME.get()
     selected_project = (
         project_cv  # From parent trace
@@ -1037,6 +1040,16 @@ def _setup_run(
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
     inputs = _get_inputs_safe(signature, *args, **kwargs)
+    invocation_params_fn = container_input.get("invocation_params_fn")
+    if invocation_params_fn:
+        try:
+            invocation_params = {
+                k: v for k, v in invocation_params_fn(inputs).items() if v is not None
+            }
+            if invocation_params and isinstance(invocation_params, dict):
+                metadata_.update(invocation_params)
+        except BaseException as e:
+            LOGGER.error(f"Failed to infer invocation params for {name_}: {e}")
     process_inputs = container_input.get("process_inputs")
     if process_inputs:
         try:

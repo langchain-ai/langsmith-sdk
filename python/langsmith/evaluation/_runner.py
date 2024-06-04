@@ -9,6 +9,7 @@ import functools
 import itertools
 import logging
 import pathlib
+import random
 import threading
 import uuid
 from contextvars import copy_context
@@ -38,9 +39,11 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
 from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import (
+    ComparisonEvaluationResult,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
+    comparison_evaluator,
     run_evaluator,
 )
 from langsmith.evaluation.integrations import LangChainStringEvaluator
@@ -79,6 +82,7 @@ def evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
 ) -> ExperimentResults:
@@ -103,6 +107,9 @@ def evaluate(
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
+        num_repetitions (int): The number of times to run the evaluation.
+            Each item in the dataset will be run and evaluated this many times.
+            Defaults to 1.
 
     Returns:
         ExperimentResults: The results of the evaluation.
@@ -238,6 +245,7 @@ def evaluate(
         experiment_prefix=experiment_prefix,
         description=description,
         max_concurrency=max_concurrency,
+        num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
     )
@@ -407,7 +415,346 @@ class ExperimentResults:
         self._thread.join()
 
 
+## Public API for Comparison Experiments
+
+# Row-level evaluator
+COMPARATIVE_EVALUATOR_T = Callable[
+    [Sequence[schemas.Run], Optional[schemas.Example]],
+    Union[
+        Union[ComparisonEvaluationResult, dict],
+        Awaitable[Union[ComparisonEvaluationResult, dict]],
+    ],
+]
+
+
+def evaluate_comparative(
+    experiments: Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]],
+    /,
+    evaluators: Sequence[COMPARATIVE_EVALUATOR_T],
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: int = 5,
+    client: Optional[langsmith.Client] = None,
+    metadata: Optional[dict] = None,
+    load_nested: bool = False,
+    randomize_order: bool = False,
+) -> ComparativeExperimentResults:
+    r"""Evaluate existing experiment runs against each other.
+
+    This lets you use pairwise preference scoring to generate more
+    reliable feedback in your experiments.
+
+    Args:
+        experiments (Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]]):
+            The identifiers of the experiments to compare.
+        evaluators (Sequence[COMPARATIVE_EVALUATOR_T]):
+            A list of evaluators to run on each example.
+        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+            Defaults to None.
+        description (Optional[str]): A free-form text description for the experiment.
+        max_concurrency (int): The maximum number of concurrent evaluations to run.
+            Defaults to 5.
+        client (Optional[langsmith.Client]): The LangSmith client to use.
+            Defaults to None.
+        metadata (Optional[dict]): Metadata to attach to the experiment.
+            Defaults to None.
+        load_nested (bool): Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs.
+        randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
+            Default is False.
+
+    Returns:
+        ComparativeExperimentResults: The results of the comparative evaluation.
+
+    Examples:
+        Suppose you want to compare two prompts to see which one is more effective.
+        You would first prepare your dataset:
+
+        >>> from typing import Sequence
+        >>> from langsmith import Client
+        >>> from langsmith.evaluation import evaluate
+        >>> from langsmith.schemas import Example, Run
+        >>> client = Client()
+        >>> client.clone_public_dataset(
+        ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+        ... )
+        >>> dataset_name = "Evaluate Examples"
+
+        Then you would run your different prompts:
+        >>> import functools
+        >>> import openai
+        >>> from langsmith.evaluation import evaluate
+        >>> from langsmith.wrappers import wrap_openai
+        >>> oai_client = openai.Client()
+        >>> wrapped_client = wrap_openai(oai_client)
+        >>> prompt_1 = "You are a helpful assistant."
+        >>> prompt_2 = "You are an exceedingly helpful assistant."
+        >>> def predict(inputs: dict, prompt: str) -> dict:
+        ...     completion = wrapped_client.chat.completions.create(
+        ...         model="gpt-3.5-turbo",
+        ...         messages=[
+        ...             {"role": "system", "content": prompt},
+        ...             {
+        ...                 "role": "user",
+        ...                 "content": f"Context: {inputs['context']}"
+        ...                 f"\n\ninputs['question']",
+        ...             },
+        ...         ],
+        ...     )
+        ...     return {"output": completion.choices[0].message.content}
+        >>> results_1 = evaluate(
+        ...     functools.partial(predict, prompt=prompt_1),
+        ...     data=dataset_name,
+        ...     description="Evaluating our basic system prompt.",
+        ...     blocking=False,  # Run these experiments in parallel
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> results_2 = evaluate(
+        ...     functools.partial(predict, prompt=prompt_2),
+        ...     data=dataset_name,
+        ...     description="Evaluating our advanced system prompt.",
+        ...     blocking=False,
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> results_1.wait()
+        >>> results_2.wait()
+
+            Finally, you would compare the two prompts directly:
+        >>> import json
+        >>> from langsmith.evaluation import evaluate_comparative
+        >>> def score_preferences(runs: list, example):
+        ...     pred_a = runs[0].outputs["output"]
+        ...     pred_b = runs[1].outputs["output"]
+        ...     ground_truth = example.outputs["answer"]
+        ...     tools = [
+        ...         {
+        ...             "type": "function",
+        ...             "function": {
+        ...                 "name": "rank_preferences",
+        ...                 "description": "Saves the prefered response ('A' or 'B')",
+        ...                 "parameters": {
+        ...                     "type": "object",
+        ...                     "properties": {
+        ...                         "reasoning": {
+        ...                             "type": "string",
+        ...                             "description": "The reasoning behind the choice.",
+        ...                         },
+        ...                         "preferred_option": {
+        ...                             "type": "string",
+        ...                             "enum": ["A", "B"],
+        ...                             "description": "The preferred option, either 'A' or 'B'",
+        ...                         },
+        ...                     },
+        ...                     "required": ["preferred_option"],
+        ...                 },
+        ...             },
+        ...         }
+        ...     ]
+        ...     completion = openai.Client().chat.completions.create(
+        ...         model="gpt-3.5-turbo",
+        ...         messages=[
+        ...             {"role": "system", "content": "Select the better response."},
+        ...             {
+        ...                 "role": "user",
+        ...                 "content": f"Option A: {pred_a}"
+        ...                 f"\n\nOption B: {pred_b}"
+        ...                 f"\n\nGround Truth: {ground_truth}",
+        ...             },
+        ...         ],
+        ...         tools=tools,
+        ...         tool_choice={
+        ...             "type": "function",
+        ...             "function": {"name": "rank_preferences"},
+        ...         },
+        ...     )
+        ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
+        ...     preference = json.loads(tool_args)["preferred_option"]
+        ...     if preference == "A":
+        ...         return {
+        ...             "key": "ranked_preference",
+        ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...         }
+        ...     else:
+        ...         return {
+        ...             "key": "ranked_preference",
+        ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...         }
+        >>> results = evaluate_comparative(
+        ...     [results_1.experiment_name, results_2.experiment_name],
+        ...     evaluators=[score_preferences],
+        ...     client=client,
+        ... )  # doctest: +ELLIPSIS
+        View the pairwise evaluation results at:...
+    """  # noqa: E501
+    if len(experiments) < 2:
+        raise ValueError("Comparative evaluation requires at least 2 experiments.")
+    if not evaluators:
+        raise ValueError(
+            "At least one evaluator is required for comparative evaluation."
+        )
+    if max_concurrency < 0:
+        raise ValueError("max_concurrency must be a positive integer.")
+    client = client or langsmith.Client()
+
+    # TODO: Add information about comparison experiments
+    projects = [_load_experiment(experiment, client) for experiment in experiments]
+    ref_datasets_ = [str(p.reference_dataset_id) for p in projects]
+    if not len(set(ref_datasets_)) == 1:
+        raise ValueError("All experiments must have the same reference dataset.")
+    experiment_ids = [p.id for p in projects]
+    if experiment_prefix is None:
+        experiment_names = [p.name for p in projects if p.name is not None]
+        experiment_name = (
+            " vs. ".join(experiment_names) + "-" + str(uuid.uuid4().hex[:4])
+        )
+    else:
+        experiment_name = experiment_prefix + "-" + str(uuid.uuid4().hex[:8])
+    comparative_experiment_id = uuid.uuid4()
+    comparative_experiment = client.create_comparative_experiment(
+        experiment_name,
+        experiments=experiment_ids,
+        description=description,
+        metadata=metadata,
+        id=comparative_experiment_id,
+    )
+    _print_comparative_experiment_start(
+        cast(
+            Tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+            tuple(projects),
+        ),
+        comparative_experiment,
+    )
+    runs = [
+        _load_traces(experiment, client, load_nested=load_nested)
+        for experiment in experiments
+    ]
+    # Only check intersections for the experiments
+    examples_intersection = None
+    for runs_list in runs:
+        example_ids_set = {run.reference_example_id for run in runs_list}
+        if examples_intersection is None:
+            examples_intersection = example_ids_set
+        else:
+            examples_intersection &= example_ids_set
+    example_ids_nullable = (
+        list(examples_intersection) if examples_intersection is not None else []
+    )
+    example_ids = [eid for eid in example_ids_nullable if eid is not None]
+    # TODO: Warn if different dataset versions, etc. are used in the different
+    # experiments. We aren't providing any training wheels here.
+    batch_size = 99
+    data = {}
+    for i in range(0, len(example_ids), batch_size):
+        example_ids_batch = example_ids[i : i + batch_size]
+        for e in client.list_examples(
+            dataset_id=projects[0].reference_dataset_id,
+            as_of=projects[0].metadata.get("dataset_version"),
+            example_ids=example_ids_batch,
+        ):
+            data[e.id] = e
+    runs_dict: Dict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    for runs_list in runs:
+        for run in runs_list:
+            if run.reference_example_id in data:
+                runs_dict[cast(uuid.UUID, run.reference_example_id)].append(run)
+
+    comparators = [comparison_evaluator(evaluator) for evaluator in evaluators or []]
+    results: dict = {}
+
+    def evaluate_and_submit_feedback(
+        runs_list: list[schemas.Run], example: schemas.Example, executor: cf.Executor
+    ) -> ComparisonEvaluationResult:
+        feedback_group_id = uuid.uuid4()
+        if randomize_order:
+            random.shuffle(runs_list)
+        result = comparator.compare_runs(runs_list, example)
+        if client is None:
+            raise ValueError("Client is required to submit feedback.")
+        for run_id, score in result.scores.items():
+            executor.submit(
+                client.create_feedback,
+                run_id=run_id,
+                key=result.key,
+                score=score,
+                comparative_experiment_id=comparative_experiment.id,
+                source_run_id=result.source_run_id,
+                feedback_group_id=feedback_group_id,
+            )
+        return result
+
+    tqdm = _load_tqdm()
+    with cf.ThreadPoolExecutor(max_workers=max_concurrency or 1) as executor:
+        futures = []
+        for example_id, runs_list in tqdm(runs_dict.items()):
+            results[example_id] = {
+                "runs": runs_list,
+            }
+            for comparator in comparators:
+                if max_concurrency > 1:
+                    future = executor.submit(
+                        evaluate_and_submit_feedback,
+                        runs_list,
+                        data[example_id],
+                        executor,
+                    )
+                    futures.append(future)
+                else:
+                    result = evaluate_and_submit_feedback(
+                        runs_list, data[example_id], executor
+                    )
+                    results[example_id][f"feedback.{result.key}"] = result
+            if futures:
+                cf.wait(futures)
+                for future in futures:
+                    result = future.result()
+                    results[example_id][f"feedback.{result.key}"] = result
+
+    return ComparativeExperimentResults(results)
+
+
+class ComparativeExperimentResults:
+    """Represents the results of an evaluate_comparative() call.
+
+    This class provides an iterator interface to iterate over the experiment results
+    as they become available. It also provides methods to access the experiment name,
+    the number of results, and to wait for the results to be processed.
+
+    Methods:
+        experiment_name() -> str: Returns the name of the experiment.
+        wait() -> None: Waits for the experiment data to be processed.
+    """
+
+    def __init__(
+        self,
+        results: dict,
+    ):
+        self._results = results
+
+    def __getitem__(self, key):
+        """Return the result associated with the given key."""
+        return self._results[key]
+
+
 ## Private API
+
+
+def _print_comparative_experiment_start(
+    experiments: Tuple[schemas.TracerSession, schemas.TracerSession],
+    comparative_experiment: schemas.ComparativeExperiment,
+) -> None:
+    url = experiments[0].url or experiments[1].url
+    if url:
+        project_url = url.split("?")[0]
+        dataset_id = comparative_experiment.reference_dataset_id
+        base_url = project_url.split("/projects/p/")[0]
+        comparison_url = (
+            f"{base_url}/datasets/{dataset_id}/compare?"
+            f"selectedSessions={'%2C'.join([str(e.id) for e in experiments])}"
+            f"&comparativeExperiment={comparative_experiment.id}"
+        )
+        print(  # noqa: T201
+            f"View the pairwise evaluation results at:\n{comparison_url}\n\n"
+        )
 
 
 def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run]]) -> bool:
@@ -424,6 +771,7 @@ def _evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[schemas.TracerSession] = None,
@@ -443,6 +791,7 @@ def _evaluate(
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
         description=description,
+        num_repetitions=num_repetitions,
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -639,6 +988,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     Args:
         data (DATA_T): The data used for the experiment. Can be a dataset name or ID OR
             a generator of examples.
+        num_repetitions (int): The number of times to run over the data.
         runs (Optional[Iterable[schemas.Run]]): The runs associated with the experiment
             predictions.
         experiment (Optional[schemas.TracerSession]): The tracer session
@@ -664,6 +1014,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
+        num_repetitions: int = 1,
     ):
         super().__init__(
             experiment=experiment,
@@ -676,11 +1027,16 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._runs = runs
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
+        self._num_repetitions = num_repetitions
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
             self._examples = _resolve_data(self._data, client=self.client)
+            if self._num_repetitions > 1:
+                self._examples = itertools.chain.from_iterable(
+                    itertools.tee(self._examples, self._num_repetitions)
+                )
         self._examples, examples_iter = itertools.tee(self._examples)
         return examples_iter
 
@@ -714,6 +1070,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         first_example = next(itertools.islice(self.examples, 1))
         project = self._get_project(first_example)
         self._print_experiment_start(project, first_example)
+        self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
             self.examples,
             experiment=project,
@@ -980,6 +1337,23 @@ class _ExperimentManager(_ExperimentManagerMixin):
         max_modified_at = max(modified_at) if modified_at else None
         return max_modified_at.isoformat() if max_modified_at else None
 
+    def _get_dataset_splits(self) -> Optional[list[str]]:
+        examples = list(self.examples)
+        splits = set()
+        for example in examples:
+            if (
+                example.metadata
+                and example.metadata.get("dataset_split")
+                and isinstance(example.metadata["dataset_split"], list)
+            ):
+                for split in example.metadata["dataset_split"]:
+                    if isinstance(split, str):
+                        splits.add(split)
+            else:
+                splits.add("base")
+
+        return list(splits)
+
     def _end(self) -> None:
         experiment = self._experiment
         if experiment is None:
@@ -987,6 +1361,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
         project_metadata = self._get_experiment_metadata()
         project_metadata["dataset_version"] = self._get_dataset_version()
+        project_metadata["dataset_splits"] = self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
             end_time=datetime.datetime.now(datetime.timezone.utc),
@@ -1091,12 +1466,14 @@ def _resolve_data(
     return data
 
 
-def _ensure_traceable(target: TARGET_T) -> rh.SupportsLangsmithExtra:
+def _ensure_traceable(
+    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],
+) -> rh.SupportsLangsmithExtra[[dict], dict]:
     """Ensure the target function is traceable."""
     if not callable(target):
         raise ValueError("Target must be a callable function.")
     if rh.is_traceable_function(target):
-        fn = cast(rh.SupportsLangsmithExtra, target)
+        fn = target
     else:
         fn = rh.traceable(name="Target")(target)
     return fn

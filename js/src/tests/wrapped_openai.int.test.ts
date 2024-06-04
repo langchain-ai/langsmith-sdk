@@ -4,6 +4,8 @@ import { jest } from "@jest/globals";
 import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
@@ -59,7 +61,7 @@ test.concurrent("chat.completions", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: unknown[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
   }
@@ -72,7 +74,7 @@ test.concurrent("chat.completions", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -124,7 +126,7 @@ test.concurrent("chat.completions", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: unknown[] = [];
   for await (const chunk of patchedStreamWithMetadata) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -244,7 +246,7 @@ test.concurrent("chat completions with tool calling", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: any[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
   }
@@ -262,7 +264,7 @@ test.concurrent("chat completions with tool calling", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: any[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -303,7 +305,7 @@ test.concurrent("chat completions with tool calling", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: any[] = [];
   for await (const chunk of patchedStream2) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -320,6 +322,10 @@ test.concurrent("chat completions with tool calling", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
       thing1: "thing2",
+      ls_model_name: "gpt-3.5-turbo",
+      ls_model_type: "chat",
+      ls_provider: "openai",
+      ls_temperature: 0,
     });
   }
   callSpy.mockClear();
@@ -362,7 +368,7 @@ test.concurrent("completions", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: unknown[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -378,7 +384,7 @@ test.concurrent("completions", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -409,7 +415,7 @@ test.concurrent("completions", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: unknown[] = [];
   for await (const chunk of patchedStream2) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -439,7 +445,7 @@ test.skip("with initialization time config", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -461,4 +467,70 @@ test.skip("no tracing with env var unset", async () => {
   });
   expect(patched).toBeDefined();
   console.log(patched);
+});
+
+test("wrapping same instance", async () => {
+  const wrapped = wrapOpenAI(new OpenAI());
+  expect(() => wrapOpenAI(wrapped)).toThrowError(
+    "This instance of OpenAI client has been already wrapped once."
+  );
+});
+
+test("chat.concurrent extra name", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  await openai.chat.completions.create(
+    {
+      messages: [{ role: "user", content: `Say 'red'` }],
+      temperature: 0,
+      seed: 42,
+      model: "gpt-3.5-turbo",
+    },
+    { langsmithExtra: { name: "red", metadata: { customKey: "red" } } }
+  );
+
+  const stream = await openai.chat.completions.create(
+    {
+      messages: [{ role: "user", content: `Say 'green'` }],
+      temperature: 0,
+      seed: 42,
+      model: "gpt-3.5-turbo",
+      stream: true,
+    },
+    { langsmithExtra: { name: "green", metadata: { customKey: "green" } } }
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of stream) {
+    // pass
+  }
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["red:0", "green:1"],
+    edges: [],
+    data: {
+      "red:0": {
+        name: "red",
+        extra: { metadata: { customKey: "red" } },
+        outputs: {
+          choices: [
+            { index: 0, message: { role: "assistant", content: "Red" } },
+          ],
+        },
+      },
+      "green:1": {
+        name: "green",
+        extra: { metadata: { customKey: "green" } },
+        outputs: {
+          choices: [
+            { index: 0, message: { role: "assistant", content: "Green" } },
+          ],
+        },
+      },
+    },
+  });
 });

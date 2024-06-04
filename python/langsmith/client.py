@@ -1070,11 +1070,14 @@ class Client:
         self,
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
+        copy: bool = False,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
         Args:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
+            update (bool, optional): Whether to update the run. Defaults to False.
+            copy (bool, optional): Whether to copy the run. Defaults to False.
 
         Returns:
             dict: The transformed run object as a dictionary.
@@ -1088,8 +1091,12 @@ class Client:
         elif isinstance(run_create["id"], str):
             run_create["id"] = uuid.UUID(run_create["id"])
         if "inputs" in run_create and run_create["inputs"] is not None:
+            if copy:
+                run_create["inputs"] = ls_utils.deepish_copy(run_create["inputs"])
             run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
         if "outputs" in run_create and run_create["outputs"] is not None:
+            if copy:
+                run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
@@ -1177,9 +1184,8 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create)
+        run_create = self._run_transform(run_create, copy=True)
         self._insert_runtime_env([run_create])
-
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
@@ -1413,6 +1419,7 @@ class Client:
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
+            outputs = ls_utils.deepish_copy(outputs)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
@@ -2962,6 +2969,7 @@ class Client:
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         dataset_id: Optional[ID_TYPE] = None,
@@ -2978,6 +2986,9 @@ class Client:
             The output values for the examples.
         metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The metadata for the examples.
+        split :  Optional[Sequence[Optional[str | List[str]]]], default=None
+            The splits for the examples, which are divisions
+            of your dataset such as 'train', 'test', or 'validation'.
         source_run_ids : Optional[Sequence[Optional[ID_TYPE]]], default=None
                 The IDs of the source runs associated with the examples.
         ids : Optional[Sequence[ID_TYPE]], default=None
@@ -3007,13 +3018,15 @@ class Client:
                 "outputs": out_,
                 "dataset_id": dataset_id,
                 "metadata": metadata_,
+                "split": split_,
                 "id": id_,
                 "source_run_id": source_run_id_,
             }
-            for in_, out_, metadata_, id_, source_run_id_ in zip(
+            for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
                 inputs,
                 outputs or [None] * len(inputs),
                 metadata or [None] * len(inputs),
+                splits or [None] * len(inputs),
                 ids or [None] * len(inputs),
                 source_run_ids or [None] * len(inputs),
             )
@@ -3035,6 +3048,7 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
+        split: Optional[str | List[str]] = None,
         example_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -3056,6 +3070,9 @@ class Client:
                 The output values for the example.
             metadata : Mapping[str, Any] or None, default=None
                 The metadata for the example.
+            split : str or List[str] or None, default=None
+                The splits for the example, which are divisions
+                of your dataset such as 'train', 'test', or 'validation'.
             exemple_id : UUID or None, default=None
                 The ID of the example to create. If not provided, a new
                 example will be created.
@@ -3071,6 +3088,7 @@ class Client:
             "outputs": outputs,
             "dataset_id": dataset_id,
             "metadata": metadata,
+            "split": split,
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
@@ -3120,6 +3138,7 @@ class Client:
         dataset_name: Optional[str] = None,
         example_ids: Optional[Sequence[ID_TYPE]] = None,
         as_of: Optional[Union[datetime.datetime, str]] = None,
+        splits: Optional[Sequence[str]] = None,
         inline_s3_urls: bool = True,
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
@@ -3138,6 +3157,9 @@ class Client:
                 timestamp to retrieve the examples as of.
                 Response examples will only be those that were present at the time
                 of the tagged (or timestamped) version.
+            splits (List[str], optional): A list of dataset splits, which are
+                divisions of your dataset such as 'train', 'test', or 'validation'.
+                Returns examples only from the specified splits.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
             limit (int, optional): The maximum number of examples to return.
@@ -3151,6 +3173,7 @@ class Client:
             "as_of": (
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
             ),
+            "splits": splits,
             "inline_s3_urls": inline_s3_urls,
             "limit": min(limit, 100) if limit is not None else 100,
         }
@@ -3181,6 +3204,7 @@ class Client:
         inputs: Optional[Dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Dict] = None,
+        split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
@@ -3195,6 +3219,9 @@ class Client:
             The output values to update.
         metadata : Dict or None, default=None
             The metadata to update.
+        split : str or List[str] or None, default=None
+            The dataset split to update, such as
+            'train', 'test', or 'validation'.
         dataset_id : UUID or None, default=None
             The ID of the dataset to update.
 
@@ -3208,6 +3235,7 @@ class Client:
             outputs=outputs,
             dataset_id=dataset_id,
             metadata=metadata,
+            split=split,
         )
         response = self.session.patch(
             f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
@@ -3468,6 +3496,8 @@ class Client:
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
         stop_after_attempt: int = 10,
         project_id: Optional[ID_TYPE] = None,
+        comparative_experiment_id: Optional[ID_TYPE] = None,
+        feedback_group_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -3507,6 +3537,12 @@ class Client:
         project_id : str or UUID
             The ID of the project_id to provide feedback on. One - and only one - of
             this and run_id must be provided.
+        comparative_experiment_id : str or UUID
+            If this feedback was logged as a part of a comparative experiment, this
+            associates the feedback with that experiment.
+        feedback_group_id : str or UUID
+            When logging preferences, ranking runs, or other comparative feedback,
+            this is used to group feedback together.
         """
         if run_id is None and project_id is None:
             raise ValueError("One of run_id and project_id must be provided")
@@ -3560,12 +3596,15 @@ class Client:
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
             session_id=project_id,
+            comparative_experiment_id=comparative_experiment_id,
+            feedback_group_id=feedback_group_id,
         )
+        feedback_block = _dumps_json(feedback.dict(exclude_none=True))
         self.request_with_retries(
             "POST",
             "/feedback",
             request_kwargs={
-                "data": _dumps_json(feedback.dict(exclude_none=True)),
+                "data": feedback_block,
             },
             stop_after_attempt=stop_after_attempt,
             retry_on=(ls_utils.LangSmithNotFoundError,),
@@ -3802,6 +3841,81 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.FeedbackIngestToken(**response.json())
 
+    def create_presigned_feedback_tokens(
+        self,
+        run_id: ID_TYPE,
+        feedback_keys: Sequence[str],
+        *,
+        expiration: Optional[datetime.datetime | datetime.timedelta] = None,
+        feedback_configs: Optional[
+            Sequence[Optional[ls_schemas.FeedbackConfig]]
+        ] = None,
+    ) -> Sequence[ls_schemas.FeedbackIngestToken]:
+        """Create a pre-signed URL to send feedback data to.
+
+        This is useful for giving browser-based clients a way to upload
+        feedback data directly to LangSmith without accessing the
+        API key.
+
+        Args:
+            run_id:
+            feedback_key:
+            expiration: The expiration time of the pre-signed URL.
+                Either a datetime or a timedelta offset from now.
+                Default to 3 hours.
+            feedback_config: FeedbackConfig or None.
+                If creating a feedback_key for the first time,
+                this defines how the metric should be interpreted,
+                such as a continuous score (w/ optional bounds),
+                or distribution over categorical values.
+
+        Returns:
+            The pre-signed URL for uploading feedback data.
+        """
+        # validate
+        if feedback_configs is not None and len(feedback_keys) != len(feedback_configs):
+            raise ValueError(
+                "The length of feedback_keys and feedback_configs must be the same."
+            )
+        if not feedback_configs:
+            feedback_configs = [None] * len(feedback_keys)
+        # build expiry option
+        expires_in, expires_at = None, None
+        if expiration is None:
+            expires_in = ls_schemas.TimeDeltaInput(
+                days=0,
+                hours=3,
+                minutes=0,
+            )
+        elif isinstance(expiration, datetime.datetime):
+            expires_at = expiration.isoformat()
+        elif isinstance(expiration, datetime.timedelta):
+            expires_in = ls_schemas.TimeDeltaInput(
+                days=expiration.days,
+                hours=expiration.seconds // 3600,
+                minutes=(expiration.seconds // 60) % 60,
+            )
+        else:
+            raise ValueError(f"Unknown expiration type: {type(expiration)}")
+        # assemble body, one entry per key
+        body: List[Dict[str, Any]] = [
+            {
+                "run_id": run_id,
+                "feedback_key": feedback_key,
+                "feedback_config": feedback_config,
+                "expires_in": expires_in,
+                "expires_at": expires_at,
+            }
+            for feedback_key, feedback_config in zip(feedback_keys, feedback_configs)
+        ]
+        response = self.request_with_retries(
+            "POST",
+            "/feedback/tokens",
+            data=_dumps_json(body),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return [ls_schemas.FeedbackIngestToken(**part) for part in response.json()]
+
     def list_presigned_feedback_tokens(
         self,
         run_id: ID_TYPE,
@@ -3997,6 +4111,64 @@ class Client:
             yield ls_schemas.RunWithAnnotationQueueInfo(**run)
             if limit is not None and i + 1 >= limit:
                 break
+
+    def create_comparative_experiment(
+        self,
+        name: str,
+        experiments: Sequence[ID_TYPE],
+        *,
+        reference_dataset: Optional[ID_TYPE] = None,
+        description: Optional[str] = None,
+        created_at: Optional[datetime.datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        id: Optional[ID_TYPE] = None,
+    ) -> ls_schemas.ComparativeExperiment:
+        """Create a comparative experiment on the LangSmith API.
+
+        These experiments compare 2 or more experiment results over a shared dataset.
+
+        Args:
+            name: The name of the comparative experiment.
+            experiments: The IDs of the experiments to compare.
+            reference_dataset: The ID of the dataset these experiments are compared on.
+            description: The description of the comparative experiment.
+            created_at: The creation time of the comparative experiment.
+            metadata: Additional metadata for the comparative experiment.
+
+        Returns:
+            The created comparative experiment object.
+        """
+        if not experiments:
+            raise ValueError("At least one experiment is required.")
+        if reference_dataset is None:
+            # Get one of the experiments' reference dataset
+            reference_dataset = self.read_project(
+                project_id=experiments[0]
+            ).reference_dataset_id
+        if not reference_dataset:
+            raise ValueError("A reference dataset is required.")
+        body: Dict[str, Any] = {
+            "id": id,
+            "name": name,
+            "experiment_ids": experiments,
+            "reference_dataset_id": reference_dataset,
+            "description": description,
+            "created_at": created_at or datetime.datetime.now(datetime.timezone.utc),
+            "extra": {},
+        }
+        if metadata is not None:
+            body["extra"]["metadata"] = metadata
+        ser = _dumps_json({k: v for k, v in body.items()})  # if v is not None})
+        response = self.request_with_retries(
+            "POST",
+            "/datasets/comparative",
+            request_kwargs={
+                "data": ser,
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        response_d = response.json()
+        return ls_schemas.ComparativeExperiment(**response_d)
 
     async def arun_on_dataset(
         self,
