@@ -513,7 +513,7 @@ def _middle_copy(
     if copier is not None:
         try:
             return copier(memo)
-        except (TypeError, ValueError, RecursionError):
+        except BaseException:
             pass
     if _depth >= max_depth:
         return val
@@ -546,7 +546,7 @@ def deepish_copy(val: T) -> T:
     memo: Dict[int, Any] = {}
     try:
         return copy.deepcopy(val, memo)
-    except Exception as e:
+    except BaseException as e:
         # Generators, locks, etc. cannot be copied
         # and raise a TypeError (mentioning pickling, since the dunder methods)
         # are re-used for copying. We'll try to do a compromise and copy
