@@ -821,7 +821,9 @@ async def test_traceable_async():
         return [query, query]
 
     @traceable
-    async def some_async_func(queries: list, **kwargs: Any) -> list:
+    async def some_async_func(queries: list, *, required: str, **kwargs: Any) -> list:
+        assert required == "foo"
+        assert kwargs == {"a": 1, "b": 2}
         await asyncio.sleep(0.01)
         return queries
 
@@ -846,7 +848,9 @@ async def test_traceable_async():
         query: str,
     ) -> list:
         expanded_terms = some_sync_func(query=query)
-        documents = await some_async_func(queries=expanded_terms, a=1, b=2)
+        documents = await some_async_func(
+            queries=expanded_terms, required="foo", a=1, b=2
+        )
 
         await another_async_func(query=query)
 
