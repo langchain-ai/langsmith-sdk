@@ -136,7 +136,7 @@ def test_bar_parametrized(x, y, z):
     return {"z": x + y}
 
 
-@unit
+@unit(test_suite_name="tests.evaluation.test_evaluation::test_foo_async_parametrized")
 @pytest.mark.parametrize("x, y", [(1, 2), (2, 3)])
 async def test_foo_async_parametrized(x, y):
     await asyncio.sleep(0.1)
