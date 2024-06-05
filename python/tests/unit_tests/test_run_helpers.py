@@ -17,6 +17,7 @@ from langsmith.run_helpers import (
     _get_inputs,
     as_runnable,
     is_traceable_function,
+    trace,
     traceable,
     tracing_context,
 )
@@ -954,3 +955,50 @@ def test_trace_to_traceable():
     assert len(child_runs) == 1
     assert child_runs[0].name == "child_fn"
     assert child_runs[0].inputs == {"a": 1, "b": 2}
+
+
+def test_client_passed_when_traceable_parent():
+    mock_client = _get_mock_client()
+    rt = RunTree(name="foo", client=mock_client)
+    headers = rt.to_headers()
+
+    @traceable
+    def my_run(foo: str):
+        return {"baz": "buzz"}
+
+    my_run(foo="bar", langsmith_extra={"parent": headers, "client": mock_client})
+    for _ in range(1):
+        time.sleep(0.1)
+        if mock_client.session.request.call_count > 0:
+            break
+    assert mock_client.session.request.call_count == 1
+    call = mock_client.session.request.call_args
+    assert call.args[0] == "POST"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(call.kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["inputs"] == {"foo": "bar"}
+    assert body["post"][0]["outputs"] == {"baz": "buzz"}
+
+
+def test_client_passed_when_trace_parent():
+    mock_client = _get_mock_client()
+    rt = RunTree(name="foo", client=mock_client)
+    headers = rt.to_headers()
+
+    with trace(
+        name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
+    ) as rt:
+        rt.outputs["bar"] = "baz"
+    for _ in range(1):
+        time.sleep(0.1)
+        if mock_client.session.request.call_count > 0:
+            break
+    assert mock_client.session.request.call_count == 1
+    call = mock_client.session.request.call_args
+    assert call.args[0] == "POST"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(call.kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["inputs"] == {"foo": "bar"}
+    assert body["post"][0]["outputs"] == {"bar": "baz"}

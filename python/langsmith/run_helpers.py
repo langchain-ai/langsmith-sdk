@@ -702,7 +702,7 @@ def trace(
     outer_metadata = _METADATA.get()
     outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
     parent_run_ = _get_parent_run(
-        {"parent": parent, "run_tree": kwargs.get("run_tree")}
+        {"parent": parent, "run_tree": kwargs.get("run_tree"), "client": client}
     )
 
     # Merge and set context variables
@@ -953,21 +953,28 @@ def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
 
 
 def _get_parent_run(
-    langsmith_extra: LangSmithExtra, config: Optional[dict] = None
+    langsmith_extra: LangSmithExtra,
+    config: Optional[dict] = None,
 ) -> Optional[run_trees.RunTree]:
     parent = langsmith_extra.get("parent")
     if isinstance(parent, run_trees.RunTree):
         return parent
     if isinstance(parent, dict):
-        return run_trees.RunTree.from_headers(parent)
+        return run_trees.RunTree.from_headers(
+            parent, client=langsmith_extra.get("client")
+        )
     if isinstance(parent, str):
-        return run_trees.RunTree.from_dotted_order(parent)
+        return run_trees.RunTree.from_dotted_order(
+            parent, client=langsmith_extra.get("client")
+        )
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
     crt = get_current_run_tree()
     if _runtime_env.get_langchain_core_version() is not None:
-        if rt := run_trees.RunTree.from_runnable_config(config):
+        if rt := run_trees.RunTree.from_runnable_config(
+            config, client=langsmith_extra.get("client")
+        ):
             # Still need to break ties when alternating between traceable and
             # LanChain code.
             # Nesting: LC -> LS -> LS, we want to still use LS as the parent
@@ -1004,7 +1011,10 @@ def _setup_run(
     run_type = container_input.get("run_type") or "chain"
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
-    parent_run_ = _get_parent_run(langsmith_extra, kwargs.get("config"))
+    client_ = langsmith_extra.get("client", client)
+    parent_run_ = _get_parent_run(
+        {**langsmith_extra, "client": client_}, kwargs.get("config")
+    )
     project_cv = _PROJECT_NAME.get()
     selected_project = (
         project_cv  # From parent trace
@@ -1068,7 +1078,6 @@ def _setup_run(
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
     context.run(_TAGS.set, tags_)
     tags_ += tags or []
-    client_ = langsmith_extra.get("client", client)
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
             name=name_,
