@@ -409,10 +409,13 @@ class _LangSmithTestSuite:
 
     @classmethod
     def from_test(
-        cls, client: Optional[ls_client.Client], func: Callable
+        cls,
+        client: Optional[ls_client.Client],
+        func: Callable,
+        test_suite_name: Optional[str] = None,
     ) -> _LangSmithTestSuite:
         client = client or ls_client.Client()
-        test_suite_name = _get_test_suite_name(func)
+        test_suite_name = test_suite_name or _get_test_suite_name(func)
         with cls._lock:
             if not cls._instances:
                 cls._instances = {}
@@ -496,6 +499,7 @@ class _LangSmithTestSuite:
                 outputs=outputs_,
                 dataset_id=self.id,
                 metadata=metadata,
+                created_at=self._experiment.start_time,
             )
         if example.modified_at:
             self.update_version(example.modified_at)
@@ -531,7 +535,9 @@ def _ensure_example(
     if output_keys:
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
-    test_suite = _LangSmithTestSuite.from_test(client, func)
+    test_suite = _LangSmithTestSuite.from_test(
+        client, func, langtest_extra.get("test_suite_name")
+    )
     example_id, example_name = _get_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id
     test_suite.sync_example(
