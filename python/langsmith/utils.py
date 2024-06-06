@@ -67,11 +67,19 @@ class LangSmithConnectionError(LangSmithError):
 
 def tracing_is_enabled() -> bool:
     """Return True if tracing is enabled."""
-    from langsmith.run_helpers import get_tracing_context
+    from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
     tc = get_tracing_context()
+    # You can manually override the environment using context vars.
+    # Check that first.
+    # Doing this before checking the run tree lets us
+    # disable a branch within a trace.
     if tc["enabled"] is not None:
         return tc["enabled"]
+    # Next check if we're mid-trace
+    if get_current_run_tree():
+        return True
+    # Finally, check the global environment
     var_result = get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))
     return var_result == "true"
 

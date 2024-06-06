@@ -343,7 +343,7 @@ def test_create_run_mutate() -> None:
         trace_id=id_,
         dotted_order=run_dict["dotted_order"],
     )
-    for _ in range(7):
+    for _ in range(10):
         time.sleep(0.1)  # Give the background thread time to stop
         payloads = [
             json.loads(call[2]["data"])

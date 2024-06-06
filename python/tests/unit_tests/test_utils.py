@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any, NamedTuple, Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import attr
 import dataclasses_json
@@ -15,6 +15,7 @@ import pytest
 from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
+from langsmith import Client, traceable
 from langsmith.run_helpers import tracing_context
 
 
@@ -87,7 +88,9 @@ class LangSmithProjectNameTest(unittest.TestCase):
 
 
 def test_tracing_enabled():
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+    with patch.dict(
+        "os.environ", {"LANGCHAIN_TRACING_V2": "false", "LANGSMITH_TRACING": "false"}
+    ):
         assert not ls_utils.tracing_is_enabled()
         with tracing_context(enabled=True):
             assert ls_utils.tracing_is_enabled()
@@ -97,9 +100,39 @@ def test_tracing_enabled():
             assert not ls_utils.tracing_is_enabled()
         assert not ls_utils.tracing_is_enabled()
 
+    @traceable
+    def child_function():
+        assert ls_utils.tracing_is_enabled()
+        return 1
+
+    @traceable
+    def untraced_child_function():
+        assert not ls_utils.tracing_is_enabled()
+        return 1
+
+    @traceable
+    def parent_function():
+        with patch.dict(
+            "os.environ",
+            {"LANGCHAIN_TRACING_V2": "false", "LANGSMITH_TRACING": "false"},
+        ):
+            assert ls_utils.tracing_is_enabled()
+            child_function()
+        with tracing_context(enabled=False):
+            assert not ls_utils.tracing_is_enabled()
+            return untraced_child_function()
+
+    with patch.dict(
+        "os.environ", {"LANGCHAIN_TRACING_V2": "true", "LANGSMITH_TRACING": "true"}
+    ):
+        mock_client = MagicMock(spec=Client)
+        parent_function(langsmith_extra={"client": mock_client})
+
 
 def test_tracing_disabled():
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with patch.dict(
+        "os.environ", {"LANGCHAIN_TRACING_V2": "true", "LANGSMITH_TRACING": "true"}
+    ):
         assert ls_utils.tracing_is_enabled()
         with tracing_context(enabled=False):
             assert not ls_utils.tracing_is_enabled()
