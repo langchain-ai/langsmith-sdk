@@ -88,7 +88,9 @@ class LangSmithProjectNameTest(unittest.TestCase):
 
 
 def test_tracing_enabled():
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+    with patch.dict(
+        "os.environ", {"LANGCHAIN_TRACING_V2": "false", "LANGSMITH_TRACING": "false"}
+    ):
         assert not ls_utils.tracing_is_enabled()
         with tracing_context(enabled=True):
             assert ls_utils.tracing_is_enabled()
@@ -110,20 +112,27 @@ def test_tracing_enabled():
 
     @traceable
     def parent_function():
-        with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "false"}):
+        with patch.dict(
+            "os.environ",
+            {"LANGCHAIN_TRACING_V2": "false", "LANGSMITH_TRACING": "false"},
+        ):
             assert ls_utils.tracing_is_enabled()
             child_function()
         with tracing_context(enabled=False):
             assert not ls_utils.tracing_is_enabled()
             return untraced_child_function()
 
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with patch.dict(
+        "os.environ", {"LANGCHAIN_TRACING_V2": "true", "LANGSMITH_TRACING": "true"}
+    ):
         mock_client = MagicMock(spec=Client)
         parent_function(langsmith_extra={"client": mock_client})
 
 
 def test_tracing_disabled():
-    with patch.dict("os.environ", {"LANGCHAIN_TRACING_V2": "true"}):
+    with patch.dict(
+        "os.environ", {"LANGCHAIN_TRACING_V2": "true", "LANGSMITH_TRACING": "true"}
+    ):
         assert ls_utils.tracing_is_enabled()
         with tracing_context(enabled=False):
             assert not ls_utils.tracing_is_enabled()
