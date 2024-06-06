@@ -91,7 +91,20 @@ def test_tracing_enabled():
     with patch.dict(
         "os.environ", {"LANGCHAIN_TRACING_V2": "false", "LANGSMITH_TRACING": "false"}
     ):
-        assert not ls_utils.tracing_is_enabled()
+        from langsmith.run_helpers import (  # noqa
+            get_tracing_context,
+            _set_tracing_context,
+        )
+
+        _set_tracing_context({"parent_": None})
+
+        from langsmith.utils import get_env_var  # noqa
+
+        tc = get_tracing_context()
+        var_result = get_env_var(
+            "TRACING_V2", default=get_env_var("TRACING", default="")
+        )
+        assert not ls_utils.tracing_is_enabled(), f"tc=[{tc}] var_result=[{var_result}]"
         with tracing_context(enabled=True):
             assert ls_utils.tracing_is_enabled()
             with tracing_context(enabled=False):
