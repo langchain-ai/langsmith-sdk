@@ -8,7 +8,13 @@ if TYPE_CHECKING:
     from langsmith.client import Client
     from langsmith.evaluation import aevaluate, evaluate
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
-    from langsmith.run_helpers import trace, traceable
+    from langsmith.run_helpers import (
+        get_current_run_tree,
+        get_tracing_context,
+        trace,
+        traceable,
+        tracing_context,
+    )
     from langsmith.run_trees import RunTree
 
 
@@ -62,6 +68,20 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation import aevaluate
 
         return aevaluate
+    elif name == "tracing_context":
+        from langsmith.run_helpers import tracing_context
+
+        return tracing_context
+
+    elif name == "get_tracing_context":
+        from langsmith.run_helpers import get_tracing_context
+
+        return get_tracing_context
+
+    elif name == "get_current_run_tree":
+        from langsmith.run_helpers import get_current_run_tree
+
+        return get_current_run_tree
 
     elif name == "unit":
         from langsmith._testing import unit
@@ -84,4 +104,7 @@ __all__ = [
     "expect",
     "evaluate",
     "aevaluate",
+    "tracing_context",
+    "get_tracing_context",
+    "get_current_run_tree",
 ]
