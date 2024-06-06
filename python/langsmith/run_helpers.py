@@ -698,6 +698,7 @@ def trace(
             f"{sorted(kwargs.keys())}.",
             DeprecationWarning,
         )
+    old_ctx = get_tracing_context()
     outer_tags = _TAGS.get()
     outer_metadata = _METADATA.get()
     outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
@@ -739,6 +740,7 @@ def trace(
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)
     _PROJECT_NAME.set(project_name_)
+
     try:
         yield new_run
     except (Exception, KeyboardInterrupt, BaseException) as e:
@@ -751,10 +753,8 @@ def trace(
         new_run.patch()
         raise e
     finally:
-        _PARENT_RUN_TREE.set(parent_run_)
-        _PROJECT_NAME.set(outer_project)
-        _TAGS.set(outer_tags)
-        _METADATA.set(outer_metadata)
+        # Reset the old context
+        _set_tracing_context(old_ctx)
     new_run.patch()
 
 
