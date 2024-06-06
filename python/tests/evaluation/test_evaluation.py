@@ -3,7 +3,7 @@ from typing import Sequence
 
 import pytest
 
-from langsmith import Client, aevaluate, evaluate, expect, unit
+from langsmith import Client, aevaluate, evaluate, expect, test
 from langsmith.schemas import Example, Run
 
 
@@ -95,7 +95,7 @@ async def test_aevaluate():
         assert count == 2
 
 
-@unit
+@test
 def test_foo():
     expect(3 + 4).to_equal(7)
 
@@ -110,33 +110,33 @@ def expected_output():
     return "input"
 
 
-@unit(output_keys=["expected_output"])
+@test(output_keys=["expected_output"])
 def test_bar(some_input: str, expected_output: str):
     expect(some_input).to_contain(expected_output)
 
 
-@unit
+@test
 async def test_baz():
     await asyncio.sleep(0.1)
     expect(3 + 4).to_equal(7)
     return 7
 
 
-@unit
+@test
 @pytest.mark.parametrize("x, y", [(1, 2), (2, 3)])
 def test_foo_parametrized(x, y):
     expect(x + y).to_be_greater_than(0)
     return x + y
 
 
-@unit(output_keys=["z"])
+@test(output_keys=["z"])
 @pytest.mark.parametrize("x, y, z", [(1, 2, 3), (2, 3, 5)])
 def test_bar_parametrized(x, y, z):
     expect(x + y).to_equal(z)
     return {"z": x + y}
 
 
-@unit(test_suite_name="tests.evaluation.test_evaluation::test_foo_async_parametrized")
+@test(test_suite_name="tests.evaluation.test_evaluation::test_foo_async_parametrized")
 @pytest.mark.parametrize("x, y", [(1, 2), (2, 3)])
 async def test_foo_async_parametrized(x, y):
     await asyncio.sleep(0.1)
@@ -144,7 +144,7 @@ async def test_foo_async_parametrized(x, y):
     return x + y
 
 
-@unit(output_keys=["z"])
+@test(output_keys=["z"])
 @pytest.mark.parametrize("x, y, z", [(1, 2, 3), (2, 3, 5)])
 async def test_bar_async_parametrized(x, y, z):
     await asyncio.sleep(0.1)
@@ -152,11 +152,11 @@ async def test_bar_async_parametrized(x, y, z):
     return {"z": x + y}
 
 
-@unit
+@test
 def test_pytest_skip():
     pytest.skip("Skip this test")
 
 
-@unit
+@test
 async def test_async_pytest_skip():
     pytest.skip("Skip this test")

@@ -1,14 +1,14 @@
 """Make approximate assertions as "expectations" on test results.
 
-This module is designed to be used within test cases decorated with the `@unit` decorator
+This module is designed to be used within test cases decorated with the `@test` decorator
 It allows you to log scores about a test case and optionally make assertions that log as
 "expectation" feedback to LangSmith.
 
 Example usage:
 
-    from langsmith import expect, unit
+    from langsmith import expect, test
 
-    @unit
+    @test
     def test_output_semantically_close():
         response = oai_client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -37,7 +37,7 @@ Example usage:
         # Or using a custom check
         expect.value(response_txt).against(lambda x: "Hello" in x)
 
-        # You can even use this for basic metric logging within unit tests
+        # You can even use this for basic metric logging within tests
 
         expect.score(0.8)
         expect.score(0.7, key="similarity").to_be_greater_than(0.7)
