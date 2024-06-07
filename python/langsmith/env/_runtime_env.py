@@ -19,6 +19,18 @@ except ImportError:
     _PSUTIL_AVAILABLE = False
 logger = logging.getLogger(__name__)
 
+# Global package versions to track
+_package_versions: Dict[str, str] = {}
+
+
+def set_package_version(package_name: str, version: str) -> None:
+    """Set the version of a package to track in metadata.
+
+    e.g. set_package_version("langchain-core", "0.2.0")
+    """
+    global _package_versions
+    _package_versions[package_name] = version
+
 
 def get_runtime_and_metrics() -> dict:
     """Get the runtime information as well as metrics."""
@@ -80,6 +92,7 @@ def get_runtime_environment() -> dict:
         "langchain_version": get_langchain_environment(),
         "langchain_core_version": get_langchain_core_version(),
         **shas,
+        **get_package_versions_dict(),
     }
 
 
@@ -165,6 +178,11 @@ def get_langchain_env_vars() -> dict:
             v = env_vars[key]
             env_vars[key] = v[:2] + "*" * (len(v) - 4) + v[-2:]
     return env_vars
+
+
+def get_package_versions_dict() -> Dict[str, str]:
+    """Get the package versions."""
+    return {f"package_version_{k}": v for k, v in _package_versions.items()}
 
 
 @functools.lru_cache(maxsize=1)
