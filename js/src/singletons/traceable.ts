@@ -51,13 +51,27 @@ export const getCurrentRunTree = () => {
       [
         "Could not get the current run tree.",
         "",
-        "Please make sure you are calling this method within a traceable function.",
+        "Please make sure you are calling this method within a traceable function or the tracing is enabled.",
       ].join("\n")
     );
   }
 
   return runTree;
 };
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function withRunTree<Fn extends (...args: any[]) => any>(
+  runTree: RunTree,
+  fn: Fn
+): Promise<Awaited<ReturnType<Fn>>> {
+  const storage = AsyncLocalStorageProviderSingleton.getInstance();
+  return new Promise<Awaited<ReturnType<Fn>>>((resolve, reject) => {
+    storage.run(
+      runTree,
+      () => void Promise.resolve(fn()).then(resolve).catch(reject)
+    );
+  });
+}
 
 export const ROOT = Symbol.for("langsmith:traceable:root");
 

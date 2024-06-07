@@ -92,6 +92,11 @@ interface LangChainTracerLike extends TracerLike {
   client: Client;
 }
 
+interface HeadersLike {
+  get(name: string): string | null;
+  set(name: string, value: string): void;
+}
+
 /**
  * Baggage header information
  */
@@ -405,10 +410,18 @@ export class RunTree implements BaseRun {
   }
 
   static fromHeaders(
-    headers: Record<string, string>,
+    headers: Record<string, string | string[]> | HeadersLike,
     inheritArgs?: RunTreeConfig
   ): RunTree | undefined {
-    const headerTrace = headers["langsmith-trace"];
+    const rawHeaders: Record<string, string | string[] | null> =
+      "get" in headers && typeof headers.get === "function"
+        ? {
+            "langsmith-trace": headers.get("langsmith-trace"),
+            baggage: headers.get("baggage"),
+          }
+        : (headers as Record<string, string | string[]>);
+
+    const headerTrace = rawHeaders["langsmith-trace"];
     if (!headerTrace || typeof headerTrace !== "string") return undefined;
 
     const parentDottedOrder = headerTrace.trim();
@@ -429,8 +442,8 @@ export class RunTree implements BaseRun {
       dotted_order: parentDottedOrder,
     };
 
-    if (headers["baggage"]) {
-      const baggage = Baggage.fromHeader(headers["baggage"]);
+    if (rawHeaders["baggage"] && typeof rawHeaders["baggage"] === "string") {
+      const baggage = Baggage.fromHeader(rawHeaders["baggage"]);
       config.metadata = baggage.metadata;
       config.tags = baggage.tags;
     }
@@ -438,11 +451,19 @@ export class RunTree implements BaseRun {
     return new RunTree(config);
   }
 
-  toHeaders() {
-    return {
+  toHeaders(headers?: HeadersLike) {
+    const result = {
       "langsmith-trace": this.dotted_order,
       baggage: new Baggage(this.extra?.metadata, this.tags).toHeader(),
     };
+
+    if (headers) {
+      for (const [key, value] of Object.entries(result)) {
+        headers.set(key, value);
+      }
+    }
+
+    return result;
   }
 }
 
