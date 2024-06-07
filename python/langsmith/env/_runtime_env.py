@@ -185,7 +185,7 @@ def get_package_versions_dict() -> Dict[str, str]:
     """Get the package versions."""
     print(sorted(list(k for k in sys.modules.keys() if k.startswith("langchain"))))
     auto_versions: Dict[str, str] = {
-        f"package_version_{packagename}": module.__version__
+        f"package_version_{packagename.split('.')[0]}": module.__version__
         for packagename, module in sys.modules.items()
         if hasattr(module, "__version__") and packagename.startswith("langchain")
     }
