@@ -583,6 +583,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 export {
   getCurrentRunTree,
   isTraceableFunction,
+  withRunTree,
   ROOT,
 } from "./singletons/traceable.js";
 
