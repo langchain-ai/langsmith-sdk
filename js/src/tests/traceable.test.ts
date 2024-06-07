@@ -1,10 +1,5 @@
 import { RunTree, RunTreeConfig } from "../run_trees.js";
-import {
-  ROOT,
-  getCurrentRunTree,
-  traceable,
-  withRunTree,
-} from "../traceable.js";
+import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 
