@@ -32,19 +32,20 @@ def test_git_info() -> None:
     assert "langsmith-sdk" in git_info["remote_url"]
 
 
-def test_package_versions() -> None:
-    def _get_package_versions() -> Dict[str, str]:
-        return {
-            k: v
-            for k, v in get_runtime_environment().items()
-            if k.startswith("package_version_")
-        }
+def _get_package_versions() -> Dict[str, str]:
+    return {
+        k: v
+        for k, v in get_runtime_environment().items()
+        if k.startswith("package_version_")
+    }
 
-    assert len(_get_package_versions()) == 0
+
+def test_package_versions_manual() -> None:
     set_package_version("foo", "1.2.3")
     set_package_version("bar", "4.5.6")
     set_package_version("foo-bar", "7.8.9")
 
+    # note this is cached, so multiple tests are difficult
     assert _get_package_versions() == {
         "package_version_foo": "1.2.3",
         "package_version_bar": "4.5.6",

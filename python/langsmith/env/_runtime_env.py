@@ -3,6 +3,7 @@
 import functools
 import logging
 import os
+import sys
 import platform
 import subprocess
 from typing import Dict, List, Optional, Union
@@ -182,7 +183,14 @@ def get_langchain_env_vars() -> dict:
 
 def get_package_versions_dict() -> Dict[str, str]:
     """Get the package versions."""
-    return {f"package_version_{k}": v for k, v in _package_versions.items()}
+    print(sorted(list(k for k in sys.modules.keys() if k.startswith("langchain"))))
+    auto_versions: Dict[str, str] = {
+        f"package_version_{packagename}": module.__version__
+        for packagename, module in sys.modules.items()
+        if hasattr(module, "__version__") and packagename.startswith("langchain")
+    }
+    manuals = {f"package_version_{k}": v for k, v in _package_versions.items()}
+    return {**auto_versions, **manuals}
 
 
 @functools.lru_cache(maxsize=1)
