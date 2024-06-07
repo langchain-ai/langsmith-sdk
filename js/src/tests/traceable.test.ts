@@ -131,16 +131,17 @@ describe("distributed tracing", () => {
       { name: "child" }
     );
 
-    const parent = traceable(
-      async function parent() {
-        const first = await child();
-        const second = await child();
-        return first + second;
-      },
-      { client, name: "parent", tracingEnabled: true }
-    );
+    const parent = traceable(async function parent() {
+      const first = await child();
+      const second = await child();
+      return first + second;
+    });
 
-    const clientRunTree = new RunTree({ name: "client", client });
+    const clientRunTree = new RunTree({
+      name: "client",
+      client,
+      tracingEnabled: true,
+    });
     await clientRunTree.postRun();
 
     // do nothing with the client run tree
@@ -183,17 +184,17 @@ describe("distributed tracing", () => {
       { name: "child" }
     );
 
-    const parent = traceable(
-      async function parent() {
-        console.log("parent", getCurrentRunTree());
-        const first = await child();
-        const second = await child();
-        return first + second;
-      },
-      { client, tracingEnabled: true }
-    );
+    const parent = traceable(async function parent() {
+      const first = await child();
+      const second = await child();
+      return first + second;
+    });
 
-    const clientRunTree = new RunTree({ name: "client", client });
+    const clientRunTree = new RunTree({
+      name: "client",
+      client,
+      tracingEnabled: true,
+    });
     await clientRunTree.postRun();
     await clientRunTree.patchRun();
 
