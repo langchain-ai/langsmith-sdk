@@ -1,5 +1,5 @@
-import type { RunTree, RunTreeConfig } from "../run_trees.js";
-import { ROOT, traceable } from "../traceable.js";
+import { RunTree, RunTreeConfig } from "../run_trees.js";
+import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 
@@ -112,6 +112,117 @@ test("passing run tree manually", async () => {
       ["child:4", "child:5"],
       ["child:5", "child:6"],
     ],
+  });
+});
+
+describe("distributed tracing", () => {
+  it("default", async () => {
+    const { client, callSpy } = mockClient();
+    const child = traceable(
+      async (depth = 0): Promise<number> => {
+        if (depth < 2) return child(depth + 1);
+        return 3;
+      },
+      { name: "child" }
+    );
+
+    const parent = traceable(async function parent() {
+      const first = await child();
+      const second = await child();
+      return first + second;
+    });
+
+    const clientRunTree = new RunTree({
+      name: "client",
+      client,
+      tracingEnabled: true,
+    });
+    await clientRunTree.postRun();
+
+    // do nothing with the client run tree
+
+    await clientRunTree.patchRun();
+
+    const response = await withRunTree(clientRunTree, () => parent());
+    expect(response).toBe(6);
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "client:0",
+        "parent:1",
+        "child:2",
+        "child:3",
+        "child:4",
+        "child:5",
+        "child:6",
+        "child:7",
+      ],
+      edges: [
+        ["client:0", "parent:1"],
+        ["parent:1", "child:2"],
+        ["child:2", "child:3"],
+        ["child:3", "child:4"],
+        ["parent:1", "child:5"],
+        ["child:5", "child:6"],
+        ["child:6", "child:7"],
+      ],
+    });
+  });
+
+  it("sync function", async () => {
+    const { client, callSpy } = mockClient();
+    const child = traceable(
+      async (depth = 0): Promise<number> => {
+        if (depth < 2) return child(depth + 1);
+        return 3;
+      },
+      { name: "child" }
+    );
+
+    const parent = traceable(async function parent() {
+      const first = await child();
+      const second = await child();
+      return first + second;
+    });
+
+    const clientRunTree = new RunTree({
+      name: "client",
+      client,
+      tracingEnabled: true,
+    });
+    await clientRunTree.postRun();
+    await clientRunTree.patchRun();
+
+    let promiseOutside: Promise<unknown> = Promise.resolve();
+
+    const response = await withRunTree(clientRunTree, () => {
+      promiseOutside = parent();
+    });
+
+    expect(response).toBeUndefined();
+    await promiseOutside;
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "client:0",
+        "parent:1",
+        "child:2",
+        "child:3",
+        "child:4",
+        "child:5",
+        "child:6",
+        "child:7",
+      ],
+      edges: [
+        ["client:0", "parent:1"],
+        ["parent:1", "child:2"],
+        ["child:2", "child:3"],
+        ["child:3", "child:4"],
+        ["parent:1", "child:5"],
+        ["child:5", "child:6"],
+        ["child:6", "child:7"],
+      ],
+    });
   });
 });
 
