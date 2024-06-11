@@ -41,6 +41,7 @@ import {
 } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
+import { warnOnce } from "./utils/warn.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -2233,6 +2234,9 @@ export class Client {
     return result;
   }
 
+  /**
+   * @deprecated This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead.
+   */
   public async evaluateRun(
     run: Run | string,
     evaluator: RunEvaluator,
@@ -2246,6 +2250,9 @@ export class Client {
       referenceExample?: Example;
     } = { loadChildRuns: false }
   ): Promise<Feedback> {
+    warnOnce(
+      "This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead."
+    );
     let run_: Run;
     if (typeof run === "string") {
       run_ = await this.readRun(run, { loadChildRuns });
@@ -2260,21 +2267,15 @@ export class Client {
     ) {
       referenceExample = await this.readExample(run_.reference_example_id);
     }
+
     const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
-    let sourceInfo_ = sourceInfo ?? {};
-    if (feedbackResult.evaluatorInfo) {
-      sourceInfo_ = { ...sourceInfo_, ...feedbackResult.evaluatorInfo };
-    }
-    const runId = feedbackResult.targetRunId ?? run_.id;
-    return await this.createFeedback(runId, feedbackResult.key, {
-      score: feedbackResult?.score,
-      value: feedbackResult?.value,
-      comment: feedbackResult?.comment,
-      correction: feedbackResult?.correction,
-      sourceInfo: sourceInfo_,
-      feedbackSourceType: "model",
-      sourceRunId: feedbackResult?.sourceRunId,
-    });
+    const [_, feedbacks] = await this._logEvaluationFeedback(
+      feedbackResult,
+      run_,
+      sourceInfo
+    );
+
+    return feedbacks[0];
   }
 
   public async createFeedback(
@@ -2599,14 +2600,17 @@ export class Client {
     return results_;
   }
 
-  public async logEvaluationFeedback(
+  async _logEvaluationFeedback(
     evaluatorResponse: EvaluationResult | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
-  ): Promise<EvaluationResult[]> {
-    const results: Array<EvaluationResult> =
+  ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
+    const evalResults: Array<EvaluationResult> =
       this._selectEvalResults(evaluatorResponse);
-    for (const res of results) {
+
+    const feedbacks: Feedback[] = [];
+
+    for (const res of evalResults) {
       let sourceInfo_ = sourceInfo || {};
       if (res.evaluatorInfo) {
         sourceInfo_ = { ...res.evaluatorInfo, ...sourceInfo_ };
@@ -2618,17 +2622,33 @@ export class Client {
         runId_ = run.id;
       }
 
-      await this.createFeedback(runId_, res.key, {
-        score: res.score,
-        value: res.value,
-        comment: res.comment,
-        correction: res.correction,
-        sourceInfo: sourceInfo_,
-        sourceRunId: res.sourceRunId,
-        feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
-        feedbackSourceType: "model",
-      });
+      feedbacks.push(
+        await this.createFeedback(runId_, res.key, {
+          score: res.score,
+          value: res.value,
+          comment: res.comment,
+          correction: res.correction,
+          sourceInfo: sourceInfo_,
+          sourceRunId: res.sourceRunId,
+          feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
+          feedbackSourceType: "model",
+        })
+      );
     }
+
+    return [evalResults, feedbacks];
+  }
+
+  public async logEvaluationFeedback(
+    evaluatorResponse: EvaluationResult | EvaluationResults,
+    run?: Run,
+    sourceInfo?: { [key: string]: any }
+  ): Promise<EvaluationResult[]> {
+    const [results] = await this._logEvaluationFeedback(
+      evaluatorResponse,
+      run,
+      sourceInfo
+    );
     return results;
   }
 }
