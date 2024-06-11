@@ -16,6 +16,7 @@ from langsmith import Client
 from langsmith.run_helpers import (
     _get_inputs,
     as_runnable,
+    get_current_run_tree,
     is_traceable_function,
     trace,
     traceable,
@@ -1002,3 +1003,50 @@ def test_client_passed_when_trace_parent():
     assert body["post"]
     assert body["post"][0]["inputs"] == {"foo": "bar"}
     assert body["post"][0]["outputs"] == {"bar": "baz"}
+
+
+def test_from_runnable_config():
+    try:
+        from langchain_core.tools import tool  # type: ignore
+        from langchain_core.tracers.langchain import LangChainTracer  # type: ignore
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+
+    gc_run_id = uuid.uuid4()
+
+    @tool
+    def my_grandchild_tool(text: str, callbacks: Any = None) -> str:
+        """Foo."""
+        lct: LangChainTracer = callbacks.handlers[0]
+        assert str(gc_run_id) in lct.run_map
+        run = lct.run_map[str(gc_run_id)]
+        assert run.name == "my_grandchild_tool"
+        assert run.run_type == "tool"
+        parent_run = lct.run_map[str(run.parent_run_id)]
+        assert parent_run
+        assert parent_run.name == "my_traceable"
+        assert parent_run.run_type == "retriever"
+        grandparent_run = lct.run_map[str(parent_run.parent_run_id)]
+        assert grandparent_run
+        assert grandparent_run.name == "my_tool"
+        assert grandparent_run.run_type == "tool"
+        return text
+
+    @traceable(run_type="retriever")
+    def my_traceable(text: str) -> str:
+        rt = get_current_run_tree()
+        assert rt
+        assert rt.run_type == "retriever"
+        assert rt.parent_run_id
+        assert rt.parent_run
+        assert rt.parent_run.run_type == "tool"
+        return my_grandchild_tool.invoke({"text": text}, {"run_id": gc_run_id})
+
+    @tool
+    def my_tool(text: str) -> str:
+        """Foo."""
+        return my_traceable(text)
+
+    mock_client = _get_mock_client()
+    tracer = LangChainTracer(client=mock_client)
+    my_tool.invoke({"text": "hello"}, {"callbacks": [tracer]})
