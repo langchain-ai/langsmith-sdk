@@ -2224,7 +2224,9 @@ class Client:
                     )
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
-                if len(results) % batch_size == 0:
+                else:
+                    logger.warning(f"Run {r.id} has no reference example ID.")
+                if len(example_ids) % batch_size == 0:
                     # Ensure not empty
                     if batch := example_ids[cursor : cursor + batch_size]:
                         futures.append(executor.submit(fetch_examples, batch))
