@@ -14,6 +14,7 @@ import threading
 import uuid
 from contextvars import copy_context
 from typing import (
+    TYPE_CHECKING,
     Awaitable,
     Callable,
     DefaultDict,
@@ -47,6 +48,9 @@ from langsmith.evaluation.evaluator import (
     run_evaluator,
 )
 from langsmith.evaluation.integrations import LangChainStringEvaluator
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +239,12 @@ def evaluate(
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+
+        You can convert the results to a list or a pandas DataFrame for further analysis:
+        >>> # results.as_list() # Returns a list of dictionaries
+        >>> df = results.as_pandas()
+        >>> df.head() # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
+        example_id  ...
     """  # noqa: E501
     return _evaluate(
         target,
@@ -375,6 +385,7 @@ class ExperimentResults:
             target=lambda: self._process_data(self._manager)
         )
         self._thread.start()
+        self._summary_results: Optional[Dict[str, EvaluationResults]] = None
 
     @property
     def experiment_name(self) -> str:
@@ -413,6 +424,46 @@ class ExperimentResults:
         finished its execution.
         """
         self._thread.join()
+
+    def as_list(self) -> List[ExperimentResultRow]:
+        """Return the evaluation results as a flattened list."""
+        self.wait()
+        rows = []
+        for row in self:
+            example = row["example"]
+            run = row["run"]
+            eval_results = row["evaluation_results"]
+            row = {
+                "example_id": example.id,
+                **{f"input.{k}": v for k, v in example.inputs.items()},
+                **{f"outputs.{k}": v for k, v in (run.outputs or {}).items()},
+                **{f"expected.{k}": v for k, v in (example.outputs or {}).items()},
+                "execution_time": (
+                    (run.end_time - run.start_time).total_seconds()
+                    if run.end_time
+                    else None
+                ),
+                "error": run.error,
+                "id": run.id,
+            }
+            if eval_results:
+                for eval_result in eval_results["results"]:
+                    # TODO: This doesn't handle duplicates
+                    row[f"feedback.{eval_result.key}"] = eval_result.score
+            rows.append(row)
+        return rows
+
+    def as_pandas(self) -> pd.DataFrame:
+        """Return a flattened pandas DataFrame of the evaluation results."""
+        try:
+            import pandas as pd  # type: ignore
+        except ImportError:
+            raise ImportError(
+                "Pandas is required for this method."
+                " Please install with 'pip install pandas'"
+            )
+        rows = self.as_list()
+        return pd.DataFrame(rows)
 
 
 ## Public API for Comparison Experiments
