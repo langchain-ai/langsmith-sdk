@@ -726,14 +726,14 @@ class Client:
         """
         request_kwargs = request_kwargs or {}
         request_kwargs = {
+            "timeout": (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
+            **request_kwargs,
+            **kwargs,
             "headers": {
                 **self._headers,
                 **request_kwargs.get("headers", {}),
                 **kwargs.get("headers", {}),
             },
-            "timeout": (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
-            **request_kwargs,
-            **kwargs,
         }
         if (
             method != "GET"
@@ -1041,6 +1041,7 @@ class Client:
             data["description"] = description
         if data_type:
             data["data_type"] = ls_utils.get_enum_value(data_type)
+        data["id"] = str(uuid.uuid4())
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
@@ -2016,7 +2017,7 @@ class Client:
             params["upsert"] = True
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
-        response = self.session.post(
+        response = self.request_with_retries(
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(body),
@@ -2065,7 +2066,8 @@ class Client:
             "description": description,
             "end_time": end_time.isoformat() if end_time else None,
         }
-        response = self.session.patch(
+        response = self.request_with_retries(
+            "PATCH",
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(body),
@@ -3795,8 +3797,9 @@ class Client:
         )
         if source_api_url != self.api_url:
             raise ValueError(f"Invalid source API URL. {source_api_url}")
-        response = self.session.post(
-            f"{source_api_url}/feedback/tokens/{_as_uuid(token_uuid)}",
+        response = self.request_with_retries(
+            "POST",
+            f"/feedback/tokens/{_as_uuid(token_uuid)}",
             data=_dumps_json(
                 {
                     "score": score,
