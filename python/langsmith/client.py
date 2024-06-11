@@ -738,6 +738,7 @@ class Client:
         if (
             method != "GET"
             and "data" in request_kwargs
+            and "files" not in request_kwargs
             and not request_kwargs["headers"].get("Content-Type")
         ):
             request_kwargs["headers"]["Content-Type"] = "application/json"
@@ -1048,7 +1049,6 @@ class Client:
                 response = self.request_with_retries(
                     "POST",
                     "/datasets/upload",
-                    headers=self._headers,
                     data=data,
                     files=file_,
                 )
@@ -1056,7 +1056,6 @@ class Client:
             response = self.request_with_retries(
                 "POST",
                 "/datasets/upload",
-                headers=self._headers,
                 data=data,
                 files={"file": csv_file},
             )
