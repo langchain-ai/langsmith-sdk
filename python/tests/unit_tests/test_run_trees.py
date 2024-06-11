@@ -4,11 +4,11 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
+from freezegun import freeze_time
+from syrupy import SnapshotAssertion
 
 from langsmith import run_trees
 from langsmith.client import Client
-from syrupy import SnapshotAssertion
-from freezegun import freeze_time
 
 
 def test_run_tree_accepts_tpe() -> None:
@@ -120,7 +120,6 @@ def test_nested_run_trees_from_dotted_order():
 
 @freeze_time("2023-01-01")
 def test_run_tree_to_dict(snapshot: SnapshotAssertion):
-
     run_tree = run_trees.RunTree(
         id="e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2",
         name="My Chat Bot",
