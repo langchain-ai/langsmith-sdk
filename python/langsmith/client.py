@@ -657,8 +657,9 @@ class Client:
         """
         if self._info is None:
             try:
-                response = self.session.get(
-                    self.api_url + "/info",
+                response = self.request_with_retries(
+                    "GET",
+                    "/info",
                     headers={"Accept": "application/json"},
                     timeout=(self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
                 )
@@ -1038,15 +1039,17 @@ class Client:
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
-                response = self.session.post(
-                    self.api_url + "/datasets/upload",
+                response = self.request_with_retries(
+                    "POST",
+                    "/datasets/upload",
                     headers=self._headers,
                     data=data,
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
-            response = self.session.post(
-                self.api_url + "/datasets/upload",
+            response = self.request_with_retries(
+                "POST",
+                "/datasets/upload",
                 headers=self._headers,
                 data=data,
                 files={"file": csv_file},
@@ -1751,8 +1754,9 @@ class Client:
             "run_id": str(run_id_),
             "share_token": share_id or str(uuid.uuid4()),
         }
-        response = self.session.put(
-            f"{self.api_url}/runs/{run_id_}/share",
+        response = self.request_with_retries(
+            "PUT",
+            f"/runs/{run_id_}/share",
             headers=self._headers,
             json=data,
         )
@@ -1762,8 +1766,9 @@ class Client:
 
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run."""
-        response = self.session.delete(
-            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}/share",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/runs/{_as_uuid(run_id, 'run_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1778,8 +1783,9 @@ class Client:
             Optional[str]: The shared link for the run, or None if the link is not
             available.
         """
-        response = self.session.get(
-            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}/share",
+        response = self.request_with_retries(
+            "GET",
+            f"/runs/{_as_uuid(run_id, 'run_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1798,8 +1804,9 @@ class Client:
     ) -> List[ls_schemas.Run]:
         """Get shared runs."""
         params = {"id": run_ids, "share_token": str(share_token)}
-        response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/runs",
+        response = self.request_with_retries(
+            "GET",
+            f"/public/{_as_uuid(share_token, 'share_token')}/runs",
             headers=self._headers,
             params=params,
         )
@@ -1832,8 +1839,9 @@ class Client:
             raise ValueError("Either dataset_id or dataset_name must be given")
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-        response = self.session.get(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
+        response = self.request_with_retries(
+            "GET",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1861,8 +1869,9 @@ class Client:
         data = {
             "dataset_id": str(dataset_id),
         }
-        response = self.session.put(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
+        response = self.request_with_retries(
+            "PUT",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
             json=data,
         )
@@ -1875,8 +1884,9 @@ class Client:
 
     def unshare_dataset(self, dataset_id: ID_TYPE) -> None:
         """Delete share link for a dataset."""
-        response = self.session.delete(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1886,8 +1896,9 @@ class Client:
         share_token: str,
     ) -> ls_schemas.Dataset:
         """Get shared datasets."""
-        response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/datasets",
+        response = self.request_with_retries(
+            "GET",
+            f"/public/{_as_uuid(share_token, 'share_token')}/datasets",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1904,8 +1915,9 @@ class Client:
         params = {}
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
-        response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/examples",
+        response = self.request_with_retries(
+            "GET",
+            f"/public/{_as_uuid(share_token, 'share_token')}/examples",
             headers=self._headers,
             params=params,
         )
@@ -2326,8 +2338,9 @@ class Client:
             project_id = str(self.read_project(project_name=project_name).id)
         elif project_id is None:
             raise ValueError("Must provide project_name or project_id")
-        response = self.session.delete(
-            self.api_url + f"/sessions/{_as_uuid(project_id, 'project_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/sessions/{_as_uuid(project_id, 'project_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2360,8 +2373,9 @@ class Client:
             description=description,
             data_type=data_type,
         )
-        response = self.session.post(
-            self.api_url + "/datasets",
+        response = self.request_with_retries(
+            "POST",
+            "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
             data=dataset.json(),
         )
@@ -2502,8 +2516,9 @@ class Client:
                 raise ValueError("Must provide either dataset name or ID")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         dsid = _as_uuid(dataset_id, "dataset_id")
-        response = self.session.get(
-            f"{self.api_url}/datasets/{dsid}/versions/diff",
+        response = self.request_with_retries(
+            "GET",
+            f"/datasets/{dsid}/versions/diff",
             headers=self._headers,
             params={
                 "from_version": (
@@ -2610,8 +2625,9 @@ class Client:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
-        response = self.session.delete(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2662,8 +2678,9 @@ class Client:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
-        response = self.session.put(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/tags",
+        response = self.request_with_retries(
+            "PUT",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/tags",
             headers=self._headers,
             json={
                 "as_of": as_of.isoformat(),
@@ -3032,8 +3049,9 @@ class Client:
             )
         ]
 
-        response = self.session.post(
-            f"{self.api_url}/examples/bulk",
+        response = self.request_with_retries(
+            "POST",
+            "/examples/bulk",
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(examples),
         )
@@ -3095,8 +3113,9 @@ class Client:
         if example_id:
             data["id"] = example_id
         example = ls_schemas.ExampleCreate(**data)
-        response = self.session.post(
-            f"{self.api_url}/examples",
+        response = self.request_with_retries(
+            "POST",
+            "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(),
         )
@@ -3237,8 +3256,9 @@ class Client:
             metadata=metadata,
             split=split,
         )
-        response = self.session.patch(
-            f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
+        response = self.request_with_retries(
+            "PATCH",
+            f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(exclude_none=True),
         )
@@ -3253,8 +3273,9 @@ class Client:
         example_id : str or UUID
             The ID of the example to delete.
         """
-        response = self.session.delete(
-            f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -3644,8 +3665,9 @@ class Client:
             feedback_update["correction"] = correction
         if comment is not None:
             feedback_update["comment"] = comment
-        response = self.session.patch(
-            self.api_url + f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
+        response = self.request_with_retries(
+            "PATCH",
+            f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(feedback_update),
         )
@@ -3724,8 +3746,9 @@ class Client:
         feedback_id : str or UUID
             The ID of the feedback to delete.
         """
-        response = self.session.delete(
-            f"{self.api_url}/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -4066,8 +4089,9 @@ class Client:
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue to delete.
         """
-        response = self.session.delete(
-            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
             headers={"Accept": "application/json", **self._headers},
         )
         ls_utils.raise_for_status_with_text(response)
