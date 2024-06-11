@@ -348,7 +348,9 @@ def traceable(
 
 
             # Logging with custom metadata and tags:
-            @traceable(metadata={"version": "1.0", "author": "John Doe"}, tags=["beta", "test"])
+            @traceable(
+                metadata={"version": "1.0", "author": "John Doe"}, tags=["beta", "test"]
+            )
             def tagged_function(x):
                 return x**2
 

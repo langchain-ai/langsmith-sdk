@@ -2004,6 +2004,7 @@ class Client:
             "name": project_name,
             "extra": extra,
             "description": description,
+            "id": str(uuid.uuid4()),
         }
         params = {}
         if upsert:
@@ -3036,7 +3037,7 @@ class Client:
                 "dataset_id": dataset_id,
                 "metadata": metadata_,
                 "split": split_,
-                "id": id_,
+                "id": id_ or str(uuid.uuid4()),
                 "source_run_id": source_run_id_,
             }
             for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
@@ -3110,8 +3111,7 @@ class Client:
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
-        if example_id:
-            data["id"] = example_id
+        data["id"] = example_id or str(uuid.uuid4())
         example = ls_schemas.ExampleCreate(**data)
         response = self.request_with_retries(
             "POST",
@@ -3799,6 +3799,7 @@ class Client:
                     "correction": correction,
                     "comment": comment,
                     "metadata": metadata,
+                    # TODO: Add ID once the API supports it.
                 }
             ),
             headers=self._headers,
@@ -3812,6 +3813,7 @@ class Client:
         *,
         expiration: Optional[datetime.datetime | datetime.timedelta] = None,
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
+        feedback_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.FeedbackIngestToken:
         """Create a pre-signed URL to send feedback data to.
 
@@ -3830,6 +3832,8 @@ class Client:
                 this defines how the metric should be interpreted,
                 such as a continuous score (w/ optional bounds),
                 or distribution over categorical values.
+            feedback_id: The ID of the feedback to create. If not provided, a new
+                feedback will be created.
 
         Returns:
             The pre-signed URL for uploading feedback data.
@@ -3838,6 +3842,7 @@ class Client:
             "run_id": run_id,
             "feedback_key": feedback_key,
             "feedback_config": feedback_config,
+            "id": feedback_id or str(uuid.uuid4()),
         }
         if expiration is None:
             body["expires_in"] = ls_schemas.TimeDeltaInput(
@@ -4036,7 +4041,7 @@ class Client:
         body = {
             "name": name,
             "description": description,
-            "id": queue_id,
+            "id": queue_id or str(uuid.uuid4()),
         }
         response = self.request_with_retries(
             "POST",
@@ -4172,7 +4177,7 @@ class Client:
         if not reference_dataset:
             raise ValueError("A reference dataset is required.")
         body: Dict[str, Any] = {
-            "id": id,
+            "id": id or str(uuid.uuid4()),
             "name": name,
             "experiment_ids": experiments,
             "reference_dataset_id": reference_dataset,
