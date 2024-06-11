@@ -42,8 +42,11 @@ type SummaryEvaluatorT =
 // Row-level evaluator
 type EvaluatorT =
   | RunEvaluator
-  | ((run: Run, example?: Example) => EvaluationResult)
-  | ((run: Run, example?: Example) => Promise<EvaluationResult>);
+  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
+  | ((
+      run: Run,
+      example?: Example
+    ) => Promise<EvaluationResult | EvaluationResults>);
 
 interface _ForwardResults {
   run: Run;
