@@ -32,16 +32,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const client = new Client();
-  // await client.deleteDataset({
-  //   datasetName: TESTING_DATASET_NAME,
-  // });
-  // try {
-  //   await client.deleteDataset({
-  //     datasetName: "my_splits_ds2",
-  //   });
-  // } catch {
-  //   //pass
-  // }
+  await client.deleteDataset({
+    datasetName: TESTING_DATASET_NAME,
+  });
+  try {
+    await client.deleteDataset({
+      datasetName: "my_splits_ds2",
+    });
+  } catch {
+    //pass
+  }
 });
 
 test("evaluate can evaluate", async () => {
@@ -738,7 +738,6 @@ test("evaluate can accept array of examples", async () => {
 
 test.only("evaluate accepts evaluators which return multiple feedback keys", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return { foo: input.input + 1 };
   };
 
@@ -768,5 +767,11 @@ test.only("evaluate accepts evaluators which return multiple feedback keys", asy
     description: "evaluate can evaluate with custom evaluators",
   });
 
-  console.log(evalRes)
+  expect(evalRes.results).toHaveLength(2);
+
+  const comment = `Run: ${evalRes.results[0].run.id} Example: ${evalRes.results[0].example.id}`;
+  expect(evalRes.results[0].evaluationResults.results).toMatchObject([
+    { key: "first-key", score: 1, comment },
+    { key: "second-key", score: 2, comment },
+  ]);
 });
