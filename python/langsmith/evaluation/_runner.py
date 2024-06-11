@@ -243,7 +243,7 @@ def evaluate(
         You can convert the results to a list or a pandas DataFrame for further analysis:
         >>> # results.as_list() # Returns a list of dictionaries
         >>> df = results.as_pandas()
-        >>> df.head() # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
+        >>> df.head()  # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
         example_id  ...
     """  # noqa: E501
     return _evaluate(
@@ -385,7 +385,7 @@ class ExperimentResults:
             target=lambda: self._process_data(self._manager)
         )
         self._thread.start()
-        self._summary_results: Optional[Dict[str, EvaluationResults]] = None
+        self._summary_results: Optional[EvaluationResults] = None
 
     @property
     def experiment_name(self) -> str:
@@ -1213,7 +1213,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 evaluation_results=evaluation_results,
             )
 
-    def get_summary_scores(self) -> Dict[str, List[dict]]:
+    def get_summary_scores(self) -> EvaluationResults:
         """If summary_evaluators were applied, consume and return the results."""
         if self._summary_results is None:
             return {"results": []}
