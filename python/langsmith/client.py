@@ -2017,6 +2017,7 @@ class Client:
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
         response = self.request_with_retries(
+            "POST",
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(body),
