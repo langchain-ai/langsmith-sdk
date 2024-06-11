@@ -140,5 +140,7 @@ def test_run_tree_to_dict(snapshot: SnapshotAssertion):
         start_time=datetime.now(),
     )
     snapshot.assert_match(run_tree.dict())
-    snapshot.assert_match(run_tree.dict(exclude={"outputs"}))
+    snapshot.assert_match(run_tree.dict(exclude={"outputs", "client"}))
     snapshot.assert_match(run_tree.dict(exclude={"child_runs": {-1: {"outputs"}}}))
+    snapshot.assert_match(run_tree.dict(exclude={"child_runs"}))
+    snapshot.assert_match(run_tree.dict(exclude={"child_runs": True}))
