@@ -9,9 +9,9 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union, cast
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
+    from pydantic.v1 import Field, root_validator  # type: ignore[import]
 except ImportError:
-    from pydantic import Field, root_validator, validator
+    from pydantic import Field, root_validator
 
 import threading
 import urllib.parse
@@ -44,7 +44,7 @@ class RunTree(ls_schemas.RunBase):
     id: UUID = Field(default_factory=uuid4)
     run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
+    parent_run: Optional[RunTree] = Field(default=None)
     child_runs: List[RunTree] = Field(
         default_factory=list,
     )
@@ -54,7 +54,7 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=_get_client, exclude=True)
+    _client: Optional[Client] = Field(default=None)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -67,12 +67,10 @@ class RunTree(ls_schemas.RunBase):
         allow_population_by_field_name = True
         extra = "allow"
 
-    @validator("client", pre=True)
-    def validate_client(cls, v: Optional[Client]) -> Client:
-        """Ensure the client is specified."""
-        if v is None:
-            return _get_client()
-        return v
+    def __init__(self, **data: Any):
+        """Initialize the RunTree object."""
+        super().__init__(**data)
+        self._client = data.get("client")
 
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
@@ -112,6 +110,17 @@ class RunTree(ls_schemas.RunBase):
             values["dotted_order"] = current_dotted_order
         return values
 
+    @property
+    def client(self) -> Client:
+        """Return the client."""
+        # Lazily load the client
+        # If you never use this for API calls, it will never be loaded
+        if not self._client:
+            with self._lock:
+                if not self._client:
+                    self._client = _get_client()
+        return self._client
+
     def dict(
         self,
         *,
@@ -142,6 +151,12 @@ class RunTree(ls_schemas.RunBase):
             Dict[str, Any]:
                 The dictionary representation of the RunTree object.
         """
+        # The reason we define this here is becaues pydantic has the fun magical
+        # property of doing  a **deep copy** when calling my_run_tree.copy()
+        # if any of the fields have an exclude=... argument and are set.
+        # We want to avoid breaking backwards compat (as much as possible)
+        # while also being more flexible as a stand-in replacement for the
+        # langchain Run object (generally used in tracing.)
         exclude = exclude or {}
         if isinstance(exclude, set):
             exclude = {e: True for e in list(exclude)}
@@ -154,6 +169,7 @@ class RunTree(ls_schemas.RunBase):
             # Else it's True
         else:
             exclude["child_runs"] = {"__all__": {"parent_run_id"}}
+        exclude["_client"] = True
         return super().dict(
             include=include,
             exclude=exclude,

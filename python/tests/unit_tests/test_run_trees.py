@@ -144,3 +144,13 @@ def test_run_tree_to_dict(snapshot: SnapshotAssertion):
     snapshot.assert_match(run_tree.dict(exclude={"child_runs": {-1: {"outputs"}}}))
     snapshot.assert_match(run_tree.dict(exclude={"child_runs"}))
     snapshot.assert_match(run_tree.dict(exclude={"child_runs": True}))
+
+
+def test_can_copy_run_tree():
+    run_tree = run_trees.RunTree(
+        name="My Chat Bot",
+        inputs={"some_generator": (i for i in range(10))},
+        client=MagicMock(spec=Client),
+    )
+    copy = run_tree.copy()
+    assert id(run_tree.inputs) == id(copy.inputs)
