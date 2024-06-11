@@ -6,7 +6,7 @@ import sys
 import time
 import uuid
 import warnings
-from typing import Any, AsyncGenerator, Generator, Optional, cast
+from typing import Any, AsyncGenerator, Generator, Optional, Set, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,6 +23,27 @@ from langsmith.run_helpers import (
     tracing_context,
 )
 from langsmith.run_trees import RunTree
+
+
+def _get_calls(
+    mock_client: Any,
+    minimum: Optional[int] = 0,
+    verbs: Set[str] = {"POST"},
+    attempts: int = 5,
+) -> list:
+    calls = []
+    for _ in range(attempts):
+        time.sleep(0.1)
+        calls = [
+            c
+            for c in mock_client.session.request.mock_calls  # type: ignore
+            if c.args and c.args[0] in verbs
+        ]
+        if minimum is None:
+            return calls
+        if minimum is not None and len(calls) > minimum:
+            break
+    return calls
 
 
 def test__get_inputs_with_no_args() -> None:
@@ -198,9 +219,9 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
             results = list(genout)
         assert results == expected
     # Wait for batcher
-    time.sleep(0.25)
+
     # check the mock_calls
-    mock_calls = mock_client.session.request.mock_calls  # type: ignore
+    mock_calls = _get_calls(mock_client, minimum=1)
     assert 1 <= len(mock_calls) <= 2
 
     call = mock_calls[0]
@@ -233,10 +254,8 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         else:
             results = [item async for item in genout]
         assert results == expected
-        # Wait for batcher
-        await asyncio.sleep(0.25)
         # check the mock_calls
-        mock_calls = mock_client.session.request.mock_calls  # type: ignore
+        mock_calls = _get_calls(mock_client, minimum=1)
         assert 1 <= len(mock_calls) <= 2
 
         call = mock_calls[0]
@@ -347,13 +366,12 @@ def test_traceable_parent_from_runnable_config() -> None:
             )
             == 2
         )
-        time.sleep(1)
         # Inspect the mock_calls and assert that 2 runs were created,
         # one for the parent and one for the child
-        mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+        mock_calls = _get_calls(mock_client_, minimum=2)
         posts = []
         for call in mock_calls:
-            if call.args:
+            if call.args and call.args[0] != "GET":
                 assert call.args[0] == "POST"
                 assert call.args[1].startswith("https://api.smith.langchain.com")
                 body = json.loads(call.kwargs["data"])
@@ -387,13 +405,12 @@ def test_traceable_parent_from_runnable_config_accepts_config() -> None:
             )
             == 2
         )
-        time.sleep(1)
         # Inspect the mock_calls and assert that 2 runs were created,
         # one for the parent and one for the child
-        mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+        mock_calls = _get_calls(mock_client_, minimum=2)
         posts = []
         for call in mock_calls:
-            if call.args:
+            if call.args and call.args[0] != "GET":
                 assert call.args[0] == "POST"
                 assert call.args[1].startswith("https://api.smith.langchain.com")
                 body = json.loads(call.kwargs["data"])
@@ -414,10 +431,9 @@ def test_traceable_project_name() -> None:
             return a + b + d
 
         my_function(1, 2, 3)
-        time.sleep(0.25)
         # Inspect the mock_calls and asser tthat "my foo project" is in
         # the session_name arg of the body
-        mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+        mock_calls = _get_calls(mock_client_, minimum=1)
         assert 1 <= len(mock_calls) <= 2
         call = mock_calls[0]
         assert call.args[0] == "POST"
@@ -434,11 +450,10 @@ def test_traceable_project_name() -> None:
             return my_function(1, 2, 3)
 
         my_other_function()  # type: ignore
-        time.sleep(0.25)
         # Inspect the mock_calls and assert that "my bar project" is in
         # both all POST runs in the single request. We want to ensure
         # all runs in a trace are associated with the same project.
-        mock_calls = mock_client_.session.request.mock_calls  # type: ignore
+        mock_calls = _get_calls(mock_client_, minimum=1)
         assert 1 <= len(mock_calls) <= 2
         call = mock_calls[0]
         assert call.args[0] == "POST"
@@ -968,11 +983,8 @@ def test_client_passed_when_traceable_parent():
         return {"baz": "buzz"}
 
     my_run(foo="bar", langsmith_extra={"parent": headers, "client": mock_client})
-    for _ in range(1):
-        time.sleep(0.1)
-        if mock_client.session.request.call_count > 0:
-            break
-    assert mock_client.session.request.call_count == 1
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 1
     call = mock_client.session.request.call_args
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
@@ -991,12 +1003,9 @@ def test_client_passed_when_trace_parent():
         name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
     ) as rt:
         rt.outputs["bar"] = "baz"
-    for _ in range(1):
-        time.sleep(0.1)
-        if mock_client.session.request.call_count > 0:
-            break
-    assert mock_client.session.request.call_count == 1
-    call = mock_client.session.request.call_args
+    calls = _get_calls(mock_client)
+    assert len(calls) == 1
+    call = calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
     body = json.loads(call.kwargs["data"])
