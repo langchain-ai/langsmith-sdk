@@ -746,7 +746,10 @@ class Client:
         ]
         retry_on_: Tuple[Type[BaseException], ...] = (
             *(retry_on or []),
-            *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
+            *(
+                ls_utils.LangSmithConnectionError,
+                ls_utils.LangSmithAPIError,
+            ),
         )
         to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
         response = None
@@ -840,13 +843,29 @@ class Client:
                 if response is not None:
                     logger.debug("Passing on exception %s", e)
                     return response
-                # Else we still raise an error
+            except ls_utils.LangSmithRateLimitError:
+                if idx + 1 == stop_after_attempt:
+                    raise
+                if response is not None:
+                    try:
+                        retry_after = float(response.headers.get("retry-after", "30"))
+                    except Exception as e:
+                        logger.warning(
+                            "Invalid retry-after header: %s",
+                            repr(e),
+                        )
+                        retry_after = 30
+                # Add exponential backoff
+                retry_after = retry_after * 2**idx + random.random()
+                time.sleep(retry_after)
             except retry_on_:
+                # Handle other exceptions more immediately
                 if idx + 1 == stop_after_attempt:
                     raise
                 sleep_time = 2**idx + (random.random() * 0.5)
                 time.sleep(sleep_time)
                 continue
+            # Else we still raise an error
 
         raise ls_utils.LangSmithError(
             f"Failed to {method} {pathname} in LangSmith API."
@@ -1328,22 +1347,6 @@ class Client:
             self._post_batch_ingest_runs(orjson.dumps(body_chunks))
 
     def _post_batch_ingest_runs(self, body: bytes):
-        def handle_429(response: requests.Response, attempt: int) -> bool:
-            # Min of 30 seconds, max of 1 minute
-            if response.status_code == 429:
-                try:
-                    retry_after = float(response.headers.get("retry-after", "30"))
-                except ValueError:
-                    logger.warning(
-                        "Invalid retry-after header value: %s",
-                        response.headers.get("retry-after"),
-                    )
-                    retry_after = 30
-                # Add exponential backoff
-                retry_after = retry_after * 2 ** (attempt - 1) + random.random()
-                time.sleep(retry_after)
-                return True
-            return False
 
         try:
             for api_url, api_key in self._write_api_urls.items():
@@ -1359,7 +1362,6 @@ class Client:
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
                     stop_after_attempt=3,
-                    handle_response=handle_429,
                 )
         except Exception as e:
             logger.warning(f"Failed to batch ingest runs: {repr(e)}")
@@ -2166,6 +2168,9 @@ class Client:
         pd.DataFrame
             A dataframe containing the test results.
         """
+        warnings.warn(
+            "Function get_test_results is in beta.", UserWarning, stacklevel=2
+        )
         from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
 
         import pandas as pd  # type: ignore
@@ -4295,6 +4300,13 @@ class Client:
                 evaluation=evaluation_config,
             )
         """  # noqa: E501
+        # warn as deprecated and to use `aevaluate` instead
+        warnings.warn(
+            "The `arun_on_dataset` method is deprecated and"
+            " will be removed in a future version."
+            "Please use the `aevaluate` method instead.",
+            DeprecationWarning,
+        )
         try:
             from langchain.smith import arun_on_dataset as _arun_on_dataset
         except ImportError:
@@ -4443,6 +4455,12 @@ class Client:
                 evaluation=evaluation_config,
             )
         """  # noqa: E501
+        warnings.warn(
+            "The `run_on_dataset` method is deprecated and"
+            " will be removed in a future version."
+            "Please use the `evaluate` method instead.",
+            DeprecationWarning,
+        )
         try:
             from langchain.smith import run_on_dataset as _run_on_dataset
         except ImportError:
