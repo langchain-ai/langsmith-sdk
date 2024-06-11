@@ -1,0 +1,267 @@
+# serializer version: 1
+# name: test_run_tree_to_dict
+  dict({
+    'child_runs': list([
+      dict({
+        'child_runs': list([
+        ]),
+        'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2.20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e3',
+        'end_time': None,
+        'error': None,
+        'events': list([
+        ]),
+        'extra': dict({
+        }),
+        'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e3'),
+        'inputs': dict({
+        }),
+        'name': 'Child',
+        'outputs': dict({
+        }),
+        'reference_example_id': None,
+        'run_type': 'chain',
+        'serialized': dict({
+          'name': 'Child',
+        }),
+        'session_id': None,
+        'session_name': 'default',
+        'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+        'tags': list([
+        ]),
+        'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+      }),
+      dict({
+        'child_runs': list([
+        ]),
+        'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2.20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e4',
+        'end_time': None,
+        'error': None,
+        'events': list([
+        ]),
+        'extra': dict({
+        }),
+        'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e4'),
+        'inputs': dict({
+        }),
+        'name': 'Child2',
+        'outputs': dict({
+          'summary': "I'm the second child.",
+        }),
+        'reference_example_id': None,
+        'run_type': 'chain',
+        'serialized': dict({
+          'name': 'Child2',
+        }),
+        'session_id': None,
+        'session_name': 'default',
+        'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+        'tags': list([
+        ]),
+        'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+      }),
+    ]),
+    'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2',
+    'end_time': None,
+    'error': None,
+    'events': list([
+    ]),
+    'extra': dict({
+    }),
+    'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+    'inputs': dict({
+      'text': "Summarize this morning's meetings.",
+    }),
+    'name': 'My Chat Bot',
+    'outputs': dict({
+      'summary': 'You have 3 meetings today.',
+    }),
+    'parent_run_id': None,
+    'reference_example_id': None,
+    'run_type': 'chain',
+    'serialized': dict({
+      'name': 'My Chat Bot',
+    }),
+    'session_id': None,
+    'session_name': 'default',
+    'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+    'tags': list([
+    ]),
+    'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+  })
+# ---
+# name: test_run_tree_to_dict.1
+  dict({
+    'child_runs': list([
+      dict({
+        'child_runs': list([
+        ]),
+        'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2.20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e3',
+        'end_time': None,
+        'error': None,
+        'events': list([
+        ]),
+        'extra': dict({
+        }),
+        'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e3'),
+        'inputs': dict({
+        }),
+        'name': 'Child',
+        'outputs': dict({
+        }),
+        'reference_example_id': None,
+        'run_type': 'chain',
+        'serialized': dict({
+          'name': 'Child',
+        }),
+        'session_id': None,
+        'session_name': 'default',
+        'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+        'tags': list([
+        ]),
+        'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+      }),
+      dict({
+        'child_runs': list([
+        ]),
+        'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2.20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e4',
+        'end_time': None,
+        'error': None,
+        'events': list([
+        ]),
+        'extra': dict({
+        }),
+        'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e4'),
+        'inputs': dict({
+        }),
+        'name': 'Child2',
+        'outputs': dict({
+          'summary': "I'm the second child.",
+        }),
+        'reference_example_id': None,
+        'run_type': 'chain',
+        'serialized': dict({
+          'name': 'Child2',
+        }),
+        'session_id': None,
+        'session_name': 'default',
+        'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+        'tags': list([
+        ]),
+        'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+      }),
+    ]),
+    'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2',
+    'end_time': None,
+    'error': None,
+    'events': list([
+    ]),
+    'extra': dict({
+    }),
+    'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+    'inputs': dict({
+      'text': "Summarize this morning's meetings.",
+    }),
+    'name': 'My Chat Bot',
+    'parent_run_id': None,
+    'reference_example_id': None,
+    'run_type': 'chain',
+    'serialized': dict({
+      'name': 'My Chat Bot',
+    }),
+    'session_id': None,
+    'session_name': 'default',
+    'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+    'tags': list([
+    ]),
+    'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+  })
+# ---
+# name: test_run_tree_to_dict.2
+  dict({
+    'child_runs': list([
+      dict({
+        'child_runs': list([
+        ]),
+        'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2.20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e3',
+        'end_time': None,
+        'error': None,
+        'events': list([
+        ]),
+        'extra': dict({
+        }),
+        'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e3'),
+        'inputs': dict({
+        }),
+        'name': 'Child',
+        'outputs': dict({
+        }),
+        'parent_run_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+        'reference_example_id': None,
+        'run_type': 'chain',
+        'serialized': dict({
+          'name': 'Child',
+        }),
+        'session_id': None,
+        'session_name': 'default',
+        'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+        'tags': list([
+        ]),
+        'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+      }),
+      dict({
+        'child_runs': list([
+        ]),
+        'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2.20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e4',
+        'end_time': None,
+        'error': None,
+        'events': list([
+        ]),
+        'extra': dict({
+        }),
+        'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e4'),
+        'inputs': dict({
+        }),
+        'name': 'Child2',
+        'parent_run_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+        'reference_example_id': None,
+        'run_type': 'chain',
+        'serialized': dict({
+          'name': 'Child2',
+        }),
+        'session_id': None,
+        'session_name': 'default',
+        'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+        'tags': list([
+        ]),
+        'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+      }),
+    ]),
+    'dotted_order': '20230101T000000000000Ze0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2',
+    'end_time': None,
+    'error': None,
+    'events': list([
+    ]),
+    'extra': dict({
+    }),
+    'id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+    'inputs': dict({
+      'text': "Summarize this morning's meetings.",
+    }),
+    'name': 'My Chat Bot',
+    'outputs': dict({
+      'summary': 'You have 3 meetings today.',
+    }),
+    'parent_run_id': None,
+    'reference_example_id': None,
+    'run_type': 'chain',
+    'serialized': dict({
+      'name': 'My Chat Bot',
+    }),
+    'session_id': None,
+    'session_name': 'default',
+    'start_time': FakeDatetime(2023, 1, 1, 0, 0),
+    'tags': list([
+    ]),
+    'trace_id': UUID('e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2'),
+  })
+# ---

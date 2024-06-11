@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union, cast
 from uuid import UUID, uuid4
 
 try:
@@ -47,7 +47,6 @@ class RunTree(ls_schemas.RunBase):
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
     child_runs: List[RunTree] = Field(
         default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
     )
     session_name: str = Field(
         default_factory=lambda: utils.get_tracer_project() or "default",
@@ -112,6 +111,53 @@ class RunTree(ls_schemas.RunBase):
         else:
             values["dotted_order"] = current_dotted_order
         return values
+
+    def dict(
+        self,
+        *,
+        include: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
+        exclude: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
+        by_alias: bool = False,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ) -> Dict[str, Any]:
+        """Return a dictionary representation of the RunTree object.
+
+        Args:
+            include (Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None):
+                The fields to include in the dictionary representation.
+            exclude (Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None):
+                The fields to exclude from the dictionary representation.
+            by_alias (bool, optional):
+                Whether to use field aliases in the dictionary representation.
+            exclude_unset (bool, optional):
+                Whether to exclude fields that have not been set.
+            exclude_defaults (bool, optional):
+                Whether to exclude fields that have default values.
+            exclude_none (bool, optional):
+                Whether to exclude fields that have a value of None.
+
+        Returns:
+            Dict[str, Any]:
+                The dictionary representation of the RunTree object.
+        """
+        exclude = exclude or {}
+        if isinstance(exclude, set):
+            exclude = {e: True for e in list(exclude)}
+        for k in ["parent_run", "client"]:
+            if k not in exclude:
+                exclude[k] = True
+        if "child_runs" not in exclude:
+            exclude["child_runs"] = {"__all__": {"parent_run_id"}}
+        return super().dict(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+        )
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""

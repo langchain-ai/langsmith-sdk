@@ -6,6 +6,9 @@ tests:
 tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests
 
+snapshot_update:
+	poetry run python -m pytest tests/unit_tests --snapshot-update
+
 integration_tests:
 	poetry run python -m pytest -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
