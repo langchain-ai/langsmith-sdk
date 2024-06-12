@@ -43,7 +43,7 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.01)
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -78,7 +78,7 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -119,7 +119,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -174,5 +174,5 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
         if mock_session.return_value.request.call_count >= 1:
             break
     assert mock_session.return_value.request.call_count >= 1
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"

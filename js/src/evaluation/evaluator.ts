@@ -87,7 +87,7 @@ export interface RunEvaluator {
     run: Run,
     example?: Example,
     options?: Partial<RunTreeConfig>
-  ): Promise<EvaluationResult>;
+  ): Promise<EvaluationResult | EvaluationResults>;
 }
 
 export type RunEvaluatorLike =
@@ -114,12 +114,26 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     }) as Func;
   }
 
+  private isEvaluationResults(x: unknown): x is EvaluationResults {
+    return (
+      typeof x === "object" &&
+      x != null &&
+      "results" in x &&
+      Array.isArray(x.results) &&
+      x.results.length > 0
+    );
+  }
+
   private coerceEvaluationResults(
     results: Record<string, any> | EvaluationResults,
     sourceRunId: string
-  ): EvaluationResult {
-    if ("results" in results) {
-      throw new Error("EvaluationResults not supported yet.");
+  ): EvaluationResult | EvaluationResults {
+    if (this.isEvaluationResults(results)) {
+      return {
+        results: results.results.map((r) =>
+          this.coerceEvaluationResult(r, sourceRunId, false)
+        ),
+      };
     }
 
     return this.coerceEvaluationResult(
@@ -162,7 +176,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     run: Run,
     example?: Example,
     options?: Partial<RunTreeConfig>
-  ): Promise<EvaluationResult> {
+  ): Promise<EvaluationResult | EvaluationResults> {
     const sourceRunId = uuidv4();
     const metadata: Record<string, any> = {
       targetRunId: run.id,

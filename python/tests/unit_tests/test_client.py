@@ -198,7 +198,13 @@ def test_upload_csv(mock_session_cls: mock.Mock) -> None:
         "examples": [example_1, example_2],
     }
     mock_session = mock.Mock()
-    mock_session.post.return_value = mock_response
+
+    def mock_request(*args, **kwargs):  # type: ignore
+        if args[0] == "POST" and args[1].endswith("datasets"):
+            return mock_response
+        return MagicMock()
+
+    mock_session.request.return_value = mock_response
     mock_session_cls.return_value = mock_session
 
     client = Client(
@@ -425,27 +431,43 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
         assert client.tracing_queue
         client.tracing_queue.join()
 
-        request_calls = [call for call in session.request.mock_calls if call.args]
+        request_calls = [
+            call
+            for call in session.request.mock_calls
+            if call.args and call.args[0] == "POST"
+        ]
         assert len(request_calls) >= 1
 
         for call in request_calls:
             assert call.args[0] == "POST"
             assert call.args[1] == "http://localhost:1984/runs/batch"
-        get_calls = [call for call in session.get.mock_calls if call.args]
+        get_calls = [
+            call
+            for call in session.request.mock_calls
+            if call.args and call.args[0] == "GET"
+        ]
         # assert len(get_calls) == 1
         for call in get_calls:
-            assert call.args[0] == f"{api_url}/info"
+            assert call.args[1] == f"{api_url}/info"
     else:
-        request_calls = [call for call in session.request.mock_calls if call.args]
+        request_calls = [
+            call
+            for call in session.request.mock_calls
+            if call.args and call.args[0] == "POST"
+        ]
 
         assert len(request_calls) == 10
         for call in request_calls:
             assert call.args[0] == "POST"
             assert call.args[1] == "http://localhost:1984/runs"
         if auto_batch_tracing:
-            get_calls = [call for call in session.get.mock_calls if call.args]
+            get_calls = [
+                call
+                for call in session.get.mock_calls
+                if call.args and call.args[0] == "GET"
+            ]
             for call in get_calls:
-                assert call.args[0] == f"{api_url}/info"
+                assert call.args[1] == f"{api_url}/info"
     del client
     time.sleep(3)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
@@ -468,7 +490,11 @@ def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
     # because no trace_id/dotted_order provided, auto batch is disabled
     for _ in range(10):
         client.create_run("my_run", inputs={}, run_type="llm", id=uuid.uuid4())
-    request_calls = [call for call in session.request.mock_calls if call.args]
+    request_calls = [
+        call
+        for call in session.request.mock_calls
+        if call.args and call.args[0] == "POST"
+    ]
     assert len(request_calls) == 10
     for call in request_calls:
         assert call.args[1] == "http://localhost:1984/runs"
@@ -510,7 +536,11 @@ def test_create_run_with_filters(auto_batch_tracing: bool) -> None:
         )
         expected.append(output_val + "goodbye")
 
-    request_calls = [call for call in session.request.mock_calls if call.args]
+    request_calls = [
+        call
+        for call in session.request.mock_calls
+        if call.args and call.args[0] in {"POST", "PATCH"}
+    ]
     all_posted = "\n".join(
         [call.kwargs["data"].decode("utf-8") for call in request_calls]
     )
@@ -549,7 +579,11 @@ def test_client_gc_after_autoscale() -> None:
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
 
-    request_calls = [call for call in session.request.mock_calls if call.args]
+    request_calls = [
+        call
+        for call in session.request.mock_calls
+        if call.args and call.args[0] == "POST"
+    ]
     assert len(request_calls) >= 500 and len(request_calls) <= 550
     for call in request_calls:
         assert call.args[0] == "POST"
@@ -874,7 +908,7 @@ def test_host_url(_: MagicMock) -> None:
 @patch("langsmith.client.time.sleep")
 def test_retry_on_connection_error(mock_sleep: MagicMock):
     mock_session = MagicMock()
-    client = Client(api_key="test", session=mock_session)
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
     mock_session.request.side_effect = requests.ConnectionError()
 
     with pytest.raises(ls_utils.LangSmithConnectionError):
@@ -885,7 +919,7 @@ def test_retry_on_connection_error(mock_sleep: MagicMock):
 @patch("langsmith.client.time.sleep")
 def test_http_status_500_handling(mock_sleep):
     mock_session = MagicMock()
-    client = Client(api_key="test", session=mock_session)
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.raise_for_status.side_effect = HTTPError()
@@ -899,12 +933,11 @@ def test_http_status_500_handling(mock_sleep):
 @patch("langsmith.client.time.sleep")
 def test_pass_on_409_handling(mock_sleep):
     mock_session = MagicMock()
-    client = Client(api_key="test", session=mock_session)
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
     mock_response = MagicMock()
     mock_response.status_code = 409
     mock_response.raise_for_status.side_effect = HTTPError()
     mock_session.request.return_value = mock_response
-
     response = client.request_with_retries(
         "GET",
         "https://test.url",
@@ -1028,7 +1061,9 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
     request_bodies = [
         op
         for call in mock_session.request.call_args_list
-        for reqs in orjson.loads(call[1]["data"]).values()
+        for reqs in (
+            orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+        )
         for op in reqs
     ]
     all_run_ids = run_ids + patch_ids
