@@ -149,6 +149,7 @@ def _default_retry_config() -> Retry:
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
         raise_on_status=False,
+        respect_retry_after_header=True,
     )
 
     # the `allowed_methods` keyword is not available in urllib3 < 1.26
