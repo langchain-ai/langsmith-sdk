@@ -1,4 +1,4 @@
-import { StringNodeRule, replaceSensitiveData } from "../anonymizer/index.js";
+import { StringNodeRule, createAnonymizer } from "../anonymizer/index.js";
 import { v4 as uuid } from "uuid";
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,}/g;
@@ -11,13 +11,10 @@ describe("replacer", () => {
 
   test("object", () => {
     expect(
-      replaceSensitiveData(
-        {
-          message: "Hello, this is my email: hello@example.com",
-          metadata: uuid(),
-        },
-        replacer
-      )
+      createAnonymizer(replacer)({
+        message: "Hello, this is my email: hello@example.com",
+        metadata: uuid(),
+      })
     ).toEqual({
       message: "Hello, this is my email: [email address]",
       metadata: "[uuid]",
@@ -26,12 +23,12 @@ describe("replacer", () => {
 
   test("array", () => {
     expect(
-      replaceSensitiveData(["human", "hello@example.com"], replacer)
+      createAnonymizer(replacer)(["human", "hello@example.com"])
     ).toEqual(["human", "[email address]"]);
   });
 
   test("string", () => {
-    expect(replaceSensitiveData("hello@example.com", replacer)).toEqual(
+    expect(createAnonymizer(replacer)("hello@example.com")).toEqual(
       "[email address]"
     );
   });
@@ -45,13 +42,10 @@ describe("declared", () => {
 
   test("object", () => {
     expect(
-      replaceSensitiveData(
-        {
-          message: "Hello, this is my email: hello@example.com",
-          metadata: uuid(),
-        },
-        replacers
-      )
+      createAnonymizer(replacers)({
+        message: "Hello, this is my email: hello@example.com",
+        metadata: uuid(),
+      })
     ).toEqual({
       message: "Hello, this is my email: [email address]",
       metadata: "[uuid]",
@@ -60,12 +54,12 @@ describe("declared", () => {
 
   test("array", () => {
     expect(
-      replaceSensitiveData(["human", "hello@example.com"], replacers)
+      createAnonymizer(replacers)(["human", "hello@example.com"])
     ).toEqual(["human", "[email address]"]);
   });
 
   test("string", () => {
-    expect(replaceSensitiveData("hello@example.com", replacers)).toEqual(
+    expect(createAnonymizer(replacers)("hello@example.com")).toEqual(
       "[email address]"
     );
   });
