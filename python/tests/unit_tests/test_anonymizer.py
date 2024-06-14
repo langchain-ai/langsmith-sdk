@@ -2,7 +2,7 @@ import re
 from typing import List, Union
 from uuid import uuid4
 
-from langsmith.anonymizer import StringNodeRule, replace_sensitive_data
+from langsmith.anonymizer import StringNodeRule, create_anonymizer
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 UUID_REGEX = re.compile(
@@ -16,22 +16,21 @@ def test_replacer_function():
         text = UUID_REGEX.sub("[uuid]", text)
         return text
 
-    assert replace_sensitive_data(
+    assert create_anonymizer(replacer)(
         {
             "message": "Hello, this is my email: hello@example.com",
             "metadata": str(uuid4()),
-        },
-        replacer,
+        }
     ) == {
         "message": "Hello, this is my email: [email address]",
         "metadata": "[uuid]",
     }
 
-    assert replace_sensitive_data(["human", "hello@example.com"], replacer) == [
+    assert create_anonymizer(replacer)(["human", "hello@example.com"]) == [
         "human",
         "[email address]",
     ]
-    assert replace_sensitive_data("hello@example.com", replacer) == "[email address]"
+    assert create_anonymizer(replacer)("hello@example.com") == "[email address]"
 
 
 def test_replacer_declared():
@@ -40,20 +39,19 @@ def test_replacer_declared():
         StringNodeRule(pattern=UUID_REGEX, replace="[uuid]"),
     ]
 
-    assert replace_sensitive_data(
+    assert create_anonymizer(replacers)(
         {
             "message": "Hello, this is my email: hello@example.com",
             "metadata": str(uuid4()),
-        },
-        replacers,
+        }
     ) == {
         "message": "Hello, this is my email: [email address]",
         "metadata": "[uuid]",
     }
 
-    assert replace_sensitive_data(["human", "hello@example.com"], replacers) == [
+    assert create_anonymizer(replacers)(["human", "hello@example.com"]) == [
         "human",
         "[email address]",
     ]
 
-    assert replace_sensitive_data("hello@example.com", replacers) == "[email address]"
+    assert create_anonymizer(replacers)("hello@example.com") == "[email address]"

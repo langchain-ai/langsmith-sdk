@@ -141,25 +141,29 @@ def _get_node_processor(replacer: ReplacerType) -> StringNodeProcessor:
         return replacer
 
 
-def replace_sensitive_data(
-    data: Any, replacer: ReplacerType, options: Optional[ReplacerOptions] = None
-) -> Any:
-    """Replace sensitive data."""
-    nodes = _extract_string_nodes(
-        data, {"maxDepth": (options.get("maxDepth") if options else None) or 10}
-    )
-    mutate_value = copy.deepcopy(data) if options and options["deepClone"] else data
+def create_anonymizer(
+    replacer: ReplacerType, options: Optional[ReplacerOptions] = None
+) -> Callable[[Any], Any]:
+    """Create an anonymizer function."""
 
-    to_update = _get_node_processor(replacer).mask_nodes(nodes)
-    for node in to_update:
-        if not node["path"]:
-            mutate_value = node["value"]
-        else:
-            temp = mutate_value
-            for part in node["path"][:-1]:
-                temp = temp[part]
+    def anonymizer(data: Any) -> Any:
+        nodes = _extract_string_nodes(
+            data, {"maxDepth": (options.get("maxDepth") if options else None) or 10}
+        )
+        mutate_value = copy.deepcopy(data) if options and options["deepClone"] else data
 
-            last_part = node["path"][-1]
-            temp[last_part] = node["value"]
+        to_update = _get_node_processor(replacer).mask_nodes(nodes)
+        for node in to_update:
+            if not node["path"]:
+                mutate_value = node["value"]
+            else:
+                temp = mutate_value
+                for part in node["path"][:-1]:
+                    temp = temp[part]
 
-    return mutate_value
+                last_part = node["path"][-1]
+                temp[last_part] = node["value"]
+
+        return mutate_value
+
+    return anonymizer
