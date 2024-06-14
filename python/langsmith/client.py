@@ -461,6 +461,7 @@ class Client:
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
+        anonymizer: Optional[Callable[[dict], dict]] = None,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
@@ -578,11 +579,15 @@ class Client:
         self._hide_inputs = (
             hide_inputs
             if hide_inputs is not None
+            else anonymizer
+            if anonymizer is not None
             else ls_utils.get_env_var("HIDE_INPUTS") == "true"
         )
         self._hide_outputs = (
             hide_outputs
             if hide_outputs is not None
+            else anonymizer
+            if anonymizer is not None
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 

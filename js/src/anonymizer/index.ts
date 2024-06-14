@@ -58,14 +58,14 @@ export type ReplacerType =
   | StringNodeRule[]
   | StringNodeProcessor;
 
-export function createAnonymizer<T>(
+export function createAnonymizer(
   replacer: ReplacerType,
   options?: {
     maxDepth?: number;
     deepClone?: boolean;
   }
 ) {
-  return (data: T): T => {
+  return <T>(data: T): T => {
     const nodes = extractStringNodes(data, {
       maxDepth: options?.maxDepth,
     });
