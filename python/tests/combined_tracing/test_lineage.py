@@ -83,3 +83,7 @@ async def test_async_recursive_depth_10(mock_client: Client) -> None:
     assert len(sorted_spans) == 11
     names = [span["name"] for span, _ in sorted_spans]
     assert names == ["recursive"] * 11
+
+
+async def test_interop(mock_client: Client) -> None:
+    """Test interop of sync and async functions."""
