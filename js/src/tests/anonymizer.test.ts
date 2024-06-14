@@ -22,9 +22,10 @@ describe("replacer", () => {
   });
 
   test("array", () => {
-    expect(
-      createAnonymizer(replacer)(["human", "hello@example.com"])
-    ).toEqual(["human", "[email address]"]);
+    expect(createAnonymizer(replacer)(["human", "hello@example.com"])).toEqual([
+      "human",
+      "[email address]",
+    ]);
   });
 
   test("string", () => {
@@ -53,9 +54,9 @@ describe("declared", () => {
   });
 
   test("array", () => {
-    expect(
-      createAnonymizer(replacers)(["human", "hello@example.com"])
-    ).toEqual(["human", "[email address]"]);
+    expect(createAnonymizer(replacers)(["human", "hello@example.com"])).toEqual(
+      ["human", "[email address]"]
+    );
   });
 
   test("string", () => {
