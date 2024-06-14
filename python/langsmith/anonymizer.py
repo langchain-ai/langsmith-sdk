@@ -2,7 +2,7 @@ import copy  # noqa
 import re
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, List, Optional, Tuple, TypedDict, TypeVar, Union
+from typing import Any, Callable, List, Optional, Tuple, TypedDict, Union
 
 
 class _ExtractOptions(TypedDict):
@@ -18,14 +18,14 @@ class StringNode(TypedDict):
     value: str
     """String value."""
 
-    path: tuple[str | int]
+    path: list[str | int]
     """Path to the string node in the data."""
 
 
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNode]:
-    max_depth = options.get("maxDepth", 10)
+    max_depth = options.get("maxDepth") or 10
 
-    queue: List[Tuple[Any, int, tuple[str | int]]] = [(data, 0, tuple())]
+    queue: List[Tuple[Any, int, list[str | int]]] = [(data, 0, list())]
     result: List[StringNode] = []
 
     while queue:
@@ -38,12 +38,12 @@ def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNod
             if depth >= max_depth:
                 continue
             for key, nested_value in value.items():
-                queue.append((nested_value, depth + 1, path + (key,)))
+                queue.append((nested_value, depth + 1, path + [key]))
         elif isinstance(value, list):
             if depth >= max_depth:
                 continue
             for i, item in enumerate(value):
-                queue.append((item, depth + 1, path + (i,)))
+                queue.append((item, depth + 1, path + [i]))
         elif isinstance(value, str):
             result.append(StringNode(value=value, path=path))
 
@@ -71,59 +71,82 @@ class ReplacerOptions(TypedDict):
 class StringNodeRule(TypedDict):
     """Declarative rule used for replacing sensitive data."""
 
-    pattern: Union[str, re.Pattern]
+    pattern: re.Pattern
     """Regex pattern to match."""
 
-    replace: Optional[str] = "[redacted]"
+    replace: Optional[str]
     """Replacement value. Defaults to `[redacted]` if not specified."""
 
 
+class RuleNodeProcessor(StringNodeProcessor):
+    """String node processor that uses a list of rules to replace sensitive data."""
+
+    rules: List[StringNodeRule]
+
+    def __init__(self, rules: List[StringNodeRule]):
+        """Initialize the processor with a list of rules."""
+        self.rules = rules
+
+    def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
+        """Mask nodes using the rules."""
+        result = []
+        for item in nodes:
+            new_value = item["value"]
+            for rule in self.rules:
+                new_value = rule["pattern"].sub(
+                    rule["replace"]
+                    if isinstance(rule["replace"], str)
+                    else "[redacted]",
+                    new_value,
+                )
+            if new_value != item["value"]:
+                result.append(StringNode(value=new_value, path=item["path"]))
+        return result
+
+
+class CallableNodeProcessor(StringNodeProcessor):
+    """String node processor that uses a callable function to replace sensitive data."""
+
+    func: Callable[[str, list[str | int]], str]
+
+    def __init__(self, func: Callable[[str, list[str | int]], str]):
+        """Initialize the processor with a callable function."""
+        self.func = func
+
+    def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
+        """Mask nodes using the callable function."""
+        retval: list[StringNode] = []
+        for node in nodes:
+            candidate = self.func(node["value"], node["path"])
+            if candidate != node["value"]:
+                retval.append(StringNode(value=candidate, path=node["path"]))
+        return retval
+
+
 ReplacerType = Union[
-    Callable[[str, tuple[str | int]], str], List[StringNodeRule], StringNodeProcessor
+    Callable[[str, list[str | int]], str], List[StringNodeRule], StringNodeProcessor
 ]
 
-T = TypeVar("T", str, dict)
+
+def _get_node_processor(replacer: ReplacerType) -> StringNodeProcessor:
+    if isinstance(replacer, list):
+        return RuleNodeProcessor(rules=replacer)
+    elif callable(replacer):
+        return CallableNodeProcessor(func=replacer)
+    else:
+        return replacer
 
 
 def replace_sensitive_data(
-    data: T, replacer: ReplacerType, options: Optional[ReplacerOptions] = None
-) -> T:
+    data: Any, replacer: ReplacerType, options: Optional[ReplacerOptions] = None
+) -> Any:
     """Replace sensitive data."""
     nodes = _extract_string_nodes(
-        data, {"maxDepth": (options or {}).get("maxDepth", 10)}
+        data, {"maxDepth": (options.get("maxDepth") if options else None) or 10}
     )
     mutate_value = copy.deepcopy(data) if options and options["deepClone"] else data
 
-    if isinstance(replacer, list):
-
-        def mask_nodes(nodes: List[StringNode]) -> List[StringNode]:
-            result = []
-            for item in nodes:
-                new_value = item["value"]
-                for rule in replacer:
-                    new_value = rule["pattern"].sub(rule["replace"], new_value)
-                if new_value != item["value"]:
-                    result.append(StringNode(value=new_value, path=item["path"]))
-            return result
-
-        processor = StringNodeProcessor()
-        processor.mask_nodes = mask_nodes
-    elif callable(replacer):
-
-        def mask_nodes(nodes: List[StringNode]) -> List[StringNode]:
-            retval: list[StringNode] = []
-            for node in nodes:
-                candidate = replacer(node["value"], node["path"])
-                if candidate != node["value"]:
-                    retval.append(StringNode(value=candidate, path=node["path"]))
-            return retval
-
-        processor = StringNodeProcessor()
-        processor.mask_nodes = mask_nodes
-    else:
-        processor = replacer
-
-    to_update = processor.mask_nodes(nodes)
+    to_update = _get_node_processor(replacer).mask_nodes(nodes)
     for node in to_update:
         if not node["path"]:
             mutate_value = node["value"]
