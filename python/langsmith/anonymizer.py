@@ -18,14 +18,14 @@ class StringNode(TypedDict):
     value: str
     """String value."""
 
-    path: list[Union[str, int]]
+    path: List[Union[str, int]]
     """Path to the string node in the data."""
 
 
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNode]:
     max_depth = options.get("maxDepth") or 10
 
-    queue: List[Tuple[Any, int, list[Union[str, int]]]] = [(data, 0, list())]
+    queue: List[Tuple[Any, int, List[Union[str, int]]]] = [(data, 0, list())]
     result: List[StringNode] = []
 
     while queue:
@@ -109,15 +109,15 @@ class RuleNodeProcessor(StringNodeProcessor):
 class CallableNodeProcessor(StringNodeProcessor):
     """String node processor that uses a callable function to replace sensitive data."""
 
-    func: Callable[[str, list[Union[str, int]]], str]
+    func: Callable[[str, List[Union[str, int]]], str]
 
-    def __init__(self, func: Callable[[str, list[Union[str, int]]], str]):
+    def __init__(self, func: Callable[[str, List[Union[str, int]]], str]):
         """Initialize the processor with a callable function."""
         self.func = func
 
     def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
         """Mask nodes using the callable function."""
-        retval: list[StringNode] = []
+        retval: List[StringNode] = []
         for node in nodes:
             candidate = self.func(node["value"], node["path"])
             if candidate != node["value"]:
@@ -126,7 +126,7 @@ class CallableNodeProcessor(StringNodeProcessor):
 
 
 ReplacerType = Union[
-    Callable[[str, list[Union[str, int]]], str],
+    Callable[[str, List[Union[str, int]]], str],
     List[StringNodeRule],
     StringNodeProcessor,
 ]
