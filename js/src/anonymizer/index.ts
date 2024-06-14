@@ -58,79 +58,82 @@ export type ReplacerType =
   | StringNodeRule[]
   | StringNodeProcessor;
 
-export function replaceSensitiveData<T>(
-  data: T,
+export function createAnonymizer<T>(
   replacer: ReplacerType,
   options?: {
     maxDepth?: number;
     deepClone?: boolean;
   }
-): T {
-  const nodes = extractStringNodes(data, {
-    maxDepth: options?.maxDepth,
-  });
+) {
+  return (data: T): T => {
+    const nodes = extractStringNodes(data, {
+      maxDepth: options?.maxDepth,
+    });
 
-  // by default we opt-in to mutate the value directly
-  // to improve performance
-  let mutateValue = options?.deepClone ? deepClone(data) : data;
+    // by default we opt-in to mutate the value directly
+    // to improve performance
+    let mutateValue = options?.deepClone ? deepClone(data) : data;
 
-  const processor: StringNodeProcessor = Array.isArray(replacer)
-    ? (() => {
-        const replacers: [regex: RegExp, replace: string][] = replacer.map(
-          ({ pattern, type, replace }) => {
-            if (type != null && type !== "pattern")
-              throw new Error("Invalid anonymizer type");
-            return [
-              typeof pattern === "string" ? new RegExp(pattern, "g") : pattern,
-              replace ?? "[redacted]",
-            ];
-          }
-        );
+    const processor: StringNodeProcessor = Array.isArray(replacer)
+      ? (() => {
+          const replacers: [regex: RegExp, replace: string][] = replacer.map(
+            ({ pattern, type, replace }) => {
+              if (type != null && type !== "pattern")
+                throw new Error("Invalid anonymizer type");
+              return [
+                typeof pattern === "string"
+                  ? new RegExp(pattern, "g")
+                  : pattern,
+                replace ?? "[redacted]",
+              ];
+            }
+          );
 
-        if (replacers.length === 0) throw new Error("No replacers provided");
-        return {
-          maskNodes: (nodes: StringNode[]) => {
-            return nodes.reduce<StringNode[]>((memo, item) => {
-              const newValue = replacers.reduce((value, [regex, replace]) => {
-                const result = value.replace(regex, replace);
+          if (replacers.length === 0) throw new Error("No replacers provided");
+          return {
+            maskNodes: (nodes: StringNode[]) => {
+              return nodes.reduce<StringNode[]>((memo, item) => {
+                const newValue = replacers.reduce((value, [regex, replace]) => {
+                  const result = value.replace(regex, replace);
 
-                // make sure we reset the state of regex
-                regex.lastIndex = 0;
+                  // make sure we reset the state of regex
+                  regex.lastIndex = 0;
 
-                return result;
-              }, item.value);
+                  return result;
+                }, item.value);
 
+                if (newValue !== item.value) {
+                  memo.push({ value: newValue, path: item.path });
+                }
+
+                return memo;
+              }, []);
+            },
+          };
+        })()
+      : typeof replacer === "function"
+      ? {
+          maskNodes: (nodes: StringNode[]) =>
+            nodes.reduce<StringNode[]>((memo, item) => {
+              const newValue = replacer(item.value, item.path);
               if (newValue !== item.value) {
                 memo.push({ value: newValue, path: item.path });
               }
 
               return memo;
-            }, []);
-          },
-        };
-      })()
-    : typeof replacer === "function"
-    ? {
-        maskNodes: (nodes: StringNode[]) =>
-          nodes.reduce<StringNode[]>((memo, item) => {
-            const newValue = replacer(item.value, item.path);
-            if (newValue !== item.value) {
-              memo.push({ value: newValue, path: item.path });
-            }
+            }, []),
+        }
+      : replacer;
 
-            return memo;
-          }, []),
+    const toUpdate = processor.maskNodes(nodes);
+    for (const node of toUpdate) {
+      if (node.path === "") {
+        mutateValue = node.value as unknown as T;
+      } else {
+        set(mutateValue as unknown as object, node.path, node.value);
       }
-    : replacer;
-
-  const toUpdate = processor.maskNodes(nodes);
-  for (const node of toUpdate) {
-    if (node.path === "") {
-      mutateValue = node.value as unknown as T;
-    } else {
-      set(mutateValue as unknown as object, node.path, node.value);
     }
-  }
 
-  return mutateValue;
+    return mutateValue;
+  };
 }
