@@ -237,7 +237,7 @@ async def test_mixed_sync_async_fibonacci(mock_client: Client) -> None:
     assert len(sorted_spans) == 177
 
 
-@pytest.mark.xfail(reason="The @traceable and RunnableLambda dont play nice")
+@pytest.mark.xfail(reason="Bug in the unit test. This is fine in notebook")
 async def test_tracing_within_runnables() -> None:
     from langchain_core.runnables import RunnableLambda
     from langchain_core.tracers import LangChainTracer
@@ -258,4 +258,4 @@ async def test_tracing_within_runnables() -> None:
 
         bar_ = RunnableLambda(bar)
         assert bar_.invoke(1, {"callbacks": [tracer]}) == 3
-    assert extract_spans(mock_client) != [], # Fails here silently
+    assert extract_spans(mock_client) != []  # Fails here silently
