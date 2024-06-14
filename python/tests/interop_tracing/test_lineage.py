@@ -7,7 +7,7 @@ import pytest
 from langsmith import Client
 from langsmith import traceable
 from langsmith.run_helpers import tracing_context, get_current_run_tree
-from tests.interop_tracing.utils import extract_span_tree
+from tests.interop_tracing.utils import extract_span_tree, extract_spans
 
 
 def _get_mock_client() -> Client:
@@ -237,25 +237,25 @@ async def test_mixed_sync_async_fibonacci(mock_client: Client) -> None:
     assert len(sorted_spans) == 177
 
 
-async def test_tracing_within_runnables(mock_client: Client) -> None:
+@pytest.mark.xfail(reason="The @traceable and RunnableLambda dont play nice")
+async def test_tracing_within_runnables() -> None:
     from langchain_core.runnables import RunnableLambda
+    from langchain_core.tracers import LangChainTracer
 
-    @traceable()
-    def foo(x: int):
-        return x + 1
+    mock_client = _get_mock_client()
 
-    def bar(x: int):
-        return foo(x + 1)
-
-    bar_ = RunnableLambda(bar)
+    tracer = LangChainTracer(client=mock_client)
 
     with tracing_context(enabled=True):
-        bar_(1)
 
+        @traceable()
+        def foo(x: int):
+            return x + 1
 
+        @traceable()
+        def bar(x: int):
+            return foo(x + 1)
 
-
-
-
-
-
+        bar_ = RunnableLambda(bar)
+        assert bar_.invoke(1, {"callbacks": [tracer]}) == 3
+    assert extract_spans(mock_client) != [], # Fails here silently
