@@ -133,7 +133,7 @@ class Tree:
         child_ids = self.parent_id_to_child_ids.get(node["id"], [])
         return [child for child in self.children if child["id"] in child_ids]
 
-    def get_breadth_first_travel(self) -> List[Tuple[Span, int]]:
+    def get_breadth_first_traversal(self) -> List[Tuple[Span, int]]:
         """Return a list of nodes in the order they were added."""
         # First we assert there's only a single root node
         root_nodes = self.get_root_nodes()
