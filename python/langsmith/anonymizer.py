@@ -94,9 +94,11 @@ class RuleNodeProcessor(StringNodeProcessor):
             new_value = item["value"]
             for rule in self.rules:
                 new_value = rule["pattern"].sub(
-                    rule["replace"]
-                    if isinstance(rule["replace"], str)
-                    else "[redacted]",
+                    (
+                        rule["replace"]
+                        if isinstance(rule["replace"], str)
+                        else "[redacted]"
+                    ),
                     new_value,
                 )
             if new_value != item["value"]:
