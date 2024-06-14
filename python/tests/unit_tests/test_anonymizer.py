@@ -10,7 +10,7 @@ UUID_REGEX = re.compile(
 
 
 def test_replacer_function():
-    def replacer(text: str, _: tuple[str | int]):
+    def replacer(text: str, _: list[str | int]):
         text = EMAIL_REGEX.sub("[email address]", text)
         text = UUID_REGEX.sub("[uuid]", text)
         return text
