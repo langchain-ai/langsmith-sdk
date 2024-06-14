@@ -1,5 +1,6 @@
 import copy  # noqa
 import re
+import inspect
 from abc import abstractmethod
 from collections import defaultdict
 from typing import Any, Callable, List, Optional, Tuple, TypedDict, Union
@@ -110,16 +111,22 @@ class CallableNodeProcessor(StringNodeProcessor):
     """String node processor that uses a callable function to replace sensitive data."""
 
     func: Callable[[str, List[Union[str, int]]], str]
+    accepts_path: bool
 
     def __init__(self, func: Callable[[str, List[Union[str, int]]], str]):
         """Initialize the processor with a callable function."""
         self.func = func
+        self.accepts_path = len(inspect.signature(func).parameters) == 2
 
     def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
         """Mask nodes using the callable function."""
         retval: List[StringNode] = []
         for node in nodes:
-            candidate = self.func(node["value"], node["path"])
+            candidate = (
+                self.func(node["value"], node["path"])
+                if self.accepts_path
+                else self.func(node["value"])
+            )
             if candidate != node["value"]:
                 retval.append(StringNode(value=candidate, path=node["path"]))
         return retval
