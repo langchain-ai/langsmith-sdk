@@ -1,4 +1,5 @@
 import re
+from typing import Union
 from uuid import uuid4
 
 from langsmith.anonymizer import StringNodeRule, replace_sensitive_data
@@ -10,7 +11,7 @@ UUID_REGEX = re.compile(
 
 
 def test_replacer_function():
-    def replacer(text: str, _: list[str | int]):
+    def replacer(text: str, _: list[Union[str, int]]):
         text = EMAIL_REGEX.sub("[email address]", text)
         text = UUID_REGEX.sub("[uuid]", text)
         return text

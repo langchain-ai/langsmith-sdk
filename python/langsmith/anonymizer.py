@@ -18,14 +18,14 @@ class StringNode(TypedDict):
     value: str
     """String value."""
 
-    path: list[str | int]
+    path: list[Union[str, int]]
     """Path to the string node in the data."""
 
 
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNode]:
     max_depth = options.get("maxDepth") or 10
 
-    queue: List[Tuple[Any, int, list[str | int]]] = [(data, 0, list())]
+    queue: List[Tuple[Any, int, list[Union[str, int]]]] = [(data, 0, list())]
     result: List[StringNode] = []
 
     while queue:
@@ -109,9 +109,9 @@ class RuleNodeProcessor(StringNodeProcessor):
 class CallableNodeProcessor(StringNodeProcessor):
     """String node processor that uses a callable function to replace sensitive data."""
 
-    func: Callable[[str, list[str | int]], str]
+    func: Callable[[str, list[Union[str, int]]], str]
 
-    def __init__(self, func: Callable[[str, list[str | int]], str]):
+    def __init__(self, func: Callable[[str, list[Union[str, int]]], str]):
         """Initialize the processor with a callable function."""
         self.func = func
 
@@ -126,7 +126,9 @@ class CallableNodeProcessor(StringNodeProcessor):
 
 
 ReplacerType = Union[
-    Callable[[str, list[str | int]], str], List[StringNodeRule], StringNodeProcessor
+    Callable[[str, list[Union[str, int]]], str],
+    List[StringNodeRule],
+    StringNodeProcessor,
 ]
 
 
