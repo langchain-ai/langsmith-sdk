@@ -33,6 +33,16 @@ def test_replacer_function():
     assert create_anonymizer(replacer)("hello@example.com") == "[email address]"
 
 
+def test_replacer_lambda():
+    assert create_anonymizer(lambda text: EMAIL_REGEX.sub("[email address]", text))(
+        {
+            "message": "Hello, this is my email: hello@example.com",
+        }
+    ) == {
+        "message": "Hello, this is my email: [email address]",
+    }
+
+
 def test_replacer_declared():
     replacers = [
         StringNodeRule(pattern=EMAIL_REGEX, replace="[email address]"),
