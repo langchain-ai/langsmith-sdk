@@ -105,12 +105,13 @@ test.each(permutations)(
         callbacks: [tracer],
       });
     }
-    const finalCall = callSpy.mock.calls[callSpy.mock.calls.length - 1];
-    const finalCallArgs = finalCall[2] as any;
-    expect(finalCallArgs).toBeDefined();
-    const finalCallOutputs = JSON.parse(finalCallArgs.body).outputs;
-    const finalCallOutput = finalCallOutputs[Object.keys(finalCallOutputs)[0]];
-    console.log(finalCallOutput, permutation.map((p) => p.name));
+    const callBodies = callSpy.mock.calls.map((call) => {
+      return JSON.parse((call[2] as any).body);
+    });
+    const finalCallBody = callBodies[callBodies.length - 1];
+    expect(finalCallBody).toBeDefined();
+    const finalCallOutput =
+      finalCallBody.outputs[Object.keys(finalCallBody.outputs)[0]];
     expect(finalCallOutput).toEqual(permutation.map((p) => p.name));
   }
 );
