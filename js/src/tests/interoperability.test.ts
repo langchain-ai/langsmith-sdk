@@ -28,8 +28,7 @@ const createRunnableLambdaWithWrappedCall = (
 ) => {
   return RunnableLambda.from(async (input: string[]) => {
     const res = await fn(input);
-    res.push("RunnableLambda");
-    return res;
+    return res.concat(["RunnableLambda"]);
   });
 };
 
@@ -41,8 +40,7 @@ const createTraceableWithWrappedCall = (
   return traceable(
     async (input: string[]) => {
       const res = await fn(input);
-      res.push("traceable");
-      return res;
+      return res.concat(["traceable"]);
     },
     {
       client,
@@ -56,8 +54,7 @@ const entries = [
     name: "RunnableLambda",
     base: () =>
       RunnableLambda.from(async (input: string[]) => {
-        input.push("RunnableLambda");
-        return input;
+        return input.concat(["RunnableLambda"]);
       }),
     wrap: createRunnableLambdaWithWrappedCall,
   },
@@ -66,8 +63,7 @@ const entries = [
     base: (client: Client) =>
       traceable(
         async (input: string[]) => {
-          input.push("traceable");
-          return input;
+          return input.concat(["traceable"]);
         },
         { client, tracingEnabled: true }
       ),
@@ -109,7 +105,12 @@ test.each(permutations)(
         callbacks: [tracer],
       });
     }
-    console.log(res);
-    console.log(callSpy.mock.calls);
+    const finalCall = callSpy.mock.calls[callSpy.mock.calls.length - 1];
+    const finalCallArgs = finalCall[2] as any;
+    expect(finalCallArgs).toBeDefined();
+    const finalCallOutputs = JSON.parse(finalCallArgs.body).outputs;
+    const finalCallOutput = finalCallOutputs[Object.keys(finalCallOutputs)[0]];
+    console.log(finalCallOutput, permutation.map((p) => p.name));
+    expect(finalCallOutput).toEqual(permutation.map((p) => p.name));
   }
 );
