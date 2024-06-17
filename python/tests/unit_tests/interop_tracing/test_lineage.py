@@ -55,7 +55,7 @@ def _sync_execute_runnable(
 
 
 async def _async_execute_runnable(
-    runnable: Runnable,
+    runnable: Runnable[Any, Any],
     method: Literal[
         "invoke", "batch", "stream", "ainvoke", "abatch", "astream_events", "astream"
     ],

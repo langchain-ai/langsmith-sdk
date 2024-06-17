@@ -14,8 +14,8 @@ from tests.unit_tests.interop_tracing.utils import extract_span_tree
 
 
 def _wrap_in_lambda(
-    underlying: Union[Runnable, Callable], depth: int
-) -> RunnableLambda:
+    underlying: Union[RunnableLambda[Any, Any], Callable], depth: int
+) -> RunnableLambda[Any, Any]:
     """Wrap the underlying logic inside a Runnable Lambda.
 
     This function should create another layer of nesting for tracing purposes.
@@ -26,7 +26,7 @@ def _wrap_in_lambda(
     """
     if inspect.isfunction(underlying):
         return RunnableLambda(underlying).with_config({"run_name": f"lambda_{depth}"})
-    elif isinstance(underlying, Runnable):
+    elif isinstance(underlying, Runnable[Any, Any]):
 
         def _wrapped(inputs: Any):
             return underlying.invoke(inputs)

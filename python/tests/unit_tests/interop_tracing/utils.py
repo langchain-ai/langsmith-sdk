@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import json
 import uuid
 from collections import deque
-from typing import List, Optional, Sequence, Tuple, TypedDict, Union, overload
+from typing import List, Literal, Optional, Sequence, Tuple, TypedDict, Union, overload
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,8 +32,8 @@ class Request(TypedDict):
 
 def _extract_requests(mock_client: Client) -> List[Request]:
     """Extract run information from the create run calls"""
-    calls = []
-    for call in mock_client.session.request.mock_calls:
+    calls: List[Request] = []
+    for call in mock_client.session.request.mock_calls:  # type: ignore
         if not call.args:
             continue
 
@@ -161,12 +163,18 @@ class SpanTree:
 
     @overload
     def get_breadth_first_traversal(
-        self, *, include_level: bool = False, attributes: Optional[Sequence[str]] = None
+        self,
+        *,
+        include_level: Literal[False] = False,
+        attributes: Optional[Sequence[str]] = None,
     ) -> List[Span]: ...
 
     @overload
     def get_breadth_first_traversal(
-        self, *, include_level: bool = True, attributes: Optional[Sequence[str]] = None
+        self,
+        *,
+        include_level: Literal[True],
+        attributes: Optional[Sequence[str]] = None,
     ) -> List[Tuple[Span, int]]: ...
 
     def get_breadth_first_traversal(
