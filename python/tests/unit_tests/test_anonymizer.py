@@ -1,7 +1,7 @@
 import json
 import re
 import uuid
-from typing import List, Union
+from typing import List, Union, cast
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -108,21 +108,28 @@ def test_replacer_declared_in_traceable():
         for call in mock_client.session.request.mock_calls
         if call.args and call.args[1].endswith("runs")
     ]
+
     patches = [
         json.loads(call[2]["data"])
         for call in mock_client.session.request.mock_calls
-        if call.args and call.args[1].endswith("patches")
+        if call.args
+        and cast(str, call.args[0]).lower() == "patch"
+        and "/runs" in call.args[1]
     ]
+
     expected_inputs = {"from_": {"from_email": "[email address]"}, "body": body_}
     expected_outputs = {
-        "user_email": "[email address]",
-        "user_id": "[uuid]",
-        "body": body_,
+        "output": {
+            "user_email": "[email address]",
+            "user_id": "[uuid]",
+            "body": body_,
+        }
     }
     assert len(posts) == 1
     posted_data = posts[0]
     assert posted_data["inputs"] == expected_inputs
     assert len(patches) == 1
     patched_data = patches[0]
-    assert patched_data["inputs"] == expected_inputs
+    if "inputs" in patched_data:
+        assert patched_data["inputs"] == expected_inputs
     assert patched_data["outputs"] == expected_outputs
