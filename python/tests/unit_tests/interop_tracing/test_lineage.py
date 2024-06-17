@@ -29,7 +29,7 @@ ALL_METHODS = _SYNC_METHODS + _ASYNC_METHODS
 
 
 def _sync_execute_runnable(
-    runnable: Runnable,
+    runnable: Runnable[Any, Any],
     method: Literal["invoke", "batch", "stream"],
     inputs: Any,
     *,
@@ -82,6 +82,8 @@ async def _async_execute_runnable(
         final_event = None
         async for event in runnable.astream_events(inputs, config, version="v2"):
             final_event = event
+        if final_event is None:
+            raise ValueError("No final event received")
         return final_event["data"]["output"]
     elif method in {"invoke", "batch", "stream"}:
         return _sync_execute_runnable(runnable, method, inputs, config=config)
@@ -305,7 +307,9 @@ async def test_mixed_sync_async_fibonacci(mock_client: Client) -> None:
 
 
 @pytest.mark.parametrize("method", _SYNC_METHODS)
-async def test_tracing_within_runnables(method: str) -> None:
+async def test_tracing_within_runnables(
+    method: Literal["invoke", "batch", "stream"],
+) -> None:
     from langchain_core.runnables import RunnableLambda
     from langchain_core.tracers import LangChainTracer
 
@@ -378,7 +382,11 @@ async def test_runnable_lambdas(mock_client: Client, method: str):
             return foo.invoke(inputs)
 
         await _async_execute_runnable(
-            bar, method, {"x": 1}, config={"callbacks": [tracer]}
+            bar,
+            # Complains about method being Literal vs. str
+            method,  # type:ignore[arg-type]
+            {"x": 1},
+            config={"callbacks": [tracer]},
         )
 
     span_tree = extract_span_tree(mock_client)
@@ -409,17 +417,20 @@ async def test_runnable_sequence(mock_client: Client, method: str) -> None:
         def bar(inputs):
             return inputs
 
-        @traceable(mock_client=mock_client)
+        @traceable(mock_client=mock_client)  # type: ignore
         def buzz(inputs):
             return inputs
 
         chain = (foo | bar | buzz).with_config({"run_name": "chain"})
 
         await _async_execute_runnable(
-            chain, method, {"x": 1}, config={"callbacks": [tracer]}
+            chain,
+            # Complains about method being Literal vs. str
+            method,  # type:ignore[arg-type]
+            {"x": 1},
+            config={"callbacks": [tracer]},
         )
 
-    mock_client.tracing_queue.join()
     span_tree = extract_span_tree(mock_client)
     nodes = span_tree.get_breadth_first_traversal(attributes=["name"])
     names = [node["name"] for node in nodes]
@@ -449,7 +460,11 @@ async def test_with_tracing(mock_client: Client, method: str) -> None:
         chain = foo
 
         await _async_execute_runnable(
-            chain, method, {"x": 1}, config={"callbacks": [tracer]}
+            chain,
+            # Complains about method being Literal vs. str
+            method,  # type:ignore[arg-type]
+            {"x": 1},
+            config={"callbacks": [tracer]},
         )
 
     span_tree = extract_span_tree(mock_client)

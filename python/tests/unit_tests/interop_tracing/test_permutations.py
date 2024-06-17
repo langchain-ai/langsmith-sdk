@@ -14,8 +14,8 @@ from tests.unit_tests.interop_tracing.utils import extract_span_tree
 
 
 def _wrap_in_lambda(
-    underlying: Union[RunnableLambda[Any, Any], Callable], depth: int
-) -> RunnableLambda[Any, Any]:
+    underlying: Union[Runnable[Any, Any], Callable], depth: int
+) -> Runnable[Any, Any]:
     """Wrap the underlying logic inside a Runnable Lambda.
 
     This function should create another layer of nesting for tracing purposes.
@@ -26,12 +26,12 @@ def _wrap_in_lambda(
     """
     if inspect.isfunction(underlying):
         return RunnableLambda(underlying).with_config({"run_name": f"lambda_{depth}"})
-    elif isinstance(underlying, Runnable[Any, Any]):
+    elif isinstance(underlying, Runnable):
 
-        def _wrapped(inputs: Any):
+        def _wrapped(inputs: Any) -> Any:
             return underlying.invoke(inputs)
 
-        async def _async_wrapped(inputs):
+        async def _async_wrapped(inputs: Any) -> Any:
             return await underlying.ainvoke(inputs)
 
         return RunnableLambda(_wrapped, afunc=_async_wrapped).with_config(
@@ -52,9 +52,16 @@ def _wrap_in_traceable(
         underlying (Union[Runnable, Callable]): The underlying logic to wrap
         depth (int): The depth of the current transformation -- used for naming purposes
     """
+    if inspect.iscoroutinefunction(underlying):
+
+        async def _async_wrapped(inputs: Any) -> Any:
+            return await underlying(inputs)
+
+        return traceable(client=client, name=f"traceable_{depth}")(_async_wrapped)
+
     if inspect.isfunction(underlying):
 
-        def _wrapped(inputs: Any):
+        def _wrapped(inputs: Any) -> Any:
             return underlying(inputs)
 
         return traceable(client=client, name=f"traceable_{depth}")(_wrapped)
@@ -113,9 +120,11 @@ def test_permutations(depth: int) -> None:
             for idx, transform in enumerate(transforms):
                 current_depth = depth - idx
                 if transform == "RunnableLambda":
-                    traced_program = _wrap_in_lambda(traced_program, current_depth)
+                    traced_program = _wrap_in_lambda(  # type: ignore[assignment]
+                        traced_program, current_depth
+                    )
                 elif transform == "@traceable":
-                    traced_program = _wrap_in_traceable(
+                    traced_program = _wrap_in_traceable(  # type: ignore[assignment]
                         mock_client, traced_program, current_depth
                     )
                 else:
@@ -199,9 +208,11 @@ async def test_async_permutations(depth: int) -> None:
             for idx, transform in enumerate(transforms):
                 current_depth = depth - idx
                 if transform == "RunnableLambda":
-                    traced_program = _wrap_in_lambda(traced_program, current_depth)
+                    traced_program = _wrap_in_lambda(  # type: ignore[assignment]
+                        traced_program, current_depth
+                    )
                 elif transform == "@traceable":
-                    traced_program = _wrap_in_traceable(
+                    traced_program = _wrap_in_traceable(  # type: ignore[assignment]
                         mock_client, traced_program, current_depth
                     )
                 else:

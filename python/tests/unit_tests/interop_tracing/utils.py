@@ -3,7 +3,17 @@ from __future__ import annotations
 import json
 import uuid
 from collections import deque
-from typing import List, Literal, Optional, Sequence, Tuple, TypedDict, Union, overload
+from typing import (
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    TypedDict,
+    Union,
+    overload,
+)
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,10 +33,8 @@ def mock_client() -> Client:
     return _get_mock_client()
 
 
-class Request(TypedDict):
+class Request(TypedDict, total=False):
     verb: str
-    data: dict
-    headers: dict
     path: str
 
 
@@ -59,12 +67,17 @@ def _extract_requests(mock_client: Client) -> List[Request]:
     return calls
 
 
-class Span(TypedDict, total=False):
+class Span(TypedDict):
     """Tracing span."""
 
     id: str
     parent_id: Optional[str]
     name: str
+    tags: List[str]
+    metadata: dict
+    run_type: Optional[str]
+    inputs: Optional[dict]
+    outputs: Optional[dict]
 
 
 def _extract_lineage_information(requests: Sequence[Request]) -> List[Span]:
@@ -74,7 +87,13 @@ def _extract_lineage_information(requests: Sequence[Request]) -> List[Span]:
             continue
         if not request["path"].endswith("/runs/batch"):
             raise ValueError(f"Unrecognized path {request['path']}")
-        post_data = request["data"]["post"]
+        if "data" not in request:
+            raise ValueError("No data in request")
+
+        if "post" not in request["data"]:  # type: ignore
+            raise ValueError("No post data in request")
+
+        post_data = request["data"]["post"]  # type: ignore
         for item in post_data:
             span: Span = {
                 "id": item["id"],
@@ -93,6 +112,9 @@ def _extract_lineage_information(requests: Sequence[Request]) -> List[Span]:
 
 
 def extract_spans(mock_client: Client) -> List[Span]:
+    """Extract lineage information from the mock client."""
+    if not mock_client.tracing_queue:
+        raise AssertionError()
     mock_client.tracing_queue.join()
     calls = _extract_requests(mock_client)
     return _extract_lineage_information(calls)
@@ -129,11 +151,14 @@ class SpanTree:
 
         self.child_id_to_parent_id = {node["id"]: node["parent_id"] for node in spans}
         # Invert to calculate parent id to child id
-        self.parent_id_to_child_ids = {}
+        self.parent_id_to_child_ids: Dict[str, List[str]] = {}
         for child_id, parent_id in self.child_id_to_parent_id.items():
+            if parent_id is None:
+                continue
             if parent_id not in self.parent_id_to_child_ids:
-                self.parent_id_to_child_ids[parent_id] = []
-            self.parent_id_to_child_ids[parent_id].append(child_id)
+                self.parent_id_to_child_ids[parent_id] = [child_id]
+            else:
+                self.parent_id_to_child_ids[parent_id].append(child_id)
         self.assert_no_cycles()
 
     def assert_no_cycles(self) -> None:
@@ -167,7 +192,7 @@ class SpanTree:
         *,
         include_level: Literal[False] = False,
         attributes: Optional[Sequence[str]] = None,
-    ) -> List[Span]: ...
+    ) -> List[dict]: ...
 
     @overload
     def get_breadth_first_traversal(
@@ -175,11 +200,11 @@ class SpanTree:
         *,
         include_level: Literal[True],
         attributes: Optional[Sequence[str]] = None,
-    ) -> List[Tuple[Span, int]]: ...
+    ) -> List[Tuple[dict, int]]: ...
 
     def get_breadth_first_traversal(
         self, *, include_level: bool = False, attributes: Optional[Sequence[str]] = None
-    ) -> Union[List[Tuple[Span, int]], List[Span]]:
+    ) -> Union[List[Tuple[dict, int]], List[dict]]:
         """Return a list of nodes in breadth-first order.
 
         This is a LEVEL order traversal
@@ -219,11 +244,11 @@ class SpanTree:
 
         if attributes:
             repackaged = [
-                ({prop: node[prop] for prop in attributes}, level_)
+                ({prop: node[prop] for prop in attributes}, level_)  # type: ignore
                 for node, level_ in nodes_and_level
             ]
         else:
-            repackaged = nodes_and_level
+            repackaged = nodes_and_level  # type: ignore
 
         if include_level:
             return repackaged
