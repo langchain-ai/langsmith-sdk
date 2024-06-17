@@ -1,6 +1,5 @@
-import copy  # noqa
-import re
 import inspect
+import re
 from abc import abstractmethod
 from collections import defaultdict
 from typing import Any, Callable, List, Optional, Tuple, TypedDict, Union
@@ -152,18 +151,16 @@ def _get_node_processor(replacer: ReplacerType) -> StringNodeProcessor:
 
 
 def create_anonymizer(
-    replacer: ReplacerType, options: Optional[ReplacerOptions] = None
+    replacer: ReplacerType,
+    *,
+    max_depth: Optional[int] = None,
 ) -> Callable[[Any], Any]:
     """Create an anonymizer function."""
     processor = _get_node_processor(replacer)
 
     def anonymizer(data: Any) -> Any:
-        nodes = _extract_string_nodes(
-            data, {"max_depth": (options.get("max_depth") if options else None) or 10}
-        )
-        mutate_value = (
-            copy.deepcopy(data) if options and options["deep_clone"] else data
-        )
+        nodes = _extract_string_nodes(data, {"max_depth": max_depth or 10})
+        mutate_value = data
 
         to_update = processor.mask_nodes(nodes)
         for node in to_update:
