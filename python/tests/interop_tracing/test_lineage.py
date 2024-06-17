@@ -1,13 +1,13 @@
 import asyncio
 from concurrent import futures
-from typing import Literal, Any, Optional
+from typing import Any, Literal, Optional
 from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.runnables import Runnable, RunnableConfig
-from langsmith import Client
-from langsmith import traceable
-from langsmith.run_helpers import tracing_context, get_current_run_tree
+
+from langsmith import Client, traceable
+from langsmith.run_helpers import get_current_run_tree, tracing_context
 from tests.interop_tracing.utils import extract_span_tree
 
 

@@ -1,10 +1,11 @@
 import json
 import uuid
 from collections import deque
-from typing import TypedDict, List, Sequence, Optional, Tuple, Union
+from typing import List, Optional, Sequence, Tuple, TypedDict, Union
 from unittest.mock import MagicMock
 
 import pytest
+
 from langsmith import Client
 
 

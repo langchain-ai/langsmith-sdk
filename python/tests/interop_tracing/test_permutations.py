@@ -1,12 +1,13 @@
 """Test various permutations of langsmith-tracing and langchain runnables."""
 
 import inspect
-import pytest
 from itertools import combinations_with_replacement
-from typing import Union, Callable
+from typing import Callable, Union
 
+import pytest
 from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.tracers import LangChainTracer
+
 from langsmith import Client, traceable, tracing_context
 from tests.interop_tracing.test_lineage import _get_mock_client
 from tests.interop_tracing.utils import extract_span_tree
@@ -54,41 +55,40 @@ def _wrap_in_traceable(
         raise TypeError(f"Unsupported type {type(underlying)}")
 
 
-@pytest.mark.parametrize("depth", range(0, 4))
-def test_permutations(depth: int, block_type: str) -> None:
-    """Test permutations.
+@pytest.mark.parametrize("depth", range(1, 4))
+def test_permutations(depth: int) -> None:
+    """Generate a bunch of "programs" and verify that they get traced correctly.
 
-    This function creates a bunch of testing permutations to test
-    the interaction between langsmith and langchain tracing.
+    The programs are built by transforming a simple passthrough function
+    with a bunch of different transformations. The transformations are
+    applied in all possible combinations to a certain depth.
 
+    We're trying to verify that primarily that tracing works smoothly across
+    langsmith-sdk and langchain primitives.
+
+    For example, if we use the two transformations of:
+
+    1. wrap in @traceable decorator
+    2. wrap in RunnableLambda
+
+    Then we will generate the following combinations for depth=2:
+
+    1. traceable(traceable(foo))
+    2. traceable(RunnableLambda(foo))
+    3. RunnableLambda(traceable(foo))
+    4. RunnableLambda(RunnableLambda(foo))
     """
-    # Here we have two basic transformations one that
-    # wraps logic in @traceable and another that wraps logic in a RunnableLambda.
-    # We will generate all possible combinations of these transformations
-    # to a certain depth and test that the resulting "program" gets traced correctly.
-    # For example, if depth is 2, we will generate the following combinations:
-    # 1. traceable(traceable(foo))
-    # 2. traceable(RunnableLambda(foo))
-    # 3. RunnableLambda(traceable(foo))
-    # 4. RunnableLambda(RunnableLambda(foo))
+
+    failed_test_cases = []
+
     combinations_of_transforms = combinations_with_replacement(
-        [_wrap_in_traceable, _wrap_in_lambda], r=depth
+        ["@traceable", "lambda"], r=depth
     )
 
     # Here we define a simple function that we will use as the base of our program.
-    @traceable(client=mock_client, name=f"traceable_{depth + 1}")
     def foo(x):
         """Basic passthrough traced with @traceable decorator."""
         return x
-
-    @RunnableLambda
-    def bar(x):
-        """Basic passthrough traced with RunnableLambda."""
-        return x
-
-    bar = bar.with_config({"run_name": f"traceable_{depth + 1}"})
-
-    blocks = [foo, bar]
 
     # Now, we will iterate over all combinations of transformations and
     # apply them to the base program.
@@ -100,10 +100,10 @@ def test_permutations(depth: int, block_type: str) -> None:
             traced_program = foo
             for idx, transform in enumerate(transforms):
                 current_depth = depth - idx
-                if transform is _wrap_in_lambda:
-                    traced_program = transform(traced_program, current_depth)
-                elif transform is _wrap_in_traceable:
-                    traced_program = transform(
+                if transform == "lambda":
+                    traced_program = _wrap_in_lambda(traced_program, current_depth)
+                elif transform == "@traceable":
+                    traced_program = _wrap_in_traceable(
                         mock_client, traced_program, current_depth
                     )
                 else:
@@ -119,10 +119,22 @@ def test_permutations(depth: int, block_type: str) -> None:
 
         # The span tree creation runs a number of assertion tests to verify
         # that mock client creates valid spans.
-        span_tree = extract_span_tree(mock_client)
-        nodes = span_tree.get_breadth_first_traversal(
-            include_level=False, attributes=["name"]
-        )
-        names = [node["name"] for node in nodes]
+        try:
+            span_tree = extract_span_tree(mock_client)
+            nodes = span_tree.get_breadth_first_traversal(
+                include_level=False, attributes=["name"]
+            )
+            names = [node["name"] for node in nodes]
+            assert len(names) == depth
+        except Exception as e:
+            failed_test_cases.append({"error": str(e), "transforms": transforms})
+            continue
 
-        assert len(names) == depth + 1
+    if failed_test_cases:
+        full_error_message = "\n".join(
+            [
+                f"Error: {test_case['error']}, Transforms: {test_case['transforms']}"
+                for test_case in failed_test_cases
+            ]
+        )
+        raise AssertionError(f"Failed test cases:\n{full_error_message}")
