@@ -1,4 +1,7 @@
-import { EvaluationResult } from "../evaluation/evaluator.js";
+import {
+  EvaluationResult,
+  EvaluationResults,
+} from "../evaluation/evaluator.js";
 import { evaluate } from "../evaluation/_runner.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
@@ -361,12 +364,8 @@ test("can pass multiple evaluators", async () => {
     });
   };
   const evaluators = [
-    {
-      evaluateRun: customEvaluatorOne,
-    },
-    {
-      evaluateRun: customEvaluatorTwo,
-    },
+    { evaluateRun: customEvaluatorOne },
+    { evaluateRun: customEvaluatorTwo },
   ];
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
@@ -735,4 +734,44 @@ test("evaluate can accept array of examples", async () => {
   expect(evalRes.results).toHaveLength(2);
   expect(firstEvalResults.evaluationResults.results).toHaveLength(1);
   expect(receivedCommentStrings).toEqual(expectedCommentStrings);
+});
+
+test("evaluate accepts evaluators which return multiple feedback keys", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return { foo: input.input + 1 };
+  };
+
+  const customEvaluator = (
+    run: Run,
+    example?: Example
+  ): Promise<EvaluationResults> => {
+    return Promise.resolve({
+      results: [
+        {
+          key: "first-key",
+          score: 1,
+          comment: `Run: ${run.id} Example: ${example?.id}`,
+        },
+        {
+          key: "second-key",
+          score: 2,
+          comment: `Run: ${run.id} Example: ${example?.id}`,
+        },
+      ],
+    });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [customEvaluator],
+    description: "evaluate can evaluate with custom evaluators",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  const comment = `Run: ${evalRes.results[0].run.id} Example: ${evalRes.results[0].example.id}`;
+  expect(evalRes.results[0].evaluationResults.results).toMatchObject([
+    { key: "first-key", score: 1, comment },
+    { key: "second-key", score: 2, comment },
+  ]);
 });

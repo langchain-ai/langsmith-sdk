@@ -199,7 +199,7 @@ def get_langchain_env_var_metadata() -> dict:
 def _get_default_revision_id() -> Optional[str]:
     """Get the default revision ID based on `git describe`."""
     try:
-        return exec_git(["describe", "--tags", "--dirty"])
+        return exec_git(["describe", "--tags", "--always", "--dirty"])
     except BaseException:
         return None
 
