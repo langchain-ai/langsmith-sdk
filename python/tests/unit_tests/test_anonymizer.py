@@ -1,7 +1,13 @@
+import json
 import re
+import uuid
 from typing import List, Union
+from unittest.mock import MagicMock
 from uuid import uuid4
 
+from pydantic import BaseModel
+
+from langsmith import Client, traceable
 from langsmith.anonymizer import StringNodeRule, create_anonymizer
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -65,3 +71,58 @@ def test_replacer_declared():
     ]
 
     assert create_anonymizer(replacers)("hello@example.com") == "[email address]"
+
+
+def test_replacer_declared_in_traceable():
+    replacers = [
+        StringNodeRule(pattern=EMAIL_REGEX, replace="[email address]"),
+        StringNodeRule(pattern=UUID_REGEX, replace="[uuid]"),
+    ]
+    anonymizer = create_anonymizer(replacers)
+    mock_client = Client(
+        session=MagicMock(), auto_batch_tracing=False, anonymizer=anonymizer
+    )
+
+    user_email = "my-test@langchain.ai"
+    user_id = "4ae21a90-d43b-4017-bb21-4fd9add235ff"
+
+    class MyOutput(BaseModel):
+        user_email: str
+        user_id: uuid.UUID
+        body: str
+
+    class MyInput(BaseModel):
+        from_email: str
+
+    @traceable(client=mock_client)
+    def my_func(body: str, from_: MyInput) -> MyOutput:
+        return MyOutput(user_email=user_email, user_id=user_id, body=body)
+
+    body_ = "Hello from Pluto"
+    res = my_func(body_, from_=MyInput(from_email="my-from-test@langchain.ai"))
+    expected = MyOutput(user_email=user_email, user_id=uuid.UUID(user_id), body=body_)
+    assert res == expected
+    # get posts
+    posts = [
+        json.loads(call[2]["data"])
+        for call in mock_client.session.request.mock_calls
+        if call.args and call.args[1].endswith("runs")
+    ]
+    patches = [
+        json.loads(call[2]["data"])
+        for call in mock_client.session.request.mock_calls
+        if call.args and call.args[1].endswith("patches")
+    ]
+    expected_inputs = {"from_": {"from_email": "[email address]"}, "body": body_}
+    expected_outputs = {
+        "user_email": "[email address]",
+        "user_id": "[uuid]",
+        "body": body_,
+    }
+    assert len(posts) == 1
+    posted_data = posts[0]
+    assert posted_data["inputs"] == expected_inputs
+    assert len(patches) == 1
+    patched_data = patches[0]
+    assert patched_data["inputs"] == expected_inputs
+    assert patched_data["outputs"] == expected_outputs
