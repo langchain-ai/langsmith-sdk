@@ -24,7 +24,7 @@ class StringNode(TypedDict):
 
 
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNode]:
-    max_depth = options.get("maxDepth") or 10
+    max_depth = options.get("max_depth") or 10
 
     queue: List[Tuple[Any, int, List[Union[str, int]]]] = [(data, 0, [])]
     result: List[StringNode] = []
@@ -159,9 +159,11 @@ def create_anonymizer(
 
     def anonymizer(data: Any) -> Any:
         nodes = _extract_string_nodes(
-            data, {"maxDepth": (options.get("maxDepth") if options else None) or 10}
+            data, {"max_depth": (options.get("max_depth") if options else None) or 10}
         )
-        mutate_value = copy.deepcopy(data) if options and options["deepClone"] else data
+        mutate_value = (
+            copy.deepcopy(data) if options and options["deep_clone"] else data
+        )
 
         to_update = processor.mask_nodes(nodes)
         for node in to_update:
