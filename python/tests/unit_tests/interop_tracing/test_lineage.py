@@ -16,7 +16,6 @@ def _get_mock_client() -> Client:
     client = Client(session=mock_session, api_key="test")
     return client
 
-
 @pytest.fixture
 def mock_client() -> Client:
     """Get a mock client."""
@@ -416,7 +415,7 @@ async def test_runnable_sequence(mock_client: Client, method: str) -> None:
         def bar(inputs):
             return inputs
 
-        @traceable(mock_client=mock_client)  # type: ignore
+        @traceable(client=mock_client)
         def buzz(inputs):
             return inputs
 
