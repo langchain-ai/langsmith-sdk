@@ -1,7 +1,7 @@
 import json
 import uuid
 from collections import deque
-from typing import List, Optional, Sequence, Tuple, TypedDict, Union
+from typing import List, Optional, Sequence, Tuple, TypedDict, Union, overload
 from unittest.mock import MagicMock
 
 import pytest
@@ -159,6 +159,16 @@ class SpanTree:
         child_ids = self.parent_id_to_child_ids.get(node["id"], [])
         return [child for child in self.spans if child["id"] in child_ids]
 
+    @overload
+    def get_breadth_first_traversal(
+        self, *, include_level: bool = False, attributes: Optional[Sequence[str]] = None
+    ) -> List[Span]: ...
+
+    @overload
+    def get_breadth_first_traversal(
+        self, *, include_level: bool = True, attributes: Optional[Sequence[str]] = None
+    ) -> List[Tuple[Span, int]]: ...
+
     def get_breadth_first_traversal(
         self, *, include_level: bool = False, attributes: Optional[Sequence[str]] = None
     ) -> Union[List[Tuple[Span, int]], List[Span]]:
@@ -238,4 +248,5 @@ def assert_is_valid_span(span: Span):
 
     assert isinstance(span.get("tags", []), list)
     assert isinstance(span.get("metadata", {}), dict)
-    assert span.get("inputs") is not None, f"Span should have inputs. {span}"
+    inputs = span.get("inputs")
+    assert inputs is not None and inputs != {}, f"Span should have inputs. {span}"

@@ -53,9 +53,17 @@ def _wrap_in_traceable(
         depth (int): The depth of the current transformation -- used for naming purposes
     """
     if inspect.isfunction(underlying):
-        return traceable(client=client, name=f"traceable_{depth}")(underlying)
+
+        def _wrapped(inputs: Any):
+            return underlying(inputs)
+
+        return traceable(client=client, name=f"traceable_{depth}")(_wrapped)
     elif isinstance(underlying, Runnable):
-        return traceable(client=client, name=f"traceable_{depth}")(underlying.invoke)
+
+        def _wrapped(inputs: Any):
+            return underlying.invoke(inputs)
+
+        return traceable(client=client, name=f"traceable_{depth}")(_wrapped)
     else:
         raise TypeError(f"Unsupported type {type(underlying)}")
 
@@ -126,8 +134,9 @@ def test_permutations(depth: int) -> None:
         try:
             span_tree = extract_span_tree(mock_client)
             nodes = span_tree.get_breadth_first_traversal(
-                include_level=False, attributes=["name"]
+                include_level=False, attributes=["name", "inputs"]
             )
+
             names = [node["name"] for node in nodes]
             assert len(names) == depth
         except Exception as e:
