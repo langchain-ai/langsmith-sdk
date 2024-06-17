@@ -1,17 +1,15 @@
 import json
-import time
 import uuid
-
 from collections import deque
-from typing import TypedDict, List, Sequence, Optional, Tuple, Any, Dict, Union
+from typing import TypedDict, List, Sequence, Optional, Tuple, Union
 from unittest.mock import MagicMock
 
 import pytest
-
 from langsmith import Client
 
 
 def _get_mock_client() -> Client:
+    """Get a mock client."""
     mock_session = MagicMock()
     client = Client(session=mock_session, api_key="test")
     return client
@@ -98,7 +96,25 @@ def extract_spans(mock_client: Client) -> List[Span]:
 
 class SpanTree:
     def __init__(self, spans: List[Span]) -> None:
-        """Build a span tree from the spans."""
+        """Build a span tree from the spans.
+
+        This will consturct a tree from the spans. The tree is represented as a list of
+        nodes, where each node is a dictionary with the following keys:
+
+        - id: The id of the node
+        - parent_id: The id of the parent node
+        - name: The name of the node
+        - tags: The tags of the node
+        - metadata: The metadata of the node
+        - run_type: The run type of the node
+        - inputs: The inputs of the node
+        - outputs: The outputs of the node
+
+        During the construction of the tree, we assert that the tree has no cycles.
+
+        We will also attempt to check that the spans themselves are valid (e.g.,
+        that the ids are UUIDs).
+        """
         for span in spans:
             assert_is_valid_span(span)
         self.spans = spans
@@ -120,18 +136,17 @@ class SpanTree:
         """Assert that the tree has no cycles."""
         # Start from root node
         root_nodes = self.get_root_nodes()
-        # Assert only one root node
-        assert len(root_nodes) == 1
-        root_node = root_nodes[0]
         visited = set()
-        stack = [root_node]
-        while stack:
-            node = stack.pop()
-            if node["id"] in visited:
-                raise ValueError("Cycle detected")
-            visited.add(node["id"])
-            children = self.get_children(node)
-            stack.extend(children)
+        for root_node in root_nodes:
+            # Assert only one root node
+            stack = [root_node]
+            while stack:
+                node = stack.pop()
+                if node["id"] in visited:
+                    raise ValueError("Cycle detected")
+                visited.add(node["id"])
+                children = self.get_children(node)
+                stack.extend(children)
 
     def get_root_nodes(self) -> List[Span]:
         """Return all nodes that do not have a parent."""
@@ -143,11 +158,24 @@ class SpanTree:
         return [child for child in self.spans if child["id"] in child_ids]
 
     def get_breadth_first_traversal(
-        self, *, include_level: bool = False
+        self, *, include_level: bool = False, attributes: Optional[Sequence[str]] = None
     ) -> Union[List[Tuple[Span, int]], List[Span]]:
-        """Return a list of nodes in the order they were added."""
+        """Return a list of nodes in the order they were added.
+
+        Args:
+            include_level: Whether to include the level of the node in the output.
+            attributes: optional list of attributes to project from the spans.
+
+        Returns:
+            A list of nodes in the order they were added. If include_level is True,
+            the list will contain tuples of the form (node, level), where level is the
+            depth from the root node.
+        """
         # First we assert there's only a single root node
         root_nodes = self.get_root_nodes()
+        assert (
+            len(root_nodes) == 1
+        ), f"Expected a single root node. Found {len(root_nodes)}"  # noqa: E501
         root_node = root_nodes[0]
         # Then we create a list to hold the nodes
         nodes_and_level = []
@@ -166,7 +194,19 @@ class SpanTree:
             # Add the children to the queue
             for child in children:
                 queue.append((child, level + 1))
-        return nodes_and_level
+
+        if attributes:
+            repackaged = [
+                ({prop: node[prop] for prop in attributes}, level_)
+                for node, level_ in nodes_and_level
+            ]
+        else:
+            repackaged = nodes_and_level
+
+        if include_level:
+            return repackaged
+        else:
+            return [node for node, _ in repackaged]
 
 
 def extract_span_tree(mock_client: Client) -> SpanTree:
@@ -194,6 +234,4 @@ def assert_is_valid_span(span: Span):
 
     assert isinstance(span.get("tags", []), list)
     assert isinstance(span.get("metadata", {}), dict)
-    assert span.get("inputs") is not None, f"Span should have inputs. {span}"
-
-
+    assert span.get("inputs"), f"Span should have inputs. {span}"
