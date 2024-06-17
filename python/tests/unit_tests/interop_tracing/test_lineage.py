@@ -363,7 +363,6 @@ async def test_tags(mock_client: Client) -> None:
 
 
 @pytest.mark.parametrize("method", ALL_METHODS)
-@pytest.mark.xfail(reason="Issue with inputs when nesting Runnable Lambdas.")
 async def test_runnable_lambdas(mock_client: Client, method: str):
     """Test runnable lambdas."""
     from langchain_core.runnables import RunnableLambda
