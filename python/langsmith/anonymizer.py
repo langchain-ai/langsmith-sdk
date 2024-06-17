@@ -7,7 +7,7 @@ from typing import Any, Callable, List, Optional, Tuple, TypedDict, Union
 
 
 class _ExtractOptions(TypedDict):
-    maxDepth: Optional[int]
+    max_depth: Optional[int]
     """
     Maximum depth to traverse to to extract string nodes
     """
@@ -26,7 +26,7 @@ class StringNode(TypedDict):
 def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNode]:
     max_depth = options.get("maxDepth") or 10
 
-    queue: List[Tuple[Any, int, List[Union[str, int]]]] = [(data, 0, list())]
+    queue: List[Tuple[Any, int, List[Union[str, int]]]] = [(data, 0, [])]
     result: List[StringNode] = []
 
     while queue:
@@ -35,7 +35,7 @@ def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNod
             continue
         value, depth, path = task
 
-        if isinstance(value, dict) or isinstance(value, defaultdict):
+        if isinstance(value, (dict, defaultdict)):
             if depth >= max_depth:
                 continue
             for key, nested_value in value.items():
@@ -62,10 +62,10 @@ class StringNodeProcessor:
 class ReplacerOptions(TypedDict):
     """Configuration options for replacing sensitive data."""
 
-    maxDepth: Optional[int]
+    max_depth: Optional[int]
     """Maximum depth to traverse to to extract string nodes."""
 
-    deepClone: Optional[bool]
+    deep_clone: Optional[bool]
     """Deep clone the data before replacing."""
 
 
