@@ -1,5 +1,5 @@
+import re  # noqa
 import inspect
-import re
 from abc import abstractmethod
 from collections import defaultdict
 from typing import Any, Callable, List, Optional, Tuple, TypedDict, Union
