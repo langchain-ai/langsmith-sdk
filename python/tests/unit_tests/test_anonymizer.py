@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from langsmith import Client, traceable
+from langsmith import Client, traceable, tracing_context
 from langsmith.anonymizer import StringNodeRule, create_anonymizer
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -80,7 +80,11 @@ def test_replacer_declared_in_traceable():
     ]
     anonymizer = create_anonymizer(replacers)
     mock_client = Client(
-        session=MagicMock(), auto_batch_tracing=False, anonymizer=anonymizer
+        session=MagicMock(),
+        auto_batch_tracing=False,
+        anonymizer=anonymizer,
+        api_url="http://localhost:1984",
+        api_key="123",
     )
 
     user_email = "my-test@langchain.ai"
@@ -99,7 +103,8 @@ def test_replacer_declared_in_traceable():
         return MyOutput(user_email=user_email, user_id=user_id, body=body)
 
     body_ = "Hello from Pluto"
-    res = my_func(body_, from_=MyInput(from_email="my-from-test@langchain.ai"))
+    with tracing_context(enabled=True):
+        res = my_func(body_, from_=MyInput(from_email="my-from-test@langchain.ai"))
     expected = MyOutput(user_email=user_email, user_id=uuid.UUID(user_id), body=body_)
     assert res == expected
     # get posts
