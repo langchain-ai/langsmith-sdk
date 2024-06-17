@@ -149,6 +149,7 @@ def _default_retry_config() -> Retry:
         # Sadly urllib3 1.x doesn't support backoff_jitter
         raise_on_redirect=False,
         raise_on_status=False,
+        respect_retry_after_header=True,
     )
 
     # the `allowed_methods` keyword is not available in urllib3 < 1.26
@@ -657,8 +658,9 @@ class Client:
         """
         if self._info is None:
             try:
-                response = self.session.get(
-                    self.api_url + "/info",
+                response = self.request_with_retries(
+                    "GET",
+                    "/info",
                     headers={"Accept": "application/json"},
                     timeout=(self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
                 )
@@ -725,18 +727,19 @@ class Client:
         """
         request_kwargs = request_kwargs or {}
         request_kwargs = {
+            "timeout": (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
+            **request_kwargs,
+            **kwargs,
             "headers": {
                 **self._headers,
                 **request_kwargs.get("headers", {}),
                 **kwargs.get("headers", {}),
             },
-            "timeout": (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
-            **request_kwargs,
-            **kwargs,
         }
         if (
             method != "GET"
             and "data" in request_kwargs
+            and "files" not in request_kwargs
             and not request_kwargs["headers"].get("Content-Type")
         ):
             request_kwargs["headers"]["Content-Type"] = "application/json"
@@ -746,7 +749,10 @@ class Client:
         ]
         retry_on_: Tuple[Type[BaseException], ...] = (
             *(retry_on or []),
-            *(ls_utils.LangSmithConnectionError, ls_utils.LangSmithAPIError),
+            *(
+                ls_utils.LangSmithConnectionError,
+                ls_utils.LangSmithAPIError,
+            ),
         )
         to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
         response = None
@@ -830,9 +836,14 @@ class Client:
                     args = list(e.args)
                     msg = args[1] if len(args) > 1 else ""
                     msg = msg.replace("session", "session (project)")
-                    emsg = "\n".join(
-                        [str(args[0])] + [msg] + [str(arg) for arg in args[2:]]
-                    )
+                    if args:
+                        emsg = "\n".join(
+                            [str(args[0])]
+                            + [msg]
+                            + [str(arg) for arg in (args[2:] if len(args) > 2 else [])]
+                        )
+                    else:
+                        emsg = msg
                     raise ls_utils.LangSmithError(
                         f"Failed to {method} {pathname} in LangSmith API. {emsg}"
                     ) from e
@@ -840,13 +851,29 @@ class Client:
                 if response is not None:
                     logger.debug("Passing on exception %s", e)
                     return response
-                # Else we still raise an error
+            except ls_utils.LangSmithRateLimitError:
+                if idx + 1 == stop_after_attempt:
+                    raise
+                if response is not None:
+                    try:
+                        retry_after = float(response.headers.get("retry-after", "30"))
+                    except Exception as e:
+                        logger.warning(
+                            "Invalid retry-after header: %s",
+                            repr(e),
+                        )
+                        retry_after = 30
+                # Add exponential backoff
+                retry_after = retry_after * 2**idx + random.random()
+                time.sleep(retry_after)
             except retry_on_:
+                # Handle other exceptions more immediately
                 if idx + 1 == stop_after_attempt:
                     raise
                 sleep_time = 2**idx + (random.random() * 0.5)
                 time.sleep(sleep_time)
                 continue
+            # Else we still raise an error
 
         raise ls_utils.LangSmithError(
             f"Failed to {method} {pathname} in LangSmith API."
@@ -1035,19 +1062,20 @@ class Client:
             data["description"] = description
         if data_type:
             data["data_type"] = ls_utils.get_enum_value(data_type)
+        data["id"] = str(uuid.uuid4())
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
                 file_ = {"file": f}
-                response = self.session.post(
-                    self.api_url + "/datasets/upload",
-                    headers=self._headers,
+                response = self.request_with_retries(
+                    "POST",
+                    "/datasets/upload",
                     data=data,
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
-            response = self.session.post(
-                self.api_url + "/datasets/upload",
-                headers=self._headers,
+            response = self.request_with_retries(
+                "POST",
+                "/datasets/upload",
                 data=data,
                 files={"file": csv_file},
             )
@@ -1328,22 +1356,6 @@ class Client:
             self._post_batch_ingest_runs(orjson.dumps(body_chunks))
 
     def _post_batch_ingest_runs(self, body: bytes):
-        def handle_429(response: requests.Response, attempt: int) -> bool:
-            # Min of 30 seconds, max of 1 minute
-            if response.status_code == 429:
-                try:
-                    retry_after = float(response.headers.get("retry-after", "30"))
-                except ValueError:
-                    logger.warning(
-                        "Invalid retry-after header value: %s",
-                        response.headers.get("retry-after"),
-                    )
-                    retry_after = 30
-                # Add exponential backoff
-                retry_after = retry_after * 2 ** (attempt - 1) + random.random()
-                time.sleep(retry_after)
-                return True
-            return False
 
         try:
             for api_url, api_key in self._write_api_urls.items():
@@ -1359,7 +1371,6 @@ class Client:
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
                     stop_after_attempt=3,
-                    handle_response=handle_429,
                 )
         except Exception as e:
             logger.warning(f"Failed to batch ingest runs: {repr(e)}")
@@ -1751,8 +1762,9 @@ class Client:
             "run_id": str(run_id_),
             "share_token": share_id or str(uuid.uuid4()),
         }
-        response = self.session.put(
-            f"{self.api_url}/runs/{run_id_}/share",
+        response = self.request_with_retries(
+            "PUT",
+            f"/runs/{run_id_}/share",
             headers=self._headers,
             json=data,
         )
@@ -1762,8 +1774,9 @@ class Client:
 
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run."""
-        response = self.session.delete(
-            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}/share",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/runs/{_as_uuid(run_id, 'run_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1778,8 +1791,9 @@ class Client:
             Optional[str]: The shared link for the run, or None if the link is not
             available.
         """
-        response = self.session.get(
-            f"{self.api_url}/runs/{_as_uuid(run_id, 'run_id')}/share",
+        response = self.request_with_retries(
+            "GET",
+            f"/runs/{_as_uuid(run_id, 'run_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1798,8 +1812,9 @@ class Client:
     ) -> List[ls_schemas.Run]:
         """Get shared runs."""
         params = {"id": run_ids, "share_token": str(share_token)}
-        response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/runs",
+        response = self.request_with_retries(
+            "GET",
+            f"/public/{_as_uuid(share_token, 'share_token')}/runs",
             headers=self._headers,
             params=params,
         )
@@ -1832,8 +1847,9 @@ class Client:
             raise ValueError("Either dataset_id or dataset_name must be given")
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
-        response = self.session.get(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
+        response = self.request_with_retries(
+            "GET",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1861,8 +1877,9 @@ class Client:
         data = {
             "dataset_id": str(dataset_id),
         }
-        response = self.session.put(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
+        response = self.request_with_retries(
+            "PUT",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
             json=data,
         )
@@ -1875,8 +1892,9 @@ class Client:
 
     def unshare_dataset(self, dataset_id: ID_TYPE) -> None:
         """Delete share link for a dataset."""
-        response = self.session.delete(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/share",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1886,8 +1904,9 @@ class Client:
         share_token: str,
     ) -> ls_schemas.Dataset:
         """Get shared datasets."""
-        response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/datasets",
+        response = self.request_with_retries(
+            "GET",
+            f"/public/{_as_uuid(share_token, 'share_token')}/datasets",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -1904,8 +1923,9 @@ class Client:
         params = {}
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
-        response = self.session.get(
-            f"{self.api_url}/public/{_as_uuid(share_token, 'share_token')}/examples",
+        response = self.request_with_retries(
+            "GET",
+            f"/public/{_as_uuid(share_token, 'share_token')}/examples",
             headers=self._headers,
             params=params,
         )
@@ -1992,13 +2012,15 @@ class Client:
             "name": project_name,
             "extra": extra,
             "description": description,
+            "id": str(uuid.uuid4()),
         }
         params = {}
         if upsert:
             params["upsert"] = True
         if reference_dataset_id is not None:
             body["reference_dataset_id"] = reference_dataset_id
-        response = self.session.post(
+        response = self.request_with_retries(
+            "POST",
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(body),
@@ -2047,7 +2069,8 @@ class Client:
             "description": description,
             "end_time": end_time.isoformat() if end_time else None,
         }
-        response = self.session.patch(
+        response = self.request_with_retries(
+            "PATCH",
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(body),
@@ -2166,6 +2189,9 @@ class Client:
         pd.DataFrame
             A dataframe containing the test results.
         """
+        warnings.warn(
+            "Function get_test_results is in beta.", UserWarning, stacklevel=2
+        )
         from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
 
         import pandas as pd  # type: ignore
@@ -2224,7 +2250,9 @@ class Client:
                     )
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
-                if len(results) % batch_size == 0:
+                else:
+                    logger.warning(f"Run {r.id} has no reference example ID.")
+                if len(example_ids) % batch_size == 0:
                     # Ensure not empty
                     if batch := example_ids[cursor : cursor + batch_size]:
                         futures.append(executor.submit(fetch_examples, batch))
@@ -2326,8 +2354,9 @@ class Client:
             project_id = str(self.read_project(project_name=project_name).id)
         elif project_id is None:
             raise ValueError("Must provide project_name or project_id")
-        response = self.session.delete(
-            self.api_url + f"/sessions/{_as_uuid(project_id, 'project_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/sessions/{_as_uuid(project_id, 'project_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2360,8 +2389,9 @@ class Client:
             description=description,
             data_type=data_type,
         )
-        response = self.session.post(
-            self.api_url + "/datasets",
+        response = self.request_with_retries(
+            "POST",
+            "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
             data=dataset.json(),
         )
@@ -2502,8 +2532,9 @@ class Client:
                 raise ValueError("Must provide either dataset name or ID")
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         dsid = _as_uuid(dataset_id, "dataset_id")
-        response = self.session.get(
-            f"{self.api_url}/datasets/{dsid}/versions/diff",
+        response = self.request_with_retries(
+            "GET",
+            f"/datasets/{dsid}/versions/diff",
             headers=self._headers,
             params={
                 "from_version": (
@@ -2610,8 +2641,9 @@ class Client:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
-        response = self.session.delete(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2662,8 +2694,9 @@ class Client:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
-        response = self.session.put(
-            f"{self.api_url}/datasets/{_as_uuid(dataset_id, 'dataset_id')}/tags",
+        response = self.request_with_retries(
+            "PUT",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/tags",
             headers=self._headers,
             json={
                 "as_of": as_of.isoformat(),
@@ -3019,7 +3052,7 @@ class Client:
                 "dataset_id": dataset_id,
                 "metadata": metadata_,
                 "split": split_,
-                "id": id_,
+                "id": id_ or str(uuid.uuid4()),
                 "source_run_id": source_run_id_,
             }
             for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
@@ -3032,8 +3065,9 @@ class Client:
             )
         ]
 
-        response = self.session.post(
-            f"{self.api_url}/examples/bulk",
+        response = self.request_with_retries(
+            "POST",
+            "/examples/bulk",
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(examples),
         )
@@ -3092,11 +3126,11 @@ class Client:
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
-        if example_id:
-            data["id"] = example_id
+        data["id"] = example_id or str(uuid.uuid4())
         example = ls_schemas.ExampleCreate(**data)
-        response = self.session.post(
-            f"{self.api_url}/examples",
+        response = self.request_with_retries(
+            "POST",
+            "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(),
         )
@@ -3237,8 +3271,9 @@ class Client:
             metadata=metadata,
             split=split,
         )
-        response = self.session.patch(
-            f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
+        response = self.request_with_retries(
+            "PATCH",
+            f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=example.json(exclude_none=True),
         )
@@ -3253,8 +3288,9 @@ class Client:
         example_id : str or UUID
             The ID of the example to delete.
         """
-        response = self.session.delete(
-            f"{self.api_url}/examples/{_as_uuid(example_id, 'example_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -3644,8 +3680,9 @@ class Client:
             feedback_update["correction"] = correction
         if comment is not None:
             feedback_update["comment"] = comment
-        response = self.session.patch(
-            self.api_url + f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
+        response = self.request_with_retries(
+            "PATCH",
+            f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(feedback_update),
         )
@@ -3724,8 +3761,9 @@ class Client:
         feedback_id : str or UUID
             The ID of the feedback to delete.
         """
-        response = self.session.delete(
-            f"{self.api_url}/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -3767,8 +3805,9 @@ class Client:
         )
         if source_api_url != self.api_url:
             raise ValueError(f"Invalid source API URL. {source_api_url}")
-        response = self.session.post(
-            f"{source_api_url}/feedback/tokens/{_as_uuid(token_uuid)}",
+        response = self.request_with_retries(
+            "POST",
+            f"/feedback/tokens/{_as_uuid(token_uuid)}",
             data=_dumps_json(
                 {
                     "score": score,
@@ -3776,6 +3815,7 @@ class Client:
                     "correction": correction,
                     "comment": comment,
                     "metadata": metadata,
+                    # TODO: Add ID once the API supports it.
                 }
             ),
             headers=self._headers,
@@ -3789,6 +3829,7 @@ class Client:
         *,
         expiration: Optional[datetime.datetime | datetime.timedelta] = None,
         feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
+        feedback_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.FeedbackIngestToken:
         """Create a pre-signed URL to send feedback data to.
 
@@ -3807,6 +3848,8 @@ class Client:
                 this defines how the metric should be interpreted,
                 such as a continuous score (w/ optional bounds),
                 or distribution over categorical values.
+            feedback_id: The ID of the feedback to create. If not provided, a new
+                feedback will be created.
 
         Returns:
             The pre-signed URL for uploading feedback data.
@@ -3815,6 +3858,7 @@ class Client:
             "run_id": run_id,
             "feedback_key": feedback_key,
             "feedback_config": feedback_config,
+            "id": feedback_id or str(uuid.uuid4()),
         }
         if expiration is None:
             body["expires_in"] = ls_schemas.TimeDeltaInput(
@@ -4013,7 +4057,7 @@ class Client:
         body = {
             "name": name,
             "description": description,
-            "id": queue_id,
+            "id": queue_id or str(uuid.uuid4()),
         }
         response = self.request_with_retries(
             "POST",
@@ -4066,8 +4110,9 @@ class Client:
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue to delete.
         """
-        response = self.session.delete(
-            f"{self.api_url}/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
+        response = self.request_with_retries(
+            "DELETE",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
             headers={"Accept": "application/json", **self._headers},
         )
         ls_utils.raise_for_status_with_text(response)
@@ -4148,7 +4193,7 @@ class Client:
         if not reference_dataset:
             raise ValueError("A reference dataset is required.")
         body: Dict[str, Any] = {
-            "id": id,
+            "id": id or str(uuid.uuid4()),
             "name": name,
             "experiment_ids": experiments,
             "reference_dataset_id": reference_dataset,
@@ -4295,6 +4340,13 @@ class Client:
                 evaluation=evaluation_config,
             )
         """  # noqa: E501
+        # warn as deprecated and to use `aevaluate` instead
+        warnings.warn(
+            "The `arun_on_dataset` method is deprecated and"
+            " will be removed in a future version."
+            "Please use the `aevaluate` method instead.",
+            DeprecationWarning,
+        )
         try:
             from langchain.smith import arun_on_dataset as _arun_on_dataset
         except ImportError:
@@ -4443,6 +4495,12 @@ class Client:
                 evaluation=evaluation_config,
             )
         """  # noqa: E501
+        warnings.warn(
+            "The `run_on_dataset` method is deprecated and"
+            " will be removed in a future version."
+            "Please use the `evaluate` method instead.",
+            DeprecationWarning,
+        )
         try:
             from langchain.smith import run_on_dataset as _run_on_dataset
         except ImportError:

@@ -376,7 +376,7 @@ def traceable(
 
 
             manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
-    """
+    """  # noqa: E501
     run_type: ls_client.RUN_TYPE_T = (
         args[0]
         if args and isinstance(args[0], str)
