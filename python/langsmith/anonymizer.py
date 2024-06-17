@@ -155,6 +155,7 @@ def create_anonymizer(
     replacer: ReplacerType, options: Optional[ReplacerOptions] = None
 ) -> Callable[[Any], Any]:
     """Create an anonymizer function."""
+    processor = _get_node_processor(replacer)
 
     def anonymizer(data: Any) -> Any:
         nodes = _extract_string_nodes(
@@ -162,7 +163,7 @@ def create_anonymizer(
         )
         mutate_value = copy.deepcopy(data) if options and options["deepClone"] else data
 
-        to_update = _get_node_processor(replacer).mask_nodes(nodes)
+        to_update = processor.mask_nodes(nodes)
         for node in to_update:
             if not node["path"]:
                 mutate_value = node["value"]
