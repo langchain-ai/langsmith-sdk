@@ -76,7 +76,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-queue:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.6.9}
     environment:
       - LANGCHAIN_ENV=local_docker
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
@@ -145,7 +145,7 @@ services:
       timeout: 2s
       retries: 30
   langchain-clickhouse:
-    image: clickhouse/clickhouse-server:23.9
+    image: clickhouse/clickhouse-server:24.2
     user: "101:101"
     restart: always
     environment:
@@ -164,7 +164,7 @@ services:
       timeout: 2s
       retries: 30
   clickhouse-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.6.9}
     depends_on:
       langchain-clickhouse:
         condition: service_healthy
@@ -183,7 +183,7 @@ services:
         "migrate -source file://clickhouse/migrations -database 'clickhouse://${CLICKHOUSE_HOST}:${CLICKHOUSE_NATIVE_PORT}?username=${CLICKHOUSE_USER}&password=${CLICKHOUSE_PASSWORD}&database=${CLICKHOUSE_DB}&x-multi-statement=true&x-migrations-table-engine=MergeTree' up",
       ]
   postgres-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.5.7}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.6.9}
     depends_on:
       langchain-db:
         condition: service_healthy
