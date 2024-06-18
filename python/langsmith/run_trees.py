@@ -4,8 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Set
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union, cast
+from typing import (
+    AbstractSet,
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 from uuid import UUID, uuid4
 
 try:
@@ -124,9 +136,14 @@ class RunTree(ls_schemas.RunBase):
     def dict(
         self,
         *,
-        include: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
-        exclude: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
+        include: Optional[
+            Union[AbstractSet[Union[int, str]], Mapping[Union[int, str], Any]]
+        ] = None,
+        exclude: Optional[
+            Union[AbstractSet[Union[int, str]], Mapping[Union[int, str], Any]]
+        ] = None,
         by_alias: bool = False,
+        skip_defaults: Optional[bool] = None,
         exclude_unset: bool = False,
         exclude_defaults: bool = False,
         exclude_none: bool = False,
@@ -151,29 +168,31 @@ class RunTree(ls_schemas.RunBase):
             Dict[str, Any]:
                 The dictionary representation of the RunTree object.
         """
-        # The reason we define this here is becaues pydantic has the fun magical
-        # property of doing  a **deep copy** when calling my_run_tree.copy()
+        # The reason we define this here is because pydantic has the fun magical
+        # property of doing a **deep copy** when calling my_run_tree.copy()
         # if any of the fields have an exclude=... argument and are set.
         # We want to avoid breaking backwards compat (as much as possible)
         # while also being more flexible as a stand-in replacement for the
         # langchain Run object (generally used in tracing.)
-        exclude = exclude or {}
-        if isinstance(exclude, set):
-            exclude = {e: True for e in list(exclude)}
-        for k in ["parent_run", "client"]:
-            if k not in exclude:
-                exclude[k] = True
-        if "child_runs" in exclude:
-            if isinstance(exclude["child_runs"], dict):
-                exclude["child_runs"].update({"__all__": {"parent_run_id"}})
-            # Else it's True
+        if isinstance(exclude, (Set, set, frozenset)):
+            exclude_ = {str(item): True for item in exclude}
+        elif exclude is None:
+            exclude_ = {}
+        elif isinstance(exclude, Mapping):
+            exclude_ = dict(exclude)  # type: ignore[arg-type]
         else:
-            exclude["child_runs"] = {"__all__": {"parent_run_id"}}
-        exclude["_client"] = True
+            raise ValueError("Invalid exclude type: %s" % type(exclude))
+
+        for k in ["parent_run", "client"]:
+            exclude_[k] = True
+        if "child_runs" in exclude_:
+            exclude_["child_runs"] = True
+        exclude_["_client"] = True
         return super().dict(
             include=include,
             exclude=exclude,
             by_alias=by_alias,
+            skip_defaults=skip_defaults,
             exclude_unset=exclude_unset,
             exclude_defaults=exclude_defaults,
             exclude_none=exclude_none,
@@ -212,8 +231,8 @@ class RunTree(ls_schemas.RunBase):
         events: Union[
             ls_schemas.RunEvent,
             Sequence[ls_schemas.RunEvent],
-            Sequence[dict],
-            dict,
+            Sequence[Dict],
+            Dict,
             str,
         ],
     ) -> None:
@@ -368,7 +387,7 @@ class RunTree(ls_schemas.RunBase):
     @classmethod
     def from_runnable_config(
         cls,
-        config: Optional[dict],
+        config: Optional[Dict],
         **kwargs: Any,
     ) -> Optional[RunTree]:
         """Create a new 'child' span from the provided runnable config.
