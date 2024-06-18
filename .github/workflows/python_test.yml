@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --with dev,lint
-          poetry run pip install -U langchain
+          poetry run pip install -U langchain langchain-core
       - name: Build ${{ matrix.python-version }}
         run: poetry build
       - name: Lint ${{ matrix.python-version }}
