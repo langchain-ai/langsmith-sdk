@@ -33,7 +33,6 @@ def _get_calls(
 ) -> list:
     calls = []
     for _ in range(attempts):
-        time.sleep(0.1)
         calls = [
             c
             for c in mock_client.session.request.mock_calls  # type: ignore
@@ -43,6 +42,7 @@ def _get_calls(
             return calls
         if minimum is not None and len(calls) > minimum:
             break
+        time.sleep(0.1)
     return calls
 
 
@@ -185,9 +185,9 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
     }
 
 
-def _get_mock_client() -> Client:
+def _get_mock_client(**kwargs: Any) -> Client:
     mock_session = MagicMock()
-    client = Client(session=mock_session, api_key="test")
+    client = Client(session=mock_session, api_key="test", **kwargs)
     return client
 
 
@@ -1059,3 +1059,60 @@ def test_from_runnable_config():
     mock_client = _get_mock_client()
     tracer = LangChainTracer(client=mock_client)
     my_tool.invoke({"text": "hello"}, {"callbacks": [tracer]})
+
+
+def test_io_interops():
+    try:
+        from langchain.callbacks.tracers import LangChainTracer
+        from langchain.schema.runnable import RunnableLambda
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+    tracer = LangChainTracer(client=_get_mock_client(auto_batch_tracing=False))
+    stage_added = {
+        "parent_input": {"original_input": "original_input_value"},
+        "child_input": {"parent_input": "parent_input_value"},
+        "child_output": {"child_output": "child_output_value"},
+        "parent_output": {"parent_output": "parent_output_value"},
+    }
+
+    @RunnableLambda
+    def child(inputs: dict) -> dict:
+        return {**stage_added["child_output"], **inputs}
+
+    @RunnableLambda
+    def parent(inputs: dict) -> dict:
+        return {
+            **stage_added["parent_output"],
+            **child.invoke({**stage_added["child_input"], **inputs}),
+        }
+
+    expected_at_stage = {}
+    current = {}
+    for stage in stage_added:
+        current = {**current, **stage_added[stage]}
+        expected_at_stage[stage] = current
+    parent_result = parent.invoke(stage_added["parent_input"], {"callbacks": [tracer]})
+    assert parent_result == expected_at_stage["parent_output"]
+    mock_posts = _get_calls(tracer.client, minimum=2)
+    assert len(mock_posts) == 2
+    datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_posts]
+    assert datas[0]["name"] == "parent"
+    assert datas[0]["inputs"] == expected_at_stage["parent_input"]
+    assert not datas[0]["outputs"]
+    assert datas[1]["name"] == "child"
+    assert datas[1]["inputs"] == expected_at_stage["child_input"]
+    assert not datas[1]["outputs"]
+    parent_uid = datas[0]["id"]
+    child_uid = datas[1]["id"]
+
+    # Check the patch requests
+    mock_patches = _get_calls(tracer.client, verbs={"PATCH"}, minimum=2)
+    assert len(mock_patches) == 2
+    child_patch = json.loads(mock_patches[0].kwargs["data"])
+    assert child_patch["id"] == child_uid
+    assert child_patch["outputs"] == expected_at_stage["child_output"]
+    assert child_patch["inputs"] == expected_at_stage["child_input"]
+    parent_patch = json.loads(mock_patches[1].kwargs["data"])
+    assert parent_patch["id"] == parent_uid
+    assert parent_patch["outputs"] == expected_at_stage["parent_output"]
+    assert parent_patch["inputs"] == expected_at_stage["parent_input"]
