@@ -1356,7 +1356,6 @@ class Client:
             self._post_batch_ingest_runs(orjson.dumps(body_chunks))
 
     def _post_batch_ingest_runs(self, body: bytes):
-
         try:
             for api_url, api_key in self._write_api_urls.items():
                 self.request_with_retries(
