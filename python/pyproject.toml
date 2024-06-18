@@ -57,6 +57,10 @@ pytest-rerunfailures = "^14.0"
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
 
+
+[tool.poetry.group.test.dependencies]
+pytest-socket = "^0.7.0"
+
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 
