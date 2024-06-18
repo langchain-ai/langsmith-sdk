@@ -59,7 +59,7 @@ def test__is_langchain_hosted() -> None:
 def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    with pytest.raises(ls_utils.LangSmithUserError, match="API key must be provided"):
+    with pytest.warns(ls_utils.LangSmithUserWarning, match="API key must be provided"):
         Client(api_url="https://api.smith.langchain.com")
     client = Client(api_url="http://localhost:1984")
     assert client.api_url == "http://localhost:1984"
