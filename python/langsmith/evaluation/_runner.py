@@ -518,6 +518,8 @@ def evaluate_comparative(
         View the evaluation results for experiment:...
         >>> results_1.wait()
         >>> results_2.wait()
+        >>> import time
+        >>> time.sleep(10)  # Wait for the traces to be fully processed
 
             Finally, you would compare the two prompts directly:
         >>> import json
