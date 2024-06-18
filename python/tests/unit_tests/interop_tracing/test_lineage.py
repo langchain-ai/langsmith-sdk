@@ -16,6 +16,7 @@ def _get_mock_client() -> Client:
     client = Client(session=mock_session, api_key="test")
     return client
 
+
 @pytest.fixture
 def mock_client() -> Client:
     """Get a mock client."""
