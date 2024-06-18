@@ -979,6 +979,20 @@ packaging = ">=17.1"
 pytest = ">=7.2"
 
 [[package]]
+name = "pytest-socket"
+version = "0.7.0"
+description = "Pytest Plugin to disable socket calls during tests"
+optional = false
+python-versions = ">=3.8,<4.0"
+files = [
+    {file = "pytest_socket-0.7.0-py3-none-any.whl", hash = "sha256:7e0f4642177d55d317bbd58fc68c6bd9048d6eadb2d46a89307fa9221336ce45"},
+    {file = "pytest_socket-0.7.0.tar.gz", hash = "sha256:71ab048cbbcb085c15a4423b73b619a8b35d6a307f46f78ea46be51b1b7e11b3"},
+]
+
+[package.dependencies]
+pytest = ">=6.2.5"
+
+[[package]]
 name = "pytest-subtests"
 version = "0.11.0"
 description = "unittest subTest() support and subtests fixture"
@@ -1598,4 +1612,4 @@ vcr = []
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0"
-content-hash = "c37fcc9d809cf705f31fc6a8c2cf241fae01075b34cff613b62bd77ab049477a"
+content-hash = "6269ec3de2038c48d77b23a46c45ee95161c2bc33f5371570fd234a8656e8218"
