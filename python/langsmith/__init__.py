@@ -97,6 +97,7 @@ __all__ = [
     "__version__",
     "EvaluationResult",
     "RunEvaluator",
+    "anonymizer",
     "traceable",
     "trace",
     "unit",

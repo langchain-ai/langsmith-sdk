@@ -15,9 +15,11 @@ const entrypoints = {
   schemas: "schemas",
   langchain: "langchain",
   wrappers: "wrappers/index",
+  anonymizer: "anonymizer/index",
   "wrappers/openai": "wrappers/openai",
   "singletons/traceable": "singletons/traceable",
 };
+
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
   const res = updateFunction(JSON.parse(contents));
