@@ -445,6 +445,7 @@ class Client:
         "tracing_sample_rate",
         "_sampled_post_uuids",
         "tracing_queue",
+        "_anonymizer",
         "_hide_inputs",
         "_hide_outputs",
         "_info",
@@ -461,6 +462,7 @@ class Client:
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
+        anonymizer: Optional[Callable[[dict], dict]] = None,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
@@ -486,6 +488,9 @@ class Client:
         session: requests.Session or None, default=None
             The session to use for requests. If None, a new session will be
             created.
+        anonymizer : Optional[Callable[[dict], dict]]
+            A function applied for masking serialized run inputs and outputs,
+            before sending to the API.
         hide_inputs: Whether to hide run inputs when tracing with this client.
             If True, hides the entire inputs. If a function, applied to
             all run inputs when creating runs.
@@ -575,6 +580,7 @@ class Client:
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
+        self._anonymizer = anonymizer
         self._hide_inputs = (
             hide_inputs
             if hide_inputs is not None
@@ -1241,17 +1247,23 @@ class Client:
             )
 
     def _hide_run_inputs(self, inputs: dict):
-        if self._hide_inputs is False:
-            return inputs
         if self._hide_inputs is True:
             return {}
+        if self._anonymizer:
+            json_inputs = orjson.loads(_dumps_json(inputs))
+            return self._anonymizer(json_inputs)
+        if self._hide_inputs is False:
+            return inputs
         return self._hide_inputs(inputs)
 
     def _hide_run_outputs(self, outputs: dict):
-        if self._hide_outputs is False:
-            return outputs
         if self._hide_outputs is True:
             return {}
+        if self._anonymizer:
+            json_outputs = orjson.loads(_dumps_json(outputs))
+            return self._anonymizer(json_outputs)
+        if self._hide_outputs is False:
+            return outputs
         return self._hide_outputs(outputs)
 
     def batch_ingest_runs(

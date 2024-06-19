@@ -49,8 +49,9 @@ interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
-  hideInputs?: boolean;
-  hideOutputs?: boolean;
+  anonymizer?: (values: KVMap) => KVMap;
+  hideInputs?: boolean | ((inputs: KVMap) => KVMap);
+  hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
   fetchOptions?: RequestInit;
@@ -429,8 +430,12 @@ export class Client {
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
-    this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
-    this.hideOutputs = config.hideOutputs ?? defaultConfig.hideOutputs;
+
+    this.hideInputs =
+      config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
+    this.hideOutputs =
+      config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
