@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.78"
+version = "0.1.80"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -53,9 +53,14 @@ vcrpy = "^6.0.1"
 fastapi = "^0.110.1"
 uvicorn = "^0.29.0"
 pytest-rerunfailures = "^14.0"
+pytest-socket = "^0.7.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
+
+
+[tool.poetry.group.test.dependencies]
+pytest-socket = "^0.7.0"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]

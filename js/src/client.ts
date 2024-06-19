@@ -1947,6 +1947,45 @@ export class Client {
     }
   }
 
+  /**
+   * Update a dataset
+   * @param props The dataset details to update
+   * @returns The updated dataset
+   */
+  public async updateDataset(props: {
+    datasetId?: string;
+    datasetName?: string;
+    name?: string;
+    description?: string;
+  }): Promise<Dataset> {
+    const { datasetId, datasetName, ...update } = props;
+
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${_datasetId}`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update dataset ${_datasetId}: ${response.status} ${response.statusText}`
+      );
+    }
+    return (await response.json()) as Dataset;
+  }
+
   public async deleteDataset({
     datasetId,
     datasetName,
