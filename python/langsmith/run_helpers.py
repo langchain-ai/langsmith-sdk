@@ -728,14 +728,16 @@ def trace(
     else:
         new_run = run_trees.RunTree(
             name=name,
-            id=run_id or uuid.uuid4(),
-            reference_example_id=reference_example_id,
+            id=ls_client._ensure_uuid(run_id),
+            reference_example_id=ls_client._ensure_uuid(
+                reference_example_id, accept_null=True
+            ),
             run_type=run_type,
             extra=extra_outer,
-            project_name=project_name_,
+            project_name=project_name_,  # type: ignore[arg-type]
             inputs=inputs or {},
             tags=tags_,
-            client=client,
+            client=client,  # type: ignore[arg-type]
         )
     new_run.post()
     _PARENT_RUN_TREE.set(new_run)
@@ -1094,7 +1096,7 @@ def _setup_run(
         )
     else:
         new_run = run_trees.RunTree(
-            id=id_,
+            id=ls_client._ensure_uuid(id_),
             name=name_,
             serialized={
                 "name": name,
@@ -1103,11 +1105,13 @@ def _setup_run(
             },
             inputs=inputs,
             run_type=run_type,
-            reference_example_id=reference_example_id,
-            project_name=selected_project,
+            reference_example_id=ls_client._ensure_uuid(
+                reference_example_id, accept_null=True
+            ),
+            project_name=selected_project,  # type: ignore[arg-type]
             extra=extra_inner,
             tags=tags_,
-            client=client_,
+            client=client_,  # type: ignore
         )
     try:
         new_run.post()
