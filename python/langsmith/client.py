@@ -3161,7 +3161,7 @@ class Client:
             "POST",
             "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=data,
+            data=_dumps_json({k: v for k, v in data.items() if v is not None}),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
