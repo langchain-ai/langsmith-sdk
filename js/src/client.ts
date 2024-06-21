@@ -430,11 +430,25 @@ export class Client {
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
-
+    // Precedence is chosen based on most specific to least specific:
+    // hideInputs/Outputs IF SET are the most specific
+    // But if they are "false", but you set an anonymizer, we assume you still want
+    // to process the inputs/outputs with that.
+    // Precedence is:
+    // 1. hideInputs if set
+    // 2. if HIDE_* is set as true in the environment -> hide the old thing
+    // 3. if anonymizer is set
+    // 4. false
     this.hideInputs =
-      config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
+      config.hideInputs ??
+      (defaultConfig.hideInputs
+        ? defaultConfig.hideInputs
+        : config.anonymizer ?? defaultConfig.hideInputs);
     this.hideOutputs =
-      config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+      config.hideOutputs ??
+      (defaultConfig.hideOutputs
+        ? defaultConfig.hideOutputs
+        : config.anonymizer ?? defaultConfig.hideOutputs);
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.pendingAutoBatchedRunLimit =
