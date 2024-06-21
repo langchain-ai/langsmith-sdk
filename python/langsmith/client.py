@@ -3304,7 +3304,7 @@ class Client:
             "PATCH",
             f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
-            data={k: v for k, v in example.items() if v is not None},
+            data=_dumps_json({k: v for k, v in example.items() if v is not None}),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
