@@ -35,4 +35,4 @@ class StringEvaluator(RunEvaluator, BaseModel):
         run_input = run.inputs[self.input_key]
         run_output = run.outputs[self.prediction_key]
         grading_results = self.grading_function(run_input, run_output, answer)
-        return EvaluationResult(key=self.evaluation_name, **grading_results)
+        return EvaluationResult(**{"key": self.evaluation_name, **grading_results})
