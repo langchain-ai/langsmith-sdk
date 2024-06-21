@@ -8,7 +8,7 @@ import string
 import sys
 import time
 from datetime import timedelta
-from typing import Any, Callable, Dict, cast
+from typing import Any, Callable, Dict
 from uuid import uuid4
 
 import pytest
@@ -444,6 +444,7 @@ def test_create_chat_example(
 def test_batch_ingest_runs(langchain_client: Client) -> None:
     _session = "__test_batch_ingest_runs"
     trace_id = uuid4()
+    trace_id_2 = uuid4()
     run_id_2 = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S%fZ"
@@ -461,6 +462,16 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             "trace_id": str(trace_id),
             "inputs": {"input1": 1, "input2": 2},
             "outputs": {"output1": 3, "output2": 4},
+        },
+        {
+            "id": str(trace_id_2),
+            "session_name": _session,
+            "name": "run 3",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_id_2)}",
+            "trace_id": str(trace_id_2),
+            "inputs": {"input1": 1, "input2": 2},
+            "error": "error",
         },
         {
             "id": str(run_id_2),
@@ -481,7 +492,7 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             f"{later_time}{str(run_id_2)}",
             "trace_id": str(trace_id),
             "parent_run_id": str(trace_id),
-            "outputs": {"output1": 7, "output2": 8},
+            "outputs": {"output1": 4, "output2": 5},
         },
     ]
     langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
@@ -491,10 +502,11 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
         try:
             runs = list(
                 langchain_client.list_runs(
-                    project_name=_session, run_ids=[str(trace_id), str(run_id_2)]
+                    project_name=_session,
+                    run_ids=[str(trace_id), str(run_id_2), str(trace_id_2)],
                 )
             )
-            if len(runs) == 2:
+            if len(runs) == 3:
                 break
             raise LangSmithError("Runs not created yet")
         except LangSmithError:
@@ -502,20 +514,30 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             wait += 1
     else:
         raise ValueError("Runs not created in time")
-    assert len(runs) == 2
+    assert len(runs) == 3
     # Write all the assertions here
-    runs = sorted(runs, key=lambda x: cast(str, x.dotted_order))
-    assert len(runs) == 2
+    assert len(runs) == 3
 
     # Assert inputs and outputs of run 1
-    run1 = runs[0]
+    run1 = next(run for run in runs if run.id == trace_id)
     assert run1.inputs == {"input1": 1, "input2": 2}
     assert run1.outputs == {"output1": 3, "output2": 4}
 
     # Assert inputs and outputs of run 2
-    run2 = runs[1]
+    run2 = next(run for run in runs if run.id == run_id_2)
     assert run2.inputs == {"input1": 5, "input2": 6}
-    assert run2.outputs == {"output1": 7, "output2": 8}
+    assert run2.outputs == {"output1": 4, "output2": 5}
+
+    # Assert inputs and outputs of run 3
+    run3 = next(run for run in runs if run.id == trace_id_2)
+    assert run3.inputs == {"input1": 1, "input2": 2}
+    assert run3.error == "error"
+
+    # read the project
+    result = langchain_client.read_project(project_name=_session)
+    assert result.error_rate > 0
+    assert result.first_token_p50 is None
+    assert result.first_token_p99 is None
 
     langchain_client.delete_project(project_name=_session)
 
