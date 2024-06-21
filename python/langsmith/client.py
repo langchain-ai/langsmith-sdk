@@ -18,6 +18,7 @@ import socket
 import sys
 import threading
 import time
+import typing
 import uuid
 import warnings
 import weakref
@@ -405,6 +406,24 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
         raise ls_utils.LangSmithUserError(
             f"{var} must be a valid UUID or UUID string. Got {value}"
         ) from e
+
+
+@typing.overload
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
+
+
+@typing.overload
+def _ensure_uuid(
+    value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = True
+) -> Optional[uuid.UUID]: ...
+
+
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = False):
+    if value is None:
+        if accept_null:
+            return None
+        return uuid.uuid4()
+    return _as_uuid(value)
 
 
 @functools.lru_cache(maxsize=1)
@@ -3138,12 +3157,11 @@ class Client:
         if created_at:
             data["created_at"] = created_at.isoformat()
         data["id"] = example_id or str(uuid.uuid4())
-        example = ls_schemas.ExampleCreate(**data)
         response = self.request_with_retries(
             "POST",
             "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=example.json(),
+            data=_dumps_json({k: v for k, v in data.items() if v is not None}),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -3275,7 +3293,7 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
-        example = ls_schemas.ExampleUpdate(
+        example = dict(
             inputs=inputs,
             outputs=outputs,
             dataset_id=dataset_id,
@@ -3286,7 +3304,7 @@ class Client:
             "PATCH",
             f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=example.json(exclude_none=True),
+            data=_dumps_json({k: v for k, v in example.items() if v is not None}),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -3386,7 +3404,7 @@ class Client:
                 results_ = cast(List[ls_evaluator.EvaluationResult], results["results"])
             else:
                 results_ = [
-                    ls_evaluator.EvaluationResult(**{"key": fn_name, **results})
+                    ls_evaluator.EvaluationResult(**{"key": fn_name, **results})  # type: ignore[arg-type]
                 ]
         else:
             raise TypeError(
@@ -3631,8 +3649,8 @@ class Client:
                 )
             feedback_source.metadata["__run"] = _run_meta
         feedback = ls_schemas.FeedbackCreate(
-            id=feedback_id or uuid.uuid4(),
-            run_id=run_id,
+            id=_ensure_uuid(feedback_id),
+            run_id=_ensure_uuid(run_id),
             key=key,
             score=score,
             value=value,
@@ -3642,9 +3660,11 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
-            session_id=project_id,
-            comparative_experiment_id=comparative_experiment_id,
-            feedback_group_id=feedback_group_id,
+            session_id=_ensure_uuid(project_id, accept_null=True),
+            comparative_experiment_id=_ensure_uuid(
+                comparative_experiment_id, accept_null=True
+            ),
+            feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
         )
         feedback_block = _dumps_json(feedback.dict(exclude_none=True))
         self.request_with_retries(
@@ -4038,8 +4058,6 @@ class Client:
         ):
             yield ls_schemas.AnnotationQueue(
                 **queue,
-                _host_url=self._host_url,
-                _tenant_id=self._get_optional_tenant_id(),
             )
             if limit is not None and i + 1 >= limit:
                 break
@@ -4078,8 +4096,6 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.AnnotationQueue(
             **response.json(),
-            _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def read_annotation_queue(self, queue_id: ID_TYPE) -> ls_schemas.AnnotationQueue:

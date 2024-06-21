@@ -573,6 +573,18 @@ class TracerSessionResult(TracerSession):
     """Feedback stats for the project."""
     run_facets: Optional[List[Dict[str, Any]]]
     """Facets for the runs in the project."""
+    total_cost: Optional[Decimal]
+    """The total estimated LLM cost associated with the completion tokens."""
+    prompt_cost: Optional[Decimal]
+    """The estimated cost associated with the prompt (input) tokens."""
+    completion_cost: Optional[Decimal]
+    """The estimated cost associated with the completion tokens."""
+    first_token_p50: Optional[timedelta]
+    """The median (50th percentile) time to process the first token."""
+    first_token_p99: Optional[timedelta]
+    """The 99th percentile time to process the first token."""
+    error_rate: Optional[float]
+    """The error rate for the project."""
 
 
 @runtime_checkable
