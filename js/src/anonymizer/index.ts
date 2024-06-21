@@ -60,19 +60,14 @@ export type ReplacerType =
 
 export function createAnonymizer(
   replacer: ReplacerType,
-  options?: {
-    maxDepth?: number;
-    deepClone?: boolean;
-  }
+  options?: { maxDepth?: number }
 ) {
   return <T>(data: T): T => {
     const nodes = extractStringNodes(data, {
       maxDepth: options?.maxDepth,
     });
 
-    // by default we opt-in to mutate the value directly
-    // to improve performance
-    let mutateValue = options?.deepClone ? deepClone(data) : data;
+    let mutateValue = deepClone(data);
 
     const processor: StringNodeProcessor = Array.isArray(replacer)
       ? (() => {
