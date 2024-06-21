@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
+from freezegun import freeze_time
+from syrupy import SnapshotAssertion
 
 from langsmith import run_trees
 from langsmith.client import Client
@@ -15,7 +17,7 @@ def test_run_tree_accepts_tpe() -> None:
         name="My Chat Bot",
         inputs={"text": "Summarize this morning's meetings."},
         client=mock_client,
-        executor=ThreadPoolExecutor(),
+        executor=ThreadPoolExecutor(),  # type: ignore
     )
 
 
@@ -114,3 +116,41 @@ def test_nested_run_trees_from_dotted_order():
     assert grandparent_clone.id == grandparent.id
     assert grandparent_clone.parent_run_id is None
     assert grandparent_clone.dotted_order == grandparent.dotted_order
+
+
+@freeze_time("2023-01-01")
+def test_run_tree_to_dict(snapshot: SnapshotAssertion):
+    run_tree = run_trees.RunTree(
+        id="e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e2",
+        name="My Chat Bot",
+        inputs={"text": "Summarize this morning's meetings."},
+        outputs={"summary": "You have 3 meetings today."},
+        client=MagicMock(spec=Client),
+        start_time=datetime.now(),
+    )
+    run_tree.create_child(
+        name="Child",
+        run_id="e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e3",
+        start_time=datetime.now(),
+    )
+    run_tree.create_child(
+        name="Child2",
+        outputs={"summary": "I'm the second child."},
+        run_id="e0ae5bb6-c69a-47bd-89c1-c51ac0cfd9e4",
+        start_time=datetime.now(),
+    )
+    snapshot.assert_match(run_tree.dict())
+    snapshot.assert_match(run_tree.dict(exclude={"outputs", "client"}))
+    snapshot.assert_match(run_tree.dict(exclude={"child_runs": {-1: {"outputs"}}}))
+    snapshot.assert_match(run_tree.dict(exclude={"child_runs"}))
+    snapshot.assert_match(run_tree.dict(exclude={"child_runs": True}))
+
+
+def test_can_copy_run_tree():
+    run_tree = run_trees.RunTree(
+        name="My Chat Bot",
+        inputs={"some_generator": (i for i in range(10))},
+        client=MagicMock(spec=Client),
+    )
+    copy = run_tree.copy()
+    assert id(run_tree.inputs) == id(copy.inputs)

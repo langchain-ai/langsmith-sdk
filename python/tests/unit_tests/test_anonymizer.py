@@ -1,3 +1,4 @@
+# mypy: disable-error-code="annotation-unchecked"
 import json
 import re
 import uuid

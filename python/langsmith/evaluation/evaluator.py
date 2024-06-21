@@ -22,7 +22,7 @@ from typing_extensions import TypedDict
 try:
     from pydantic.v1 import BaseModel, Field, ValidationError  # type: ignore[import]
 except ImportError:
-    from pydantic import BaseModel, Field, ValidationError
+    from pydantic import BaseModel, Field, ValidationError  # type: ignore[assignment]
 
 from functools import wraps
 

@@ -4,21 +4,36 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Set
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
+from typing import (
+    AbstractSet,
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
+    from pydantic.v1 import Field, root_validator  # type: ignore[import]
 except ImportError:
-    from pydantic import Field, root_validator, validator
+    from pydantic import (  # type: ignore[assignment, no-redef]
+        Field,
+        root_validator,
+    )
 
 import threading
 import urllib.parse
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json
+from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +59,9 @@ class RunTree(ls_schemas.RunBase):
     id: UUID = Field(default_factory=uuid4)
     run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
+    parent_run: Optional[RunTree] = Field(default=None)
     child_runs: List[RunTree] = Field(
         default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
     )
     session_name: str = Field(
         default_factory=lambda: utils.get_tracer_project() or "default",
@@ -55,7 +69,7 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=_get_client, exclude=True)
+    _client: Optional[Client] = Field(default=None)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -68,12 +82,10 @@ class RunTree(ls_schemas.RunBase):
         allow_population_by_field_name = True
         extra = "allow"
 
-    @validator("client", pre=True)
-    def validate_client(cls, v: Optional[Client]) -> Client:
-        """Ensure the client is specified."""
-        if v is None:
-            return _get_client()
-        return v
+    def __init__(self, **data: Any):
+        """Initialize the RunTree object."""
+        super().__init__(**data)
+        self._client = data.get("client")
 
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
@@ -113,6 +125,82 @@ class RunTree(ls_schemas.RunBase):
             values["dotted_order"] = current_dotted_order
         return values
 
+    @property
+    def client(self) -> Client:
+        """Return the client."""
+        # Lazily load the client
+        # If you never use this for API calls, it will never be loaded
+        if not self._client:
+            with self._lock:
+                if not self._client:
+                    self._client = _get_client()
+        return self._client
+
+    def dict(
+        self,
+        *,
+        include: Optional[
+            Union[AbstractSet[Union[int, str]], Mapping[Union[int, str], Any]]
+        ] = None,
+        exclude: Optional[
+            Union[AbstractSet[Union[int, str]], Mapping[Union[int, str], Any]]
+        ] = None,
+        by_alias: bool = False,
+        skip_defaults: Optional[bool] = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ) -> Dict[str, Any]:
+        """Return a dictionary representation of the RunTree object.
+
+        Args:
+            include (Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None):
+                The fields to include in the dictionary representation.
+            exclude (Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None):
+                The fields to exclude from the dictionary representation.
+            by_alias (bool, optional):
+                Whether to use field aliases in the dictionary representation.
+            exclude_unset (bool, optional):
+                Whether to exclude fields that have not been set.
+            exclude_defaults (bool, optional):
+                Whether to exclude fields that have default values.
+            exclude_none (bool, optional):
+                Whether to exclude fields that have a value of None.
+
+        Returns:
+            Dict[str, Any]:
+                The dictionary representation of the RunTree object.
+        """
+        # The reason we define this here is because pydantic has the fun magical
+        # property of doing a **deep copy** when calling my_run_tree.copy()
+        # if any of the fields have an exclude=... argument and are set.
+        # We want to avoid breaking backwards compat (as much as possible)
+        # while also being more flexible as a stand-in replacement for the
+        # langchain Run object (generally used in tracing.)
+        if isinstance(exclude, (Set, set, frozenset)):
+            exclude_ = {str(item): True for item in exclude}
+        elif exclude is None:
+            exclude_ = {}
+        elif isinstance(exclude, Mapping):
+            exclude_ = dict(exclude)  # type: ignore[arg-type]
+        else:
+            raise ValueError("Invalid exclude type: %s" % type(exclude))
+
+        for k in ["parent_run", "client"]:
+            exclude_[k] = True
+        if "child_runs" in exclude_:
+            exclude_["child_runs"] = True
+        exclude_["_client"] = True
+        return super().dict(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+        )
+
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
         if isinstance(tags, str):
@@ -146,8 +234,8 @@ class RunTree(ls_schemas.RunBase):
         events: Union[
             ls_schemas.RunEvent,
             Sequence[ls_schemas.RunEvent],
-            Sequence[dict],
-            dict,
+            Sequence[Dict],
+            Dict,
             str,
         ],
     ) -> None:
@@ -218,7 +306,7 @@ class RunTree(ls_schemas.RunBase):
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
-            id=run_id or uuid4(),
+            id=_ensure_uuid(run_id),
             serialized=serialized_,
             inputs=inputs or {},
             outputs=outputs or {},
@@ -229,7 +317,7 @@ class RunTree(ls_schemas.RunBase):
             end_time=end_time,
             extra=extra or {},
             parent_run=self,
-            session_name=self.session_name,
+            project_name=self.session_name,
             client=self.client,
             tags=tags,
         )
@@ -302,7 +390,7 @@ class RunTree(ls_schemas.RunBase):
     @classmethod
     def from_runnable_config(
         cls,
-        config: Optional[dict],
+        config: Optional[Dict],
         **kwargs: Any,
     ) -> Optional[RunTree]:
         """Create a new 'child' span from the provided runnable config.

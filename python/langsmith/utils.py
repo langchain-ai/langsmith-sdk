@@ -65,6 +65,11 @@ class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
+# User Warning
+class LangSmithUserWarning(UserWarning):
+    """A warning occurred while communicating with the LangSmith API."""
+
+
 def tracing_is_enabled() -> bool:
     """Return True if tracing is enabled."""
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
