@@ -1268,22 +1268,24 @@ class Client:
     def _hide_run_inputs(self, inputs: dict):
         if self._hide_inputs is True:
             return {}
+        if self._hide_inputs:
+            return self._hide_inputs(inputs)
         if self._anonymizer:
             json_inputs = orjson.loads(_dumps_json(inputs))
             return self._anonymizer(json_inputs)
-        if self._hide_inputs is False:
-            return inputs
-        return self._hide_inputs(inputs)
+        # self._hide_inputs is False and self._anonymizer is None
+        return inputs
 
     def _hide_run_outputs(self, outputs: dict):
         if self._hide_outputs is True:
             return {}
+        if self._hide_outputs:
+            return self._hide_outputs(outputs)
         if self._anonymizer:
             json_outputs = orjson.loads(_dumps_json(outputs))
             return self._anonymizer(json_outputs)
-        if self._hide_outputs is False:
-            return outputs
-        return self._hide_outputs(outputs)
+        # self._hide_outputs is False and self._anonymizer is None
+        return outputs
 
     def batch_ingest_runs(
         self,
