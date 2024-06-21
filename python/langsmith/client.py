@@ -2176,7 +2176,6 @@ class Client:
                     f"Project {project_name} not found"
                 )
             return ls_schemas.TracerSessionResult(**result[0], _host_url=self._host_url)
-        print("RESPONSE JSON", response.json())
         return ls_schemas.TracerSessionResult(
             **response.json(), _host_url=self._host_url
         )
