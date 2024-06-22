@@ -7,6 +7,7 @@ import {
   Dataset,
   DatasetDiffInfo,
   DatasetShareSchema,
+  DatasetVersion,
   Example,
   ExampleCreate,
   ExampleUpdate,
@@ -1989,6 +1990,127 @@ export class Client {
       );
     }
     return (await response.json()) as Dataset;
+  }
+
+  /**
+   * Get a list of versions of a dataset
+   * @param props The dataset and pagination details
+   * @returns Async iterable list of dataset versions
+   */
+  public async *listDatasetVersions({
+    datasetId,
+    datasetName,
+    search,
+    limit = 100,
+    offset = 0,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): AsyncIterable<DatasetVersion> {
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const path = `/datasets/${_datasetId}/versions`;
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    if (search !== undefined) {
+      params.append("search", search);
+    }
+
+    for await (const datasets of this._getPaginated<DatasetVersion>(
+      path,
+      params
+    )) {
+      yield* datasets;
+    }
+  }
+
+  /**
+   * Get a single dataset version
+   * @param props The dataset version details
+   * @returns The dataset version
+   */
+  public async readDatasetVersion(props: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: Date | string;
+    tag?: string;
+  }): Promise<DatasetVersion> {
+    const { datasetId, datasetName, asOf, tag } = props;
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    if ((asOf && tag) || (asOf && tag)) {
+      throw new Error("Must specify either asOf or tag (but not both)");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const params = new URLSearchParams();
+    if (asOf) {
+      params.append(
+        "as_of",
+        typeof asOf === "string" ? asOf : asOf.toISOString()
+      );
+    }
+    if (tag) {
+      params.append("tag", tag);
+    }
+
+    const path = `/datasets/${_datasetId}/version`;
+    return await this._get<DatasetVersion>(path, params);
+  }
+
+  /**
+   * Set a tag on a dataset version.
+   *
+   * If the tag is already assigned to a different version of this dataset,
+   * the tag will be moved to the new version.
+   * @param props The dataset version details
+   */
+  public async updateDatasetTag(props: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf: Date | string;
+    tag: string;
+  }): Promise<void> {
+    const { datasetId, datasetName, asOf, tag } = props;
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${_datasetId}/tags`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
+          tag,
+        }),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update dataset ${_datasetId}: ${response.status} ${response.statusText}`
+      );
+    }
   }
 
   public async deleteDataset({

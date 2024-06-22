@@ -268,6 +268,13 @@ export interface DatasetShareSchema {
   url: string;
 }
 
+export interface DatasetVersion {
+  /** A list of tags for the version */
+  tags: string[],
+  /** The ISO date of the version */
+  as_of: string;
+}
+
 export interface FeedbackSourceBase {
   type: string;
   metadata?: KVMap;
