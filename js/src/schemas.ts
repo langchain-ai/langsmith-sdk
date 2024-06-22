@@ -270,7 +270,7 @@ export interface DatasetShareSchema {
 
 export interface DatasetVersion {
   /** A list of tags for the version */
-  tags: string[],
+  tags: string[];
   /** The ISO date of the version */
   as_of: string;
 }
