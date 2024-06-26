@@ -174,6 +174,7 @@ def is_async(func: Callable) -> bool:
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
+    name: Optional[str]
     reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
     parent: Optional[Union[run_trees.RunTree, str, Mapping]]
@@ -1006,13 +1007,13 @@ def _setup_run(
 ) -> _TraceableContainer:
     """Create a new run or create_child() if run is passed in kwargs."""
     extra_outer = container_input.get("extra_outer") or {}
-    name = container_input.get("name")
     metadata = container_input.get("metadata")
     tags = container_input.get("tags")
     client = container_input.get("client")
     run_type = container_input.get("run_type") or "chain"
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
+    name = langsmith_extra.get("name") or container_input.get("name")
     client_ = langsmith_extra.get("client", client)
     parent_run_ = _get_parent_run(
         {**langsmith_extra, "client": client_}, kwargs.get("config")
