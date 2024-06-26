@@ -36,10 +36,6 @@ function extractStringNodes(data: unknown, options: { maxDepth?: number }) {
 }
 
 function deepClone<T>(data: T): T {
-  if ("structuredClone" in globalThis) {
-    return globalThis.structuredClone(data);
-  }
-
   return JSON.parse(JSON.stringify(data));
 }
 
@@ -63,11 +59,10 @@ export function createAnonymizer(
   options?: { maxDepth?: number }
 ) {
   return <T>(data: T): T => {
-    const nodes = extractStringNodes(data, {
+    let mutateValue = deepClone(data);
+    const nodes = extractStringNodes(mutateValue, {
       maxDepth: options?.maxDepth,
     });
-
-    let mutateValue = deepClone(data);
 
     const processor: StringNodeProcessor = Array.isArray(replacer)
       ? (() => {
