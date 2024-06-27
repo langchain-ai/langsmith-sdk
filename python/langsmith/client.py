@@ -3203,6 +3203,8 @@ class Client:
         as_of: Optional[Union[datetime.datetime, str]] = None,
         splits: Optional[Sequence[str]] = None,
         inline_s3_urls: bool = True,
+        *,
+        offset: int = 0,
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         **kwargs: Any,
@@ -3225,6 +3227,7 @@ class Client:
                 Returns examples only from the specified splits.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
+            offset (int): The offset to start from. Defaults to 0.
             limit (int, optional): The maximum number of examples to return.
 
         Yields:
@@ -3232,6 +3235,7 @@ class Client:
         """
         params: Dict[str, Any] = {
             **kwargs,
+            "offset": offset,
             "id": example_ids,
             "as_of": (
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
