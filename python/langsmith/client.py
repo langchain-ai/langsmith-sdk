@@ -3207,6 +3207,7 @@ class Client:
         offset: int = 0,
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
+        filter: Optional[str] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3229,6 +3230,8 @@ class Client:
                 Defaults to True.
             offset (int): The offset to start from. Defaults to 0.
             limit (int, optional): The maximum number of examples to return.
+            filter (str, optional): A structured fileter string to apply to
+                the examples.
 
         Yields:
             Example: The examples.
@@ -3243,6 +3246,7 @@ class Client:
             "splits": splits,
             "inline_s3_urls": inline_s3_urls,
             "limit": min(limit, 100) if limit is not None else 100,
+            "filter": filter,
         }
         if metadata is not None:
             params["metadata"] = _dumps_json(metadata)

@@ -129,6 +129,14 @@ def test_list_examples(langchain_client: Client) -> None:
     assert len(example_list) == len(examples)
 
     example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, offset=1, limit=2)
+    )
+    assert len(example_list) == 2
+
+    example_list = list(langchain_client.list_examples(dataset_id=dataset.id, offset=1))
+    assert len(example_list) == len(examples) - 1
+
+    example_list = list(
         langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
     )
     assert len(example_list) == 3
@@ -198,6 +206,27 @@ def test_list_examples(langchain_client: Client) -> None:
     example_list = list(
         langchain_client.list_examples(
             dataset_id=dataset.id, metadata={"foo": "bar", "baz": "quux"}
+        )
+    )
+    assert len(example_list) == 0
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='exists(metadata, "baz")'
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='has("metadata", \'{"foo": "bar"}\')'
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='exists(metadata, "bazzz")'
         )
     )
     assert len(example_list) == 0

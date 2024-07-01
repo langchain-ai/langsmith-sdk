@@ -571,6 +571,7 @@ export class Client {
   ): AsyncIterable<T[]> {
     let offset = Number(queryParams.get("offset")) || 0;
     const limit = Number(queryParams.get("limit")) || 100;
+    const limitSet = queryParams.has("limit");
     while (true) {
       queryParams.set("offset", String(offset));
       queryParams.set("limit", String(limit));
@@ -593,6 +594,10 @@ export class Client {
         break;
       }
       yield items;
+
+      if (limitSet && items.length === limit) {
+        break;
+      }
 
       if (items.length < limit) {
         break;
@@ -2183,6 +2188,9 @@ export class Client {
     splits,
     inlineS3Urls,
     metadata,
+    limit,
+    offset,
+    filter,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2191,6 +2199,9 @@ export class Client {
     splits?: string[];
     inlineS3Urls?: boolean;
     metadata?: KVMap;
+    limit?: number;
+    offset?: number;
+    filter?: string;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2227,6 +2238,15 @@ export class Client {
     if (metadata !== undefined) {
       const serializedMetadata = JSON.stringify(metadata);
       params.append("metadata", serializedMetadata);
+    }
+    if (limit !== undefined) {
+      params.append("limit", limit.toString());
+    }
+    if (offset !== undefined) {
+      params.append("offset", offset.toString());
+    }
+    if (filter !== undefined) {
+      params.append("filter", filter);
     }
     for await (const examples of this._getPaginated<Example>(
       "/examples",
