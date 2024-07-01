@@ -1,6 +1,6 @@
 """Contains the LLMEvaluator class for building LLM-as-a-judge evaluators."""
 
-from typing import Any, Callable, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 from pydantic import BaseModel
 
@@ -30,7 +30,7 @@ class ContinuousScoreConfig(BaseModel):
 def _create_score_json_schema(
     score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
 ) -> dict:
-    properties: dict[str, Any] = {}
+    properties: Dict[str, Any] = {}
     if isinstance(score_config, CategoricalScoreConfig):
         properties["score"] = {
             "type": "string",
