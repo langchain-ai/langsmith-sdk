@@ -5,9 +5,28 @@ body:
   - type: markdown
     attributes:
       value: >
-        Thank you for taking the time to file a bug report. Before creating a new
+        Thank you for taking the time to file a bug report. Use this to report bugs in LangSmith. Before creating a new
         issue, please make sure to take a few moments to check the issue tracker
         for existing issues about the bug.
+
+        If you're not absolutely certain that your issue is due to a bug in LangSmith, please use [GitHub Discussions](https://github.com/langchain-ai/langsmith-sdk/discussions)
+        to ask for help with your issue.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checked other resources
+      description: Please confirm and check all the following options.
+      options:
+        - label: I added a very descriptive title to this issue.
+          required: true
+        - label: I searched the [LangGraph](https://langchain-ai.github.io/langgraph/)/LangChain documentation with the integrated search.
+          required: true
+        - label: I used the GitHub search to find a similar question and didn't find it.
+          required: true
+        - label: I am sure that this is a bug in LangGraph/LangChain rather than my code.
+          required: true
+        - label: I am sure this is better as an issue [rather than a GitHub discussion](https://github.com/langchain-ai/langgraph/discussions/new/choose), since this is a LangGraph bug and not a design question.
+          required: true
 
   - type: checkboxes
     id: tracing-method
@@ -34,18 +53,25 @@ body:
     id: platform-environment
     attributes:
       label: Host
-      description: "Indicate whether you are connected to the hosted LangSmith platform or running locally."
+      description: "Indicate whether you are connected to the hosted LangSmith platform or running locally. And whether you are using Windows, Mac, Linux, etc. and what versions."
       options:
         - label: "Hosted (https://api.smith.langchain.com)"
         - label: "Self-hosted"
         - label: "Other"
-
   - type: textarea
     id: system-info
     attributes:
-      label: Other System Info
-      description: Please share any other system info with us. You can view this by running `langsmith env` in your terminal.
-      placeholder: LangSmith SDK version, client runtime information,
+      label: System Info
+      description: |
+        Please share your system info with us. You can view some of this by running `langsmith env` in your terminal.
+        langsmith-sdk version
+        langchain or other relevant library versions
+        platform (windows / linux / mac)
+        python/node/etc. version
+      placeholder: |
+        "pip freeze | grep langsmith"
+        platform
+        python version
     validations:
       required: true
 
@@ -62,11 +88,11 @@ body:
         Avoid screenshots when possible, as they are hard to read and (more importantly) don't allow others to copy-and-paste your code.
 
       placeholder: |
-        Steps to reproduce the behavior:
+        # Steps to reproduce the behavior:
 
-          1.
-          2.
-          3.
+        #  1.
+        #  2.
+        #  3.
 
   - type: textarea
     id: expected-behavior
@@ -75,3 +101,8 @@ body:
     attributes:
       label: Expected behavior
       description: "A clear and concise description of what you would expect to happen."
+      placeholder: |
+        * I'm trying to use the `langsmith` python library to do X.
+        * I expect to see Y.
+        * Instead, it does Z.
+  
