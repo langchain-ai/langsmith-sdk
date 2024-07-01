@@ -152,9 +152,9 @@ def test_evaluate() -> None:
             include_explanation=True,
         ),
         map_variables=lambda run, example: {
-            "context": example.inputs["context"],
-            "question": example.inputs["question"],
-            "output": run.outputs["answer"],
+            "context": example.inputs.get("context", "") if example else "",
+            "question": example.inputs.get("question", "") if example else "",
+            "output": run.outputs.get("output", "") if run.outputs else "",
         },
         model_provider="anthropic",
         model="claude-3-haiku-20240307",
@@ -163,6 +163,6 @@ def test_evaluate() -> None:
     results = evaluate(
         predict,
         data=dataset_name,
-        evaluators=[reference_accuracy.evaluate_run, accuracy.evaluate_run],
+        evaluators=[reference_accuracy, accuracy],
     )
     results.wait()

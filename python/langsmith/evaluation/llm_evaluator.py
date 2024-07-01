@@ -1,6 +1,6 @@
 """Contains the LLMEvaluator class for building LLM-as-a-judge evaluators."""
 
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union, cast
 
 from pydantic import BaseModel
 
@@ -74,9 +74,9 @@ class LLMEvaluator(RunEvaluator):
         *,
         prompt_template: Union[str, List[Tuple[str, str]]],
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
-        map_variables: Optional[Callable[[Run, Example], dict]] = None,
-        model: Optional[str] = "gpt-3.5-turbo",
-        model_provider: Optional[str] = "openai",
+        map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
+        model: str = "gpt-3.5-turbo",
+        model_provider: str = "openai",
         **kwargs,
     ):
         """Initialize the LLMEvaluator.
@@ -129,7 +129,7 @@ class LLMEvaluator(RunEvaluator):
         self.score_schema = _create_score_json_schema(self.score_config)
 
         try:
-            model = init_chat_model(
+            chat_model = init_chat_model(
                 model=model, model_provider=model_provider, **kwargs
             ).with_structured_output(self.score_schema)
         except ImportError as e:
@@ -142,7 +142,7 @@ class LLMEvaluator(RunEvaluator):
                 "and that the appropriate secrets are set."
             ) from e
 
-        self.runnable = self.prompt | model
+        self.runnable = self.prompt | chat_model
 
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
@@ -157,7 +157,6 @@ class LLMEvaluator(RunEvaluator):
                     f"{self.prompt.input_variables}. Returned variables: "
                     f"{variables.keys()}"
                 )
-            output = self.runnable.invoke(variables)
         else:
             variables = {}
             if "input" in self.prompt.input_variables:
@@ -173,6 +172,11 @@ class LLMEvaluator(RunEvaluator):
                     )
                 variables["input"] = list(run.inputs.values())[0]
             if "output" in self.prompt.input_variables:
+                if not run.outputs:
+                    raise ValueError(
+                        "No output keys are present in run.outputs but the prompt "
+                        "requires 'output'."
+                    )
                 if len(run.outputs) == 0:
                     raise ValueError(
                         "No output keys are present in run.outputs but the prompt "
@@ -185,9 +189,10 @@ class LLMEvaluator(RunEvaluator):
                     )
                 variables["output"] = list(run.outputs.values())[0]
             if "expected" in self.prompt.input_variables:
-                if not example:
+                if not example or not example.outputs:
                     raise ValueError(
-                        "No example is provided but the prompt requires 'expected'."
+                        "No example or example outputs is provided but the prompt "
+                        "requires 'expected'."
                     )
                 if len(example.outputs) == 0:
                     raise ValueError(
@@ -200,8 +205,8 @@ class LLMEvaluator(RunEvaluator):
                         "provide a map_variables function."
                     )
                 variables["expected"] = list(example.outputs.values())[0]
-            output = self.runnable.invoke(variables)
 
+        output: dict = cast(dict, self.runnable.invoke(variables))
         if isinstance(self.score_config, CategoricalScoreConfig):
             value = output["score"]
             explanation = output.get("explanation", None)
