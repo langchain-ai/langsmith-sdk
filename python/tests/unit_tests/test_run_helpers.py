@@ -1116,3 +1116,63 @@ def test_io_interops():
     assert parent_patch["id"] == parent_uid
     assert parent_patch["outputs"] == expected_at_stage["parent_output"]
     assert parent_patch["inputs"] == expected_at_stage["parent_input"]
+
+
+def test_trace_respects_tracing_context():
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=False):
+        with trace(name="foo", inputs={"a": 1}, client=mock_client):
+            pass
+
+    mock_calls = _get_calls(mock_client)
+    assert not mock_calls
+
+
+def test_trace_nested_enable_disable():
+    # Test that you can disable then re-enable tracing
+    # and the trace connects as expected
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
+            with tracing_context(enabled=False):
+                with trace(name="bar", inputs={"b": 2}, client=mock_client) as run2:
+                    with tracing_context(enabled=True):
+                        with trace(
+                            name="baz", inputs={"c": 3}, client=mock_client
+                        ) as run3:
+                            run3.end(outputs={"c": 3})
+                            run2.end(outputs={"b": 2})
+                            run.end(outputs={"a": 1})
+
+    # Now we need to ensure that there are 2 runs created (2 posts and 2 patches),
+    # run -> run3
+    # with run2 being invisible
+    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH"})
+    datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_calls]
+    assert "post" in datas[0]
+    posted = datas[0]["post"]
+    assert len(posted) == 2
+    assert posted[0]["name"] == "foo"
+    assert posted[1]["name"] == "baz"
+    dotted_parts = posted[1]["dotted_order"].split(".")
+    assert len(dotted_parts) == 2
+    parent_dotted = posted[0]["dotted_order"]
+    assert parent_dotted == dotted_parts[0]
+
+
+def test_tracing_disabled_project_name_set():
+    mock_client = _get_mock_client()
+
+    @traceable
+    def foo(a: int) -> int:
+        return a
+
+    with tracing_context(enabled=False):
+        with trace(
+            name="foo", inputs={"a": 1}, client=mock_client, project_name="my_project"
+        ):
+            pass
+        foo(1, langsmith_extra={"client": mock_client, "project_name": "my_project"})
+
+    mock_calls = _get_calls(mock_client)
+    assert not mock_calls
