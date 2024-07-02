@@ -571,7 +571,6 @@ export class Client {
   ): AsyncIterable<T[]> {
     let offset = Number(queryParams.get("offset")) || 0;
     const limit = Number(queryParams.get("limit")) || 100;
-    const limitSet = queryParams.has("limit");
     while (true) {
       queryParams.set("offset", String(offset));
       queryParams.set("limit", String(limit));
@@ -594,10 +593,6 @@ export class Client {
         break;
       }
       yield items;
-
-      if (limitSet && items.length === limit) {
-        break;
-      }
 
       if (items.length < limit) {
         break;
@@ -2248,11 +2243,18 @@ export class Client {
     if (filter !== undefined) {
       params.append("filter", filter);
     }
+    let i = 0;
     for await (const examples of this._getPaginated<Example>(
       "/examples",
       params
     )) {
-      yield* examples;
+      for (const example of examples) {
+        yield example;
+        i++;
+      }
+      if (limit !== undefined && i >= limit) {
+        break;
+      }
     }
   }
 
