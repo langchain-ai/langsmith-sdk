@@ -113,6 +113,37 @@ def test_llm_evaluator_init() -> None:
     assert set(evaluator.prompt.input_variables) == {"input", "output", "hello"}
 
 
+def test_from_model() -> None:
+    from langchain_openai import ChatOpenAI
+
+    evaluator = LLMEvaluator.from_model(
+        ChatOpenAI(),
+        prompt_template="Rate the response from 0 to 1.\n{input}",
+        score_config=ContinuousScoreConfig(
+            key="rating",
+            description="The rating of the response, from 0 to 1.",
+            include_explanation=False,
+        ),
+    )
+    assert evaluator is not None
+    assert evaluator.prompt.input_variables == ["input"]
+    assert evaluator.score_schema == {
+        "title": "rating",
+        "description": "The rating of the response, from 0 to 1.",
+        "type": "object",
+        "properties": {
+            "score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "The score for the evaluation, "
+                "between 0 and 1, inclusive.",
+            },
+        },
+        "required": ["score"],
+    }
+
+
 def test_evaluate() -> None:
     client = Client()
     client.clone_public_dataset(
@@ -157,7 +188,7 @@ def test_evaluate() -> None:
             "output": run.outputs.get("output", "") if run.outputs else "",
         },
         model_provider="anthropic",
-        model="claude-3-haiku-20240307",
+        model_name="claude-3-haiku-20240307",
     )
 
     results = evaluate(

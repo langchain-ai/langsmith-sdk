@@ -75,7 +75,7 @@ class LLMEvaluator(RunEvaluator):
         prompt_template: Union[str, List[Tuple[str, str]]],
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
-        model: str = "gpt-3.5-turbo",
+        model_name: str = "gpt-4o",
         model_provider: str = "openai",
         **kwargs,
     ):
@@ -89,20 +89,13 @@ class LLMEvaluator(RunEvaluator):
                 The configuration for the score, either categorical or continuous.
             map_variables (Optional[Callable[[Run, Example], dict]], optional):
                 A function that maps the run and example to the variables in the
-            prompt. Defaults to None. If None, it is assumed that the prompt
+                prompt. Defaults to None. If None, it is assumed that the prompt
                 only requires 'input', 'output', and 'expected'.
-            model (Optional[str], optional): The model to use for the evaluation.
-                Defaults to "gpt-3.5-turbo".
+            model_name (Optional[str], optional): The model to use for the evaluation.
+                Defaults to "gpt-4o".
             model_provider (Optional[str], optional): The model provider to use
                 for the evaluation. Defaults to "openai".
         """
-        try:
-            from langchain_core.prompts import ChatPromptTemplate
-        except ImportError as e:
-            raise ImportError(
-                "LLMEvaluator requires langchain-core to be installed. "
-                "Please install langchain-core by running `pip install langchain-core`."
-            ) from e
         try:
             from langchain.chat_models import init_chat_model
         except ImportError as e:
@@ -110,6 +103,78 @@ class LLMEvaluator(RunEvaluator):
                 "LLMEvaluator requires langchain to be installed. "
                 "Please install langchain by running `pip install langchain`."
             ) from e
+
+        chat_model = init_chat_model(
+            model=model_name, model_provider=model_provider, **kwargs
+        )
+
+        self._initialize(prompt_template, score_config, map_variables, chat_model)
+
+    @classmethod
+    def from_model(
+        cls,
+        model: Any,
+        *,
+        prompt_template: Union[str, List[Tuple[str, str]]],
+        score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
+        map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
+    ):
+        """Create an LLMEvaluator instance from a BaseChatModel instance.
+
+        Args:
+            model (BaseChatModel): The chat model instance to use for the evaluation.
+            prompt_template (Union[str, List[Tuple[str, str]]): The prompt
+                template to use for the evaluation. If a string is provided, it is
+                assumed to be a system message.
+            score_config (Union[CategoricalScoreConfig, ContinuousScoreConfig]):
+                The configuration for the score, either categorical or continuous.
+            map_variables (Optional[Callable[[Run, Example]], dict]], optional):
+                A function that maps the run and example to the variables in the
+                prompt. Defaults to None. If None, it is assumed that the prompt
+                only requires 'input', 'output', and 'expected'.
+
+        Returns:
+            LLMEvaluator: An instance of LLMEvaluator.
+        """
+        instance = cls.__new__(cls)
+        instance._initialize(prompt_template, score_config, map_variables, model)
+        return instance
+
+    def _initialize(
+        self,
+        prompt_template: Union[str, List[Tuple[str, str]]],
+        score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
+        map_variables: Optional[Callable[[Run, Optional[Example]], dict]],
+        chat_model: Any,
+    ):
+        """Shared initialization code for __init__ and from_model.
+
+        Args:
+            prompt_template (Union[str, List[Tuple[str, str]]): The prompt template.
+            score_config (Union[CategoricalScoreConfig, ContinuousScoreConfig]):
+                The score configuration.
+            map_variables (Optional[Callable[[Run, Example]], dict]]):
+                Function to map variables.
+            chat_model (BaseChatModel): The chat model instance.
+        """
+        try:
+            from langchain_core.language_models.chat_models import BaseChatModel
+            from langchain_core.prompts import ChatPromptTemplate
+        except ImportError as e:
+            raise ImportError(
+                "LLMEvaluator requires langchain-core to be installed. "
+                "Please install langchain-core by running `pip install langchain-core`."
+            ) from e
+
+        if not (
+            isinstance(chat_model, BaseChatModel)
+            and hasattr(chat_model, "with_structured_output")
+        ):
+            raise ValueError(
+                "chat_model must be an instance of "
+                "BaseLanguageModel and support structured output."
+            )
+
         if isinstance(prompt_template, str):
             self.prompt = ChatPromptTemplate.from_messages(
                 [("system", prompt_template)]
@@ -128,20 +193,7 @@ class LLMEvaluator(RunEvaluator):
         self.score_config = score_config
         self.score_schema = _create_score_json_schema(self.score_config)
 
-        try:
-            chat_model = init_chat_model(
-                model=model, model_provider=model_provider, **kwargs
-            ).with_structured_output(self.score_schema)
-        except ImportError as e:
-            raise ImportError(
-                "LLMEvaluator is missing a required langchain integration."
-            ) from e
-        except ValueError as e:
-            raise ValueError(
-                "Error loading the model. Please check the model, model_provider, "
-                "and that the appropriate secrets are set."
-            ) from e
-
+        chat_model = chat_model.with_structured_output(self.score_schema)
         self.runnable = self.prompt | chat_model
 
     def evaluate_run(
@@ -149,14 +201,8 @@ class LLMEvaluator(RunEvaluator):
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate a run."""
         if self.map_variables:
+            # These will be validated when we invoke the model
             variables = self.map_variables(run, example)
-            if set(self.prompt.input_variables) - set(variables.keys()):
-                raise ValueError(
-                    "map_variables must return a dictionary with keys for all of the "
-                    "variables in the prompt. Expected variables: "
-                    f"{self.prompt.input_variables}. Returned variables: "
-                    f"{variables.keys()}"
-                )
         else:
             variables = {}
             if "input" in self.prompt.input_variables:
