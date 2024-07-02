@@ -200,59 +200,77 @@ class LLMEvaluator(RunEvaluator):
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate a run."""
-        if self.map_variables:
-            # These will be validated when we invoke the model
-            variables = self.map_variables(run, example)
-        else:
-            variables = {}
-            if "input" in self.prompt.input_variables:
-                if len(run.inputs) == 0:
-                    raise ValueError(
-                        "No input keys are present in run.inputs but the prompt "
-                        "requires 'input'."
-                    )
-                if len(run.inputs) != 1:
-                    raise ValueError(
-                        "Multiple input keys are present in run.inputs. Please provide "
-                        "a map_variables function."
-                    )
-                variables["input"] = list(run.inputs.values())[0]
-            if "output" in self.prompt.input_variables:
-                if not run.outputs:
-                    raise ValueError(
-                        "No output keys are present in run.outputs but the prompt "
-                        "requires 'output'."
-                    )
-                if len(run.outputs) == 0:
-                    raise ValueError(
-                        "No output keys are present in run.outputs but the prompt "
-                        "requires 'output'."
-                    )
-                if len(run.outputs) != 1:
-                    raise ValueError(
-                        "Multiple output keys are present in run.outputs. Please "
-                        "provide a map_variables function."
-                    )
-                variables["output"] = list(run.outputs.values())[0]
-            if "expected" in self.prompt.input_variables:
-                if not example or not example.outputs:
-                    raise ValueError(
-                        "No example or example outputs is provided but the prompt "
-                        "requires 'expected'."
-                    )
-                if len(example.outputs) == 0:
-                    raise ValueError(
-                        "No output keys are present in example.outputs but the prompt "
-                        "requires 'expected'."
-                    )
-                if len(example.outputs) != 1:
-                    raise ValueError(
-                        "Multiple output keys are present in example.outputs. Please "
-                        "provide a map_variables function."
-                    )
-                variables["expected"] = list(example.outputs.values())[0]
-
+        variables = self._prepare_variables(run, example)
         output: dict = cast(dict, self.runnable.invoke(variables))
+        return self._parse_output(output)
+
+    async def aevaluate_run(
+        self, run: Run, example: Optional[Example] = None
+    ) -> Union[EvaluationResult, EvaluationResults]:
+        """Asynchronously evaluate a run."""
+        variables = self._prepare_variables(run, example)
+        output: dict = cast(dict, await self.runnable.ainvoke(variables))
+        return self._parse_output(output)
+
+    def _prepare_variables(self, run: Run, example: Optional[Example]) -> dict:
+        """Prepare variables for model invocation."""
+        if self.map_variables:
+            return self.map_variables(run, example)
+
+        variables = {}
+        if "input" in self.prompt.input_variables:
+            if len(run.inputs) == 0:
+                raise ValueError(
+                    "No input keys are present in run.inputs but the prompt "
+                    "requires 'input'."
+                )
+            if len(run.inputs) != 1:
+                raise ValueError(
+                    "Multiple input keys are present in run.inputs. Please provide "
+                    "a map_variables function."
+                )
+            variables["input"] = list(run.inputs.values())[0]
+
+        if "output" in self.prompt.input_variables:
+            if not run.outputs:
+                raise ValueError(
+                    "No output keys are present in run.outputs but the prompt "
+                    "requires 'output'."
+                )
+            if len(run.outputs) == 0:
+                raise ValueError(
+                    "No output keys are present in run.outputs but the prompt "
+                    "requires 'output'."
+                )
+            if len(run.outputs) != 1:
+                raise ValueError(
+                    "Multiple output keys are present in run.outputs. Please "
+                    "provide a map_variables function."
+                )
+            variables["output"] = list(run.outputs.values())[0]
+
+        if "expected" in self.prompt.input_variables:
+            if not example or not example.outputs:
+                raise ValueError(
+                    "No example or example outputs is provided but the prompt "
+                    "requires 'expected'."
+                )
+            if len(example.outputs) == 0:
+                raise ValueError(
+                    "No output keys are present in example.outputs but the prompt "
+                    "requires 'expected'."
+                )
+            if len(example.outputs) != 1:
+                raise ValueError(
+                    "Multiple output keys are present in example.outputs. Please "
+                    "provide a map_variables function."
+                )
+            variables["expected"] = list(example.outputs.values())[0]
+
+        return variables
+
+    def _parse_output(self, output: dict) -> Union[EvaluationResult, EvaluationResults]:
+        """Parse the model output into an evaluation result."""
         if isinstance(self.score_config, CategoricalScoreConfig):
             value = output["score"]
             explanation = output.get("explanation", None)

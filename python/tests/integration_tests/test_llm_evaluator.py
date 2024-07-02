@@ -1,6 +1,6 @@
 import pytest
 
-from langsmith import Client, evaluate
+from langsmith import Client, aevaluate, evaluate
 from langsmith.evaluation.llm_evaluator import (
     CategoricalScoreConfig,
     ContinuousScoreConfig,
@@ -144,7 +144,7 @@ def test_from_model() -> None:
     }
 
 
-def test_evaluate() -> None:
+async def test_evaluate() -> None:
     client = Client()
     client.clone_public_dataset(
         "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
@@ -152,6 +152,9 @@ def test_evaluate() -> None:
     dataset_name = "Evaluate Examples"
 
     def predict(inputs: dict) -> dict:
+        return {"answer": "Yes"}
+
+    async def apredict(inputs: dict) -> dict:
         return {"answer": "Yes"}
 
     reference_accuracy = LLMEvaluator(
@@ -197,3 +200,9 @@ def test_evaluate() -> None:
         evaluators=[reference_accuracy, accuracy],
     )
     results.wait()
+
+    await aevaluate(
+        apredict,
+        data=dataset_name,
+        evaluators=[reference_accuracy, accuracy],
+    )
