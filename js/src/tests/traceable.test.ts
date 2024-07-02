@@ -513,6 +513,44 @@ describe("async generators", () => {
       },
     });
   });
+
+  test("iterable with props", async () => {
+    const { client, callSpy } = mockClient();
+
+    const iterableTraceable = traceable(
+      function iterableWithProps() {
+        return {
+          *[Symbol.asyncIterator]() {
+            yield 0;
+          },
+          prop: "value",
+        };
+      },
+      {
+        client,
+        tracingEnabled: true,
+      }
+    );
+
+    const numbers: number[] = [];
+    const iterableWithProps = await iterableTraceable();
+    for await (const num of iterableWithProps) {
+      numbers.push(num);
+    }
+
+    expect(numbers).toEqual([0]);
+
+    expect(iterableWithProps.prop).toBe("value");
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: ["iterableWithProps:0"],
+      edges: [],
+      data: {
+        "iterableWithProps:0": {
+          outputs: { outputs: [0] },
+        },
+      },
+    });
+  });
 });
 
 describe("deferred input", () => {

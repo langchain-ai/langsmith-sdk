@@ -32,11 +32,10 @@ type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (
   ? I
   : never;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
 export type TraceableFunction<Func extends (...args: any[]) => any> =
   // function overloads are represented as intersections rather than unions
   // matches the behavior introduced in https://github.com/microsoft/TypeScript/pull/54448
-  Func extends {
+  (Func extends {
     (...args: infer A1): infer R1;
     (...args: infer A2): infer R2;
     (...args: infer A3): infer R3;
@@ -70,6 +69,9 @@ export type TraceableFunction<Func extends (...args: any[]) => any> =
         (...args: infer A1): infer R1;
       }
     ? UnionToIntersection<WrapArgReturnPair<[A1, R1]>>
-    : never;
+    : never) & {
+    // Other properties of Func
+    [K in keyof Func]: Func[K];
+  };
 
 export type RunTreeLike = RunTree;
