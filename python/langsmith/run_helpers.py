@@ -431,7 +431,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
-            run_container = await asyncio.to_thread(
+            run_container = await _aio_to_thread(
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -460,19 +460,17 @@ def traceable(
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
                 await asyncio.shield(
-                    asyncio.to_thread(_container_end, run_container, error=e)
+                    _aio_to_thread(_container_end, run_container, error=e)
                 )
                 raise e
-            await asyncio.to_thread(
-                _container_end, run_container, outputs=function_result
-            )
+            await _aio_to_thread(_container_end, run_container, outputs=function_result)
             return function_result
 
         @functools.wraps(func)
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            run_container = await asyncio.to_thread(
+            run_container = await _aio_to_thread(
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -533,7 +531,7 @@ def traceable(
                     pass
             except BaseException as e:
                 await asyncio.shield(
-                    asyncio.to_thread(_container_end, run_container, error=e)
+                    _aio_to_thread(_container_end, run_container, error=e)
                 )
                 raise e
             if results:
@@ -547,9 +545,7 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            await asyncio.to_thread(
-                _container_end, run_container, outputs=function_result
-            )
+            await _aio_to_thread(_container_end, run_container, outputs=function_result)
 
         @functools.wraps(func)
         def wrapper(
@@ -1174,3 +1170,20 @@ def _get_inputs_safe(
     except BaseException as e:
         LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}
+
+
+# Ported from Python 3.9+ to support Python 3.8
+async def _aio_to_thread(func, /, *args, **kwargs):
+    """Asynchronously run function *func* in a separate thread.
+
+    Any *args and **kwargs supplied for this function are directly passed
+    to *func*. Also, the current :class:`contextvars.Context` is propagated,
+    allowing context variables from the main thread to be accessed in the
+    separate thread.
+
+    Return a coroutine that can be awaited to get the eventual result of *func*.
+    """
+    loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
+    func_call = functools.partial(ctx.run, func, *args, **kwargs)
+    return await loop.run_in_executor(None, func_call)
