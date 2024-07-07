@@ -431,7 +431,8 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
-            run_container = _setup_run(
+            run_container = await asyncio.to_thread(
+                _setup_run,
                 func,
                 container_input=container_input,
                 langsmith_extra=langsmith_extra,
@@ -457,16 +458,22 @@ def traceable(
                     ):
                         function_result = await fr_coro
             except BaseException as e:
-                _container_end(run_container, error=e)
+                # shield from cancellation, given we're catching all exceptions
+                await asyncio.shield(
+                    asyncio.to_thread(_container_end, run_container, error=e)
+                )
                 raise e
-            _container_end(run_container, outputs=function_result)
+            await asyncio.to_thread(
+                _container_end, run_container, outputs=function_result
+            )
             return function_result
 
         @functools.wraps(func)
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            run_container = _setup_run(
+            run_container = await asyncio.to_thread(
+                _setup_run,
                 func,
                 container_input=container_input,
                 langsmith_extra=langsmith_extra,
@@ -525,7 +532,9 @@ def traceable(
                 except StopAsyncIteration:
                     pass
             except BaseException as e:
-                _container_end(run_container, error=e)
+                await asyncio.shield(
+                    asyncio.to_thread(_container_end, run_container, error=e)
+                )
                 raise e
             if results:
                 if reduce_fn:
@@ -538,7 +547,9 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            _container_end(run_container, outputs=function_result)
+            await asyncio.to_thread(
+                _container_end, run_container, outputs=function_result
+            )
 
         @functools.wraps(func)
         def wrapper(
