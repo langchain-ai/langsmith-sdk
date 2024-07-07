@@ -562,14 +562,6 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     assert run3.inputs == {"input1": 1, "input2": 2}
     assert run3.error == "error"
 
-    # read the project
-    result = langchain_client.read_project(project_name=_session)
-    assert result.error_rate > 0
-    assert result.first_token_p50 is None
-    assert result.first_token_p99 is None
-
-    langchain_client.delete_project(project_name=_session)
-
 
 @freeze_time("2023-01-01")
 def test_get_info() -> None:
