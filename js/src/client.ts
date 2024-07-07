@@ -2183,6 +2183,9 @@ export class Client {
     splits,
     inlineS3Urls,
     metadata,
+    limit,
+    offset,
+    filter,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2191,6 +2194,9 @@ export class Client {
     splits?: string[];
     inlineS3Urls?: boolean;
     metadata?: KVMap;
+    limit?: number;
+    offset?: number;
+    filter?: string;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2228,11 +2234,27 @@ export class Client {
       const serializedMetadata = JSON.stringify(metadata);
       params.append("metadata", serializedMetadata);
     }
+    if (limit !== undefined) {
+      params.append("limit", limit.toString());
+    }
+    if (offset !== undefined) {
+      params.append("offset", offset.toString());
+    }
+    if (filter !== undefined) {
+      params.append("filter", filter);
+    }
+    let i = 0;
     for await (const examples of this._getPaginated<Example>(
       "/examples",
       params
     )) {
-      yield* examples;
+      for (const example of examples) {
+        yield example;
+        i++;
+      }
+      if (limit !== undefined && i >= limit) {
+        break;
+      }
     }
   }
 
