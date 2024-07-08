@@ -160,7 +160,7 @@ async def test_nested_async_runs(langchain_client: Client):
         langsmith_extra=dict(project_name=project_name, metadata={"test_run": meta}),
     )
     executor.shutdown(wait=True)
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}")'
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
     poll_runs_until_count(langchain_client, project_name, 4, filter_=_filter)
     runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     assert len(runs) == 4
@@ -204,7 +204,12 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         thread_pool = ThreadPoolExecutor(max_workers=1)
         for i in range(3):
             thread_pool.submit(
-                my_tool_run, f"Child Tool {i}", langsmith_extra={"run_tree": run_tree}
+                my_tool_run,
+                f"Child Tool {i}",
+                langsmith_extra={
+                    "run_tree": run_tree,
+                    "metadata": getattr(run_tree, "metadata", {}),
+                },
             )
         thread_pool.shutdown(wait=True)
         return llm_run_result
@@ -216,7 +221,9 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         thread_pool = ThreadPoolExecutor(max_workers=3)
         for i in range(2):
             thread_pool.submit(
-                my_run, f"Child {i}", langsmith_extra=dict(run_tree=run_tree)
+                my_run,
+                f"Child {i}",
+                langsmith_extra=dict(run_tree=run_tree, metadata=run_tree.metadata),
             )
         thread_pool.shutdown(wait=True)
         return text
@@ -227,11 +234,13 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         langsmith_extra=dict(project_name=project_name, metadata={"test_run": meta}),
     )
     executor.shutdown(wait=True)
-    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}")'
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
     poll_runs_until_count(langchain_client, project_name, 17, filter_=filter_)
     runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     trace_runs = list(
-        langchain_client.list_runs(trace_id=runs[0].trace_id, project_name=project_name)
+        langchain_client.list_runs(
+            trace_id=runs[0].trace_id, project_name=project_name, filter=filter_
+        )
     )
     assert len(trace_runs) == 17
     assert len(runs) == 17
@@ -281,7 +290,7 @@ async def test_context_manager(langchain_client: Client) -> None:
                 await my_llm("corge")
             await asyncio.gather(*runs)
         run_tree.end(outputs={"End val": "my_context2"})
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}")'
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
     poll_runs_until_count(langchain_client, project_name, 8, filter_=_filter)
     runs_ = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     assert len(runs_) == 8
