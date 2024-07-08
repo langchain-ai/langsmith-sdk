@@ -264,7 +264,9 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         assert call.args[1].startswith("https://api.smith.langchain.com")
         body = json.loads(call.kwargs["data"])
         assert body["post"]
-        assert body["post"][0]["outputs"]["output"] == expected
+        outputs_ = body["post"][0]["outputs"]
+        assert "output" in outputs_
+        assert outputs_["output"] == expected
         # Assert the inputs are filtered as expected
         assert body["post"][0]["inputs"] == {"a": "FOOOOOO", "b": 2, "d": 3}
 
