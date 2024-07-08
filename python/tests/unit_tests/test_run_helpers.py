@@ -13,6 +13,7 @@ import pytest
 
 import langsmith
 from langsmith import Client
+from langsmith import schemas as ls_schemas
 from langsmith.run_helpers import (
     _get_inputs,
     as_runnable,
@@ -1176,3 +1177,62 @@ def test_tracing_disabled_project_name_set():
 
     mock_calls = _get_calls(mock_client)
     assert not mock_calls
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+async def test_traceable_async_exception(auto_batch_tracing: bool):
+    mock_client = _get_mock_client(
+        auto_batch_tracing=auto_batch_tracing,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+    @traceable
+    async def my_function(a: int) -> int:
+        raise ValueError("foo")
+
+    with pytest.raises(ValueError, match="foo"):
+        await my_function(1, langsmith_extra={"client": mock_client})
+
+    # Get ALL the call args for the mock_client
+    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH", "GET"})
+    num_calls = 1 if auto_batch_tracing else 2
+    assert len(mock_calls) == num_calls
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
+    mock_client = _get_mock_client(
+        auto_batch_tracing=auto_batch_tracing,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+    @traceable
+    async def my_function(a: int) -> AsyncGenerator[int, None]:
+        for i in range(5):
+            yield i
+        raise ValueError("foo")
+
+    with pytest.raises(ValueError, match="foo"):
+        async for _ in my_function(1, langsmith_extra={"client": mock_client}):
+            pass
+
+    # Get ALL the call args for the mock_client
+    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH", "GET"})
+    num_calls = 1 if auto_batch_tracing else 2
+    assert len(mock_calls) == num_calls

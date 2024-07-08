@@ -937,11 +937,6 @@ def _container_end(
         error_ = f"{repr(error)}\n\n{stacktrace}"
     run_tree.end(outputs=outputs_, error=error_)
     run_tree.patch()
-    if error:
-        try:
-            LOGGER.info(f"See trace: {run_tree.get_url()}")
-        except Exception:
-            pass
     on_end = container.get("on_end")
     if on_end is not None and callable(on_end):
         try:
