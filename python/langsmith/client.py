@@ -1249,6 +1249,7 @@ class Client:
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        self._insert_runtime_env([run_create])
         self._create_run(run_create)
 
     def _create_run(self, run_create: dict):

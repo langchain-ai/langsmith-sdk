@@ -98,6 +98,8 @@ class RunTree(ls_schemas.RunBase):
             values["events"] = []
         if values.get("tags") is None:
             values["tags"] = []
+        if values.get("outputs") is None:
+            values["outputs"] = {}
         return values
 
     @root_validator(pre=False)
