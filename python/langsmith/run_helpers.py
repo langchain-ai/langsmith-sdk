@@ -174,6 +174,7 @@ def is_async(func: Callable) -> bool:
 class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
+    name: Optional[str]
     reference_example_id: Optional[ls_client.ID_TYPE]
     run_extra: Optional[Dict]
     parent: Optional[Union[run_trees.RunTree, str, Mapping]]
@@ -706,6 +707,7 @@ def trace(
             DeprecationWarning,
         )
     old_ctx = get_tracing_context()
+    is_disabled = old_ctx.get("enabled", True) is False
     outer_tags = _TAGS.get()
     outer_metadata = _METADATA.get()
     outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
@@ -713,17 +715,16 @@ def trace(
         {"parent": parent, "run_tree": kwargs.get("run_tree"), "client": client}
     )
 
-    # Merge and set context variables
+    # Merge context variables
     tags_ = sorted(set((tags or []) + (outer_tags or [])))
-    _TAGS.set(tags_)
     metadata = {**(metadata or {}), **(outer_metadata or {}), "ls_method": "trace"}
-    _METADATA.set(metadata)
 
     extra_outer = extra or {}
     extra_outer["metadata"] = metadata
 
     project_name_ = project_name or outer_project
-    if parent_run_ is not None:
+    # If it's disabled, we break the tree
+    if parent_run_ is not None and not is_disabled:
         new_run = parent_run_.create_child(
             name=name,
             run_id=run_id,
@@ -746,9 +747,12 @@ def trace(
             tags=tags_,
             client=client,  # type: ignore[arg-type]
         )
-    new_run.post()
-    _PARENT_RUN_TREE.set(new_run)
-    _PROJECT_NAME.set(project_name_)
+    if not is_disabled:
+        new_run.post()
+        _TAGS.set(tags_)
+        _METADATA.set(metadata)
+        _PARENT_RUN_TREE.set(new_run)
+        _PROJECT_NAME.set(project_name_)
 
     try:
         yield new_run
@@ -759,12 +763,14 @@ def trace(
             tb = utils._format_exc()
             tb = f"{e.__class__.__name__}: {e}\n\n{tb}"
         new_run.end(error=tb)
-        new_run.patch()
+        if not is_disabled:
+            new_run.patch()
         raise e
     finally:
         # Reset the old context
         _set_tracing_context(old_ctx)
-    new_run.patch()
+    if not is_disabled:
+        new_run.patch()
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
@@ -939,11 +945,6 @@ def _container_end(
         error_ = f"{repr(error)}\n\n{stacktrace}"
     run_tree.end(outputs=outputs_, error=error_)
     run_tree.patch()
-    if error:
-        try:
-            LOGGER.info(f"See trace: {run_tree.get_url()}")
-        except Exception:
-            pass
     on_end = container.get("on_end")
     if on_end is not None and callable(on_end):
         try:
@@ -1013,13 +1014,13 @@ def _setup_run(
 ) -> _TraceableContainer:
     """Create a new run or create_child() if run is passed in kwargs."""
     extra_outer = container_input.get("extra_outer") or {}
-    name = container_input.get("name")
     metadata = container_input.get("metadata")
     tags = container_input.get("tags")
     client = container_input.get("client")
     run_type = container_input.get("run_type") or "chain"
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
+    name = langsmith_extra.get("name") or container_input.get("name")
     client_ = langsmith_extra.get("client", client)
     parent_run_ = _get_parent_run(
         {**langsmith_extra, "client": client_}, kwargs.get("config")
@@ -1033,12 +1034,7 @@ def _setup_run(
     )
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
-    if (
-        not project_cv
-        and not reference_example_id
-        and not parent_run_
-        and not utils.tracing_is_enabled()
-    ):
+    if not parent_run_ and not utils.tracing_is_enabled():
         utils.log_once(
             logging.DEBUG, "LangSmith tracing is enabled, returning original function."
         )

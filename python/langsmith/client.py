@@ -266,7 +266,9 @@ def _dumps_json_single(
             ensure_ascii=True,
         ).encode("utf-8")
         try:
-            result = orjson.dumps(orjson.loads(result.decode("utf-8", errors="lossy")))
+            result = orjson.dumps(
+                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
+            )
         except orjson.JSONDecodeError:
             result = _elide_surrogates(result)
         return result
@@ -1238,7 +1240,6 @@ class Client:
         if not self._filter_for_sampling([run_create]):
             return
         run_create = self._run_transform(run_create, copy=True)
-        self._insert_runtime_env([run_create])
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
@@ -1250,6 +1251,7 @@ class Client:
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        self._insert_runtime_env([run_create])
         self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
