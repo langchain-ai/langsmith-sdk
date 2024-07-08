@@ -1238,7 +1238,6 @@ class Client:
         if not self._filter_for_sampling([run_create]):
             return
         run_create = self._run_transform(run_create, copy=True)
-        self._insert_runtime_env([run_create])
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
