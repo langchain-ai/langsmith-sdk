@@ -1203,12 +1203,15 @@ async def test_traceable_async_exception(auto_batch_tracing: bool):
     async def my_function(a: int) -> int:
         raise ValueError("foo")
 
-    with pytest.raises(ValueError, match="foo"):
-        await my_function(1, langsmith_extra={"client": mock_client})
+    with tracing_context(enabled=True):
+        with pytest.raises(ValueError, match="foo"):
+            await my_function(1, langsmith_extra={"client": mock_client})
 
     # Get ALL the call args for the mock_client
-    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH", "GET"})
     num_calls = 1 if auto_batch_tracing else 2
+    mock_calls = _get_calls(
+        mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
+    )
     assert len(mock_calls) == num_calls
 
 
@@ -1233,11 +1236,14 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
             yield i
         raise ValueError("foo")
 
-    with pytest.raises(ValueError, match="foo"):
-        async for _ in my_function(1, langsmith_extra={"client": mock_client}):
-            pass
+    with tracing_context(enabled=True):
+        with pytest.raises(ValueError, match="foo"):
+            async for _ in my_function(1, langsmith_extra={"client": mock_client}):
+                pass
 
     # Get ALL the call args for the mock_client
-    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH", "GET"})
     num_calls = 1 if auto_batch_tracing else 2
+    mock_calls = _get_calls(
+        mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
+    )
     assert len(mock_calls) == num_calls
