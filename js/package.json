@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.1.31",
+  "version": "0.1.36",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -37,6 +37,10 @@
     "wrappers.js",
     "wrappers.d.ts",
     "wrappers.d.cts",
+    "anonymizer.cjs",
+    "anonymizer.js",
+    "anonymizer.d.ts",
+    "anonymizer.d.cts",
     "wrappers/openai.cjs",
     "wrappers/openai.js",
     "wrappers/openai.d.ts",
@@ -227,6 +231,15 @@
       },
       "import": "./wrappers.js",
       "require": "./wrappers.cjs"
+    },
+    "./anonymizer": {
+      "types": {
+        "import": "./anonymizer.d.ts",
+        "require": "./anonymizer.d.cts",
+        "default": "./anonymizer.d.ts"
+      },
+      "import": "./anonymizer.js",
+      "require": "./anonymizer.cjs"
     },
     "./wrappers/openai": {
       "types": {

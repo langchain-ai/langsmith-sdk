@@ -49,8 +49,9 @@ interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
-  hideInputs?: boolean;
-  hideOutputs?: boolean;
+  anonymizer?: (values: KVMap) => KVMap;
+  hideInputs?: boolean | ((inputs: KVMap) => KVMap);
+  hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
   fetchOptions?: RequestInit;
@@ -429,8 +430,12 @@ export class Client {
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
-    this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
-    this.hideOutputs = config.hideOutputs ?? defaultConfig.hideOutputs;
+
+    this.hideInputs =
+      config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
+    this.hideOutputs =
+      config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
@@ -2178,6 +2183,9 @@ export class Client {
     splits,
     inlineS3Urls,
     metadata,
+    limit,
+    offset,
+    filter,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2186,6 +2194,9 @@ export class Client {
     splits?: string[];
     inlineS3Urls?: boolean;
     metadata?: KVMap;
+    limit?: number;
+    offset?: number;
+    filter?: string;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2223,11 +2234,27 @@ export class Client {
       const serializedMetadata = JSON.stringify(metadata);
       params.append("metadata", serializedMetadata);
     }
+    if (limit !== undefined) {
+      params.append("limit", limit.toString());
+    }
+    if (offset !== undefined) {
+      params.append("offset", offset.toString());
+    }
+    if (filter !== undefined) {
+      params.append("filter", filter);
+    }
+    let i = 0;
     for await (const examples of this._getPaginated<Example>(
       "/examples",
       params
     )) {
-      yield* examples;
+      for (const example of examples) {
+        yield example;
+        i++;
+      }
+      if (limit !== undefined && i >= limit) {
+        break;
+      }
     }
   }
 

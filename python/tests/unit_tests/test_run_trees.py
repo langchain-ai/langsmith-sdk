@@ -15,7 +15,7 @@ def test_run_tree_accepts_tpe() -> None:
         name="My Chat Bot",
         inputs={"text": "Summarize this morning's meetings."},
         client=mock_client,
-        executor=ThreadPoolExecutor(),
+        executor=ThreadPoolExecutor(),  # type: ignore
     )
 
 

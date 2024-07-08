@@ -18,6 +18,7 @@ import socket
 import sys
 import threading
 import time
+import typing
 import uuid
 import warnings
 import weakref
@@ -265,7 +266,9 @@ def _dumps_json_single(
             ensure_ascii=True,
         ).encode("utf-8")
         try:
-            result = orjson.dumps(orjson.loads(result.decode("utf-8", errors="lossy")))
+            result = orjson.dumps(
+                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
+            )
         except orjson.JSONDecodeError:
             result = _elide_surrogates(result)
         return result
@@ -407,6 +410,24 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
         ) from e
 
 
+@typing.overload
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
+
+
+@typing.overload
+def _ensure_uuid(
+    value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = True
+) -> Optional[uuid.UUID]: ...
+
+
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = False):
+    if value is None:
+        if accept_null:
+            return None
+        return uuid.uuid4()
+    return _as_uuid(value)
+
+
 @functools.lru_cache(maxsize=1)
 def _parse_url(url):
     parsed_url = urllib_parse.urlparse(url)
@@ -445,6 +466,7 @@ class Client:
         "tracing_sample_rate",
         "_sampled_post_uuids",
         "tracing_queue",
+        "_anonymizer",
         "_hide_inputs",
         "_hide_outputs",
         "_info",
@@ -461,6 +483,7 @@ class Client:
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
+        anonymizer: Optional[Callable[[dict], dict]] = None,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
@@ -486,6 +509,9 @@ class Client:
         session: requests.Session or None, default=None
             The session to use for requests. If None, a new session will be
             created.
+        anonymizer : Optional[Callable[[dict], dict]]
+            A function applied for masking serialized run inputs and outputs,
+            before sending to the API.
         hide_inputs: Whether to hide run inputs when tracing with this client.
             If True, hides the entire inputs. If a function, applied to
             all run inputs when creating runs.
@@ -575,6 +601,7 @@ class Client:
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
+        self._anonymizer = anonymizer
         self._hide_inputs = (
             hide_inputs
             if hide_inputs is not None
@@ -1213,7 +1240,6 @@ class Client:
         if not self._filter_for_sampling([run_create]):
             return
         run_create = self._run_transform(run_create, copy=True)
-        self._insert_runtime_env([run_create])
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
@@ -1225,6 +1251,7 @@ class Client:
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        self._insert_runtime_env([run_create])
         self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
@@ -1241,17 +1268,23 @@ class Client:
             )
 
     def _hide_run_inputs(self, inputs: dict):
-        if self._hide_inputs is False:
-            return inputs
         if self._hide_inputs is True:
             return {}
+        if self._anonymizer:
+            json_inputs = orjson.loads(_dumps_json(inputs))
+            return self._anonymizer(json_inputs)
+        if self._hide_inputs is False:
+            return inputs
         return self._hide_inputs(inputs)
 
     def _hide_run_outputs(self, outputs: dict):
-        if self._hide_outputs is False:
-            return outputs
         if self._hide_outputs is True:
             return {}
+        if self._anonymizer:
+            json_outputs = orjson.loads(_dumps_json(outputs))
+            return self._anonymizer(json_outputs)
+        if self._hide_outputs is False:
+            return outputs
         return self._hide_outputs(outputs)
 
     def batch_ingest_runs(
@@ -3126,12 +3159,11 @@ class Client:
         if created_at:
             data["created_at"] = created_at.isoformat()
         data["id"] = example_id or str(uuid.uuid4())
-        example = ls_schemas.ExampleCreate(**data)
         response = self.request_with_retries(
             "POST",
             "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=example.json(),
+            data=_dumps_json({k: v for k, v in data.items() if v is not None}),
         )
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
@@ -3173,8 +3205,11 @@ class Client:
         as_of: Optional[Union[datetime.datetime, str]] = None,
         splits: Optional[Sequence[str]] = None,
         inline_s3_urls: bool = True,
+        *,
+        offset: int = 0,
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
+        filter: Optional[str] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3195,13 +3230,17 @@ class Client:
                 Returns examples only from the specified splits.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
+            offset (int): The offset to start from. Defaults to 0.
             limit (int, optional): The maximum number of examples to return.
+            filter (str, optional): A structured fileter string to apply to
+                the examples.
 
         Yields:
             Example: The examples.
         """
         params: Dict[str, Any] = {
             **kwargs,
+            "offset": offset,
             "id": example_ids,
             "as_of": (
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
@@ -3209,6 +3248,7 @@ class Client:
             "splits": splits,
             "inline_s3_urls": inline_s3_urls,
             "limit": min(limit, 100) if limit is not None else 100,
+            "filter": filter,
         }
         if metadata is not None:
             params["metadata"] = _dumps_json(metadata)
@@ -3263,7 +3303,7 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
-        example = ls_schemas.ExampleUpdate(
+        example = dict(
             inputs=inputs,
             outputs=outputs,
             dataset_id=dataset_id,
@@ -3274,7 +3314,7 @@ class Client:
             "PATCH",
             f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=example.json(exclude_none=True),
+            data=_dumps_json({k: v for k, v in example.items() if v is not None}),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -3374,7 +3414,7 @@ class Client:
                 results_ = cast(List[ls_evaluator.EvaluationResult], results["results"])
             else:
                 results_ = [
-                    ls_evaluator.EvaluationResult(**{"key": fn_name, **results})
+                    ls_evaluator.EvaluationResult(**{"key": fn_name, **results})  # type: ignore[arg-type]
                 ]
         else:
             raise TypeError(
@@ -3619,8 +3659,8 @@ class Client:
                 )
             feedback_source.metadata["__run"] = _run_meta
         feedback = ls_schemas.FeedbackCreate(
-            id=feedback_id or uuid.uuid4(),
-            run_id=run_id,
+            id=_ensure_uuid(feedback_id),
+            run_id=_ensure_uuid(run_id),
             key=key,
             score=score,
             value=value,
@@ -3630,9 +3670,11 @@ class Client:
             created_at=datetime.datetime.now(datetime.timezone.utc),
             modified_at=datetime.datetime.now(datetime.timezone.utc),
             feedback_config=feedback_config,
-            session_id=project_id,
-            comparative_experiment_id=comparative_experiment_id,
-            feedback_group_id=feedback_group_id,
+            session_id=_ensure_uuid(project_id, accept_null=True),
+            comparative_experiment_id=_ensure_uuid(
+                comparative_experiment_id, accept_null=True
+            ),
+            feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
         )
         feedback_block = _dumps_json(feedback.dict(exclude_none=True))
         self.request_with_retries(
@@ -4026,8 +4068,6 @@ class Client:
         ):
             yield ls_schemas.AnnotationQueue(
                 **queue,
-                _host_url=self._host_url,
-                _tenant_id=self._get_optional_tenant_id(),
             )
             if limit is not None and i + 1 >= limit:
                 break
@@ -4066,8 +4106,6 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.AnnotationQueue(
             **response.json(),
-            _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def read_annotation_queue(self, queue_id: ID_TYPE) -> ls_schemas.AnnotationQueue:

@@ -176,6 +176,7 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_TRACING_V2",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
+        "LANGSMITH_RUNS_ENDPOINTS",
     }
     langchain_metadata = {
         k: v

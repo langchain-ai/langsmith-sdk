@@ -11,14 +11,18 @@ from uuid import UUID, uuid4
 try:
     from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
 except ImportError:
-    from pydantic import Field, root_validator, validator
+    from pydantic import (  # type: ignore[assignment, no-redef]
+        Field,
+        root_validator,
+        validator,
+    )
 
 import threading
 import urllib.parse
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json
+from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +98,8 @@ class RunTree(ls_schemas.RunBase):
             values["events"] = []
         if values.get("tags") is None:
             values["tags"] = []
+        if values.get("outputs") is None:
+            values["outputs"] = {}
         return values
 
     @root_validator(pre=False)
@@ -218,7 +224,7 @@ class RunTree(ls_schemas.RunBase):
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
-            id=run_id or uuid4(),
+            id=_ensure_uuid(run_id),
             serialized=serialized_,
             inputs=inputs or {},
             outputs=outputs or {},
@@ -229,7 +235,7 @@ class RunTree(ls_schemas.RunBase):
             end_time=end_time,
             extra=extra or {},
             parent_run=self,
-            session_name=self.session_name,
+            project_name=self.session_name,
             client=self.client,
             tags=tags,
         )
