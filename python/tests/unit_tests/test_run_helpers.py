@@ -727,7 +727,12 @@ def test_generator():
 
     with tracing_context(enabled=True):
         chunks = my_answer(
-            "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
+            "some_query",
+            langsmith_extra={
+                "name": "test_overridding_name",
+                "on_end": _get_run,
+                "client": mock_client_,
+            },
         )
         all_chunks = []
         for chunk in chunks:
@@ -742,7 +747,7 @@ def test_generator():
     ]
     assert run is not None
     run = cast(RunTree, run)
-    assert run.name == "expand_and_answer_questions"
+    assert run.name == "test_overridding_name"
     child_runs = run.child_runs
     assert child_runs and len(child_runs) == 5
     names = [run.name for run in child_runs]
