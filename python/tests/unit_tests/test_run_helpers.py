@@ -13,6 +13,7 @@ import pytest
 
 import langsmith
 from langsmith import Client
+from langsmith import schemas as ls_schemas
 from langsmith.run_helpers import (
     _get_inputs,
     as_runnable,
@@ -1116,3 +1117,122 @@ def test_io_interops():
     assert parent_patch["id"] == parent_uid
     assert parent_patch["outputs"] == expected_at_stage["parent_output"]
     assert parent_patch["inputs"] == expected_at_stage["parent_input"]
+
+
+def test_trace_respects_tracing_context():
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=False):
+        with trace(name="foo", inputs={"a": 1}, client=mock_client):
+            pass
+
+    mock_calls = _get_calls(mock_client)
+    assert not mock_calls
+
+
+def test_trace_nested_enable_disable():
+    # Test that you can disable then re-enable tracing
+    # and the trace connects as expected
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
+            with tracing_context(enabled=False):
+                with trace(name="bar", inputs={"b": 2}, client=mock_client) as run2:
+                    with tracing_context(enabled=True):
+                        with trace(
+                            name="baz", inputs={"c": 3}, client=mock_client
+                        ) as run3:
+                            run3.end(outputs={"c": 3})
+                            run2.end(outputs={"b": 2})
+                            run.end(outputs={"a": 1})
+
+    # Now we need to ensure that there are 2 runs created (2 posts and 2 patches),
+    # run -> run3
+    # with run2 being invisible
+    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH"})
+    datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_calls]
+    assert "post" in datas[0]
+    posted = datas[0]["post"]
+    assert len(posted) == 2
+    assert posted[0]["name"] == "foo"
+    assert posted[1]["name"] == "baz"
+    dotted_parts = posted[1]["dotted_order"].split(".")
+    assert len(dotted_parts) == 2
+    parent_dotted = posted[0]["dotted_order"]
+    assert parent_dotted == dotted_parts[0]
+
+
+def test_tracing_disabled_project_name_set():
+    mock_client = _get_mock_client()
+
+    @traceable
+    def foo(a: int) -> int:
+        return a
+
+    with tracing_context(enabled=False):
+        with trace(
+            name="foo", inputs={"a": 1}, client=mock_client, project_name="my_project"
+        ):
+            pass
+        foo(1, langsmith_extra={"client": mock_client, "project_name": "my_project"})
+
+    mock_calls = _get_calls(mock_client)
+    assert not mock_calls
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+async def test_traceable_async_exception(auto_batch_tracing: bool):
+    mock_client = _get_mock_client(
+        auto_batch_tracing=auto_batch_tracing,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+    @traceable
+    async def my_function(a: int) -> int:
+        raise ValueError("foo")
+
+    with pytest.raises(ValueError, match="foo"):
+        await my_function(1, langsmith_extra={"client": mock_client})
+
+    # Get ALL the call args for the mock_client
+    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH", "GET"})
+    num_calls = 1 if auto_batch_tracing else 2
+    assert len(mock_calls) == num_calls
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
+    mock_client = _get_mock_client(
+        auto_batch_tracing=auto_batch_tracing,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+    @traceable
+    async def my_function(a: int) -> AsyncGenerator[int, None]:
+        for i in range(5):
+            yield i
+        raise ValueError("foo")
+
+    with pytest.raises(ValueError, match="foo"):
+        async for _ in my_function(1, langsmith_extra={"client": mock_client}):
+            pass
+
+    # Get ALL the call args for the mock_client
+    mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH", "GET"})
+    num_calls = 1 if auto_batch_tracing else 2
+    assert len(mock_calls) == num_calls

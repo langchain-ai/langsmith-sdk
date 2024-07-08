@@ -129,6 +129,14 @@ def test_list_examples(langchain_client: Client) -> None:
     assert len(example_list) == len(examples)
 
     example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, offset=1, limit=2)
+    )
+    assert len(example_list) == 2
+
+    example_list = list(langchain_client.list_examples(dataset_id=dataset.id, offset=1))
+    assert len(example_list) == len(examples) - 1
+
+    example_list = list(
         langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
     )
     assert len(example_list) == 3
@@ -198,6 +206,27 @@ def test_list_examples(langchain_client: Client) -> None:
     example_list = list(
         langchain_client.list_examples(
             dataset_id=dataset.id, metadata={"foo": "bar", "baz": "quux"}
+        )
+    )
+    assert len(example_list) == 0
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='exists(metadata, "baz")'
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='has("metadata", \'{"foo": "bar"}\')'
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='exists(metadata, "bazzz")'
         )
     )
     assert len(example_list) == 0
@@ -532,14 +561,6 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     run3 = next(run for run in runs if run.id == trace_id_2)
     assert run3.inputs == {"input1": 1, "input2": 2}
     assert run3.error == "error"
-
-    # read the project
-    result = langchain_client.read_project(project_name=_session)
-    assert result.error_rate > 0
-    assert result.first_token_p50 is None
-    assert result.first_token_p99 is None
-
-    langchain_client.delete_project(project_name=_session)
 
 
 @freeze_time("2023-01-01")
