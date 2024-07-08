@@ -266,7 +266,9 @@ def _dumps_json_single(
             ensure_ascii=True,
         ).encode("utf-8")
         try:
-            result = orjson.dumps(orjson.loads(result.decode("utf-8", errors="lossy")))
+            result = orjson.dumps(
+                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
+            )
         except orjson.JSONDecodeError:
             result = _elide_surrogates(result)
         return result
