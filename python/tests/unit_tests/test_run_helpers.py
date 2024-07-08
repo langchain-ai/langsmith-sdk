@@ -264,9 +264,17 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         assert call.args[1].startswith("https://api.smith.langchain.com")
         body = json.loads(call.kwargs["data"])
         assert body["post"]
-        assert body["post"][0]["outputs"]["output"] == expected
-        # Assert the inputs are filtered as expected
         assert body["post"][0]["inputs"] == {"a": "FOOOOOO", "b": 2, "d": 3}
+        outputs_ = body["post"][0]["outputs"]
+        if "output" in outputs_:
+            assert outputs_["output"] == expected
+            # Assert the inputs are filtered as expected
+        else:
+            # It was put in the second batch
+            assert len(mock_calls) == 2
+            body_2 = json.loads(mock_calls[1].kwargs["data"])
+            assert body_2["patch"]
+            assert body_2["patch"][0]["outputs"]["output"] == expected
 
 
 @patch("langsmith.run_trees.Client", autospec=True)
