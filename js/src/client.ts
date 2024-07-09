@@ -2324,8 +2324,13 @@ export class Client {
     assertUuid(datasetId_);
 
     const params = new URLSearchParams();
-    if (asOf !== undefined) {
-      params.append("as_of", asOf instanceof Date ? asOf.toISOString() : asOf);
+    const dataset_version = asOf
+      ? typeof asOf === "string"
+        ? asOf
+        : asOf?.toISOString()
+      : undefined;
+    if (dataset_version) {
+      params.append("as_of", dataset_version);
     }
 
     const response = await this._get<string[]>(
