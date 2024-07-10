@@ -3660,7 +3660,7 @@ class Client:
             feedback_source.metadata["__run"] = _run_meta
         feedback = ls_schemas.FeedbackCreate(
             id=_ensure_uuid(feedback_id),
-            run_id=_ensure_uuid(run_id),
+            run_id=_ensure_uuid(run_id, accept_null=True),
             key=key,
             score=score,
             value=value,
