@@ -4561,6 +4561,181 @@ class Client:
         )
 
 
+    def get_settings(self):
+        res = requests.get(
+            f"{self.api_url}/settings",
+            headers=self._headers,
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+    def list_prompts(self, limit: int = 100, offset: int = 0) -> ls_schemas.ListPromptsResponse:
+        res = requests.get(
+            f"{self.api_url}/repos?limit={limit}&offset={offset}",
+            headers=self._headers,
+        )
+        res.raise_for_status()
+        res_dict = res.json()
+        return ls_schemas.ListPromptsResponse(**res_dict)
+
+
+    def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt:
+        res = requests.get(
+            f"{self.api_url}/repos/{prompt_identifier}",
+            headers=self._headers,
+        )
+        res.raise_for_status()
+        prompt = res.json()['repo']
+        return ls_schemas.Prompt(**prompt)
+
+
+    def create_prompt(
+        self, prompt_name: str, *, description: str = "", is_public: bool = True
+    ):
+        json = {
+            "repo_handle": prompt_name,
+            "is_public": is_public,
+            "description": description,
+        }
+        res = requests.post(
+            f"{self.api_url}/repos/",
+            headers=self._headers,
+            json=json,
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+    def list_commits(self, prompt_name: str, limit: int = 100, offset: int = 0):
+        res = requests.get(
+            f"{self.api_url}/commits/{prompt_name}/?limit={limit}&offset={offset}",
+            headers=self._headers,
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+    def _get_latest_commit_hash(self, prompt_identifier: str) -> Optional[str]:
+        commits_resp = self.list_commits(prompt_identifier)
+        commits = commits_resp["commits"]
+        if len(commits) == 0:
+            return None
+        return commits[0]["commit_hash"]
+
+
+    def pull_prompt(
+        self,
+        prompt_identifier: str,
+    ) -> ls_schemas.PromptManifest:
+        """Pull a prompt from the LangSmith API.
+
+        Args:
+            prompt_identifier: The identifier of the prompt (str, ex. "prompt_name", "owner/prompt_name", "owner/prompt_name:commit_hash")
+
+        Yields:
+            Prompt
+                The prompt
+        """
+        LS_VERSION_WITH_OPTIMIZATION="0.5.23"
+        use_optimization = ls_utils.is_version_greater_or_equal(
+            current_version=self.info.version, target_version=LS_VERSION_WITH_OPTIMIZATION
+        )
+
+        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(prompt_identifier)
+
+        if not use_optimization:
+            if commit_hash is None or commit_hash == "latest":
+                commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
+                if commit_hash is None:
+                    raise ValueError("No commits found")
+
+        res = requests.get(
+            f"{self.api_url}/commits/{owner}/{prompt_name}/{commit_hash}",
+            headers=self._headers,
+        )
+        res.raise_for_status()
+        result = res.json()
+        return ls_schemas.PromptManifest(**{"owner": owner, "repo": prompt_name, **result})
+    
+    def push_prompt(
+        self,
+        prompt_identifier: str,
+        manifest_json: Any,
+        *,
+        parent_commit_hash: Optional[str] = "latest",
+        is_public: bool = False,
+        description: str = "",
+    ) -> str:
+        """Push a prompt to the LangSmith API.
+
+        Args:
+            prompt_name: The name of the prompt
+            manifest_json: The JSON string of the prompt manifest
+            parent_commit_hash: The commit hash of the parent commit
+            is_public: Whether the new prompt is public
+            description: The description of the new prompt
+        """
+        from langchain_core.load.dump import dumps
+        manifest_json = dumps(manifest_json)
+        settings = self.get_settings()
+        if is_public:
+            if not settings["tenant_handle"]:
+                raise ValueError(
+                    """
+                  Cannot create public prompt without first creating a LangChain Hub handle.
+                  
+                  You can add a handle by creating a public prompt at:
+                      https://smith.langchain.com/prompts
+                  
+                  This is a workspace-level handle and will be associated with all of your workspace's public prompts in the LangChain Hub.
+                  """
+                )
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        prompt_full_name = f"{owner}/{prompt_name}"
+        try:
+            # check if the prompt exists
+            _ = self.get_prompt(prompt_full_name)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code != 404:
+                raise e
+            # create prompt if it doesn't exist
+            # make sure I am owner if owner is specified
+            if (
+                settings["tenant_handle"]
+                and owner != "-"
+                and settings["tenant_handle"] != owner
+            ):
+                raise ValueError(
+                    f"Tenant {settings['tenant_handle']} is not the owner of repo {prompt_identifier}"
+                )
+            self.create_prompt(
+                prompt_name,
+                is_public=is_public,
+                description=description,
+            )
+
+        manifest_dict = json.loads(manifest_json)
+        if parent_commit_hash == "latest":
+            parent_commit_hash = self._get_latest_commit_hash(prompt_full_name)
+        print('dict to submit', manifest_dict)
+        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        res = requests.post(
+            f"{self.api_url}/commits/{prompt_full_name}",
+            headers=self._headers,
+            json=request_dict,
+        )
+        res.raise_for_status()
+        res = res.json()
+        commit_hash = res["commit"]["commit_hash"]
+        short_hash = commit_hash[:8]
+        url = (
+            self._host_url
+            + f"/prompts/{prompt_name}/{short_hash}?organizationId={settings['id']}"
+        )
+        return url
+
+
 def _tracing_thread_drain_queue(
     tracing_queue: Queue, limit: int = 100, block: bool = True
 ) -> List[TracingQueueItem]:
