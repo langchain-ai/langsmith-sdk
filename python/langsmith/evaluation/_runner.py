@@ -336,7 +336,7 @@ def evaluate_existing(
     project = _load_experiment(experiment, client)
     runs = _load_traces(experiment, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
-    data = [data_map[run.reference_example_id] for run in runs]
+    data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
     return _evaluate(
         runs,
         data=data,
@@ -1415,7 +1415,7 @@ def _wrap_summary_evaluators(
             def _wrapper_super_inner(
                 runs_: str, examples_: str
             ) -> Union[EvaluationResult, EvaluationResults]:
-                return evaluator(runs, examples)
+                return evaluator(list(runs), list(examples))
 
             return _wrapper_super_inner(
                 f"Runs[] (Length={len(runs)})", f"Examples[] (Length={len(examples)})"
