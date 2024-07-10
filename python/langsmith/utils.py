@@ -561,3 +561,28 @@ def deepish_copy(val: T) -> T:
         # what we can
         _LOGGER.debug("Failed to deepcopy input: %s", repr(e))
         return _middle_copy(val, memo)
+
+
+def is_version_greater_or_equal(current_version, target_version):
+    from packaging import version
+
+    current = version.parse(current_version)
+    target = version.parse(target_version)
+    return current >= target
+
+
+def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
+    """
+    Parses a string in the format of `owner/repo:commit` and returns a tuple of
+    (owner, repo, commit).
+    """
+    owner_prompt = identifier
+    commit = "latest"
+    if ":" in identifier:
+        owner_prompt, commit = identifier.split(":", 1)
+
+    if "/" not in owner_prompt:
+        return "-", owner_prompt, commit
+
+    owner, prompt = owner_prompt.split("/", 1)
+    return owner, prompt, commit

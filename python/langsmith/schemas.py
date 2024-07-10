@@ -744,3 +744,41 @@ class ComparativeExperiment(BaseModel):
         if self.extra is None or "metadata" not in self.extra:
             return {}
         return self.extra["metadata"]
+
+
+class PromptManifest(BaseModel):
+    owner: str
+    repo: str
+    commit_hash: str
+    manifest: Dict[str, Any]
+    examples: List[dict]
+
+
+class Prompt(BaseModel):
+    repo_handle: str
+    description: str | None
+    readme: str | None
+    id: str
+    tenant_id: str
+    created_at: datetime
+    updated_at: datetime
+    is_public: bool
+    is_archived: bool
+    tags: List[str]
+    original_repo_id: str | None
+    upstream_repo_id: str | None
+    owner: str
+    full_name: str
+    num_likes: int
+    num_downloads: int
+    num_views: int
+    liked_by_auth_user: bool
+    last_commit_hash: str | None
+    num_commits: int
+    original_repo_full_name: str | None
+    upstream_repo_full_name: str | None
+
+
+class ListPromptsResponse(BaseModel):
+    repos: List[Prompt]
+    total: int
