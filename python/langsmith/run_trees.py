@@ -352,6 +352,9 @@ class RunTree(ls_schemas.RunBase):
                 kwargs["outputs"] = run.outputs
                 kwargs["start_time"] = run.start_time
                 kwargs["end_time"] = run.end_time
+                extra_ = kwargs.setdefault("extra", {})
+                metadata_ = extra_.setdefault("metadata", {})
+                metadata_.update(run.metadata)
             elif hasattr(tracer, "order_map") and cb.parent_run_id in tracer.order_map:
                 dotted_order = tracer.order_map[cb.parent_run_id][1]
             else:
