@@ -22,8 +22,6 @@ from typing import (
     cast,
 )
 
-from python.langsmith.evaluation._runner import _load_examples_map
-
 import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
@@ -37,6 +35,7 @@ from langsmith.evaluation._runner import (
     ExperimentResultRow,
     _ExperimentManagerMixin,
     _ForwardResults,
+    _load_examples_map,
     _load_experiment,
     _load_tqdm,
     _load_traces,
