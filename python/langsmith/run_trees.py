@@ -347,11 +347,12 @@ class RunTree(ls_schemas.RunBase):
         ):
             if (run := tracer.run_map.get(str(cb.parent_run_id))) and run.dotted_order:
                 dotted_order = run.dotted_order
-                kwargs["run_type"] = run.run_type
-                kwargs["inputs"] = run.inputs
-                kwargs["outputs"] = run.outputs
-                kwargs["start_time"] = run.start_time
-                kwargs["end_time"] = run.end_time
+                for field, val in run:
+                    if field in ("extra", "dotted_order"):
+                        continue
+                    if field in kwargs:
+                        continue
+                    kwargs[field] = val
                 extra_ = kwargs.setdefault("extra", {})
                 metadata_ = extra_.setdefault("metadata", {})
                 metadata_.update(run.metadata)
