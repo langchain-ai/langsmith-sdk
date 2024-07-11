@@ -18,6 +18,9 @@ doctest:
 evals:
 	poetry run python -m pytest tests/evaluation
 
+prompts:
+	poetry run python -m pytest tests/prompts
+
 lint:
 	poetry run ruff check .
 	poetry run mypy .
