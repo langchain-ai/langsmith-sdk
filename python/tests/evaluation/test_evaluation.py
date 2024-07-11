@@ -41,7 +41,6 @@ def test_evaluate():
         },
         num_repetitions=3,
     )
-    results.wait()
     assert len(results) == 30
     examples = client.list_examples(dataset_name=dataset_name)
     for example in examples:
