@@ -84,7 +84,7 @@ class LLMEvaluator(RunEvaluator):
         Args:
             prompt_template (Union[str, List[Tuple[str, str]]): The prompt
                 template to use for the evaluation. If a string is provided, it is
-                assumed to be a system message.
+                assumed to be a human / user message.
             score_config (Union[CategoricalScoreConfig, ContinuousScoreConfig]):
                 The configuration for the score, either categorical or continuous.
             map_variables (Optional[Callable[[Run, Example], dict]], optional):
@@ -177,7 +177,7 @@ class LLMEvaluator(RunEvaluator):
 
         if isinstance(prompt_template, str):
             self.prompt = ChatPromptTemplate.from_messages(
-                [("system", prompt_template)]
+                [("human", prompt_template)]
             )
         else:
             self.prompt = ChatPromptTemplate.from_messages(prompt_template)
