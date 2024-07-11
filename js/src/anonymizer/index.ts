@@ -1,4 +1,4 @@
-import set from "lodash.set";
+import set from "../utils/lodash/set.js";
 
 export interface StringNode {
   value: string;
