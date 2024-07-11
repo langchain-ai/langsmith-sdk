@@ -193,11 +193,11 @@ async def test_evaluate() -> None:
         model_provider="anthropic",
         model_name="claude-3-haiku-20240307",
     )
-
     results = evaluate(
         predict,
         data=dataset_name,
         evaluators=[reference_accuracy, accuracy],
+        experiment_prefix=__name__ + "::test_evaluate.evaluate",
     )
     results.wait()
 
@@ -205,4 +205,5 @@ async def test_evaluate() -> None:
         apredict,
         data=dataset_name,
         evaluators=[reference_accuracy, accuracy],
+        experiment_prefix=__name__ + "::test_evaluate.aevaluate",
     )

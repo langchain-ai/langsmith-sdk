@@ -685,7 +685,9 @@ def evaluate_comparative(
         return result
 
     tqdm = _load_tqdm()
-    with cf.ThreadPoolExecutor(max_workers=max_concurrency or 1) as executor:
+    with ls_utils.ContextThreadPoolExecutor(
+        max_workers=max_concurrency or 1
+    ) as executor:
         futures = []
         for example_id, runs_list in tqdm(runs_dict.items()):
             results[example_id] = {
@@ -1191,7 +1193,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 )
 
         else:
-            with cf.ThreadPoolExecutor(max_concurrency) as executor:
+            with ls_utils.ContextThreadPoolExecutor(max_concurrency) as executor:
                 futures = [
                     executor.submit(
                         _forward,
@@ -1223,7 +1225,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
             },
         }
         with rh.tracing_context(
-            **{**current_context, "project_name": "evaluators", "metadata": metadata}
+            **{
+                **current_context,
+                "project_name": "evaluators",
+                "metadata": metadata,
+                "enabled": True,
+            }
         ):
             run = current_results["run"]
             example = current_results["example"]
@@ -1264,10 +1271,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
         (e.g. from a previous prediction step)
         """
         if max_concurrency == 0:
+            context = copy_context()
             for current_results in self.get_results():
-                yield self._run_evaluators(evaluators, current_results)
+                yield context.run(self._run_evaluators, evaluators, current_results)
         else:
-            with cf.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+            with ls_utils.ContextThreadPoolExecutor(
+                max_workers=max_concurrency
+            ) as executor:
                 futures = []
                 for current_results in self.get_results():
                     futures.append(
@@ -1289,7 +1299,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs.append(run)
             examples.append(example)
         aggregate_feedback = []
-        with cf.ThreadPoolExecutor() as executor:
+        with ls_utils.ContextThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id
             current_context = rh.get_tracing_context()
             metadata = {
@@ -1431,30 +1441,31 @@ def _forward(
         nonlocal run
         run = r
 
-    try:
-        fn(
-            example.inputs,
-            langsmith_extra=rh.LangSmithExtra(
-                reference_example_id=example.id,
-                on_end=_get_run,
-                project_name=experiment_name,
-                metadata={
-                    **metadata,
-                    "example_version": (
-                        example.modified_at.isoformat()
-                        if example.modified_at
-                        else example.created_at.isoformat()
-                    ),
-                },
-                client=client,
-            ),
+    with rh.tracing_context(enabled=True):
+        try:
+            fn(
+                example.inputs,
+                langsmith_extra=rh.LangSmithExtra(
+                    reference_example_id=example.id,
+                    on_end=_get_run,
+                    project_name=experiment_name,
+                    metadata={
+                        **metadata,
+                        "example_version": (
+                            example.modified_at.isoformat()
+                            if example.modified_at
+                            else example.created_at.isoformat()
+                        ),
+                    },
+                    client=client,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error running target function: {e}")
+        return _ForwardResults(
+            run=cast(schemas.Run, run),
+            example=example,
         )
-    except Exception as e:
-        logger.error(f"Error running target function: {e}")
-    return _ForwardResults(
-        run=cast(schemas.Run, run),
-        example=example,
-    )
 
 
 def _resolve_data(

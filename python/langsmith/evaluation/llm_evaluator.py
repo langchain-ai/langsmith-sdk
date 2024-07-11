@@ -176,9 +176,7 @@ class LLMEvaluator(RunEvaluator):
             )
 
         if isinstance(prompt_template, str):
-            self.prompt = ChatPromptTemplate.from_messages(
-                [("human", prompt_template)]
-            )
+            self.prompt = ChatPromptTemplate.from_messages([("human", prompt_template)])
         else:
             self.prompt = ChatPromptTemplate.from_messages(prompt_template)
 

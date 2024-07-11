@@ -4,7 +4,6 @@ These functions may change in the future.
 """
 
 import collections
-import concurrent.futures
 import datetime
 import itertools
 import uuid
@@ -218,6 +217,8 @@ def compute_test_metrics(
     Returns:
         None: This function does not return any value.
     """
+    from langsmith import ContextThreadPoolExecutor
+
     evaluators_: List[ls_eval.RunEvaluator] = []
     for func in evaluators:
         if isinstance(func, ls_eval.RunEvaluator):
@@ -230,7 +231,7 @@ def compute_test_metrics(
             )
     client = client or Client()
     traces = _load_nested_traces(project_name, client)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+    with ContextThreadPoolExecutor(max_workers=max_concurrency) as executor:
         results = executor.map(
             client.evaluate_run, *zip(*_outer_product(traces, evaluators_))
         )
