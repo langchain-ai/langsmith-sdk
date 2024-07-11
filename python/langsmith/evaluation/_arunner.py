@@ -314,11 +314,11 @@ async def aevaluate_existing(
 
     """  # noqa: E501
     client = client or langsmith.Client()
-    project = await aitertools.aio_to_thread(_load_experiment(experiment, client))
+    project = await aitertools.aio_to_thread(_load_experiment, experiment, client)
     runs = await aitertools.aio_to_thread(
-        _load_traces(experiment, client, load_nested=load_nested)
+        _load_traces, experiment, client, load_nested=load_nested
     )
-    data_map = await aitertools.aio_to_thread(_load_examples_map(client, project))
+    data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
     data = [data_map[run.reference_example_id] for run in runs]
     return await _aevaluate(
         runs,
