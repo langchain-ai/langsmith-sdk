@@ -4561,7 +4561,6 @@ class Client:
         )
 
 
-class Client:
     def get_settings(self) -> dict:
         """
         Get the settings for the current tenant.
