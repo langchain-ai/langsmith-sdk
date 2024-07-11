@@ -266,7 +266,9 @@ def _dumps_json_single(
             ensure_ascii=True,
         ).encode("utf-8")
         try:
-            result = orjson.dumps(orjson.loads(result.decode("utf-8", errors="lossy")))
+            result = orjson.dumps(
+                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
+            )
         except orjson.JSONDecodeError:
             result = _elide_surrogates(result)
         return result
@@ -1238,7 +1240,6 @@ class Client:
         if not self._filter_for_sampling([run_create]):
             return
         run_create = self._run_transform(run_create, copy=True)
-        self._insert_runtime_env([run_create])
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
@@ -1250,6 +1251,7 @@ class Client:
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        self._insert_runtime_env([run_create])
         self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
@@ -3203,8 +3205,11 @@ class Client:
         as_of: Optional[Union[datetime.datetime, str]] = None,
         splits: Optional[Sequence[str]] = None,
         inline_s3_urls: bool = True,
+        *,
+        offset: int = 0,
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
+        filter: Optional[str] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3225,13 +3230,17 @@ class Client:
                 Returns examples only from the specified splits.
             inline_s3_urls (bool, optional): Whether to inline S3 URLs.
                 Defaults to True.
+            offset (int): The offset to start from. Defaults to 0.
             limit (int, optional): The maximum number of examples to return.
+            filter (str, optional): A structured fileter string to apply to
+                the examples.
 
         Yields:
             Example: The examples.
         """
         params: Dict[str, Any] = {
             **kwargs,
+            "offset": offset,
             "id": example_ids,
             "as_of": (
                 as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
@@ -3239,6 +3248,7 @@ class Client:
             "splits": splits,
             "inline_s3_urls": inline_s3_urls,
             "limit": min(limit, 100) if limit is not None else 100,
+            "filter": filter,
         }
         if metadata is not None:
             params["metadata"] = _dumps_json(metadata)
@@ -3650,7 +3660,9 @@ class Client:
             feedback_source.metadata["__run"] = _run_meta
         feedback = ls_schemas.FeedbackCreate(
             id=_ensure_uuid(feedback_id),
-            run_id=_ensure_uuid(run_id),
+            # If run_id is None, this is interpreted as session-level
+            # feedback.
+            run_id=_ensure_uuid(run_id, accept_null=True),
             key=key,
             score=score,
             value=value,
