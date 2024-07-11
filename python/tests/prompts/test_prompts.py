@@ -4,13 +4,16 @@ from langsmith.client import Client
 from langsmith.schemas import Prompt, ListPromptsResponse
 from langchain_core.prompts import ChatPromptTemplate
 
+
 @pytest.fixture
 def langsmith_client() -> Client:
     return Client()
 
+
 @pytest.fixture
 def prompt_template_1() -> ChatPromptTemplate:
     return ChatPromptTemplate.from_template("tell me a joke about {topic}")
+
 
 @pytest.fixture
 def prompt_template_2() -> ChatPromptTemplate:
@@ -21,11 +24,13 @@ def prompt_template_2() -> ChatPromptTemplate:
         ]
     )
 
+
 def test_list_prompts(langsmith_client: Client):
     # Test listing prompts
     response = langsmith_client.list_prompts(limit=10, offset=0)
     assert isinstance(response, ListPromptsResponse)
     assert len(response.repos) <= 10
+
 
 def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     # First, create a prompt to test with
@@ -41,6 +46,7 @@ def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTempl
     langsmith_client.delete_prompt(prompt_name)
     assert not langsmith_client.prompt_exists(prompt_name)
 
+
 def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTemplate):
     # Test with a non-existent prompt
     non_existent_prompt = f"non_existent_{uuid4().hex[:8]}"
@@ -55,6 +61,7 @@ def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTe
     langsmith_client.delete_prompt(existent_prompt)
     assert not langsmith_client.prompt_exists(existent_prompt)
 
+
 def test_push_and_pull_prompt(langsmith_client: Client, prompt_template_2: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
 
@@ -67,6 +74,7 @@ def test_push_and_pull_prompt(langsmith_client: Client, prompt_template_2: ChatP
 
     # Clean up
     langsmith_client.delete_prompt(prompt_name)
+
 
 def test_push_prompt_manifest(langsmith_client: Client, prompt_template_2: ChatPromptTemplate):
     prompt_name = f"test_prompt_manifest_{uuid4().hex[:8]}"
