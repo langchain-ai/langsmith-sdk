@@ -4579,12 +4579,14 @@ class Client:
 
     def list_prompts(self, limit: int = 100, offset: int = 0) -> ls_schemas.ListPromptsResponse:
         params = {"limit": limit, "offset": offset}
-        res_dict = self.request_with_retries("GET", "/repos", params=params)
-        return ls_schemas.ListPromptsResponse(**res_dict)
+        response = self.request_with_retries("GET", "/repos", params=params)
+        res = response.json()
+        return ls_schemas.ListPromptsResponse(**res)
 
 
     def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt:
-        response = self.request_with_retries("GET", f"/repos/{prompt_identifier}")
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        response = self.request_with_retries("GET", f"/repos/{owner}/{prompt_name}", to_ignore=[ls_utils.LangSmithError])
         if response.status_code == 200:
             res = response.json()
             return ls_schemas.Prompt(**res['repo'])
@@ -4592,9 +4594,9 @@ class Client:
             response.raise_for_status()
 
 
-    def prompt_exists(self, prompt_name: str) -> bool:
+    def prompt_exists(self, prompt_identifier: str) -> bool:
         try:
-            self.get_prompt(prompt_name)
+            self.get_prompt(prompt_identifier)
             return True
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
@@ -4607,6 +4609,14 @@ class Client:
         commits_resp = response.json()
         commits = commits_resp["commits"]
         return commits[0]["commit_hash"] if commits else None
+    
+
+    def delete_prompt(self, prompt_identifier: str) -> bool:
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        if not self.current_tenant_is_owner(owner):
+            raise ValueError(f"Cannot delete prompt for another tenant. Current tenant: {self.get_settings()['tenant_handle']}, Requested tenant: {owner}")
+        response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
+        return response.status_code == 204
 
 
     def pull_prompt_manifest(self, prompt_identifier: str) -> ls_schemas.PromptManifest:
@@ -4635,7 +4645,7 @@ class Client:
         return ls_schemas.PromptManifest(**{"owner": owner, "repo": prompt_name, **res})
 
 
-    def pull_prompt(self, prompt_identifier: str) -> ls_schemas.PromptManifest:
+    def pull_prompt(self, prompt_identifier: str) -> Any:
         from langchain_core.load.load import loads
         from langchain_core.prompts import BasePromptTemplate
         response = self.pull_prompt_manifest(prompt_identifier)
