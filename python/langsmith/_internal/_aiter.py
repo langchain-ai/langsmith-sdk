@@ -6,6 +6,8 @@ MIT License
 """
 
 import asyncio
+import contextvars
+import functools
 import inspect
 from collections import deque
 from typing import (
@@ -277,8 +279,13 @@ def aiter_with_concurrency(
 
     async def process_generator():
         tasks = []
+        accepts_context = asyncio_accepts_context()
         async for item in generator:
-            task = asyncio.create_task(process_item(item))
+            if accepts_context:
+                context = contextvars.copy_context()
+                task = asyncio.create_task(process_item(item), context=context)
+            else:
+                task = asyncio.create_task(process_item(item))
             tasks.append(task)
             if n is not None and len(tasks) >= n:
                 done, pending = await asyncio.wait(
@@ -300,3 +307,9 @@ def accepts_context(callable: Callable[..., Any]) -> bool:
         return inspect.signature(callable).parameters.get("context") is not None
     except ValueError:
         return False
+
+
+@functools.lru_cache(maxsize=1)
+def asyncio_accepts_context():
+    """Check if the current asyncio event loop accepts a context argument."""
+    return accepts_context(asyncio.create_task)
