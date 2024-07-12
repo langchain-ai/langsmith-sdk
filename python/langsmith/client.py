@@ -4736,16 +4736,20 @@ class Client:
         prompt_identifier: str,
         *,
         description: Optional[str] = None,
-        is_public: Optional[bool] = None,
+        readme: Optional[str] = None,
         tags: Optional[List[str]] = None,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Update a prompt's metadata.
 
         Args:
             prompt_identifier (str): The identifier of the prompt to update.
             description (Optional[str]): New description for the prompt.
-            is_public (Optional[bool]): New public status for the prompt.
+            readme (Optional[str]): New readme for the prompt.
             tags (Optional[List[str]]): New list of tags for the prompt.
+            is_public (Optional[bool]): New public status for the prompt.
+            is_archived (Optional[bool]): New archived status for the prompt.
 
         Returns:
             Dict[str, Any]: The updated prompt data as returned by the server.
@@ -4754,11 +4758,19 @@ class Client:
             ValueError: If the prompt_identifier is empty.
             HTTPError: If the server request fails.
         """
+        if not prompt_identifier:
+            raise ValueError("The prompt_identifier cannot be empty.")
+
         json: Dict[str, Union[str, bool, List[str]]] = {}
+
         if description is not None:
             json["description"] = description
+        if readme is not None:
+            json["readme"] = readme
         if is_public is not None:
             json["is_public"] = is_public
+        if is_archived is not None:
+            json["is_archived"] = is_archived
         if tags is not None:
             json["tags"] = tags
 
