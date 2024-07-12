@@ -4671,7 +4671,7 @@ class Client:
         offset: int = 0,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = False,
-        sort_field: ls_schemas.PromptsSortField = "updated_at",
+        sort_field: ls_schemas.PromptSortField = ls_schemas.PromptSortField.updated_at,
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:

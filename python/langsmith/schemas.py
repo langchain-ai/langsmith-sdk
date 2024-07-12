@@ -793,7 +793,7 @@ class Prompt(BaseModel):
     """The tags associated with the prompt."""
     original_repo_id: Optional[str] = None
     """The ID of the original prompt, if forked."""
-    upstream_repo_id: str = None
+    upstream_repo_id: Optional[str] = None
     """The ID of the upstream prompt, if forked."""
     owner: Optional[str]
     """The handle of the owner of the prompt."""
@@ -811,9 +811,9 @@ class Prompt(BaseModel):
     """The hash of the last commit."""
     num_commits: int
     """The number of commits."""
-    original_repo_full_name: str = None
+    original_repo_full_name: Optional[str] = None
     """The full name of the original prompt, if forked."""
-    upstream_repo_full_name: str = None
+    upstream_repo_full_name: Optional[str] = None
     """The full name of the upstream prompt, if forked."""
 
 
@@ -826,7 +826,7 @@ class ListPromptsResponse(BaseModel):
     """The total number of prompts."""
 
 
-class PromptsSortField(str, Enum):
+class PromptSortField(str, Enum):
     """Enum for sorting fields for prompts."""
 
     num_downloads = "num_downloads"
