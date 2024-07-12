@@ -564,6 +564,7 @@ def deepish_copy(val: T) -> T:
 
 
 def is_version_greater_or_equal(current_version, target_version):
+    """Check if the current version is greater or equal to the target version."""
     from packaging import version
 
     current = version.parse(current_version)
@@ -572,17 +573,35 @@ def is_version_greater_or_equal(current_version, target_version):
 
 
 def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
-    """
-    Parses a string in the format of `owner/repo:commit` and returns a tuple of
-    (owner, repo, commit).
-    """
-    owner_prompt = identifier
-    commit = "latest"
-    if ":" in identifier:
-        owner_prompt, commit = identifier.split(":", 1)
+    """Parse a string in the format of `owner/name[:commit]` or `name[:commit]` and returns a tuple of (owner, name, commit).
 
-    if "/" not in owner_prompt:
-        return "-", owner_prompt, commit
+    Args:
+        identifier (str): The prompt identifier to parse.
 
-    owner, prompt = owner_prompt.split("/", 1)
-    return owner, prompt, commit
+    Returns:
+        Tuple[str, str, str]: A tuple containing (owner, name, commit).
+
+    Raises:
+        ValueError: If the identifier doesn't match the expected formats.
+    """
+    if (
+        not identifier
+        or identifier.count("/") > 1
+        or identifier.startswith("/")
+        or identifier.endswith("/")
+    ):
+        raise ValueError(f"Invalid identifier format: {identifier}")
+
+    parts = identifier.split(":", 1)
+    owner_name = parts[0]
+    commit = parts[1] if len(parts) > 1 else "latest"
+
+    if "/" in owner_name:
+        owner, name = owner_name.split("/", 1)
+        if not owner or not name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return owner, name, commit
+    else:
+        if not owner_name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return "-", owner_name, commit

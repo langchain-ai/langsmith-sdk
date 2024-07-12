@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 import attr
 import dataclasses_json
 import pytest
-from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
@@ -163,19 +162,6 @@ def test_deepish_copy():
 
     class MyClassWithSlots:
         __slots__ = ["x", "y"]
-
-        def __init__(self, x: int) -> None:
-            self.x = x
-            self.y = "y"
-
-    class MyPydantic(BaseModel):
-        foo: str
-        bar: int
-        baz: dict
-
-    @dataclasses.dataclass
-    class MyDataclass:
-        foo: str
         bar: int
 
         def something(self) -> None:
@@ -264,3 +250,50 @@ def test_deepish_copy():
         "fake_json": ClassWithFakeJson(),
     }
     assert ls_utils.deepish_copy(my_dict) == my_dict
+
+
+def test_is_version_greater_or_equal():
+    # Test versions equal to 0.5.23
+    assert ls_utils.is_version_greater_or_equal("0.5.23", "0.5.23")
+
+    # Test versions greater than 0.5.23
+    assert ls_utils.is_version_greater_or_equal("0.5.24", "0.5.23")
+    assert ls_utils.is_version_greater_or_equal("0.6.0", "0.5.23")
+    assert ls_utils.is_version_greater_or_equal("1.0.0", "0.5.23")
+
+    # Test versions less than 0.5.23
+    assert not ls_utils.is_version_greater_or_equal("0.5.22", "0.5.23")
+    assert not ls_utils.is_version_greater_or_equal("0.5.0", "0.5.23")
+    assert not ls_utils.is_version_greater_or_equal("0.4.99", "0.5.23")
+
+
+def test_parse_prompt_identifier():
+    # Valid cases
+    assert ls_utils.parse_prompt_identifier("name") == ("-", "name", "latest")
+    assert ls_utils.parse_prompt_identifier("owner/name") == ("owner", "name", "latest")
+    assert ls_utils.parse_prompt_identifier("owner/name:commit") == (
+        "owner",
+        "name",
+        "commit",
+    )
+    assert ls_utils.parse_prompt_identifier("name:commit") == ("-", "name", "commit")
+
+    # Invalid cases
+    invalid_identifiers = [
+        "",
+        "/",
+        ":",
+        "owner/",
+        "/name",
+        "owner//name",
+        "owner/name/",
+        "owner/name/extra",
+        ":commit",
+    ]
+
+    for invalid_id in invalid_identifiers:
+        try:
+            ls_utils.parse_prompt_identifier(invalid_id)
+            assert False, f"Expected ValueError for identifier: {invalid_id}"
+        except ValueError:
+            pass  # This is the expected behavior

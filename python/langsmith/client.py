@@ -4560,10 +4560,8 @@ class Client:
             **kwargs,
         )
 
-
     def get_settings(self) -> dict:
-        """
-        Get the settings for the current tenant.
+        """Get the settings for the current tenant.
 
         Returns:
             dict: The settings for the current tenant.
@@ -4571,10 +4569,8 @@ class Client:
         response = self.request_with_retries("GET", "/settings")
         return response.json()
 
-
     def current_tenant_is_owner(self, owner: str) -> bool:
-        """
-        Check if the current tenant is the owner of the prompt.
+        """Check if the current workspace has the same handle as owner.
 
         Args:
             owner (str): The owner to check against.
@@ -4585,45 +4581,8 @@ class Client:
         settings = self.get_settings()
         return owner == "-" or settings["tenant_handle"] == owner
 
-
-    def list_prompts(self, limit: int = 100, offset: int = 0) -> ls_schemas.ListPromptsResponse:
-        """
-        List prompts with pagination.
-
-        Args:
-            limit (int): The maximum number of prompts to return. Defaults to 100.
-            offset (int): The number of prompts to skip. Defaults to 0.
-
-        Returns:
-            ls_schemas.ListPromptsResponse: A response object containing the list of prompts.
-        """
-        params = {"limit": limit, "offset": offset}
-        response = self.request_with_retries("GET", "/repos", params=params)
-        return ls_schemas.ListPromptsResponse(**response.json())
-
-    def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt:
-        """
-        Get a specific prompt by its identifier.
-
-        Args:
-            prompt_identifier (str): The identifier of the prompt.
-
-        Returns:
-            ls_schemas.Prompt: The prompt object.
-
-        Raises:
-            requests.exceptions.HTTPError: If the prompt is not found or another error occurs.
-        """
-        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
-        response = self.request_with_retries("GET", f"/repos/{owner}/{prompt_name}", to_ignore=[ls_utils.LangSmithError])
-        if response.status_code == 200:
-            return ls_schemas.Prompt(**response.json()['repo'])
-        response.raise_for_status()
-
-
     def prompt_exists(self, prompt_identifier: str) -> bool:
-        """
-        Check if a prompt exists.
+        """Check if a prompt exists.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -4637,10 +4596,10 @@ class Client:
         except requests.exceptions.HTTPError as e:
             return e.response.status_code != 404
 
-
-    def _get_latest_commit_hash(self, prompt_owner_and_name: str, limit: int = 1, offset: int = 0) -> Optional[str]:
-        """
-        Get the latest commit hash for a prompt.
+    def _get_latest_commit_hash(
+        self, prompt_owner_and_name: str, limit: int = 1, offset: int = 0
+    ) -> Optional[str]:
+        """Get the latest commit hash for a prompt.
 
         Args:
             prompt_owner_and_name (str): The owner and name of the prompt.
@@ -4650,14 +4609,136 @@ class Client:
         Returns:
             Optional[str]: The latest commit hash, or None if no commits are found.
         """
-        response = self.request_with_retries("GET", f"/commits/{prompt_owner_and_name}/", params={"limit": limit, "offset": offset})
+        response = self.request_with_retries(
+            "GET",
+            f"/commits/{prompt_owner_and_name}/",
+            params={"limit": limit, "offset": offset},
+        )
         commits = response.json()["commits"]
         return commits[0]["commit_hash"] if commits else None
 
+    def _like_or_unlike_prompt(
+        self, prompt_identifier: str, like: bool
+    ) -> Dict[str, int]:
+        """Like or unlike a prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+            like (bool): True to like the prompt, False to unlike it.
+
+        Returns:
+            A dictionary with the key 'likes' and the count of likes as the value.
+
+        Raises:
+            requests.exceptions.HTTPError: If the prompt is not found or another error occurs.
+        """
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        response = self.request_with_retries(
+            "POST", f"/likes/{owner}/{prompt_name}", json={"like": like}
+        )
+        response.raise_for_status()
+        return response.json
+
+    def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+        """Check if a prompt exists.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            A dictionary with the key 'likes' and the count of likes as the value.
+
+        """
+        return self._like_or_unlike_prompt(prompt_identifier, like=True)
+
+    def unlike_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+        """Unlike a prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            A dictionary with the key 'likes' and the count of likes as the value.
+
+        """
+        return self._like_or_unlike_prompt(prompt_identifier, like=False)
+
+    def list_prompts(
+        self, limit: int = 100, offset: int = 0
+    ) -> ls_schemas.ListPromptsResponse:
+        """List prompts with pagination.
+
+        Args:
+            limit (int): The maximum number of prompts to return. Defaults to 100.
+            offset (int): The number of prompts to skip. Defaults to 0.
+
+        Returns:
+            ls_schemas.ListPromptsResponse: A response object containing the list of prompts.
+        """
+        params = {"limit": limit, "offset": offset}
+        response = self.request_with_retries("GET", "/repos", params=params)
+        return ls_schemas.ListPromptsResponse(**response.json())
+
+    def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt:
+        """Get a specific prompt by its identifier.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt. The identifier should be in the format "prompt_name" or "owner/prompt_name".
+
+        Returns:
+            ls_schemas.Prompt: The prompt object.
+
+        Raises:
+            requests.exceptions.HTTPError: If the prompt is not found or another error occurs.
+        """
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        response = self.request_with_retries(
+            "GET", f"/repos/{owner}/{prompt_name}", to_ignore=[ls_utils.LangSmithError]
+        )
+        if response.status_code == 200:
+            return ls_schemas.Prompt(**response.json()["repo"])
+        response.raise_for_status()
+
+    def update_prompt(
+        self,
+        prompt_identifier: str,
+        *,
+        description: Optional[str] = None,
+        is_public: Optional[bool] = None,
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Update a prompt's metadata.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt to update.
+            description (Optional[str]): New description for the prompt.
+            is_public (Optional[bool]): New public status for the prompt.
+            tags (Optional[List[str]]): New list of tags for the prompt.
+
+        Returns:
+            Dict[str, Any]: The updated prompt data as returned by the server.
+
+        Raises:
+            ValueError: If the prompt_identifier is empty.
+            HTTPError: If the server request fails.
+        """
+        json: Dict[str, Union[str, bool, List[str]]] = {}
+        if description is not None:
+            json["description"] = description
+        if is_public is not None:
+            json["is_public"] = is_public
+        if tags is not None:
+            json["tags"] = tags
+
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        response = self.request_with_retries(
+            "PATCH", f"/repos/{owner}/{prompt_name}", json=json
+        )
+        response.raise_for_status()
+        return response.json()
 
     def delete_prompt(self, prompt_identifier: str) -> bool:
-        """
-        Delete a prompt.
+        """Delete a prompt.
 
         Args:
             prompt_identifier (str): The identifier of the prompt to delete.
@@ -4670,14 +4751,14 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         if not self.current_tenant_is_owner(owner):
-            raise ValueError(f"Cannot delete prompt for another tenant. Current tenant: {self.get_settings()['tenant_handle']}, Requested tenant: {owner}")
+            raise ValueError(
+                f"Cannot delete prompt for another tenant. Current tenant: {self.get_settings()['tenant_handle']}, Requested tenant: {owner}"
+            )
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
         return response.status_code == 204
 
-
     def pull_prompt_manifest(self, prompt_identifier: str) -> ls_schemas.PromptManifest:
-        """
-        Pull a prompt manifest from the LangSmith API.
+        """Pull a prompt manifest from the LangSmith API.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -4688,22 +4769,27 @@ class Client:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
-        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(prompt_identifier)
-        use_optimization = ls_utils.is_version_greater_or_equal(self.info.version, "0.5.23")
+        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
+            prompt_identifier
+        )
+        use_optimization = ls_utils.is_version_greater_or_equal(
+            self.info.version, "0.5.23"
+        )
 
         if not use_optimization and (commit_hash is None or commit_hash == "latest"):
             commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
             if commit_hash is None:
                 raise ValueError("No commits found")
 
-        response = self.request_with_retries("GET", f"/commits/{owner}/{prompt_name}/{commit_hash}")
-        res = response.json()
-        return ls_schemas.PromptManifest(**{"owner": owner, "repo": prompt_name, **res})
-
+        response = self.request_with_retries(
+            "GET", f"/commits/{owner}/{prompt_name}/{commit_hash}"
+        )
+        return ls_schemas.PromptManifest(
+            **{"owner": owner, "repo": prompt_name, **response.json()}
+        )
 
     def pull_prompt(self, prompt_identifier: str) -> Any:
-        """
-        Pull a prompt and return it as a LangChain object.
+        """Pull a prompt and return it as a LangChain object.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -4713,22 +4799,30 @@ class Client:
         """
         from langchain_core.load.load import loads
         from langchain_core.prompts import BasePromptTemplate
+
         response = self.pull_prompt_manifest(prompt_identifier)
         obj = loads(json.dumps(response.manifest))
         if isinstance(obj, BasePromptTemplate):
             if obj.metadata is None:
                 obj.metadata = {}
-            obj.metadata.update({
-                "lc_hub_owner": response.owner,
-                "lc_hub_repo": response.repo,
-                "lc_hub_commit_hash": response.commit_hash
-            })
+            obj.metadata.update(
+                {
+                    "lc_hub_owner": response.owner,
+                    "lc_hub_repo": response.repo,
+                    "lc_hub_commit_hash": response.commit_hash,
+                }
+            )
         return obj
 
-
-    def push_prompt_manifest(self, prompt_identifier: str, manifest_json: Any, parent_commit_hash: Optional[str] = "latest", is_public: bool = False, description: str = "") -> str:
-        """
-        Push a prompt manifest to the LangSmith API.
+    def push_prompt_manifest(
+        self,
+        prompt_identifier: str,
+        manifest_json: Any,
+        parent_commit_hash: Optional[str] = "latest",
+        is_public: bool = False,
+        description: str = "",
+    ) -> str:
+        """Push a prompt manifest to the LangSmith API.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -4758,31 +4852,43 @@ class Client:
         prompt_full_name = f"{owner}/{prompt_name}"
 
         if not self.current_tenant_is_owner(owner):
-            raise ValueError(f"Cannot create prompt for another tenant. Current tenant: {settings['tenant_handle'] or 'no handle'}, Requested tenant: {owner}")
+            raise ValueError(
+                f"Cannot create prompt for another tenant. Current tenant: {settings['tenant_handle'] or 'no handle'}, Requested tenant: {owner}"
+            )
 
         if not self.prompt_exists(prompt_full_name):
-            self.request_with_retries("POST", "/repos/", json={
-                "repo_handle": prompt_name,
-                "is_public": is_public,
-                "description": description,
-            })
+            self.request_with_retries(
+                "POST",
+                "/repos/",
+                json={
+                    "repo_handle": prompt_name,
+                    "is_public": is_public,
+                    "description": description,
+                },
+            )
 
         manifest_dict = json.loads(manifest_json)
         if parent_commit_hash == "latest":
             parent_commit_hash = self._get_latest_commit_hash(prompt_full_name)
-        
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
-        response = self.request_with_retries("POST", f"/commits/{prompt_full_name}", json=request_dict)
-        res = response.json()
 
-        commit_hash = res["commit"]["commit_hash"]
+        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        response = self.request_with_retries(
+            "POST", f"/commits/{prompt_full_name}", json=request_dict
+        )
+
+        commit_hash = response.json()["commit"]["commit_hash"]
         short_hash = commit_hash[:8]
         return f"{self._host_url}/prompts/{prompt_name}/{short_hash}?organizationId={settings['id']}"
 
-
-    def push_prompt(self, prompt_identifier: str, obj: Any, parent_commit_hash: Optional[str] = "latest", is_public: bool = False, description: str = "") -> str:
-        """
-        Push a prompt object to the LangSmith API.
+    def push_prompt(
+        self,
+        prompt_identifier: str,
+        obj: Any,
+        parent_commit_hash: Optional[str] = "latest",
+        is_public: bool = False,
+        description: str = "",
+    ) -> str:
+        """Push a prompt object to the LangSmith API.
 
         This method is a wrapper around push_prompt_manifest.
 
@@ -4796,7 +4902,9 @@ class Client:
         Returns:
             str: The URL of the pushed prompt.
         """
-        return self.push_prompt_manifest(prompt_identifier, obj, parent_commit_hash, is_public, description)
+        return self.push_prompt_manifest(
+            prompt_identifier, obj, parent_commit_hash, is_public, description
+        )
 
 
 def _tracing_thread_drain_queue(
