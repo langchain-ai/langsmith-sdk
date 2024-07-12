@@ -4638,7 +4638,7 @@ class Client:
             "POST", f"/likes/{owner}/{prompt_name}", json={"like": like}
         )
         response.raise_for_status()
-        return response.json
+        return response.json()
 
     def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
         """Check if a prompt exists.
@@ -4811,9 +4811,11 @@ class Client:
         )
 
         if not use_optimization and commit_hash == "latest":
-            commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
-            if commit_hash is None:
+            latest_commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
+            if latest_commit_hash is None:
                 raise ValueError("No commits found")
+            else:
+                commit_hash = latest_commit_hash
 
         response = self.request_with_retries(
             "GET", f"/commits/{owner}/{prompt_name}/{commit_hash}"
