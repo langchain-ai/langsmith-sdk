@@ -777,9 +777,9 @@ class Prompt(BaseModel):
     """The name of the prompt."""
     full_name: str
     """The full name of the prompt. (owner + repo_handle)"""
-    description: str | None
+    description: str = None
     """The description of the prompt."""
-    readme: str | None
+    readme: str = None
     """The README of the prompt."""
     id: str
     """The ID of the prompt."""
@@ -795,9 +795,9 @@ class Prompt(BaseModel):
     """Whether the prompt is archived."""
     tags: List[str]
     """The tags associated with the prompt."""
-    original_repo_id: str | None
+    original_repo_id: str = None
     """The ID of the original prompt, if forked."""
-    upstream_repo_id: str | None
+    upstream_repo_id: str = None
     """The ID of the upstream prompt, if forked."""
     num_likes: int
     """The number of likes."""
@@ -807,13 +807,13 @@ class Prompt(BaseModel):
     """The number of views."""
     liked_by_auth_user: bool
     """Whether the prompt is liked by the authenticated user."""
-    last_commit_hash: str | None
+    last_commit_hash: str = None
     """The hash of the last commit."""
     num_commits: int
     """The number of commits."""
-    original_repo_full_name: str | None
+    original_repo_full_name: str = None
     """The full name of the original prompt, if forked."""
-    upstream_repo_full_name: str | None
+    upstream_repo_full_name: str = None
     """The full name of the upstream prompt, if forked."""
 
 
