@@ -4671,8 +4671,7 @@ class Client:
         offset: int = 0,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = False,
-        sort_field: ls_schemas.PromptsSortField =
-          ls_schemas.PromptsSortField.updated_at,
+        sort_field: ls_schemas.PromptsSortField = "updated_at",
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
@@ -4696,11 +4695,9 @@ class Client:
         params = {
             "limit": limit,
             "offset": offset,
-            "is_public": "true"
-            if is_public
-            else "false"
-            if is_public is not None
-            else None,
+            "is_public": (
+                "true" if is_public else "false" if is_public is not None else None
+            ),
             "is_archived": "true" if is_archived else "false",
             "sort_field": sort_field,
             "sort_direction": sort_direction,
