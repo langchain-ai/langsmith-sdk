@@ -747,38 +747,80 @@ class ComparativeExperiment(BaseModel):
 
 
 class PromptManifest(BaseModel):
+    """Represents a Prompt with a manifest.
+
+    Attributes:
+        repo (str): The name of the prompt.
+        commit_hash (str): The commit hash of the prompt.
+        manifest (Dict[str, Any]): The manifest of the prompt.
+        examples (List[dict]): The list of examples.
+    """
+
     owner: str
+    """The handle of the owner of the prompt."""
     repo: str
+    """The name of the prompt."""
     commit_hash: str
+    """The commit hash of the prompt."""
     manifest: Dict[str, Any]
+    """The manifest of the prompt."""
     examples: List[dict]
+    """The list of examples."""
 
 
 class Prompt(BaseModel):
-    repo_handle: str
-    description: str | None
-    readme: str | None
-    id: str
-    tenant_id: str
-    created_at: datetime
-    updated_at: datetime
-    is_public: bool
-    is_archived: bool
-    tags: List[str]
-    original_repo_id: str | None
-    upstream_repo_id: str | None
+    """Represents a Prompt with metadata."""
+
     owner: str
+    """The handle of the owner of the prompt."""
+    repo_handle: str
+    """The name of the prompt."""
     full_name: str
+    """The full name of the prompt. (owner + repo_handle)"""
+    description: str | None
+    """The description of the prompt."""
+    readme: str | None
+    """The README of the prompt."""
+    id: str
+    """The ID of the prompt."""
+    tenant_id: str
+    """The tenant ID of the prompt owner."""
+    created_at: datetime
+    """The creation time of the prompt."""
+    updated_at: datetime
+    """The last update time of the prompt."""
+    is_public: bool
+    """Whether the prompt is public."""
+    is_archived: bool
+    """Whether the prompt is archived."""
+    tags: List[str]
+    """The tags associated with the prompt."""
+    original_repo_id: str | None
+    """The ID of the original prompt, if forked."""
+    upstream_repo_id: str | None
+    """The ID of the upstream prompt, if forked."""
     num_likes: int
+    """The number of likes."""
     num_downloads: int
+    """The number of downloads."""
     num_views: int
+    """The number of views."""
     liked_by_auth_user: bool
+    """Whether the prompt is liked by the authenticated user."""
     last_commit_hash: str | None
+    """The hash of the last commit."""
     num_commits: int
+    """The number of commits."""
     original_repo_full_name: str | None
+    """The full name of the original prompt, if forked."""
     upstream_repo_full_name: str | None
+    """The full name of the upstream prompt, if forked."""
 
 
 class ListPromptsResponse(BaseModel):
+    """A list of prompts with metadata."""
+
     repos: List[Prompt]
+    """The list of prompts."""
     total: int
+    """The total number of prompts."""
