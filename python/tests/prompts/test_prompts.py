@@ -75,6 +75,7 @@ def test_update_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTe
     assert isinstance(updated_data, dict)
 
     updated_prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(updated_prompt, Prompt)
     assert updated_prompt.description == "Updated description"
     assert updated_prompt.is_public
     assert set(updated_prompt.tags) == set(["test", "update"])
@@ -140,10 +141,12 @@ def test_like_unlike_prompt(
 
     langsmith_client.like_prompt(prompt_name)
     prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(prompt, Prompt)
     assert prompt.num_likes == 1
 
     langsmith_client.unlike_prompt(prompt_name)
     prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(prompt, Prompt)
     assert prompt.num_likes == 0
 
     langsmith_client.delete_prompt(prompt_name)
