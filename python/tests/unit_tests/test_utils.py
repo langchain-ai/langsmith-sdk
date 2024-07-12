@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import attr
 import dataclasses_json
 import pytest
+from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
@@ -162,6 +163,18 @@ def test_deepish_copy():
 
     class MyClassWithSlots:
         __slots__ = ["x", "y"]
+        def __init__(self, x: int) -> None:
+            self.x = x
+            self.y = "y"
+
+    class MyPydantic(BaseModel):
+        foo: str
+        bar: int
+        baz: dict
+
+    @dataclasses.dataclass
+    class MyDataclass:
+        foo: str
         bar: int
 
         def something(self) -> None:
