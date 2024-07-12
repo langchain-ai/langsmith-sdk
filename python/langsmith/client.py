@@ -4665,19 +4665,47 @@ class Client:
         return self._like_or_unlike_prompt(prompt_identifier, like=False)
 
     def list_prompts(
-        self, limit: int = 100, offset: int = 0
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        sort_field: ls_schemas.PromptsSortField = ls_schemas.PromptsSortField.updated_at,
+        sort_direction: Literal["desc", "asc"] = "desc",
+        query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
         """List prompts with pagination.
 
         Args:
             limit (int): The maximum number of prompts to return. Defaults to 100.
             offset (int): The number of prompts to skip. Defaults to 0.
+            is_public (Optional[bool]): Filter prompts by if they are public.
+            is_archived (Optional[bool]): Filter prompts by if they are archived.
+            sort_field (ls_schemas.PromptsSortField): The field to sort by.
+              Defaults to "updated_at".
+            sort_direction (Literal["desc", "asc"]): The order to sort by. Defaults to "desc".
+            query (Optional[str]): Filter prompts by a search query.
 
         Returns:
             ls_schemas.ListPromptsResponse: A response object containing
             the list of prompts.
         """
-        params = {"limit": limit, "offset": offset}
+        params = {
+            "limit": limit,
+            "offset": offset,
+            "is_public": "true"
+            if is_public
+            else "false"
+            if is_public is not None
+            else None,
+            "is_archived": "true" if is_archived else "false",
+            "sort_field": sort_field,
+            "sort_direction": sort_direction,
+            "query": query,
+            "match_prefix": "true" if query else None,
+        }
+
         response = self.request_with_retries("GET", "/repos", params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 

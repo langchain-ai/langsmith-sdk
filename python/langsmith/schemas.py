@@ -824,3 +824,16 @@ class ListPromptsResponse(BaseModel):
     """The list of prompts."""
     total: int
     """The total number of prompts."""
+
+
+class PromptsSortField(str, Enum):
+    """Enum for sorting fields for prompts."""
+
+    num_downloads = "num_downloads"
+    """Number of downloads."""
+    num_views = "num_views"
+    """Number of views."""
+    updated_at = "updated_at"
+    """Last updated time."""
+    num_likes = "num_likes"
+    """Number of likes."""
