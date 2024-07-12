@@ -4671,7 +4671,8 @@ class Client:
         offset: int = 0,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = False,
-        sort_field: ls_schemas.PromptsSortField = ls_schemas.PromptsSortField.updated_at,
+        sort_field: ls_schemas.PromptsSortField =
+          ls_schemas.PromptsSortField.updated_at,
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
@@ -4684,7 +4685,8 @@ class Client:
             is_archived (Optional[bool]): Filter prompts by if they are archived.
             sort_field (ls_schemas.PromptsSortField): The field to sort by.
               Defaults to "updated_at".
-            sort_direction (Literal["desc", "asc"]): The order to sort by. Defaults to "desc".
+            sort_direction (Literal["desc", "asc"]): The order to sort by.
+              Defaults to "desc".
             query (Optional[str]): Filter prompts by a search query.
 
         Returns:
