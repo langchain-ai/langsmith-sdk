@@ -163,6 +163,7 @@ def test_deepish_copy():
 
     class MyClassWithSlots:
         __slots__ = ["x", "y"]
+
         def __init__(self, x: int) -> None:
             self.x = x
             self.y = "y"

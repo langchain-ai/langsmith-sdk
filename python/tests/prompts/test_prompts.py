@@ -132,21 +132,6 @@ def test_push_and_pull_prompt(
         langsmith_client.push_prompt(f"random_handle/{prompt_name}", prompt_template_2)
 
 
-def test_push_prompt_manifest(
-    langsmith_client: Client, prompt_template_2: ChatPromptTemplate
-):
-    prompt_name = f"test_prompt_manifest_{uuid4().hex[:8]}"
-
-    result = langsmith_client.push_prompt_manifest(prompt_name, prompt_template_2)
-    assert isinstance(result, str)
-
-    pulled_prompt_manifest = langsmith_client.pull_prompt_manifest(prompt_name)
-    latest_commit_hash = langsmith_client._get_latest_commit_hash(f"-/{prompt_name}")
-    assert pulled_prompt_manifest.commit_hash == latest_commit_hash
-
-    langsmith_client.delete_prompt(prompt_name)
-
-
 def test_like_unlike_prompt(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):

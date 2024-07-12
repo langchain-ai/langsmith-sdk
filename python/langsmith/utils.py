@@ -573,13 +573,13 @@ def is_version_greater_or_equal(current_version, target_version):
 
 
 def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
-    """Parse a string in the format of `owner/name[:commit]` or `name[:commit]` and returns a tuple of (owner, name, commit).
+    """Parse a string in the format of owner/name:hash, name:hash, owner/name, or name.
 
     Args:
         identifier (str): The prompt identifier to parse.
 
     Returns:
-        Tuple[str, str, str]: A tuple containing (owner, name, commit).
+        Tuple[str, str, str]: A tuple containing (owner, name, hash).
 
     Raises:
         ValueError: If the identifier doesn't match the expected formats.
