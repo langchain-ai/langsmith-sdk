@@ -4671,8 +4671,7 @@ class Client:
         offset: int = 0,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = False,
-        sort_field: ls_schemas.PromptsSortField =
-          ls_schemas.PromptsSortField.updated_at,
+        sort_field: ls_schemas.PromptsSortField = ls_schemas.PromptsSortField.updated_at,
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
@@ -4927,6 +4926,61 @@ class Client:
             f"{self._host_url}/prompts/{prompt_name}/{short_hash}"
             f"?organizationId={settings['id']}"
         )
+
+    def convert_to_openai_format(
+        self, messages: Any, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> dict:
+        """Convert a prompt to OpenAI format.
+
+        Requires the `langchain_openai` package to be installed.
+
+        Args:
+            messages (Any): The messages to convert.
+            stop (Optional[List[str]]): Stop sequences for the prompt.
+            **kwargs: Additional arguments for the conversion.
+
+        Returns:
+            dict: The prompt in OpenAI format.
+        """
+        from langchain_openai import ChatOpenAI
+
+        openai = ChatOpenAI()
+
+        try:
+            return openai._get_request_payload(messages, stop=stop, **kwargs)
+        except Exception as e:
+            print(e)
+            return None
+
+    def convert_to_anthropic_format(
+        self,
+        messages: Any,
+        model_name: Optional[str] = "claude-2",
+        stop: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> dict:
+        """Convert a prompt to Anthropic format.
+
+        Requires the `langchain_anthropic` package to be installed.
+
+        Args:
+            messages (Any): The messages to convert.
+            model_name (Optional[str]): The model name to use. Defaults to "claude-2".
+            stop (Optional[List[str]]): Stop sequences for the prompt.
+            **kwargs: Additional arguments for the conversion.
+
+        Returns:
+            dict: The prompt in Anthropic format.
+        """
+        from langchain_anthropic import ChatAnthropic
+
+        anthropic = ChatAnthropic(model_name=model_name)
+
+        try:
+            return anthropic._get_request_payload(messages, stop=stop, **kwargs)
+        except Exception as e:
+            print(e)
+            return None
 
 
 def _tracing_thread_drain_queue(
