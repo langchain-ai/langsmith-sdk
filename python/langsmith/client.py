@@ -4708,7 +4708,7 @@ class Client:
         response = self.request_with_retries("GET", "/repos", params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 
-    def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt:
+    def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt | None:
         """Get a specific prompt by its identifier.
 
         Args:
@@ -4729,6 +4729,7 @@ class Client:
         if response.status_code == 200:
             return ls_schemas.Prompt(**response.json()["repo"])
         response.raise_for_status()
+        return None
 
     def update_prompt(
         self,
@@ -4809,7 +4810,7 @@ class Client:
             self.info.version, "0.5.23"
         )
 
-        if not use_optimization and (commit_hash is None or commit_hash == "latest"):
+        if not use_optimization and commit_hash == "latest":
             commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
             if commit_hash is None:
                 raise ValueError("No commits found")
