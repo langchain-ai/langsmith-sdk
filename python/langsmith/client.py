@@ -4871,7 +4871,9 @@ class Client:
         manifest_json: Any,
         parent_commit_hash: Optional[str] = "latest",
         is_public: bool = False,
-        description: str = "",
+        description: Optional[str] = "",
+        readme: Optional[str] = "",
+        tags: Optional[List[str]] = [],
     ) -> str:
         """Push a prompt manifest to the LangSmith API.
 
@@ -4881,7 +4883,12 @@ class Client:
             parent_commit_hash (Optional[str]): The parent commit hash.
               Defaults to "latest".
             is_public (bool): Whether the prompt should be public. Defaults to False.
-            description (str): A description of the prompt. Defaults to an empty string.
+            description (Optional[str]): A description of the prompt.
+              Defaults to an empty string.
+            readme (Optional[str]): A readme for the prompt.
+              Defaults to an empty string.
+            tags (Optional[List[str]]): A list of tags for the prompt.
+              Defaults to an empty list.
 
         Returns:
             str: The URL of the pushed prompt.
@@ -4921,6 +4928,8 @@ class Client:
                     "repo_handle": prompt_name,
                     "is_public": is_public,
                     "description": description,
+                    "readme": readme,
+                    "tags": tags,
                 },
             )
 
