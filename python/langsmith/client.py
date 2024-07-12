@@ -4708,7 +4708,7 @@ class Client:
         response = self.request_with_retries("GET", "/repos", params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 
-    def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt | None:
+    def get_prompt(self, prompt_identifier: str) -> Optional[ls_schemas.Prompt]:
         """Get a specific prompt by its identifier.
 
         Args:
@@ -4716,7 +4716,7 @@ class Client:
             The identifier should be in the format "prompt_name" or "owner/prompt_name".
 
         Returns:
-            ls_schemas.Prompt: The prompt object.
+            Optional[ls_schemas.Prompt]: The prompt object.
 
         Raises:
             requests.exceptions.HTTPError: If the prompt is not found or
