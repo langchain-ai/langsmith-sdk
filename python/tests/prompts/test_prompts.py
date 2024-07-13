@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import uuid4
 
 import pytest
@@ -203,6 +204,7 @@ def test_create_commit(
     assert prompt_name in commit_url
 
     prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(prompt, ls_schemas.Prompt)
     assert prompt.num_commits == 2
 
     langsmith_client.delete_prompt(prompt_name)
@@ -222,6 +224,7 @@ def test_push_prompt_new(langsmith_client: Client, prompt_template_3: PromptTemp
     assert prompt_name in url
 
     prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(prompt, ls_schemas.Prompt)
     assert prompt.is_public
     assert prompt.description == "New prompt"
     assert "new" in prompt.tags
@@ -249,6 +252,7 @@ def test_push_prompt_update(
     assert prompt_name in updated_url
 
     updated_prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(updated_prompt, ls_schemas.Prompt)
     assert updated_prompt.description == "Updated prompt"
     assert "updated" in updated_prompt.tags
     assert "test" in updated_prompt.tags
@@ -283,19 +287,21 @@ def test_update_prompt_archive(
 
     langsmith_client.update_prompt(prompt_name, is_archived=True)
     archived_prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(archived_prompt, ls_schemas.Prompt)
     assert archived_prompt.is_archived
 
     langsmith_client.update_prompt(prompt_name, is_archived=False)
     unarchived_prompt = langsmith_client.get_prompt(prompt_name)
+    assert isinstance(unarchived_prompt, ls_schemas.Prompt)
     assert not unarchived_prompt.is_archived
 
     langsmith_client.delete_prompt(prompt_name)
 
 
 @pytest.mark.parametrize(
-    "sort_field,sort_direction",
+    "sort_field, sort_direction",
     [
-        (ls_schemas.PromptSortField.updated_at, "desc"),
+        (ls_schemas.PromptSortField.updated_at, Literal["desc"]),
     ],
 )
 def test_list_prompts_sorting(
