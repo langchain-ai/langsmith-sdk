@@ -5017,7 +5017,7 @@ class Client:
         self,
         prompt_identifier: str,
         *,
-        object: Optional[dict] = None,
+        object: Optional[Any] = None,
         parent_commit_hash: Optional[str] = "latest",
         is_public: bool = False,
         description: Optional[str] = "",
@@ -5033,7 +5033,7 @@ class Client:
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
-            object (Optional[dict]): The LangChain object to push.
+            object (Optional[Any]): The LangChain object to push.
             parent_commit_hash (Optional[str]): The parent commit hash.
               Defaults to "latest".
             is_public (bool): Whether the prompt should be public. Defaults to False.
