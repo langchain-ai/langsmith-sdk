@@ -119,7 +119,9 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     # test pulling with just prompt name
     pulled_prompt = langsmith_client.pull_prompt(prompt_name)
     assert isinstance(pulled_prompt, ChatPromptTemplate)
-    assert pulled_prompt.metadata["lc_hub_repo"] == prompt_name
+    assert (
+        pulled_prompt.metadata and pulled_prompt.metadata["lc_hub_repo"] == prompt_name
+    )
 
     # test pulling with private owner (-) and name
     pulled_prompt_2 = langsmith_client.pull_prompt(f"-/{prompt_name}")
@@ -128,6 +130,7 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     # test pulling with tenant handle and name
     tenant_handle = langsmith_client._get_settings()["tenant_handle"]
     pulled_prompt_3 = langsmith_client.pull_prompt(f"{tenant_handle}/{prompt_name}")
+    assert pulled_prompt.metadata and pulled_prompt_3.metadata
     assert (
         pulled_prompt.metadata["lc_hub_commit_hash"]
         == pulled_prompt_3.metadata["lc_hub_commit_hash"]
@@ -142,9 +145,11 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     assert pulled_prompt_3 == pulled_prompt_4
 
     # test pulling without handle, with commit hash
+    assert pulled_prompt_4.metadata
     pulled_prompt_5 = langsmith_client.pull_prompt(
         f"{prompt_name}:{pulled_prompt_4.metadata['lc_hub_commit_hash']}"
     )
+    assert pulled_prompt_5.metadata
     assert (
         pulled_prompt_4.metadata["lc_hub_commit_hash"]
         == pulled_prompt_5.metadata["lc_hub_commit_hash"]
