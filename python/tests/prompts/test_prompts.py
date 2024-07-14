@@ -301,14 +301,14 @@ def test_update_prompt_archive(
 @pytest.mark.parametrize(
     "sort_field, sort_direction",
     [
-        (ls_schemas.PromptSortField.updated_at, Literal["desc"]),
+        (ls_schemas.PromptSortField.updated_at, "desc"),
     ],
 )
 def test_list_prompts_sorting(
     langsmith_client: Client,
     prompt_template_1: ChatPromptTemplate,
     sort_field: ls_schemas.PromptSortField,
-    sort_direction: str,
+    sort_direction: Literal["asc", "desc"],
 ):
     prompt_names = [f"test_sort_{i}_{uuid4().hex[:8]}" for i in range(3)]
     for name in prompt_names:
