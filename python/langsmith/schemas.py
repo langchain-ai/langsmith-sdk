@@ -746,7 +746,7 @@ class ComparativeExperiment(BaseModel):
         return self.extra["metadata"]
 
 
-class PromptManifest(BaseModel):
+class PromptObject(BaseModel):
     """Represents a Prompt with a manifest.
 
     Attributes:
