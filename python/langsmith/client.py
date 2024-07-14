@@ -4818,7 +4818,7 @@ class Client:
     def create_commit(
         self,
         prompt_identifier: str,
-        object: dict,
+        object: Any,
         *,
         parent_commit_hash: Optional[str] = "latest",
     ) -> str:
@@ -4826,7 +4826,7 @@ class Client:
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
-            object (dict): The LangChain object to commit.
+            object (Any): The LangChain object to commit.
             parent_commit_hash (Optional[str]): The hash of the parent commit.
                 Defaults to "latest".
 
@@ -4850,8 +4850,8 @@ class Client:
                 "package to run.\nInstall with `pip install langchain_core`"
             )
 
-        object = dumps(object)
-        manifest_dict = json.loads(object)
+        json_object = dumps(object)
+        manifest_dict = json.loads(json_object)
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         prompt_owner_and_name = f"{owner}/{prompt_name}"
