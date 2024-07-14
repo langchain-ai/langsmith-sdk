@@ -4581,6 +4581,15 @@ class Client:
         settings = self._get_settings()
         return owner == "-" or settings["tenant_handle"] == owner
 
+    def _owner_conflict_error(
+        self, action: str, owner: str
+    ) -> ls_utils.LangSmithUserError:
+        return ls_utils.LangSmithUserError(
+            f"Cannot {action} for another tenant.\n"
+            f"Current tenant: {self._get_settings()['tenant_handle']},\n"
+            f"Requested tenant: {owner}"
+        )
+
     def _get_latest_commit_hash(
         self, prompt_owner_and_name: str, limit: int = 1, offset: int = 0
     ) -> Optional[str]:
@@ -4783,7 +4792,7 @@ class Client:
         """
         settings = self._get_settings()
         if is_public and not settings.get("tenant_handle"):
-            raise ValueError(
+            raise ls_utils.LangSmithUserError(
                 "Cannot create a public prompt without first\n"
                 "creating a LangChain Hub handle. "
                 "You can add a handle by creating a public prompt at:\n"
@@ -4792,11 +4801,7 @@ class Client:
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         if not self._current_tenant_is_owner(owner=owner):
-            raise ValueError(
-                f"Cannot create prompt for another tenant.\n"
-                f"Current tenant: {self._get_settings()['tenant_handle']},\n"
-                f"Requested tenant: {owner}"
-            )
+            raise self._owner_conflict_error("create a prompt", owner)
 
         json: Dict[str, Union[str, bool, List[str]]] = {
             "repo_handle": prompt_name,
@@ -4842,7 +4847,7 @@ class Client:
         except ImportError:
             raise ImportError(
                 "The client.create_commit function requires the langchain_core"
-                "package to run.\nInstall with pip install langchain_core"
+                "package to run.\nInstall with `pip install langchain_core`"
             )
 
         object = dumps(object)
@@ -4935,11 +4940,8 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         if not self._current_tenant_is_owner(owner):
-            raise ValueError(
-                f"Cannot delete prompt for another tenant.\n"
-                f"Current tenant: {self._get_settings()['tenant_handle']},\n"
-                f"Requested tenant: {owner}"
-            )
+            raise self._owner_conflict_error("delete a prompt", owner)
+
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
         return response.status_code == 204
 
@@ -4987,8 +4989,14 @@ class Client:
         Returns:
             Any: The prompt object in the specified format.
         """
-        from langchain_core.load.load import loads
-        from langchain_core.prompts import BasePromptTemplate
+        try:
+            from langchain_core.load.load import loads
+            from langchain_core.prompts import BasePromptTemplate
+        except ImportError:
+            raise ImportError(
+                "The client.pull_prompt function requires the langchain_core"
+                "package to run.\nInstall with `pip install langchain_core`"
+            )
 
         prompt_object = self.pull_prompt_object(prompt_identifier)
         prompt = loads(json.dumps(prompt_object.manifest))
@@ -5018,10 +5026,10 @@ class Client:
     ) -> str:
         """Push a prompt to the LangSmith API.
 
+        Can be used to update prompt metadata or prompt content.
+
         If the prompt does not exist, it will be created.
         If the prompt exists, it will be updated.
-
-        Can be used to update prompt metadata or prompt content.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -5063,8 +5071,8 @@ class Client:
 
         # Create a commit with the new manifest
         url = self.create_commit(
-            prompt_identifier=prompt_identifier,
-            object=object,
+            prompt_identifier,
+            object,
             parent_commit_hash=parent_commit_hash,
         )
         return url

@@ -5,6 +5,7 @@ import pytest
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 
 import langsmith.schemas as ls_schemas
+import langsmith.utils as ls_utils
 from langsmith.client import Client
 
 
@@ -48,7 +49,7 @@ def test_list_prompts(langsmith_client: Client):
 
 def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
     prompt = langsmith_client.get_prompt(prompt_name)
     assert isinstance(prompt, ls_schemas.Prompt)
@@ -59,18 +60,18 @@ def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTempl
 
 def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTemplate):
     non_existent_prompt = f"non_existent_{uuid4().hex[:8]}"
-    assert not langsmith_client.prompt_exists(non_existent_prompt)
+    assert not langsmith_client._prompt_exists(non_existent_prompt)
 
     existent_prompt = f"existent_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(existent_prompt, prompt_template_2)
-    assert langsmith_client.prompt_exists(existent_prompt)
+    langsmith_client.push_prompt(existent_prompt, object=prompt_template_2)
+    assert langsmith_client._prompt_exists(existent_prompt)
 
     langsmith_client.delete_prompt(existent_prompt)
 
 
 def test_update_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
     updated_data = langsmith_client.update_prompt(
         prompt_name,
@@ -91,21 +92,21 @@ def test_update_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTe
 
 def test_delete_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
-    assert langsmith_client.prompt_exists(prompt_name)
+    assert langsmith_client._prompt_exists(prompt_name)
     langsmith_client.delete_prompt(prompt_name)
-    assert not langsmith_client.prompt_exists(prompt_name)
+    assert not langsmith_client._prompt_exists(prompt_name)
 
 
-def test_pull_prompt_manifest(
+def test_pull_prompt_object(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
-    manifest = langsmith_client.pull_prompt_manifest(prompt_name)
-    assert isinstance(manifest, ls_schemas.PromptManifest)
+    manifest = langsmith_client.pull_prompt_object(prompt_name)
+    assert isinstance(manifest, ls_schemas.PromptObject)
     assert manifest.repo == prompt_name
 
     langsmith_client.delete_prompt(prompt_name)
@@ -113,10 +114,41 @@ def test_pull_prompt_manifest(
 
 def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
+    # test pulling with just prompt name
     pulled_prompt = langsmith_client.pull_prompt(prompt_name)
     assert isinstance(pulled_prompt, ChatPromptTemplate)
+    assert pulled_prompt.metadata["lc_hub_repo"] == prompt_name
+
+    # test pulling with private owner (-) and name
+    pulled_prompt_2 = langsmith_client.pull_prompt(f"-/{prompt_name}")
+    assert pulled_prompt == pulled_prompt_2
+
+    # test pulling with tenant handle and name
+    tenant_handle = langsmith_client._get_settings()["tenant_handle"]
+    pulled_prompt_3 = langsmith_client.pull_prompt(f"{tenant_handle}/{prompt_name}")
+    assert (
+        pulled_prompt.metadata["lc_hub_commit_hash"]
+        == pulled_prompt_3.metadata["lc_hub_commit_hash"]
+    )
+    assert pulled_prompt_3.metadata["lc_hub_owner"] == tenant_handle
+
+    # test pulling with handle, name and commit hash
+    tenant_handle = langsmith_client._get_settings()["tenant_handle"]
+    pulled_prompt_4 = langsmith_client.pull_prompt(
+        f"{tenant_handle}/{prompt_name}:latest"
+    )
+    assert pulled_prompt_3 == pulled_prompt_4
+
+    # test pulling without handle, with commit hash
+    pulled_prompt_5 = langsmith_client.pull_prompt(
+        f"{prompt_name}:{pulled_prompt_4.metadata['lc_hub_commit_hash']}"
+    )
+    assert (
+        pulled_prompt_4.metadata["lc_hub_commit_hash"]
+        == pulled_prompt_5.metadata["lc_hub_commit_hash"]
+    )
 
     langsmith_client.delete_prompt(prompt_name)
 
@@ -126,7 +158,7 @@ def test_push_and_pull_prompt(
 ):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
 
-    push_result = langsmith_client.push_prompt(prompt_name, prompt_template_2)
+    push_result = langsmith_client.push_prompt(prompt_name, object=prompt_template_2)
     assert isinstance(push_result, str)
 
     pulled_prompt = langsmith_client.pull_prompt(prompt_name)
@@ -135,15 +167,17 @@ def test_push_and_pull_prompt(
     langsmith_client.delete_prompt(prompt_name)
 
     # should fail
-    with pytest.raises(ValueError):
-        langsmith_client.push_prompt(f"random_handle/{prompt_name}", prompt_template_2)
+    with pytest.raises(ls_utils.LangSmithUserError):
+        langsmith_client.push_prompt(
+            f"random_handle/{prompt_name}", object=prompt_template_2
+        )
 
 
 def test_like_unlike_prompt(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
     langsmith_client.like_prompt(prompt_name)
     prompt = langsmith_client.get_prompt(prompt_name)
@@ -162,7 +196,7 @@ def test_get_latest_commit_hash(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
     commit_hash = langsmith_client._get_latest_commit_hash(f"-/{prompt_name}")
     assert isinstance(commit_hash, str)
@@ -196,10 +230,19 @@ def test_create_commit(
     prompt_template_3: PromptTemplate,
 ):
     prompt_name = f"test_create_commit_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_3)
-    commit_url = langsmith_client.create_commit(
-        prompt_name, manifest_json=prompt_template_2
-    )
+    try:
+        # this should fail because the prompt does not exist
+        commit_url = langsmith_client.create_commit(
+            prompt_name, object=prompt_template_2
+        )
+        pytest.fail("Expected LangSmithNotFoundError was not raised")
+    except ls_utils.LangSmithNotFoundError as e:
+        assert str(e) == "Prompt does not exist, you must create it first."
+    except Exception as e:
+        pytest.fail(f"Unexpected exception raised: {e}")
+
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_3)
+    commit_url = langsmith_client.create_commit(prompt_name, object=prompt_template_2)
     assert isinstance(commit_url, str)
     assert prompt_name in commit_url
 
@@ -210,11 +253,11 @@ def test_create_commit(
     langsmith_client.delete_prompt(prompt_name)
 
 
-def test_push_prompt_new(langsmith_client: Client, prompt_template_3: PromptTemplate):
+def test_push_prompt(langsmith_client: Client, prompt_template_3: PromptTemplate):
     prompt_name = f"test_push_new_{uuid4().hex[:8]}"
     url = langsmith_client.push_prompt(
         prompt_name,
-        prompt_template_3,
+        object=prompt_template_3,
         is_public=True,
         description="New prompt",
         tags=["new", "test"],
@@ -229,33 +272,20 @@ def test_push_prompt_new(langsmith_client: Client, prompt_template_3: PromptTemp
     assert prompt.description == "New prompt"
     assert "new" in prompt.tags
     assert "test" in prompt.tags
+    assert prompt.num_commits == 1
 
-    langsmith_client.delete_prompt(prompt_name)
-
-
-def test_push_prompt_update(
-    langsmith_client: Client,
-    prompt_template_1: ChatPromptTemplate,
-    prompt_template_3: PromptTemplate,
-):
-    prompt_name = f"test_push_update_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
-
-    updated_url = langsmith_client.push_prompt(
+    # test updating prompt metadata but not manifest
+    url = langsmith_client.push_prompt(
         prompt_name,
-        prompt_template_3,
+        is_public=False,
         description="Updated prompt",
-        tags=["updated", "test"],
     )
-
-    assert isinstance(updated_url, str)
-    assert prompt_name in updated_url
 
     updated_prompt = langsmith_client.get_prompt(prompt_name)
     assert isinstance(updated_prompt, ls_schemas.Prompt)
     assert updated_prompt.description == "Updated prompt"
-    assert "updated" in updated_prompt.tags
-    assert "test" in updated_prompt.tags
+    assert not updated_prompt.is_public
+    assert updated_prompt.num_commits == 1
 
     langsmith_client.delete_prompt(prompt_name)
 
@@ -268,7 +298,9 @@ def test_list_prompts_filter(
     expected_count: int,
 ):
     prompt_name = f"test_list_filter_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1, is_public=is_public)
+    langsmith_client.push_prompt(
+        prompt_name, object=prompt_template_1, is_public=is_public
+    )
 
     response = langsmith_client.list_prompts(is_public=is_public, query=prompt_name)
 
@@ -283,7 +315,7 @@ def test_update_prompt_archive(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
     prompt_name = f"test_archive_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, prompt_template_1)
+    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
     langsmith_client.update_prompt(prompt_name, is_archived=True)
     archived_prompt = langsmith_client.get_prompt(prompt_name)
@@ -312,7 +344,7 @@ def test_list_prompts_sorting(
 ):
     prompt_names = [f"test_sort_{i}_{uuid4().hex[:8]}" for i in range(3)]
     for name in prompt_names:
-        langsmith_client.push_prompt(name, prompt_template_1)
+        langsmith_client.push_prompt(name, object=prompt_template_1)
 
     response = langsmith_client.list_prompts(
         sort_field=sort_field, sort_direction=sort_direction, limit=10
