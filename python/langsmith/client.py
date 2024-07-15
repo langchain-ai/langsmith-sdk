@@ -4705,11 +4705,7 @@ class Client:
         offset: int = 0,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = False,
-<<<<<<< HEAD
-        sort_field: ls_schemas.PromptsSortField = ls_schemas.PromptsSortField.updated_at,
-=======
         sort_field: ls_schemas.PromptSortField = ls_schemas.PromptSortField.updated_at,
->>>>>>> eb0c73c92488bf17f35880b727efe2a8212a9a51
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
