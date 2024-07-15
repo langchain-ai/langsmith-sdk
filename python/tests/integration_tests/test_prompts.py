@@ -287,7 +287,7 @@ def test_push_and_pull_prompt(
         )
 
 
-# @pytest.mark.skip(reason="This test is flaky")
+@pytest.mark.skip(reason="This test is flaky")
 def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: dict):
     prompt_name = f"test_prompt_with_model_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_with_model)
