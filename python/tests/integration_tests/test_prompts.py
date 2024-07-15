@@ -137,11 +137,13 @@ def test_current_tenant_is_owner(langsmith_client: Client):
     assert langsmith_client._current_tenant_is_owner("-")
     assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
+
 @pytest.mark.skip(reason="This test is flaky")
 def test_list_prompts(langsmith_client: Client):
     response = langsmith_client.list_prompts(limit=10, offset=0)
     assert isinstance(response, ls_schemas.ListPromptsResponse)
     assert len(response.repos) <= 10
+
 
 @pytest.mark.skip(reason="This test is flaky")
 def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
@@ -290,6 +292,7 @@ def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: 
     assert isinstance(pulled_prompt, RunnableSequence)
     assert (
         pulled_prompt.first
+        and "metadata" in pulled_prompt.first
         and pulled_prompt.first.metadata
         and pulled_prompt.first.metadata["lc_hub_repo"] == prompt_name
     )
