@@ -1,4 +1,4 @@
-from typing import Literal, Tuple
+from typing import Literal
 from uuid import uuid4
 
 import pytest
@@ -11,7 +11,7 @@ from langsmith.client import Client
 
 @pytest.fixture
 def langsmith_client() -> Client:
-    return Client(timeout_ms=Tuple[20_000, 90_000])
+    return Client(timeout_ms=(20_000, 90_000))
 
 
 @pytest.fixture
