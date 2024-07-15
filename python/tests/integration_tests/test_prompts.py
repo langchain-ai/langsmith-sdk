@@ -11,7 +11,7 @@ from langsmith.client import Client
 
 @pytest.fixture
 def langsmith_client() -> Client:
-    return Client()
+    return Client(timeout_ms=[20_000, 90_000])
 
 
 @pytest.fixture
