@@ -746,10 +746,11 @@ class ComparativeExperiment(BaseModel):
         return self.extra["metadata"]
 
 
-class PromptManifest(BaseModel):
+class PromptObject(BaseModel):
     """Represents a Prompt with a manifest.
 
     Attributes:
+        owner (str): The handle of the owner of the prompt.
         repo (str): The name of the prompt.
         commit_hash (str): The commit hash of the prompt.
         manifest (Dict[str, Any]): The manifest of the prompt.
@@ -771,15 +772,11 @@ class PromptManifest(BaseModel):
 class Prompt(BaseModel):
     """Represents a Prompt with metadata."""
 
-    owner: str
-    """The handle of the owner of the prompt."""
     repo_handle: str
     """The name of the prompt."""
-    full_name: str
-    """The full name of the prompt. (owner + repo_handle)"""
-    description: str | None
+    description: Optional[str] = None
     """The description of the prompt."""
-    readme: str | None
+    readme: Optional[str] = None
     """The README of the prompt."""
     id: str
     """The ID of the prompt."""
@@ -795,10 +792,14 @@ class Prompt(BaseModel):
     """Whether the prompt is archived."""
     tags: List[str]
     """The tags associated with the prompt."""
-    original_repo_id: str | None
+    original_repo_id: Optional[str] = None
     """The ID of the original prompt, if forked."""
-    upstream_repo_id: str | None
+    upstream_repo_id: Optional[str] = None
     """The ID of the upstream prompt, if forked."""
+    owner: Optional[str]
+    """The handle of the owner of the prompt."""
+    full_name: str
+    """The full name of the prompt. (owner + repo_handle)"""
     num_likes: int
     """The number of likes."""
     num_downloads: int
@@ -807,13 +808,13 @@ class Prompt(BaseModel):
     """The number of views."""
     liked_by_auth_user: bool
     """Whether the prompt is liked by the authenticated user."""
-    last_commit_hash: str | None
+    last_commit_hash: Optional[str] = None
     """The hash of the last commit."""
     num_commits: int
     """The number of commits."""
-    original_repo_full_name: str | None
+    original_repo_full_name: Optional[str] = None
     """The full name of the original prompt, if forked."""
-    upstream_repo_full_name: str | None
+    upstream_repo_full_name: Optional[str] = None
     """The full name of the upstream prompt, if forked."""
 
 
@@ -826,7 +827,7 @@ class ListPromptsResponse(BaseModel):
     """The total number of prompts."""
 
 
-class PromptsSortField(str, Enum):
+class PromptSortField(str, Enum):
     """Enum for sorting fields for prompts."""
 
     num_downloads = "num_downloads"
