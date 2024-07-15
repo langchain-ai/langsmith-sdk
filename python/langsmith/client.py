@@ -3335,6 +3335,82 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def list_dataset_splits(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: Optional[Union[str, datetime.datetime]] = None,
+    ) -> List[str]:
+        """Get the splits for a dataset.
+
+        Args:
+            dataset_id (ID_TYPE): The ID of the dataset.
+            as_of (Optional[Union[str, datetime.datetime]], optional): The version
+                of the dataset to retrieve splits for. Can be a timestamp or a
+                string tag. Defaults to "latest".
+
+        Returns:
+            List[str]: The names of this dataset's.
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide dataset name or ID")
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        params = {}
+        if as_of is not None:
+            params["as_of"] = (
+                as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
+            )
+
+        response = self.request_with_retries(
+            "GET",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/splits",
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    def update_dataset_splits(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        split_name: str,
+        example_ids: List[ID_TYPE],
+        remove: bool = False,
+    ) -> None:
+        """Update the splits for a dataset.
+
+        Args:
+            dataset_id (ID_TYPE): The ID of the dataset to update.
+            split_name (str): The name of the split to update.
+            example_ids (List[ID_TYPE]): The IDs of the examples to add to or
+                remove from the split.
+            remove (bool, optional): If True, remove the examples from the split.
+                If False, add the examples to the split. Defaults to False.
+
+        Returns:
+            None
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide dataset name or ID")
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        data = {
+            "split_name": split_name,
+            "examples": [
+                str(_as_uuid(id_, f"example_ids[{i}]"))
+                for i, id_ in enumerate(example_ids)
+            ],
+            "remove": remove,
+        }
+
+        response = self.request_with_retries(
+            "PUT", f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/splits", json=data
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     def _resolve_run_id(
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
