@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.runnables.base import RunnableSequence
 
 import langsmith.schemas as ls_schemas
 import langsmith.utils as ls_utils
@@ -32,6 +33,101 @@ def prompt_template_2() -> ChatPromptTemplate:
 @pytest.fixture
 def prompt_template_3() -> PromptTemplate:
     return PromptTemplate.from_template("Summarize the following text: {text}")
+
+
+@pytest.fixture
+def prompt_with_model() -> dict:
+    return {
+        "id": ["langsmith", "playground", "PromptPlayground"],
+        "lc": 1,
+        "type": "constructor",
+        "kwargs": {
+            "last": {
+                "id": ["langchain", "schema", "runnable", "RunnableBinding"],
+                "lc": 1,
+                "type": "constructor",
+                "kwargs": {
+                    "bound": {
+                        "id": ["langchain", "chat_models", "openai", "ChatOpenAI"],
+                        "lc": 1,
+                        "type": "constructor",
+                        "kwargs": {
+                            "openai_api_key": {
+                                "id": ["OPENAI_API_KEY"],
+                                "lc": 1,
+                                "type": "secret",
+                            }
+                        },
+                    },
+                    "kwargs": {},
+                },
+            },
+            "first": {
+                "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                "lc": 1,
+                "type": "constructor",
+                "kwargs": {
+                    "messages": [
+                        {
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "SystemMessagePromptTemplate",
+                            ],
+                            "lc": 1,
+                            "type": "constructor",
+                            "kwargs": {
+                                "prompt": {
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "kwargs": {
+                                        "template": "You are a chatbot.",
+                                        "input_variables": [],
+                                        "template_format": "f-string",
+                                    },
+                                }
+                            },
+                        },
+                        {
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "HumanMessagePromptTemplate",
+                            ],
+                            "lc": 1,
+                            "type": "constructor",
+                            "kwargs": {
+                                "prompt": {
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "kwargs": {
+                                        "template": "{question}",
+                                        "input_variables": ["question"],
+                                        "template_format": "f-string",
+                                    },
+                                }
+                            },
+                        },
+                    ],
+                    "input_variables": ["question"],
+                },
+            },
+        },
+    }
 
 
 def test_current_tenant_is_owner(langsmith_client: Client):
@@ -176,6 +272,21 @@ def test_push_and_pull_prompt(
         langsmith_client.push_prompt(
             f"random_handle/{prompt_name}", object=prompt_template_2
         )
+
+
+def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: dict):
+    prompt_name = f"test_prompt_with_model_{uuid4().hex[:8]}"
+    langsmith_client.push_prompt(prompt_name, object=prompt_with_model)
+
+    pulled_prompt = langsmith_client.pull_prompt(prompt_name, include_model=True)
+    assert isinstance(pulled_prompt, RunnableSequence)
+    assert (
+        pulled_prompt.first
+        and pulled_prompt.first.metadata
+        and pulled_prompt.first.metadata["lc_hub_repo"] == prompt_name
+    )
+
+    langsmith_client.delete_prompt(prompt_name)
 
 
 def test_like_unlike_prompt(

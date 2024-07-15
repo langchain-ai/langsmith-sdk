@@ -750,6 +750,7 @@ class PromptObject(BaseModel):
     """Represents a Prompt with a manifest.
 
     Attributes:
+        owner (str): The handle of the owner of the prompt.
         repo (str): The name of the prompt.
         commit_hash (str): The commit hash of the prompt.
         manifest (Dict[str, Any]): The manifest of the prompt.

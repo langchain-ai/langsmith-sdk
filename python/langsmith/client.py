@@ -4926,7 +4926,7 @@ class Client:
         response.raise_for_status()
         return response.json()
 
-    def delete_prompt(self, prompt_identifier: str) -> bool:
+    def delete_prompt(self, prompt_identifier: str) -> Any:
         """Delete a prompt.
 
         Args:
@@ -4943,9 +4943,15 @@ class Client:
             raise self._owner_conflict_error("delete a prompt", owner)
 
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
-        return response.status_code == 204
 
-    def pull_prompt_object(self, prompt_identifier: str) -> ls_schemas.PromptObject:
+        return response
+
+    def pull_prompt_object(
+        self,
+        prompt_identifier: str,
+        *,
+        include_model: Optional[bool] = False,
+    ) -> ls_schemas.PromptObject:
         """Pull a prompt object from the LangSmith API.
 
         Args:
@@ -4972,13 +4978,19 @@ class Client:
                 commit_hash = latest_commit_hash
 
         response = self.request_with_retries(
-            "GET", f"/commits/{owner}/{prompt_name}/{commit_hash}"
+            "GET",
+            (
+                f"/commits/{owner}/{prompt_name}/{commit_hash}"
+                f"{'?include_model=true' if include_model else ''}"
+            ),
         )
         return ls_schemas.PromptObject(
             **{"owner": owner, "repo": prompt_name, **response.json()}
         )
 
-    def pull_prompt(self, prompt_identifier: str) -> Any:
+    def pull_prompt(
+        self, prompt_identifier: str, *, include_model: Optional[bool] = False
+    ) -> Any:
         """Pull a prompt and return it as a LangChain PromptTemplate.
 
         This method requires `langchain_core`.
@@ -4998,12 +5010,20 @@ class Client:
                 "package to run.\nInstall with `pip install langchain_core`"
             )
 
-        prompt_object = self.pull_prompt_object(prompt_identifier)
+        prompt_object = self.pull_prompt_object(
+            prompt_identifier, include_model=include_model
+        )
         prompt = loads(json.dumps(prompt_object.manifest))
-        if isinstance(prompt, BasePromptTemplate):
-            if prompt.metadata is None:
-                prompt.metadata = {}
-            prompt.metadata.update(
+
+        if isinstance(prompt, BasePromptTemplate) or isinstance(
+            prompt.first, BasePromptTemplate
+        ):
+            prompt_template = (
+                prompt if isinstance(prompt, BasePromptTemplate) else prompt.first
+            )
+            if prompt_template.metadata is None:
+                prompt_template.metadata = {}
+            prompt_template.metadata.update(
                 {
                     "lc_hub_owner": prompt_object.owner,
                     "lc_hub_repo": prompt_object.repo,
