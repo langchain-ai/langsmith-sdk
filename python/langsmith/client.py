@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import collections
+import concurrent.futures as cf
 import datetime
 import functools
 import importlib
@@ -3985,23 +3986,48 @@ class Client:
         else:
             raise ValueError(f"Unknown expiration type: {type(expiration)}")
         # assemble body, one entry per key
-        body: List[Dict[str, Any]] = [
-            {
-                "run_id": run_id,
-                "feedback_key": feedback_key,
-                "feedback_config": feedback_config,
-                "expires_in": expires_in,
-                "expires_at": expires_at,
-            }
-            for feedback_key, feedback_config in zip(feedback_keys, feedback_configs)
-        ]
-        response = self.request_with_retries(
-            "POST",
-            "/feedback/tokens",
-            data=_dumps_json(body),
+        body = _dumps_json(
+            [
+                {
+                    "run_id": run_id,
+                    "feedback_key": feedback_key,
+                    "feedback_config": feedback_config,
+                    "expires_in": expires_in,
+                    "expires_at": expires_at,
+                }
+                for feedback_key, feedback_config in zip(
+                    feedback_keys, feedback_configs
+                )
+            ]
         )
-        ls_utils.raise_for_status_with_text(response)
-        return [ls_schemas.FeedbackIngestToken(**part) for part in response.json()]
+
+        def req(api_url: str, api_key: Optional[str]) -> list:
+            response = self.request_with_retries(
+                "POST",
+                f"{api_url}/feedback/tokens",
+                request_kwargs={
+                    "data": body,
+                    "header": {
+                        **self._headers,
+                        X_API_KEY: api_key or self.api_key,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return response.json()
+
+        tokens = []
+        with cf.ThreadPoolExecutor(max_workers=len(self._write_api_urls)) as executor:
+            futs = [
+                executor.submit(req, api_url, api_key)
+                for api_url, api_key in self._write_api_urls.items()
+            ]
+            for fut in cf.as_completed(futs):
+                response = fut.result()
+                tokens.extend(
+                    [ls_schemas.FeedbackIngestToken(**part) for part in response]
+                )
+        return tokens
 
     def list_presigned_feedback_tokens(
         self,
