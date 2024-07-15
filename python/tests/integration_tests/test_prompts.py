@@ -2,7 +2,11 @@ from typing import Literal
 from uuid import uuid4
 
 import pytest
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.prompts import (
+    BasePromptTemplate,
+    ChatPromptTemplate,
+    PromptTemplate,
+)
 from langchain_core.runnables.base import RunnableSequence
 
 import langsmith.schemas as ls_schemas
@@ -283,19 +287,19 @@ def test_push_and_pull_prompt(
         )
 
 
-@pytest.mark.skip(reason="This test is flaky")
+# @pytest.mark.skip(reason="This test is flaky")
 def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: dict):
     prompt_name = f"test_prompt_with_model_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_with_model)
 
     pulled_prompt = langsmith_client.pull_prompt(prompt_name, include_model=True)
     assert isinstance(pulled_prompt, RunnableSequence)
-    assert (
-        pulled_prompt.first
-        and "metadata" in pulled_prompt.first
-        and pulled_prompt.first.metadata
-        and pulled_prompt.first.metadata["lc_hub_repo"] == prompt_name
-    )
+    if getattr(pulled_prompt, "first", None):
+        first = getattr(pulled_prompt, "first")
+        assert isinstance(first, BasePromptTemplate)
+        assert first.metadata and first.metadata["lc_hub_repo"] == prompt_name
+    else:
+        assert False, "pulled_prompt.first should exist, incorrect prompt format"
 
     langsmith_client.delete_prompt(prompt_name)
 
