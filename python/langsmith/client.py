@@ -4562,7 +4562,7 @@ class Client:
             **kwargs,
         )
 
-    def get_settings(self) -> dict:
+    def _get_settings(self) -> dict:
         """Get the settings for the current tenant.
 
         Returns:
@@ -4571,7 +4571,7 @@ class Client:
         response = self.request_with_retries("GET", "/settings")
         return response.json()
 
-    def current_tenant_is_owner(self, owner: str) -> bool:
+    def _current_tenant_is_owner(self, owner: str) -> bool:
         """Check if the current workspace has the same handle as owner.
 
         Args:
@@ -4580,23 +4580,17 @@ class Client:
         Returns:
             bool: True if the current tenant is the owner, False otherwise.
         """
-        settings = self.get_settings()
+        settings = self._get_settings()
         return owner == "-" or settings["tenant_handle"] == owner
 
-    def prompt_exists(self, prompt_identifier: str) -> bool:
-        """Check if a prompt exists.
-
-        Args:
-            prompt_identifier (str): The identifier of the prompt.
-
-        Returns:
-            bool: True if the prompt exists, False otherwise.
-        """
-        try:
-            self.get_prompt(prompt_identifier)
-            return True
-        except requests.exceptions.HTTPError as e:
-            return e.response.status_code != 404
+    def _owner_conflict_error(
+        self, action: str, owner: str
+    ) -> ls_utils.LangSmithUserError:
+        return ls_utils.LangSmithUserError(
+            f"Cannot {action} for another tenant.\n"
+            f"Current tenant: {self._get_settings()['tenant_handle']},\n"
+            f"Requested tenant: {owner}"
+        )
 
     def _get_latest_commit_hash(
         self, prompt_owner_and_name: str, limit: int = 1, offset: int = 0
@@ -4640,7 +4634,45 @@ class Client:
             "POST", f"/likes/{owner}/{prompt_name}", json={"like": like}
         )
         response.raise_for_status()
-        return response.json
+        return response.json()
+
+    def _get_prompt_url(self, prompt_identifier: str) -> str:
+        """Get a URL for a prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            str: The URL for the prompt.
+
+        """
+        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
+            prompt_identifier
+        )
+
+        if not self._current_tenant_is_owner(owner):
+            return f"{self._host_url}/hub/{owner}/{prompt_name}:{commit_hash[:8]}"
+
+        settings = self._get_settings()
+        return (
+            f"{self._host_url}/prompts/{prompt_name}/{commit_hash[:8]}"
+            f"?organizationId={settings['id']}"
+        )
+
+    def _prompt_exists(self, prompt_identifier: str) -> bool:
+        """Check if a prompt exists.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            bool: True if the prompt exists, False otherwise.
+        """
+        try:
+            self.get_prompt(prompt_identifier)
+            return True
+        except requests.exceptions.HTTPError as e:
+            return e.response.status_code != 404
 
     def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
         """Check if a prompt exists.
@@ -4673,7 +4705,11 @@ class Client:
         offset: int = 0,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = False,
+<<<<<<< HEAD
         sort_field: ls_schemas.PromptsSortField = ls_schemas.PromptsSortField.updated_at,
+=======
+        sort_field: ls_schemas.PromptSortField = ls_schemas.PromptSortField.updated_at,
+>>>>>>> eb0c73c92488bf17f35880b727efe2a8212a9a51
         sort_direction: Literal["desc", "asc"] = "desc",
         query: Optional[str] = None,
     ) -> ls_schemas.ListPromptsResponse:
@@ -4697,11 +4733,9 @@ class Client:
         params = {
             "limit": limit,
             "offset": offset,
-            "is_public": "true"
-            if is_public
-            else "false"
-            if is_public is not None
-            else None,
+            "is_public": (
+                "true" if is_public else "false" if is_public is not None else None
+            ),
             "is_archived": "true" if is_archived else "false",
             "sort_field": sort_field,
             "sort_direction": sort_direction,
@@ -4712,7 +4746,7 @@ class Client:
         response = self.request_with_retries("GET", "/repos", params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 
-    def get_prompt(self, prompt_identifier: str) -> ls_schemas.Prompt:
+    def get_prompt(self, prompt_identifier: str) -> Optional[ls_schemas.Prompt]:
         """Get a specific prompt by its identifier.
 
         Args:
@@ -4720,7 +4754,7 @@ class Client:
             The identifier should be in the format "prompt_name" or "owner/prompt_name".
 
         Returns:
-            ls_schemas.Prompt: The prompt object.
+            Optional[ls_schemas.Prompt]: The prompt object.
 
         Raises:
             requests.exceptions.HTTPError: If the prompt is not found or
@@ -4733,22 +4767,134 @@ class Client:
         if response.status_code == 200:
             return ls_schemas.Prompt(**response.json()["repo"])
         response.raise_for_status()
+        return None
+
+    def create_prompt(
+        self,
+        prompt_identifier: str,
+        *,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        is_public: bool = False,
+    ) -> ls_schemas.Prompt:
+        """Create a new prompt.
+
+        Does not attach prompt object, just creates an empty prompt.
+
+        Args:
+            prompt_name (str): The name of the prompt.
+            description (Optional[str]): A description of the prompt.
+            readme (Optional[str]): A readme for the prompt.
+            tags (Optional[List[str]]): A list of tags for the prompt.
+            is_public (bool): Whether the prompt should be public. Defaults to False.
+
+        Returns:
+            ls_schemas.Prompt: The created prompt object.
+
+        Raises:
+            ValueError: If the current tenant is not the owner.
+            HTTPError: If the server request fails.
+        """
+        settings = self._get_settings()
+        if is_public and not settings.get("tenant_handle"):
+            raise ls_utils.LangSmithUserError(
+                "Cannot create a public prompt without first\n"
+                "creating a LangChain Hub handle. "
+                "You can add a handle by creating a public prompt at:\n"
+                "https://smith.langchain.com/prompts"
+            )
+
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        if not self._current_tenant_is_owner(owner=owner):
+            raise self._owner_conflict_error("create a prompt", owner)
+
+        json: Dict[str, Union[str, bool, List[str]]] = {
+            "repo_handle": prompt_name,
+            "description": description or "",
+            "readme": readme or "",
+            "tags": tags or [],
+            "is_public": is_public,
+        }
+
+        response = self.request_with_retries("POST", "/repos", json=json)
+        response.raise_for_status()
+        return ls_schemas.Prompt(**response.json()["repo"])
+
+    def create_commit(
+        self,
+        prompt_identifier: str,
+        object: Any,
+        *,
+        parent_commit_hash: Optional[str] = "latest",
+    ) -> str:
+        """Create a commit for an existing prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+            object (Any): The LangChain object to commit.
+            parent_commit_hash (Optional[str]): The hash of the parent commit.
+                Defaults to "latest".
+
+        Returns:
+            str: The url of the prompt commit.
+
+        Raises:
+            HTTPError: If the server request fails.
+            ValueError: If the prompt does not exist.
+        """
+        if not self._prompt_exists(prompt_identifier):
+            raise ls_utils.LangSmithNotFoundError(
+                "Prompt does not exist, you must create it first."
+            )
+
+        try:
+            from langchain_core.load.dump import dumps
+        except ImportError:
+            raise ImportError(
+                "The client.create_commit function requires the langchain_core"
+                "package to run.\nInstall with `pip install langchain_core`"
+            )
+
+        json_object = dumps(object)
+        manifest_dict = json.loads(json_object)
+
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        prompt_owner_and_name = f"{owner}/{prompt_name}"
+
+        if parent_commit_hash == "latest":
+            parent_commit_hash = self._get_latest_commit_hash(prompt_owner_and_name)
+
+        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
+        response = self.request_with_retries(
+            "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
+        )
+
+        commit_hash = response.json()["commit"]["commit_hash"]
+
+        return self._get_prompt_url(f"{prompt_owner_and_name}:{commit_hash}")
 
     def update_prompt(
         self,
         prompt_identifier: str,
         *,
         description: Optional[str] = None,
-        is_public: Optional[bool] = None,
+        readme: Optional[str] = None,
         tags: Optional[List[str]] = None,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Update a prompt's metadata.
+
+        To update the content of a prompt, use push_prompt or create_commit instead.
 
         Args:
             prompt_identifier (str): The identifier of the prompt to update.
             description (Optional[str]): New description for the prompt.
-            is_public (Optional[bool]): New public status for the prompt.
+            readme (Optional[str]): New readme for the prompt.
             tags (Optional[List[str]]): New list of tags for the prompt.
+            is_public (Optional[bool]): New public status for the prompt.
+            is_archived (Optional[bool]): New archived status for the prompt.
 
         Returns:
             Dict[str, Any]: The updated prompt data as returned by the server.
@@ -4757,11 +4903,25 @@ class Client:
             ValueError: If the prompt_identifier is empty.
             HTTPError: If the server request fails.
         """
+        settings = self._get_settings()
+        if is_public and not settings.get("tenant_handle"):
+            raise ValueError(
+                "Cannot create a public prompt without first\n"
+                "creating a LangChain Hub handle. "
+                "You can add a handle by creating a public prompt at:\n"
+                "https://smith.langchain.com/prompts"
+            )
+
         json: Dict[str, Union[str, bool, List[str]]] = {}
+
         if description is not None:
             json["description"] = description
+        if readme is not None:
+            json["readme"] = readme
         if is_public is not None:
             json["is_public"] = is_public
+        if is_archived is not None:
+            json["is_archived"] = is_archived
         if tags is not None:
             json["tags"] = tags
 
@@ -4772,7 +4932,7 @@ class Client:
         response.raise_for_status()
         return response.json()
 
-    def delete_prompt(self, prompt_identifier: str) -> bool:
+    def delete_prompt(self, prompt_identifier: str) -> Any:
         """Delete a prompt.
 
         Args:
@@ -4785,23 +4945,26 @@ class Client:
             ValueError: If the current tenant is not the owner of the prompt.
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
-        if not self.current_tenant_is_owner(owner):
-            raise ValueError(
-                f"Cannot delete prompt for another tenant.\n"
-                f"Current tenant: {self.get_settings()['tenant_handle']},\n"
-                f"Requested tenant: {owner}"
-            )
-        response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
-        return response.status_code == 204
+        if not self._current_tenant_is_owner(owner):
+            raise self._owner_conflict_error("delete a prompt", owner)
 
-    def pull_prompt_manifest(self, prompt_identifier: str) -> ls_schemas.PromptManifest:
-        """Pull a prompt manifest from the LangSmith API.
+        response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
+
+        return response
+
+    def pull_prompt_object(
+        self,
+        prompt_identifier: str,
+        *,
+        include_model: Optional[bool] = False,
+    ) -> ls_schemas.PromptObject:
+        """Pull a prompt object from the LangSmith API.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
 
         Returns:
-            ls_schemas.PromptManifest: The prompt manifest.
+            ls_schemas.PromptObject: The prompt object.
 
         Raises:
             ValueError: If no commits are found for the prompt.
@@ -4813,22 +4976,30 @@ class Client:
             self.info.version, "0.5.23"
         )
 
-        if not use_optimization and (commit_hash is None or commit_hash == "latest"):
-            commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
-            if commit_hash is None:
+        if not use_optimization and commit_hash == "latest":
+            latest_commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
+            if latest_commit_hash is None:
                 raise ValueError("No commits found")
+            else:
+                commit_hash = latest_commit_hash
 
         response = self.request_with_retries(
-            "GET", f"/commits/{owner}/{prompt_name}/{commit_hash}"
+            "GET",
+            (
+                f"/commits/{owner}/{prompt_name}/{commit_hash}"
+                f"{'?include_model=true' if include_model else ''}"
+            ),
         )
-        return ls_schemas.PromptManifest(
+        return ls_schemas.PromptObject(
             **{"owner": owner, "repo": prompt_name, **response.json()}
         )
 
-    def pull_prompt(self, prompt_identifier: str) -> Any:
+    def pull_prompt(
+        self, prompt_identifier: str, *, include_model: Optional[bool] = False
+    ) -> Any:
         """Pull a prompt and return it as a LangChain PromptTemplate.
 
-        This method requires `langchain_core` to convert the prompt manifest.
+        This method requires `langchain_core`.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -4836,19 +5007,33 @@ class Client:
         Returns:
             Any: The prompt object in the specified format.
         """
-        from langchain_core.load.load import loads
-        from langchain_core.prompts import BasePromptTemplate
+        try:
+            from langchain_core.load.load import loads
+            from langchain_core.prompts import BasePromptTemplate
+        except ImportError:
+            raise ImportError(
+                "The client.pull_prompt function requires the langchain_core"
+                "package to run.\nInstall with `pip install langchain_core`"
+            )
 
-        prompt_manifest = self.pull_prompt_manifest(prompt_identifier)
-        prompt = loads(json.dumps(prompt_manifest.manifest))
-        if isinstance(prompt, BasePromptTemplate):
-            if prompt.metadata is None:
-                prompt.metadata = {}
-            prompt.metadata.update(
+        prompt_object = self.pull_prompt_object(
+            prompt_identifier, include_model=include_model
+        )
+        prompt = loads(json.dumps(prompt_object.manifest))
+
+        if isinstance(prompt, BasePromptTemplate) or isinstance(
+            prompt.first, BasePromptTemplate
+        ):
+            prompt_template = (
+                prompt if isinstance(prompt, BasePromptTemplate) else prompt.first
+            )
+            if prompt_template.metadata is None:
+                prompt_template.metadata = {}
+            prompt_template.metadata.update(
                 {
-                    "lc_hub_owner": prompt_manifest.owner,
-                    "lc_hub_repo": prompt_manifest.repo,
-                    "lc_hub_commit_hash": prompt_manifest.commit_hash,
+                    "lc_hub_owner": prompt_object.owner,
+                    "lc_hub_repo": prompt_object.repo,
+                    "lc_hub_commit_hash": prompt_object.commit_hash,
                 }
             )
 
@@ -4857,77 +5042,66 @@ class Client:
     def push_prompt(
         self,
         prompt_identifier: str,
-        manifest_json: Any,
+        *,
+        object: Optional[Any] = None,
         parent_commit_hash: Optional[str] = "latest",
         is_public: bool = False,
-        description: str = "",
+        description: Optional[str] = "",
+        readme: Optional[str] = "",
+        tags: Optional[List[str]] = [],
     ) -> str:
-        """Push a prompt manifest to the LangSmith API.
+        """Push a prompt to the LangSmith API.
+
+        Can be used to update prompt metadata or prompt content.
+
+        If the prompt does not exist, it will be created.
+        If the prompt exists, it will be updated.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
-            manifest_json (Any): The manifest to push.
+            object (Optional[Any]): The LangChain object to push.
             parent_commit_hash (Optional[str]): The parent commit hash.
               Defaults to "latest".
             is_public (bool): Whether the prompt should be public. Defaults to False.
-            description (str): A description of the prompt. Defaults to an empty string.
+            description (Optional[str]): A description of the prompt.
+              Defaults to an empty string.
+            readme (Optional[str]): A readme for the prompt.
+              Defaults to an empty string.
+            tags (Optional[List[str]]): A list of tags for the prompt.
+              Defaults to an empty list.
 
         Returns:
-            str: The URL of the pushed prompt.
+            str: The URL of the prompt.
 
-        Raises:
-            ValueError: If a public prompt is attempted without a tenant handle or
-              if the current tenant is not the owner.
         """
-        from langchain_core.load.dump import dumps
-
-        manifest_json = dumps(manifest_json)
-        settings = self.get_settings()
-
-        if is_public and not settings.get("tenant_handle"):
-            raise ValueError(
-                "Cannot create a public prompt without first\n"
-                "creating a LangChain Hub handle. "
-                "You can add a handle by creating a public prompt at:\n"
-                "https://smith.langchain.com/prompts"
+        # Create or update prompt metadata
+        if self._prompt_exists(prompt_identifier):
+            self.update_prompt(
+                prompt_identifier,
+                description=description,
+                readme=readme,
+                tags=tags,
+                is_public=is_public,
+            )
+        else:
+            self.create_prompt(
+                prompt_identifier,
+                is_public=is_public,
+                description=description,
+                readme=readme,
+                tags=tags,
             )
 
-        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
-        prompt_full_name = f"{owner}/{prompt_name}"
+        if object is None:
+            return self._get_prompt_url(prompt_identifier=prompt_identifier)
 
-        if not self.current_tenant_is_owner(owner):
-            raise ValueError(
-                "Cannot create prompt for another tenant."
-                f"Current tenant: {settings['tenant_handle'] or 'no handle'}"
-                f", Requested tenant: {owner}"
-            )
-
-        if not self.prompt_exists(prompt_full_name):
-            self.request_with_retries(
-                "POST",
-                "/repos/",
-                json={
-                    "repo_handle": prompt_name,
-                    "is_public": is_public,
-                    "description": description,
-                },
-            )
-
-        manifest_dict = json.loads(manifest_json)
-        if parent_commit_hash == "latest":
-            parent_commit_hash = self._get_latest_commit_hash(prompt_full_name)
-
-        request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
-        response = self.request_with_retries(
-            "POST", f"/commits/{prompt_full_name}", json=request_dict
+        # Create a commit with the new manifest
+        url = self.create_commit(
+            prompt_identifier,
+            object,
+            parent_commit_hash=parent_commit_hash,
         )
-
-        commit_hash = response.json()["commit"]["commit_hash"]
-        short_hash = commit_hash[:8]
-        return (
-            f"{self._host_url}/prompts/{prompt_name}/{short_hash}"
-            f"?organizationId={settings['id']}"
-        )
+        return url
 
     def convert_to_openai_format(
         self, messages: Any, stop: Optional[List[str]] = None, **kwargs: Any
