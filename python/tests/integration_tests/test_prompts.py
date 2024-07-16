@@ -140,6 +140,11 @@ def test_current_tenant_is_owner(langsmith_client: Client):
     assert langsmith_client._current_tenant_is_owner("-")
     assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
+def test_current_tenant_is_owner2(langsmith_client: Client):
+    settings = langsmith_client._get_settings()
+    assert langsmith_client._current_tenant_is_owner(settings["tenant_handle"])
+    assert langsmith_client._current_tenant_is_owner("-")
+    assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
 def test_list_prompts(langsmith_client: Client):
     response = langsmith_client.list_prompts(limit=10, offset=0)
