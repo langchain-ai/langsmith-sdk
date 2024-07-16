@@ -150,7 +150,7 @@ def chat_prompt_template():
 
 def test_current_tenant_is_owner(langsmith_client: Client):
     settings = langsmith_client._get_settings()
-    assert langsmith_client._current_tenant_is_owner(settings.tenant_handle)
+    assert langsmith_client._current_tenant_is_owner(settings.tenant_handle or "-")
     assert langsmith_client._current_tenant_is_owner("-")
     assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
@@ -540,12 +540,10 @@ def test_convert_to_openai_format(chat_prompt_template: ChatPromptTemplate):
 def test_convert_to_anthropic_format(chat_prompt_template: ChatPromptTemplate):
     invoked = chat_prompt_template.invoke({"question": "What is the meaning of life?"})
 
-    res = convert_prompt_to_anthropic_format(
-        invoked,
-    )
+    res = convert_prompt_to_anthropic_format(invoked, {"model_name": "claude-2"})
 
     assert res == {
-        "model": "claude-3-haiku-20240307",
+        "model": "claude-2",
         "max_tokens": 1024,
         "messages": [{"role": "user", "content": "What is the meaning of life?"}],
         "system": "You are a chatbot",
