@@ -5358,3 +5358,72 @@ def _tracing_sub_thread_func(
         tracing_queue, limit=size_limit, block=False
     ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+
+
+def convert_prompt_to_openai_format(
+    messages: Any, stop: Optional[List[str]] = None, **kwargs: Any
+) -> dict:
+    """Convert a prompt to OpenAI format.
+
+    Requires the `langchain_openai` package to be installed.
+
+    Args:
+        messages (Any): The messages to convert.
+        stop (Optional[List[str]]): Stop sequences for the prompt.
+        **kwargs: Additional arguments for the conversion.
+
+    Returns:
+        dict: The prompt in OpenAI format.
+    """
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        raise ImportError(
+            "The convert_prompt_to_openai_format function requires the langchain_openai"
+            "package to run.\nInstall with `pip install langchain_openai`"
+        )
+
+    openai = ChatOpenAI()
+
+    try:
+        return openai._get_request_payload(messages, stop=stop, **kwargs)
+    except Exception as e:
+        raise ls_utils.LangSmithError(f"Error converting to OpenAI format: {e}")
+
+
+def convert_prompt_to_anthropic_format(
+    messages: Any,
+    model_name: str = "claude-2",
+    stop: Optional[List[str]] = None,
+    **kwargs: Any,
+) -> dict:
+    """Convert a prompt to Anthropic format.
+
+    Requires the `langchain_anthropic` package to be installed.
+
+    Args:
+        messages (Any): The messages to convert.
+        model_name (Optional[str]): The model name to use. Defaults to "claude-2".
+        stop (Optional[List[str]]): Stop sequences for the prompt.
+        **kwargs: Additional arguments for the conversion.
+
+    Returns:
+        dict: The prompt in Anthropic format.
+    """
+    try:
+        from langchain_anthropic import ChatAnthropic
+    except ImportError:
+        raise ImportError(
+            "The convert_prompt_to_anthropic_format function requires the "
+            "langchain_anthropic package to run.\n"
+            "Install with `pip install langchain_anthropic`"
+        )
+
+    anthropic = ChatAnthropic(
+        model_name=model_name, timeout=None, stop=stop, base_url=None, api_key=None
+    )
+
+    try:
+        return anthropic._get_request_payload(messages, stop=stop, **kwargs)
+    except Exception as e:
+        raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
