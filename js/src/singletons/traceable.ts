@@ -17,20 +17,21 @@ class MockAsyncLocalStorage implements AsyncLocalStorageInterface {
   }
 }
 
+const TRACING_ALS_KEY = Symbol.for("ls:tracing_async_local_storage");
+
+const mockAsyncLocalStorage = new MockAsyncLocalStorage();
+
 class AsyncLocalStorageProvider {
-  private asyncLocalStorage: AsyncLocalStorageInterface =
-    new MockAsyncLocalStorage();
-
-  private hasBeenInitialized = false;
-
   getInstance(): AsyncLocalStorageInterface {
-    return this.asyncLocalStorage;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (globalThis as any)[TRACING_ALS_KEY] ?? mockAsyncLocalStorage;
   }
 
   initializeGlobalInstance(instance: AsyncLocalStorageInterface) {
-    if (!this.hasBeenInitialized) {
-      this.hasBeenInitialized = true;
-      this.asyncLocalStorage = instance;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((globalThis as any)[TRACING_ALS_KEY] === undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any)[TRACING_ALS_KEY] = instance;
     }
   }
 }

@@ -395,100 +395,122 @@ test("explicit nested", async () => {
   });
 });
 
-test("automatic tracing", async () => {
-  const { client, callSpy, langChainTracer } = mockClient();
+describe("automatic tracing", () => {
+  it("root langchain", async () => {
+    const { callSpy, langChainTracer } = mockClient();
 
-  const lc = RunnableLambda.from(async () => "Hello from LangChain");
-  const ls = traceable(() => "Hello from LangSmith", { name: "traceable" });
+    const lc = RunnableLambda.from(async () => "Hello from LangChain");
+    const ls = traceable(() => "Hello from LangSmith", { name: "traceable" });
 
-  const childA = RunnableLambda.from(async () => {
-    const results: string[] = [];
-    results.push(await lc.invoke({}));
-    results.push(await ls());
-    return results.join("\n");
-  });
+    const childA = RunnableLambda.from(async () => {
+      const results: string[] = [];
+      results.push(await lc.invoke({}));
+      results.push(await ls());
+      return results.join("\n");
+    });
 
-  const childB = traceable(
-    async () => [await lc.invoke({}), await ls()].join("\n"),
-    { name: "childB" }
-  );
+    const childB = traceable(
+      async () => [await lc.invoke({}), await ls()].join("\n"),
+      { name: "childB" }
+    );
 
-  const rootLC = RunnableLambda.from(async () => {
-    return [
-      await childA.invoke({}, { runName: "childA" }),
-      await childB(),
-    ].join("\n");
-  });
-
-  expect(
-    await rootLC.invoke({}, { callbacks: [langChainTracer], runName: "rootLC" })
-  ).toEqual(
-    [
-      "Hello from LangChain",
-      "Hello from LangSmith",
-      "Hello from LangChain",
-      "Hello from LangSmith",
-    ].join("\n")
-  );
-
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
-    nodes: [
-      "rootLC:0",
-      "childA:1",
-      "RunnableLambda:2",
-      "traceable:3",
-      "childB:4",
-      "RunnableLambda:5",
-      "traceable:6",
-    ],
-    edges: [
-      ["rootLC:0", "childA:1"],
-      ["childA:1", "RunnableLambda:2"],
-      ["childA:1", "traceable:3"],
-      ["rootLC:0", "childB:4"],
-      ["childB:4", "RunnableLambda:5"],
-      ["childB:4", "traceable:6"],
-    ],
-  });
-
-  callSpy.mockClear();
-
-  const rootLS = traceable(
-    async () => {
+    const rootLC = RunnableLambda.from(async () => {
       return [
         await childA.invoke({}, { runName: "childA" }),
         await childB(),
       ].join("\n");
-    },
-    { name: "rootLS", client, tracingEnabled: true }
-  );
+    });
 
-  expect(await rootLS()).toEqual(
-    [
-      "Hello from LangChain",
-      "Hello from LangSmith",
-      "Hello from LangChain",
-      "Hello from LangSmith",
-    ].join("\n")
-  );
+    expect(
+      await rootLC.invoke(
+        {},
+        { callbacks: [langChainTracer], runName: "rootLC" }
+      )
+    ).toEqual(
+      [
+        "Hello from LangChain",
+        "Hello from LangSmith",
+        "Hello from LangChain",
+        "Hello from LangSmith",
+      ].join("\n")
+    );
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
-    nodes: [
-      "rootLS:0",
-      "childA:1",
-      "RunnableLambda:2",
-      "traceable:3",
-      "childB:4",
-      "RunnableLambda:5",
-      "traceable:6",
-    ],
-    edges: [
-      ["rootLS:0", "childA:1"],
-      ["childA:1", "RunnableLambda:2"],
-      ["childA:1", "traceable:3"],
-      ["rootLS:0", "childB:4"],
-      ["childB:4", "RunnableLambda:5"],
-      ["childB:4", "traceable:6"],
-    ],
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "rootLC:0",
+        "childA:1",
+        "RunnableLambda:2",
+        "traceable:3",
+        "childB:4",
+        "RunnableLambda:5",
+        "traceable:6",
+      ],
+      edges: [
+        ["rootLC:0", "childA:1"],
+        ["childA:1", "RunnableLambda:2"],
+        ["childA:1", "traceable:3"],
+        ["rootLC:0", "childB:4"],
+        ["childB:4", "RunnableLambda:5"],
+        ["childB:4", "traceable:6"],
+      ],
+    });
+  });
+
+  it("root traceable", async () => {
+    const { client, callSpy } = mockClient();
+
+    const lc = RunnableLambda.from(async () => "Hello from LangChain");
+    const ls = traceable(() => "Hello from LangSmith", { name: "traceable" });
+
+    const childA = RunnableLambda.from(async () => {
+      const results: string[] = [];
+      results.push(await lc.invoke({}));
+      results.push(await ls());
+      return results.join("\n");
+    });
+
+    const childB = traceable(
+      async () => [await lc.invoke({}), await ls()].join("\n"),
+      { name: "childB" }
+    );
+
+    const rootLS = traceable(
+      async () => {
+        return [
+          await childA.invoke({}, { runName: "childA" }),
+          await childB(),
+        ].join("\n");
+      },
+      { name: "rootLS", client, tracingEnabled: true }
+    );
+
+    expect(await rootLS()).toEqual(
+      [
+        "Hello from LangChain",
+        "Hello from LangSmith",
+        "Hello from LangChain",
+        "Hello from LangSmith",
+      ].join("\n")
+    );
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "rootLS:0",
+        "childA:1",
+        "RunnableLambda:2",
+        "traceable:3",
+        "childB:4",
+        "RunnableLambda:5",
+        "traceable:6",
+      ],
+      edges: [
+        ["rootLS:0", "childA:1"],
+        ["childA:1", "RunnableLambda:2"],
+        ["childA:1", "traceable:3"],
+        ["rootLS:0", "childB:4"],
+        ["childB:4", "RunnableLambda:5"],
+        ["childB:4", "traceable:6"],
+      ],
+    });
   });
 });

@@ -25,12 +25,9 @@ import {
 } from "./utils/asserts.js";
 
 // make sure we also properly initialise the LangChain context storage
-const myInstance = new AsyncLocalStorage<RunTree | undefined>();
-const als: AsyncLocalStorage<RunTree | undefined> =
-  (globalThis as any).__lc_tracing_async_local_storage_v2 ?? myInstance;
-(globalThis as any).__lc_tracing_async_local_storage_v2 = als;
-
-AsyncLocalStorageProviderSingleton.initializeGlobalInstance(als);
+AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
+  new AsyncLocalStorage<RunTree | undefined>()
+);
 
 const handleRunInputs = (rawInputs: unknown[]): KVMap => {
   const firstInput = rawInputs[0];
