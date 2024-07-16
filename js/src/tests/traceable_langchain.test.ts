@@ -1,4 +1,4 @@
-import { traceable } from "../traceable.js";
+import { getCurrentRunTree, traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 import { FakeChatModel } from "@langchain/core/utils/testing";
@@ -8,6 +8,7 @@ import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 import { RunnableTraceable, getLangchainCallbacks } from "../langchain.js";
+import { RunnableLambda, RunnableMap } from "@langchain/core/runnables";
 
 describe("to langchain", () => {
   const llm = new FakeChatModel({});
@@ -309,6 +310,107 @@ describe("to traceable", () => {
     expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
+    });
+  });
+
+  test("invoke inside runnable lambda", async () => {
+    const { client, callSpy, langChainTracer } = mockClient();
+
+    const lc = RunnableLambda.from(async () => "Hello from LangChain");
+    const ls = traceable(() => "Hello from LangSmith", { name: "traceable" });
+
+    const childA = RunnableLambda.from(async () => {
+      const results: string[] = [];
+      results.push(await lc.invoke({}));
+      results.push(await ls());
+      return results.join("\n");
+    });
+
+    const childB = traceable(
+      async () => [await lc.invoke({}), await ls()].join("\n"),
+      { name: "childB" }
+    );
+
+    const rootLC = RunnableLambda.from(async () => {
+      return [
+        await childA.invoke({}, { runName: "childA" }),
+        await childB(),
+      ].join("\n");
+    });
+
+    expect(
+      await rootLC.invoke(
+        {},
+        { callbacks: [langChainTracer], runName: "rootLC" }
+      )
+    ).toEqual(
+      [
+        "Hello from LangChain",
+        "Hello from LangSmith",
+        "Hello from LangChain",
+        "Hello from LangSmith",
+      ].join("\n")
+    );
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "rootLC:0",
+        "childA:1",
+        "RunnableLambda:2",
+        "traceable:3",
+        "childB:4",
+        "RunnableLambda:5",
+        "traceable:6",
+      ],
+      edges: [
+        ["rootLC:0", "childA:1"],
+        ["childA:1", "RunnableLambda:2"],
+        ["childA:1", "traceable:3"],
+        ["rootLC:0", "childB:4"],
+        ["childB:4", "RunnableLambda:5"],
+        ["childB:4", "traceable:6"],
+      ],
+    });
+
+    callSpy.mockClear();
+
+    const rootLS = traceable(
+      async () => {
+        return [
+          await childA.invoke({}, { runName: "childA" }),
+          await childB(),
+        ].join("\n");
+      },
+      { name: "rootLS", client, tracingEnabled: true }
+    );
+
+    expect(await rootLS()).toEqual(
+      [
+        "Hello from LangChain",
+        "Hello from LangSmith",
+        "Hello from LangChain",
+        "Hello from LangSmith",
+      ].join("\n")
+    );
+
+    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+      nodes: [
+        "rootLS:0",
+        "childA:1",
+        "RunnableLambda:2",
+        "traceable:3",
+        "childB:4",
+        "RunnableLambda:5",
+        "traceable:6",
+      ],
+      edges: [
+        ["rootLS:0", "childA:1"],
+        ["childA:1", "RunnableLambda:2"],
+        ["childA:1", "traceable:3"],
+        ["rootLS:0", "childB:4"],
+        ["childB:4", "RunnableLambda:5"],
+        ["childB:4", "traceable:6"],
+      ],
     });
   });
 });
