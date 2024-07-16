@@ -4605,7 +4605,7 @@ class Client:
         """
         response = self.request_with_retries(
             "GET",
-            f"/commits/{prompt_owner_and_name}",
+            f"/commits/{prompt_owner_and_name}/",
             params={"limit": limit, "offset": offset},
         )
         commits = response.json()["commits"]
@@ -4629,7 +4629,7 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = self.request_with_retries(
-            "POST", f"/likes/{owner}/{prompt_name}", json={"like": like}
+            "POST", f"/likes/{owner}/{prompt_name}/", json={"like": like}
         )
         response.raise_for_status()
         return response.json()
@@ -4737,7 +4737,7 @@ class Client:
             "match_prefix": "true" if query else None,
         }
 
-        response = self.request_with_retries("GET", "/repos", params=params)
+        response = self.request_with_retries("GET", "/repos/", params=params)
         return ls_schemas.ListPromptsResponse(**response.json())
 
     def get_prompt(self, prompt_identifier: str) -> Optional[ls_schemas.Prompt]:
@@ -4756,7 +4756,7 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = self.request_with_retries(
-            "GET", f"/repos/{owner}/{prompt_name}", to_ignore=[ls_utils.LangSmithError]
+            "GET", f"/repos/{owner}/{prompt_name}/", to_ignore=[ls_utils.LangSmithError]
         )
         if response.status_code == 200:
             return ls_schemas.Prompt(**response.json()["repo"])
@@ -4811,7 +4811,7 @@ class Client:
             "is_public": is_public,
         }
 
-        response = self.request_with_retries("POST", "/repos", json=json)
+        response = self.request_with_retries("POST", "/repos/", json=json)
         response.raise_for_status()
         return ls_schemas.Prompt(**response.json()["repo"])
 
@@ -4861,7 +4861,7 @@ class Client:
 
         request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
         response = self.request_with_retries(
-            "POST", f"/commits/{prompt_owner_and_name}/", json=request_dict
+            "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
 
         commit_hash = response.json()["commit"]["commit_hash"]
@@ -4921,7 +4921,7 @@ class Client:
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = self.request_with_retries(
-            "PATCH", f"/repos/{owner}/{prompt_name}", json=json
+            "PATCH", f"/repos/{owner}/{prompt_name}/", json=json
         )
         response.raise_for_status()
         return response.json()
@@ -4942,7 +4942,7 @@ class Client:
         if not self._current_tenant_is_owner(owner):
             raise self._owner_conflict_error("delete a prompt", owner)
 
-        response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
+        response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}/")
 
         return response
 
@@ -4980,7 +4980,7 @@ class Client:
         response = self.request_with_retries(
             "GET",
             (
-                f"/commits/{owner}/{prompt_name}/{commit_hash}"
+                f"/commits/{owner}/{prompt_name}/{commit_hash}/"
                 f"{'?include_model=true' if include_model else ''}"
             ),
         )

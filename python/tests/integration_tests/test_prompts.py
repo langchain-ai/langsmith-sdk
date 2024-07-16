@@ -140,11 +140,6 @@ def test_current_tenant_is_owner(langsmith_client: Client):
     assert langsmith_client._current_tenant_is_owner("-")
     assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
-def test_current_tenant_is_owner2(langsmith_client: Client):
-    settings = langsmith_client._get_settings()
-    assert langsmith_client._current_tenant_is_owner(settings["tenant_handle"])
-    assert langsmith_client._current_tenant_is_owner("-")
-    assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
 def test_list_prompts(langsmith_client: Client):
     response = langsmith_client.list_prompts(limit=10, offset=0)
@@ -154,7 +149,9 @@ def test_list_prompts(langsmith_client: Client):
 
 def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
+    url = langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
+    assert isinstance(url, str)
+    assert langsmith_client._prompt_exists(prompt_name)
 
     prompt = langsmith_client.get_prompt(prompt_name)
     assert isinstance(prompt, ls_schemas.Prompt)
@@ -168,7 +165,7 @@ def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTe
     assert not langsmith_client._prompt_exists(non_existent_prompt)
 
     existent_prompt = f"existent_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(existent_prompt, object=prompt_template_2)
+    assert langsmith_client.push_prompt(existent_prompt, object=prompt_template_2)
     assert langsmith_client._prompt_exists(existent_prompt)
 
     langsmith_client.delete_prompt(existent_prompt)
