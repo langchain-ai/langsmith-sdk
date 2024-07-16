@@ -150,7 +150,7 @@ def chat_prompt_template():
 
 def test_current_tenant_is_owner(langsmith_client: Client):
     settings = langsmith_client._get_settings()
-    assert langsmith_client._current_tenant_is_owner(settings["tenant_handle"])
+    assert langsmith_client._current_tenant_is_owner(settings.tenant_handle)
     assert langsmith_client._current_tenant_is_owner("-")
     assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
@@ -244,7 +244,7 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     assert pulled_prompt == pulled_prompt_2
 
     # test pulling with tenant handle and name
-    tenant_handle = langsmith_client._get_settings()["tenant_handle"]
+    tenant_handle = langsmith_client._get_settings().tenant_handle
     pulled_prompt_3 = langsmith_client.pull_prompt(f"{tenant_handle}/{prompt_name}")
     assert pulled_prompt.metadata and pulled_prompt_3.metadata
     assert (
@@ -254,7 +254,7 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     assert pulled_prompt_3.metadata["lc_hub_owner"] == tenant_handle
 
     # test pulling with handle, name and commit hash
-    tenant_handle = langsmith_client._get_settings()["tenant_handle"]
+    tenant_handle = langsmith_client._get_settings().tenant_handle
     pulled_prompt_4 = langsmith_client.pull_prompt(
         f"{tenant_handle}/{prompt_name}:latest"
     )
@@ -545,7 +545,7 @@ def test_convert_to_anthropic_format(chat_prompt_template: ChatPromptTemplate):
     )
 
     assert res == {
-        "model": "claude-2",
+        "model": "claude-3-haiku-20240307",
         "max_tokens": 1024,
         "messages": [{"role": "user", "content": "What is the meaning of life?"}],
         "system": "You are a chatbot",

@@ -667,6 +667,18 @@ class LangSmithInfo(BaseModel):
 Example.update_forward_refs()
 
 
+class LangSmithSettings(BaseModel):
+    """Settings for the LangSmith tenant."""
+
+    id: str
+    """The ID of the tenant."""
+    display_name: str
+    """The display name of the tenant."""
+    created_at: datetime
+    """The creation time of the tenant."""
+    tenant_handle: Optional[str] = None
+
+
 class FeedbackIngestToken(BaseModel):
     """Represents the schema for a feedback ingest token.
 
