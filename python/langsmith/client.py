@@ -4605,7 +4605,7 @@ class Client:
         """
         response = self.request_with_retries(
             "GET",
-            f"/commits/{prompt_owner_and_name}/",
+            f"/commits/{prompt_owner_and_name}",
             params={"limit": limit, "offset": offset},
         )
         commits = response.json()["commits"]
@@ -4861,7 +4861,7 @@ class Client:
 
         request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
         response = self.request_with_retries(
-            "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
+            "POST", f"/commits/{prompt_owner_and_name}/", json=request_dict
         )
 
         commit_hash = response.json()["commit"]["commit_hash"]
