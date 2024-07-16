@@ -4754,7 +4754,7 @@ class Client:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
             response = self.request_with_retries(
-                "GET", f"/repos/{owner}/{prompt_name}/"
+                "GET", f"/repos/{owner}/{prompt_name}"
             )
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
