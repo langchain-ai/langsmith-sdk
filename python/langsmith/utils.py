@@ -571,7 +571,7 @@ def deepish_copy(val: T) -> T:
         return _middle_copy(val, memo)
 
 
-def is_version_greater_or_equal(current_version, target_version):
+def is_version_greater_or_equal(current_version: str, target_version: str) -> bool:
     """Check if the current version is greater or equal to the target version."""
     from packaging import version
 
