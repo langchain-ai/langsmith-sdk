@@ -1,7 +1,7 @@
 .PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals
 
 tests:
-	poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 tests/unit_tests
+	 PYTHONDEVMODE=1 PYTHONASYNCIODEBUG=1 poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 tests/unit_tests
 
 tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests

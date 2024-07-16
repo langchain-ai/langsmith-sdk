@@ -1,6 +1,9 @@
 """Generic utility functions."""
 
+from __future__ import annotations
+
 import contextlib
+import contextvars
 import copy
 import enum
 import functools
@@ -11,11 +14,14 @@ import subprocess
 import sys
 import threading
 import traceback
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Any,
     Callable,
     Dict,
     Generator,
+    Iterable,
+    Iterator,
     List,
     Mapping,
     Optional,
@@ -23,9 +29,11 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    cast,
 )
 
 import requests
+from typing_extensions import ParamSpec
 from urllib3.util import Retry
 
 from langsmith import schemas as ls_schemas
@@ -561,3 +569,77 @@ def deepish_copy(val: T) -> T:
         # what we can
         _LOGGER.debug("Failed to deepcopy input: %s", repr(e))
         return _middle_copy(val, memo)
+
+
+P = ParamSpec("P")
+
+
+class ContextThreadPoolExecutor(ThreadPoolExecutor):
+    """ThreadPoolExecutor that copies the context to the child thread."""
+
+    def submit(  # type: ignore[override]
+        self,
+        func: Callable[P, T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> Future[T]:
+        """Submit a function to the executor.
+
+        Args:
+            func (Callable[..., T]): The function to submit.
+            *args (Any): The positional arguments to the function.
+            **kwargs (Any): The keyword arguments to the function.
+
+        Returns:
+            Future[T]: The future for the function.
+        """
+        return super().submit(
+            cast(
+                Callable[..., T],
+                functools.partial(
+                    contextvars.copy_context().run, func, *args, **kwargs
+                ),
+            )
+        )
+
+    def map(
+        self,
+        fn: Callable[..., T],
+        *iterables: Iterable[Any],
+        timeout: Optional[float] = None,
+        chunksize: int = 1,
+    ) -> Iterator[T]:
+        """Return an iterator equivalent to stdlib map.
+
+        Each function will receive it's own copy of the context from the parent thread.
+
+        Args:
+            fn: A callable that will take as many arguments as there are
+                passed iterables.
+            timeout: The maximum number of seconds to wait. If None, then there
+                is no limit on the wait time.
+            chunksize: The size of the chunks the iterable will be broken into
+                before being passed to a child process. This argument is only
+                used by ProcessPoolExecutor; it is ignored by
+                ThreadPoolExecutor.
+
+        Returns:
+            An iterator equivalent to: map(func, *iterables) but the calls may
+            be evaluated out-of-order.
+
+        Raises:
+            TimeoutError: If the entire result iterator could not be generated
+                before the given timeout.
+            Exception: If fn(*args) raises for any values.
+        """
+        contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
+
+        def _wrapped_fn(*args: Any) -> T:
+            return contexts.pop().run(fn, *args)
+
+        return super().map(
+            _wrapped_fn,
+            *iterables,
+            timeout=timeout,
+            chunksize=chunksize,
+        )

@@ -510,6 +510,22 @@ test.concurrent(
       client.listExamples({ datasetId: dataset.id })
     );
     expect(examplesList.length).toEqual(4);
+
+    const examplesListLimited = await toArray(
+      client.listExamples({ datasetId: dataset.id, limit: 2 })
+    );
+    expect(examplesListLimited.length).toEqual(2);
+
+    const examplesListOffset = await toArray(
+      client.listExamples({ datasetId: dataset.id, offset: 2 })
+    );
+    expect(examplesListOffset.length).toEqual(2);
+
+    const examplesListLimitedOffset = await toArray(
+      client.listExamples({ datasetId: dataset.id, limit: 1, offset: 2 })
+    );
+    expect(examplesListLimitedOffset.length).toEqual(1);
+
     await client.deleteExample(example.id);
     const examplesList2 = await toArray(
       client.listExamples({ datasetId: dataset.id })
@@ -582,6 +598,34 @@ test.concurrent(
     expect(examplesList3.length).toEqual(1);
     expect(examplesList3[0].metadata?.foo).toEqual("bar");
     expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        filter: 'exists(metadata, "baz")',
+      })
+    );
+    expect(examplesList3.length).toEqual(1);
+    expect(examplesList3[0].metadata?.foo).toEqual("bar");
+    expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        filter: 'has("metadata", \'{"foo": "bar"}\')',
+      })
+    );
+    expect(examplesList3.length).toEqual(1);
+    expect(examplesList3[0].metadata?.foo).toEqual("bar");
+    expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        filter: 'exists(metadata, "bazzz")',
+      })
+    );
+    expect(examplesList3.length).toEqual(0);
 
     examplesList3 = await toArray(
       client.listExamples({
