@@ -4664,6 +4664,7 @@ class Client:
             **kwargs,
         )
 
+    @functools.lru_cache(maxsize=1)
     def _get_settings(self) -> dict:
         """Get the settings for the current tenant.
 
@@ -5025,7 +5026,7 @@ class Client:
         response.raise_for_status()
         return response.json()
 
-    def delete_prompt(self, prompt_identifier: str) -> Any:
+    def delete_prompt(self, prompt_identifier: str) -> None:
         """Delete a prompt.
 
         Args:
@@ -5042,15 +5043,14 @@ class Client:
             raise self._owner_conflict_error("delete a prompt", owner)
 
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
+        response.raise_for_status()
 
-        return response
-
-    def pull_prompt_object(
+    def pull_prompt_commit(
         self,
         prompt_identifier: str,
         *,
         include_model: Optional[bool] = False,
-    ) -> ls_schemas.PromptObject:
+    ) -> ls_schemas.PromptCommit:
         """Pull a prompt object from the LangSmith API.
 
         Args:
@@ -5083,7 +5083,7 @@ class Client:
                 f"{'?include_model=true' if include_model else ''}"
             ),
         )
-        return ls_schemas.PromptObject(
+        return ls_schemas.PromptCommit(
             **{"owner": owner, "repo": prompt_name, **response.json()}
         )
 
@@ -5103,23 +5103,38 @@ class Client:
         try:
             from langchain_core.load.load import loads
             from langchain_core.prompts import BasePromptTemplate
+            from langchain_core.runnables.base import RunnableSequence
         except ImportError:
             raise ImportError(
                 "The client.pull_prompt function requires the langchain_core"
                 "package to run.\nInstall with `pip install langchain_core`"
             )
 
-        prompt_object = self.pull_prompt_object(
+        prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
         prompt = loads(json.dumps(prompt_object.manifest))
 
-        if isinstance(prompt, BasePromptTemplate) or isinstance(
-            prompt.first, BasePromptTemplate
+        if (
+            isinstance(prompt, BasePromptTemplate)
+            or isinstance(prompt, RunnableSequence)
+            and isinstance(prompt.first, BasePromptTemplate)
         ):
             prompt_template = (
-                prompt if isinstance(prompt, BasePromptTemplate) else prompt.first
+                prompt
+                if isinstance(prompt, BasePromptTemplate)
+                else (
+                    prompt.first
+                    if isinstance(prompt, RunnableSequence)
+                    and isinstance(prompt.first, BasePromptTemplate)
+                    else None
+                )
             )
+            if prompt_template is None:
+                raise ls_utils.LangSmithError(
+                    "Prompt object is not a valid prompt template."
+                )
+
             if prompt_template.metadata is None:
                 prompt_template.metadata = {}
             prompt_template.metadata.update(

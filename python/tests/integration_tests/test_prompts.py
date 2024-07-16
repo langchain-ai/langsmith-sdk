@@ -207,8 +207,8 @@ def test_pull_prompt_object(
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
 
-    manifest = langsmith_client.pull_prompt_object(prompt_name)
-    assert isinstance(manifest, ls_schemas.PromptObject)
+    manifest = langsmith_client.pull_prompt_commit(prompt_name)
+    assert isinstance(manifest, ls_schemas.PromptCommit)
     assert manifest.repo == prompt_name
 
     langsmith_client.delete_prompt(prompt_name)
