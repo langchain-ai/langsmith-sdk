@@ -615,7 +615,7 @@ class Client:
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 
-        self._settings: Union[dict, None] = None
+        self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -704,7 +704,7 @@ class Client:
                 self._info = ls_schemas.LangSmithInfo()
         return self._info
 
-    def _get_settings(self) -> dict:
+    def _get_settings(self) -> ls_schemas.LangSmithSettings:
         """Get the settings for the current tenant.
 
         Returns:
@@ -712,8 +712,8 @@ class Client:
         """
         if self._settings is None:
             response = self.request_with_retries("GET", "/settings")
-            settings: dict = response.json()
-            self._settings = settings
+            ls_utils.raise_for_status_with_text(response)
+            self._settings = ls_schemas.LangSmithSettings(**response.json())
 
         return self._settings
 
@@ -4690,14 +4690,14 @@ class Client:
             bool: True if the current tenant is the owner, False otherwise.
         """
         settings = self._get_settings()
-        return owner == "-" or settings["tenant_handle"] == owner
+        return owner == "-" or settings.tenant_handle == owner
 
     def _owner_conflict_error(
         self, action: str, owner: str
     ) -> ls_utils.LangSmithUserError:
         return ls_utils.LangSmithUserError(
             f"Cannot {action} for another tenant.\n"
-            f"Current tenant: {self._get_settings()['tenant_handle']},\n"
+            f"Current tenant: {self._get_settings().tenant_handle},\n"
             f"Requested tenant: {owner}"
         )
 
@@ -4765,7 +4765,7 @@ class Client:
         settings = self._get_settings()
         return (
             f"{self._host_url}/prompts/{prompt_name}/{commit_hash[:8]}"
-            f"?organizationId={settings['id']}"
+            f"?organizationId={settings.id}"
         )
 
     def _prompt_exists(self, prompt_identifier: str) -> bool:
@@ -4875,7 +4875,7 @@ class Client:
         *,
         description: Optional[str] = None,
         readme: Optional[str] = None,
-        tags: Optional[List[str]] = None,
+        tags: Optional[Sequence[str]] = None,
         is_public: bool = False,
     ) -> ls_schemas.Prompt:
         """Create a new prompt.
@@ -4886,7 +4886,7 @@ class Client:
             prompt_name (str): The name of the prompt.
             description (Optional[str]): A description of the prompt.
             readme (Optional[str]): A readme for the prompt.
-            tags (Optional[List[str]]): A list of tags for the prompt.
+            tags (Optional[Sequence[str]]): A list of tags for the prompt.
             is_public (bool): Whether the prompt should be public. Defaults to False.
 
         Returns:
@@ -4897,7 +4897,7 @@ class Client:
             HTTPError: If the server request fails.
         """
         settings = self._get_settings()
-        if is_public and not settings.get("tenant_handle"):
+        if is_public and not settings.tenant_handle:
             raise ls_utils.LangSmithUserError(
                 "Cannot create a public prompt without first\n"
                 "creating a LangChain Hub handle. "
@@ -4909,7 +4909,7 @@ class Client:
         if not self._current_tenant_is_owner(owner=owner):
             raise self._owner_conflict_error("create a prompt", owner)
 
-        json: Dict[str, Union[str, bool, List[str]]] = {
+        json: Dict[str, Union[str, bool, Sequence[str]]] = {
             "repo_handle": prompt_name,
             "description": description or "",
             "readme": readme or "",
@@ -4926,7 +4926,7 @@ class Client:
         prompt_identifier: str,
         object: Any,
         *,
-        parent_commit_hash: Optional[str] = "latest",
+        parent_commit_hash: Optional[str] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -4934,7 +4934,7 @@ class Client:
             prompt_identifier (str): The identifier of the prompt.
             object (Any): The LangChain object to commit.
             parent_commit_hash (Optional[str]): The hash of the parent commit.
-                Defaults to "latest".
+                Defaults to latest commit.
 
         Returns:
             str: The url of the prompt commit.
@@ -4962,7 +4962,7 @@ class Client:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         prompt_owner_and_name = f"{owner}/{prompt_name}"
 
-        if parent_commit_hash == "latest":
+        if parent_commit_hash == "latest" or parent_commit_hash is None:
             parent_commit_hash = self._get_latest_commit_hash(prompt_owner_and_name)
 
         request_dict = {"parent_commit": parent_commit_hash, "manifest": manifest_dict}
@@ -4980,7 +4980,7 @@ class Client:
         *,
         description: Optional[str] = None,
         readme: Optional[str] = None,
-        tags: Optional[List[str]] = None,
+        tags: Optional[Sequence[str]] = None,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = None,
     ) -> Dict[str, Any]:
@@ -4992,7 +4992,7 @@ class Client:
             prompt_identifier (str): The identifier of the prompt to update.
             description (Optional[str]): New description for the prompt.
             readme (Optional[str]): New readme for the prompt.
-            tags (Optional[List[str]]): New list of tags for the prompt.
+            tags (Optional[Sequence[str]]): New list of tags for the prompt.
             is_public (Optional[bool]): New public status for the prompt.
             is_archived (Optional[bool]): New archived status for the prompt.
 
@@ -5004,7 +5004,7 @@ class Client:
             HTTPError: If the server request fails.
         """
         settings = self._get_settings()
-        if is_public and not settings.get("tenant_handle"):
+        if is_public and not settings.tenant_handle:
             raise ValueError(
                 "Cannot create a public prompt without first\n"
                 "creating a LangChain Hub handle. "
@@ -5012,7 +5012,7 @@ class Client:
                 "https://smith.langchain.com/prompts"
             )
 
-        json: Dict[str, Union[str, bool, List[str]]] = {}
+        json: Dict[str, Union[str, bool, Sequence[str]]] = {}
 
         if description is not None:
             json["description"] = description
@@ -5158,11 +5158,11 @@ class Client:
         prompt_identifier: str,
         *,
         object: Optional[Any] = None,
-        parent_commit_hash: Optional[str] = "latest",
+        parent_commit_hash: str = "latest",
         is_public: bool = False,
-        description: Optional[str] = "",
-        readme: Optional[str] = "",
-        tags: Optional[List[str]] = [],
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -5174,14 +5174,14 @@ class Client:
         Args:
             prompt_identifier (str): The identifier of the prompt.
             object (Optional[Any]): The LangChain object to push.
-            parent_commit_hash (Optional[str]): The parent commit hash.
+            parent_commit_hash (str): The parent commit hash.
               Defaults to "latest".
             is_public (bool): Whether the prompt should be public. Defaults to False.
             description (Optional[str]): A description of the prompt.
               Defaults to an empty string.
             readme (Optional[str]): A readme for the prompt.
               Defaults to an empty string.
-            tags (Optional[List[str]]): A list of tags for the prompt.
+            tags (Optional[Sequence[str]]): A list of tags for the prompt.
               Defaults to an empty list.
 
         Returns:
@@ -5367,7 +5367,8 @@ def _tracing_sub_thread_func(
 
 
 def convert_prompt_to_openai_format(
-    messages: Any, stop: Optional[List[str]] = None, **kwargs: Any
+    messages: Any,
+    model_kwargs: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Convert a prompt to OpenAI format.
 
@@ -5375,11 +5376,15 @@ def convert_prompt_to_openai_format(
 
     Args:
         messages (Any): The messages to convert.
-        stop (Optional[List[str]]): Stop sequences for the prompt.
-        **kwargs: Additional arguments for the conversion.
+        model_kwargs (Optional[Dict[str, Any]]): Model configuration arguments including
+            `stop` and any other required arguments. Defaults to None.
 
     Returns:
         dict: The prompt in OpenAI format.
+
+    Raises:
+        ImportError: If the `langchain_openai` package is not installed.
+        ls_utils.LangSmithError: If there is an error during the conversion process.
     """
     try:
         from langchain_openai import ChatOpenAI
@@ -5391,17 +5396,18 @@ def convert_prompt_to_openai_format(
 
     openai = ChatOpenAI()
 
+    model_kwargs = model_kwargs or {}
+    stop = model_kwargs.pop("stop", None)
+
     try:
-        return openai._get_request_payload(messages, stop=stop, **kwargs)
+        return openai._get_request_payload(messages, stop=stop, **model_kwargs)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to OpenAI format: {e}")
 
 
 def convert_prompt_to_anthropic_format(
     messages: Any,
-    model_name: str = "claude-2",
-    stop: Optional[List[str]] = None,
-    **kwargs: Any,
+    model_kwargs: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Convert a prompt to Anthropic format.
 
@@ -5409,9 +5415,9 @@ def convert_prompt_to_anthropic_format(
 
     Args:
         messages (Any): The messages to convert.
-        model_name (Optional[str]): The model name to use. Defaults to "claude-2".
-        stop (Optional[List[str]]): Stop sequences for the prompt.
-        **kwargs: Additional arguments for the conversion.
+        model_kwargs (Optional[Dict[str, Any]]):
+            Model configuration arguments including `model_name` and `stop`.
+            Defaults to None.
 
     Returns:
         dict: The prompt in Anthropic format.
@@ -5425,11 +5431,16 @@ def convert_prompt_to_anthropic_format(
             "Install with `pip install langchain_anthropic`"
         )
 
+    model_kwargs = model_kwargs or {}
+    model_name = model_kwargs.pop("model_name", "claude-3-haiku-20240307")
+    stop = model_kwargs.pop("stop", None)
+    timeout = model_kwargs.pop("timeout", None)
+
     anthropic = ChatAnthropic(
-        model_name=model_name, timeout=None, stop=stop, base_url=None, api_key=None
+        model_name=model_name, timeout=timeout, stop=stop, **model_kwargs
     )
 
     try:
-        return anthropic._get_request_payload(messages, stop=stop, **kwargs)
+        return anthropic._get_request_payload(messages, stop=stop)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
