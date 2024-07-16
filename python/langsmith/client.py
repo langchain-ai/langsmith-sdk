@@ -5345,7 +5345,7 @@ def _tracing_sub_thread_func(
         _tracing_thread_handle_batch(client, tracing_queue, next_batch)
 
 
-def convert_to_openai_format(
+def convert_prompt_to_openai_format(
     messages: Any, stop: Optional[List[str]] = None, **kwargs: Any
 ) -> dict:
     """Convert a prompt to OpenAI format.
@@ -5360,7 +5360,13 @@ def convert_to_openai_format(
     Returns:
         dict: The prompt in OpenAI format.
     """
-    from langchain_openai import ChatOpenAI
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        raise ImportError(
+            "The convert_prompt_to_openai_format function requires the langchain_openai"
+            "package to run.\nInstall with `pip install langchain_openai`"
+        )
 
     openai = ChatOpenAI()
 
@@ -5370,7 +5376,7 @@ def convert_to_openai_format(
         raise ls_utils.LangSmithError(f"Error converting to OpenAI format: {e}")
 
 
-def convert_to_anthropic_format(
+def convert_prompt_to_anthropic_format(
     messages: Any,
     model_name: str = "claude-2",
     stop: Optional[List[str]] = None,
@@ -5389,7 +5395,14 @@ def convert_to_anthropic_format(
     Returns:
         dict: The prompt in Anthropic format.
     """
-    from langchain_anthropic import ChatAnthropic
+    try:
+        from langchain_anthropic import ChatAnthropic
+    except ImportError:
+        raise ImportError(
+            "The convert_prompt_to_anthropic_format function requires the "
+            "langchain_anthropic package to run.\n"
+            "Install with `pip install langchain_anthropic`"
+        )
 
     anthropic = ChatAnthropic(
         model_name=model_name, timeout=None, stop=stop, base_url=None, api_key=None
