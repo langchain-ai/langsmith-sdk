@@ -77,7 +77,10 @@ export async function getLangchainCallbacks(
   }
 
   if (langChainTracer != null) {
-    if (langChainTracer.updateFromRunTree) {
+    if (
+      "updateFromRunTree" in langChainTracer &&
+      typeof langChainTracer === "function"
+    ) {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore @langchain/core can use a different version of LangSmith
       langChainTracer.updateFromRunTree(runTree);
