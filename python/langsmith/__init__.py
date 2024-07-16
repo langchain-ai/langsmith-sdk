@@ -16,6 +16,9 @@ if TYPE_CHECKING:
         tracing_context,
     )
     from langsmith.run_trees import RunTree
+    from langsmith.utils import (
+        ContextThreadPoolExecutor,
+    )
 
 
 def __getattr__(name: str) -> Any:
@@ -114,4 +117,5 @@ __all__ = [
     "tracing_context",
     "get_tracing_context",
     "get_current_run_tree",
+    "ContextThreadPoolExecutor",
 ]
