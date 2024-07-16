@@ -4666,11 +4666,8 @@ class Client:
         Returns:
             bool: True if the prompt exists, False otherwise.
         """
-        try:
-            self.get_prompt(prompt_identifier)
-            return True
-        except requests.exceptions.HTTPError as e:
-            return e.response.status_code != 404
+        prompt = self.get_prompt(prompt_identifier)
+        return True if prompt else False
 
     def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
         """Check if a prompt exists.
@@ -4755,13 +4752,13 @@ class Client:
             another error occurs.
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
-        response = self.request_with_retries(
-            "GET", f"/repos/{owner}/{prompt_name}/", to_ignore=[ls_utils.LangSmithError]
-        )
-        if response.status_code == 200:
+        try:
+            response = self.request_with_retries(
+                "GET", f"/repos/{owner}/{prompt_name}/"
+            )
             return ls_schemas.Prompt(**response.json()["repo"])
-        response.raise_for_status()
-        return None
+        except ls_utils.LangSmithNotFoundError:
+            return None
 
     def create_prompt(
         self,
