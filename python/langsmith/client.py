@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import collections
+import concurrent.futures as cf
 import datetime
 import functools
 import importlib
@@ -3334,6 +3335,82 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def list_dataset_splits(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        as_of: Optional[Union[str, datetime.datetime]] = None,
+    ) -> List[str]:
+        """Get the splits for a dataset.
+
+        Args:
+            dataset_id (ID_TYPE): The ID of the dataset.
+            as_of (Optional[Union[str, datetime.datetime]], optional): The version
+                of the dataset to retrieve splits for. Can be a timestamp or a
+                string tag. Defaults to "latest".
+
+        Returns:
+            List[str]: The names of this dataset's.
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide dataset name or ID")
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        params = {}
+        if as_of is not None:
+            params["as_of"] = (
+                as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of
+            )
+
+        response = self.request_with_retries(
+            "GET",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/splits",
+            params=params,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    def update_dataset_splits(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        split_name: str,
+        example_ids: List[ID_TYPE],
+        remove: bool = False,
+    ) -> None:
+        """Update the splits for a dataset.
+
+        Args:
+            dataset_id (ID_TYPE): The ID of the dataset to update.
+            split_name (str): The name of the split to update.
+            example_ids (List[ID_TYPE]): The IDs of the examples to add to or
+                remove from the split.
+            remove (bool, optional): If True, remove the examples from the split.
+                If False, add the examples to the split. Defaults to False.
+
+        Returns:
+            None
+        """
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("Must provide dataset name or ID")
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        data = {
+            "split_name": split_name,
+            "examples": [
+                str(_as_uuid(id_, f"example_ids[{i}]"))
+                for i, id_ in enumerate(example_ids)
+            ],
+            "remove": remove,
+        }
+
+        response = self.request_with_retries(
+            "PUT", f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}/splits", json=data
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     def _resolve_run_id(
         self,
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
@@ -3660,7 +3737,9 @@ class Client:
             feedback_source.metadata["__run"] = _run_meta
         feedback = ls_schemas.FeedbackCreate(
             id=_ensure_uuid(feedback_id),
-            run_id=_ensure_uuid(run_id),
+            # If run_id is None, this is interpreted as session-level
+            # feedback.
+            run_id=_ensure_uuid(run_id, accept_null=True),
             key=key,
             score=score,
             value=value,
@@ -3983,23 +4062,48 @@ class Client:
         else:
             raise ValueError(f"Unknown expiration type: {type(expiration)}")
         # assemble body, one entry per key
-        body: List[Dict[str, Any]] = [
-            {
-                "run_id": run_id,
-                "feedback_key": feedback_key,
-                "feedback_config": feedback_config,
-                "expires_in": expires_in,
-                "expires_at": expires_at,
-            }
-            for feedback_key, feedback_config in zip(feedback_keys, feedback_configs)
-        ]
-        response = self.request_with_retries(
-            "POST",
-            "/feedback/tokens",
-            data=_dumps_json(body),
+        body = _dumps_json(
+            [
+                {
+                    "run_id": run_id,
+                    "feedback_key": feedback_key,
+                    "feedback_config": feedback_config,
+                    "expires_in": expires_in,
+                    "expires_at": expires_at,
+                }
+                for feedback_key, feedback_config in zip(
+                    feedback_keys, feedback_configs
+                )
+            ]
         )
-        ls_utils.raise_for_status_with_text(response)
-        return [ls_schemas.FeedbackIngestToken(**part) for part in response.json()]
+
+        def req(api_url: str, api_key: Optional[str]) -> list:
+            response = self.request_with_retries(
+                "POST",
+                f"{api_url}/feedback/tokens",
+                request_kwargs={
+                    "data": body,
+                    "header": {
+                        **self._headers,
+                        X_API_KEY: api_key or self.api_key,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return response.json()
+
+        tokens = []
+        with cf.ThreadPoolExecutor(max_workers=len(self._write_api_urls)) as executor:
+            futs = [
+                executor.submit(req, api_url, api_key)
+                for api_url, api_key in self._write_api_urls.items()
+            ]
+            for fut in cf.as_completed(futs):
+                response = fut.result()
+                tokens.extend(
+                    [ls_schemas.FeedbackIngestToken(**part) for part in response]
+                )
+        return tokens
 
     def list_presigned_feedback_tokens(
         self,

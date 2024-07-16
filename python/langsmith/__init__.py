@@ -87,6 +87,12 @@ def __getattr__(name: str) -> Any:
         from langsmith._testing import unit
 
         return unit
+    elif name == "ContextThreadPoolExecutor":
+        from langsmith.utils import (
+            ContextThreadPoolExecutor,
+        )
+
+        return ContextThreadPoolExecutor
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
