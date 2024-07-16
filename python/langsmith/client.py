@@ -615,7 +615,7 @@ class Client:
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 
-        self._settings = None
+        self._settings = self._get_settings()
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
