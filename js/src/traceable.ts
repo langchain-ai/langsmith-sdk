@@ -24,9 +24,13 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 
-AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
-  new AsyncLocalStorage<RunTree | undefined>()
-);
+// make sure we also properly initialise the LangChain context storage
+const myInstance = new AsyncLocalStorage<RunTree | undefined>();
+const als: AsyncLocalStorage<RunTree | undefined> =
+  (globalThis as any).__lc_tracing_async_local_storage_v2 ?? myInstance;
+(globalThis as any).__lc_tracing_async_local_storage_v2 = als;
+
+AsyncLocalStorageProviderSingleton.initializeGlobalInstance(als);
 
 const handleRunInputs = (rawInputs: unknown[]): KVMap => {
   const firstInput = rawInputs[0];
@@ -476,6 +480,8 @@ export function traceable<Func extends (...args: any[]) => any>(
             onEnd(currentRunTree);
           }
         }
+
+        // TODO: update child_execution_order of the parent run
         await postRunPromise;
         await currentRunTree?.patchRun();
       }
