@@ -134,7 +134,6 @@ def prompt_with_model() -> dict:
     }
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_current_tenant_is_owner(langsmith_client: Client):
     settings = langsmith_client._get_settings()
     assert langsmith_client._current_tenant_is_owner(settings["tenant_handle"])
@@ -142,14 +141,12 @@ def test_current_tenant_is_owner(langsmith_client: Client):
     assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_list_prompts(langsmith_client: Client):
     response = langsmith_client.list_prompts(limit=10, offset=0)
     assert isinstance(response, ls_schemas.ListPromptsResponse)
     assert len(response.repos) <= 10
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
@@ -161,7 +158,6 @@ def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTempl
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTemplate):
     non_existent_prompt = f"non_existent_{uuid4().hex[:8]}"
     assert not langsmith_client._prompt_exists(non_existent_prompt)
@@ -173,7 +169,6 @@ def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTe
     langsmith_client.delete_prompt(existent_prompt)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_update_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
@@ -195,7 +190,6 @@ def test_update_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTe
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_delete_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
@@ -205,7 +199,6 @@ def test_delete_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTe
     assert not langsmith_client._prompt_exists(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_pull_prompt_object(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
@@ -219,7 +212,6 @@ def test_pull_prompt_object(
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
@@ -266,7 +258,6 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_push_and_pull_prompt(
     langsmith_client: Client, prompt_template_2: ChatPromptTemplate
 ):
@@ -287,7 +278,6 @@ def test_push_and_pull_prompt(
         )
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: dict):
     prompt_name = f"test_prompt_with_model_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_with_model)
@@ -304,7 +294,6 @@ def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: 
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_like_unlike_prompt(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
@@ -324,7 +313,6 @@ def test_like_unlike_prompt(
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_get_latest_commit_hash(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
@@ -338,7 +326,6 @@ def test_get_latest_commit_hash(
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_create_prompt(langsmith_client: Client):
     prompt_name = f"test_create_prompt_{uuid4().hex[:8]}"
     created_prompt = langsmith_client.create_prompt(
@@ -358,7 +345,6 @@ def test_create_prompt(langsmith_client: Client):
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_create_commit(
     langsmith_client: Client,
     prompt_template_2: ChatPromptTemplate,
@@ -385,10 +371,30 @@ def test_create_commit(
     assert isinstance(prompt, ls_schemas.Prompt)
     assert prompt.num_commits == 2
 
+    # try submitting different types of unaccepted manifests
+    try:
+        # this should fail
+        commit_url = langsmith_client.create_commit(prompt_name, object={"hi": "hello"})
+    except ls_utils.LangSmithError as e:
+        err = str(e)
+        assert "Manifest must have an id field" in err
+        assert "400 Client Error" in err
+    except Exception as e:
+        pytest.fail(f"Unexpected exception raised: {e}")
+
+    try:
+        # this should fail
+        commit_url = langsmith_client.create_commit(prompt_name, object={"id": ["hi"]})
+    except ls_utils.LangSmithError as e:
+        err = str(e)
+        assert "Manifest type hi is not supported" in err
+        assert "400 Client Error" in err
+    except Exception as e:
+        pytest.fail(f"Unexpected exception raised: {e}")
+
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_push_prompt(langsmith_client: Client, prompt_template_3: PromptTemplate):
     prompt_name = f"test_push_new_{uuid4().hex[:8]}"
     url = langsmith_client.push_prompt(
@@ -427,7 +433,6 @@ def test_push_prompt(langsmith_client: Client, prompt_template_3: PromptTemplate
 
 
 @pytest.mark.parametrize("is_public,expected_count", [(True, 1), (False, 1)])
-@pytest.mark.skip(reason="This test is flaky")
 def test_list_prompts_filter(
     langsmith_client: Client,
     prompt_template_1: ChatPromptTemplate,
@@ -448,7 +453,6 @@ def test_list_prompts_filter(
     langsmith_client.delete_prompt(prompt_name)
 
 
-@pytest.mark.skip(reason="This test is flaky")
 def test_update_prompt_archive(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
@@ -474,7 +478,6 @@ def test_update_prompt_archive(
         (ls_schemas.PromptSortField.updated_at, "desc"),
     ],
 )
-@pytest.mark.skip(reason="This test is flaky")
 def test_list_prompts_sorting(
     langsmith_client: Client,
     prompt_template_1: ChatPromptTemplate,
