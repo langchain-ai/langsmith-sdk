@@ -2197,6 +2197,9 @@ export class Client {
     splits,
     inlineS3Urls,
     metadata,
+    limit,
+    offset,
+    filter,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2205,6 +2208,9 @@ export class Client {
     splits?: string[];
     inlineS3Urls?: boolean;
     metadata?: KVMap;
+    limit?: number;
+    offset?: number;
+    filter?: string;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2242,11 +2248,27 @@ export class Client {
       const serializedMetadata = JSON.stringify(metadata);
       params.append("metadata", serializedMetadata);
     }
+    if (limit !== undefined) {
+      params.append("limit", limit.toString());
+    }
+    if (offset !== undefined) {
+      params.append("offset", offset.toString());
+    }
+    if (filter !== undefined) {
+      params.append("filter", filter);
+    }
+    let i = 0;
     for await (const examples of this._getPaginated<Example>(
       "/examples",
       params
     )) {
-      yield* examples;
+      for (const example of examples) {
+        yield example;
+        i++;
+      }
+      if (limit !== undefined && i >= limit) {
+        break;
+      }
     }
   }
 
@@ -2290,6 +2312,97 @@ export class Client {
     }
     const result = await response.json();
     return result;
+  }
+
+  public async listDatasetSplits({
+    datasetId,
+    datasetName,
+    asOf,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: string | Date;
+  }): Promise<string[]> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const params = new URLSearchParams();
+    const dataset_version = asOf
+      ? typeof asOf === "string"
+        ? asOf
+        : asOf?.toISOString()
+      : undefined;
+    if (dataset_version) {
+      params.append("as_of", dataset_version);
+    }
+
+    const response = await this._get<string[]>(
+      `/datasets/${datasetId_}/splits`,
+      params
+    );
+    return response;
+  }
+
+  public async updateDatasetSplits({
+    datasetId,
+    datasetName,
+    splitName,
+    exampleIds,
+    remove = false,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    splitName: string;
+    exampleIds: string[];
+    remove?: boolean;
+  }): Promise<void> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const data = {
+      split_name: splitName,
+      examples: exampleIds.map((id) => {
+        assertUuid(id);
+        return id;
+      }),
+      remove,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId_}/splits`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "update dataset splits");
   }
 
   /**

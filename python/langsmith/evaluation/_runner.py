@@ -55,14 +55,23 @@ TARGET_T = Callable[[dict], dict]
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
-SUMMARY_EVALUATOR_T = Callable[
-    [Sequence[schemas.Run], Sequence[schemas.Example]],
-    Union[EvaluationResult, EvaluationResults],
+SUMMARY_EVALUATOR_T = Union[
+    Callable[
+        [Sequence[schemas.Run], Sequence[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
+    Callable[
+        [List[schemas.Run], List[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
 ]
 # Row-level evaluator
 EVALUATOR_T = Union[
     RunEvaluator,
-    Callable[[schemas.Run, Optional[schemas.Example]], EvaluationResult],
+    Callable[
+        [schemas.Run, Optional[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
 ]
 AEVALUATOR_T = Union[
     Callable[
@@ -326,14 +335,8 @@ def evaluate_existing(
     client = client or langsmith.Client()
     project = _load_experiment(experiment, client)
     runs = _load_traces(experiment, client, load_nested=load_nested)
-    data = list(
-        client.list_examples(
-            dataset_id=project.reference_dataset_id,
-            as_of=project.metadata.get("dataset_version"),
-        )
-    )
-    runs = sorted(runs, key=lambda r: str(r.reference_example_id))
-    data = sorted(data, key=lambda d: str(d.id))
+    data_map = _load_examples_map(client, project)
+    data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
     return _evaluate(
         runs,
         data=data,
@@ -343,6 +346,7 @@ def evaluate_existing(
         max_concurrency=max_concurrency,
         client=client,
         blocking=blocking,
+        experiment=project,
     )
 
 
@@ -864,6 +868,18 @@ def _load_traces(
     for run_id, child_runs in treemap.items():
         all_runs[run_id].child_runs = sorted(child_runs, key=lambda r: r.dotted_order)
     return results
+
+
+def _load_examples_map(
+    client: langsmith.Client, project: schemas.TracerSession
+) -> Dict[uuid.UUID, schemas.Example]:
+    return {
+        e.id: e
+        for e in client.list_examples(
+            dataset_id=project.reference_dataset_id,
+            as_of=project.metadata.get("dataset_version"),
+        )
+    }
 
 
 IT = TypeVar("IT")
@@ -1399,7 +1415,7 @@ def _wrap_summary_evaluators(
             def _wrapper_super_inner(
                 runs_: str, examples_: str
             ) -> Union[EvaluationResult, EvaluationResults]:
-                return evaluator(runs, examples)
+                return evaluator(list(runs), list(examples))
 
             return _wrapper_super_inner(
                 f"Runs[] (Length={len(runs)})", f"Examples[] (Length={len(examples)})"
@@ -1492,7 +1508,7 @@ def _resolve_experiment(
     if experiment is not None:
         if not experiment.name:
             raise ValueError("Experiment name must be defined if provided.")
-        return experiment, None
+        return experiment, runs
     # If we have runs, that means the experiment was already started.
     if runs is not None:
         if runs is not None:
