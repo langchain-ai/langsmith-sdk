@@ -27,7 +27,6 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
-from langsmith.beta import warn_beta
 from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
@@ -36,6 +35,7 @@ from langsmith.evaluation._runner import (
     ExperimentResultRow,
     _ExperimentManagerMixin,
     _ForwardResults,
+    _load_examples_map,
     _load_experiment,
     _load_tqdm,
     _load_traces,
@@ -51,7 +51,6 @@ logger = logging.getLogger(__name__)
 ATARGET_T = Callable[[dict], Awaitable[dict]]
 
 
-@warn_beta
 async def aevaluate(
     target: Union[ATARGET_T, AsyncIterable[dict]],
     /,
@@ -236,7 +235,6 @@ async def aevaluate(
     )
 
 
-@warn_beta
 async def aevaluate_existing(
     experiment: Union[str, uuid.UUID],
     /,
@@ -316,17 +314,12 @@ async def aevaluate_existing(
 
     """  # noqa: E501
     client = client or langsmith.Client()
-    project = _load_experiment(experiment, client)
-    runs = _load_traces(experiment, client, load_nested=load_nested)
-    data = [
-        example
-        for example in client.list_examples(
-            dataset_id=project.reference_dataset_id,
-            as_of=project.metadata.get("dataset_version"),
-        )
-    ]
-    runs = sorted(runs, key=lambda r: str(r.reference_example_id))
-    data = sorted(data, key=lambda d: str(d.id))
+    project = await aitertools.aio_to_thread(_load_experiment, experiment, client)
+    runs = await aitertools.aio_to_thread(
+        _load_traces, experiment, client, load_nested=load_nested
+    )
+    data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
+    data = [data_map[run.reference_example_id] for run in runs]
     return await _aevaluate(
         runs,
         data=data,
@@ -359,7 +352,8 @@ async def _aevaluate(
     )
     client = client or langsmith.Client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
-    experiment_, runs = _resolve_experiment(
+    experiment_, runs = await aitertools.aio_to_thread(
+        _resolve_experiment,
         experiment,
         runs,
         client,
@@ -696,7 +690,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     for result in flattened_results:
                         feedback = result.dict(exclude={"target_run_id"})
                         evaluator_info = feedback.pop("evaluator_info", None)
-                        self.client.create_feedback(
+                        await aitertools.aio_to_thread(
+                            self.client.create_feedback,
                             **feedback,
                             run_id=None,
                             project_id=project_id,
