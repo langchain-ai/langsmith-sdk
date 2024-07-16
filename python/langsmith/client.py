@@ -472,6 +472,7 @@ class Client:
         "_hide_outputs",
         "_info",
         "_write_api_urls",
+        "_settings",
     ]
 
     def __init__(
@@ -614,6 +615,8 @@ class Client:
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 
+        self._settings = None
+
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
 
@@ -700,6 +703,18 @@ class Client:
                 )
                 self._info = ls_schemas.LangSmithInfo()
         return self._info
+
+    def _get_settings(self) -> dict:
+        """Get the settings for the current tenant.
+
+        Returns:
+            dict: The settings for the current tenant.
+        """
+        if self._settings is None:
+            response = self.request_with_retries("GET", "/settings")
+            self._settings = response.json()
+
+        return self._settings
 
     def request_with_retries(
         self,
@@ -4663,16 +4678,6 @@ class Client:
             dataset_version=dataset_version,
             **kwargs,
         )
-
-    @functools.lru_cache(maxsize=1)
-    def _get_settings(self) -> dict:
-        """Get the settings for the current tenant.
-
-        Returns:
-            dict: The settings for the current tenant.
-        """
-        response = self.request_with_retries("GET", "/settings")
-        return response.json()
 
     def _current_tenant_is_owner(self, owner: str) -> bool:
         """Check if the current workspace has the same handle as owner.
