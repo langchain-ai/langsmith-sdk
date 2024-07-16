@@ -1,4 +1,4 @@
-import { getCurrentRunTree, traceable } from "../traceable.js";
+import { traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 import { FakeChatModel } from "@langchain/core/utils/testing";
@@ -8,7 +8,7 @@ import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 import { RunnableTraceable, getLangchainCallbacks } from "../langchain.js";
-import { RunnableLambda, RunnableMap } from "@langchain/core/runnables";
+import { RunnableLambda } from "@langchain/core/runnables";
 
 describe("to langchain", () => {
   const llm = new FakeChatModel({});
