@@ -571,7 +571,6 @@ def deepish_copy(val: T) -> T:
         return _middle_copy(val, memo)
 
 
-
 def is_version_greater_or_equal(current_version, target_version):
     """Check if the current version is greater or equal to the target version."""
     from packaging import version
@@ -614,6 +613,7 @@ def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
         if not owner_name:
             raise ValueError(f"Invalid identifier format: {identifier}")
         return "-", owner_name, commit
+
 
 P = ParamSpec("P")
 

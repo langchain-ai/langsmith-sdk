@@ -4733,7 +4733,7 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = self.request_with_retries(
-            "POST", f"/likes/{owner}/{prompt_name}/", json={"like": like}
+            "POST", f"/likes/{owner}/{prompt_name}", json={"like": like}
         )
         response.raise_for_status()
         return response.json()
@@ -4857,9 +4857,7 @@ class Client:
         """
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         try:
-            response = self.request_with_retries(
-                "GET", f"/repos/{owner}/{prompt_name}"
-            )
+            response = self.request_with_retries("GET", f"/repos/{owner}/{prompt_name}")
             return ls_schemas.Prompt(**response.json()["repo"])
         except ls_utils.LangSmithNotFoundError:
             return None
@@ -5022,7 +5020,7 @@ class Client:
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         response = self.request_with_retries(
-            "PATCH", f"/repos/{owner}/{prompt_name}/", json=json
+            "PATCH", f"/repos/{owner}/{prompt_name}", json=json
         )
         response.raise_for_status()
         return response.json()
@@ -5043,7 +5041,7 @@ class Client:
         if not self._current_tenant_is_owner(owner):
             raise self._owner_conflict_error("delete a prompt", owner)
 
-        response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}/")
+        response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
 
         return response
 
@@ -5081,7 +5079,7 @@ class Client:
         response = self.request_with_retries(
             "GET",
             (
-                f"/commits/{owner}/{prompt_name}/{commit_hash}/"
+                f"/commits/{owner}/{prompt_name}/{commit_hash}"
                 f"{'?include_model=true' if include_model else ''}"
             ),
         )
