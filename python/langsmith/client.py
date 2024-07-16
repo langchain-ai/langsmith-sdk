@@ -615,7 +615,7 @@ class Client:
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 
-        self._settings = self._get_settings()
+        self._settings: Union[dict, None] = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -712,7 +712,8 @@ class Client:
         """
         if self._settings is None:
             response = self.request_with_retries("GET", "/settings")
-            self._settings = response.json()
+            settings: dict = response.json()
+            self._settings = settings
 
         return self._settings
 
