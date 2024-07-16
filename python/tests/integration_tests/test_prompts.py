@@ -371,6 +371,27 @@ def test_create_commit(
     assert isinstance(prompt, ls_schemas.Prompt)
     assert prompt.num_commits == 2
 
+    # try submitting different types of unaccepted manifests
+    try:
+        # this should fail
+        commit_url = langsmith_client.create_commit(prompt_name, object={"hi": "hello"})
+    except ls_utils.LangSmithError as e:
+        err = str(e)
+        assert "Manifest must have an id field" in err
+        assert "400 Client Error" in err
+    except Exception as e:
+        pytest.fail(f"Unexpected exception raised: {e}")
+
+    try:
+        # this should fail
+        commit_url = langsmith_client.create_commit(prompt_name, object={"id": ["hi"]})
+    except ls_utils.LangSmithError as e:
+        err = str(e)
+        assert "Manifest type hi is not supported" in err
+        assert "400 Client Error" in err
+    except Exception as e:
+        pytest.fail(f"Unexpected exception raised: {e}")
+
     langsmith_client.delete_prompt(prompt_name)
 
 
