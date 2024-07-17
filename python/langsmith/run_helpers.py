@@ -442,7 +442,7 @@ def traceable(
             )
 
             try:
-                accepts_context = aitertools.accepts_context(asyncio.create_task)
+                accepts_context = aitertools.asyncio_accepts_context()
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
                 if not func_accepts_config:
@@ -492,7 +492,7 @@ def traceable(
                     kwargs.pop("config", None)
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
-                accepts_context = aitertools.accepts_context(asyncio.create_task)
+                accepts_context = aitertools.asyncio_accepts_context()
                 if inspect.iscoroutine(async_gen_result):
                     if accepts_context:
                         async_gen_result = await asyncio.create_task(
