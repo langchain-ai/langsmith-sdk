@@ -1,6 +1,6 @@
 import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
-import type { Client, RunTreeConfig } from "../index.js";
+import type { RunTreeConfig } from "../index.js";
 import { isTraceableFunction, traceable } from "../traceable.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
