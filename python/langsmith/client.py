@@ -4099,7 +4099,7 @@ class Client:
                 f"{api_url}/feedback/tokens",
                 request_kwargs={
                     "data": body,
-                    "header": {
+                    "headers": {
                         **self._headers,
                         X_API_KEY: api_key or self.api_key,
                     },
