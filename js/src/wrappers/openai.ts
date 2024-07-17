@@ -280,7 +280,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
 const _wrapClient = <T extends object>(
   sdk: T,
   runName: string,
-  options?: { client?: Client }
+  options?: Omit<RunTreeConfig, "name">
 ): T => {
   return new Proxy(sdk, {
     get(target, propKey, receiver) {
@@ -312,6 +312,10 @@ const _wrapClient = <T extends object>(
   });
 };
 
+type WrapSDKOptions = Partial<
+  Omit<RunTreeConfig, "name"> & { runName: string }
+>;
+
 /**
  * Wrap an arbitrary SDK, enabling automatic LangSmith tracing.
  * Method signatures are unchanged.
@@ -325,9 +329,14 @@ const _wrapClient = <T extends object>(
  */
 export const wrapSDK = <T extends object>(
   sdk: T,
-  options?: { client?: Client; runName?: string }
+  options?: WrapSDKOptions
 ): T => {
-  return _wrapClient(sdk, options?.runName ?? sdk.constructor?.name, {
-    client: options?.client,
-  });
+  const traceableOptions = options ? { ...options } : undefined;
+  if (traceableOptions != null) delete traceableOptions.runName;
+
+  return _wrapClient(
+    sdk,
+    options?.runName ?? sdk.constructor?.name,
+    traceableOptions
+  );
 };
