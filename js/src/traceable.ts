@@ -24,7 +24,6 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 
-// make sure we also properly initialise the LangChain context storage
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
 );
@@ -477,8 +476,6 @@ export function traceable<Func extends (...args: any[]) => any>(
             onEnd(currentRunTree);
           }
         }
-
-        // TODO: update child_execution_order of the parent run
         await postRunPromise;
         await currentRunTree?.patchRun();
       }
