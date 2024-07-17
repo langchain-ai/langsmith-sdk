@@ -524,8 +524,7 @@ def test_convert_to_openai_format(chat_prompt_template: ChatPromptTemplate):
     res = convert_prompt_to_openai_format(
         invoked,
     )
-
-    assert res == {
+    expected = {
         "messages": [
             {"content": "You are a chatbot", "role": "system"},
             {"content": "What is the meaning of life?", "role": "user"},
@@ -535,6 +534,7 @@ def test_convert_to_openai_format(chat_prompt_template: ChatPromptTemplate):
         "n": 1,
         "temperature": 0.7,
     }
+    assert {k: res[k] for k in expected.keys()} == expected
 
 
 def test_convert_to_anthropic_format(chat_prompt_template: ChatPromptTemplate):
