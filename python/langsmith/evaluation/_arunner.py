@@ -622,7 +622,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             **{"experiment": self.experiment_name},
         }
         with rh.tracing_context(
-            **{**current_context, "project_name": "evaluators", "metadata": metadata}
+            **{
+                **current_context,
+                "project_name": "evaluators",
+                "metadata": metadata,
+                "enabled": True,
+            }
         ):
             run = current_results["run"]
             example = current_results["example"]
@@ -676,11 +681,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
+                "enabled": True,
             }
         ):
             for evaluator in summary_evaluators:
                 try:
-                    # TODO: Support async evaluators
                     summary_eval_result = evaluator(runs, examples)
                     flattened_results = self.client._select_eval_results(
                         summary_eval_result,
@@ -808,30 +813,31 @@ async def _aforward(
         nonlocal run
         run = r
 
-    try:
-        await fn(
-            example.inputs,
-            langsmith_extra=rh.LangSmithExtra(
-                reference_example_id=example.id,
-                on_end=_get_run,
-                project_name=experiment_name,
-                metadata={
-                    **metadata,
-                    "example_version": (
-                        example.modified_at.isoformat()
-                        if example.modified_at
-                        else example.created_at.isoformat()
-                    ),
-                },
-                client=client,
-            ),
+    with rh.tracing_context(enabled=True):
+        try:
+            await fn(
+                example.inputs,
+                langsmith_extra=rh.LangSmithExtra(
+                    reference_example_id=example.id,
+                    on_end=_get_run,
+                    project_name=experiment_name,
+                    metadata={
+                        **metadata,
+                        "example_version": (
+                            example.modified_at.isoformat()
+                            if example.modified_at
+                            else example.created_at.isoformat()
+                        ),
+                    },
+                    client=client,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error running target function: {e}")
+        return _ForwardResults(
+            run=cast(schemas.Run, run),
+            example=example,
         )
-    except Exception as e:
-        logger.error(f"Error running target function: {e}")
-    return _ForwardResults(
-        run=cast(schemas.Run, run),
-        example=example,
-    )
 
 
 def _ensure_async_traceable(
