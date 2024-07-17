@@ -571,6 +571,50 @@ def deepish_copy(val: T) -> T:
         return _middle_copy(val, memo)
 
 
+def is_version_greater_or_equal(current_version: str, target_version: str) -> bool:
+    """Check if the current version is greater or equal to the target version."""
+    from packaging import version
+
+    current = version.parse(current_version)
+    target = version.parse(target_version)
+    return current >= target
+
+
+def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
+    """Parse a string in the format of owner/name:hash, name:hash, owner/name, or name.
+
+    Args:
+        identifier (str): The prompt identifier to parse.
+
+    Returns:
+        Tuple[str, str, str]: A tuple containing (owner, name, hash).
+
+    Raises:
+        ValueError: If the identifier doesn't match the expected formats.
+    """
+    if (
+        not identifier
+        or identifier.count("/") > 1
+        or identifier.startswith("/")
+        or identifier.endswith("/")
+    ):
+        raise ValueError(f"Invalid identifier format: {identifier}")
+
+    parts = identifier.split(":", 1)
+    owner_name = parts[0]
+    commit = parts[1] if len(parts) > 1 else "latest"
+
+    if "/" in owner_name:
+        owner, name = owner_name.split("/", 1)
+        if not owner or not name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return owner, name, commit
+    else:
+        if not owner_name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return "-", owner_name, commit
+
+
 P = ParamSpec("P")
 
 
