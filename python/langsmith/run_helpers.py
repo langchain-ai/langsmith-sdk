@@ -685,7 +685,7 @@ def traceable(
     return decorator
 
 
-def _get_project_name(project_name: Optional[str]) -> str:
+def _get_project_name(project_name: Optional[str]) -> Optional[str]:
     prt = _PARENT_RUN_TREE.get()
     return (
         # Maintain tree consistency first
