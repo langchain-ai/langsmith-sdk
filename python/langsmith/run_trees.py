@@ -352,6 +352,7 @@ class RunTree(ls_schemas.RunBase):
                 kwargs["outputs"] = run.outputs
                 kwargs["start_time"] = run.start_time
                 kwargs["end_time"] = run.end_time
+                kwargs["tags"] = sorted(set(run.tags or [] + kwargs.get("tags", [])))
                 extra_ = kwargs.setdefault("extra", {})
                 metadata_ = extra_.setdefault("metadata", {})
                 metadata_.update(run.metadata)
