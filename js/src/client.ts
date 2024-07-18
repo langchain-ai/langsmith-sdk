@@ -481,6 +481,9 @@ export class Client {
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
       this.webUrl = "https://dev.smith.langchain.com";
       return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
+      this.webUrl = "https://eu.smith.langchain.com";
+      return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
       return this.webUrl;

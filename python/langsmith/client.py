@@ -654,6 +654,8 @@ class Client:
             elif parsed_url.path.endswith("/api"):
                 new_path = parsed_url.path.rsplit("/api", 1)[0]
                 link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
+            elif parsed_url.netloc.startswith("eu."):
+                link = "https://eu.smith.langchain.com"
             elif parsed_url.netloc.startswith("dev."):
                 link = "https://dev.smith.langchain.com"
             else:
