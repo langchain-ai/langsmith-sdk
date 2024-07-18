@@ -442,7 +442,7 @@ def traceable(
             )
 
             try:
-                accepts_context = aitertools.accepts_context(asyncio.create_task)
+                accepts_context = aitertools.asyncio_accepts_context()
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
                 if not func_accepts_config:
@@ -492,7 +492,7 @@ def traceable(
                     kwargs.pop("config", None)
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
-                accepts_context = aitertools.accepts_context(asyncio.create_task)
+                accepts_context = aitertools.asyncio_accepts_context()
                 if inspect.iscoroutine(async_gen_result):
                     if accepts_context:
                         async_gen_result = await asyncio.create_task(
@@ -685,6 +685,19 @@ def traceable(
     return decorator
 
 
+def _get_project_name(project_name: Optional[str]) -> Optional[str]:
+    prt = _PARENT_RUN_TREE.get()
+    return (
+        # Maintain tree consistency first
+        _PROJECT_NAME.get()
+        or (prt.session_name if prt else None)
+        # Then check the passed in value
+        or project_name
+        # fallback to the default for the environment
+        or utils.get_tracer_project()
+    )
+
+
 @contextlib.contextmanager
 def trace(
     name: str,
@@ -714,7 +727,6 @@ def trace(
     is_disabled = old_ctx.get("enabled", True) is False
     outer_tags = _TAGS.get()
     outer_metadata = _METADATA.get()
-    outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
     parent_run_ = _get_parent_run(
         {"parent": parent, "run_tree": kwargs.get("run_tree"), "client": client}
     )
@@ -726,7 +738,7 @@ def trace(
     extra_outer = extra or {}
     extra_outer["metadata"] = metadata
 
-    project_name_ = project_name or outer_project
+    project_name_ = _get_project_name(project_name)
     # If it's disabled, we break the tree
     if parent_run_ is not None and not is_disabled:
         new_run = parent_run_.create_child(
@@ -975,12 +987,19 @@ def _get_parent_run(
         return parent
     if isinstance(parent, dict):
         return run_trees.RunTree.from_headers(
-            parent, client=langsmith_extra.get("client")
+            parent,
+            client=langsmith_extra.get("client"),
+            # Precedence: headers -> cvar -> explicit -> env var
+            project_name=_get_project_name(langsmith_extra.get("project_name")),
         )
     if isinstance(parent, str):
-        return run_trees.RunTree.from_dotted_order(
-            parent, client=langsmith_extra.get("client")
+        dort = run_trees.RunTree.from_dotted_order(
+            parent,
+            client=langsmith_extra.get("client"),
+            # Precedence: cvar -> explicit ->  env var
+            project_name=_get_project_name(langsmith_extra.get("project_name")),
         )
+        return dort
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
@@ -1032,6 +1051,9 @@ def _setup_run(
     project_cv = _PROJECT_NAME.get()
     selected_project = (
         project_cv  # From parent trace
+        or (
+            parent_run_.session_name if parent_run_ else None
+        )  # from parent run attempt 2 (not managed by traceable)
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
         or utils.get_tracer_project()  # default
