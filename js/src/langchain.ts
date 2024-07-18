@@ -77,12 +77,21 @@ export async function getLangchainCallbacks(
   }
 
   if (langChainTracer != null) {
-    Object.assign(langChainTracer, {
-      runMap,
-      client: runTree.client,
-      projectName: runTree.project_name || langChainTracer.projectName,
-      exampleId: runTree.reference_example_id || langChainTracer.exampleId,
-    });
+    if (
+      "updateFromRunTree" in langChainTracer &&
+      typeof langChainTracer === "function"
+    ) {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore @langchain/core can use a different version of LangSmith
+      langChainTracer.updateFromRunTree(runTree);
+    } else {
+      Object.assign(langChainTracer, {
+        runMap,
+        client: runTree.client,
+        projectName: runTree.project_name || langChainTracer.projectName,
+        exampleId: runTree.reference_example_id || langChainTracer.exampleId,
+      });
+    }
   }
 
   return callbacks;
