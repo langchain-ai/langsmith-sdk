@@ -87,7 +87,7 @@ interface TracerLike {
   name: string;
 }
 
-export interface LangChainTracerLike extends TracerLike {
+interface LangChainTracerLike extends TracerLike {
   name: "langchain_tracer";
   projectName: string;
   getRun?: (id: string) => RunTree | undefined;
@@ -523,7 +523,7 @@ function containsLangChainTracerLike(x: unknown): x is LangChainTracerLike[] {
   );
 }
 
-export function isCallbackManagerLike(x: unknown): x is CallbackManagerLike {
+function isCallbackManagerLike(x: unknown): x is CallbackManagerLike {
   return (
     typeof x === "object" &&
     x != null &&
