@@ -3344,7 +3344,7 @@ class Client:
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         metadata: Optional[Sequence[Optional[Dict]]] = None,
         splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        dataset_id: Optional[ID_TYPE] = None,
+        dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
     ) -> None:
         """Update multiple examples.
 
@@ -3361,8 +3361,8 @@ class Client:
         split :  Optional[Sequence[Optional[str | List[str]]]], default=None
             The splits for the examples, which are divisions
             of your dataset such as 'train', 'test', or 'validation'.
-        dataset_id : Optional[ID_TYPE], default=None
-            The ID of the dataset that contains the examples.
+        dataset_ids : Optional[Sequence[Optional[ID_TYPE]]], default=None
+            The IDs of the datasets to move the examples to.
 
         Returns:
         -------
@@ -3383,7 +3383,7 @@ class Client:
                 outputs or [None] * len(example_ids),
                 metadata or [None] * len(example_ids),
                 splits or [None] * len(example_ids),
-                [dataset_id] * len(example_ids) or [None] * len(example_ids),
+                dataset_ids or [None] * len(example_ids),
             )
         ]
         response = self.request_with_retries(
