@@ -434,14 +434,13 @@ export function traceable<Func extends (...args: any[]) => any>(
         return chunks;
       }
 
-      async function* wrapAsyncGeneratorForTracing(
-        iterable: AsyncIterable<unknown>,
+      async function* wrapAsyncIteratorForTracing(
+        iterator: AsyncIterator<unknown, unknown, undefined>,
         snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
       ) {
         let finished = false;
         const chunks: unknown[] = [];
         try {
-          const iterator = iterable[Symbol.asyncIterator]();
           while (true) {
             const { value, done } = await (snapshot
               ? snapshot(() => iterator.next())
@@ -463,6 +462,15 @@ export function traceable<Func extends (...args: any[]) => any>(
           );
           await handleEnd();
         }
+      }
+      function wrapAsyncGeneratorForTracing(
+        iterable: AsyncIterable<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        const iterator = iterable[Symbol.asyncIterator]();
+        const wrappedIterator = wrapAsyncIteratorForTracing(iterator, snapshot);
+        iterable[Symbol.asyncIterator] = () => wrappedIterator;
+        return iterable;
       }
 
       async function handleEnd() {
