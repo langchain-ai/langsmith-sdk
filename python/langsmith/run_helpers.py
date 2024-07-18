@@ -432,7 +432,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
-            run_container = await _aio_to_thread(
+            run_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -442,7 +442,7 @@ def traceable(
             )
 
             try:
-                accepts_context = aitertools.accepts_context(asyncio.create_task)
+                accepts_context = aitertools.asyncio_accepts_context()
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
                 if not func_accepts_config:
@@ -461,17 +461,19 @@ def traceable(
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
                 await asyncio.shield(
-                    _aio_to_thread(_container_end, run_container, error=e)
+                    aitertools.aio_to_thread(_container_end, run_container, error=e)
                 )
                 raise e
-            await _aio_to_thread(_container_end, run_container, outputs=function_result)
+            await aitertools.aio_to_thread(
+                _container_end, run_container, outputs=function_result
+            )
             return function_result
 
         @functools.wraps(func)
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            run_container = await _aio_to_thread(
+            run_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -490,7 +492,7 @@ def traceable(
                     kwargs.pop("config", None)
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
-                accepts_context = aitertools.accepts_context(asyncio.create_task)
+                accepts_context = aitertools.asyncio_accepts_context()
                 if inspect.iscoroutine(async_gen_result):
                     if accepts_context:
                         async_gen_result = await asyncio.create_task(
@@ -532,7 +534,7 @@ def traceable(
                     pass
             except BaseException as e:
                 await asyncio.shield(
-                    _aio_to_thread(_container_end, run_container, error=e)
+                    aitertools.aio_to_thread(_container_end, run_container, error=e)
                 )
                 raise e
             if results:
@@ -546,7 +548,9 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            await _aio_to_thread(_container_end, run_container, outputs=function_result)
+            await aitertools.aio_to_thread(
+                _container_end, run_container, outputs=function_result
+            )
 
         @functools.wraps(func)
         def wrapper(
@@ -681,6 +685,19 @@ def traceable(
     return decorator
 
 
+def _get_project_name(project_name: Optional[str]) -> Optional[str]:
+    prt = _PARENT_RUN_TREE.get()
+    return (
+        # Maintain tree consistency first
+        _PROJECT_NAME.get()
+        or (prt.session_name if prt else None)
+        # Then check the passed in value
+        or project_name
+        # fallback to the default for the environment
+        or utils.get_tracer_project()
+    )
+
+
 @contextlib.contextmanager
 def trace(
     name: str,
@@ -710,7 +727,6 @@ def trace(
     is_disabled = old_ctx.get("enabled", True) is False
     outer_tags = _TAGS.get()
     outer_metadata = _METADATA.get()
-    outer_project = _PROJECT_NAME.get() or utils.get_tracer_project()
     parent_run_ = _get_parent_run(
         {"parent": parent, "run_tree": kwargs.get("run_tree"), "client": client}
     )
@@ -722,7 +738,7 @@ def trace(
     extra_outer = extra or {}
     extra_outer["metadata"] = metadata
 
-    project_name_ = project_name or outer_project
+    project_name_ = _get_project_name(project_name)
     # If it's disabled, we break the tree
     if parent_run_ is not None and not is_disabled:
         new_run = parent_run_.create_child(
@@ -971,12 +987,19 @@ def _get_parent_run(
         return parent
     if isinstance(parent, dict):
         return run_trees.RunTree.from_headers(
-            parent, client=langsmith_extra.get("client")
+            parent,
+            client=langsmith_extra.get("client"),
+            # Precedence: headers -> cvar -> explicit -> env var
+            project_name=_get_project_name(langsmith_extra.get("project_name")),
         )
     if isinstance(parent, str):
-        return run_trees.RunTree.from_dotted_order(
-            parent, client=langsmith_extra.get("client")
+        dort = run_trees.RunTree.from_dotted_order(
+            parent,
+            client=langsmith_extra.get("client"),
+            # Precedence: cvar -> explicit ->  env var
+            project_name=_get_project_name(langsmith_extra.get("project_name")),
         )
+        return dort
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
@@ -1028,6 +1051,9 @@ def _setup_run(
     project_cv = _PROJECT_NAME.get()
     selected_project = (
         project_cv  # From parent trace
+        or (
+            parent_run_.session_name if parent_run_ else None
+        )  # from parent run attempt 2 (not managed by traceable)
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
         or utils.get_tracer_project()  # default
@@ -1166,20 +1192,3 @@ def _get_inputs_safe(
     except BaseException as e:
         LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}
-
-
-# Ported from Python 3.9+ to support Python 3.8
-async def _aio_to_thread(func, /, *args, **kwargs):
-    """Asynchronously run function *func* in a separate thread.
-
-    Any *args and **kwargs supplied for this function are directly passed
-    to *func*. Also, the current :class:`contextvars.Context` is propagated,
-    allowing context variables from the main thread to be accessed in the
-    separate thread.
-
-    Return a coroutine that can be awaited to get the eventual result of *func*.
-    """
-    loop = asyncio.get_running_loop()
-    ctx = contextvars.copy_context()
-    func_call = functools.partial(ctx.run, func, *args, **kwargs)
-    return await loop.run_in_executor(None, func_call)

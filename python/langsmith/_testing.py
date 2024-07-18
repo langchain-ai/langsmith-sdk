@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import atexit
-import concurrent.futures
 import datetime
 import functools
 import inspect
@@ -392,7 +391,7 @@ class _LangSmithTestSuite:
         self._experiment = experiment
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
         atexit.register(_end_tests, self)
 
     @property

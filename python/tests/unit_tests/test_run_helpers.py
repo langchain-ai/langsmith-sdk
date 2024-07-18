@@ -1045,6 +1045,7 @@ def test_from_runnable_config():
         run = lct.run_map[str(gc_run_id)]
         assert run.name == "my_grandchild_tool"
         assert run.run_type == "tool"
+        assert lct.project_name == "foo"
         parent_run = lct.run_map[str(run.parent_run_id)]
         assert parent_run
         assert parent_run.name == "my_traceable"
@@ -1063,6 +1064,7 @@ def test_from_runnable_config():
         assert rt.parent_run_id
         assert rt.parent_run
         assert rt.parent_run.run_type == "tool"
+        assert rt.session_name == "foo"
         return my_grandchild_tool.invoke({"text": text}, {"run_id": gc_run_id})
 
     @tool
@@ -1071,7 +1073,7 @@ def test_from_runnable_config():
         return my_traceable(text)
 
     mock_client = _get_mock_client()
-    tracer = LangChainTracer(client=mock_client)
+    tracer = LangChainTracer(client=mock_client, project_name="foo")
     my_tool.invoke({"text": "hello"}, {"callbacks": [tracer]})
 
 
