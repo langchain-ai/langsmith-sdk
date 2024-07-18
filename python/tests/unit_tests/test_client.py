@@ -898,6 +898,9 @@ def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="http://localhost:8000", api_key="API_KEY")
     assert client._host_url == "http://localhost"
 
+    client = Client(api_url="https://eu.api.smith.langchain.com", api_key="API_KEY")
+    assert client._host_url == "https://eu.smith.langchain.com"
+
     client = Client(api_url="https://dev.api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://dev.smith.langchain.com"
 
