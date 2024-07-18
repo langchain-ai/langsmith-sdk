@@ -3347,7 +3347,7 @@ class Client:
         metadata: Optional[Sequence[Optional[Dict]]] = None,
         splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-    ) -> None:
+    ) -> Dict[str, Any]:
         """Update multiple examples.
 
         Parameters
@@ -3368,7 +3368,8 @@ class Client:
 
         Returns:
         -------
-        None
+        Dict[str, Any]
+            The response from the server (specifies the number of examples updated).
         """
         examples = [
             {
