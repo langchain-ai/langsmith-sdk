@@ -10,6 +10,7 @@ import {
   Example,
   ExampleCreate,
   ExampleUpdate,
+  ExampleUpdateWithId,
   Feedback,
   FeedbackConfig,
   FeedbackIngestToken,
@@ -2294,6 +2295,27 @@ export class Client {
     if (!response.ok) {
       throw new Error(
         `Failed to update example ${exampleId}: ${response.status} ${response.statusText}`
+      );
+    }
+    const result = await response.json();
+    return result;
+  }
+
+  public async updateExamples(update: ExampleUpdateWithId[]): Promise<object> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/examples/bulk`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update examples: ${response.status} ${response.statusText}`
       );
     }
     const result = await response.json();

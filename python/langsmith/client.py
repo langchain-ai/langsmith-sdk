@@ -3336,6 +3336,72 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         return response.json()
 
+    def update_examples(
+        self,
+        *,
+        example_ids: Sequence[ID_TYPE],
+        inputs: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
+        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        metadata: Optional[Sequence[Optional[Dict]]] = None,
+        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+    ) -> None:
+        """Update multiple examples.
+
+        Parameters
+        ----------
+        example_ids : Sequence[ID_TYPE]
+            The IDs of the examples to update.
+        inputs : Optional[Sequence[Optional[Dict[str, Any]]], default=None
+            The input values for the examples.
+        outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
+            The output values for the examples.
+        metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
+            The metadata for the examples.
+        split :  Optional[Sequence[Optional[str | List[str]]]], default=None
+            The splits for the examples, which are divisions
+            of your dataset such as 'train', 'test', or 'validation'.
+        dataset_id : Optional[ID_TYPE], default=None
+            The ID of the dataset that contains the examples.
+
+        Returns:
+        -------
+        None
+        """
+        examples = [
+            {
+                "id": id_,
+                "inputs": in_,
+                "outputs": out_,
+                "dataset_id": dataset_id_,
+                "metadata": metadata_,
+                "split": split_,
+            }
+            for id_, in_, out_, metadata_, split_, dataset_id_ in zip(
+                example_ids,
+                inputs or [None] * len(example_ids),
+                outputs or [None] * len(example_ids),
+                metadata or [None] * len(example_ids),
+                splits or [None] * len(example_ids),
+                [dataset_id] * len(example_ids) or [None] * len(example_ids),
+            )
+        ]
+        response = self.request_with_retries(
+            "PATCH",
+            "/examples/bulk",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=(
+                _dumps_json(
+                    [
+                        {k: v for k, v in example.items() if v is not None}
+                        for example in examples
+                    ]
+                )
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
     def delete_example(self, example_id: ID_TYPE) -> None:
         """Delete an example by ID.
 
