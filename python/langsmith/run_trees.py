@@ -352,6 +352,7 @@ class RunTree(ls_schemas.RunBase):
                 kwargs["outputs"] = run.outputs
                 kwargs["start_time"] = run.start_time
                 kwargs["end_time"] = run.end_time
+                kwargs["tags"] = sorted(set(run.tags or [] + kwargs.get("tags", [])))
                 extra_ = kwargs.setdefault("extra", {})
                 metadata_ = extra_.setdefault("metadata", {})
                 metadata_.update(run.metadata)
@@ -409,6 +410,8 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
+            if baggage.project_name:
+                init_args["project_name"] = baggage.project_name
 
         return RunTree(**init_args)
 
@@ -420,6 +423,7 @@ class RunTree(ls_schemas.RunBase):
         baggage = _Baggage(
             metadata=self.extra.get("metadata", {}),
             tags=self.tags,
+            project_name=self.session_name,
         )
         headers["baggage"] = baggage.to_header()
         return headers
@@ -432,10 +436,12 @@ class _Baggage:
         self,
         metadata: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        project_name: Optional[str] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
+        self.project_name = project_name
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -444,6 +450,7 @@ class _Baggage:
             return cls()
         metadata = {}
         tags = []
+        project_name = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -451,10 +458,12 @@ class _Baggage:
                     metadata = json.loads(urllib.parse.unquote(value))
                 elif key == f"{LANGSMITH_PREFIX}tags":
                     tags = urllib.parse.unquote(value).split(",")
+                elif key == f"{LANGSMITH_PREFIX}project":
+                    project_name = urllib.parse.unquote(value)
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
-        return cls(metadata=metadata, tags=tags)
+        return cls(metadata=metadata, tags=tags, project_name=project_name)
 
     def to_header(self) -> str:
         """Return the Baggage object as a header value."""
@@ -468,6 +477,10 @@ class _Baggage:
             serialized_tags = ",".join(self.tags)
             items.append(
                 f"{LANGSMITH_PREFIX}tags={urllib.parse.quote(serialized_tags)}"
+            )
+        if self.project_name:
+            items.append(
+                f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         return ",".join(items)
 
