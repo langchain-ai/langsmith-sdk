@@ -1768,6 +1768,93 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    def get_runs_stats(
+        self,
+        *,
+        id: Optional[List[ID_TYPE]] = None,
+        trace: Optional[ID_TYPE] = None,
+        parent_run: Optional[ID_TYPE] = None,
+        run_type: Optional[str] = None,
+        project_names: Optional[List[str]] = None,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        reference_example_ids: Optional[List[ID_TYPE]] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        error: Optional[bool] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        trace_filter: Optional[str] = None,
+        tree_filter: Optional[str] = None,
+        is_root: Optional[bool] = None,
+        data_source_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get aggregate statistics over queried runs.
+
+        Takes in similar query parameters to `list_runs` and returns statistics
+        based on the runs that match the query.
+
+        Args:
+            id (Optional[List[ID_TYPE]]): List of run IDs to filter by.
+            trace (Optional[ID_TYPE]): Trace ID to filter by.
+            parent_run (Optional[ID_TYPE]): Parent run ID to filter by.
+            run_type (Optional[str]): Run type to filter by.
+            projects (Optional[List[ID_TYPE]]): List of session IDs to filter by.
+            reference_example (Optional[List[ID_TYPE]]): List of reference example IDs to filter by.
+            start_time (Optional[str]): Start time to filter by.
+            end_time (Optional[str]): End time to filter by.
+            error (Optional[bool]): Filter by error status.
+            query (Optional[str]): Query string to filter by.
+            filter (Optional[str]): Filter string to apply.
+            trace_filter (Optional[str]): Trace filter string to apply.
+            tree_filter (Optional[str]): Tree filter string to apply.
+            is_root (Optional[bool]): Filter by root run status.
+            data_source_type (Optional[str]): Data source type to filter by.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the run statistics.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
+
+        project_ids = project_ids or []
+        if project_names:
+            with ThreadPoolExecutor() as executor:
+                futures = [
+                    executor.submit(self.read_project, project_name=name)
+                    for name in project_names
+                ]
+                for future in as_completed(futures):
+                    project_ids.append(future.result().id)
+        payload = {
+            "id": id,
+            "trace": trace,
+            "parent_run": parent_run,
+            "run_type": run_type,
+            "session": project_ids,
+            "reference_example": reference_example_ids,
+            "start_time": start_time,
+            "end_time": end_time,
+            "error": error,
+            "query": query,
+            "filter": filter,
+            "trace_filter": trace_filter,
+            "tree_filter": tree_filter,
+            "is_root": is_root,
+            "data_source_type": data_source_type,
+        }
+
+        # Remove None values from the payload
+        payload = {k: v for k, v in payload.items() if v is not None}
+
+        response = self.request_with_retries(
+            "POST",
+            "/runs/stats",
+            request_kwargs={
+                "data": _dumps_json(payload),
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
     def get_run_url(
         self,
         *,
@@ -1776,6 +1863,10 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
     ) -> str:
         """Get the URL for a run.
+
+        Not recommended for use within your agent runtime.
+        More for use interacting with runs after the fact
+        for data analysis or ETL workloads.
 
         Parameters
         ----------
