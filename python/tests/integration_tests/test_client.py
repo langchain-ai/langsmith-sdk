@@ -98,11 +98,45 @@ def test_datasets(langchain_client: Client) -> None:
     assert updated_example_value.outputs["col2"] == "updatedExampleCol2"
     assert (updated_example_value.metadata or {}).get("foo") == "bar"
 
+    new_example = langchain_client.create_example(
+        inputs={"col1": "newAddedExampleCol1"},
+        outputs={"col2": "newAddedExampleCol2"},
+        dataset_id=new_dataset.id,
+    )
+    example_value = langchain_client.read_example(new_example.id)
+    assert example_value.inputs is not None
+    assert example_value.inputs["col1"] == "newAddedExampleCol1"
+    assert example_value.outputs is not None
+    assert example_value.outputs["col2"] == "newAddedExampleCol2"
+
+    langchain_client.update_examples(
+        example_ids=[new_example.id, example.id],
+        inputs=[{"col1": "newUpdatedExampleCol1"}, {"col1": "newNewUpdatedExampleCol"}],
+        outputs=[
+            {"col2": "newUpdatedExampleCol2"},
+            {"col2": "newNewUpdatedExampleCol2"},
+        ],
+        metadata=[{"foo": "baz"}, {"foo": "qux"}],
+    )
+    updated_example = langchain_client.read_example(new_example.id)
+    assert updated_example.id == new_example.id
+    assert updated_example.inputs["col1"] == "newUpdatedExampleCol1"
+    assert updated_example.outputs is not None
+    assert updated_example.outputs["col2"] == "newUpdatedExampleCol2"
+    assert (updated_example.metadata or {}).get("foo") == "baz"
+
+    updated_example = langchain_client.read_example(example.id)
+    assert updated_example.id == example.id
+    assert updated_example.inputs["col1"] == "newNewUpdatedExampleCol"
+    assert updated_example.outputs is not None
+    assert updated_example.outputs["col2"] == "newNewUpdatedExampleCol2"
+    assert (updated_example.metadata or {}).get("foo") == "qux"
+
     langchain_client.delete_example(example.id)
     examples2 = list(
         langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
-    assert len(examples2) == 1
+    assert len(examples2) == 2
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
 

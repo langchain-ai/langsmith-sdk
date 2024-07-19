@@ -10,6 +10,7 @@ import {
   Example,
   ExampleCreate,
   ExampleUpdate,
+  ExampleUpdateWithId,
   Feedback,
   FeedbackConfig,
   FeedbackIngestToken,
@@ -480,6 +481,9 @@ export class Client {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
       this.webUrl = "https://dev.smith.langchain.com";
+      return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
+      this.webUrl = "https://eu.smith.langchain.com";
       return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
@@ -2298,6 +2302,118 @@ export class Client {
     }
     const result = await response.json();
     return result;
+  }
+
+  public async updateExamples(update: ExampleUpdateWithId[]): Promise<object> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/examples/bulk`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update examples: ${response.status} ${response.statusText}`
+      );
+    }
+    const result = await response.json();
+    return result;
+  }
+
+  public async listDatasetSplits({
+    datasetId,
+    datasetName,
+    asOf,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: string | Date;
+  }): Promise<string[]> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const params = new URLSearchParams();
+    const dataset_version = asOf
+      ? typeof asOf === "string"
+        ? asOf
+        : asOf?.toISOString()
+      : undefined;
+    if (dataset_version) {
+      params.append("as_of", dataset_version);
+    }
+
+    const response = await this._get<string[]>(
+      `/datasets/${datasetId_}/splits`,
+      params
+    );
+    return response;
+  }
+
+  public async updateDatasetSplits({
+    datasetId,
+    datasetName,
+    splitName,
+    exampleIds,
+    remove = false,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    splitName: string;
+    exampleIds: string[];
+    remove?: boolean;
+  }): Promise<void> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const data = {
+      split_name: splitName,
+      examples: exampleIds.map((id) => {
+        assertUuid(id);
+        return id;
+      }),
+      remove,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId_}/splits`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "update dataset splits");
   }
 
   /**

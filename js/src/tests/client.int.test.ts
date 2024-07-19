@@ -113,11 +113,45 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   const newExampleValue2 = await client.readExample(example.id);
   expect(newExampleValue2.inputs.col1).toBe("updatedExampleCol3");
   expect(newExampleValue2.metadata?.dataset_split).toStrictEqual(["my_split3"]);
+
+  const newExample = await client.createExample(
+    { col1: "newAddedExampleCol1" },
+    { col2: "newAddedExampleCol2" },
+    { datasetId: newDataset.id }
+  );
+  const newExampleValue_ = await client.readExample(newExample.id);
+  expect(newExampleValue_.inputs.col1).toBe("newAddedExampleCol1");
+  expect(newExampleValue_.outputs?.col2).toBe("newAddedExampleCol2");
+
+  await client.updateExamples([
+    {
+      id: newExample.id,
+      inputs: { col1: "newUpdatedExampleCol1" },
+      outputs: { col2: "newUpdatedExampleCol2" },
+      metadata: { foo: "baz" },
+    },
+    {
+      id: example.id,
+      inputs: { col1: "newNewUpdatedExampleCol" },
+      outputs: { col2: "newNewUpdatedExampleCol2" },
+      metadata: { foo: "qux" },
+    },
+  ]);
+  const updatedExample = await client.readExample(newExample.id);
+  expect(updatedExample.inputs.col1).toBe("newUpdatedExampleCol1");
+  expect(updatedExample.outputs?.col2).toBe("newUpdatedExampleCol2");
+  expect(updatedExample.metadata?.foo).toBe("baz");
+
+  const updatedExample2 = await client.readExample(example.id);
+  expect(updatedExample2.inputs.col1).toBe("newNewUpdatedExampleCol");
+  expect(updatedExample2.outputs?.col2).toBe("newNewUpdatedExampleCol2");
+  expect(updatedExample2.metadata?.foo).toBe("qux");
+
   await client.deleteExample(example.id);
   const examples2 = await toArray(
     client.listExamples({ datasetId: newDataset.id })
   );
-  expect(examples2.length).toBe(1);
+  expect(examples2.length).toBe(2);
 
   await client.deleteDataset({ datasetId });
   const rawDataset = await client.createDataset(fileName, {

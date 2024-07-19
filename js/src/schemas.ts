@@ -247,6 +247,10 @@ export interface ExampleUpdate {
   metadata?: KVMap;
   split?: string | string[];
 }
+
+export interface ExampleUpdateWithId extends ExampleUpdate {
+  id: string;
+}
 export interface BaseDataset {
   name: string;
   description: string;
