@@ -724,13 +724,13 @@ class trace:
     ---------
     Synchronous usage:
     >>> with trace("My Operation", run_type="tool", tags=["important"]) as run:
-    ...     result = perform_operation()
+    ...     result = "foo" # Do some_operation()
     ...     run.metadata["some-key"] = "some-value"
     ...     run.end(outputs={"result": result})
 
     Asynchronous usage:
     >>> async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
-    ...     result = await perform_async_operation()
+    ...     result = "foo" # Can await some_async_operation()
     ...     run.metadata["some-key"] = "some-value"
     ...     # "end" just adds the outputs and sets error to None
     ...     # The actual patching of the run happens when the context exits
@@ -740,7 +740,7 @@ class trace:
     >>> with trace("OS-Specific Test", exceptions_to_handle=(pytest.skip.Exception,)):
     ...     if sys.platform == "win32":
     ...         pytest.skip("Not supported on Windows")
-    ...     unix_specific_operation()
+    ...     result = "foo" # e.g., do some unix_specific_operation()
     """
 
     def __init__(
