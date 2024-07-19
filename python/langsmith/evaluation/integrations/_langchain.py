@@ -44,6 +44,7 @@ class LangChainStringEvaluator:
         Converting a LangChainStringEvaluator to a RunEvaluator:
 
         >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> from langchain_openai import ChatOpenAI
         >>> evaluator = LangChainStringEvaluator(
         ...     "criteria",
         ...     config={
@@ -51,6 +52,7 @@ class LangChainStringEvaluator:
         ...             "usefulness": "The prediction is useful if"
         ...             " it is correct and/or asks a useful followup question."
         ...         },
+        ...         "llm": ChatOpenAI(model="gpt-4o"),
         ...     },
         ... )
         >>> run_evaluator = evaluator.as_run_evaluator()
@@ -111,6 +113,7 @@ class LangChainStringEvaluator:
         ...             "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
         ...         },
         ...         "normalize_by": 10,
+        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229"),
         ...     },
         ...     prepare_data=prepare_data,
         ... )
