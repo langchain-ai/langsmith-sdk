@@ -940,7 +940,14 @@ class trace:
             exc_value: The exception instance that occurred, if any.
             traceback: The traceback object associated with the exception, if any.
         """
-        await aitertools.aio_to_thread(self._teardown, exc_type, exc_value, traceback)
+        if exc_type is not None:
+            await asyncio.shield(
+                aitertools.aio_to_thread(self._teardown, exc_type, exc_value, traceback)
+            )
+        else:
+            await aitertools.aio_to_thread(
+                self._teardown, exc_type, exc_value, traceback
+            )
 
 
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
