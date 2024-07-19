@@ -731,7 +731,9 @@ class trace:
     >>> async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
     ...     result = await perform_async_operation()
     ...     run.metadata["some-key"] = "some-value"
-    ...     await aitertools.aio_to_thread(run.end, outputs={"result": result})
+    ...     # "end" just adds the outputs and sets error to None
+    ...     # The actual patching of the run happens when the context exits
+    ...     run.end(outputs={"result": result})
 
     Allowing pytest.skip in a test:
     >>> with trace("OS-Specific Test", exceptions_to_handle=(pytest.skip.Exception,)):
