@@ -739,3 +739,12 @@ test.concurrent("list runs limit arg works", async () => {
     }
   }
 });
+
+test.concurrent("Test run stats", async () => {
+  const client = new Client();
+  const stats = await client.getRunStats({
+    projectNames: ["default"],
+    runType: "llm",
+  });
+  expect(stats).toBeDefined();
+});

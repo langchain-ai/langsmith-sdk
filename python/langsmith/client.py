@@ -1768,7 +1768,7 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
-    def get_runs_stats(
+    def get_run_stats(
         self,
         *,
         id: Optional[List[ID_TYPE]] = None,
@@ -1812,7 +1812,7 @@ class Client:
 
         Returns:
             Dict[str, Any]: A dictionary containing the run statistics.
-        """
+        """  # noqa: E501
         from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
 
         project_ids = project_ids or []
