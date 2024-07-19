@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 from pydantic import BaseModel
 
+import langsmith.beta._utils as beta_utils
 from langsmith.evaluation import EvaluationResult, EvaluationResults, RunEvaluator
 from langsmith.schemas import Example, Run
 
@@ -15,6 +16,7 @@ class CategoricalScoreConfig(BaseModel):
     choices: List[str]
     description: str
     include_explanation: bool = False
+    explanation_description: Optional[str] = None
 
 
 class ContinuousScoreConfig(BaseModel):
@@ -25,6 +27,7 @@ class ContinuousScoreConfig(BaseModel):
     max: float = 1
     description: str
     include_explanation: bool = False
+    explanation_description: Optional[str] = None
 
 
 def _create_score_json_schema(
@@ -52,7 +55,11 @@ def _create_score_json_schema(
     if score_config.include_explanation:
         properties["explanation"] = {
             "type": "string",
-            "description": "The explanation for the score.",
+            "description": (
+                "The explanation for the score."
+                if score_config.explanation_description is None
+                else score_config.explanation_description
+            ),
         }
 
     return {
@@ -194,6 +201,7 @@ class LLMEvaluator(RunEvaluator):
         chat_model = chat_model.with_structured_output(self.score_schema)
         self.runnable = self.prompt | chat_model
 
+    @beta_utils.warn_beta
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -202,6 +210,7 @@ class LLMEvaluator(RunEvaluator):
         output: dict = cast(dict, self.runnable.invoke(variables))
         return self._parse_output(output)
 
+    @beta_utils.warn_beta
     async def aevaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
