@@ -288,10 +288,9 @@ const _wrapClient = <T extends object>(
       if (typeof originalValue === "function") {
         return traceable(
           originalValue.bind(target),
-          Object.assign(
-            { name: [runName, propKey.toString()].join("."), run_type: "llm" },
-            options
-          )
+          Object.assign({ run_type: "llm" }, options, {
+            name: [runName, propKey.toString()].join("."),
+          })
         );
       } else if (
         originalValue != null &&
@@ -313,7 +312,12 @@ const _wrapClient = <T extends object>(
 };
 
 type WrapSDKOptions = Partial<
-  Omit<RunTreeConfig, "name"> & { runName: string }
+  RunTreeConfig & {
+    /**
+     * @deprecated Use `name` instead.
+     */
+    runName: string;
+  }
 >;
 
 /**
@@ -332,11 +336,14 @@ export const wrapSDK = <T extends object>(
   options?: WrapSDKOptions
 ): T => {
   const traceableOptions = options ? { ...options } : undefined;
-  if (traceableOptions != null) delete traceableOptions.runName;
+  if (traceableOptions != null) {
+    delete traceableOptions.runName;
+    delete traceableOptions.name;
+  }
 
   return _wrapClient(
     sdk,
-    options?.runName ?? sdk.constructor?.name,
+    options?.name ?? options?.runName ?? sdk.constructor?.name,
     traceableOptions
   );
 };
