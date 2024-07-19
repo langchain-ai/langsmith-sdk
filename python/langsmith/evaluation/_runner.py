@@ -199,6 +199,7 @@ def evaluate(
         Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
         >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> from langchain_openai import ChatOpenAI
         >>> def prepare_criteria_data(run: Run, example: Example):
         ...     return {
         ...         "prediction": run.outputs["output"],
@@ -218,6 +219,7 @@ def evaluate(
         ...                     "usefulness": "The prediction is useful if it is correct"
         ...                     " and/or asks a useful followup question."
         ...                 },
+        ...                 "llm": ChatOpenAI(model="gpt-4o"),
         ...             },
         ...             prepare_data=prepare_criteria_data,
         ...         ),
