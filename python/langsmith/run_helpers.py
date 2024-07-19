@@ -918,7 +918,7 @@ class trace:
         Returns:
             run_trees.RunTree: The newly created run.
         """
-        return self._setup()
+        return await aitertools.aio_to_thread(self._setup)
 
     async def __aexit__(
         self,
