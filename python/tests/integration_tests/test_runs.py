@@ -117,7 +117,6 @@ async def test_list_runs_multi_project(langchain_client: Client):
     filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
 
     poll_runs_until_count(langchain_client, project_names[0], 1, filter_=filter_)
-    poll_runs_until_count(langchain_client, project_names[1], 1, filter_=filter_)
     runs = list(
         langchain_client.list_runs(
             project_name=project_names,
@@ -296,7 +295,7 @@ async def test_context_manager(langchain_client: Client) -> None:
     assert len(runs_) == 8
 
 
-async def test_sync_generator(langchain_client: Client):
+def test_sync_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator"
     run_meta = uuid.uuid4().hex
 
@@ -314,7 +313,7 @@ async def test_sync_generator(langchain_client: Client):
         )
     )
     assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}")'
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
     )
@@ -327,10 +326,9 @@ async def test_sync_generator(langchain_client: Client):
     }
 
 
-async def test_sync_generator_reduce_fn(langchain_client: Client):
+def test_sync_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator_reduce_fn"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
+    run_meta = uuid.uuid4().hex
 
     def reduce_fn(outputs: list) -> dict:
         return {"my_output": " ".join(outputs)}
@@ -340,10 +338,20 @@ async def test_sync_generator_reduce_fn(langchain_client: Client):
         for i in range(num):
             yield f"Yielded {i}"
 
-    results = list(my_generator(5, langsmith_extra=dict(project_name=project_name)))
+    results = list(
+        my_generator(
+            5,
+            langsmith_extra=dict(
+                project_name=project_name, metadata={"test_run": run_meta}
+            ),
+        )
+    )
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
-    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=filter_
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     run = runs[0]
     assert run.run_type == "chain"
     assert run.name == "my_generator"
@@ -380,9 +388,9 @@ async def test_async_generator(langchain_client: Client):
         "Async yielded 3",
         "Async yielded 4",
     ]
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}")'
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
-        langchain_client, project_name, 1, max_retries=20, _filter=_filter
+        langchain_client, project_name, 1, max_retries=20, filter_=_filter
     )
     runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     run = runs[0]
@@ -401,8 +409,7 @@ async def test_async_generator(langchain_client: Client):
 
 async def test_async_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator_reduce_fn"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
+    run_meta = uuid.uuid4().hex
 
     def reduce_fn(outputs: list) -> dict:
         return {"my_output": " ".join(outputs)}
@@ -416,7 +423,10 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
     results = [
         item
         async for item in my_async_generator(
-            5, langsmith_extra=dict(project_name=project_name)
+            5,
+            langsmith_extra=dict(
+                project_name=project_name, metadata={"test_run": run_meta}
+            ),
         )
     ]
     assert results == [
@@ -426,11 +436,11 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
         "Async yielded 3",
         "Async yielded 4",
     ]
-
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
-        langchain_client, project_name, 1, max_retries=20, sleep_time=5
+        langchain_client, project_name, 1, max_retries=20, sleep_time=5, filter_=filter_
     )
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     run = runs[0]
     assert run.run_type == "chain"
     assert run.name == "my_async_generator"
