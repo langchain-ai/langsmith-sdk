@@ -699,8 +699,6 @@ class trace:
         Type of run (e.g., "chain", "llm", "tool"). Defaults to "chain".
     inputs : Optional[Dict], optional
         Initial input data for the run
-    extra : Optional[Dict], optional
-        Additional run-specific data not covered by other parameters
     project_name : Optional[str], optional
         Associates the run with a specific project, overriding defaults
     parent : Optional[Union[run_trees.RunTree, str, Mapping]], optional
@@ -710,14 +708,17 @@ class trace:
     metadata : Optional[Mapping[str, Any]], optional
         Arbitrary key-value pairs for run annotation
     client : Optional[ls_client.Client], optional
-        Custom LangSmith client for specifying a different tenant,
+        LangSmith client for specifying a different tenant,
         setting custom headers, or modifying API endpoint
     run_id : Optional[ls_client.ID_TYPE], optional
         Preset identifier for the run
     reference_example_id : Optional[ls_client.ID_TYPE], optional
-        Links the run to a specific example in LangSmith
+        You typically won't set this. It associates this run with a dataset example.
+        This is only valid for root runs (not children) in an evaluation context.
     exceptions_to_handle : Optional[Tuple[Type[BaseException], ...]], optional
-        Exception types to catch and record without halting execution
+        Typically not set. Exception types to ignore in what is sent up to LangSmith
+    extra : Optional[Dict], optional
+        Typically not set. Use 'metadata' instead. Extra data to be sent to LangSmith.
 
     Examples:
     ---------
