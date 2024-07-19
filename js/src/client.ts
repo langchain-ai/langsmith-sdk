@@ -1229,6 +1229,94 @@ export class Client {
     }
   }
 
+  public async getRunStats({
+    id,
+    trace,
+    parentRun,
+    runType,
+    projectNames,
+    projectIds,
+    referenceExampleIds,
+    startTime,
+    endTime,
+    error,
+    query,
+    filter,
+    traceFilter,
+    treeFilter,
+    isRoot,
+    dataSourceType,
+  }: {
+    id?: string[];
+    trace?: string;
+    parentRun?: string;
+    runType?: string;
+    projectNames?: string[];
+    projectIds?: string[];
+    referenceExampleIds?: string[];
+    startTime?: string;
+    endTime?: string;
+    error?: boolean;
+    query?: string;
+    filter?: string;
+    traceFilter?: string;
+    treeFilter?: string;
+    isRoot?: boolean;
+    dataSourceType?: string;
+  }): Promise<any> {
+    let projectIds_ = projectIds || [];
+    if (projectNames) {
+      projectIds_ = [
+        ...(projectIds || []),
+        ...(await Promise.all(
+          projectNames.map((name) =>
+            this.readProject({ projectName: name }).then(
+              (project) => project.id
+            )
+          )
+        )),
+      ];
+    }
+
+    const payload = {
+      id,
+      trace,
+      parent_run: parentRun,
+      run_type: runType,
+      session: projectIds_,
+      reference_example: referenceExampleIds,
+      start_time: startTime,
+      end_time: endTime,
+      error,
+      query,
+      filter,
+      trace_filter: traceFilter,
+      tree_filter: treeFilter,
+      is_root: isRoot,
+      data_source_type: dataSourceType,
+    };
+
+    // Remove undefined values from the payload
+    const filteredPayload = Object.fromEntries(
+      Object.entries(payload).filter(([_, value]) => value !== undefined)
+    );
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/stats`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify(filteredPayload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const result = await response.json();
+    return result;
+  }
+
   public async shareRun(
     runId: string,
     { shareId }: { shareId?: string } = {}
