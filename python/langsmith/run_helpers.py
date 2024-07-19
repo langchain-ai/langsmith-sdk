@@ -724,23 +724,27 @@ class trace:
     ---------
     Synchronous usage:
     >>> with trace("My Operation", run_type="tool", tags=["important"]) as run:
-    ...     result = "foo" # Do some_operation()
+    ...     result = "foo"  # Do some_operation()
     ...     run.metadata["some-key"] = "some-value"
     ...     run.end(outputs={"result": result})
 
     Asynchronous usage:
-    >>> async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
-    ...     result = "foo" # Can await some_async_operation()
-    ...     run.metadata["some-key"] = "some-value"
-    ...     # "end" just adds the outputs and sets error to None
-    ...     # The actual patching of the run happens when the context exits
-    ...     run.end(outputs={"result": result})
+    >>> async def main():
+    ...     async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
+    ...         result = "foo"  # Can await some_async_operation()
+    ...         run.metadata["some-key"] = "some-value"
+    ...         # "end" just adds the outputs and sets error to None
+    ...         # The actual patching of the run happens when the context exits
+    ...         run.end(outputs={"result": result})
+    >>> asyncio.run(main())
 
     Allowing pytest.skip in a test:
+    >>> import sys
+    >>> import pytest
     >>> with trace("OS-Specific Test", exceptions_to_handle=(pytest.skip.Exception,)):
     ...     if sys.platform == "win32":
     ...         pytest.skip("Not supported on Windows")
-    ...     result = "foo" # e.g., do some unix_specific_operation()
+    ...     result = "foo"  # e.g., do some unix_specific_operation()
     """
 
     def __init__(
