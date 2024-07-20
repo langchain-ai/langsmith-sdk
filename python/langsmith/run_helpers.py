@@ -12,7 +12,6 @@ import logging
 import uuid
 import warnings
 from contextvars import copy_context
-from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -44,6 +43,8 @@ from langsmith._internal import _aiter as aitertools
 from langsmith.env import _runtime_env
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from langchain_core.runnables import Runnable
 
 LOGGER = logging.getLogger(__name__)
