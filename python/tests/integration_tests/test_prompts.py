@@ -159,6 +159,7 @@ def test_list_prompts(langsmith_client: Client):
     response = langsmith_client.list_prompts(limit=10, offset=0)
     assert isinstance(response, ls_schemas.ListPromptsResponse)
     assert len(response.repos) <= 10
+    assert response.total >= len(response.repos)
 
 
 def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):

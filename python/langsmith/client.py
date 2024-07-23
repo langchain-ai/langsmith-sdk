@@ -4920,13 +4920,22 @@ class Client:
         )
 
         if not self._current_tenant_is_owner(owner):
-            return f"{self._host_url}/hub/{owner}/{prompt_name}:{commit_hash[:8]}"
+            if commit_hash is not 'latest':
+                return f"{self._host_url}/hub/{owner}/{prompt_name}:{commit_hash[:8]}"
+            else: 
+                return f"{self._host_url}/hub/{owner}/{prompt_name}"
 
         settings = self._get_settings()
-        return (
-            f"{self._host_url}/prompts/{prompt_name}/{commit_hash[:8]}"
-            f"?organizationId={settings.id}"
-        )
+        if commit_hash is not 'latest':
+            return (
+                f"{self._host_url}/prompts/{prompt_name}/{commit_hash[:8]}"
+                f"?organizationId={settings.id}"
+            )
+        else: 
+            return (
+                f"{self._host_url}/prompts/{prompt_name}"
+                f"?organizationId={settings.id}"
+            )
 
     def _prompt_exists(self, prompt_identifier: str) -> bool:
         """Check if a prompt exists.
@@ -4963,6 +4972,16 @@ class Client:
 
         """
         return self._like_or_unlike_prompt(prompt_identifier, like=False)
+
+    def list_commits(
+        prompt_owner_and_name: str,
+        limit: Optional[int] = 1,
+        offset: Optional[int] = 0,
+    ) -> Sequence[ls_schemas.PromptCommit]:
+        """List commits for a prompt.
+        """
+
+        return ''
 
     def list_prompts(
         self,
@@ -5110,6 +5129,7 @@ class Client:
 
         try:
             from langchain_core.load.dump import dumps
+            from langchain_core.load.load import loads
         except ImportError:
             raise ImportError(
                 "The client.create_commit function requires the langchain_core"
@@ -5163,14 +5183,11 @@ class Client:
             ValueError: If the prompt_identifier is empty.
             HTTPError: If the server request fails.
         """
-        settings = self._get_settings()
-        if is_public and not settings.tenant_handle:
-            raise ValueError(
-                "Cannot create a public prompt without first\n"
-                "creating a LangChain Hub handle. "
-                "You can add a handle by creating a public prompt at:\n"
-                "https://smith.langchain.com/prompts"
-            )
+        if not self.prompt_exists(prompt_identifier):
+            raise ls_utils.LangSmithNotFoundError("Prompt does not exist, you must create it first.")
+        
+        if not self._current_tenant_is_owner(owner):
+            raise self._owner_conflict_error("update a prompt", owner)
 
         json: Dict[str, Union[str, bool, Sequence[str]]] = {}
 

@@ -1,5 +1,5 @@
 import { Dataset, Run } from "../schemas.js";
-import { FunctionMessage, HumanMessage } from "@langchain/core/messages";
+import { FunctionMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
@@ -10,6 +10,7 @@ import {
   toArray,
   waitUntil,
 } from "./utils.js";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -747,4 +748,169 @@ test.concurrent("Test run stats", async () => {
     runType: "llm",
   });
   expect(stats).toBeDefined();
+});
+
+test("Test list prompts", async () => {
+  const client = new Client();
+  const response = await client.listPrompts({ limit: 10, offset: 0 });
+  expect(response.repos.length).toBeLessThanOrEqual(10);
+  expect(response.total).toBeGreaterThanOrEqual(response.repos.length);
+});
+
+test("Test get prompt", async () => {
+  const client = new Client();
+  const promptName = `test_prompt_${uuidv4().slice(0, 8)}`;
+  const promptTemplate = ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" });
+  
+  const url = await client.pushPrompt(promptName, { object: promptTemplate });
+  expect(url).toBeDefined();
+
+  const prompt = await client.getPrompt(promptName);
+  expect(prompt).toBeDefined();
+  expect(prompt?.repoHandle).toBe(promptName);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test prompt exists", async () => {
+  const client = new Client();
+  const nonExistentPrompt = `non_existent_${uuidv4().slice(0, 8)}`;
+  expect(await client.promptExists(nonExistentPrompt)).toBe(false);
+
+  const existentPrompt = `existent_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(existentPrompt, { object: ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" })});
+  expect(await client.promptExists(existentPrompt)).toBe(true);
+
+  await client.deletePrompt(existentPrompt);
+});
+
+test("Test update prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_update_prompt_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" })});
+
+  const updatedData = await client.updatePrompt(promptName, {
+    description: "Updated description",
+    isPublic: true,
+    tags: ["test", "update"],
+  });
+
+  expect(updatedData).toBeDefined();
+
+  const updatedPrompt = await client.getPrompt(promptName);
+  expect(updatedPrompt?.description).toBe("Updated description");
+  expect(updatedPrompt?.isPublic).toBe(true);
+  expect(updatedPrompt?.tags).toEqual(expect.arrayContaining(["test", "update"]));
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test delete prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_delete_prompt_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" })});
+
+  expect(await client.promptExists(promptName)).toBe(true);
+  await client.deletePrompt(promptName);
+  expect(await client.promptExists(promptName)).toBe(false);
+});
+
+test("Test create commit", async () => {
+  const client = new Client();
+
+  const promptName = `test_create_commit_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" })});
+
+  const newTemplate = ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "My question is: {{question}}" }),
+  ], { templateFormat: "mustache" });
+  const commitUrl = await client.createCommit(promptName, newTemplate);
+
+  expect(commitUrl).toBeDefined();
+  expect(commitUrl).toContain(promptName);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test like and unlike prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_like_prompt_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" })});
+
+  await client.likePrompt(promptName);
+  let prompt = await client.getPrompt(promptName);
+  expect(prompt?.numLikes).toBe(1);
+
+  await client.unlikePrompt(promptName);
+  prompt = await client.getPrompt(promptName);
+  expect(prompt?.numLikes).toBe(0);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test pull prompt commit", async () => {
+  const client = new Client();
+
+  const promptName = `test_pull_commit_${uuidv4().slice(0, 8)}`;
+  const initialTemplate = ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" });
+  await client.pushPrompt(promptName, { object: initialTemplate });
+
+  const promptCommit = await client.pullPromptCommit(promptName);
+  expect(promptCommit).toBeDefined();
+  expect(promptCommit.repo).toBe(promptName);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test push and pull prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_push_pull_${uuidv4().slice(0, 8)}`;
+  const template = ChatPromptTemplate.fromMessages([
+    new SystemMessage({ content: "System message" }),
+    new HumanMessage({ content: "{{question}}" }),
+  ], { templateFormat: "mustache" });
+
+  await client.pushPrompt(promptName, {
+    object: template,
+    description: "Test description",
+    readme: "Test readme",
+    tags: ["test", "tag"]
+  });
+
+  const pulledPrompt = await client.pullPrompt(promptName);
+  expect(pulledPrompt).toBeDefined();
+
+  const promptInfo = await client.getPrompt(promptName);
+  expect(promptInfo?.description).toBe("Test description");
+  expect(promptInfo?.readme).toBe("Test readme");
+  expect(promptInfo?.tags).toEqual(expect.arrayContaining(["test", "tag"]));
+  expect(promptInfo?.isPublic).toBe(false);
+
+  await client.deletePrompt(promptName);
 });
