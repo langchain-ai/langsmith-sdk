@@ -177,29 +177,43 @@ describe("Client", () => {
     });
   });
 
-  describe('parsePromptIdentifier', () => {
-    it('should parse valid identifiers correctly', () => {
-      expect(parsePromptIdentifier('name')).toEqual(['-', 'name', 'latest']);
-      expect(parsePromptIdentifier('owner/name')).toEqual(['owner', 'name', 'latest']);
-      expect(parsePromptIdentifier('owner/name:commit')).toEqual(['owner', 'name', 'commit']);
-      expect(parsePromptIdentifier('name:commit')).toEqual(['-', 'name', 'commit']);
+  describe("parsePromptIdentifier", () => {
+    it("should parse valid identifiers correctly", () => {
+      expect(parsePromptIdentifier("name")).toEqual(["-", "name", "latest"]);
+      expect(parsePromptIdentifier("owner/name")).toEqual([
+        "owner",
+        "name",
+        "latest",
+      ]);
+      expect(parsePromptIdentifier("owner/name:commit")).toEqual([
+        "owner",
+        "name",
+        "commit",
+      ]);
+      expect(parsePromptIdentifier("name:commit")).toEqual([
+        "-",
+        "name",
+        "commit",
+      ]);
     });
 
-    it('should throw an error for invalid identifiers', () => {
+    it("should throw an error for invalid identifiers", () => {
       const invalidIdentifiers = [
-        '',
-        '/',
-        ':',
-        'owner/',
-        '/name',
-        'owner//name',
-        'owner/name/',
-        'owner/name/extra',
-        ':commit',
+        "",
+        "/",
+        ":",
+        "owner/",
+        "/name",
+        "owner//name",
+        "owner/name/",
+        "owner/name/extra",
+        ":commit",
       ];
 
-      invalidIdentifiers.forEach(identifier => {
-        expect(() => parsePromptIdentifier(identifier)).toThrowError(`Invalid identifier format: ${identifier}`);
+      invalidIdentifiers.forEach((identifier) => {
+        expect(() => parsePromptIdentifier(identifier)).toThrowError(
+          `Invalid identifier format: ${identifier}`
+        );
       });
     });
   });

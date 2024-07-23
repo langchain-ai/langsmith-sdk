@@ -1,5 +1,9 @@
 import { Dataset, Run } from "../schemas.js";
-import { FunctionMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import {
+  FunctionMessage,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
@@ -760,11 +764,14 @@ test("Test list prompts", async () => {
 test("Test get prompt", async () => {
   const client = new Client();
   const promptName = `test_prompt_${uuidv4().slice(0, 8)}`;
-  const promptTemplate = ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" });
-  
+  const promptTemplate = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "{{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
+
   const url = await client.pushPrompt(promptName, { object: promptTemplate });
   expect(url).toBeDefined();
 
@@ -781,10 +788,15 @@ test("Test prompt exists", async () => {
   expect(await client.promptExists(nonExistentPrompt)).toBe(false);
 
   const existentPrompt = `existent_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(existentPrompt, { object: ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" })});
+  await client.pushPrompt(existentPrompt, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
   expect(await client.promptExists(existentPrompt)).toBe(true);
 
   await client.deletePrompt(existentPrompt);
@@ -794,10 +806,15 @@ test("Test update prompt", async () => {
   const client = new Client();
 
   const promptName = `test_update_prompt_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" })});
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
 
   const updatedData = await client.updatePrompt(promptName, {
     description: "Updated description",
@@ -810,7 +827,9 @@ test("Test update prompt", async () => {
   const updatedPrompt = await client.getPrompt(promptName);
   expect(updatedPrompt?.description).toBe("Updated description");
   expect(updatedPrompt?.isPublic).toBe(true);
-  expect(updatedPrompt?.tags).toEqual(expect.arrayContaining(["test", "update"]));
+  expect(updatedPrompt?.tags).toEqual(
+    expect.arrayContaining(["test", "update"])
+  );
 
   await client.deletePrompt(promptName);
 });
@@ -819,10 +838,15 @@ test("Test delete prompt", async () => {
   const client = new Client();
 
   const promptName = `test_delete_prompt_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" })});
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
 
   expect(await client.promptExists(promptName)).toBe(true);
   await client.deletePrompt(promptName);
@@ -833,15 +857,23 @@ test("Test create commit", async () => {
   const client = new Client();
 
   const promptName = `test_create_commit_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" })});
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
 
-  const newTemplate = ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "My question is: {{question}}" }),
-  ], { templateFormat: "mustache" });
+  const newTemplate = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "My question is: {{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
   const commitUrl = await client.createCommit(promptName, newTemplate);
 
   expect(commitUrl).toBeDefined();
@@ -854,10 +886,15 @@ test("Test like and unlike prompt", async () => {
   const client = new Client();
 
   const promptName = `test_like_prompt_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, { object: ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" })});
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
 
   await client.likePrompt(promptName);
   let prompt = await client.getPrompt(promptName);
@@ -874,10 +911,13 @@ test.only("Test pull prompt commit", async () => {
   const client = new Client();
 
   const promptName = `test_pull_commit_${uuidv4().slice(0, 8)}`;
-  const initialTemplate = ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" });
+  const initialTemplate = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "{{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
   await client.pushPrompt(promptName, { object: initialTemplate });
 
   const promptCommit = await client.pullPromptCommit(promptName);
@@ -891,16 +931,19 @@ test("Test push and pull prompt", async () => {
   const client = new Client();
 
   const promptName = `test_push_pull_${uuidv4().slice(0, 8)}`;
-  const template = ChatPromptTemplate.fromMessages([
-    new SystemMessage({ content: "System message" }),
-    new HumanMessage({ content: "{{question}}" }),
-  ], { templateFormat: "mustache" });
+  const template = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "{{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
 
   await client.pushPrompt(promptName, {
     object: template,
     description: "Test description",
     readme: "Test readme",
-    tags: ["test", "tag"]
+    tags: ["test", "tag"],
   });
 
   const pulledPrompt = await client.pullPrompt(promptName);
