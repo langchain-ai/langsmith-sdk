@@ -6,7 +6,10 @@ import {
   getLangChainEnvVars,
   getLangChainEnvVarsMetadata,
 } from "../utils/env.js";
-import { parsePromptIdentifier } from "../utils/prompts.js";
+import {
+  isVersionGreaterOrEqual,
+  parsePromptIdentifier,
+} from "../utils/prompts.js";
 
 describe("Client", () => {
   describe("createLLMExample", () => {
@@ -174,6 +177,23 @@ describe("Client", () => {
         revision_id: "test_revision_id",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
+    });
+  });
+
+  describe("isVersionGreaterOrEqual", () => {
+    it("should return true if the version is greater or equal", () => {
+      // Test versions equal to 0.5.23
+      expect(isVersionGreaterOrEqual("0.5.23", "0.5.23")).toBe(true);
+
+      // Test versions greater than 0.5.23
+      expect(isVersionGreaterOrEqual("0.5.24", "0.5.23"));
+      expect(isVersionGreaterOrEqual("0.6.0", "0.5.23"));
+      expect(isVersionGreaterOrEqual("1.0.0", "0.5.23"));
+
+      // Test versions less than 0.5.23
+      expect(isVersionGreaterOrEqual("0.5.22", "0.5.23")).toBe(false);
+      expect(isVersionGreaterOrEqual("0.5.0", "0.5.23")).toBe(false);
+      expect(isVersionGreaterOrEqual("0.4.99", "0.5.23")).toBe(false);
     });
   });
 
