@@ -3388,8 +3388,8 @@ export class Client {
     }
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] = parsePromptIdentifier(promptIdentifier);
-    console.log('this is current version', this.serverInfo?.version);
-    const useOptimization = true //isVersionGreaterOrEqual(this.serverInfo?.version, '0.5.23');
+    const serverInfo = await this._getServerInfo()
+    const useOptimization = isVersionGreaterOrEqual(serverInfo.version, '0.5.23');
 
     let passedCommitHash = commitHash;
 
