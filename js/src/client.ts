@@ -49,7 +49,10 @@ import {
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import { isVersionGreaterOrEqual, parsePromptIdentifier } from "./utils/prompts.js";
+import {
+  isVersionGreaterOrEqual,
+  parsePromptIdentifier,
+} from "./utils/prompts.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -2944,7 +2947,8 @@ export class Client {
   }
 
   protected async _ownerConflictError(
-    action: string, owner: string
+    action: string,
+    owner: string
   ): Promise<Error> {
     const settings = await this._getSettings();
     return new Error(
@@ -2955,9 +2959,11 @@ export class Client {
   }
 
   protected async _getLatestCommitHash(
-    promptOwnerAndName: string,
+    promptOwnerAndName: string
   ): Promise<string | undefined> {
-    const commitsResp = await this.listCommits(promptOwnerAndName, { limit: 1 });
+    const commitsResp = await this.listCommits(promptOwnerAndName, {
+      limit: 1,
+    });
     const commits = commitsResp.commits;
     if (commits.length === 0) {
       return undefined;
@@ -2984,7 +2990,9 @@ export class Client {
 
     if (!response.ok) {
       throw new Error(
-        `Failed to ${like ? "like" : "unlike"} prompt: ${response.status} ${await response.text()}`
+        `Failed to ${like ? "like" : "unlike"} prompt: ${
+          response.status
+        } ${await response.text()}`
       );
     }
 
@@ -2992,35 +3000,46 @@ export class Client {
   }
 
   protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
-    const [owner, promptName, commitHash] = parsePromptIdentifier(promptIdentifier);
+    const [owner, promptName, commitHash] =
+      parsePromptIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
-      if (commitHash !== 'latest') {
-        return `${this.getHostUrl()}/hub/${owner}/${promptName}/${commitHash.substring(0, 8)}`;
+      if (commitHash !== "latest") {
+        return `${this.getHostUrl()}/hub/${owner}/${promptName}/${commitHash.substring(
+          0,
+          8
+        )}`;
       } else {
         return `${this.getHostUrl()}/hub/${owner}/${promptName}`;
       }
     } else {
       const settings = await this._getSettings();
-      if (commitHash !== 'latest') {
-        return `${this.getHostUrl()}/prompts/${promptName}/${commitHash.substring(0, 8)}?organizationId=${settings.id}`;
+      if (commitHash !== "latest") {
+        return `${this.getHostUrl()}/prompts/${promptName}/${commitHash.substring(
+          0,
+          8
+        )}?organizationId=${settings.id}`;
       } else {
-        return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${settings.id}`;
+        return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${
+          settings.id
+        }`;
       }
     }
   }
 
-  public async promptExists(
-    promptIdentifier: string
-  ): Promise<boolean> {
+  public async promptExists(promptIdentifier: string): Promise<boolean> {
     const prompt = await this.getPrompt(promptIdentifier);
-    return !!prompt
+    return !!prompt;
   }
 
-  public async likePrompt(promptIdentifier: string): Promise<LikePromptResponse> {
+  public async likePrompt(
+    promptIdentifier: string
+  ): Promise<LikePromptResponse> {
     return this._likeOrUnlikePrompt(promptIdentifier, true);
   }
 
-  public async unlikePrompt(promptIdentifier: string): Promise<LikePromptResponse> {
+  public async unlikePrompt(
+    promptIdentifier: string
+  ): Promise<LikePromptResponse> {
     return this._likeOrUnlikePrompt(promptIdentifier, false);
   }
 
@@ -3029,12 +3048,12 @@ export class Client {
     options?: {
       limit?: number;
       offset?: number;
-    },
+    }
   ) {
     const { limit = 100, offset = 0 } = options ?? {};
     const res = await this.caller.call(
       fetch,
-     `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${limit}&offset=${offset}`,
+      `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${limit}&offset=${offset}`,
       {
         method: "GET",
         headers: this.headers,
@@ -3049,7 +3068,7 @@ export class Client {
           ? json.detail
           : JSON.stringify(json.detail);
       const error = new Error(
-        `Error ${res.status}: ${res.statusText}\n${detail}`,
+        `Error ${res.status}: ${res.statusText}\n${detail}`
       );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (error as any).statusCode = res.status;
@@ -3058,35 +3077,33 @@ export class Client {
     return json;
   }
 
-  public async listPrompts(
-    options?: {
-      limit?: number,
-      offset?: number,
-      isPublic?: boolean,
-      isArchived?: boolean,
-      sortField?: PromptSortField,
-      sortDirection?: 'desc' | 'asc',
-      query?: string,
-    }
-  ): Promise<ListPromptsResponse> {
+  public async listPrompts(options?: {
+    limit?: number;
+    offset?: number;
+    isPublic?: boolean;
+    isArchived?: boolean;
+    sortField?: PromptSortField;
+    sortDirection?: "desc" | "asc";
+    query?: string;
+  }): Promise<ListPromptsResponse> {
     const params: Record<string, string> = {
       limit: (options?.limit ?? 100).toString(),
       offset: (options?.offset ?? 0).toString(),
-      sort_field: options?.sortField ?? 'updated_at',
-      sort_direction: options?.sortDirection ?? 'desc',
+      sort_field: options?.sortField ?? "updated_at",
+      sort_direction: options?.sortDirection ?? "desc",
       is_archived: (!!options?.isArchived).toString(),
     };
-  
+
     if (options?.isPublic !== undefined) {
       params.is_public = options.isPublic.toString();
     }
-  
+
     if (options?.query) {
       params.query = options.query;
     }
-  
+
     const queryString = new URLSearchParams(params).toString();
-  
+
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/repos/?${queryString}`,
@@ -3099,7 +3116,7 @@ export class Client {
     );
 
     const res = await response.json();
-  
+
     return {
       repos: res.repos.map((result: any) => ({
         owner: result.owner,
@@ -3127,7 +3144,7 @@ export class Client {
       })),
       total: res.total,
     };
-  }  
+  }
 
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
@@ -3180,10 +3197,10 @@ export class Client {
   public async createPrompt(
     promptIdentifier: string,
     options?: {
-      description?: string,
-      readme?: string,
-      tags?: string[],
-      isPublic?: boolean,
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
     }
   ): Promise<Prompt> {
     const settings = await this._getSettings();
@@ -3197,10 +3214,10 @@ export class Client {
     }
 
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
-    if (!await this._currentTenantIsOwner(owner)) {
+    if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("create a prompt", owner);
     }
-    
+
     const data = {
       repo_handle: promptName,
       ...(options?.description && { description: options.description }),
@@ -3209,17 +3226,13 @@ export class Client {
       is_public: !!options?.isPublic,
     };
 
-    const response = await this.caller.call(
-      fetch,
-      `${this.apiUrl}/repos/`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
+    const response = await this.caller.call(fetch, `${this.apiUrl}/repos/`, {
+      method: "POST",
+      headers: { ...this.headers, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
+    });
 
     const { repo } = await response.json();
     return {
@@ -3252,16 +3265,16 @@ export class Client {
     promptIdentifier: string,
     object: any,
     options?: {
-      parentCommitHash?: string,
+      parentCommitHash?: string;
     }
   ): Promise<string> {
-    if (!await this.promptExists(promptIdentifier)) {
+    if (!(await this.promptExists(promptIdentifier))) {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     const resolvedParentCommitHash =
-      (options?.parentCommitHash === "latest" || !options?.parentCommitHash)
+      options?.parentCommitHash === "latest" || !options?.parentCommitHash
         ? await this._getLatestCommitHash(`${owner}/${promptName}`)
         : options?.parentCommitHash;
 
@@ -3289,42 +3302,48 @@ export class Client {
     }
 
     const result = await response.json();
-    return this._getPromptUrl(`${owner}/${promptName}${result.commit_hash ? `:${result.commit_hash}` : ''}`);
+    return this._getPromptUrl(
+      `${owner}/${promptName}${
+        result.commit_hash ? `:${result.commit_hash}` : ""
+      }`
+    );
   }
 
   public async updatePrompt(
     promptIdentifier: string,
     options?: {
-      description?: string,
-      readme?: string,
-      tags?: string[],
-      isPublic?: boolean,
-      isArchived?: boolean,
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+      isArchived?: boolean;
     }
   ): Promise<Record<string, any>> {
-    if (!await this.promptExists(promptIdentifier)) {
+    if (!(await this.promptExists(promptIdentifier))) {
       throw new Error("Prompt does not exist, you must create it first.");
     }
-  
+
     const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
-  
-    if (!await this._currentTenantIsOwner(owner)) {
+
+    if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("update a prompt", owner);
     }
-  
+
     const payload: Record<string, any> = {};
-  
-    if (options?.description !== undefined) payload.description = options.description;
+
+    if (options?.description !== undefined)
+      payload.description = options.description;
     if (options?.readme !== undefined) payload.readme = options.readme;
     if (options?.tags !== undefined) payload.tags = options.tags;
     if (options?.isPublic !== undefined) payload.is_public = options.isPublic;
-    if (options?.isArchived !== undefined) payload.is_archived = options.isArchived;
-  
+    if (options?.isArchived !== undefined)
+      payload.is_archived = options.isArchived;
+
     // Check if payload is empty
     if (Object.keys(payload).length === 0) {
       throw new Error("No valid update options provided");
     }
-  
+
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/repos/${owner}/${promptName}`,
@@ -3333,30 +3352,30 @@ export class Client {
         body: JSON.stringify(payload),
         headers: {
           ...this.headers,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
     );
-  
+
     if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status} - ${await response.text()}`);
+      throw new Error(
+        `HTTP Error: ${response.status} - ${await response.text()}`
+      );
     }
-  
+
     return response.json();
   }
 
-  public async deletePrompt(
-    promptIdentifier: string
-  ): Promise<void> {
-    if (!await this.promptExists(promptIdentifier)) {
+  public async deletePrompt(promptIdentifier: string): Promise<void> {
+    if (!(await this.promptExists(promptIdentifier))) {
       throw new Error("Prompt does not exist, you must create it first.");
     }
 
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
 
-    if (!await this._currentTenantIsOwner(owner)) {
+    if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("delete a prompt", owner);
     }
 
@@ -3377,19 +3396,25 @@ export class Client {
   public async pullPromptCommit(
     promptIdentifier: string,
     options?: {
-      includeModel?: boolean
+      includeModel?: boolean;
     }
   ): Promise<PromptCommit> {
-    const [owner, promptName, commitHash] = parsePromptIdentifier(promptIdentifier);
-    const serverInfo = await this._getServerInfo()
-    const useOptimization = isVersionGreaterOrEqual(serverInfo.version, '0.5.23');
+    const [owner, promptName, commitHash] =
+      parsePromptIdentifier(promptIdentifier);
+    const serverInfo = await this._getServerInfo();
+    const useOptimization = isVersionGreaterOrEqual(
+      serverInfo.version,
+      "0.5.23"
+    );
 
     let passedCommitHash = commitHash;
 
-    if (!useOptimization && commitHash === 'latest') {
-      const latestCommitHash = await this._getLatestCommitHash(`${owner}/${promptName}`);
+    if (!useOptimization && commitHash === "latest") {
+      const latestCommitHash = await this._getLatestCommitHash(
+        `${owner}/${promptName}`
+      );
       if (!latestCommitHash) {
-        throw new Error('No commits found');
+        throw new Error("No commits found");
       } else {
         passedCommitHash = latestCommitHash;
       }
@@ -3397,7 +3422,9 @@ export class Client {
 
     const response = await this.caller.call(
       fetch,
-      `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${options?.includeModel ? '?include_model=true' : ''}`,
+      `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${
+        options?.includeModel ? "?include_model=true" : ""
+      }`,
       {
         method: "GET",
         headers: this.headers,
@@ -3422,15 +3449,15 @@ export class Client {
       examples: result.examples,
     };
   }
-  
+
   public async pullPrompt(
     promptIdentifier: string,
     options?: {
-      includeModel?: boolean,
+      includeModel?: boolean;
     }
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
-      includeModel: options?.includeModel
+      includeModel: options?.includeModel,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     // need to add load from lc js
@@ -3440,12 +3467,12 @@ export class Client {
   public async pushPrompt(
     promptIdentifier: string,
     options?: {
-      object?: any,
-      parentCommitHash?: string,
-      isPublic?: boolean,
-      description?: string,
-      readme?: string,
-      tags?: string[],
+      object?: any;
+      parentCommitHash?: string;
+      isPublic?: boolean;
+      description?: string;
+      readme?: string;
+      tags?: string[];
     }
   ): Promise<string> {
     // Create or update prompt metadata
@@ -3457,15 +3484,12 @@ export class Client {
         isPublic: options?.isPublic,
       });
     } else {
-      await this.createPrompt(
-        promptIdentifier,
-        {
-          description: options?.description,
-          readme: options?.readme,
-          tags: options?.tags,
-          isPublic: options?.isPublic,
-        }
-      );
+      await this.createPrompt(promptIdentifier, {
+        description: options?.description,
+        readme: options?.readme,
+        tags: options?.tags,
+        isPublic: options?.isPublic,
+      });
     }
 
     if (options?.object === null) {

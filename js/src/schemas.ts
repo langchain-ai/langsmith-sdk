@@ -446,10 +446,10 @@ export interface ListPromptsResponse {
 }
 
 export enum PromptSortField {
-  NumDownloads = 'num_downloads',
-  NumViews = 'num_views',
-  UpdatedAt = 'updated_at',
-  NumLikes = 'num_likes',
+  NumDownloads = "num_downloads",
+  NumViews = "num_views",
+  UpdatedAt = "updated_at",
+  NumLikes = "num_likes",
 }
 
 export interface LikePromptResponse {
@@ -460,5 +460,5 @@ export interface LangSmithSettings {
   id: string;
   displayName: string;
   createdAt: string;
-  tenantHandle?: string; 
+  tenantHandle?: string;
 }
