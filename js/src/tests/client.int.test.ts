@@ -870,7 +870,7 @@ test("Test like and unlike prompt", async () => {
   await client.deletePrompt(promptName);
 });
 
-test("Test pull prompt commit", async () => {
+test.only("Test pull prompt commit", async () => {
   const client = new Client();
 
   const promptName = `test_pull_commit_${uuidv4().slice(0, 8)}`;

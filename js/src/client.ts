@@ -2959,7 +2959,6 @@ export class Client {
   ): Promise<string | undefined> {
     const commitsResp = await this.listCommits(promptOwnerAndName, { limit: 1 });
     const commits = commitsResp.commits;
-    console.log('commits number', commits)
     if (commits.length === 0) {
       return undefined;
     }
@@ -2993,7 +2992,6 @@ export class Client {
   }
 
   protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
-    console.log('print ing promt id', promptIdentifier)
     const [owner, promptName, commitHash] = parsePromptIdentifier(promptIdentifier);
     if (!(await this._currentTenantIsOwner(owner))) {
       if (commitHash !== 'latest') {
@@ -3224,7 +3222,6 @@ export class Client {
     );
 
     const { repo } = await response.json();
-    console.log('result right here', repo);
     return {
       owner: repo.owner,
       repoHandle: repo.repo_handle,
@@ -3268,14 +3265,10 @@ export class Client {
         ? await this._getLatestCommitHash(`${owner}/${promptName}`)
         : options?.parentCommitHash;
 
-    console.log('this is resolved parent commit hash', resolvedParentCommitHash);
-
     const payload = {
       manifest: JSON.parse(JSON.stringify(object)),
       parent_commit: resolvedParentCommitHash,
     };
-
-    console.log('latest prompt anyway', await this.listCommits(`${owner}/${promptName}`));
 
     const response = await this.caller.call(
       fetch,
@@ -3456,7 +3449,6 @@ export class Client {
     }
   ): Promise<string> {
     // Create or update prompt metadata
-    console.log('prompt exists', await this.promptExists(promptIdentifier));
     if (await this.promptExists(promptIdentifier)) {
       await this.updatePrompt(promptIdentifier, {
         description: options?.description,
