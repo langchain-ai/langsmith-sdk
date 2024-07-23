@@ -16,6 +16,12 @@ import {
   FeedbackIngestToken,
   KVMap,
   LangChainBaseMessage,
+  LangSmithSettings,
+  LikePromptResponse,
+  ListPromptsResponse,
+  Prompt,
+  PromptCommit,
+  PromptSortField,
   Run,
   RunCreate,
   RunUpdate,
@@ -43,6 +49,7 @@ import {
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
+import { isVersionGreaterOrEqual, parsePromptIdentifier } from "./utils/prompts.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -418,6 +425,8 @@ export class Client {
 
   private fetchOptions: RequestInit;
 
+  private settings: LangSmithSettings;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -744,6 +753,13 @@ export class Client {
       return false;
     }
     return true;
+  }
+
+  protected async _getSettings() {
+    if (!this.settings) {
+      this.settings = await this._get("/settings");
+    }
+    return this.settings;
   }
 
   public async createRun(run: CreateRunParams): Promise<void> {
@@ -2920,5 +2936,554 @@ export class Client {
       sourceInfo
     );
     return results;
+  }
+
+  protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
+    const settings = await this._getSettings();
+    return owner == "-" || settings.tenantHandle === owner;
+  }
+
+  protected async _ownerConflictError(
+    action: string, owner: string
+  ): Promise<Error> {
+    const settings = await this._getSettings();
+    return new Error(
+      `Cannot ${action} for another tenant.\n
+      Current tenant: ${settings.tenantHandle}\n
+      Requested tenant: ${owner}`
+    );
+  }
+
+  protected async _getLatestCommitHash(
+    promptOwnerAndName: string,
+  ): Promise<string | undefined> {
+    const commitsResp = await this.listCommits(promptOwnerAndName, { limit: 1 });
+    const commits = commitsResp.commits;
+    console.log('commits number', commits)
+    if (commits.length === 0) {
+      return undefined;
+    }
+    return commits[0].commit_hash;
+  }
+
+  protected async _likeOrUnlikePrompt(
+    promptIdentifier: string,
+    like: boolean
+  ): Promise<LikePromptResponse> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/likes/${owner}/${promptName}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ like: like }),
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to ${like ? "like" : "unlike"} prompt: ${response.status} ${await response.text()}`
+      );
+    }
+
+    return await response.json();
+  }
+
+  protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
+    console.log('print ing promt id', promptIdentifier)
+    const [owner, promptName, commitHash] = parsePromptIdentifier(promptIdentifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      if (commitHash !== 'latest') {
+        return `${this.getHostUrl()}/hub/${owner}/${promptName}/${commitHash.substring(0, 8)}`;
+      } else {
+        return `${this.getHostUrl()}/hub/${owner}/${promptName}`;
+      }
+    } else {
+      const settings = await this._getSettings();
+      if (commitHash !== 'latest') {
+        return `${this.getHostUrl()}/prompts/${promptName}/${commitHash.substring(0, 8)}?organizationId=${settings.id}`;
+      } else {
+        return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${settings.id}`;
+      }
+    }
+  }
+
+  public async promptExists(
+    promptIdentifier: string
+  ): Promise<boolean> {
+    const prompt = await this.getPrompt(promptIdentifier);
+    return !!prompt
+  }
+
+  public async likePrompt(promptIdentifier: string): Promise<LikePromptResponse> {
+    return this._likeOrUnlikePrompt(promptIdentifier, true);
+  }
+
+  public async unlikePrompt(promptIdentifier: string): Promise<LikePromptResponse> {
+    return this._likeOrUnlikePrompt(promptIdentifier, false);
+  }
+
+  public async listCommits(
+    promptOwnerAndName: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ) {
+    const { limit = 100, offset = 0 } = options ?? {};
+    const res = await this.caller.call(
+      fetch,
+     `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${limit}&offset=${offset}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    const json = await res.json();
+    if (!res.ok) {
+      const detail =
+        typeof json.detail === "string"
+          ? json.detail
+          : JSON.stringify(json.detail);
+      const error = new Error(
+        `Error ${res.status}: ${res.statusText}\n${detail}`,
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (error as any).statusCode = res.status;
+      throw error;
+    }
+    return json;
+  }
+
+  public async listPrompts(
+    options?: {
+      limit?: number,
+      offset?: number,
+      isPublic?: boolean,
+      isArchived?: boolean,
+      sortField?: PromptSortField,
+      sortDirection?: 'desc' | 'asc',
+      query?: string,
+    }
+  ): Promise<ListPromptsResponse> {
+    const params: Record<string, string> = {
+      limit: (options?.limit ?? 100).toString(),
+      offset: (options?.offset ?? 0).toString(),
+      sort_field: options?.sortField ?? 'updated_at',
+      sort_direction: options?.sortDirection ?? 'desc',
+      is_archived: (!!options?.isArchived).toString(),
+    };
+  
+    if (options?.isPublic !== undefined) {
+      params.is_public = options.isPublic.toString();
+    }
+  
+    if (options?.query) {
+      params.query = options.query;
+    }
+  
+    const queryString = new URLSearchParams(params).toString();
+  
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/?${queryString}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const res = await response.json();
+  
+    return {
+      repos: res.repos.map((result: any) => ({
+        owner: result.owner,
+        repoHandle: result.repo_handle,
+        description: result.description,
+        id: result.id,
+        readme: result.readme,
+        tenantId: result.tenant_id,
+        tags: result.tags,
+        isPublic: result.is_public,
+        isArchived: result.is_archived,
+        createdAt: result.created_at,
+        updatedAt: result.updated_at,
+        originalRepoId: result.original_repo_id,
+        upstreamRepoId: result.upstream_repo_id,
+        fullName: result.full_name,
+        numLikes: result.num_likes,
+        numDownloads: result.num_downloads,
+        numViews: result.num_views,
+        likedByAuthUser: result.liked_by_auth_user,
+        lastCommitHash: result.last_commit_hash,
+        numCommits: result.num_commits,
+        originalRepoFullName: result.original_repo_full_name,
+        upstreamRepoFullName: result.upstream_repo_full_name,
+      })),
+      total: res.total,
+    };
+  }  
+
+  public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    const result = await response.json();
+    if (result.repo) {
+      return {
+        owner: result.repo.owner,
+        repoHandle: result.repo.repo_handle,
+        description: result.repo.description,
+        id: result.repo.id,
+        readme: result.repo.readme,
+        tenantId: result.repo.tenant_id,
+        tags: result.repo.tags,
+        isPublic: result.repo.is_public,
+        isArchived: result.repo.is_archived,
+        createdAt: result.repo.created_at,
+        updatedAt: result.repo.updated_at,
+        originalRepoId: result.repo.original_repo_id,
+        upstreamRepoId: result.repo.upstream_repo_id,
+        fullName: result.repo.full_name,
+        numLikes: result.repo.num_likes,
+        numDownloads: result.repo.num_downloads,
+        numViews: result.repo.num_views,
+        likedByAuthUser: result.repo.liked_by_auth_user,
+        lastCommitHash: result.repo.last_commit_hash,
+        numCommits: result.repo.num_commits,
+        originalRepoFullName: result.repo.original_repo_full_name,
+        upstreamRepoFullName: result.repo.upstream_repo_full_name,
+      };
+    } else {
+      return null;
+    }
+  }
+
+  public async createPrompt(
+    promptIdentifier: string,
+    options?: {
+      description?: string,
+      readme?: string,
+      tags?: string[],
+      isPublic?: boolean,
+    }
+  ): Promise<Prompt> {
+    const settings = await this._getSettings();
+    if (options?.isPublic && !settings.tenantHandle) {
+      throw new Error(
+        `Cannot create a public prompt without first\n
+        creating a LangChain Hub handle. 
+        You can add a handle by creating a public prompt at:\n
+        https://smith.langchain.com/prompts`
+      );
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    if (!await this._currentTenantIsOwner(owner)) {
+      throw await this._ownerConflictError("create a prompt", owner);
+    }
+    
+    const data = {
+      repo_handle: promptName,
+      ...(options?.description && { description: options.description }),
+      ...(options?.readme && { readme: options.readme }),
+      ...(options?.tags && { tags: options.tags }),
+      is_public: !!options?.isPublic,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const { repo } = await response.json();
+    console.log('result right here', repo);
+    return {
+      owner: repo.owner,
+      repoHandle: repo.repo_handle,
+      description: repo.description,
+      id: repo.id,
+      readme: repo.readme,
+      tenantId: repo.tenant_id,
+      tags: repo.tags,
+      isPublic: repo.is_public,
+      isArchived: repo.is_archived,
+      createdAt: repo.created_at,
+      updatedAt: repo.updated_at,
+      originalRepoId: repo.original_repo_id,
+      upstreamRepoId: repo.upstream_repo_id,
+      fullName: repo.full_name,
+      numLikes: repo.num_likes,
+      numDownloads: repo.num_downloads,
+      numViews: repo.num_views,
+      likedByAuthUser: repo.liked_by_auth_user,
+      lastCommitHash: repo.last_commit_hash,
+      numCommits: repo.num_commits,
+      originalRepoFullName: repo.original_repo_full_name,
+      upstreamRepoFullName: repo.upstream_repo_full_name,
+    };
+  }
+
+  public async createCommit(
+    promptIdentifier: string,
+    object: any,
+    options?: {
+      parentCommitHash?: string,
+    }
+  ): Promise<string> {
+    if (!await this.promptExists(promptIdentifier)) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const resolvedParentCommitHash =
+      (options?.parentCommitHash === "latest" || !options?.parentCommitHash)
+        ? await this._getLatestCommitHash(`${owner}/${promptName}`)
+        : options?.parentCommitHash;
+
+    console.log('this is resolved parent commit hash', resolvedParentCommitHash);
+
+    const payload = {
+      manifest: JSON.parse(JSON.stringify(object)),
+      parent_commit: resolvedParentCommitHash,
+    };
+
+    console.log('latest prompt anyway', await this.listCommits(`${owner}/${promptName}`));
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${owner}/${promptName}`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create commit: ${response.status} ${await response.text()}`
+      );
+    }
+
+    const result = await response.json();
+    return this._getPromptUrl(`${owner}/${promptName}${result.commit_hash ? `:${result.commit_hash}` : ''}`);
+  }
+
+  public async updatePrompt(
+    promptIdentifier: string,
+    options?: {
+      description?: string,
+      readme?: string,
+      tags?: string[],
+      isPublic?: boolean,
+      isArchived?: boolean,
+    }
+  ): Promise<Record<string, any>> {
+    if (!await this.promptExists(promptIdentifier)) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+  
+    const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
+  
+    if (!await this._currentTenantIsOwner(owner)) {
+      throw await this._ownerConflictError("update a prompt", owner);
+    }
+  
+    const payload: Record<string, any> = {};
+  
+    if (options?.description !== undefined) payload.description = options.description;
+    if (options?.readme !== undefined) payload.readme = options.readme;
+    if (options?.tags !== undefined) payload.tags = options.tags;
+    if (options?.isPublic !== undefined) payload.is_public = options.isPublic;
+    if (options?.isArchived !== undefined) payload.is_archived = options.isArchived;
+  
+    // Check if payload is empty
+    if (Object.keys(payload).length === 0) {
+      throw new Error("No valid update options provided");
+    }
+  
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+  
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status} - ${await response.text()}`);
+    }
+  
+    return response.json();
+  }
+
+  public async deletePrompt(
+    promptIdentifier: string
+  ): Promise<void> {
+    if (!await this.promptExists(promptIdentifier)) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+
+    if (!await this._currentTenantIsOwner(owner)) {
+      throw await this._ownerConflictError("delete a prompt", owner);
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    return await response.json();
+  }
+
+  public async pullPromptCommit(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean
+    }
+  ): Promise<PromptCommit> {
+    const [owner, promptName, commitHash] = parsePromptIdentifier(promptIdentifier);
+    console.log('this is current version', this.serverInfo?.version);
+    const useOptimization = true //isVersionGreaterOrEqual(this.serverInfo?.version, '0.5.23');
+
+    let passedCommitHash = commitHash;
+
+    if (!useOptimization && commitHash === 'latest') {
+      const latestCommitHash = await this._getLatestCommitHash(`${owner}/${promptName}`);
+      if (!latestCommitHash) {
+        throw new Error('No commits found');
+      } else {
+        passedCommitHash = latestCommitHash;
+      }
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${options?.includeModel ? '?include_model=true' : ''}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to pull prompt commit: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+
+    return {
+      owner,
+      repo: promptName,
+      commitHash: result.commit_hash,
+      manifest: result.manifest,
+      examples: result.examples,
+    };
+  }
+  
+  public async pullPrompt(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean,
+    }
+  ): Promise<any> {
+    const promptObject = await this.pullPromptCommit(promptIdentifier, {
+      includeModel: options?.includeModel
+    });
+    const prompt = JSON.stringify(promptObject.manifest);
+    // need to add load from lc js
+    return prompt;
+  }
+
+  public async pushPrompt(
+    promptIdentifier: string,
+    options?: {
+      object?: any,
+      parentCommitHash?: string,
+      isPublic?: boolean,
+      description?: string,
+      readme?: string,
+      tags?: string[],
+    }
+  ): Promise<string> {
+    // Create or update prompt metadata
+    console.log('prompt exists', await this.promptExists(promptIdentifier));
+    if (await this.promptExists(promptIdentifier)) {
+      await this.updatePrompt(promptIdentifier, {
+        description: options?.description,
+        readme: options?.readme,
+        tags: options?.tags,
+        isPublic: options?.isPublic,
+      });
+    } else {
+      await this.createPrompt(
+        promptIdentifier,
+        {
+          description: options?.description,
+          readme: options?.readme,
+          tags: options?.tags,
+          isPublic: options?.isPublic,
+        }
+      );
+    }
+
+    if (options?.object === null) {
+      return await this._getPromptUrl(promptIdentifier);
+    }
+
+    // Create a commit with the new manifest
+    const url = await this.createCommit(promptIdentifier, options?.object, {
+      parentCommitHash: options?.parentCommitHash,
+    });
+    return url;
   }
 }

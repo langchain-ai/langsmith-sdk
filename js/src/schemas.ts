@@ -406,3 +406,59 @@ export interface InvocationParamsSchema {
   ls_max_tokens?: number;
   ls_stop?: string[];
 }
+
+export interface PromptCommit {
+  owner: string;
+  repo: string;
+  commitHash: string;
+  manifest: Record<string, any>;
+  examples: Array<Record<any, any>>;
+}
+
+export interface Prompt {
+  repoHandle: string;
+  description?: string;
+  readme?: string;
+  id: string;
+  tenantId: string;
+  createdAt: string;
+  updatedAt: string;
+  isPublic: boolean;
+  isArchived: boolean;
+  tags: string[];
+  originalRepoId?: string;
+  upstreamRepoId?: string;
+  owner?: string;
+  fullName: string;
+  numLikes: number;
+  numDownloads: number;
+  numViews: number;
+  likedByAuthUser: boolean;
+  lastCommitHash?: string;
+  numCommits: number;
+  originalRepoFullName?: string;
+  upstreamRepoFullName?: string;
+}
+
+export interface ListPromptsResponse {
+  repos: Prompt[];
+  total: number;
+}
+
+export enum PromptSortField {
+  NumDownloads = 'num_downloads',
+  NumViews = 'num_views',
+  UpdatedAt = 'updated_at',
+  NumLikes = 'num_likes',
+}
+
+export interface LikePromptResponse {
+  likes: number;
+}
+
+export interface LangSmithSettings {
+  id: string;
+  displayName: string;
+  createdAt: string;
+  tenantHandle?: string; 
+}

@@ -6,6 +6,7 @@ import {
   getLangChainEnvVars,
   getLangChainEnvVarsMetadata,
 } from "../utils/env.js";
+import { parsePromptIdentifier } from "../utils/prompts.js";
 
 describe("Client", () => {
   describe("createLLMExample", () => {
@@ -172,6 +173,33 @@ describe("Client", () => {
       expect(langchainMetadataEnvVars).toEqual({
         revision_id: "test_revision_id",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
+      });
+    });
+  });
+
+  describe('parsePromptIdentifier', () => {
+    it('should parse valid identifiers correctly', () => {
+      expect(parsePromptIdentifier('name')).toEqual(['-', 'name', 'latest']);
+      expect(parsePromptIdentifier('owner/name')).toEqual(['owner', 'name', 'latest']);
+      expect(parsePromptIdentifier('owner/name:commit')).toEqual(['owner', 'name', 'commit']);
+      expect(parsePromptIdentifier('name:commit')).toEqual(['-', 'name', 'commit']);
+    });
+
+    it('should throw an error for invalid identifiers', () => {
+      const invalidIdentifiers = [
+        '',
+        '/',
+        ':',
+        'owner/',
+        '/name',
+        'owner//name',
+        'owner/name/',
+        'owner/name/extra',
+        ':commit',
+      ];
+
+      invalidIdentifiers.forEach(identifier => {
+        expect(() => parsePromptIdentifier(identifier)).toThrowError(`Invalid identifier format: ${identifier}`);
       });
     });
   });
