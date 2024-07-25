@@ -428,7 +428,7 @@ export class Client {
 
   private fetchOptions: RequestInit;
 
-  private settings: LangSmithSettings;
+  private settings: Promise<LangSmithSettings> | null;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
@@ -760,9 +760,10 @@ export class Client {
 
   protected async _getSettings() {
     if (!this.settings) {
-      this.settings = await this._get("/settings");
+      this.settings = this._get("/settings");
     }
-    return this.settings;
+
+    return await this.settings;
   }
 
   public async createRun(run: CreateRunParams): Promise<void> {
@@ -3103,7 +3104,6 @@ export class Client {
     }
 
     const queryString = new URLSearchParams(params).toString();
-
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/repos/?${queryString}`,
