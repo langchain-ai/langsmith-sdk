@@ -756,9 +756,12 @@ test.concurrent("Test run stats", async () => {
 
 test("Test list prompts", async () => {
   const client = new Client();
-  const response = await client.listPrompts({ limit: 10, offset: 0 });
-  expect(response.repos.length).toBeLessThanOrEqual(10);
-  expect(response.total).toBeGreaterThanOrEqual(response.repos.length);
+  const response = await client.listPrompts({ isPublic: true });
+  expect(response).toBeDefined();
+  for await (const prompt of response) {
+    console.log("this is what prompt looks like", prompt);
+    expect(prompt).toBeDefined();
+  }
 });
 
 test("Test get prompt", async () => {
@@ -777,7 +780,7 @@ test("Test get prompt", async () => {
 
   const prompt = await client.getPrompt(promptName);
   expect(prompt).toBeDefined();
-  expect(prompt?.repoHandle).toBe(promptName);
+  expect(prompt?.repo_handle).toBe(promptName);
 
   await client.deletePrompt(promptName);
 });
@@ -826,7 +829,7 @@ test("Test update prompt", async () => {
 
   const updatedPrompt = await client.getPrompt(promptName);
   expect(updatedPrompt?.description).toBe("Updated description");
-  expect(updatedPrompt?.isPublic).toBe(true);
+  expect(updatedPrompt?.is_public).toBe(true);
   expect(updatedPrompt?.tags).toEqual(
     expect.arrayContaining(["test", "update"])
   );
@@ -898,16 +901,16 @@ test("Test like and unlike prompt", async () => {
 
   await client.likePrompt(promptName);
   let prompt = await client.getPrompt(promptName);
-  expect(prompt?.numLikes).toBe(1);
+  expect(prompt?.num_likes).toBe(1);
 
   await client.unlikePrompt(promptName);
   prompt = await client.getPrompt(promptName);
-  expect(prompt?.numLikes).toBe(0);
+  expect(prompt?.num_likes).toBe(0);
 
   await client.deletePrompt(promptName);
 });
 
-test.only("Test pull prompt commit", async () => {
+test("Test pull prompt commit", async () => {
   const client = new Client();
 
   const promptName = `test_pull_commit_${uuidv4().slice(0, 8)}`;
@@ -953,7 +956,7 @@ test("Test push and pull prompt", async () => {
   expect(promptInfo?.description).toBe("Test description");
   expect(promptInfo?.readme).toBe("Test readme");
   expect(promptInfo?.tags).toEqual(expect.arrayContaining(["test", "tag"]));
-  expect(promptInfo?.isPublic).toBe(false);
+  expect(promptInfo?.is_public).toBe(false);
 
   await client.deletePrompt(promptName);
 });

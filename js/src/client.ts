@@ -18,6 +18,7 @@ import {
   LangChainBaseMessage,
   LangSmithSettings,
   LikePromptResponse,
+  ListCommitsResponse,
   ListPromptsResponse,
   Prompt,
   PromptCommit,
@@ -581,9 +582,10 @@ export class Client {
     const response = await this._getResponse(path, queryParams);
     return response.json() as T;
   }
-  private async *_getPaginated<T>(
+  private async *_getPaginated<T, TResponse = unknown>(
     path: string,
-    queryParams: URLSearchParams = new URLSearchParams()
+    queryParams: URLSearchParams = new URLSearchParams(),
+    transform?: (data: TResponse) => T[]
   ): AsyncIterable<T[]> {
     let offset = Number(queryParams.get("offset")) || 0;
     const limit = Number(queryParams.get("limit")) || 100;
@@ -603,7 +605,8 @@ export class Client {
           `Failed to fetch ${path}: ${response.status} ${response.statusText}`
         );
       }
-      const items: T[] = await response.json();
+
+      const items: T[] =transform ? transform(await response.json()) : await response.json();
 
       if (items.length === 0) {
         break;
@@ -2944,7 +2947,7 @@ export class Client {
 
   protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
     const settings = await this._getSettings();
-    return owner == "-" || settings.tenantHandle === owner;
+    return owner == "-" || settings.tenant_handle === owner;
   }
 
   protected async _ownerConflictError(
@@ -2954,7 +2957,7 @@ export class Client {
     const settings = await this._getSettings();
     return new Error(
       `Cannot ${action} for another tenant.\n
-      Current tenant: ${settings.tenantHandle}\n
+      Current tenant: ${settings.tenant_handle}\n
       Requested tenant: ${owner}`
     );
   }
@@ -2962,14 +2965,36 @@ export class Client {
   protected async _getLatestCommitHash(
     promptOwnerAndName: string
   ): Promise<string | undefined> {
-    const commitsResp = await this.listCommits(promptOwnerAndName, {
-      limit: 1,
-    });
-    const commits = commitsResp.commits;
-    if (commits.length === 0) {
+    const res = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const json = await res.json();
+    if (!res.ok) {
+      const detail =
+        typeof json.detail === "string"
+          ? json.detail
+          : JSON.stringify(json.detail);
+      const error = new Error(
+        `Error ${res.status}: ${res.statusText}\n${detail}`
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (error as any).statusCode = res.status;
+      throw error;
+    }
+
+    if (json.commits.length === 0) {
       return undefined;
     }
-    return commits[0].commit_hash;
+
+    return json.commits[0].commit_hash;
   }
 
   protected async _likeOrUnlikePrompt(
@@ -3044,106 +3069,89 @@ export class Client {
     return this._likeOrUnlikePrompt(promptIdentifier, false);
   }
 
-  public async listCommits(
-    promptOwnerAndName: string,
-    options?: {
-      limit?: number;
-      offset?: number;
+  public async *listCommits(promptOwnerAndName: string): AsyncIterableIterator<PromptCommit> {
+    for await (const commits of this._getPaginated<PromptCommit, ListCommitsResponse>(
+      `/commits/${promptOwnerAndName}/`,
+      {} as URLSearchParams,
+      (res) => res.commits,
+    )) {
+      yield* commits;
     }
-  ) {
-    const { limit = 100, offset = 0 } = options ?? {};
-    const res = await this.caller.call(
-      fetch,
-      `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${limit}&offset=${offset}`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    const json = await res.json();
-    if (!res.ok) {
-      const detail =
-        typeof json.detail === "string"
-          ? json.detail
-          : JSON.stringify(json.detail);
-      const error = new Error(
-        `Error ${res.status}: ${res.statusText}\n${detail}`
-      );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (error as any).statusCode = res.status;
-      throw error;
-    }
-    return json;
   }
 
-  public async listPrompts(options?: {
-    limit?: number;
-    offset?: number;
+  public async *listProjects2({
+    projectIds,
+    name,
+    nameContains,
+    referenceDatasetId,
+    referenceDatasetName,
+    referenceFree,
+  }: {
+    projectIds?: string[];
+    name?: string;
+    nameContains?: string;
+    referenceDatasetId?: string;
+    referenceDatasetName?: string;
+    referenceFree?: boolean;
+  } = {}): AsyncIterable<TracerSession> {
+    const params = new URLSearchParams();
+    if (projectIds !== undefined) {
+      for (const projectId of projectIds) {
+        params.append("id", projectId);
+      }
+    }
+    if (name !== undefined) {
+      params.append("name", name);
+    }
+    if (nameContains !== undefined) {
+      params.append("name_contains", nameContains);
+    }
+    if (referenceDatasetId !== undefined) {
+      params.append("reference_dataset", referenceDatasetId);
+    } else if (referenceDatasetName !== undefined) {
+      const dataset = await this.readDataset({
+        datasetName: referenceDatasetName,
+      });
+      params.append("reference_dataset", dataset.id);
+    }
+    if (referenceFree !== undefined) {
+      params.append("reference_free", referenceFree.toString());
+    }
+    for await (const projects of this._getPaginated<TracerSession>(
+      "/sessions",
+      params
+    )) {
+      yield* projects;
+    }
+  }
+
+  public async *listPrompts(options?: {
     isPublic?: boolean;
     isArchived?: boolean;
     sortField?: PromptSortField;
     sortDirection?: "desc" | "asc";
     query?: string;
-  }): Promise<ListPromptsResponse> {
-    const params: Record<string, string> = {
-      limit: (options?.limit ?? 100).toString(),
-      offset: (options?.offset ?? 0).toString(),
-      sort_field: options?.sortField ?? "updated_at",
-      sort_direction: options?.sortDirection ?? "desc",
-      is_archived: (!!options?.isArchived).toString(),
-    };
+  }): AsyncIterableIterator<Prompt> {
+    const params = new URLSearchParams();
+    params.append("sort_field", options?.sortField ?? "updated_at");
+    params.append("sort_direction", options?.sortDirection ?? "desc");
+    params.append("is_archived", (!!options?.isArchived).toString());
 
     if (options?.isPublic !== undefined) {
-      params.is_public = options.isPublic.toString();
+      params.append("is_public", options.isPublic.toString());
     }
 
     if (options?.query) {
-      params.query = options.query;
+      params.append("query", options.query);
     }
 
-    const queryString = new URLSearchParams(params).toString();
-    const response = await this.caller.call(
-      fetch,
-      `${this.apiUrl}/repos/?${queryString}`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    const res = await response.json();
-
-    return {
-      repos: res.repos.map((result: any) => ({
-        owner: result.owner,
-        repoHandle: result.repo_handle,
-        description: result.description,
-        id: result.id,
-        readme: result.readme,
-        tenantId: result.tenant_id,
-        tags: result.tags,
-        isPublic: result.is_public,
-        isArchived: result.is_archived,
-        createdAt: result.created_at,
-        updatedAt: result.updated_at,
-        originalRepoId: result.original_repo_id,
-        upstreamRepoId: result.upstream_repo_id,
-        fullName: result.full_name,
-        numLikes: result.num_likes,
-        numDownloads: result.num_downloads,
-        numViews: result.num_views,
-        likedByAuthUser: result.liked_by_auth_user,
-        lastCommitHash: result.last_commit_hash,
-        numCommits: result.num_commits,
-        originalRepoFullName: result.original_repo_full_name,
-        upstreamRepoFullName: result.upstream_repo_full_name,
-      })),
-      total: res.total,
-    };
+    for await (const prompts of this._getPaginated<Prompt, ListPromptsResponse>(
+      "/repos",
+      params,
+      (res) => res.repos,
+    )) {
+      yield* prompts;
+    }
   }
 
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
@@ -3165,30 +3173,7 @@ export class Client {
 
     const result = await response.json();
     if (result.repo) {
-      return {
-        owner: result.repo.owner,
-        repoHandle: result.repo.repo_handle,
-        description: result.repo.description,
-        id: result.repo.id,
-        readme: result.repo.readme,
-        tenantId: result.repo.tenant_id,
-        tags: result.repo.tags,
-        isPublic: result.repo.is_public,
-        isArchived: result.repo.is_archived,
-        createdAt: result.repo.created_at,
-        updatedAt: result.repo.updated_at,
-        originalRepoId: result.repo.original_repo_id,
-        upstreamRepoId: result.repo.upstream_repo_id,
-        fullName: result.repo.full_name,
-        numLikes: result.repo.num_likes,
-        numDownloads: result.repo.num_downloads,
-        numViews: result.repo.num_views,
-        likedByAuthUser: result.repo.liked_by_auth_user,
-        lastCommitHash: result.repo.last_commit_hash,
-        numCommits: result.repo.num_commits,
-        originalRepoFullName: result.repo.original_repo_full_name,
-        upstreamRepoFullName: result.repo.upstream_repo_full_name,
-      };
+      return result.repo as Prompt;
     } else {
       return null;
     }
@@ -3204,7 +3189,7 @@ export class Client {
     }
   ): Promise<Prompt> {
     const settings = await this._getSettings();
-    if (options?.isPublic && !settings.tenantHandle) {
+    if (options?.isPublic && !settings.tenant_handle) {
       throw new Error(
         `Cannot create a public prompt without first\n
         creating a LangChain Hub handle. 
@@ -3235,30 +3220,7 @@ export class Client {
     });
 
     const { repo } = await response.json();
-    return {
-      owner: repo.owner,
-      repoHandle: repo.repo_handle,
-      description: repo.description,
-      id: repo.id,
-      readme: repo.readme,
-      tenantId: repo.tenant_id,
-      tags: repo.tags,
-      isPublic: repo.is_public,
-      isArchived: repo.is_archived,
-      createdAt: repo.created_at,
-      updatedAt: repo.updated_at,
-      originalRepoId: repo.original_repo_id,
-      upstreamRepoId: repo.upstream_repo_id,
-      fullName: repo.full_name,
-      numLikes: repo.num_likes,
-      numDownloads: repo.num_downloads,
-      numViews: repo.num_views,
-      likedByAuthUser: repo.liked_by_auth_user,
-      lastCommitHash: repo.last_commit_hash,
-      numCommits: repo.num_commits,
-      originalRepoFullName: repo.original_repo_full_name,
-      upstreamRepoFullName: repo.upstream_repo_full_name,
-    };
+    return repo as Prompt;
   }
 
   public async createCommit(
@@ -3444,7 +3406,7 @@ export class Client {
     return {
       owner,
       repo: promptName,
-      commitHash: result.commit_hash,
+      commit_hash: result.commit_hash,
       manifest: result.manifest,
       examples: result.examples,
     };
@@ -3460,7 +3422,6 @@ export class Client {
       includeModel: options?.includeModel,
     });
     const prompt = JSON.stringify(promptObject.manifest);
-    // need to add load from lc js
     return prompt;
   }
 
