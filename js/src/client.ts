@@ -3131,6 +3131,12 @@ export class Client {
       return null;
     }
 
+    if (!response.ok) {
+      throw new Error(
+        `Failed to get prompt: ${response.status} ${await response.text()}`
+      );
+    }
+
     const result = await response.json();
     if (result.repo) {
       return result.repo as Prompt;
@@ -3178,6 +3184,12 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create prompt: ${response.status} ${await response.text()}`
+      );
+    }
 
     const { repo } = await response.json();
     return repo as Prompt;
@@ -3372,6 +3384,13 @@ export class Client {
     };
   }
 
+  /**
+   *
+   * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
+   * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
+   * @private
+   *
+   */
   public async _pullPrompt(
     promptIdentifier: string,
     options?: {
@@ -3413,7 +3432,7 @@ export class Client {
       });
     }
 
-    if (options?.object === null) {
+    if (!options?.object) {
       return await this._getPromptUrl(promptIdentifier);
     }
 
