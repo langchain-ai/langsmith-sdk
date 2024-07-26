@@ -450,7 +450,11 @@ export interface ListCommitsResponse {
   total: number;
 }
 
-export type PromptSortField = "num_downloads" | "num_views" | "updated_at" | "num_likes"
+export type PromptSortField =
+  | "num_downloads"
+  | "num_views"
+  | "updated_at"
+  | "num_likes";
 
 export interface LikePromptResponse {
   likes: number;
