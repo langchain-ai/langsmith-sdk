@@ -1,6 +1,6 @@
 import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
-import type { Client, RunTreeConfig } from "../index.js";
+import type { RunTreeConfig } from "../index.js";
 import { isTraceableFunction, traceable } from "../traceable.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
@@ -280,19 +280,17 @@ export const wrapOpenAI = <T extends OpenAIType>(
 const _wrapClient = <T extends object>(
   sdk: T,
   runName: string,
-  options?: { client?: Client }
+  options?: Omit<RunTreeConfig, "name">
 ): T => {
   return new Proxy(sdk, {
     get(target, propKey, receiver) {
       const originalValue = target[propKey as keyof T];
       if (typeof originalValue === "function") {
-        return traceable(
-          originalValue.bind(target),
-          Object.assign(
-            { name: [runName, propKey.toString()].join("."), run_type: "llm" },
-            options
-          )
-        );
+        return traceable(originalValue.bind(target), {
+          run_type: "llm",
+          ...options,
+          name: [runName, propKey.toString()].join("."),
+        });
       } else if (
         originalValue != null &&
         !Array.isArray(originalValue) &&
@@ -312,6 +310,15 @@ const _wrapClient = <T extends object>(
   });
 };
 
+type WrapSDKOptions = Partial<
+  RunTreeConfig & {
+    /**
+     * @deprecated Use `name` instead.
+     */
+    runName: string;
+  }
+>;
+
 /**
  * Wrap an arbitrary SDK, enabling automatic LangSmith tracing.
  * Method signatures are unchanged.
@@ -325,9 +332,17 @@ const _wrapClient = <T extends object>(
  */
 export const wrapSDK = <T extends object>(
   sdk: T,
-  options?: { client?: Client; runName?: string }
+  options?: WrapSDKOptions
 ): T => {
-  return _wrapClient(sdk, options?.runName ?? sdk.constructor?.name, {
-    client: options?.client,
-  });
+  const traceableOptions = options ? { ...options } : undefined;
+  if (traceableOptions != null) {
+    delete traceableOptions.runName;
+    delete traceableOptions.name;
+  }
+
+  return _wrapClient(
+    sdk,
+    options?.name ?? options?.runName ?? sdk.constructor?.name,
+    traceableOptions
+  );
 };
