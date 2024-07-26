@@ -606,7 +606,9 @@ export class Client {
         );
       }
 
-      const items: T[] =transform ? transform(await response.json()) : await response.json();
+      const items: T[] = transform
+        ? transform(await response.json())
+        : await response.json();
 
       if (items.length === 0) {
         break;
@@ -3069,11 +3071,16 @@ export class Client {
     return this._likeOrUnlikePrompt(promptIdentifier, false);
   }
 
-  public async *listCommits(promptOwnerAndName: string): AsyncIterableIterator<PromptCommit> {
-    for await (const commits of this._getPaginated<PromptCommit, ListCommitsResponse>(
+  public async *listCommits(
+    promptOwnerAndName: string
+  ): AsyncIterableIterator<PromptCommit> {
+    for await (const commits of this._getPaginated<
+      PromptCommit,
+      ListCommitsResponse
+    >(
       `/commits/${promptOwnerAndName}/`,
       {} as URLSearchParams,
-      (res) => res.commits,
+      (res) => res.commits
     )) {
       yield* commits;
     }
@@ -3129,12 +3136,11 @@ export class Client {
     isPublic?: boolean;
     isArchived?: boolean;
     sortField?: PromptSortField;
-    sortDirection?: "desc" | "asc";
     query?: string;
   }): AsyncIterableIterator<Prompt> {
     const params = new URLSearchParams();
     params.append("sort_field", options?.sortField ?? "updated_at");
-    params.append("sort_direction", options?.sortDirection ?? "desc");
+    params.append("sort_direction", "desc");
     params.append("is_archived", (!!options?.isArchived).toString());
 
     if (options?.isPublic !== undefined) {
@@ -3148,7 +3154,7 @@ export class Client {
     for await (const prompts of this._getPaginated<Prompt, ListPromptsResponse>(
       "/repos",
       params,
-      (res) => res.repos,
+      (res) => res.repos
     )) {
       yield* prompts;
     }
@@ -3412,7 +3418,7 @@ export class Client {
     };
   }
 
-  public async pullPrompt(
+  public async _pullPrompt(
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;

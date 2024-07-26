@@ -450,12 +450,7 @@ export interface ListCommitsResponse {
   total: number;
 }
 
-export enum PromptSortField {
-  NumDownloads = "num_downloads",
-  NumViews = "num_views",
-  UpdatedAt = "updated_at",
-  NumLikes = "num_likes",
-}
+export type PromptSortField = "num_downloads" | "num_views" | "updated_at" | "num_likes"
 
 export interface LikePromptResponse {
   likes: number;
