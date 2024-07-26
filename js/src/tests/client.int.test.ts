@@ -14,7 +14,10 @@ import {
   toArray,
   waitUntil,
 } from "./utils.js";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI } from "@langchain/openai";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { load } from "langchain/load";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -756,12 +759,65 @@ test.concurrent("Test run stats", async () => {
 
 test("Test list prompts", async () => {
   const client = new Client();
+  // push 3 prompts
+  const promptName1 = `test_prompt_${uuidv4().slice(0, 8)}`;
+  const promptName2 = `test_prompt_${uuidv4().slice(0, 8)}`;
+  const promptName3 = `test_prompt_${uuidv4().slice(0, 8)}`;
+
+  await client.pushPrompt(promptName1, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+    isPublic: true,
+  });
+  await client.pushPrompt(promptName2, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+  await client.pushPrompt(promptName3, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+
+  // expect at least one of the prompts to have promptName1
   const response = await client.listPrompts({ isPublic: true });
+  let found = false;
   expect(response).toBeDefined();
   for await (const prompt of response) {
-    console.log("this is what prompt looks like", prompt);
     expect(prompt).toBeDefined();
+    if (prompt.repo_handle === promptName1) {
+      found = true;
+    }
   }
+  expect(found).toBe(true);
+
+  // expect the prompts to be sorted by updated_at
+  const response2 = client.listPrompts({ sortField: "updated_at" });
+  expect(response2).toBeDefined();
+  let lastUpdatedAt: number | undefined;
+  for await (const prompt of response2) {
+    expect(prompt.updated_at).toBeDefined();
+    const currentUpdatedAt = new Date(prompt.updated_at).getTime();
+    if (lastUpdatedAt !== undefined) {
+      expect(currentUpdatedAt).toBeLessThanOrEqual(lastUpdatedAt);
+    }
+    lastUpdatedAt = currentUpdatedAt;
+  }
+  expect(lastUpdatedAt).toBeDefined();
 });
 
 test("Test get prompt", async () => {
@@ -949,7 +1005,7 @@ test("Test push and pull prompt", async () => {
     tags: ["test", "tag"],
   });
 
-  const pulledPrompt = await client.pullPrompt(promptName);
+  const pulledPrompt = await client._pullPrompt(promptName);
   expect(pulledPrompt).toBeDefined();
 
   const promptInfo = await client.getPrompt(promptName);
@@ -957,6 +1013,27 @@ test("Test push and pull prompt", async () => {
   expect(promptInfo?.readme).toBe("Test readme");
   expect(promptInfo?.tags).toEqual(expect.arrayContaining(["test", "tag"]));
   expect(promptInfo?.is_public).toBe(false);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test pull prompt include model", async () => {
+  const client = new Client();
+  const model = new ChatOpenAI({});
+  const promptTemplate = PromptTemplate.fromTemplate(
+    "Tell me a joke about {topic}"
+  );
+  const promptWithModel = promptTemplate.pipe(model);
+
+  const promptName = `test_prompt_with_model_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, { object: promptWithModel });
+
+  const pulledPrompt = await client._pullPrompt(promptName, {
+    includeModel: true,
+  });
+  const rs: RunnableSequence = await load(pulledPrompt);
+  expect(rs).toBeDefined();
+  expect(rs).toBeInstanceOf(RunnableSequence);
 
   await client.deletePrompt(promptName);
 });
