@@ -3086,52 +3086,6 @@ export class Client {
     }
   }
 
-  public async *listProjects2({
-    projectIds,
-    name,
-    nameContains,
-    referenceDatasetId,
-    referenceDatasetName,
-    referenceFree,
-  }: {
-    projectIds?: string[];
-    name?: string;
-    nameContains?: string;
-    referenceDatasetId?: string;
-    referenceDatasetName?: string;
-    referenceFree?: boolean;
-  } = {}): AsyncIterable<TracerSession> {
-    const params = new URLSearchParams();
-    if (projectIds !== undefined) {
-      for (const projectId of projectIds) {
-        params.append("id", projectId);
-      }
-    }
-    if (name !== undefined) {
-      params.append("name", name);
-    }
-    if (nameContains !== undefined) {
-      params.append("name_contains", nameContains);
-    }
-    if (referenceDatasetId !== undefined) {
-      params.append("reference_dataset", referenceDatasetId);
-    } else if (referenceDatasetName !== undefined) {
-      const dataset = await this.readDataset({
-        datasetName: referenceDatasetName,
-      });
-      params.append("reference_dataset", dataset.id);
-    }
-    if (referenceFree !== undefined) {
-      params.append("reference_free", referenceFree.toString());
-    }
-    for await (const projects of this._getPaginated<TracerSession>(
-      "/sessions",
-      params
-    )) {
-      yield* projects;
-    }
-  }
-
   public async *listPrompts(options?: {
     isPublic?: boolean;
     isArchived?: boolean;
