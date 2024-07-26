@@ -286,12 +286,11 @@ const _wrapClient = <T extends object>(
     get(target, propKey, receiver) {
       const originalValue = target[propKey as keyof T];
       if (typeof originalValue === "function") {
-        return traceable(
-          originalValue.bind(target),
-          Object.assign({ run_type: "llm" }, options, {
-            name: [runName, propKey.toString()].join("."),
-          })
-        );
+        return traceable(originalValue.bind(target), {
+          run_type: "llm",
+          ...options,
+          name: [runName, propKey.toString()].join("."),
+        });
       } else if (
         originalValue != null &&
         !Array.isArray(originalValue) &&
