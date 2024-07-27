@@ -1,10 +1,10 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { openai } from "@ai-sdk/openai";
 import { generateObject, generateText, streamObject, streamText } from "ai";
 import { z } from "zod";
 import { wrapAISDKModel } from "../wrappers/vercel.js";
 
 test("AI SDK generateText", async () => {
-  const modelWithTracing = wrapAISDKModel(anthropic("claude-3-haiku-20240307"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
   const { text } = await generateText({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
@@ -13,7 +13,7 @@ test("AI SDK generateText", async () => {
 });
 
 test("AI SDK generateObject", async () => {
-  const modelWithTracing = wrapAISDKModel(anthropic("claude-3-haiku-20240307"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
   const { object } = await generateObject({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
@@ -25,7 +25,7 @@ test("AI SDK generateObject", async () => {
 });
 
 test("AI SDK streamText", async () => {
-  const modelWithTracing = wrapAISDKModel(anthropic("claude-3-haiku-20240307"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
   const { textStream } = await streamText({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
@@ -36,7 +36,7 @@ test("AI SDK streamText", async () => {
 });
 
 test("AI SDK streamObject", async () => {
-  const modelWithTracing = wrapAISDKModel(anthropic("claude-3-haiku-20240307"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
   const { partialObjectStream } = await streamObject({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
