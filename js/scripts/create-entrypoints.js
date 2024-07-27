@@ -17,6 +17,7 @@ const entrypoints = {
   wrappers: "wrappers/index",
   anonymizer: "anonymizer/index",
   "wrappers/openai": "wrappers/openai",
+  "wrappers/vercel": "wrappers/vercel",
   "singletons/traceable": "singletons/traceable",
 };
 
