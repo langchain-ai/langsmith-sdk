@@ -1,5 +1,11 @@
 import { openai } from "@ai-sdk/openai";
-import { generateObject, generateText, streamObject, streamText } from "ai";
+import {
+  generateObject,
+  generateText,
+  streamObject,
+  streamText,
+  tool,
+} from "ai";
 import { z } from "zod";
 import { wrapAISDKModel } from "../wrappers/vercel.js";
 
@@ -8,6 +14,27 @@ test("AI SDK generateText", async () => {
   const { text } = await generateText({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
+  });
+  console.log(text);
+});
+
+test("AI SDK generateText with a tool", async () => {
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
+  const { text } = await generateText({
+    model: modelWithTracing,
+    prompt:
+      "Write a vegetarian lasagna recipe for 4 people. Get ingredients first.",
+    tools: {
+      getIngredients: tool({
+        description: "get a list of ingredients",
+        parameters: z.object({
+          ingredients: z.array(z.string()),
+        }),
+        execute: async () =>
+          JSON.stringify(["pasta", "tomato", "cheese", "onions"]),
+      }),
+    },
+    maxToolRoundtrips: 2,
   });
   console.log(text);
 });
