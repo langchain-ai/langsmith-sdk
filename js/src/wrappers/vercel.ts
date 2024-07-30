@@ -50,14 +50,45 @@ export const wrapAISDKModel = <T extends object>(
       const originalValue = target[propKey as keyof T];
       if (typeof originalValue === "function") {
         let __finalTracedIteratorKey;
+        let aggregator;
         if (propKey === "doStream") {
           __finalTracedIteratorKey = "stream";
+          aggregator = (chunks: any[]) => {
+            return chunks.reduce(
+              (aggregated, chunk) => {
+                console.log(chunk);
+                if (chunk.type === "text-delta") {
+                  return {
+                    ...aggregated,
+                    text: aggregated.text + chunk.textDelta,
+                  };
+                } else if (chunk.type === "tool-call") {
+                  return {
+                    ...aggregated,
+                    ...chunk,
+                  };
+                } else if (chunk.type === "finish") {
+                  return {
+                    ...aggregated,
+                    usage: chunk.usage,
+                    finishReason: chunk.finishReason,
+                  };
+                } else {
+                  return aggregated;
+                }
+              },
+              {
+                text: "",
+              }
+            );
+          };
         }
         return traceable(originalValue.bind(target), {
           run_type: "llm",
           name: runName,
           ...options,
           __finalTracedIteratorKey,
+          aggregator,
         });
       } else if (
         originalValue != null &&
