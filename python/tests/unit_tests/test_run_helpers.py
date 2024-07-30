@@ -963,11 +963,24 @@ def test_traceable_to_trace():
 
 async def test_traceable_to_atrace():
     @traceable
+    async def great_grandchild_fn(a: int, b: int) -> int:
+        return a + b
+
+    @traceable
     async def parent_fn(a: int, b: int) -> int:
         async with langsmith.trace(
             name="child_fn", inputs={"a": a, "b": b}
         ) as run_tree:
-            result = a + b
+            async with langsmith.trace(
+                "grandchild_fn", inputs={"a": a, "b": b, "c": "oh my"}
+            ) as run_tree_gc:
+                try:
+                    async with langsmith.trace("expect_error", inputs={}):
+                        raise ValueError("oh no")
+                except ValueError:
+                    pass
+                result = await great_grandchild_fn(a, b)
+                run_tree_gc.end(outputs={"result": result})
             run_tree.end(outputs={"result": result})
         return result
 
@@ -991,8 +1004,20 @@ async def test_traceable_to_atrace():
     child_runs = run.child_runs
     assert child_runs
     assert len(child_runs) == 1
-    assert child_runs[0].name == "child_fn"
-    assert child_runs[0].inputs == {"a": 1, "b": 2}
+    child = child_runs[0]
+    assert child.name == "child_fn"
+    assert child.inputs == {"a": 1, "b": 2}
+    assert len(child.child_runs) == 1
+    grandchild = child.child_runs[0]
+    assert grandchild.name == "grandchild_fn"
+    assert grandchild.inputs == {"a": 1, "b": 2, "c": "oh my"}
+    assert len(grandchild.child_runs) == 2
+    ggcerror = grandchild.child_runs[0]
+    assert ggcerror.name == "expect_error"
+    assert "oh no" in str(ggcerror.error)
+    ggc = grandchild.child_runs[1]
+    assert ggc.name == "great_grandchild_fn"
+    assert ggc.inputs == {"a": 1, "b": 2}
 
 
 def test_trace_to_traceable():
