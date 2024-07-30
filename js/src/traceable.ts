@@ -297,8 +297,8 @@ export function traceable<Func extends (...args: any[]) => any>(
   type Inputs = Parameters<Func>;
   const {
     aggregator,
-    __finalTracedIteratorKey,
     argsConfigPath,
+    __finalTracedIteratorKey,
     ...runTreeConfig
   } = config ?? {};
 
