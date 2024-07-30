@@ -926,7 +926,11 @@ class trace:
         Returns:
             run_trees.RunTree: The newly created run.
         """
-        return await aitertools.aio_to_thread(self._setup)
+        ctx = copy_context()
+        result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
+        # Set the context for the current thread
+        _set_tracing_context(get_tracing_context(ctx))
+        return result
 
     async def __aexit__(
         self,
@@ -941,14 +945,18 @@ class trace:
             exc_value: The exception instance that occurred, if any.
             traceback: The traceback object associated with the exception, if any.
         """
+        ctx = copy_context()
         if exc_type is not None:
             await asyncio.shield(
-                aitertools.aio_to_thread(self._teardown, exc_type, exc_value, traceback)
+                aitertools.aio_to_thread(
+                    self._teardown, exc_type, exc_value, traceback, __ctx=ctx
+                )
             )
         else:
             await aitertools.aio_to_thread(
-                self._teardown, exc_type, exc_value, traceback
+                self._teardown, exc_type, exc_value, traceback, __ctx=ctx
             )
+        _set_tracing_context(get_tracing_context(ctx))
 
 
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
