@@ -56,7 +56,6 @@ export const wrapAISDKModel = <T extends object>(
           aggregator = (chunks: any[]) => {
             return chunks.reduce(
               (aggregated, chunk) => {
-                console.log(chunk);
                 if (chunk.type === "text-delta") {
                   return {
                     ...aggregated,
