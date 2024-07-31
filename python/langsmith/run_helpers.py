@@ -804,7 +804,8 @@ class trace:
             run_trees.RunTree: The newly created run.
         """
         self.old_ctx = get_tracing_context()
-        is_disabled = self.old_ctx.get("enabled", True) is False
+        enabled = utils.tracing_is_enabled(self.old_ctx)
+
         outer_tags = _TAGS.get()
         outer_metadata = _METADATA.get()
         parent_run_ = _get_parent_run(
@@ -827,7 +828,7 @@ class trace:
 
         project_name_ = _get_project_name(self.project_name)
 
-        if parent_run_ is not None and not is_disabled:
+        if parent_run_ is not None and enabled:
             self.new_run = parent_run_.create_child(
                 name=self.name,
                 run_id=self.run_id,
@@ -851,7 +852,7 @@ class trace:
                 client=self.client,  # type: ignore[arg-type]
             )
 
-        if not is_disabled:
+        if enabled:
             self.new_run.post()
             _TAGS.set(tags_)
             _METADATA.set(metadata)
@@ -877,7 +878,6 @@ class trace:
             traceback: The traceback object associated with the exception, if any.
         """
         if self.new_run is None:
-            warnings.warn("Tracing context was not set up properly.", RuntimeWarning)
             return
         if exc_type is not None:
             if self.exceptions_to_handle and issubclass(
@@ -889,8 +889,8 @@ class trace:
                 tb = f"{exc_type.__name__}: {exc_value}\n\n{tb}"
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
-            is_disabled = self.old_ctx.get("enabled", True) is False
-            if not is_disabled:
+            enabled = utils.tracing_is_enabled(self.old_ctx)
+            if enabled:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)
