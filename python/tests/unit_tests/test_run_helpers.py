@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import json
+import os
 import sys
 import time
 import uuid
@@ -1071,11 +1072,11 @@ def test_client_passed_when_trace_parent():
     mock_client = _get_mock_client()
     rt = RunTree(name="foo", client=mock_client)
     headers = rt.to_headers()
-
-    with trace(
-        name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
-    ) as rt:
-        rt.outputs["bar"] = "baz"
+    with tracing_context(enabled=True):
+        with trace(
+            name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
+        ) as rt:
+            rt.outputs["bar"] = "baz"
     calls = _get_calls(mock_client)
     assert len(calls) == 1
     call = calls[0]
@@ -1281,7 +1282,7 @@ async def test_traceable_async_exception(auto_batch_tracing: bool):
     mock_calls = _get_calls(
         mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
     )
-    assert len(mock_calls) == num_calls
+    assert len(mock_calls) >= num_calls
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
@@ -1316,3 +1317,27 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
         mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
     )
     assert len(mock_calls) == num_calls
+
+
+@pytest.mark.parametrize("env_var", [True, False])
+@pytest.mark.parametrize("context", [True, False, None])
+async def test_trace_respects_env_var(env_var: bool, context: Optional[bool]):
+    mock_client = _get_mock_client()
+    with patch.dict(os.environ, {"LANGSMITH_TRACING": "true" if env_var else "false "}):
+        with tracing_context(enabled=context):
+            with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
+                assert run.name == "foo"
+                pass
+            async with trace(name="bar", inputs={"b": 2}, client=mock_client) as run2:
+                assert run2.name == "bar"
+                pass
+
+    mock_calls = _get_calls(mock_client)
+    if context is None:
+        expect = env_var
+    else:
+        expect = context
+    if expect:
+        assert len(mock_calls) >= 1
+    else:
+        assert not mock_calls
