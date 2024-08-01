@@ -997,12 +997,24 @@ test("Test push and pull prompt", async () => {
     ],
     { templateFormat: "mustache" }
   );
+  const template2 = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "My question is: {{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
 
   await client.pushPrompt(promptName, {
     object: template,
     description: "Test description",
     readme: "Test readme",
     tags: ["test", "tag"],
+  });
+
+  // test you can push an updated manifest without any other options
+  await client.pushPrompt(promptName, {
+    object: template2,
   });
 
   const pulledPrompt = await client._pullPrompt(promptName);
