@@ -1012,7 +1012,7 @@ test("Test push and pull prompt", async () => {
     tags: ["test", "tag"],
   });
 
-  // test you can push an updated manifest
+  // test you can push an updated manifest without any other options
   await client.pushPrompt(promptName, {
     object: template2,
   });
