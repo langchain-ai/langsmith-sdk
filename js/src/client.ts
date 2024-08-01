@@ -3417,12 +3417,14 @@ export class Client {
   ): Promise<string> {
     // Create or update prompt metadata
     if (await this.promptExists(promptIdentifier)) {
-      await this.updatePrompt(promptIdentifier, {
-        description: options?.description,
-        readme: options?.readme,
-        tags: options?.tags,
-        isPublic: options?.isPublic,
-      });
+      if (options && Object.keys(options).some((key) => key !== "object")) {
+        await this.updatePrompt(promptIdentifier, {
+          description: options?.description,
+          readme: options?.readme,
+          tags: options?.tags,
+          isPublic: options?.isPublic,
+        });
+      }
     } else {
       await this.createPrompt(promptIdentifier, {
         description: options?.description,
