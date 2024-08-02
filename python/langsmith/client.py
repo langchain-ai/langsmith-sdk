@@ -5350,7 +5350,13 @@ class Client:
         """
         # Create or update prompt metadata
         if self._prompt_exists(prompt_identifier):
-            if not (parent_commit_hash is None and is_public is None and description is None and readme is None and tags is None):
+            if not (
+                parent_commit_hash is None
+                and is_public is None
+                and description is None
+                and readme is None
+                and tags is None
+            ):
                 self.update_prompt(
                     prompt_identifier,
                     description=description,
