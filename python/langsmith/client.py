@@ -88,7 +88,10 @@ def _is_localhost(url: str) -> bool:
 
 
 def _parse_token_or_url(
-    url_or_token: Union[str, uuid.UUID], api_url: str, num_parts: int = 2
+    url_or_token: Union[str, uuid.UUID],
+    api_url: str,
+    num_parts: int = 2,
+    kind: str = "dataset",
 ) -> Tuple[str, str]:
     """Parse a public dataset URL or share token."""
     try:
@@ -104,7 +107,7 @@ def _parse_token_or_url(
     if len(path_parts) >= num_parts:
         token_uuid = path_parts[-num_parts]
     else:
-        raise ls_utils.LangSmithUserError(f"Invalid public dataset URL: {url_or_token}")
+        raise ls_utils.LangSmithUserError(f"Invalid public {kind} URL: {url_or_token}")
     return api_url, token_uuid
 
 
@@ -1949,21 +1952,32 @@ class Client:
         link = self.read_run_shared_link(_as_uuid(run_id, "run_id"))
         return link is not None
 
-    def list_shared_runs(
-        self, share_token: ID_TYPE, run_ids: Optional[List[str]] = None
-    ) -> List[ls_schemas.Run]:
+    def read_shared_run(
+        self, share_token: Union[ID_TYPE, str], run_id: Optional[ID_TYPE] = None
+    ) -> ls_schemas.Run:
         """Get shared runs."""
-        params = {"id": run_ids, "share_token": str(share_token)}
+        _, token_uuid = _parse_token_or_url(share_token, "", kind="run")
+        path = f"/public/{token_uuid}/run"
+        if run_id is not None:
+            path += f"/{_as_uuid(run_id, 'run_id')}"
         response = self.request_with_retries(
             "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/runs",
+            path,
             headers=self._headers,
-            params=params,
         )
         ls_utils.raise_for_status_with_text(response)
-        return [
-            ls_schemas.Run(**run, _host_url=self._host_url) for run in response.json()
-        ]
+        return ls_schemas.Run(**response.json(), _host_url=self._host_url)
+
+    def list_shared_runs(
+        self, share_token: Union[ID_TYPE, str], run_ids: Optional[List[str]] = None
+    ) -> Iterator[ls_schemas.Run]:
+        """Get shared runs."""
+        body = {"id": run_ids} if run_ids else {}
+        _, token_uuid = _parse_token_or_url(share_token, "", kind="run")
+        for run in self._get_cursor_paginated_list(
+            f"/public/{token_uuid}/runs/query", body=body
+        ):
+            yield ls_schemas.Run(**run, _host_url=self._host_url)
 
     def read_dataset_shared_schema(
         self,
