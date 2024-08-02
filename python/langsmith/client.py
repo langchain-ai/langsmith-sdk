@@ -5036,7 +5036,7 @@ class Client:
         description: Optional[str] = None,
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
-        is_public: bool = False,
+        is_public: Optional[bool] = False,
     ) -> ls_schemas.Prompt:
         """Create a new prompt.
 
@@ -5074,7 +5074,7 @@ class Client:
             "description": description or "",
             "readme": readme or "",
             "tags": tags or [],
-            "is_public": is_public,
+            "is_public": is_public or False,
         }
 
         response = self.request_with_retries("POST", "/repos/", json=json)
@@ -5350,13 +5350,14 @@ class Client:
         """
         # Create or update prompt metadata
         if self._prompt_exists(prompt_identifier):
-            self.update_prompt(
-                prompt_identifier,
-                description=description,
-                readme=readme,
-                tags=tags,
-                is_public=is_public,
-            )
+            if not (parent_commit_hash is None and is_public is None and description is None and readme is None and tags is None):
+                self.update_prompt(
+                    prompt_identifier,
+                    description=description,
+                    readme=readme,
+                    tags=tags,
+                    is_public=is_public,
+                )
         else:
             self.create_prompt(
                 prompt_identifier,
