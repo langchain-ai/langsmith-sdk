@@ -5036,7 +5036,7 @@ class Client:
         description: Optional[str] = None,
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
-        is_public: Optional[bool] = False,
+        is_public: bool = False,
     ) -> ls_schemas.Prompt:
         """Create a new prompt.
 
