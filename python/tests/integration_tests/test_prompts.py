@@ -411,7 +411,11 @@ def test_create_commit(
     langsmith_client.delete_prompt(prompt_name)
 
 
-def test_push_prompt(langsmith_client: Client, prompt_template_3: PromptTemplate, prompt_template_2: ChatPromptTemplate):
+def test_push_prompt(
+    langsmith_client: Client,
+    prompt_template_3: PromptTemplate,
+    prompt_template_2: ChatPromptTemplate
+):
     prompt_name = f"test_push_new_{uuid4().hex[:8]}"
     url = langsmith_client.push_prompt(
         prompt_name,
