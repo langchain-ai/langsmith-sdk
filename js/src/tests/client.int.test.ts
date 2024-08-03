@@ -917,18 +917,20 @@ test("test listing projects by metadata", async () => {
   await client.createProject({
     projectName: "my_metadata_project",
     metadata: {
-      foo: "bar",
-      baz: "qux",
+      foobar: "bar",
+      baz: "barfooqux",
     },
   });
 
-  const projects = await client.listProjects({ metadata: { foo: "bar" } });
+  const projects = await client.listProjects({ metadata: { foobar: "bar" } });
 
   let myProject: TracerSession | null = null;
   for await (const project of projects) {
     myProject = project;
   }
   expect(myProject?.name).toEqual("my_metadata_project");
+
+  await client.deleteProject({ projectName: "my_metadata_project" });
 });
 
 test("Test create commit", async () => {
