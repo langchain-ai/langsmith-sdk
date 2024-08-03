@@ -1,4 +1,4 @@
-import { Dataset, Run } from "../schemas.js";
+import { Dataset, Run, TracerSession } from "../schemas.js";
 import {
   FunctionMessage,
   HumanMessage,
