@@ -917,12 +917,12 @@ test("test listing projects by metadata", async () => {
   await client.createProject({
     projectName: "my_metadata_project",
     metadata: {
-      "foo": "bar",
-      "baz": "qux",
-    }
+      foo: "bar",
+      baz: "qux",
+    },
   });
 
-  const projects = await client.listProjects({ metadata: { "foo": "bar" } });
+  const projects = await client.listProjects({ metadata: { foo: "bar" } });
 
   let myProject: TracerSession | null = null;
   for await (const project of projects) {
