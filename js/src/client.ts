@@ -1758,6 +1758,7 @@ export class Client {
     referenceDatasetId,
     referenceDatasetName,
     referenceFree,
+    metadata,
   }: {
     projectIds?: string[];
     name?: string;
@@ -1765,6 +1766,7 @@ export class Client {
     referenceDatasetId?: string;
     referenceDatasetName?: string;
     referenceFree?: boolean;
+    metadata?: RecordStringAny;
   } = {}): AsyncIterable<TracerSession> {
     const params = new URLSearchParams();
     if (projectIds !== undefined) {
@@ -1788,6 +1790,9 @@ export class Client {
     }
     if (referenceFree !== undefined) {
       params.append("reference_free", referenceFree.toString());
+    }
+    if (metadata !== undefined) {
+      params.append("metadata", JSON.stringify(metadata));
     }
     for await (const projects of this._getPaginated<TracerSession>(
       "/sessions",
