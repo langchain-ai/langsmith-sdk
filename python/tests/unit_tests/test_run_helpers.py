@@ -770,6 +770,24 @@ def test_generator():
     assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
+def test_generator_yield_and_respond():
+    @traceable
+    def my_function() -> Generator[int, None, None]:
+        yield 1
+        yield 2
+        return 3
+
+    gen = my_function()
+    results = []
+    while True:
+        try:
+            results.append(next(gen))
+        except StopIteration as e:
+            assert e.value == 3
+            break
+    assert results == [1, 2]
+
+
 def test_traceable_regular():
     @traceable
     def some_sync_func(query: str, **kwargs: Any) -> list:
