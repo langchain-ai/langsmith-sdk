@@ -794,7 +794,7 @@ test("Test list prompts", async () => {
   });
 
   // expect at least one of the prompts to have promptName1
-  const response = await client.listPrompts({ isPublic: true });
+  const response = await client.listPrompts({ isPublic: true, query: 'test_prompt' });
   let found = false;
   expect(response).toBeDefined();
   for await (const prompt of response) {
