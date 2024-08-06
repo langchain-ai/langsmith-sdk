@@ -772,10 +772,10 @@ def test_generator():
 
 def test_generator_yield_and_respond():
     @traceable
-    def my_function() -> Generator[int, None, None]:
+    def my_function() -> Generator[int, None, str]:
         yield 1
         yield 2
-        return 3
+        return "foo"
 
     gen = my_function()
     results = []
@@ -783,7 +783,7 @@ def test_generator_yield_and_respond():
         try:
             results.append(next(gen))
         except StopIteration as e:
-            assert e.value == 3
+            assert e.value == "foo"
             break
     assert results == [1, 2]
 
