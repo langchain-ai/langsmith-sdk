@@ -2438,6 +2438,7 @@ class Client:
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
         limit: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Iterator[ls_schemas.TracerSession]:
         """List projects from the LangSmith API.
 
@@ -2457,6 +2458,8 @@ class Client:
             Whether to filter for only projects not associated with a dataset.
         limit : Optional[int], optional
             The maximum number of projects to return, by default None
+        metadata: Optional[Dict[str, Any]], optional
+            Metadata to filter by.
 
         Yields:
         ------
@@ -2486,6 +2489,8 @@ class Client:
             params["reference_dataset"] = reference_dataset_id
         if reference_free is not None:
             params["reference_free"] = reference_free
+        if metadata is not None:
+            params["metadata"] = json.dumps(metadata)
         for i, project in enumerate(
             self._get_paginated_list("/sessions", params=params)
         ):
