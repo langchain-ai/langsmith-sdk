@@ -1341,3 +1341,110 @@ async def test_trace_respects_env_var(env_var: bool, context: Optional[bool]):
         assert len(mock_calls) >= 1
     else:
         assert not mock_calls
+
+
+async def test_process_inputs_outputs():
+    mock_client = _get_mock_client()
+    in_s = "what's life's meaning"
+
+    def process_inputs(inputs: dict) -> dict:
+        assert inputs == {"val": in_s, "ooblek": "nada"}
+        inputs["val2"] = "this is mutated"
+        return {"serialized_in": "what's the meaning of life?"}
+
+    def process_outputs(outputs: int) -> dict:
+        assert outputs == 42
+        return {"serialized_out": 24}
+
+    @traceable(process_inputs=process_inputs, process_outputs=process_outputs)
+    def my_function(val: str, **kwargs: Any) -> int:
+        assert not kwargs.get("val2")
+        return 42
+
+    with tracing_context(enabled=True):
+        my_function(
+            in_s,
+            ooblek="nada",
+            langsmith_extra={"client": mock_client},
+        )
+
+    def _check_client(client: Client) -> None:
+        mock_calls = _get_calls(client)
+        assert len(mock_calls) == 1
+        call = mock_calls[0]
+        assert call.args[0] == "POST"
+        assert call.args[1].startswith("https://api.smith.langchain.com")
+        body = json.loads(call.kwargs["data"])
+        assert body["post"]
+        assert body["post"][0]["inputs"] == {
+            "serialized_in": "what's the meaning of life?"
+        }
+        assert body["post"][0]["outputs"] == {"serialized_out": 24}
+
+    _check_client(mock_client)
+
+    @traceable(process_inputs=process_inputs, process_outputs=process_outputs)
+    async def amy_function(val: str, **kwargs: Any) -> int:
+        assert not kwargs.get("val2")
+        return 42
+
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        await amy_function(
+            in_s,
+            ooblek="nada",
+            langsmith_extra={"client": mock_client},
+        )
+
+    _check_client(mock_client)
+
+    # Do generator
+
+    def reducer(outputs: list) -> dict:
+        return {"reduced": outputs[0]}
+
+    def process_reduced_outputs(outputs: dict) -> dict:
+        assert outputs == {"reduced": 42}
+        return {"serialized_out": 24}
+
+    @traceable(
+        process_inputs=process_inputs,
+        process_outputs=process_reduced_outputs,
+        reduce_fn=reducer,
+    )
+    def my_gen(val: str, **kwargs: Any) -> Generator[int, None, None]:
+        assert not kwargs.get("val2")
+        yield 42
+
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        result = list(
+            my_gen(
+                in_s,
+                ooblek="nada",
+                langsmith_extra={"client": mock_client},
+            )
+        )
+        assert result == [42]
+
+    _check_client(mock_client)
+
+    @traceable(
+        process_inputs=process_inputs,
+        process_outputs=process_reduced_outputs,
+        reduce_fn=reducer,
+    )
+    async def amy_gen(val: str, **kwargs: Any) -> AsyncGenerator[int, None]:
+        assert not kwargs.get("val2")
+        yield 42
+
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        result = [
+            i
+            async for i in amy_gen(
+                in_s, ooblek="nada", langsmith_extra={"client": mock_client}
+            )
+        ]
+        assert result == [42]
+    _check_client(mock_client)
