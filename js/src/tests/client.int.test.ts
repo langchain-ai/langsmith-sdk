@@ -1,4 +1,4 @@
-import { Dataset, Run } from "../schemas.js";
+import { Dataset, Run, TracerSession } from "../schemas.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -910,6 +910,27 @@ test("Test delete prompt", async () => {
   expect(await client.promptExists(promptName)).toBe(true);
   await client.deletePrompt(promptName);
   expect(await client.promptExists(promptName)).toBe(false);
+});
+
+test("test listing projects by metadata", async () => {
+  const client = new Client();
+  await client.createProject({
+    projectName: "my_metadata_project",
+    metadata: {
+      foobar: "bar",
+      baz: "barfooqux",
+    },
+  });
+
+  const projects = await client.listProjects({ metadata: { foobar: "bar" } });
+
+  let myProject: TracerSession | null = null;
+  for await (const project of projects) {
+    myProject = project;
+  }
+  expect(myProject?.name).toEqual("my_metadata_project");
+
+  await client.deleteProject({ projectName: "my_metadata_project" });
 });
 
 test("Test create commit", async () => {
