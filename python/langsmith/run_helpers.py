@@ -550,8 +550,9 @@ def traceable(
                                 )
                         results.append(item)
                         yield item
-                except StopAsyncIteration:
-                    pass
+                except StopAsyncIteration as saie:
+                    if saie.value:
+                        results.append(saie.value)
             except BaseException as e:
                 await asyncio.shield(
                     aitertools.aio_to_thread(_on_run_end, run_container, error=e)
@@ -616,6 +617,7 @@ def traceable(
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
             results: List[Any] = []
+            return_value = None
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
@@ -644,8 +646,10 @@ def traceable(
                             yield item
                         except GeneratorExit:
                             break
-                except StopIteration:
-                    pass
+                except StopIteration as sie:
+                    return_value = sie.value
+                    if return_value:
+                        results.append(return_value)
 
             except BaseException as e:
                 _on_run_end(run_container, error=e)
@@ -662,6 +666,7 @@ def traceable(
             else:
                 function_result = None
             _on_run_end(run_container, outputs=function_result)
+            return return_value
 
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper
