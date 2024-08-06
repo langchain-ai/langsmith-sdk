@@ -3,7 +3,7 @@ import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from typing import AsyncGenerator, Generator, Optional
+from typing import AsyncGenerator, Generator, Optional, Sequence
 
 import pytest  # type: ignore
 
@@ -330,7 +330,7 @@ def test_sync_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator_reduce_fn"
     run_meta = uuid.uuid4().hex
 
-    def reduce_fn(outputs: list) -> dict:
+    def reduce_fn(outputs: Sequence) -> dict:
         return {"my_output": " ".join(outputs)}
 
     @traceable(run_type="chain", reduce_fn=reduce_fn)
@@ -411,7 +411,7 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator_reduce_fn"
     run_meta = uuid.uuid4().hex
 
-    def reduce_fn(outputs: list) -> dict:
+    def reduce_fn(outputs: Sequence) -> dict:
         return {"my_output": " ".join(outputs)}
 
     @traceable(run_type="chain", reduce_fn=reduce_fn)
