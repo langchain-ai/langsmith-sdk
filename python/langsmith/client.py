@@ -5093,7 +5093,7 @@ class Client:
             "description": description or "",
             "readme": readme or "",
             "tags": tags or [],
-            "is_public": is_public or False,
+            "is_public": is_public,
         }
 
         response = self.request_with_retries("POST", "/repos/", json=json)
