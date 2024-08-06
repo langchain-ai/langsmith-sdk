@@ -243,10 +243,10 @@ def traceable(
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[List[str]] = None,
     client: Optional[ls_client.Client] = None,
-    reduce_fn: Optional[Callable[[Sequence, dict]]] = None,
+    reduce_fn: Optional[Callable[[Sequence], dict]] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
-    process_outputs: Optional[Callable[[R], dict]] = None,
+    process_outputs: Optional[Callable[..., dict]] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
@@ -423,15 +423,15 @@ def traceable(
     )
     outputs_processor = kwargs.pop("process_outputs", None)
 
-    def _container_handle_end(
+    def _on_run_end(
         container: _TraceableContainer,
         outputs: Optional[Any] = None,
         error: Optional[BaseException] = None,
-    ):
-        """Handle the end of a container."""
+    ) -> None:
+        """Handle the end of run."""
         if outputs and outputs_processor is not None:
             outputs = outputs_processor(outputs)
-        return _container_end(container, outputs=outputs, error=error)
+        _container_end(container, outputs=outputs, error=error)
 
     if kwargs:
         warnings.warn(
@@ -481,13 +481,11 @@ def traceable(
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
                 await asyncio.shield(
-                    aitertools.aio_to_thread(
-                        _container_handle_end, run_container, error=e
-                    )
+                    aitertools.aio_to_thread(_on_run_end, run_container, error=e)
                 )
                 raise e
             await aitertools.aio_to_thread(
-                _container_handle_end, run_container, outputs=function_result
+                _on_run_end, run_container, outputs=function_result
             )
             return function_result
 
@@ -556,9 +554,7 @@ def traceable(
                     pass
             except BaseException as e:
                 await asyncio.shield(
-                    aitertools.aio_to_thread(
-                        _container_handle_end, run_container, error=e
-                    )
+                    aitertools.aio_to_thread(_on_run_end, run_container, error=e)
                 )
                 raise e
             if results:
@@ -573,7 +569,7 @@ def traceable(
             else:
                 function_result = None
             await aitertools.aio_to_thread(
-                _container_handle_end, run_container, outputs=function_result
+                _on_run_end, run_container, outputs=function_result
             )
 
         @functools.wraps(func)
@@ -600,9 +596,9 @@ def traceable(
                     kwargs.pop("config", None)
                 function_result = run_container["context"].run(func, *args, **kwargs)
             except BaseException as e:
-                _container_handle_end(run_container, error=e)
+                _on_run_end(run_container, error=e)
                 raise e
-            _container_handle_end(run_container, outputs=function_result)
+            _on_run_end(run_container, outputs=function_result)
             return function_result
 
         @functools.wraps(func)
@@ -652,7 +648,7 @@ def traceable(
                     pass
 
             except BaseException as e:
-                _container_handle_end(run_container, error=e)
+                _on_run_end(run_container, error=e)
                 raise e
             if results:
                 if reduce_fn:
@@ -665,7 +661,7 @@ def traceable(
                     function_result = results
             else:
                 function_result = None
-            _container_handle_end(run_container, outputs=function_result)
+            _on_run_end(run_container, outputs=function_result)
 
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper
@@ -1153,7 +1149,7 @@ def _container_end(
     container: _TraceableContainer,
     outputs: Optional[Any] = None,
     error: Optional[BaseException] = None,
-):
+) -> None:
     """End the run."""
     run_tree = container.get("new_run")
     if run_tree is None:
