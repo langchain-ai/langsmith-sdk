@@ -332,6 +332,7 @@ test.skip("can iterate over evaluate results", async () => {
   });
 
   for await (const item of evalRes) {
+    expect(item.run).toBeDefined();
   }
 });
 
