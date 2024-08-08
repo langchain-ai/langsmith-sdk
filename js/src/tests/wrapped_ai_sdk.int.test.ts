@@ -35,6 +35,7 @@ test("AI SDK generateText with a tool", async () => {
     },
     maxToolRoundtrips: 2,
   });
+  expect(text).toBeDefined();
 });
 
 test("AI SDK generateObject", async () => {
@@ -55,6 +56,7 @@ test("AI SDK streamText", async () => {
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
   });
   for await (const chunk of textStream) {
+    expect(chunk).toBeDefined();
   }
 });
 
@@ -68,5 +70,6 @@ test("AI SDK streamObject", async () => {
     }),
   });
   for await (const chunk of partialObjectStream) {
+    expect(chunk).toBeDefined();
   }
 });
