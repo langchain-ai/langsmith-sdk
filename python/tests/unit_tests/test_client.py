@@ -28,7 +28,7 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
-from langsmith import run_trees
+from langsmith import EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith.client import (
     Client,
@@ -1077,3 +1077,42 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
 
     # Check that no duplicate run_ids are present in the request bodies
     assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
+
+
+def test_select_eval_results():
+    expected = EvaluationResult(
+        key="foo",
+        value="bar",
+        score=7899082,
+        metadata={"a": "b"},
+        comment="hi",
+        feedback_config={"c": "d"},
+    )
+    client = Client(api_key="test")
+    for count, input_ in [
+        (1, expected),
+        (1, expected.dict()),
+        (1, {"results": [expected]}),
+        (1, {"results": [expected.dict()]}),
+        (2, {"results": [expected.dict(), expected.dict()]}),
+        (2, {"results": [expected, expected]}),
+    ]:
+        op = client._select_eval_results(input_)
+        assert len(op) == count
+        assert op == [expected] * count
+
+    expected2 = EvaluationResult(
+        key="foo",
+        metadata={"a": "b"},
+        comment="this is a comment",
+        feedback_config={"c": "d"},
+    )
+
+    as_reasoning = {
+        "reasoning": expected2.comment,
+        **expected2.dict(exclude={"comment"}),
+    }
+    for input_ in [as_reasoning, {"results": [as_reasoning]}, {"results": [expected2]}]:
+        assert client._select_eval_results(input_) == [
+            expected2,
+        ]
