@@ -46,7 +46,7 @@ afterAll(async () => {
 
 test("evaluate can evaluate", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -56,7 +56,7 @@ test("evaluate can evaluate", async () => {
     data: TESTING_DATASET_NAME,
     description: "Experiment from evaluate can evaluate integration test",
   });
-  // console.log(evalRes.results)
+  //console.debug(evalRes.results)
   expect(evalRes.results).toHaveLength(2);
 
   expect(evalRes.results[0].run).toBeDefined();
@@ -84,7 +84,7 @@ test("evaluate can evaluate", async () => {
 
 test("evaluate can repeat", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -184,7 +184,7 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
 
 test("evaluate can evaluate with custom evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -256,7 +256,7 @@ test("evaluate can evaluate with custom evaluators", async () => {
 
 test("evaluate can evaluate with summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -314,7 +314,7 @@ test("evaluate can evaluate with summary evaluators", async () => {
 
 test.skip("can iterate over evaluate results", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -337,13 +337,13 @@ test.skip("can iterate over evaluate results", async () => {
   });
 
   for await (const item of evalRes) {
-    console.log("item", item);
+    console.debug("item", item);
   }
 });
 
 test("can pass multiple evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -404,7 +404,7 @@ test("split info saved correctly", async () => {
   });
 
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -466,7 +466,7 @@ test("split info saved correctly", async () => {
 
 test("can pass multiple summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -517,7 +517,7 @@ test("can pass AsyncIterable of Example's to evaluator instead of dataset name",
   });
 
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -551,7 +551,7 @@ test("can pass AsyncIterable of Example's to evaluator instead of dataset name",
 
 test("max concurrency works with custom evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -587,7 +587,7 @@ test("max concurrency works with custom evaluators", async () => {
 
 test("max concurrency works with summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -704,7 +704,7 @@ test("evaluate can accept array of examples", async () => {
   }
 
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
+    console.debug("__input__", input);
     return {
       foo: input.input + 1,
     };

@@ -356,7 +356,7 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _test = chunk.invalidProp;
   }
-  console.log(tracedOutput);
+  console.debug(tracedOutput);
   expect(typeof tracedOutput).toEqual("string");
   expect(collectedRun).not.toBeNull();
   expect(collectedRun!.outputs).toEqual({ outputs: tracedOutput });
