@@ -4377,6 +4377,11 @@ class Client:
         name: str,
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
+        default_dataset_id: Optional[ID_TYPE] = None,
+        default_dataset_name: Optional[str] = None,
+        num_reviewers_per_item: Optional[int] = None,
+        enable_reservations: Optional[bool] = None,
+        reservation_minutes: Optional[int] = None,
     ) -> ls_schemas.AnnotationQueue:
         """Create an annotation queue on the LangSmith API.
 
@@ -4392,10 +4397,16 @@ class Client:
             AnnotationQueue
                 The created annotation queue object.
         """
+        if default_dataset_id is None and default_dataset_name is not None:
+            default_dataset_id = self.read_dataset(default_dataset_name).id
         body = {
             "name": name,
             "description": description,
             "id": queue_id or str(uuid.uuid4()),
+            "default_dataset": default_dataset_id,
+            "num_reviewers_per_item": num_reviewers_per_item,
+            "enable_reservations": enable_reservations,
+            "reservation_minutes": reservation_minutes,
         }
         response = self.request_with_retries(
             "POST",
@@ -4420,7 +4431,16 @@ class Client:
         return next(self.list_annotation_queues(queue_ids=[queue_id]))
 
     def update_annotation_queue(
-        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self,
+        queue_id: ID_TYPE,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        default_dataset_id: Optional[ID_TYPE] = None,
+        default_dataset_name: Optional[str] = None,
+        num_reviewers_per_item: Optional[int] = None,
+        enable_reservations: Optional[bool] = None,
+        reservation_minutes: Optional[int] = None,
     ) -> None:
         """Update an annotation queue with the specified queue_id.
 
@@ -4428,15 +4448,30 @@ class Client:
             queue_id (ID_TYPE): The ID of the annotation queue to update.
             name (str): The new name for the annotation queue.
             description (Optional[str], optional): The new description for the
-                annotation queue. Defaults to None.
+                annotation queue. Defaults to Nonee.
+            default_dataset_id (Optional[ID_TYPE], optional): The new default dataset
+                ID for the annotation queue. Defaults to None.
+            num_reviewers_per_item (Optional[int], optional): The new number of
+                reviewers per item for the annotation queue. Defaults to None.
+            enable_reservations (Optional[bool], optional): The new enable reservations
+                for the annotation queue. Defaults to None.
+            reservation_minutes (Optional[int], optional): The new reservation minutes
+                for the annotation queue. Defaults to None.
         """
+        if default_dataset_id is None and default_dataset_name is not None:
+            default_dataset_id = self.read_dataset(default_dataset_name).id
+        body = {
+            "name": name,
+            "description": description,
+            "default_dataset": default_dataset_id,
+            "num_reviewers_per_item": num_reviewers_per_item,
+            "enable_reservations": enable_reservations,
+            "reservation_minutes": reservation_minutes,
+        }
         response = self.request_with_retries(
             "PATCH",
             f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
-            json={
-                "name": name,
-                "description": description,
-            },
+            data=_dumps_json(body),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -4493,6 +4528,137 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    def get_run_from_annotation_queue(
+        self,
+        queue_id: ID_TYPE,
+        index: int,
+    ) -> ls_schemas.RunWithAnnotationQueueInfo:
+        """Get a run from the annotation queue by index.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+            index (int): The index of the run in the annotation queue.
+
+        Returns:
+            RunFromAnnotationQueueResponse: The run information.
+        """
+        response = self.request_with_retries(
+            "GET",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/run/{index}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
+
+    def get_annotation_queues_for_run(
+        self, run_id: ID_TYPE, /
+    ) -> List[ls_schemas.AnnotationQueue]:
+        """Get annotation queues for a specific run.
+
+        Args:
+            run_id (ID_TYPE): The ID of the run.
+
+        Returns:
+            List[AnnotationQueue]: The list of annotation queues.
+        """
+        response = self.request_with_retries(
+            "GET",
+            f"/annotation-queues/{_as_uuid(run_id, 'run_id')}/queues",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    def update_run_in_annotation_queue(
+        self,
+        queue_id: ID_TYPE,
+        *,
+        queue_run_id: ID_TYPE,
+        last_reviewed_time: Optional[datetime.datetime],
+        added_at: Optional[datetime.datetime],
+    ) -> None:
+        """Update a run in the annotation queue.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+            queue_run_id (ID_TYPE): The ID of the run in the annotation queue.
+            last_reviewed_time (Optional[datetime.datetime]): The time the run was last
+                reviewed.
+            added_at (Optional[datetime.datetime]): The time the run was added to the
+                queue.
+
+        """
+        response = self.request_with_retries(
+            "PATCH",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}"
+            f"/runs/{_as_uuid(queue_run_id, 'queue_run_id')}",
+            json={
+                "last_reviewed_time": (
+                    last_reviewed_time.isoformat() if last_reviewed_time else None
+                ),
+                "added_at": (added_at.isoformat() if added_at else None),
+            },
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def delete_run_from_annotation_queue(
+        self, queue_id: ID_TYPE, *, queue_run_id: ID_TYPE
+    ) -> None:
+        """Delete a run from the annotation queue.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+            queue_run_id (ID_TYPE): The ID of the run in the annotation queue.
+                NOTE: This is the queue_run_id, not the run_id.
+        """
+        response = self.request_with_retries(
+            "DELETE",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}"
+            f"/runs/{_as_uuid(queue_run_id, 'queue_run_id')}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def get_total_size_from_annotation_queue(self, queue_id: ID_TYPE, /) -> int:
+        """Get the total size of the annotation queue.
+
+        Includes "reserved" runs.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+
+        Returns:
+            int: The total size of the annotation queue.
+        """
+        response = self.request_with_retries(
+            "GET",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/total_size",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()["size"]
+
+    def get_size_from_annotation_queue(self, queue_id: ID_TYPE, /) -> int:
+        """Get the current size of the annotation queue.
+
+        Excludes "reserved runs".
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+
+        Returns:
+            int: The current size of the annotation queue.
+        """
+        response = self.request_with_retries(
+            "GET",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/size",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()["size"]
+
+    # Comparative Experiment API
     def create_comparative_experiment(
         self,
         name: str,
