@@ -298,6 +298,19 @@ def _dumps_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> bytes:
     )
 
 
+def _dumps_nonnull_json_vals(obj: Union[dict, List[dict]]) -> bytes:
+    """Serialize a dictionary to a JSON formatted string without null values."""
+    if isinstance(obj, dict):
+        return _dumps_json({k: v for k, v in obj.items() if v is not None})
+    return _dumps_json(
+        [
+            {k: v_ for k, v_ in v.items() if v_ is not None} if v else None
+            for v in obj
+            if v is not None
+        ]
+    )
+
+
 def close_session(session: requests.Session) -> None:
     """Close the session.
 
@@ -3443,7 +3456,7 @@ class Client:
             "PATCH",
             f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({k: v for k, v in example.items() if v is not None}),
+            data=_dumps_nonnull_json_vals(example),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -3503,14 +3516,7 @@ class Client:
             "PATCH",
             "/examples/bulk",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=(
-                _dumps_json(
-                    [
-                        {k: v for k, v in example.items() if v is not None}
-                        for example in examples
-                    ]
-                )
-            ),
+            data=(_dumps_nonnull_json_vals(examples)),
         )
         ls_utils.raise_for_status_with_text(response)
         return response.json()
@@ -4434,7 +4440,7 @@ class Client:
         self,
         queue_id: ID_TYPE,
         *,
-        name: str,
+        name: Optional[str] = None,
         description: Optional[str] = None,
         default_dataset_id: Optional[ID_TYPE] = None,
         default_dataset_name: Optional[str] = None,
@@ -4446,7 +4452,7 @@ class Client:
 
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue to update.
-            name (str): The new name for the annotation queue.
+            name (Optional[str]): The new name for the annotation queue.
             description (Optional[str], optional): The new description for the
                 annotation queue. Defaults to Nonee.
             default_dataset_id (Optional[ID_TYPE], optional): The new default dataset
@@ -4471,7 +4477,7 @@ class Client:
         response = self.request_with_retries(
             "PATCH",
             f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}",
-            data=_dumps_json(body),
+            data=_dumps_nonnull_json_vals(body),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -4592,12 +4598,14 @@ class Client:
             "PATCH",
             f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}"
             f"/runs/{_as_uuid(queue_run_id, 'queue_run_id')}",
-            json={
-                "last_reviewed_time": (
-                    last_reviewed_time.isoformat() if last_reviewed_time else None
-                ),
-                "added_at": (added_at.isoformat() if added_at else None),
-            },
+            data=_dumps_nonnull_json_vals(
+                {
+                    "last_reviewed_time": (
+                        last_reviewed_time.isoformat() if last_reviewed_time else None
+                    ),
+                    "added_at": (added_at.isoformat() if added_at else None),
+                }
+            ),
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
