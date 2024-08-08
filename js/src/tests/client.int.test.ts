@@ -759,10 +759,11 @@ test.concurrent("Test run stats", async () => {
 
 test("Test list prompts", async () => {
   const client = new Client();
+  const uid = uuidv4();
   // push 3 prompts
-  const promptName1 = `test_prompt_${uuidv4().slice(0, 8)}`;
-  const promptName2 = `test_prompt_${uuidv4().slice(0, 8)}`;
-  const promptName3 = `test_prompt_${uuidv4().slice(0, 8)}`;
+  const promptName1 = `test_prompt_${uid}__0`;
+  const promptName2 = `test_prompt_${uid}__1`;
+  const promptName3 = `test_prompt_${uid}__2`;
 
   await client.pushPrompt(promptName1, {
     object: ChatPromptTemplate.fromMessages(
@@ -794,7 +795,7 @@ test("Test list prompts", async () => {
   });
 
   // expect at least one of the prompts to have promptName1
-  const response = await client.listPrompts({ isPublic: true });
+  const response = client.listPrompts({ isPublic: true, query: uid });
   let found = false;
   expect(response).toBeDefined();
   for await (const prompt of response) {
@@ -806,7 +807,7 @@ test("Test list prompts", async () => {
   expect(found).toBe(true);
 
   // expect the prompts to be sorted by updated_at
-  const response2 = client.listPrompts({ sortField: "updated_at" });
+  const response2 = client.listPrompts({ sortField: "updated_at", query: uid });
   expect(response2).toBeDefined();
   let lastUpdatedAt: number | undefined;
   for await (const prompt of response2) {
