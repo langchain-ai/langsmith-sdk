@@ -698,3 +698,10 @@ def test_surrogates():
         run_type="llm",
         end_time=datetime.datetime.now(datetime.timezone.utc),
     )
+
+
+def test_runs_stats():
+    langchain_client = Client()
+    # We always have stuff in the "default" project...
+    stats = langchain_client.get_run_stats(project_names=["default"], run_type="llm")
+    assert stats

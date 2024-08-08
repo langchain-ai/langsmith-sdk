@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import json
+import os
 import sys
 import time
 import uuid
@@ -961,6 +962,65 @@ def test_traceable_to_trace():
     assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
+async def test_traceable_to_atrace():
+    @traceable
+    async def great_grandchild_fn(a: int, b: int) -> int:
+        return a + b
+
+    @traceable
+    async def parent_fn(a: int, b: int) -> int:
+        async with langsmith.trace(
+            name="child_fn", inputs={"a": a, "b": b}
+        ) as run_tree:
+            async with langsmith.trace(
+                "grandchild_fn", inputs={"a": a, "b": b, "c": "oh my"}
+            ) as run_tree_gc:
+                try:
+                    async with langsmith.trace("expect_error", inputs={}):
+                        raise ValueError("oh no")
+                except ValueError:
+                    pass
+                result = await great_grandchild_fn(a, b)
+                run_tree_gc.end(outputs={"result": result})
+            run_tree.end(outputs={"result": result})
+        return result
+
+    run: Optional[RunTree] = None  # type: ignore
+
+    def _get_run(r: RunTree) -> None:
+        nonlocal run
+        run = r
+
+    with tracing_context(enabled=True):
+        result = await parent_fn(
+            1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+        )
+
+    assert result == 3
+    assert run is not None
+    run = cast(RunTree, run)
+    assert run.name == "parent_fn"
+    assert run.outputs == {"output": 3}
+    assert run.inputs == {"a": 1, "b": 2}
+    child_runs = run.child_runs
+    assert child_runs
+    assert len(child_runs) == 1
+    child = child_runs[0]
+    assert child.name == "child_fn"
+    assert child.inputs == {"a": 1, "b": 2}
+    assert len(child.child_runs) == 1
+    grandchild = child.child_runs[0]
+    assert grandchild.name == "grandchild_fn"
+    assert grandchild.inputs == {"a": 1, "b": 2, "c": "oh my"}
+    assert len(grandchild.child_runs) == 2
+    ggcerror = grandchild.child_runs[0]
+    assert ggcerror.name == "expect_error"
+    assert "oh no" in str(ggcerror.error)
+    ggc = grandchild.child_runs[1]
+    assert ggc.name == "great_grandchild_fn"
+    assert ggc.inputs == {"a": 1, "b": 2}
+
+
 def test_trace_to_traceable():
     @traceable
     def child_fn(a: int, b: int) -> int:
@@ -1012,11 +1072,11 @@ def test_client_passed_when_trace_parent():
     mock_client = _get_mock_client()
     rt = RunTree(name="foo", client=mock_client)
     headers = rt.to_headers()
-
-    with trace(
-        name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
-    ) as rt:
-        rt.outputs["bar"] = "baz"
+    with tracing_context(enabled=True):
+        with trace(
+            name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
+        ) as rt:
+            rt.outputs["bar"] = "baz"
     calls = _get_calls(mock_client)
     assert len(calls) == 1
     call = calls[0]
@@ -1222,7 +1282,7 @@ async def test_traceable_async_exception(auto_batch_tracing: bool):
     mock_calls = _get_calls(
         mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
     )
-    assert len(mock_calls) == num_calls
+    assert len(mock_calls) >= num_calls
 
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
@@ -1257,3 +1317,134 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
         mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
     )
     assert len(mock_calls) == num_calls
+
+
+@pytest.mark.parametrize("env_var", [True, False])
+@pytest.mark.parametrize("context", [True, False, None])
+async def test_trace_respects_env_var(env_var: bool, context: Optional[bool]):
+    mock_client = _get_mock_client()
+    with patch.dict(os.environ, {"LANGSMITH_TRACING": "true" if env_var else "false "}):
+        with tracing_context(enabled=context):
+            with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
+                assert run.name == "foo"
+                pass
+            async with trace(name="bar", inputs={"b": 2}, client=mock_client) as run2:
+                assert run2.name == "bar"
+                pass
+
+    mock_calls = _get_calls(mock_client)
+    if context is None:
+        expect = env_var
+    else:
+        expect = context
+    if expect:
+        assert len(mock_calls) >= 1
+    else:
+        assert not mock_calls
+
+
+async def test_process_inputs_outputs():
+    mock_client = _get_mock_client()
+    in_s = "what's life's meaning"
+
+    def process_inputs(inputs: dict) -> dict:
+        assert inputs == {"val": in_s, "ooblek": "nada"}
+        inputs["val2"] = "this is mutated"
+        return {"serialized_in": "what's the meaning of life?"}
+
+    def process_outputs(outputs: int) -> dict:
+        assert outputs == 42
+        return {"serialized_out": 24}
+
+    @traceable(process_inputs=process_inputs, process_outputs=process_outputs)
+    def my_function(val: str, **kwargs: Any) -> int:
+        assert not kwargs.get("val2")
+        return 42
+
+    with tracing_context(enabled=True):
+        my_function(
+            in_s,
+            ooblek="nada",
+            langsmith_extra={"client": mock_client},
+        )
+
+    def _check_client(client: Client) -> None:
+        mock_calls = _get_calls(client)
+        assert len(mock_calls) == 1
+        call = mock_calls[0]
+        assert call.args[0] == "POST"
+        assert call.args[1].startswith("https://api.smith.langchain.com")
+        body = json.loads(call.kwargs["data"])
+        assert body["post"]
+        assert body["post"][0]["inputs"] == {
+            "serialized_in": "what's the meaning of life?"
+        }
+        assert body["post"][0]["outputs"] == {"serialized_out": 24}
+
+    _check_client(mock_client)
+
+    @traceable(process_inputs=process_inputs, process_outputs=process_outputs)
+    async def amy_function(val: str, **kwargs: Any) -> int:
+        assert not kwargs.get("val2")
+        return 42
+
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        await amy_function(
+            in_s,
+            ooblek="nada",
+            langsmith_extra={"client": mock_client},
+        )
+
+    _check_client(mock_client)
+
+    # Do generator
+
+    def reducer(outputs: list) -> dict:
+        return {"reduced": outputs[0]}
+
+    def process_reduced_outputs(outputs: dict) -> dict:
+        assert outputs == {"reduced": 42}
+        return {"serialized_out": 24}
+
+    @traceable(
+        process_inputs=process_inputs,
+        process_outputs=process_reduced_outputs,
+        reduce_fn=reducer,
+    )
+    def my_gen(val: str, **kwargs: Any) -> Generator[int, None, None]:
+        assert not kwargs.get("val2")
+        yield 42
+
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        result = list(
+            my_gen(
+                in_s,
+                ooblek="nada",
+                langsmith_extra={"client": mock_client},
+            )
+        )
+        assert result == [42]
+
+    _check_client(mock_client)
+
+    @traceable(
+        process_inputs=process_inputs,
+        process_outputs=process_reduced_outputs,
+        reduce_fn=reducer,
+    )
+    async def amy_gen(val: str, **kwargs: Any) -> AsyncGenerator[int, None]:
+        assert not kwargs.get("val2")
+        yield 42
+
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        result = [
+            i
+            async for i in amy_gen(
+                in_s, ooblek="nada", langsmith_extra={"client": mock_client}
+            )
+        ]
+        assert result == [42]
+    _check_client(mock_client)

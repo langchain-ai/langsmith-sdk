@@ -88,7 +88,10 @@ def _is_localhost(url: str) -> bool:
 
 
 def _parse_token_or_url(
-    url_or_token: Union[str, uuid.UUID], api_url: str, num_parts: int = 2
+    url_or_token: Union[str, uuid.UUID],
+    api_url: str,
+    num_parts: int = 2,
+    kind: str = "dataset",
 ) -> Tuple[str, str]:
     """Parse a public dataset URL or share token."""
     try:
@@ -104,7 +107,7 @@ def _parse_token_or_url(
     if len(path_parts) >= num_parts:
         token_uuid = path_parts[-num_parts]
     else:
-        raise ls_utils.LangSmithUserError(f"Invalid public dataset URL: {url_or_token}")
+        raise ls_utils.LangSmithUserError(f"Invalid public {kind} URL: {url_or_token}")
     return api_url, token_uuid
 
 
@@ -1768,6 +1771,93 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
+    def get_run_stats(
+        self,
+        *,
+        id: Optional[List[ID_TYPE]] = None,
+        trace: Optional[ID_TYPE] = None,
+        parent_run: Optional[ID_TYPE] = None,
+        run_type: Optional[str] = None,
+        project_names: Optional[List[str]] = None,
+        project_ids: Optional[List[ID_TYPE]] = None,
+        reference_example_ids: Optional[List[ID_TYPE]] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        error: Optional[bool] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        trace_filter: Optional[str] = None,
+        tree_filter: Optional[str] = None,
+        is_root: Optional[bool] = None,
+        data_source_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get aggregate statistics over queried runs.
+
+        Takes in similar query parameters to `list_runs` and returns statistics
+        based on the runs that match the query.
+
+        Args:
+            id (Optional[List[ID_TYPE]]): List of run IDs to filter by.
+            trace (Optional[ID_TYPE]): Trace ID to filter by.
+            parent_run (Optional[ID_TYPE]): Parent run ID to filter by.
+            run_type (Optional[str]): Run type to filter by.
+            projects (Optional[List[ID_TYPE]]): List of session IDs to filter by.
+            reference_example (Optional[List[ID_TYPE]]): List of reference example IDs to filter by.
+            start_time (Optional[str]): Start time to filter by.
+            end_time (Optional[str]): End time to filter by.
+            error (Optional[bool]): Filter by error status.
+            query (Optional[str]): Query string to filter by.
+            filter (Optional[str]): Filter string to apply.
+            trace_filter (Optional[str]): Trace filter string to apply.
+            tree_filter (Optional[str]): Tree filter string to apply.
+            is_root (Optional[bool]): Filter by root run status.
+            data_source_type (Optional[str]): Data source type to filter by.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the run statistics.
+        """  # noqa: E501
+        from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
+
+        project_ids = project_ids or []
+        if project_names:
+            with ThreadPoolExecutor() as executor:
+                futures = [
+                    executor.submit(self.read_project, project_name=name)
+                    for name in project_names
+                ]
+                for future in as_completed(futures):
+                    project_ids.append(future.result().id)
+        payload = {
+            "id": id,
+            "trace": trace,
+            "parent_run": parent_run,
+            "run_type": run_type,
+            "session": project_ids,
+            "reference_example": reference_example_ids,
+            "start_time": start_time,
+            "end_time": end_time,
+            "error": error,
+            "query": query,
+            "filter": filter,
+            "trace_filter": trace_filter,
+            "tree_filter": tree_filter,
+            "is_root": is_root,
+            "data_source_type": data_source_type,
+        }
+
+        # Remove None values from the payload
+        payload = {k: v for k, v in payload.items() if v is not None}
+
+        response = self.request_with_retries(
+            "POST",
+            "/runs/stats",
+            request_kwargs={
+                "data": _dumps_json(payload),
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
     def get_run_url(
         self,
         *,
@@ -1776,6 +1866,10 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
     ) -> str:
         """Get the URL for a run.
+
+        Not recommended for use within your agent runtime.
+        More for use interacting with runs after the fact
+        for data analysis or ETL workloads.
 
         Parameters
         ----------
@@ -1858,21 +1952,32 @@ class Client:
         link = self.read_run_shared_link(_as_uuid(run_id, "run_id"))
         return link is not None
 
-    def list_shared_runs(
-        self, share_token: ID_TYPE, run_ids: Optional[List[str]] = None
-    ) -> List[ls_schemas.Run]:
+    def read_shared_run(
+        self, share_token: Union[ID_TYPE, str], run_id: Optional[ID_TYPE] = None
+    ) -> ls_schemas.Run:
         """Get shared runs."""
-        params = {"id": run_ids, "share_token": str(share_token)}
+        _, token_uuid = _parse_token_or_url(share_token, "", kind="run")
+        path = f"/public/{token_uuid}/run"
+        if run_id is not None:
+            path += f"/{_as_uuid(run_id, 'run_id')}"
         response = self.request_with_retries(
             "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/runs",
+            path,
             headers=self._headers,
-            params=params,
         )
         ls_utils.raise_for_status_with_text(response)
-        return [
-            ls_schemas.Run(**run, _host_url=self._host_url) for run in response.json()
-        ]
+        return ls_schemas.Run(**response.json(), _host_url=self._host_url)
+
+    def list_shared_runs(
+        self, share_token: Union[ID_TYPE, str], run_ids: Optional[List[str]] = None
+    ) -> Iterator[ls_schemas.Run]:
+        """Get shared runs."""
+        body = {"id": run_ids} if run_ids else {}
+        _, token_uuid = _parse_token_or_url(share_token, "", kind="run")
+        for run in self._get_cursor_paginated_list(
+            f"/public/{token_uuid}/runs/query", body=body
+        ):
+            yield ls_schemas.Run(**run, _host_url=self._host_url)
 
     def read_dataset_shared_schema(
         self,
@@ -2333,6 +2438,7 @@ class Client:
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
         limit: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Iterator[ls_schemas.TracerSession]:
         """List projects from the LangSmith API.
 
@@ -2352,6 +2458,8 @@ class Client:
             Whether to filter for only projects not associated with a dataset.
         limit : Optional[int], optional
             The maximum number of projects to return, by default None
+        metadata: Optional[Dict[str, Any]], optional
+            Metadata to filter by.
 
         Yields:
         ------
@@ -2381,6 +2489,8 @@ class Client:
             params["reference_dataset"] = reference_dataset_id
         if reference_free is not None:
             params["reference_free"] = reference_free
+        if metadata is not None:
+            params["metadata"] = json.dumps(metadata)
         for i, project in enumerate(
             self._get_paginated_list("/sessions", params=params)
         ):

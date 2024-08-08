@@ -310,7 +310,9 @@ def accepts_context(callable: Callable[..., Any]) -> bool:
 
 
 # Ported from Python 3.9+ to support Python 3.8
-async def aio_to_thread(func, /, *args, **kwargs):
+async def aio_to_thread(
+    func, /, *args, __ctx: Optional[contextvars.Context] = None, **kwargs
+):
     """Asynchronously run function *func* in a separate thread.
 
     Any *args and **kwargs supplied for this function are directly passed
@@ -321,7 +323,7 @@ async def aio_to_thread(func, /, *args, **kwargs):
     Return a coroutine that can be awaited to get the eventual result of *func*.
     """
     loop = asyncio.get_running_loop()
-    ctx = contextvars.copy_context()
+    ctx = __ctx or contextvars.copy_context()
     func_call = functools.partial(ctx.run, func, *args, **kwargs)
     return await loop.run_in_executor(None, func_call)
 
