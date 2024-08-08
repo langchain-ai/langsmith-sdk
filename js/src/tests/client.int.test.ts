@@ -914,23 +914,26 @@ test("Test delete prompt", async () => {
 
 test("test listing projects by metadata", async () => {
   const client = new Client();
+  const uid = uuidv4();
+  const projectName = `my_metadata_project_${uid}`;
+
   await client.createProject({
-    projectName: "my_metadata_project",
+    projectName: projectName,
     metadata: {
-      foobar: "bar",
+      foobar: uid,
       baz: "barfooqux",
     },
   });
 
-  const projects = await client.listProjects({ metadata: { foobar: "bar" } });
+  const projects = await client.listProjects({ metadata: { foobar: uid } });
 
   let myProject: TracerSession | null = null;
   for await (const project of projects) {
     myProject = project;
   }
-  expect(myProject?.name).toEqual("my_metadata_project");
+  expect(myProject?.name).toEqual(projectName);
 
-  await client.deleteProject({ projectName: "my_metadata_project" });
+  await client.deleteProject({ projectName: projectName });
 });
 
 test("Test create commit", async () => {
