@@ -5385,13 +5385,17 @@ class Client:
         """
         # Create or update prompt metadata
         if self._prompt_exists(prompt_identifier):
-            self.update_prompt(
-                prompt_identifier,
-                description=description,
-                readme=readme,
-                tags=tags,
-                is_public=is_public,
-            )
+            if any(
+                param is not None
+                for param in [parent_commit_hash, is_public, description, readme, tags]
+            ):
+                self.update_prompt(
+                    prompt_identifier,
+                    description=description,
+                    readme=readme,
+                    tags=tags,
+                    is_public=is_public,
+                )
         else:
             self.create_prompt(
                 prompt_identifier,

@@ -411,7 +411,11 @@ def test_create_commit(
     langsmith_client.delete_prompt(prompt_name)
 
 
-def test_push_prompt(langsmith_client: Client, prompt_template_3: PromptTemplate):
+def test_push_prompt(
+    langsmith_client: Client,
+    prompt_template_3: PromptTemplate,
+    prompt_template_2: ChatPromptTemplate,
+):
     prompt_name = f"test_push_new_{uuid4().hex[:8]}"
     url = langsmith_client.push_prompt(
         prompt_name,
@@ -444,6 +448,13 @@ def test_push_prompt(langsmith_client: Client, prompt_template_3: PromptTemplate
     assert updated_prompt.description == "Updated prompt"
     assert not updated_prompt.is_public
     assert updated_prompt.num_commits == 1
+
+    # test updating prompt manifest but not metadata
+    url = langsmith_client.push_prompt(
+        prompt_name,
+        object=prompt_template_2,
+    )
+    assert isinstance(url, str)
 
     langsmith_client.delete_prompt(prompt_name)
 
