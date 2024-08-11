@@ -48,6 +48,7 @@ from urllib import parse as urllib_parse
 import orjson
 import requests
 from requests import adapters as requests_adapters
+from typing_extensions import TypeGuard
 from urllib3.util import Retry
 
 import langsmith
@@ -3673,25 +3674,40 @@ class Client:
 
     def _select_eval_results(
         self,
-        results: Union[ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults],
+        results: Union[
+            ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
+        ],
         *,
         fn_name: Optional[str] = None,
     ) -> List[ls_evaluator.EvaluationResult]:
         from langsmith.evaluation import evaluator as ls_evaluator  # noqa: F811
 
+        def _cast_result(
+            single_result: Union[ls_evaluator.EvaluationResult, dict],
+        ) -> ls_evaluator.EvaluationResult:
+            if isinstance(single_result, dict):
+                return ls_evaluator.EvaluationResult(
+                    **{
+                        "key": fn_name,
+                        "comment": single_result.get("reasoning"),
+                        **single_result,
+                    }
+                )
+            return single_result
+
+        def _is_eval_results(results: Any) -> TypeGuard[ls_evaluator.EvaluationResults]:
+            return isinstance(results, dict) and "results" in results
+
         if isinstance(results, ls_evaluator.EvaluationResult):
             results_ = [results]
+        elif _is_eval_results(results):
+            results_ = [_cast_result(r) for r in results["results"]]
         elif isinstance(results, dict):
-            if "results" in results:
-                results_ = cast(List[ls_evaluator.EvaluationResult], results["results"])
-            else:
-                results_ = [
-                    ls_evaluator.EvaluationResult(**{"key": fn_name, **results})  # type: ignore[arg-type]
-                ]
+            results_ = [_cast_result(cast(dict, results))]
         else:
-            raise TypeError(
-                f"Invalid evaluation result type {type(results)}."
-                " Expected EvaluationResult or EvaluationResults."
+            raise ValueError(
+                f"Invalid evaluation results type: {type(results)}."
+                " Must be EvaluationResult, EvaluationResults."
             )
         return results_
 
@@ -3745,7 +3761,7 @@ class Client:
     def _log_evaluation_feedback(
         self,
         evaluator_response: Union[
-            ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults
+            ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
         run: Optional[ls_schemas.Run] = None,
         source_info: Optional[Dict[str, Any]] = None,
