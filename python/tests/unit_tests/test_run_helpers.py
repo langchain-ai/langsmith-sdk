@@ -1383,10 +1383,22 @@ async def test_process_inputs_outputs():
 
     _check_client(mock_client)
 
+    class Untruthy:
+        def __init__(self, val: Any) -> None:
+            self.val = val
+
+        def __bool__(self) -> bool:
+            raise ValueError("I'm not truthy")
+
+        def __eq__(self, other: Any) -> bool:
+            if isinstance(other, Untruthy):
+                return self.val == other.val
+            return self.val == other
+
     @traceable(process_inputs=process_inputs, process_outputs=process_outputs)
     async def amy_function(val: str, **kwargs: Any) -> int:
         assert not kwargs.get("val2")
-        return 42
+        return Untruthy(42)
 
     mock_client = _get_mock_client()
     with tracing_context(enabled=True):
@@ -1436,7 +1448,7 @@ async def test_process_inputs_outputs():
     )
     async def amy_gen(val: str, **kwargs: Any) -> AsyncGenerator[int, None]:
         assert not kwargs.get("val2")
-        yield 42
+        yield Untruthy(42)
 
     mock_client = _get_mock_client()
     with tracing_context(enabled=True):
