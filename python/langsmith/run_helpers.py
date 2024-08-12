@@ -429,9 +429,12 @@ def traceable(
         error: Optional[BaseException] = None,
     ) -> None:
         """Handle the end of run."""
-        if outputs and outputs_processor is not None:
-            outputs = outputs_processor(outputs)
-        _container_end(container, outputs=outputs, error=error)
+        try:
+            if outputs_processor is not None:
+                outputs = outputs_processor(outputs)
+            _container_end(container, outputs=outputs, error=error)
+        except BaseException as e:
+            LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
 
     if kwargs:
         warnings.warn(
