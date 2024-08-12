@@ -1398,7 +1398,7 @@ async def test_process_inputs_outputs():
     @traceable(process_inputs=process_inputs, process_outputs=process_outputs)
     async def amy_function(val: str, **kwargs: Any) -> int:
         assert not kwargs.get("val2")
-        return Untruthy(42)
+        return Untruthy(42)  # type: ignore
 
     mock_client = _get_mock_client()
     with tracing_context(enabled=True):
@@ -1448,7 +1448,7 @@ async def test_process_inputs_outputs():
     )
     async def amy_gen(val: str, **kwargs: Any) -> AsyncGenerator[int, None]:
         assert not kwargs.get("val2")
-        yield Untruthy(42)
+        yield Untruthy(42)  # type: ignore
 
     mock_client = _get_mock_client()
     with tracing_context(enabled=True):
