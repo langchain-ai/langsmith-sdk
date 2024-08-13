@@ -2529,8 +2529,8 @@ class Client:
         *,
         description: Optional[str] = None,
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
-        inputs_schema_definition: Optional[Dict[str, Any]] = None,
-        outputs_schema_definition: Optional[Dict[str, Any]] = None,
+        inputs_schema: Optional[Dict[str, Any]] = None,
+        outputs_schema: Optional[Dict[str, Any]] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -2552,8 +2552,8 @@ class Client:
             name=dataset_name,
             description=description,
             data_type=data_type,
-            inputs_schema_definition=inputs_schema_definition,
-            outputs_schema_definition=outputs_schema_definition,
+            inputs_schema=inputs_schema,
+            outputs_schema=outputs_schema,
         )
         response = self.request_with_retries(
             "POST",

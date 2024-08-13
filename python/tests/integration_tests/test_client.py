@@ -371,13 +371,13 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
     dataset = langchain_client.create_dataset(
         dataset_name,
         data_type=DataType.kv,
-        inputs_schema_definition=InputSchema.model_json_schema(),
-        outputs_schema_definition=OutputSchema.model_json_schema(),
+        inputs_schema=InputSchema.model_json_schema(),
+        outputs_schema=OutputSchema.model_json_schema(),
     )
 
     # confirm we store the schema from the create request
-    assert dataset.inputs_schema_definition == InputSchema.model_json_schema()
-    assert dataset.outputs_schema_definition == OutputSchema.model_json_schema()
+    assert dataset.inputs_schema == InputSchema.model_json_schema()
+    assert dataset.outputs_schema == OutputSchema.model_json_schema()
 
     # create an example that matches the schema, which should succeed
     langchain_client.create_example(
@@ -404,8 +404,8 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
 
     # assert read API includes the schema definition
     read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
-    assert read_dataset.inputs_schema_definition == InputSchema.model_json_schema()
-    assert read_dataset.outputs_schema_definition == OutputSchema.model_json_schema()
+    assert read_dataset.inputs_schema == InputSchema.model_json_schema()
+    assert read_dataset.outputs_schema == OutputSchema.model_json_schema()
 
     langchain_client.delete_dataset(dataset_id=dataset.id)
 

@@ -128,8 +128,8 @@ class DatasetBase(BaseModel):
     name: str
     description: Optional[str] = None
     data_type: Optional[DataType] = None
-    inputs_schema_definition: Optional[Dict[str, Any]] = None
-    outputs_schema_definition: Optional[Dict[str, Any]] = None
+    inputs_schema: Optional[Dict[str, Any]] = None
+    outputs_schema: Optional[Dict[str, Any]] = None
 
     class Config:
         """Configuration class for the schema."""
