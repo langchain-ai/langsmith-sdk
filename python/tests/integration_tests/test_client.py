@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 from freezegun import freeze_time
+from pydantic import BaseModel
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import DataType
@@ -312,11 +313,7 @@ def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
 
-def test_create_dataset(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
-    """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
+def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -357,6 +354,59 @@ def test_create_dataset(
     assert diffs.examples_added == [example_2.id]
     assert diffs.examples_removed == []
     assert diffs.examples_modified == [example.id]
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_dataset_schema_validation(langchain_client: Client) -> None:
+    dataset_name = "__test_create_dataset" + uuid4().hex[:4]
+    if langchain_client.has_dataset(dataset_name=dataset_name):
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    class InputSchema(BaseModel):
+        input: str
+
+    class OutputSchema(BaseModel):
+        output: str
+
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        data_type=DataType.kv,
+        inputs_schema_definition=InputSchema.model_json_schema(),
+        outputs_schema_definition=OutputSchema.model_json_schema(),
+    )
+
+    # confirm we store the schema from the create request
+    assert dataset.inputs_schema_definition == InputSchema.model_json_schema()
+    assert dataset.outputs_schema_definition == OutputSchema.model_json_schema()
+
+    # create an example that matches the schema, which should succeed
+    langchain_client.create_example(
+        inputs={"input": "hello world"},
+        outputs={"output": "hello"},
+        dataset_id=dataset.id,
+    )
+
+    # create an example that does not match the input schema
+    with pytest.raises(LangSmithError):
+        langchain_client.create_example(
+            inputs={"john": 1},
+            outputs={"output": "hello"},
+            dataset_id=dataset.id,
+        )
+
+    # create an example that does not match the output schema
+    with pytest.raises(LangSmithError):
+        langchain_client.create_example(
+            inputs={"input": "hello world"},
+            outputs={"john": 1},
+            dataset_id=dataset.id,
+        )
+
+    # assert read API includes the schema definition
+    read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
+    assert read_dataset.inputs_schema_definition == InputSchema.model_json_schema()
+    assert read_dataset.outputs_schema_definition == OutputSchema.model_json_schema()
+
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
