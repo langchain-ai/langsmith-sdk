@@ -2555,11 +2555,12 @@ class Client:
             inputs_schema=inputs_schema,
             outputs_schema=outputs_schema,
         )
+
         response = self.request_with_retries(
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=dataset.json(),
+            data=dataset.json(by_alias=True),
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(

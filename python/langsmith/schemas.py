@@ -128,12 +128,17 @@ class DatasetBase(BaseModel):
     name: str
     description: Optional[str] = None
     data_type: Optional[DataType] = None
-    inputs_schema: Optional[Dict[str, Any]] = None
-    outputs_schema: Optional[Dict[str, Any]] = None
+    inputs_schema: Optional[Dict[str, Any]] = Field(
+        None, alias="inputs_schema_definition"
+    )
+    outputs_schema: Optional[Dict[str, Any]] = Field(
+        None, alias="outputs_schema_definition"
+    )
 
     class Config:
         """Configuration class for the schema."""
 
+        allow_population_by_field_name = True
         frozen = True
 
 
