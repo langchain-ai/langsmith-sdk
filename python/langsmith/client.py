@@ -2548,19 +2548,19 @@ class Client:
         Dataset
             The created dataset.
         """
-        dataset = ls_schemas.DatasetCreate(
-            name=dataset_name,
-            description=description,
-            data_type=data_type,
-            inputs_schema=inputs_schema,
-            outputs_schema=outputs_schema,
-        )
+        dataset = {
+            "name": dataset_name,
+            "description": description,
+            "data_type": data_type,
+            "inputs_schema_definition": inputs_schema,
+            "outputs_schema_definition": outputs_schema,
+        }
 
         response = self.request_with_retries(
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=dataset.json(by_alias=True),
+            data=dataset,
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.Dataset(

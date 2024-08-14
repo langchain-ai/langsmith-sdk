@@ -128,12 +128,8 @@ class DatasetBase(BaseModel):
     name: str
     description: Optional[str] = None
     data_type: Optional[DataType] = None
-    inputs_schema: Optional[Dict[str, Any]] = Field(
-        None, alias="inputs_schema_definition"
-    )
-    outputs_schema: Optional[Dict[str, Any]] = Field(
-        None, alias="outputs_schema_definition"
-    )
+    inputs_schema: Optional[Dict[str, Any]] = None
+    outputs_schema: Optional[Dict[str, Any]] = None
 
     class Config:
         """Configuration class for the schema."""
@@ -170,6 +166,12 @@ class Dataset(DatasetBase):
         **kwargs: Any,
     ) -> None:
         """Initialize a Dataset object."""
+        if "input_schema_definition" in kwargs:
+            kwargs["inputs_schema"] = kwargs.pop("input_schema_definition")
+
+        if "output_schema_definition" in kwargs:
+            kwargs["outputs_schema"] = kwargs.pop("output_schema_definition")
+
         super().__init__(**kwargs)
         self._host_url = _host_url
         self._tenant_id = _tenant_id
