@@ -1,6 +1,6 @@
 """Evaluation Helpers."""
 
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from typing import List
