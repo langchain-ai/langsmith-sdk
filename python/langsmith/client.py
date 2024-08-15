@@ -3422,7 +3422,7 @@ class Client:
         dataset_id: ID_TYPE,
         **kwargs: Any,
     ) -> List[ls_schemas.ExampleSearch]:
-        """Retrieve the dataset examples whose inputs best match the current inputs.
+        r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
         **Note**: Must have few-shot indexing enabled for the dataset. See (TODO) method
         for how to enable indexing.
@@ -3457,7 +3457,7 @@ class Client:
                     ExampleSearch(dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40'), inputs={'question': 'Show me how to use RecursiveURLLoader'}, outputs={'answer': 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\n```python\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n```\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'}, metadata=None, id=UUID('0308ea70-a803-4181-a37d-39e95f138f8c')),
                 ]
 
-        """
+        """  # noqa: E501
         dataset_id = _as_uuid(dataset_id, "dataset_id")
         resp = self.request_with_retries(
             "POST",
