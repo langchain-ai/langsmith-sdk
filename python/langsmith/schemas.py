@@ -128,21 +128,11 @@ class DatasetBase(BaseModel):
     name: str
     description: Optional[str] = None
     data_type: Optional[DataType] = None
-    inputs_schema: Optional[Dict[str, Any]] = None
-    outputs_schema: Optional[Dict[str, Any]] = None
 
     class Config:
         """Configuration class for the schema."""
 
-        allow_population_by_field_name = True
         frozen = True
-
-
-class DatasetCreate(DatasetBase):
-    """Dataset create model."""
-
-    id: Optional[UUID] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Dataset(DatasetBase):
@@ -154,6 +144,8 @@ class Dataset(DatasetBase):
     example_count: Optional[int] = None
     session_count: Optional[int] = None
     last_session_start_time: Optional[datetime] = None
+    inputs_schema: Optional[Dict[str, Any]] = None
+    outputs_schema: Optional[Dict[str, Any]] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
     _public_path: Optional[str] = PrivateAttr(default=None)
@@ -166,11 +158,11 @@ class Dataset(DatasetBase):
         **kwargs: Any,
     ) -> None:
         """Initialize a Dataset object."""
-        if "input_schema_definition" in kwargs:
-            kwargs["inputs_schema"] = kwargs.pop("input_schema_definition")
+        if "inputs_schema_definition" in kwargs:
+            kwargs["inputs_schema"] = kwargs.pop("inputs_schema_definition")
 
-        if "output_schema_definition" in kwargs:
-            kwargs["outputs_schema"] = kwargs.pop("output_schema_definition")
+        if "outputs_schema_definition" in kwargs:
+            kwargs["outputs_schema"] = kwargs.pop("outputs_schema_definition")
 
         super().__init__(**kwargs)
         self._host_url = _host_url

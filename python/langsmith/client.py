@@ -2550,19 +2550,26 @@ class Client:
         """
         dataset = {
             "name": dataset_name,
-            "description": description,
-            "data_type": data_type,
-            "inputs_schema_definition": inputs_schema,
-            "outputs_schema_definition": outputs_schema,
+            "data_type": data_type.value,
+            "created_at": datetime.datetime.now().isoformat(),
         }
+        if description is not None:
+            dataset["description"] = description
+
+        if inputs_schema is not None:
+            dataset["inputs_schema_definition"] = inputs_schema
+
+        if outputs_schema is not None:
+            dataset["outputs_schema_definition"] = outputs_schema
 
         response = self.request_with_retries(
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=dataset,
+            data=orjson.dumps(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
+
         return ls_schemas.Dataset(
             **response.json(),
             _host_url=self._host_url,
