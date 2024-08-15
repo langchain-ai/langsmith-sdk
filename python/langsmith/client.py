@@ -3417,6 +3417,7 @@ class Client:
         self,
         inputs: dict,
         /,
+        *,
         limit: int,
         dataset_id: ID_TYPE,
         **kwargs: Any,
