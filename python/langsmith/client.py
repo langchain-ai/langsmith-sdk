@@ -3413,7 +3413,7 @@ class Client:
                 break
 
     # dataset_name explicitly not supported to avoid extra API calls.
-    def search_examples(
+    def similar_examples(
         self,
         inputs: dict,
         /,
@@ -3422,7 +3422,7 @@ class Client:
         dataset_id: ID_TYPE,
         **kwargs: Any,
     ) -> List[ls_schemas.ExampleSearch]:
-        """Retrieve the dataset examples whose inputs best match the query.
+        """Retrieve the dataset examples whose inputs best match the current inputs.
 
         **Note**: Must have few-shot indexing enabled for the dataset. See (TODO) method
         for how to enable indexing.
@@ -3436,6 +3436,27 @@ class Client:
 
         Returns:
             List of ExampleSearch.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+                client.similar_examples(
+                    {"question": "When would i use the runnable generator"},
+                    limit=3,
+                    dataset_id="...",
+                )
+
+            .. code-block:: pycon
+
+                [
+                    ExampleSearch(dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40'), inputs={'question': 'How do I cache a Chat model? What caches can I use?'}, outputs={'answer': 'You can use LangChain\'s caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you\'re often requesting the same completion multiple times, and speed up your application.\n\n```python\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\')\n\n```\n\nYou can also use SQLite Cache which uses a SQLite database:\n\n```python\n  rm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=".langchain.db")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\') \n```\n'}, metadata=None, id=UUID('b2ddd1c4-dff6-49ae-8544-f48e39053398')),
+                    ExampleSearch(dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40'), inputs={'question': "What's a runnable lambda?"}, outputs={'answer': "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."}, metadata=None, id=UUID('f94104a7-2434-4ba7-8293-6a283f4860b4')),
+                    ExampleSearch(dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40'), inputs={'question': 'Show me how to use RecursiveURLLoader'}, outputs={'answer': 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\n```python\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n```\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'}, metadata=None, id=UUID('0308ea70-a803-4181-a37d-39e95f138f8c')),
+                ]
+
         """
         dataset_id = _as_uuid(dataset_id, "dataset_id")
         resp = self.request_with_retries(
