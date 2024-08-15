@@ -2529,6 +2529,8 @@ class Client:
         *,
         description: Optional[str] = None,
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
+        inputs_schema: Optional[Dict[str, Any]] = None,
+        outputs_schema: Optional[Dict[str, Any]] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -2546,18 +2548,28 @@ class Client:
         Dataset
             The created dataset.
         """
-        dataset = ls_schemas.DatasetCreate(
-            name=dataset_name,
-            description=description,
-            data_type=data_type,
-        )
+        dataset: Dict[str, Any] = {
+            "name": dataset_name,
+            "data_type": data_type.value,
+            "created_at": datetime.datetime.now().isoformat(),
+        }
+        if description is not None:
+            dataset["description"] = description
+
+        if inputs_schema is not None:
+            dataset["inputs_schema_definition"] = inputs_schema
+
+        if outputs_schema is not None:
+            dataset["outputs_schema_definition"] = outputs_schema
+
         response = self.request_with_retries(
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=dataset.json(),
+            data=orjson.dumps(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
+
         return ls_schemas.Dataset(
             **response.json(),
             _host_url=self._host_url,
