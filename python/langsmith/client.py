@@ -3446,18 +3446,18 @@ class Client:
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         dataset_id = _as_uuid(dataset_id, "dataset_id")
-        few_shot_resp = self.request_with_retries(
+        resp = self.request_with_retries(
             "POST",
             f"/datasets/{dataset_id}/search",
             headers=self._headers,
             data=json.dumps({"inputs": query, "limit": limit, **kwargs}),
         )
-        ls_utils.raise_for_status_with_text(few_shot_resp)
+        ls_utils.raise_for_status_with_text(resp)
         examples = []
-        for res in few_shot_resp.json()["examples"]:
+        for ex in resp.json()["examples"]:
             examples.append(
                 ls_schemas.ExampleSearch(
-                    **res,
+                    **ex,
                     dataset_id=dataset_id,
                     _host_url=self._host_url,
                     _tenant_id=self._get_optional_tenant_id(),

@@ -98,8 +98,10 @@ class Example(ExampleBase):
             return f"{self._host_url}{path}"
         return None
 
+
 class ExampleSearch(ExampleBase):
     """Example returned via search."""
+
     id: UUID
 
 
