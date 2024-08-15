@@ -3414,28 +3414,25 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
-    @ls_utils.xor_args(("dataset_name", "dataset_id"))
+    # dataset_name explicitly not supported to avoid extra API calls.
     def search_examples(
         self,
-        query: dict,
+        inputs: dict,
         /,
         limit: int,
         dataset_id: Optional[ID_TYPE] = None,
-        dataset_name: Optional[str] = None,
         **kwargs: Any,
-    ) -> List[ls_schemas.ExampleBase]:
+    ) -> List[ls_schemas.ExampleSearch]:
         """Retrieve the dataset examples whose inputs best match the query.
 
         **Note**: Must have few-shot indexing enabled for the dataset. See (TODO) method
         for how to enable indexing.
 
         Args:
-            query (dict): The query to search against. Must be JSON serializable.
+            inputs (dict): The inputs to use as a search query. Must match the dataset
+                input schema. Must be JSON serializable.
             limit (int): The maximum number of examples to return.
             dataset_id (UUID, optional): The ID of the dataset to filter by.
-                Defaults to None. Must specify one of ``dataset_id`` or
-                ``dataset_name``.
-            dataset_name (str, optional): The name of the dataset to filter by.
                 Defaults to None. Must specify one of ``dataset_id`` or
                 ``dataset_name``.
             kwargs (Any): Additional keyword args to pass as part of request body.
@@ -3443,14 +3440,12 @@ class Client:
         Returns:
             List of ExampleSearch.
         """
-        if dataset_id is None:
-            dataset_id = self.read_dataset(dataset_name=dataset_name).id
         dataset_id = _as_uuid(dataset_id, "dataset_id")
         resp = self.request_with_retries(
             "POST",
             f"/datasets/{dataset_id}/search",
             headers=self._headers,
-            data=json.dumps({"inputs": query, "limit": limit, **kwargs}),
+            data=json.dumps({"inputs": inputs, "limit": limit, **kwargs}),
         )
         ls_utils.raise_for_status_with_text(resp)
         examples = []
@@ -3460,7 +3455,6 @@ class Client:
                     **ex,
                     dataset_id=dataset_id,
                     _host_url=self._host_url,
-                    _tenant_id=self._get_optional_tenant_id(),
                 )
             )
         return examples
