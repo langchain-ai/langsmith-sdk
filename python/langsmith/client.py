@@ -416,15 +416,13 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
 
 
 @typing.overload
-def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID:
-    ...
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
 
 
 @typing.overload
 def _ensure_uuid(
     value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = True
-) -> Optional[uuid.UUID]:
-    ...
+) -> Optional[uuid.UUID]: ...
 
 
 def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = False):
@@ -3448,13 +3446,7 @@ class Client:
         ls_utils.raise_for_status_with_text(resp)
         examples = []
         for ex in resp.json()["examples"]:
-            examples.append(
-                ls_schemas.ExampleSearch(
-                    **ex,
-                    dataset_id=dataset_id,
-                    _host_url=self._host_url,
-                )
-            )
+            examples.append(ls_schemas.ExampleSearch(**ex, dataset_id=dataset_id))
         return examples
 
     def update_example(
