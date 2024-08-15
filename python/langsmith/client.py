@@ -3412,7 +3412,9 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
-    # dataset_name explicitly not supported to avoid extra API calls.
+    # dataset_name arg explicitly not supported to avoid extra API calls.
+    # TODO: Update note on enabling indexing when there's an enable_indexing method.
+    # TODO: Come up with more interesting example for docstring.
     def similar_examples(
         self,
         inputs: dict,
