@@ -416,13 +416,15 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
 
 
 @typing.overload
-def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID:
+    ...
 
 
 @typing.overload
 def _ensure_uuid(
     value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = True
-) -> Optional[uuid.UUID]: ...
+) -> Optional[uuid.UUID]:
+    ...
 
 
 def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = False):
@@ -3411,6 +3413,57 @@ class Client:
             )
             if limit is not None and i + 1 >= limit:
                 break
+
+    @ls_utils.xor_args(("dataset_name", "dataset_id"))
+    def search_examples(
+        self,
+        query: dict,
+        /,
+        limit: int,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        **kwargs: Any,
+    ) -> List[ls_schemas.ExampleBase]:
+        """Retrieve the dataset examples whose inputs best match the query.
+
+        **Note**: Must have few-shot indexing enabled for the dataset. See (TODO) method
+        for how to enable indexing.
+
+        Args:
+            query (dict): The query to search against. Must be JSON serializable.
+            limit (int): The maximum number of examples to return.
+            dataset_id (UUID, optional): The ID of the dataset to filter by.
+                Defaults to None. Must specify one of ``dataset_id`` or
+                ``dataset_name``.
+            dataset_name (str, optional): The name of the dataset to filter by.
+                Defaults to None. Must specify one of ``dataset_id`` or
+                ``dataset_name``.
+            kwargs (Any): Additional keyword args to pass as part of request body.
+
+        Returns:
+            List of ExampleSearch.
+        """
+        if dataset_id is None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        few_shot_resp = self.request_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/search",
+            headers=self._headers,
+            data=json.dumps({"inputs": query, "limit": limit, **kwargs}),
+        )
+        ls_utils.raise_for_status_with_text(few_shot_resp)
+        examples = []
+        for res in few_shot_resp.json()["examples"]:
+            examples.append(
+                ls_schemas.ExampleSearch(
+                    **res,
+                    dataset_id=dataset_id,
+                    _host_url=self._host_url,
+                    _tenant_id=self._get_optional_tenant_id(),
+                )
+            )
+        return examples
 
     def update_example(
         self,

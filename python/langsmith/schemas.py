@@ -98,6 +98,10 @@ class Example(ExampleBase):
             return f"{self._host_url}{path}"
         return None
 
+class ExampleSearch(ExampleBase):
+    """Example returned via search."""
+    id: UUID
+
 
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
