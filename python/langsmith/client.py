@@ -55,6 +55,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith.base import beta
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
@@ -3415,6 +3416,7 @@ class Client:
     # dataset_name arg explicitly not supported to avoid extra API calls.
     # TODO: Update note on enabling indexing when there's an enable_indexing method.
     # TODO: Come up with more interesting example for docstring.
+    @beta()
     def similar_examples(
         self,
         inputs: dict,
