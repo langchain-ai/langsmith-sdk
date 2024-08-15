@@ -2548,7 +2548,7 @@ class Client:
         Dataset
             The created dataset.
         """
-        dataset = {
+        dataset: Dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
             "created_at": datetime.datetime.now().isoformat(),
