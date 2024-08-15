@@ -232,8 +232,7 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
 @overload
 def traceable(
     func: Callable[P, R],
-) -> SupportsLangsmithExtra[P, R]:
-    ...
+) -> SupportsLangsmithExtra[P, R]: ...
 
 
 @overload
@@ -249,8 +248,7 @@ def traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
-) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]:
-    ...
+) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
 def traceable(
