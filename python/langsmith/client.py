@@ -3420,7 +3420,7 @@ class Client:
         inputs: dict,
         /,
         limit: int,
-        dataset_id: Optional[ID_TYPE] = None,
+        dataset_id: ID_TYPE,
         **kwargs: Any,
     ) -> List[ls_schemas.ExampleSearch]:
         """Retrieve the dataset examples whose inputs best match the query.
@@ -3433,8 +3433,6 @@ class Client:
                 input schema. Must be JSON serializable.
             limit (int): The maximum number of examples to return.
             dataset_id (UUID, optional): The ID of the dataset to filter by.
-                Defaults to None. Must specify one of ``dataset_id`` or
-                ``dataset_name``.
             kwargs (Any): Additional keyword args to pass as part of request body.
 
         Returns:
