@@ -268,6 +268,7 @@ class RunTree(ls_schemas.RunBase):
         if not self.end_time:
             self.end()
         self.client.update_run(
+            name=self.name,
             run_id=self.id,
             outputs=self.outputs.copy() if self.outputs else None,
             error=self.error,
