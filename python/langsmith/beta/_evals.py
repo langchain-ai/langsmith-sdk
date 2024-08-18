@@ -9,9 +9,9 @@ import itertools
 import uuid
 from typing import DefaultDict, List, Optional, Sequence, Tuple, TypeVar
 
-import langsmith.beta._utils as beta_utils
 import langsmith.schemas as ls_schemas
 from langsmith import evaluation as ls_eval
+from langsmith._internal._beta_decorator import warn_beta
 from langsmith.client import Client
 
 
@@ -65,7 +65,7 @@ def _convert_root_run(root: ls_schemas.Run, run_to_example_map: dict) -> List[di
     return result
 
 
-@beta_utils.warn_beta
+@warn_beta
 def convert_runs_to_test(
     runs: Sequence[ls_schemas.Run],
     *,
@@ -196,7 +196,7 @@ def _outer_product(list1: List[T], list2: List[U]) -> List[Tuple[T, U]]:
     return list(itertools.product(list1, list2))
 
 
-@beta_utils.warn_beta
+@warn_beta
 def compute_test_metrics(
     project_name: str,
     *,
