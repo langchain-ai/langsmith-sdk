@@ -37,7 +37,7 @@ def wait_for(
 
 @pytest.fixture
 def langchain_client() -> Client:
-    return Client(api_key=os.environ["LANGCHAIN_ORG_API_KEY"])
+    return Client()
 
 
 def test_datasets(langchain_client: Client) -> None:
