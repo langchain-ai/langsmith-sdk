@@ -3413,8 +3413,41 @@ class Client:
             if limit is not None and i + 1 >= limit:
                 break
 
-    # dataset_name arg explicitly not supported to avoid extra API calls.
-    # TODO: Update note on enabling indexing when there's an enable_indexing method.
+    @warn_beta
+    def index_dataset(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        tag: str = "latest",
+        **kwargs: Any,
+    ) -> None:
+        """Enable dataset indexing. Examples are indexed by their inputs.
+
+        This enables searching for similar examples by inputs with
+        ``client.similar_examples()``.
+
+        Args:
+            dataset_id (UUID): The ID of the dataset to index.
+            tag (str, optional): The version of the dataset to index. If 'latest'
+                then any updates to the dataset (additions, updates, deletions of
+                examples) will be reflected in the index.
+
+        Returns:
+            None
+
+        Raises:
+            requests.HTTPError
+        """  # noqa: E501
+        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        resp = self.request_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/index",
+            headers=self._headers,
+            data=json.dumps({"tag": tag, **kwargs}),
+        )
+        ls_utils.raise_for_status_with_text(resp)
+
+    # NOTE: dataset_name arg explicitly not supported to avoid extra API calls.
     @warn_beta
     def similar_examples(
         self,
@@ -3427,15 +3460,14 @@ class Client:
     ) -> List[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
-        **Note**: Must have few-shot indexing enabled for the dataset. You can do this
-        in the LangSmith UI:
-        https://docs.smith.langchain.com/how_to_guides/datasets/index_datasets_for_dynamic_few_shot_example_selection
+        **Note**: Must have few-shot indexing enabled for the dataset. See
+        ``client.index_dataset()``.
 
         Args:
             inputs (dict): The inputs to use as a search query. Must match the dataset
                 input schema. Must be JSON serializable.
             limit (int): The maximum number of examples to return.
-            dataset_id (UUID, optional): The ID of the dataset to filter by.
+            dataset_id (str or UUID): The ID of the dataset to search over.
             kwargs (Any): Additional keyword args to pass as part of request body.
 
         Returns:
