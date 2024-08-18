@@ -310,6 +310,8 @@ def test_similar_examples(langchain_client: Client) -> None:
     )
     assert len(similar_list) == 2
 
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
 
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
