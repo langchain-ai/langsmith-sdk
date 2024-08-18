@@ -3415,7 +3415,6 @@ class Client:
 
     # dataset_name arg explicitly not supported to avoid extra API calls.
     # TODO: Update note on enabling indexing when there's an enable_indexing method.
-    # TODO: Come up with more interesting example for docstring.
     @beta()
     def similar_examples(
         self,
@@ -3428,8 +3427,9 @@ class Client:
     ) -> List[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
-        **Note**: Must have few-shot indexing enabled for the dataset. See (TODO) method
-        for how to enable indexing.
+        **Note**: Must have few-shot indexing enabled for the dataset. You can do this
+        in the LangSmith UI:
+        https://docs.smith.langchain.com/how_to_guides/datasets/index_datasets_for_dynamic_few_shot_example_selection
 
         Args:
             inputs (dict): The inputs to use as a search query. Must match the dataset
