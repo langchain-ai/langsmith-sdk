@@ -882,7 +882,7 @@ async function _forward(
   if (!run) {
     throw new Error(`Run not created by target function.
 This is most likely due to tracing not being enabled.\n
-Try setting "LANGCHAIN_TRACING_V2=true" in your environment.`);
+Try setting "LANGSMITH_TRACING=true" in your environment.`);
   }
 
   return {

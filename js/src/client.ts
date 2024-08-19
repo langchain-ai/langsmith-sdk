@@ -37,8 +37,8 @@ import {
   isLangChainMessage,
 } from "./utils/messages.js";
 import {
-  getEnvironmentVariable,
   getLangChainEnvVarsMetadata,
+  getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
 
@@ -286,8 +286,8 @@ async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
 }
 
 const getTracingSamplingRate = () => {
-  const samplingRateStr = getEnvironmentVariable(
-    "LANGCHAIN_TRACING_SAMPLING_RATE"
+  const samplingRateStr = getLangSmithEnvironmentVariable(
+    "TRACING_SAMPLING_RATE"
   );
   if (samplingRateStr === undefined) {
     return undefined;
@@ -295,7 +295,7 @@ const getTracingSamplingRate = () => {
   const samplingRate = parseFloat(samplingRateStr);
   if (samplingRate < 0 || samplingRate > 1) {
     throw new Error(
-      `LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
+      `LANGSMITH_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
     );
   }
   return samplingRate;
@@ -463,14 +463,14 @@ export class Client {
     hideInputs?: boolean;
     hideOutputs?: boolean;
   } {
-    const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
+    const apiKey = getLangSmithEnvironmentVariable("API_KEY");
     const apiUrl =
-      getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
+      getLangSmithEnvironmentVariable("ENDPOINT") ??
       "https://api.smith.langchain.com";
     const hideInputs =
-      getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true";
+      getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
-      getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true";
+      getLangSmithEnvironmentVariable("HIDE_OUTPUTS") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
@@ -1017,7 +1017,7 @@ export class Client {
         sessionId = projectOpts?.projectId;
       } else {
         const project = await this.readProject({
-          projectName: getEnvironmentVariable("LANGCHAIN_PROJECT") || "default",
+          projectName: getLangSmithEnvironmentVariable("PROJECT") || "default",
         });
         sessionId = project.id;
       }
