@@ -1149,6 +1149,7 @@ class Client:
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
         copy: bool = False,
+        hide: bool = False,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
@@ -1168,11 +1169,11 @@ class Client:
             run_create["id"] = uuid.uuid4()
         elif isinstance(run_create["id"], str):
             run_create["id"] = uuid.UUID(run_create["id"])
-        if "inputs" in run_create and run_create["inputs"] is not None:
+        if hide and "inputs" in run_create and run_create["inputs"] is not None:
             if copy:
                 run_create["inputs"] = ls_utils.deepish_copy(run_create["inputs"])
             run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
-        if "outputs" in run_create and run_create["outputs"] is not None:
+        if hide and "outputs" in run_create and run_create["outputs"] is not None:
             if copy:
                 run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
@@ -1262,7 +1263,7 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create, copy=True)
+
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
@@ -1271,9 +1272,17 @@ class Client:
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
+            run_create = self._run_transform(
+                run_create,
+                copy=True,
+                # This will be hidden within the batch_ingest_runs call
+                hide=False,
+            )
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        else:
+            run_create = self._run_transform(run_create, copy=True, hide=True)
         self._insert_runtime_env([run_create])
         self._create_run(run_create)
 
@@ -1347,8 +1356,10 @@ class Client:
         if not create and not update:
             return
         # transform and convert to dicts
-        create_dicts = [self._run_transform(run) for run in create or []]
-        update_dicts = [self._run_transform(run, update=True) for run in update or []]
+        create_dicts = [self._run_transform(run, hide=True) for run in create or []]
+        update_dicts = [
+            self._run_transform(run, update=True, hide=True) for run in update or []
+        ]
         # combine post and patch dicts where possible
         if update_dicts and create_dicts:
             create_by_id = {run["id"]: run for run in create_dicts}
@@ -1482,11 +1493,7 @@ class Client:
             data["end_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if error is not None:
             data["error"] = error
-        if inputs is not None:
-            data["inputs"] = self._hide_run_inputs(inputs)
-        if outputs is not None:
-            outputs = ls_utils.deepish_copy(outputs)
-            data["outputs"] = self._hide_run_outputs(outputs)
+
         if events is not None:
             data["events"] = events
         if (
@@ -1495,9 +1502,19 @@ class Client:
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
         ):
+            if inputs is not None:
+                data["inputs"] = inputs
+            if outputs is not None:
+                data["outputs"] = outputs
             return self.tracing_queue.put(
                 TracingQueueItem(data["dotted_order"], "update", data)
             )
+        else:
+            if inputs is not None:
+                data["inputs"] = self._hide_run_inputs(inputs)
+            if outputs is not None:
+                outputs = ls_utils.deepish_copy(outputs)
+                data["outputs"] = self._hide_run_outputs(outputs)
         return self._update_run(data)
 
     def _update_run(self, run_update: dict) -> None:
