@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 from pydantic import BaseModel
 
-import langsmith.beta._utils as beta_utils
+from langsmith._internal._beta_decorator import warn_beta
 from langsmith.evaluation import EvaluationResult, EvaluationResults, RunEvaluator
 from langsmith.schemas import Example, Run
 
@@ -201,7 +201,7 @@ class LLMEvaluator(RunEvaluator):
         chat_model = chat_model.with_structured_output(self.score_schema)
         self.runnable = self.prompt | chat_model
 
-    @beta_utils.warn_beta
+    @warn_beta
     def evaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -210,7 +210,7 @@ class LLMEvaluator(RunEvaluator):
         output: dict = cast(dict, self.runnable.invoke(variables))
         return self._parse_output(output)
 
-    @beta_utils.warn_beta
+    @warn_beta
     async def aevaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
