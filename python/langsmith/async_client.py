@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import logging
 import uuid
 import warnings
 from typing import (
@@ -26,8 +25,6 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
-
-logger = logging.getLogger(__name__)
 
 
 class AsyncClient:

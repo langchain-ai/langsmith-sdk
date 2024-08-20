@@ -30,17 +30,23 @@ async def test_indexed_datasets():
         )
 
         await client.index_dataset(dataset_id=dataset.id)
-        for _ in range(10):
-            examples = await client.similar_examples(
-                {"name": "Bob", "age": 22}, dataset_id=dataset.id, limit=5
+
+        async def check_similar_examples():
+            examples = [
+                example
+                async for example in client.similar_examples(
+                    {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=5
+                )
+            ]
+            return len(examples) == 1
+
+        await wait_for(check_similar_examples)
+        examples = [
+            example
+            async for example in client.similar_examples(
+                {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=5
             )
-
-            if len(examples) == 1:
-                break
-
-            await asyncio.sleep(1)
-
-        assert len(examples) == 1
+        ]
         assert examples[0].id == example.id
 
 
