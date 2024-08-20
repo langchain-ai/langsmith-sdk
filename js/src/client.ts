@@ -2174,7 +2174,7 @@ export class Client {
     let datasetId_ = datasetId;
     if (!datasetId_ && !datasetName) {
       throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ && !datasetName) {
+    } else if (datasetId_ && datasetName) {
       throw new Error("Must provide either datasetName or datasetId, not both");
     } else if (!datasetId_) {
       const dataset = await this.readDataset({ datasetName });
