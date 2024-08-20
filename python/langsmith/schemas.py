@@ -114,6 +114,12 @@ class ExampleUpdate(BaseModel):
         frozen = True
 
 
+class ExampleSearch(ExampleBase):
+    """Example returned via search."""
+
+    id: UUID
+
+
 class DataType(str, Enum):
     """Enum for dataset data types."""
 

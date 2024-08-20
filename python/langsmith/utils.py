@@ -687,3 +687,33 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
             timeout=timeout,
             chunksize=chunksize,
         )
+
+def get_api_url(api_url: Optional[str]) -> str:
+    _api_url = api_url or cast(
+        str,
+        _get_env(
+            ("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+            "https://api.smith.langchain.com",
+        ),
+    )
+    if not _api_url.strip():
+        raise LangSmithUserError("LangSmith API URL cannot be empty")
+    return _api_url.strip().strip('"').strip("'").rstrip("/")
+
+
+def get_api_key(api_key: Optional[str]) -> Optional[str]:
+    api_key_ = (
+        api_key
+        if api_key is not None
+        else _get_env(("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"))
+    )
+    if api_key_ is None or not api_key_.strip():
+        return None
+    return api_key_.strip().strip('"').strip("'")
+
+def _get_env(var_names: Sequence[str], default: Optional[str] = None) -> Optional[str]:
+    for var_name in var_names:
+        var = os.getenv(var_name)
+        if var is not None:
+            return var
+    return default

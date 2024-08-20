@@ -311,3 +311,37 @@ def test_parse_prompt_identifier():
             assert False, f"Expected ValueError for identifier: {invalid_id}"
         except ValueError:
             pass  # This is the expected behavior
+
+
+def test_get_api_key() -> None:
+    assert ls_utils.get_api_key("provided_api_key") == "provided_api_key"
+    assert ls_utils.get_api_key("'provided_api_key'") == "provided_api_key"
+    assert ls_utils.get_api_key('"_provided_api_key"') == "_provided_api_key"
+
+    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
+        assert ls_utils.get_api_key(None) == "env_api_key"
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_key(None) is None
+
+    assert ls_utils.get_api_key("") is None
+    assert ls_utils.get_api_key(" ") is None
+
+
+def test_get_api_url() -> None:
+    assert ls_utils.get_api_url("http://provided.url") == "http://provided.url"
+
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert ls_utils.get_api_url(None) == "http://env.url"
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_url(None) == "https://api.smith.langchain.com"
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_url(None) == "https://api.smith.langchain.com"
+
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert ls_utils.get_api_url(None) == "http://env.url"
+
+    with pytest.raises(ls_utils.LangSmithUserError):
+        ls_utils.get_api_url(" ")

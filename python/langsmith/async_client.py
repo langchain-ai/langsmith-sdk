@@ -48,8 +48,8 @@ class AsyncClient:
         retry_config: Optional[Dict[str, Any]] = None,
     ):
         """Initialize the async client."""
-        self.api_url = api_url or ls_utils.get_api_url()
-        self.api_key = api_key or ls_utils.get_api_key()
+        self.api_url = ls_utils.get_api_url(api_url)
+        self.api_key = ls_utils.get_api_key(api_key)
         self.timeout_ms = timeout_ms or 10_000
         self.retry_config = retry_config or {"max_retries": 3}
         self._headers = {
@@ -111,7 +111,7 @@ class AsyncClient:
             items = response.json()
             if not items:
                 break
-            yield from items
+            yield items
             if len(items) < params["limit"]:
                 break
             offset += len(items)
@@ -251,6 +251,15 @@ class AsyncClient:
                 )
             return ls_schemas.Dataset(**data[0])
         return ls_schemas.Dataset(**data)
+    
+
+    async def delete_dataset(self, dataset_id: ID_TYPE) -> None:
+        """Delete a dataset asynchronously."""
+        await self._arequest_with_retries(
+            "DELETE",
+            f"/datasets/{_as_uuid(dataset_id)}",
+        )
+
 
     async def list_datasets(
         self,
@@ -278,7 +287,7 @@ class AsyncClient:
         data = {
             "inputs": inputs,
             "outputs": outputs,
-            "dataset_id": dataset_id,
+            "dataset_id": str(dataset_id),
             **kwargs,
         }
         response = await self._arequest_with_retries("POST", "/examples", json=data)
@@ -604,3 +613,47 @@ class AsyncClient:
         """List prompts asynchronously."""
         async for prompt in self._aget_paginated_list("/prompts", params=kwargs):
             yield ls_schemas.Prompt(**prompt)
+
+    async def index_dataset(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        tag: str = "latest",
+        **kwargs: Any,
+    ) -> None:
+        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        resp = await self._arequest_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/index",
+            json={
+                "tag": tag, 
+                **kwargs
+            }
+        )
+        ls_utils.raise_for_status_with_text(resp)
+
+    async def similar_examples(
+        self,
+        inputs: dict,
+        /,
+        *,
+        limit: int,
+        dataset_id: ID_TYPE,
+        **kwargs: Any,
+    ) -> List[ls_schemas.ExampleSearch]:
+        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        resp = await self._arequest_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/search",
+            json={
+                "inputs": inputs, 
+                "limit": limit, 
+                **kwargs
+            }
+        )
+        ls_utils.raise_for_status_with_text(resp)
+        examples = []
+        for ex in resp.json()["examples"]:
+            examples.append(ls_schemas.ExampleSearch(**ex, dataset_id=dataset_id))
+        return examples
+    
