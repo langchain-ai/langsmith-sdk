@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 
+import langsmith
 from langsmith.wrappers import wrap_openai
 
 
@@ -12,8 +13,9 @@ from langsmith.wrappers import wrap_openai
 def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
     import openai  # noqa
 
+    client = langsmith.Client(session=mock_session())
     original_client = openai.Client()
-    patched_client = wrap_openai(openai.Client())
+    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = original_client.chat.completions.create(
         messages=messages,  # noqa: [arg-type]
@@ -41,7 +43,7 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.01)
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -50,8 +52,9 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
 async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
     import openai  # noqa
 
+    client = langsmith.Client(session=mock_session())
     original_client = openai.AsyncClient()
-    patched_client = wrap_openai(openai.AsyncClient())
+    patched_client = wrap_openai(openai.AsyncClient(), tracing_extra={"client": client})
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = await original_client.chat.completions.create(
         messages=messages, stream=stream, temperature=0, seed=42, model="gpt-3.5-turbo"
@@ -75,7 +78,7 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -84,8 +87,9 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
 def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
     import openai
 
+    client = langsmith.Client(session=mock_session())
     original_client = openai.Client()
-    patched_client = wrap_openai(openai.Client())
+    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
     prompt = ("Say 'Foo' then stop.",)
     original = original_client.completions.create(
         model="gpt-3.5-turbo-instruct",
@@ -115,7 +119,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -124,8 +128,15 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
 async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool):
     import openai
 
+    client = langsmith.Client(session=mock_session())
+
     original_client = openai.AsyncClient()
-    patched_client = wrap_openai(openai.AsyncClient())
+    patched_client = wrap_openai(
+        openai.AsyncClient(),
+        tracing_extra={"client": client},
+        chat_name="chattychat",
+        completions_name="incompletions",
+    )
     prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
     original = await original_client.completions.create(
         model="gpt-3.5-turbo-instruct",
@@ -158,7 +169,10 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
         assert type(original) == type(patched)
         assert original.choices == patched.choices
     # Give the thread a chance.
-    time.sleep(0.1)
+    for _ in range(10):
+        time.sleep(0.1)
+        if mock_session.return_value.request.call_count >= 1:
+            break
     assert mock_session.return_value.request.call_count >= 1
-    for call in mock_session.return_value.request.call_args_list:
+    for call in mock_session.return_value.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"

@@ -11,18 +11,34 @@ from uuid import UUID, uuid4
 try:
     from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
 except ImportError:
-    from pydantic import Field, root_validator, validator
+    from pydantic import (  # type: ignore[assignment, no-redef]
+        Field,
+        root_validator,
+        validator,
+    )
 
+import threading
 import urllib.parse
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json
+from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 
 logger = logging.getLogger(__name__)
 
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = f"{LANGSMITH_PREFIX}trace"
+_CLIENT: Optional[Client] = None
+_LOCK = threading.Lock()
+
+
+def _get_client() -> Client:
+    global _CLIENT
+    if _CLIENT is None:
+        with _LOCK:
+            if _CLIENT is None:
+                _CLIENT = Client()
+    return _CLIENT
 
 
 class RunTree(ls_schemas.RunBase):
@@ -43,7 +59,7 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=Client, exclude=True)
+    client: Client = Field(default_factory=_get_client, exclude=True)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -60,7 +76,7 @@ class RunTree(ls_schemas.RunBase):
     def validate_client(cls, v: Optional[Client]) -> Client:
         """Ensure the client is specified."""
         if v is None:
-            return Client()
+            return _get_client()
         return v
 
     @root_validator(pre=True)
@@ -78,6 +94,12 @@ class RunTree(ls_schemas.RunBase):
             else:
                 values["trace_id"] = values["id"]
         cast(dict, values.setdefault("extra", {}))
+        if values.get("events") is None:
+            values["events"] = []
+        if values.get("tags") is None:
+            values["tags"] = []
+        if values.get("outputs") is None:
+            values["outputs"] = {}
         return values
 
     @root_validator(pre=False)
@@ -202,7 +224,7 @@ class RunTree(ls_schemas.RunBase):
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
-            id=run_id or uuid4(),
+            id=_ensure_uuid(run_id),
             serialized=serialized_,
             inputs=inputs or {},
             outputs=outputs or {},
@@ -213,7 +235,7 @@ class RunTree(ls_schemas.RunBase):
             end_time=end_time,
             extra=extra or {},
             parent_run=self,
-            session_name=self.session_name,
+            project_name=self.session_name,
             client=self.client,
             tags=tags,
         )
@@ -221,20 +243,17 @@ class RunTree(ls_schemas.RunBase):
         return run
 
     def _get_dicts_safe(self):
-        try:
-            return self.dict(exclude={"child_runs"}, exclude_none=True)
-        except TypeError:
-            # Things like generators cannot be copied
-            self_dict = self.dict(
-                exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
-            )
-            if self.inputs:
-                # shallow copy
-                self_dict["inputs"] = self.inputs.copy()
-            if self.outputs:
-                # shallow copy
-                self_dict["outputs"] = self.outputs.copy()
-            return self_dict
+        # Things like generators cannot be copied
+        self_dict = self.dict(
+            exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
+        )
+        if self.inputs is not None:
+            # shallow copy. deep copying will occur in the client
+            self_dict["inputs"] = self.inputs.copy()
+        if self.outputs is not None:
+            # shallow copy; deep copying will occur in the client
+            self_dict["outputs"] = self.outputs.copy()
+        return self_dict
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
@@ -287,6 +306,66 @@ class RunTree(ls_schemas.RunBase):
         return cast(RunTree, cls.from_headers(headers, **kwargs))
 
     @classmethod
+    def from_runnable_config(
+        cls,
+        config: Optional[dict],
+        **kwargs: Any,
+    ) -> Optional[RunTree]:
+        """Create a new 'child' span from the provided runnable config.
+
+        Requires langchain to be installed.
+
+        Returns:
+            Optional[RunTree]: The new span or None if
+                no parent span information is found.
+        """
+        try:
+            from langchain_core.callbacks.manager import (
+                AsyncCallbackManager,
+                CallbackManager,
+            )
+            from langchain_core.runnables import RunnableConfig, ensure_config
+            from langchain_core.tracers.langchain import LangChainTracer
+        except ImportError as e:
+            raise ImportError(
+                "RunTree.from_runnable_config requires langchain-core to be installed. "
+                "You can install it with `pip install langchain-core`."
+            ) from e
+        config_ = ensure_config(
+            cast(RunnableConfig, config) if isinstance(config, dict) else None
+        )
+        if (
+            (cb := config_.get("callbacks"))
+            and isinstance(cb, (CallbackManager, AsyncCallbackManager))
+            and cb.parent_run_id
+            and (
+                tracer := next(
+                    (t for t in cb.handlers if isinstance(t, LangChainTracer)),
+                    None,
+                )
+            )
+        ):
+            if (run := tracer.run_map.get(str(cb.parent_run_id))) and run.dotted_order:
+                dotted_order = run.dotted_order
+                kwargs["run_type"] = run.run_type
+                kwargs["inputs"] = run.inputs
+                kwargs["outputs"] = run.outputs
+                kwargs["start_time"] = run.start_time
+                kwargs["end_time"] = run.end_time
+                kwargs["tags"] = sorted(set(run.tags or [] + kwargs.get("tags", [])))
+                extra_ = kwargs.setdefault("extra", {})
+                metadata_ = extra_.setdefault("metadata", {})
+                metadata_.update(run.metadata)
+            elif hasattr(tracer, "order_map") and cb.parent_run_id in tracer.order_map:
+                dotted_order = tracer.order_map[cb.parent_run_id][1]
+            else:
+                return None
+            kwargs["client"] = tracer.client
+            kwargs["project_name"] = tracer.project_name
+            return RunTree.from_dotted_order(dotted_order, **kwargs)
+        return None
+
+    @classmethod
     def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[RunTree]:
         """Create a new 'parent' span from the provided headers.
 
@@ -310,6 +389,9 @@ class RunTree(ls_schemas.RunBase):
         init_args["trace_id"] = trace_id
         init_args["id"] = parsed_dotted_order[-1][1]
         init_args["dotted_order"] = parent_dotted_order
+        if len(parsed_dotted_order) >= 2:
+            # Has a parent
+            init_args["parent_run_id"] = parsed_dotted_order[-2][1]
         # All placeholders. We assume the source process
         # handles the life-cycle of the run.
         init_args["start_time"] = init_args.get("start_time") or datetime.now(
@@ -328,6 +410,8 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
+            if baggage.project_name:
+                init_args["project_name"] = baggage.project_name
 
         return RunTree(**init_args)
 
@@ -339,6 +423,7 @@ class RunTree(ls_schemas.RunBase):
         baggage = _Baggage(
             metadata=self.extra.get("metadata", {}),
             tags=self.tags,
+            project_name=self.session_name,
         )
         headers["baggage"] = baggage.to_header()
         return headers
@@ -351,10 +436,12 @@ class _Baggage:
         self,
         metadata: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        project_name: Optional[str] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
+        self.project_name = project_name
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -363,6 +450,7 @@ class _Baggage:
             return cls()
         metadata = {}
         tags = []
+        project_name = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -370,10 +458,12 @@ class _Baggage:
                     metadata = json.loads(urllib.parse.unquote(value))
                 elif key == f"{LANGSMITH_PREFIX}tags":
                     tags = urllib.parse.unquote(value).split(",")
+                elif key == f"{LANGSMITH_PREFIX}project":
+                    project_name = urllib.parse.unquote(value)
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
-        return cls(metadata=metadata, tags=tags)
+        return cls(metadata=metadata, tags=tags, project_name=project_name)
 
     def to_header(self) -> str:
         """Return the Baggage object as a header value."""
@@ -387,6 +477,10 @@ class _Baggage:
             serialized_tags = ",".join(self.tags)
             items.append(
                 f"{LANGSMITH_PREFIX}tags={urllib.parse.quote(serialized_tags)}"
+            )
+        if self.project_name:
+            items.append(
+                f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         return ",".join(items)
 

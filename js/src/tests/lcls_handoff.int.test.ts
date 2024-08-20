@@ -35,19 +35,18 @@ test.concurrent(
     };
 
     // Define the two nodes we will cycle between
-    workflow.addNode(
-      "agent",
-      new RunnableLambda({
-        func: async () => new HumanMessage({ content: "Hello!" }),
-      })
-    );
-    workflow.addNode("action", new RunnableLambda({ func: myFunc }));
+    workflow
+      .addNode(
+        "agent",
+        new RunnableLambda({
+          func: async () => new HumanMessage({ content: "Hello!" }),
+        })
+      )
+      .addNode("action", new RunnableLambda({ func: myFunc }))
+      .addEdge("__start__", "agent")
+      .addEdge("agent", "action")
+      .addEdge("action", "__end__");
 
-    // Set the entrypoint as `agent`
-    // This means that this node is the first one called
-    workflow.setEntryPoint("agent");
-    workflow.addEdge("agent", "action");
-    workflow.setFinishPoint("action");
     const app = workflow.compile();
     const tracer = new LangChainTracer({ projectName });
     const client = new Client({

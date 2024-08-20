@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --with dev
-          poetry run pip install -U langchain
+          poetry run pip install -U langchain langchain_anthropic langchain_openai rapidfuzz
       - name: Run Python integration tests
         uses: ./.github/actions/python-integration-tests
         with:

@@ -1,6 +1,10 @@
 """Generic utility functions."""
 
+from __future__ import annotations
+
 import contextlib
+import contextvars
+import copy
 import enum
 import functools
 import logging
@@ -10,20 +14,26 @@ import subprocess
 import sys
 import threading
 import traceback
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Any,
     Callable,
     Dict,
     Generator,
+    Iterable,
+    Iterator,
     List,
     Mapping,
     Optional,
     Sequence,
     Tuple,
+    TypeVar,
     Union,
+    cast,
 )
 
 import requests
+from typing_extensions import ParamSpec
 from urllib3.util import Retry
 
 from langsmith import schemas as ls_schemas
@@ -63,13 +73,21 @@ class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
-def tracing_is_enabled() -> bool:
+def tracing_is_enabled(ctx: Optional[dict] = None) -> bool:
     """Return True if tracing is enabled."""
-    from langsmith.run_helpers import get_tracing_context
+    from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
-    tc = get_tracing_context()
+    tc = ctx or get_tracing_context()
+    # You can manually override the environment using context vars.
+    # Check that first.
+    # Doing this before checking the run tree lets us
+    # disable a branch within a trace.
     if tc["enabled"] is not None:
         return tc["enabled"]
+    # Next check if we're mid-trace
+    if get_current_run_tree():
+        return True
+    # Finally, check the global environment
     var_result = get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))
     return var_result == "true"
 
@@ -497,3 +515,175 @@ def _format_exc() -> str:
     tb_lines = traceback.format_exception(*sys.exc_info())
     filtered_lines = [line for line in tb_lines if "langsmith/" not in line]
     return "".join(filtered_lines)
+
+
+T = TypeVar("T")
+
+
+def _middle_copy(
+    val: T, memo: Dict[int, Any], max_depth: int = 4, _depth: int = 0
+) -> T:
+    cls = type(val)
+
+    copier = getattr(cls, "__deepcopy__", None)
+    if copier is not None:
+        try:
+            return copier(memo)
+        except BaseException:
+            pass
+    if _depth >= max_depth:
+        return val
+    if isinstance(val, dict):
+        return {  # type: ignore[return-value]
+            _middle_copy(k, memo, max_depth, _depth + 1): _middle_copy(
+                v, memo, max_depth, _depth + 1
+            )
+            for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [_middle_copy(item, memo, max_depth, _depth + 1) for item in val]  # type: ignore[return-value]
+    if isinstance(val, tuple):
+        return tuple(_middle_copy(item, memo, max_depth, _depth + 1) for item in val)  # type: ignore[return-value]
+    if isinstance(val, set):
+        return {_middle_copy(item, memo, max_depth, _depth + 1) for item in val}  # type: ignore[return-value]
+
+    return val
+
+
+def deepish_copy(val: T) -> T:
+    """Deep copy a value with a compromise for uncopyable objects.
+
+    Args:
+        val: The value to be deep copied.
+
+    Returns:
+        The deep copied value.
+    """
+    memo: Dict[int, Any] = {}
+    try:
+        return copy.deepcopy(val, memo)
+    except BaseException as e:
+        # Generators, locks, etc. cannot be copied
+        # and raise a TypeError (mentioning pickling, since the dunder methods)
+        # are re-used for copying. We'll try to do a compromise and copy
+        # what we can
+        _LOGGER.debug("Failed to deepcopy input: %s", repr(e))
+        return _middle_copy(val, memo)
+
+
+def is_version_greater_or_equal(current_version: str, target_version: str) -> bool:
+    """Check if the current version is greater or equal to the target version."""
+    from packaging import version
+
+    current = version.parse(current_version)
+    target = version.parse(target_version)
+    return current >= target
+
+
+def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
+    """Parse a string in the format of owner/name:hash, name:hash, owner/name, or name.
+
+    Args:
+        identifier (str): The prompt identifier to parse.
+
+    Returns:
+        Tuple[str, str, str]: A tuple containing (owner, name, hash).
+
+    Raises:
+        ValueError: If the identifier doesn't match the expected formats.
+    """
+    if (
+        not identifier
+        or identifier.count("/") > 1
+        or identifier.startswith("/")
+        or identifier.endswith("/")
+    ):
+        raise ValueError(f"Invalid identifier format: {identifier}")
+
+    parts = identifier.split(":", 1)
+    owner_name = parts[0]
+    commit = parts[1] if len(parts) > 1 else "latest"
+
+    if "/" in owner_name:
+        owner, name = owner_name.split("/", 1)
+        if not owner or not name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return owner, name, commit
+    else:
+        if not owner_name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return "-", owner_name, commit
+
+
+P = ParamSpec("P")
+
+
+class ContextThreadPoolExecutor(ThreadPoolExecutor):
+    """ThreadPoolExecutor that copies the context to the child thread."""
+
+    def submit(  # type: ignore[override]
+        self,
+        func: Callable[P, T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> Future[T]:
+        """Submit a function to the executor.
+
+        Args:
+            func (Callable[..., T]): The function to submit.
+            *args (Any): The positional arguments to the function.
+            **kwargs (Any): The keyword arguments to the function.
+
+        Returns:
+            Future[T]: The future for the function.
+        """
+        return super().submit(
+            cast(
+                Callable[..., T],
+                functools.partial(
+                    contextvars.copy_context().run, func, *args, **kwargs
+                ),
+            )
+        )
+
+    def map(
+        self,
+        fn: Callable[..., T],
+        *iterables: Iterable[Any],
+        timeout: Optional[float] = None,
+        chunksize: int = 1,
+    ) -> Iterator[T]:
+        """Return an iterator equivalent to stdlib map.
+
+        Each function will receive it's own copy of the context from the parent thread.
+
+        Args:
+            fn: A callable that will take as many arguments as there are
+                passed iterables.
+            timeout: The maximum number of seconds to wait. If None, then there
+                is no limit on the wait time.
+            chunksize: The size of the chunks the iterable will be broken into
+                before being passed to a child process. This argument is only
+                used by ProcessPoolExecutor; it is ignored by
+                ThreadPoolExecutor.
+
+        Returns:
+            An iterator equivalent to: map(func, *iterables) but the calls may
+            be evaluated out-of-order.
+
+        Raises:
+            TimeoutError: If the entire result iterator could not be generated
+                before the given timeout.
+            Exception: If fn(*args) raises for any values.
+        """
+        contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
+
+        def _wrapped_fn(*args: Any) -> T:
+            return contexts.pop().run(fn, *args)
+
+        return super().map(
+            _wrapped_fn,
+            *iterables,
+            timeout=timeout,
+            chunksize=chunksize,
+        )

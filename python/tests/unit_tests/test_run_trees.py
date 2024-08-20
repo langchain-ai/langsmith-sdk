@@ -15,7 +15,7 @@ def test_run_tree_accepts_tpe() -> None:
         name="My Chat Bot",
         inputs={"text": "Summarize this morning's meetings."},
         client=mock_client,
-        executor=ThreadPoolExecutor(),
+        executor=ThreadPoolExecutor(),  # type: ignore
     )
 
 
@@ -59,3 +59,58 @@ def test_run_tree_accepts_tpe() -> None:
 )
 def test_parse_dotted_order(inputs, expected):
     assert run_trees._parse_dotted_order(inputs) == expected
+
+
+def test_run_tree_events_not_null():
+    mock_client = MagicMock(spec=Client)
+    run_tree = run_trees.RunTree(
+        name="My Chat Bot",
+        inputs={"text": "Summarize this morning's meetings."},
+        client=mock_client,
+        events=None,
+    )
+    assert run_tree.events == []
+
+
+def test_nested_run_trees_from_dotted_order():
+    grandparent = run_trees.RunTree(
+        name="Grandparent",
+        inputs={"text": "Summarize this morning's meetings."},
+        client=MagicMock(spec=Client),
+    )
+    parent = grandparent.create_child(
+        name="Parent",
+    )
+    child = parent.create_child(
+        name="Child",
+    )
+    # Check child
+    clone = run_trees.RunTree.from_dotted_order(
+        dotted_order=child.dotted_order,
+        name="Clone",
+        client=MagicMock(spec=Client),
+    )
+
+    assert clone.id == child.id
+    assert clone.parent_run_id == child.parent_run_id
+    assert clone.dotted_order == child.dotted_order
+
+    # Check parent
+    parent_clone = run_trees.RunTree.from_dotted_order(
+        dotted_order=parent.dotted_order,
+        name="Parent Clone",
+        client=MagicMock(spec=Client),
+    )
+    assert parent_clone.id == parent.id
+    assert parent_clone.parent_run_id == parent.parent_run_id
+    assert parent_clone.dotted_order == parent.dotted_order
+
+    # Check grandparent
+    grandparent_clone = run_trees.RunTree.from_dotted_order(
+        dotted_order=grandparent.dotted_order,
+        name="Grandparent Clone",
+        client=MagicMock(spec=Client),
+    )
+    assert grandparent_clone.id == grandparent.id
+    assert grandparent_clone.parent_run_id is None
+    assert grandparent_clone.dotted_order == grandparent.dotted_order
