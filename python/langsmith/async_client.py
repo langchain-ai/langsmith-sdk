@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
+import uuid
 from typing import (
     Any,
     AsyncIterator,
@@ -11,22 +13,19 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Sequence,
     Tuple,
     Union,
     cast,
 )
+import warnings
 
 import httpx
 
+from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith.client import (
-    ID_TYPE,
-    X_API_KEY,
-    _as_uuid,
-    _dumps_json,
-    _ensure_uuid,
-)
+from langsmith._internal import _beta_decorator as ls_beta
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +50,16 @@ class AsyncClient:
         retry_config: Optional[Mapping[str, Any]] = None,
     ):
         """Initialize the async client."""
+        warnings.warn(
+            f"Class AsyncClient is in beta.", ls_beta.LangSmithBetaWarning, stacklevel=2
+        )
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
             "Content-Type": "application/json",
         }
         api_key = ls_utils.get_api_key(api_key)
         if api_key:
-            _headers[X_API_KEY] = api_key
+            _headers[ls_client.X_API_KEY] = api_key
 
         if isinstance(timeout_ms, int):
             timeout_: Union[Tuple, float] = (timeout_ms / 1000, None, None, None)
@@ -92,15 +94,15 @@ class AsyncClient:
         for attempt in range(max_retries):
             try:
                 response = await self._client.request(method, endpoint, **kwargs)
-                response.raise_for_status()
+                ls_utils.raise_for_status_with_text(response)
                 return response
             except httpx.HTTPStatusError as e:
                 if attempt == max_retries - 1:
-                    raise ls_utils.LangSmithAPIError(f"HTTP error: {e}")
+                    raise ls_utils.LangSmithAPIError(f"HTTP error: {repr(e)}")
                 await asyncio.sleep(2**attempt)
             except httpx.RequestError as e:
                 if attempt == max_retries - 1:
-                    raise ls_utils.LangSmithConnectionError(f"Request error: {e}")
+                    raise ls_utils.LangSmithConnectionError(f"Request error: {repr(e)}")
                 await asyncio.sleep(2**attempt)
         raise ls_utils.LangSmithAPIError(
             "Unexpected error connecting to the LangSmith API"
@@ -117,90 +119,286 @@ class AsyncClient:
         params["limit"] = params.get("limit", 100)
         while True:
             params["offset"] = offset
+            print(f"path: {path}, params: {params}", flush=True)
             response = await self._arequest_with_retries("GET", path, params=params)
             items = response.json()
+            print(f"items: {items}, response: {response}", flush=True)
             if not items:
                 break
-            yield items
+            for item in items:
+                yield item
             if len(items) < params["limit"]:
                 break
             offset += len(items)
+
+    async def _aget_cursor_paginated_list(
+        self,
+        path: str,
+        *,
+        body: Optional[dict] = None,
+        request_method: str = "POST",
+        data_key: str = "runs",
+    ) -> AsyncIterator[dict]:
+        """Get a cursor paginated list of items."""
+        params_ = body.copy() if body else {}
+        while True:
+            response = await self._arequest_with_retries(
+                request_method,
+                path,
+                content=ls_client._dumps_json(params_),
+            )
+            response_body = response.json()
+            if not response_body:
+                break
+            if not response_body.get(data_key):
+                break
+            for run in response_body[data_key]:
+                yield run
+            cursors = response_body.get("cursors")
+            if not cursors:
+                break
+            if not cursors.get("next"):
+                break
+            params_["cursor"] = cursors["next"]
 
     async def create_run(
         self,
         name: str,
         inputs: Dict[str, Any],
         run_type: str,
+        *,
         project_name: Optional[str] = None,
+        revision_id: Optional[ls_client.ID_TYPE] = None,
         **kwargs: Any,
     ) -> None:
-        """Create a run asynchronously."""
+        """Create a run."""
         run_create = {
             "name": name,
+            "id": kwargs.get("id") or uuid.uuid4(),
             "inputs": inputs,
             "run_type": run_type,
             "session_name": project_name or ls_utils.get_tracer_project(),
+            "revision_id": revision_id,
             **kwargs,
         }
-        await self._arequest_with_retries("POST", "/runs", json=_dumps_json(run_create))
+        await self._arequest_with_retries(
+            "POST", "/runs", content=ls_client._dumps_json(run_create)
+        )
 
     async def update_run(
         self,
-        run_id: ID_TYPE,
+        run_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> None:
-        """Update a run asynchronously."""
-        data = {**kwargs, "id": _as_uuid(run_id)}
+        """Update a run."""
+        data = {**kwargs, "id": ls_client._as_uuid(run_id)}
         await self._arequest_with_retries(
             "PATCH",
-            f"/runs/{_as_uuid(run_id)}",
-            json=_dumps_json(data),
+            f"/runs/{ls_client._as_uuid(run_id)}",
+            content=ls_client._dumps_json(data),
         )
 
-    async def read_run(self, run_id: ID_TYPE) -> ls_schemas.Run:
-        """Read a run asynchronously."""
+    async def read_run(self, run_id: ls_client.ID_TYPE) -> ls_schemas.Run:
+        """Read a run."""
         response = await self._arequest_with_retries(
             "GET",
-            f"/runs/{_as_uuid(run_id)}",
+            f"/runs/{ls_client._as_uuid(run_id)}",
         )
         return ls_schemas.Run(**response.json())
 
     async def list_runs(
         self,
-        project_id: Optional[ID_TYPE] = None,
-        project_name: Optional[str] = None,
+        *,
+        project_id: Optional[
+            Union[ls_client.ID_TYPE, Sequence[ls_client.ID_TYPE]]
+        ] = None,
+        project_name: Optional[Union[str, Sequence[str]]] = None,
+        run_type: Optional[str] = None,
+        trace_id: Optional[ls_client.ID_TYPE] = None,
+        reference_example_id: Optional[ls_client.ID_TYPE] = None,
+        query: Optional[str] = None,
+        filter: Optional[str] = None,
+        trace_filter: Optional[str] = None,
+        tree_filter: Optional[str] = None,
+        is_root: Optional[bool] = None,
+        parent_run_id: Optional[ls_client.ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
+        error: Optional[bool] = None,
+        run_ids: Optional[Sequence[ls_client.ID_TYPE]] = None,
+        select: Optional[Sequence[str]] = None,
+        limit: Optional[int] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Run]:
-        """List runs asynchronously."""
-        params = kwargs.copy()
-        if project_id:
-            params["session"] = _as_uuid(project_id)
-        elif project_name:
-            project = await self.read_project(project_name=project_name)
-            params["session"] = project.id
+        """List runs from the LangSmith API.
 
-        async for run in self._aget_paginated_list("/runs", params=params):
+        Parameters
+        ----------
+        project_id : UUID or None, default=None
+            The ID(s) of the project to filter by.
+        project_name : str or None, default=None
+            The name(s) of the project to filter by.
+        run_type : str or None, default=None
+            The type of the runs to filter by.
+        trace_id : UUID or None, default=None
+            The ID of the trace to filter by.
+        reference_example_id : UUID or None, default=None
+            The ID of the reference example to filter by.
+        query : str or None, default=None
+            The query string to filter by.
+        filter : str or None, default=None
+            The filter string to filter by.
+        trace_filter : str or None, default=None
+            Filter to apply to the ROOT run in the trace tree. This is meant to
+            be used in conjunction with the regular `filter` parameter to let you
+            filter runs by attributes of the root run within a trace.
+        tree_filter : str or None, default=None
+            Filter to apply to OTHER runs in the trace tree, including
+            sibling and child runs. This is meant to be used in conjunction with
+            the regular `filter` parameter to let you filter runs by attributes
+            of any run within a trace.
+        is_root : bool or None, default=None
+            Whether to filter by root runs.
+        parent_run_id : UUID or None, default=None
+            The ID of the parent run to filter by.
+        start_time : datetime or None, default=None
+            The start time to filter by.
+        error : bool or None, default=None
+            Whether to filter by error status.
+        run_ids : List[str or UUID] or None, default=None
+            The IDs of the runs to filter by.
+        limit : int or None, default=None
+            The maximum number of runs to return.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Yields:
+        ------
+        Run
+            The runs.
+
+        Examples:
+        --------
+        .. code-block:: python
+
+            # List all runs in a project
+            project_runs = client.list_runs(project_name="<your_project>")
+
+            # List LLM and Chat runs in the last 24 hours
+            todays_llm_runs = client.list_runs(
+                project_name="<your_project>",
+                start_time=datetime.now() - timedelta(days=1),
+                run_type="llm",
+            )
+
+            # List root traces in a project
+            root_runs = client.list_runs(project_name="<your_project>", is_root=1)
+
+            # List runs without errors
+            correct_runs = client.list_runs(project_name="<your_project>", error=False)
+
+            # List runs and only return their inputs/outputs (to speed up the query)
+            input_output_runs = client.list_runs(
+                project_name="<your_project>", select=["inputs", "outputs"]
+            )
+
+            # List runs by run ID
+            run_ids = [
+                "a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836",
+                "9398e6be-964f-4aa4-8ae9-ad78cd4b7074",
+            ]
+            selected_runs = client.list_runs(id=run_ids)
+
+            # List all "chain" type runs that took more than 10 seconds and had
+            # `total_tokens` greater than 5000
+            chain_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))',
+            )
+
+            # List all runs called "extractor" whose root of the trace was assigned feedback "user_score" score of 1
+            good_extractor_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='eq(name, "extractor")',
+                trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
+            )
+
+            # List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0
+            complex_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))',
+            )
+
+            # List all runs where `tags` include "experimental" or "beta" and `latency` is greater than 2 seconds
+            tagged_runs = client.list_runs(
+                project_name="<your_project>",
+                filter='and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))',
+            )
+        """  # noqa: E501
+        project_ids = []
+        if isinstance(project_id, (uuid.UUID, str)):
+            project_ids.append(project_id)
+        elif isinstance(project_id, list):
+            project_ids.extend(project_id)
+        if project_name is not None:
+            if isinstance(project_name, str):
+                project_name = [project_name]
+            projects = await asyncio.gather(
+                *[self.read_project(project_name=name) for name in project_name]
+            )
+            project_ids.extend([project.id for project in projects])
+
+        body_query: Dict[str, Any] = {
+            "session": project_ids if project_ids else None,
+            "run_type": run_type,
+            "reference_example": (
+                [reference_example_id] if reference_example_id else None
+            ),
+            "query": query,
+            "filter": filter,
+            "trace_filter": trace_filter,
+            "tree_filter": tree_filter,
+            "is_root": is_root,
+            "parent_run": parent_run_id,
+            "start_time": start_time.isoformat() if start_time else None,
+            "error": error,
+            "id": run_ids,
+            "trace": trace_id,
+            "select": select,
+            **kwargs,
+        }
+        if project_ids:
+            body_query["session"] = [
+                str(ls_client._as_uuid(id_)) for id_ in project_ids
+            ]
+        body = {k: v for k, v in body_query.items() if v is not None}
+        ix = 0
+        async for run in self._aget_cursor_paginated_list("/runs/query", body=body):
             yield ls_schemas.Run(**run)
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
 
     async def create_project(
         self,
         project_name: str,
         **kwargs: Any,
     ) -> ls_schemas.TracerSession:
-        """Create a project asynchronously."""
+        """Create a project."""
         data = {"name": project_name, **kwargs}
-        response = await self._arequest_with_retries("POST", "/sessions", json=data)
+        response = await self._arequest_with_retries(
+            "POST", "/sessions", content=ls_client._dumps_json(data)
+        )
         return ls_schemas.TracerSession(**response.json())
 
     async def read_project(
         self,
         project_name: Optional[str] = None,
-        project_id: Optional[ID_TYPE] = None,
+        project_id: Optional[ls_client.ID_TYPE] = None,
     ) -> ls_schemas.TracerSession:
-        """Read a project asynchronously."""
+        """Read a project."""
         if project_id:
             response = await self._arequest_with_retries(
-                "GET", f"/sessions/{_as_uuid(project_id)}"
+                "GET", f"/sessions/{ls_client._as_uuid(project_id)}"
             )
         elif project_name:
             response = await self._arequest_with_retries(
@@ -222,29 +420,53 @@ class AsyncClient:
         self,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.TracerSession]:
-        """List projects asynchronously."""
+        """List projects."""
         async for project in self._aget_paginated_list("/sessions", params=kwargs):
             yield ls_schemas.TracerSession(**project)
+
+    async def delete_project(
+        self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
+    ) -> None:
+        """Delete a project from LangSmith.
+
+        Parameters
+        ----------
+        project_name : str or None, default=None
+            The name of the project to delete.
+        project_id : str or None, default=None
+            The ID of the project to delete.
+        """
+        if project_id is None and project_name is None:
+            raise ValueError("Either project_name or project_id must be provided")
+        if project_id is None:
+            project = await self.read_project(project_name=project_name)
+            project_id = project.id
+        await self._arequest_with_retries(
+            "DELETE",
+            f"/sessions/{ls_client._as_uuid(project_id)}",
+        )
 
     async def create_dataset(
         self,
         dataset_name: str,
         **kwargs: Any,
     ) -> ls_schemas.Dataset:
-        """Create a dataset asynchronously."""
+        """Create a dataset."""
         data = {"name": dataset_name, **kwargs}
-        response = await self._arequest_with_retries("POST", "/datasets", json=data)
+        response = await self._arequest_with_retries(
+            "POST", "/datasets", content=ls_client._dumps_json(data)
+        )
         return ls_schemas.Dataset(**response.json())
 
     async def read_dataset(
         self,
         dataset_name: Optional[str] = None,
-        dataset_id: Optional[ID_TYPE] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
     ) -> ls_schemas.Dataset:
-        """Read a dataset asynchronously."""
+        """Read a dataset."""
         if dataset_id:
             response = await self._arequest_with_retries(
-                "GET", f"/datasets/{_as_uuid(dataset_id)}"
+                "GET", f"/datasets/{ls_client._as_uuid(dataset_id)}"
             )
         elif dataset_name:
             response = await self._arequest_with_retries(
@@ -262,18 +484,18 @@ class AsyncClient:
             return ls_schemas.Dataset(**data[0])
         return ls_schemas.Dataset(**data)
 
-    async def delete_dataset(self, dataset_id: ID_TYPE) -> None:
-        """Delete a dataset asynchronously."""
+    async def delete_dataset(self, dataset_id: ls_client.ID_TYPE) -> None:
+        """Delete a dataset."""
         await self._arequest_with_retries(
             "DELETE",
-            f"/datasets/{_as_uuid(dataset_id)}",
+            f"/datasets/{ls_client._as_uuid(dataset_id)}",
         )
 
     async def list_datasets(
         self,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Dataset]:
-        """List datasets asynchronously."""
+        """List datasets."""
         async for dataset in self._aget_paginated_list("/datasets", params=kwargs):
             yield ls_schemas.Dataset(**dataset)
 
@@ -281,11 +503,11 @@ class AsyncClient:
         self,
         inputs: Dict[str, Any],
         outputs: Optional[Dict[str, Any]] = None,
-        dataset_id: Optional[ID_TYPE] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Example:
-        """Create an example asynchronously."""
+        """Create an example."""
         if dataset_id is None and dataset_name is None:
             raise ValueError("Either dataset_id or dataset_name must be provided")
         if dataset_id is None:
@@ -298,26 +520,28 @@ class AsyncClient:
             "dataset_id": str(dataset_id),
             **kwargs,
         }
-        response = await self._arequest_with_retries("POST", "/examples", json=data)
+        response = await self._arequest_with_retries(
+            "POST", "/examples", content=ls_client._dumps_json(data)
+        )
         return ls_schemas.Example(**response.json())
 
-    async def read_example(self, example_id: ID_TYPE) -> ls_schemas.Example:
-        """Read an example asynchronously."""
+    async def read_example(self, example_id: ls_client.ID_TYPE) -> ls_schemas.Example:
+        """Read an example."""
         response = await self._arequest_with_retries(
-            "GET", f"/examples/{_as_uuid(example_id)}"
+            "GET", f"/examples/{ls_client._as_uuid(example_id)}"
         )
         return ls_schemas.Example(**response.json())
 
     async def list_examples(
         self,
-        dataset_id: Optional[ID_TYPE] = None,
+        dataset_id: Optional[ls_client.ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Example]:
-        """List examples asynchronously."""
+        """List examples."""
         params = kwargs.copy()
         if dataset_id:
-            params["dataset"] = _as_uuid(dataset_id)
+            params["dataset"] = ls_client._as_uuid(dataset_id)
         elif dataset_name:
             dataset = await self.read_dataset(dataset_name=dataset_name)
             params["dataset"] = dataset.id
@@ -327,112 +551,82 @@ class AsyncClient:
 
     async def create_feedback(
         self,
-        run_id: Optional[ID_TYPE],
+        run_id: Optional[ls_client.ID_TYPE],
         key: str,
         score: Optional[float] = None,
         value: Optional[Any] = None,
         comment: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
-        """Create feedback asynchronously."""
+        """Create feedback."""
         data = {
-            "run_id": _ensure_uuid(run_id, accept_null=True),
+            "run_id": ls_client._ensure_uuid(run_id, accept_null=True),
             "key": key,
             "score": score,
             "value": value,
             "comment": comment,
             **kwargs,
         }
-        response = await self._arequest_with_retries("POST", "/feedback", json=data)
+        response = await self._arequest_with_retries(
+            "POST", "/feedback", content=ls_client._dumps_json(data)
+        )
         return ls_schemas.Feedback(**response.json())
 
-    async def read_feedback(self, feedback_id: ID_TYPE) -> ls_schemas.Feedback:
-        """Read feedback asynchronously."""
+    async def read_feedback(
+        self, feedback_id: ls_client.ID_TYPE
+    ) -> ls_schemas.Feedback:
+        """Read feedback."""
         response = await self._arequest_with_retries(
-            "GET", f"/feedback/{_as_uuid(feedback_id)}"
+            "GET", f"/feedback/{ls_client._as_uuid(feedback_id)}"
         )
         return ls_schemas.Feedback(**response.json())
 
     async def list_feedback(
         self,
-        run_ids: Optional[List[ID_TYPE]] = None,
+        *,
+        run_ids: Optional[Sequence[ls_client.ID_TYPE]] = None,
+        feedback_key: Optional[Sequence[str]] = None,
+        feedback_source_type: Optional[Sequence[ls_schemas.FeedbackSourceType]] = None,
+        limit: Optional[int] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Feedback]:
-        """List feedback asynchronously."""
-        params = kwargs.copy()
-        if run_ids:
-            params["run"] = [str(_as_uuid(run_id)) for run_id in run_ids]
+        """List feedback."""
 
+        params = {
+            "run": (
+                [str(ls_client._as_uuid(id_)) for id_ in run_ids] if run_ids else None
+            ),
+            "limit": min(limit, 100) if limit is not None else 100,
+            **kwargs,
+        }
+        if feedback_key is not None:
+            params["key"] = feedback_key
+        if feedback_source_type is not None:
+            params["source"] = feedback_source_type
+        ix = 0
         async for feedback in self._aget_paginated_list("/feedback", params=params):
             yield ls_schemas.Feedback(**feedback)
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
 
     async def update_feedback(
         self,
-        feedback_id: ID_TYPE,
+        feedback_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> None:
-        """Update feedback asynchronously."""
+        """Update feedback."""
         await self._arequest_with_retries(
             "PATCH",
-            f"/feedback/{_as_uuid(feedback_id)}",
-            json=kwargs,
+            f"/feedback/{ls_client._as_uuid(feedback_id)}",
+            content=ls_client._dumps_json(kwargs),
         )
 
-    async def delete_feedback(self, feedback_id: ID_TYPE) -> None:
-        """Delete feedback asynchronously."""
+    async def delete_feedback(self, feedback_id: ls_client.ID_TYPE) -> None:
+        """Delete feedback."""
         await self._arequest_with_retries(
             "DELETE",
-            f"/feedback/{_as_uuid(feedback_id)}",
-        )
-
-    async def create_dataset_split(
-        self,
-        dataset_id: ID_TYPE,
-        split_name: str,
-        example_ids: List[ID_TYPE],
-    ) -> None:
-        """Create a dataset split asynchronously."""
-        data = {
-            "split_name": split_name,
-            "examples": [str(_as_uuid(id)) for id in example_ids],
-        }
-        await self._arequest_with_retries(
-            "PUT", f"/datasets/{_as_uuid(dataset_id)}/splits", json=data
-        )
-
-    async def read_dataset_split(
-        self,
-        dataset_id: ID_TYPE,
-        split_name: str,
-    ) -> List[str]:
-        """Read a dataset split asynchronously."""
-        response = await self._arequest_with_retries(
-            "GET",
-            f"/datasets/{_as_uuid(dataset_id)}/splits",
-            params={"split_name": split_name},
-        )
-        return response.json()
-
-    async def list_dataset_splits(
-        self,
-        dataset_id: ID_TYPE,
-    ) -> List[str]:
-        """List dataset splits asynchronously."""
-        response = await self._arequest_with_retries(
-            "GET",
-            f"/datasets/{_as_uuid(dataset_id)}/splits",
-        )
-        return response.json()
-
-    async def delete_dataset_split(
-        self,
-        dataset_id: ID_TYPE,
-        split_name: str,
-    ) -> None:
-        """Delete a dataset split asynchronously."""
-        await self._arequest_with_retries(
-            "DELETE",
-            f"/datasets/{_as_uuid(dataset_id)}/splits/{split_name}",
+            f"/feedback/{ls_client._as_uuid(feedback_id)}",
         )
 
     async def create_annotation_queue(
@@ -441,30 +635,30 @@ class AsyncClient:
         description: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.AnnotationQueue:
-        """Create an annotation queue asynchronously."""
+        """Create an annotation queue."""
         data = {"name": name, "description": description, **kwargs}
         response = await self._arequest_with_retries(
-            "POST", "/annotation-queues", json=data
+            "POST", "/annotation-queues", content=ls_client._dumps_json(data)
         )
         return ls_schemas.AnnotationQueue(**response.json())
 
     async def read_annotation_queue(
-        self, queue_id: ID_TYPE
+        self, queue_id: ls_client.ID_TYPE
     ) -> ls_schemas.AnnotationQueue:
-        """Read an annotation queue asynchronously."""
+        """Read an annotation queue."""
         response = await self._arequest_with_retries(
-            "GET", f"/annotation-queues/{_as_uuid(queue_id)}"
+            "GET", f"/annotation-queues/{ls_client._as_uuid(queue_id)}"
         )
         return ls_schemas.AnnotationQueue(**response.json())
 
     async def update_annotation_queue(
         self,
-        queue_id: ID_TYPE,
+        queue_id: ls_client.ID_TYPE,
         name: Optional[str] = None,
         description: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
-        """Update an annotation queue asynchronously."""
+        """Update an annotation queue."""
         data = {
             "name": name,
             "description": description,
@@ -472,22 +666,24 @@ class AsyncClient:
         }
         await self._arequest_with_retries(
             "PATCH",
-            f"/annotation-queues/{_as_uuid(queue_id)}",
-            json={k: v for k, v in data.items() if v is not None},
+            f"/annotation-queues/{ls_client._as_uuid(queue_id)}",
+            content=ls_client._dumps_json(
+                {k: v for k, v in data.items() if v is not None}
+            ),
         )
 
-    async def delete_annotation_queue(self, queue_id: ID_TYPE) -> None:
-        """Delete an annotation queue asynchronously."""
+    async def delete_annotation_queue(self, queue_id: ls_client.ID_TYPE) -> None:
+        """Delete an annotation queue."""
         await self._arequest_with_retries(
             "DELETE",
-            f"/annotation-queues/{_as_uuid(queue_id)}",
+            f"/annotation-queues/{ls_client._as_uuid(queue_id)}",
         )
 
     async def list_annotation_queues(
         self,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.AnnotationQueue]:
-        """List annotation queues asynchronously."""
+        """List annotation queues."""
         async for queue in self._aget_paginated_list(
             "/annotation-queues", params=kwargs
         ):
@@ -495,70 +691,72 @@ class AsyncClient:
 
     async def add_runs_to_annotation_queue(
         self,
-        queue_id: ID_TYPE,
-        run_ids: List[ID_TYPE],
+        queue_id: ls_client.ID_TYPE,
+        run_ids: List[ls_client.ID_TYPE],
     ) -> None:
-        """Add runs to an annotation queue asynchronously."""
-        data = [str(_as_uuid(run_id)) for run_id in run_ids]
+        """Add runs to an annotation queue."""
+        data = [str(ls_client._as_uuid(run_id)) for run_id in run_ids]
         await self._arequest_with_retries(
             "POST",
-            f"/annotation-queues/{_as_uuid(queue_id)}/runs",
+            f"/annotation-queues/{ls_client._as_uuid(queue_id)}/runs",
             json=data,
         )
 
     async def list_runs_from_annotation_queue(
         self,
-        queue_id: ID_TYPE,
+        queue_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.RunWithAnnotationQueueInfo]:
-        """List runs from an annotation queue asynchronously."""
+        """List runs from an annotation queue."""
         async for run in self._aget_paginated_list(
-            f"/annotation-queues/{_as_uuid(queue_id)}/runs", params=kwargs
+            f"/annotation-queues/{ls_client._as_uuid(queue_id)}/runs", params=kwargs
         ):
             yield ls_schemas.RunWithAnnotationQueueInfo(**run)
 
     async def create_comparative_experiment(
         self,
         name: str,
-        experiment_ids: List[ID_TYPE],
-        reference_dataset_id: ID_TYPE,
+        experiment_ids: List[ls_client.ID_TYPE],
+        reference_dataset_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> ls_schemas.ComparativeExperiment:
-        """Create a comparative experiment asynchronously."""
+        """Create a comparative experiment."""
         data = {
             "name": name,
-            "experiment_ids": [str(_as_uuid(id)) for id in experiment_ids],
-            "reference_dataset_id": _as_uuid(reference_dataset_id),
+            "experiment_ids": [ls_client._as_uuid(id) for id in experiment_ids],
+            "reference_dataset_id": ls_client._as_uuid(reference_dataset_id),
             **kwargs,
         }
         response = await self._arequest_with_retries(
-            "POST", "/datasets/comparative", json=data
+            "POST", "/datasets/comparative", content=ls_client._dumps_json(data)
         )
         return ls_schemas.ComparativeExperiment(**response.json())
 
     async def read_comparative_experiment(
-        self, experiment_id: ID_TYPE
+        self, experiment_id: ls_client.ID_TYPE
     ) -> ls_schemas.ComparativeExperiment:
-        """Read a comparative experiment asynchronously."""
+        """Read a comparative experiment."""
         response = await self._arequest_with_retries(
-            "GET", f"/datasets/comparative/{_as_uuid(experiment_id)}"
+            "GET", f"/datasets/comparative/{ls_client._as_uuid(experiment_id)}"
         )
         return ls_schemas.ComparativeExperiment(**response.json())
 
     async def list_comparative_experiments(
         self, **kwargs: Any
     ) -> AsyncIterator[ls_schemas.ComparativeExperiment]:
-        """List comparative experiments asynchronously."""
+        """List comparative experiments."""
         async for experiment in self._aget_paginated_list(
             "/datasets/comparative", params=kwargs
         ):
             yield ls_schemas.ComparativeExperiment(**experiment)
 
-    async def delete_comparative_experiment(self, experiment_id: ID_TYPE) -> None:
-        """Delete a comparative experiment asynchronously."""
+    async def delete_comparative_experiment(
+        self, experiment_id: ls_client.ID_TYPE
+    ) -> None:
+        """Delete a comparative experiment."""
         await self._arequest_with_retries(
             "DELETE",
-            f"/datasets/comparative/{_as_uuid(experiment_id)}",
+            f"/datasets/comparative/{ls_client._as_uuid(experiment_id)}",
         )
 
     async def create_prompt(
@@ -569,7 +767,7 @@ class AsyncClient:
         tags: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> ls_schemas.Prompt:
-        """Create a prompt asynchronously."""
+        """Create a prompt."""
         data = {
             "name": name,
             "prompt": prompt,
@@ -577,26 +775,28 @@ class AsyncClient:
             "tags": tags,
             **kwargs,
         }
-        response = await self._arequest_with_retries("POST", "/prompts", json=data)
+        response = await self._arequest_with_retries(
+            "POST", "/prompts", content=ls_client._dumps_json(data)
+        )
         return ls_schemas.Prompt(**response.json())
 
-    async def read_prompt(self, prompt_id: ID_TYPE) -> ls_schemas.Prompt:
-        """Read a prompt asynchronously."""
+    async def read_prompt(self, prompt_id: ls_client.ID_TYPE) -> ls_schemas.Prompt:
+        """Read a prompt."""
         response = await self._arequest_with_retries(
-            "GET", f"/prompts/{_as_uuid(prompt_id)}"
+            "GET", f"/prompts/{ls_client._as_uuid(prompt_id)}"
         )
         return ls_schemas.Prompt(**response.json())
 
     async def update_prompt(
         self,
-        prompt_id: ID_TYPE,
+        prompt_id: ls_client.ID_TYPE,
         name: Optional[str] = None,
         prompt: Optional[Any] = None,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
-        """Update a prompt asynchronously."""
+        """Update a prompt."""
         data = {
             "name": name,
             "prompt": prompt,
@@ -606,26 +806,29 @@ class AsyncClient:
         }
         await self._arequest_with_retries(
             "PATCH",
-            f"/prompts/{_as_uuid(prompt_id)}",
-            json={k: v for k, v in data.items() if v is not None},
+            f"/prompts/{ls_client._as_uuid(prompt_id)}",
+            content=ls_client._dumps_json(
+                {k: v for k, v in data.items() if v is not None}
+            ),
         )
 
-    async def delete_prompt(self, prompt_id: ID_TYPE) -> None:
-        """Delete a prompt asynchronously."""
+    async def delete_prompt(self, prompt_id: ls_client.ID_TYPE) -> None:
+        """Delete a prompt."""
         await self._arequest_with_retries(
             "DELETE",
-            f"/prompts/{_as_uuid(prompt_id)}",
+            f"/prompts/{ls_client._as_uuid(prompt_id)}",
         )
 
     async def list_prompts(self, **kwargs: Any) -> AsyncIterator[ls_schemas.Prompt]:
-        """List prompts asynchronously."""
+        """List prompts."""
         async for prompt in self._aget_paginated_list("/prompts", params=kwargs):
             yield ls_schemas.Prompt(**prompt)
 
+    @ls_beta.warn_beta
     async def index_dataset(
         self,
         *,
-        dataset_id: ID_TYPE,
+        dataset_id: ls_client.ID_TYPE,
         tag: str = "latest",
         **kwargs: Any,
     ) -> None:
@@ -646,19 +849,22 @@ class AsyncClient:
         Raises:
             requests.HTTPError
         """  # noqa: E501
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
-            "POST", f"/datasets/{dataset_id}/index", json={"tag": tag, **kwargs}
+            "POST",
+            f"/datasets/{dataset_id}/index",
+            content=ls_client._dumps_json({"tag": tag, **kwargs}),
         )
         ls_utils.raise_for_status_with_text(resp)
 
+    @ls_beta.warn_beta
     async def similar_examples(
         self,
         inputs: dict,
         /,
         *,
         limit: int,
-        dataset_id: ID_TYPE,
+        dataset_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> List[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
@@ -715,11 +921,11 @@ class AsyncClient:
                 ]
 
         """  # noqa: E501
-        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
             "POST",
             f"/datasets/{dataset_id}/search",
-            json={"inputs": inputs, "limit": limit, **kwargs},
+            content=ls_client._dumps_json({"inputs": inputs, "limit": limit, **kwargs}),
         )
         ls_utils.raise_for_status_with_text(resp)
         examples = []
