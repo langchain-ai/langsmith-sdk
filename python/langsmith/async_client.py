@@ -416,14 +416,6 @@ class AsyncClient:
             return ls_schemas.TracerSession(**data[0])
         return ls_schemas.TracerSession(**data)
 
-    async def list_projects(
-        self,
-        **kwargs: Any,
-    ) -> AsyncIterator[ls_schemas.TracerSession]:
-        """List projects."""
-        async for project in self._aget_paginated_list("/sessions", params=kwargs):
-            yield ls_schemas.TracerSession(**project)
-
     async def delete_project(
         self, *, project_name: Optional[str] = None, project_id: Optional[str] = None
     ) -> None:
