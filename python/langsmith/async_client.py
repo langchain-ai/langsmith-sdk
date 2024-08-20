@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import uuid
-import warnings
 from typing import (
     Any,
     AsyncIterator,
@@ -47,9 +46,7 @@ class AsyncClient:
         retry_config: Optional[Mapping[str, Any]] = None,
     ):
         """Initialize the async client."""
-        warnings.warn(
-            "Class AsyncClient is in beta.", ls_beta.LangSmithBetaWarning, stacklevel=2
-        )
+        ls_beta._warn_once("Class AsyncClient is in beta.")
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
             "Content-Type": "application/json",
