@@ -101,3 +101,4 @@ disallow_untyped_defs = "True"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [ "slow: long-running tests",]
