@@ -2997,11 +2997,15 @@ class Client:
         )
         ds = source_client.read_shared_dataset(token_uuid)
         dataset_name = dataset_name or ds.name
-        if self.has_dataset(dataset_name=dataset_name):
+        try:
+            ds = self.read_dataset(dataset_name=dataset_name)
             logger.info(
                 f"Dataset {dataset_name} already exists in your tenant. Skipping."
             )
-            return
+            return str(ds.id)
+        except ls_utils.LangSmithNotFoundError:
+            pass
+
         try:
             # Fetch examples first
             examples = list(source_client.list_shared_examples(token_uuid))
