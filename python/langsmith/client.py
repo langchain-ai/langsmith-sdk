@@ -1435,6 +1435,7 @@ class Client:
         self,
         run_id: ID_TYPE,
         *,
+        name: Optional[str] = None,
         end_time: Optional[datetime.datetime] = None,
         error: Optional[str] = None,
         inputs: Optional[Dict] = None,
@@ -1450,6 +1451,8 @@ class Client:
         ----------
         run_id : str or UUID
             The ID of the run to update.
+        name : str or None, default=None
+            The name of the run.
         end_time : datetime or None
             The end time of the run.
         error : str or None, default=None
@@ -1469,6 +1472,7 @@ class Client:
         """
         data: Dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
+            "name": name,
             "trace_id": kwargs.pop("trace_id", None),
             "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),
