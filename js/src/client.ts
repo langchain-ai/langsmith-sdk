@@ -10,11 +10,19 @@ import {
   Example,
   ExampleCreate,
   ExampleUpdate,
+  ExampleUpdateWithId,
   Feedback,
   FeedbackConfig,
   FeedbackIngestToken,
   KVMap,
   LangChainBaseMessage,
+  LangSmithSettings,
+  LikePromptResponse,
+  ListCommitsResponse,
+  ListPromptsResponse,
+  Prompt,
+  PromptCommit,
+  PromptSortField,
   Run,
   RunCreate,
   RunUpdate,
@@ -29,8 +37,8 @@ import {
   isLangChainMessage,
 } from "./utils/messages.js";
 import {
-  getEnvironmentVariable,
   getLangChainEnvVarsMetadata,
+  getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
 
@@ -41,6 +49,11 @@ import {
 } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
+import { warnOnce } from "./utils/warn.js";
+import {
+  isVersionGreaterOrEqual,
+  parsePromptIdentifier,
+} from "./utils/prompts.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -48,8 +61,9 @@ export interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
-  hideInputs?: boolean;
-  hideOutputs?: boolean;
+  anonymizer?: (values: KVMap) => KVMap;
+  hideInputs?: boolean | ((inputs: KVMap) => KVMap);
+  hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
   fetchOptions?: RequestInit;
@@ -239,6 +253,7 @@ export type CreateExampleOptions = {
   exampleId?: string;
 
   metadata?: KVMap;
+  split?: string | string[];
 };
 
 type AutoBatchQueueItem = {
@@ -271,8 +286,8 @@ async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
 }
 
 const getTracingSamplingRate = () => {
-  const samplingRateStr = getEnvironmentVariable(
-    "LANGCHAIN_TRACING_SAMPLING_RATE"
+  const samplingRateStr = getLangSmithEnvironmentVariable(
+    "TRACING_SAMPLING_RATE"
   );
   if (samplingRateStr === undefined) {
     return undefined;
@@ -280,7 +295,7 @@ const getTracingSamplingRate = () => {
   const samplingRate = parseFloat(samplingRateStr);
   if (samplingRate < 0 || samplingRate > 1) {
     throw new Error(
-      `LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
+      `LANGSMITH_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
     );
   }
   return samplingRate;
@@ -414,6 +429,8 @@ export class Client {
 
   private fetchOptions: RequestInit;
 
+  private settings: Promise<LangSmithSettings> | null;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -427,8 +444,12 @@ export class Client {
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
-    this.hideInputs = config.hideInputs ?? defaultConfig.hideInputs;
-    this.hideOutputs = config.hideOutputs ?? defaultConfig.hideOutputs;
+
+    this.hideInputs =
+      config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
+    this.hideOutputs =
+      config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
@@ -442,14 +463,14 @@ export class Client {
     hideInputs?: boolean;
     hideOutputs?: boolean;
   } {
-    const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
+    const apiKey = getLangSmithEnvironmentVariable("API_KEY");
     const apiUrl =
-      getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
+      getLangSmithEnvironmentVariable("ENDPOINT") ??
       "https://api.smith.langchain.com";
     const hideInputs =
-      getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true";
+      getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
-      getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true";
+      getLangSmithEnvironmentVariable("HIDE_OUTPUTS") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
@@ -459,12 +480,12 @@ export class Client {
     };
   }
 
-  private getHostUrl(): string {
+  public getHostUrl(): string {
     if (this.webUrl) {
       return this.webUrl;
     } else if (isLocalhost(this.apiUrl)) {
-      this.webUrl = "http://localhost";
-      return "http://localhost";
+      this.webUrl = "http://localhost:3000";
+      return this.webUrl;
     } else if (
       this.apiUrl.includes("/api") &&
       !this.apiUrl.split(".", 1)[0].endsWith("api")
@@ -473,10 +494,13 @@ export class Client {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
       this.webUrl = "https://dev.smith.langchain.com";
-      return "https://dev.smith.langchain.com";
+      return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
+      this.webUrl = "https://eu.smith.langchain.com";
+      return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
-      return "https://smith.langchain.com";
+      return this.webUrl;
     }
   }
 
@@ -558,9 +582,10 @@ export class Client {
     const response = await this._getResponse(path, queryParams);
     return response.json() as T;
   }
-  private async *_getPaginated<T>(
+  private async *_getPaginated<T, TResponse = unknown>(
     path: string,
-    queryParams: URLSearchParams = new URLSearchParams()
+    queryParams: URLSearchParams = new URLSearchParams(),
+    transform?: (data: TResponse) => T[]
   ): AsyncIterable<T[]> {
     let offset = Number(queryParams.get("offset")) || 0;
     const limit = Number(queryParams.get("limit")) || 100;
@@ -580,7 +605,10 @@ export class Client {
           `Failed to fetch ${path}: ${response.status} ${response.statusText}`
         );
       }
-      const items: T[] = await response.json();
+
+      const items: T[] = transform
+        ? transform(await response.json())
+        : await response.json();
 
       if (items.length === 0) {
         break;
@@ -733,6 +761,14 @@ export class Client {
       return false;
     }
     return true;
+  }
+
+  protected async _getSettings() {
+    if (!this.settings) {
+      this.settings = this._get("/settings");
+    }
+
+    return await this.settings;
   }
 
   public async createRun(run: CreateRunParams): Promise<void> {
@@ -981,7 +1017,7 @@ export class Client {
         sessionId = projectOpts?.projectId;
       } else {
         const project = await this.readProject({
-          projectName: getEnvironmentVariable("LANGCHAIN_PROJECT") || "default",
+          projectName: getLangSmithEnvironmentVariable("PROJECT") || "default",
         });
         sessionId = project.id;
       }
@@ -1196,12 +1232,114 @@ export class Client {
       is_root: isRoot,
     };
 
+    let runsYielded = 0;
     for await (const runs of this._getCursorPaginatedList<Run>(
       "/runs/query",
       body
     )) {
-      yield* runs;
+      if (limit) {
+        if (runsYielded >= limit) {
+          break;
+        }
+        if (runs.length + runsYielded > limit) {
+          const newRuns = runs.slice(0, limit - runsYielded);
+          yield* newRuns;
+          break;
+        }
+        runsYielded += runs.length;
+        yield* runs;
+      } else {
+        yield* runs;
+      }
     }
+  }
+
+  public async getRunStats({
+    id,
+    trace,
+    parentRun,
+    runType,
+    projectNames,
+    projectIds,
+    referenceExampleIds,
+    startTime,
+    endTime,
+    error,
+    query,
+    filter,
+    traceFilter,
+    treeFilter,
+    isRoot,
+    dataSourceType,
+  }: {
+    id?: string[];
+    trace?: string;
+    parentRun?: string;
+    runType?: string;
+    projectNames?: string[];
+    projectIds?: string[];
+    referenceExampleIds?: string[];
+    startTime?: string;
+    endTime?: string;
+    error?: boolean;
+    query?: string;
+    filter?: string;
+    traceFilter?: string;
+    treeFilter?: string;
+    isRoot?: boolean;
+    dataSourceType?: string;
+  }): Promise<any> {
+    let projectIds_ = projectIds || [];
+    if (projectNames) {
+      projectIds_ = [
+        ...(projectIds || []),
+        ...(await Promise.all(
+          projectNames.map((name) =>
+            this.readProject({ projectName: name }).then(
+              (project) => project.id
+            )
+          )
+        )),
+      ];
+    }
+
+    const payload = {
+      id,
+      trace,
+      parent_run: parentRun,
+      run_type: runType,
+      session: projectIds_,
+      reference_example: referenceExampleIds,
+      start_time: startTime,
+      end_time: endTime,
+      error,
+      query,
+      filter,
+      trace_filter: traceFilter,
+      tree_filter: treeFilter,
+      is_root: isRoot,
+      data_source_type: dataSourceType,
+    };
+
+    // Remove undefined values from the payload
+    const filteredPayload = Object.fromEntries(
+      Object.entries(payload).filter(([_, value]) => value !== undefined)
+    );
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/stats`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify(filteredPayload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const result = await response.json();
+    return result;
   }
 
   public async shareRun(
@@ -1568,6 +1706,36 @@ export class Client {
     return result;
   }
 
+  public async getProjectUrl({
+    projectId,
+    projectName,
+  }: {
+    projectId?: string;
+    projectName?: string;
+  }) {
+    if (projectId === undefined && projectName === undefined) {
+      throw new Error("Must provide either projectName or projectId");
+    }
+    const project = await this.readProject({ projectId, projectName });
+    const tenantId = await this._getTenantId();
+    return `${this.getHostUrl()}/o/${tenantId}/projects/p/${project.id}`;
+  }
+
+  public async getDatasetUrl({
+    datasetId,
+    datasetName,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+  }) {
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const dataset = await this.readDataset({ datasetId, datasetName });
+    const tenantId = await this._getTenantId();
+    return `${this.getHostUrl()}/o/${tenantId}/datasets/${dataset.id}`;
+  }
+
   private async _getTenantId(): Promise<string> {
     if (this._tenantId !== null) {
       return this._tenantId;
@@ -1590,6 +1758,7 @@ export class Client {
     referenceDatasetId,
     referenceDatasetName,
     referenceFree,
+    metadata,
   }: {
     projectIds?: string[];
     name?: string;
@@ -1597,6 +1766,7 @@ export class Client {
     referenceDatasetId?: string;
     referenceDatasetName?: string;
     referenceFree?: boolean;
+    metadata?: RecordStringAny;
   } = {}): AsyncIterable<TracerSession> {
     const params = new URLSearchParams();
     if (projectIds !== undefined) {
@@ -1620,6 +1790,9 @@ export class Client {
     }
     if (referenceFree !== undefined) {
       params.append("reference_free", referenceFree.toString());
+    }
+    if (metadata !== undefined) {
+      params.append("metadata", JSON.stringify(metadata));
     }
     for await (const projects of this._getPaginated<TracerSession>(
       "/sessions",
@@ -1901,6 +2074,45 @@ export class Client {
     }
   }
 
+  /**
+   * Update a dataset
+   * @param props The dataset details to update
+   * @returns The updated dataset
+   */
+  public async updateDataset(props: {
+    datasetId?: string;
+    datasetName?: string;
+    name?: string;
+    description?: string;
+  }): Promise<Dataset> {
+    const { datasetId, datasetName, ...update } = props;
+
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${_datasetId}`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update dataset ${_datasetId}: ${response.status} ${response.statusText}`
+      );
+    }
+    return (await response.json()) as Dataset;
+  }
+
   public async deleteDataset({
     datasetId,
     datasetName,
@@ -1945,6 +2157,7 @@ export class Client {
       createdAt,
       exampleId,
       metadata,
+      split,
     }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
@@ -1965,6 +2178,7 @@ export class Client {
       created_at: createdAt_?.toISOString(),
       id: exampleId,
       metadata,
+      split,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
@@ -1989,6 +2203,7 @@ export class Client {
     inputs: Array<KVMap>;
     outputs?: Array<KVMap>;
     metadata?: Array<KVMap>;
+    splits?: Array<string | Array<string>>;
     sourceRunIds?: Array<string>;
     exampleIds?: Array<string>;
     datasetId?: string;
@@ -2019,6 +2234,7 @@ export class Client {
         inputs: input,
         outputs: outputs ? outputs[idx] : undefined,
         metadata: metadata ? metadata[idx] : undefined,
+        split: props.splits ? props.splits[idx] : undefined,
         id: exampleIds ? exampleIds[idx] : undefined,
         source_run_id: sourceRunIds ? sourceRunIds[idx] : undefined,
       };
@@ -2086,15 +2302,23 @@ export class Client {
     datasetName,
     exampleIds,
     asOf,
+    splits,
     inlineS3Urls,
     metadata,
+    limit,
+    offset,
+    filter,
   }: {
     datasetId?: string;
     datasetName?: string;
     exampleIds?: string[];
     asOf?: string | Date;
+    splits?: string[];
     inlineS3Urls?: boolean;
     metadata?: KVMap;
+    limit?: number;
+    offset?: number;
+    filter?: string;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2123,15 +2347,36 @@ export class Client {
         params.append("id", id_);
       }
     }
+    if (splits !== undefined) {
+      for (const split of splits) {
+        params.append("splits", split);
+      }
+    }
     if (metadata !== undefined) {
       const serializedMetadata = JSON.stringify(metadata);
       params.append("metadata", serializedMetadata);
     }
+    if (limit !== undefined) {
+      params.append("limit", limit.toString());
+    }
+    if (offset !== undefined) {
+      params.append("offset", offset.toString());
+    }
+    if (filter !== undefined) {
+      params.append("filter", filter);
+    }
+    let i = 0;
     for await (const examples of this._getPaginated<Example>(
       "/examples",
       params
     )) {
-      yield* examples;
+      for (const example of examples) {
+        yield example;
+        i++;
+      }
+      if (limit !== undefined && i >= limit) {
+        break;
+      }
     }
   }
 
@@ -2177,6 +2422,121 @@ export class Client {
     return result;
   }
 
+  public async updateExamples(update: ExampleUpdateWithId[]): Promise<object> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/examples/bulk`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to update examples: ${response.status} ${response.statusText}`
+      );
+    }
+    const result = await response.json();
+    return result;
+  }
+
+  public async listDatasetSplits({
+    datasetId,
+    datasetName,
+    asOf,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: string | Date;
+  }): Promise<string[]> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const params = new URLSearchParams();
+    const dataset_version = asOf
+      ? typeof asOf === "string"
+        ? asOf
+        : asOf?.toISOString()
+      : undefined;
+    if (dataset_version) {
+      params.append("as_of", dataset_version);
+    }
+
+    const response = await this._get<string[]>(
+      `/datasets/${datasetId_}/splits`,
+      params
+    );
+    return response;
+  }
+
+  public async updateDatasetSplits({
+    datasetId,
+    datasetName,
+    splitName,
+    exampleIds,
+    remove = false,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    splitName: string;
+    exampleIds: string[];
+    remove?: boolean;
+  }): Promise<void> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const data = {
+      split_name: splitName,
+      examples: exampleIds.map((id) => {
+        assertUuid(id);
+        return id;
+      }),
+      remove,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId_}/splits`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "update dataset splits");
+  }
+
+  /**
+   * @deprecated This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead.
+   */
   public async evaluateRun(
     run: Run | string,
     evaluator: RunEvaluator,
@@ -2190,6 +2550,9 @@ export class Client {
       referenceExample?: Example;
     } = { loadChildRuns: false }
   ): Promise<Feedback> {
+    warnOnce(
+      "This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead."
+    );
     let run_: Run;
     if (typeof run === "string") {
       run_ = await this.readRun(run, { loadChildRuns });
@@ -2204,21 +2567,15 @@ export class Client {
     ) {
       referenceExample = await this.readExample(run_.reference_example_id);
     }
+
     const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
-    let sourceInfo_ = sourceInfo ?? {};
-    if (feedbackResult.evaluatorInfo) {
-      sourceInfo_ = { ...sourceInfo_, ...feedbackResult.evaluatorInfo };
-    }
-    const runId = feedbackResult.targetRunId ?? run_.id;
-    return await this.createFeedback(runId, feedbackResult.key, {
-      score: feedbackResult?.score,
-      value: feedbackResult?.value,
-      comment: feedbackResult?.comment,
-      correction: feedbackResult?.correction,
-      sourceInfo: sourceInfo_,
-      feedbackSourceType: "model",
-      sourceRunId: feedbackResult?.sourceRunId,
-    });
+    const [_, feedbacks] = await this._logEvaluationFeedback(
+      feedbackResult,
+      run_,
+      sourceInfo
+    );
+
+    return feedbacks[0];
   }
 
   public async createFeedback(
@@ -2543,14 +2900,17 @@ export class Client {
     return results_;
   }
 
-  public async logEvaluationFeedback(
+  async _logEvaluationFeedback(
     evaluatorResponse: EvaluationResult | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
-  ): Promise<EvaluationResult[]> {
-    const results: Array<EvaluationResult> =
+  ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
+    const evalResults: Array<EvaluationResult> =
       this._selectEvalResults(evaluatorResponse);
-    for (const res of results) {
+
+    const feedbacks: Feedback[] = [];
+
+    for (const res of evalResults) {
       let sourceInfo_ = sourceInfo || {};
       if (res.evaluatorInfo) {
         sourceInfo_ = { ...res.evaluatorInfo, ...sourceInfo_ };
@@ -2562,17 +2922,531 @@ export class Client {
         runId_ = run.id;
       }
 
-      await this.createFeedback(runId_, res.key, {
-        score: res.score,
-        value: res.value,
-        comment: res.comment,
-        correction: res.correction,
-        sourceInfo: sourceInfo_,
-        sourceRunId: res.sourceRunId,
-        feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
-        feedbackSourceType: "model",
+      feedbacks.push(
+        await this.createFeedback(runId_, res.key, {
+          score: res.score,
+          value: res.value,
+          comment: res.comment,
+          correction: res.correction,
+          sourceInfo: sourceInfo_,
+          sourceRunId: res.sourceRunId,
+          feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
+          feedbackSourceType: "model",
+        })
+      );
+    }
+
+    return [evalResults, feedbacks];
+  }
+
+  public async logEvaluationFeedback(
+    evaluatorResponse: EvaluationResult | EvaluationResults,
+    run?: Run,
+    sourceInfo?: { [key: string]: any }
+  ): Promise<EvaluationResult[]> {
+    const [results] = await this._logEvaluationFeedback(
+      evaluatorResponse,
+      run,
+      sourceInfo
+    );
+    return results;
+  }
+
+  protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
+    const settings = await this._getSettings();
+    return owner == "-" || settings.tenant_handle === owner;
+  }
+
+  protected async _ownerConflictError(
+    action: string,
+    owner: string
+  ): Promise<Error> {
+    const settings = await this._getSettings();
+    return new Error(
+      `Cannot ${action} for another tenant.\n
+      Current tenant: ${settings.tenant_handle}\n
+      Requested tenant: ${owner}`
+    );
+  }
+
+  protected async _getLatestCommitHash(
+    promptOwnerAndName: string
+  ): Promise<string | undefined> {
+    const res = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const json = await res.json();
+    if (!res.ok) {
+      const detail =
+        typeof json.detail === "string"
+          ? json.detail
+          : JSON.stringify(json.detail);
+      const error = new Error(
+        `Error ${res.status}: ${res.statusText}\n${detail}`
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (error as any).statusCode = res.status;
+      throw error;
+    }
+
+    if (json.commits.length === 0) {
+      return undefined;
+    }
+
+    return json.commits[0].commit_hash;
+  }
+
+  protected async _likeOrUnlikePrompt(
+    promptIdentifier: string,
+    like: boolean
+  ): Promise<LikePromptResponse> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/likes/${owner}/${promptName}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ like: like }),
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to ${like ? "like" : "unlike"} prompt: ${
+          response.status
+        } ${await response.text()}`
+      );
+    }
+
+    return await response.json();
+  }
+
+  protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
+    const [owner, promptName, commitHash] =
+      parsePromptIdentifier(promptIdentifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      if (commitHash !== "latest") {
+        return `${this.getHostUrl()}/hub/${owner}/${promptName}/${commitHash.substring(
+          0,
+          8
+        )}`;
+      } else {
+        return `${this.getHostUrl()}/hub/${owner}/${promptName}`;
+      }
+    } else {
+      const settings = await this._getSettings();
+      if (commitHash !== "latest") {
+        return `${this.getHostUrl()}/prompts/${promptName}/${commitHash.substring(
+          0,
+          8
+        )}?organizationId=${settings.id}`;
+      } else {
+        return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${
+          settings.id
+        }`;
+      }
+    }
+  }
+
+  public async promptExists(promptIdentifier: string): Promise<boolean> {
+    const prompt = await this.getPrompt(promptIdentifier);
+    return !!prompt;
+  }
+
+  public async likePrompt(
+    promptIdentifier: string
+  ): Promise<LikePromptResponse> {
+    return this._likeOrUnlikePrompt(promptIdentifier, true);
+  }
+
+  public async unlikePrompt(
+    promptIdentifier: string
+  ): Promise<LikePromptResponse> {
+    return this._likeOrUnlikePrompt(promptIdentifier, false);
+  }
+
+  public async *listCommits(
+    promptOwnerAndName: string
+  ): AsyncIterableIterator<PromptCommit> {
+    for await (const commits of this._getPaginated<
+      PromptCommit,
+      ListCommitsResponse
+    >(
+      `/commits/${promptOwnerAndName}/`,
+      {} as URLSearchParams,
+      (res) => res.commits
+    )) {
+      yield* commits;
+    }
+  }
+
+  public async *listPrompts(options?: {
+    isPublic?: boolean;
+    isArchived?: boolean;
+    sortField?: PromptSortField;
+    query?: string;
+  }): AsyncIterableIterator<Prompt> {
+    const params = new URLSearchParams();
+    params.append("sort_field", options?.sortField ?? "updated_at");
+    params.append("sort_direction", "desc");
+    params.append("is_archived", (!!options?.isArchived).toString());
+
+    if (options?.isPublic !== undefined) {
+      params.append("is_public", options.isPublic.toString());
+    }
+
+    if (options?.query) {
+      params.append("query", options.query);
+    }
+
+    for await (const prompts of this._getPaginated<Prompt, ListPromptsResponse>(
+      "/repos",
+      params,
+      (res) => res.repos
+    )) {
+      yield* prompts;
+    }
+  }
+
+  public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to get prompt: ${response.status} ${await response.text()}`
+      );
+    }
+
+    const result = await response.json();
+    if (result.repo) {
+      return result.repo as Prompt;
+    } else {
+      return null;
+    }
+  }
+
+  public async createPrompt(
+    promptIdentifier: string,
+    options?: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    }
+  ): Promise<Prompt> {
+    const settings = await this._getSettings();
+    if (options?.isPublic && !settings.tenant_handle) {
+      throw new Error(
+        `Cannot create a public prompt without first\n
+        creating a LangChain Hub handle. 
+        You can add a handle by creating a public prompt at:\n
+        https://smith.langchain.com/prompts`
+      );
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("create a prompt", owner);
+    }
+
+    const data = {
+      repo_handle: promptName,
+      ...(options?.description && { description: options.description }),
+      ...(options?.readme && { readme: options.readme }),
+      ...(options?.tags && { tags: options.tags }),
+      is_public: !!options?.isPublic,
+    };
+
+    const response = await this.caller.call(fetch, `${this.apiUrl}/repos/`, {
+      method: "POST",
+      headers: { ...this.headers, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create prompt: ${response.status} ${await response.text()}`
+      );
+    }
+
+    const { repo } = await response.json();
+    return repo as Prompt;
+  }
+
+  public async createCommit(
+    promptIdentifier: string,
+    object: any,
+    options?: {
+      parentCommitHash?: string;
+    }
+  ): Promise<string> {
+    if (!(await this.promptExists(promptIdentifier))) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const resolvedParentCommitHash =
+      options?.parentCommitHash === "latest" || !options?.parentCommitHash
+        ? await this._getLatestCommitHash(`${owner}/${promptName}`)
+        : options?.parentCommitHash;
+
+    const payload = {
+      manifest: JSON.parse(JSON.stringify(object)),
+      parent_commit: resolvedParentCommitHash,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${owner}/${promptName}`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create commit: ${response.status} ${await response.text()}`
+      );
+    }
+
+    const result = await response.json();
+    return this._getPromptUrl(
+      `${owner}/${promptName}${
+        result.commit_hash ? `:${result.commit_hash}` : ""
+      }`
+    );
+  }
+
+  public async updatePrompt(
+    promptIdentifier: string,
+    options?: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+      isArchived?: boolean;
+    }
+  ): Promise<Record<string, any>> {
+    if (!(await this.promptExists(promptIdentifier))) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
+
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("update a prompt", owner);
+    }
+
+    const payload: Record<string, any> = {};
+
+    if (options?.description !== undefined)
+      payload.description = options.description;
+    if (options?.readme !== undefined) payload.readme = options.readme;
+    if (options?.tags !== undefined) payload.tags = options.tags;
+    if (options?.isPublic !== undefined) payload.is_public = options.isPublic;
+    if (options?.isArchived !== undefined)
+      payload.is_archived = options.isArchived;
+
+    // Check if payload is empty
+    if (Object.keys(payload).length === 0) {
+      throw new Error("No valid update options provided");
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+        headers: {
+          ...this.headers,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP Error: ${response.status} - ${await response.text()}`
+      );
+    }
+
+    return response.json();
+  }
+
+  public async deletePrompt(promptIdentifier: string): Promise<void> {
+    if (!(await this.promptExists(promptIdentifier))) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("delete a prompt", owner);
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    return await response.json();
+  }
+
+  public async pullPromptCommit(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean;
+    }
+  ): Promise<PromptCommit> {
+    const [owner, promptName, commitHash] =
+      parsePromptIdentifier(promptIdentifier);
+    const serverInfo = await this._getServerInfo();
+    const useOptimization = isVersionGreaterOrEqual(
+      serverInfo.version,
+      "0.5.23"
+    );
+
+    let passedCommitHash = commitHash;
+
+    if (!useOptimization && commitHash === "latest") {
+      const latestCommitHash = await this._getLatestCommitHash(
+        `${owner}/${promptName}`
+      );
+      if (!latestCommitHash) {
+        throw new Error("No commits found");
+      } else {
+        passedCommitHash = latestCommitHash;
+      }
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${
+        options?.includeModel ? "?include_model=true" : ""
+      }`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to pull prompt commit: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+
+    return {
+      owner,
+      repo: promptName,
+      commit_hash: result.commit_hash,
+      manifest: result.manifest,
+      examples: result.examples,
+    };
+  }
+
+  /**
+   *
+   * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
+   * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
+   * @private
+   *
+   */
+  public async _pullPrompt(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean;
+    }
+  ): Promise<any> {
+    const promptObject = await this.pullPromptCommit(promptIdentifier, {
+      includeModel: options?.includeModel,
+    });
+    const prompt = JSON.stringify(promptObject.manifest);
+    return prompt;
+  }
+
+  public async pushPrompt(
+    promptIdentifier: string,
+    options?: {
+      object?: any;
+      parentCommitHash?: string;
+      isPublic?: boolean;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+    }
+  ): Promise<string> {
+    // Create or update prompt metadata
+    if (await this.promptExists(promptIdentifier)) {
+      if (options && Object.keys(options).some((key) => key !== "object")) {
+        await this.updatePrompt(promptIdentifier, {
+          description: options?.description,
+          readme: options?.readme,
+          tags: options?.tags,
+          isPublic: options?.isPublic,
+        });
+      }
+    } else {
+      await this.createPrompt(promptIdentifier, {
+        description: options?.description,
+        readme: options?.readme,
+        tags: options?.tags,
+        isPublic: options?.isPublic,
       });
     }
-    return results;
+
+    if (!options?.object) {
+      return await this._getPromptUrl(promptIdentifier);
+    }
+
+    // Create a commit with the new manifest
+    const url = await this.createCommit(promptIdentifier, options?.object, {
+      parentCommitHash: options?.parentCommitHash,
+    });
+    return url;
   }
 }

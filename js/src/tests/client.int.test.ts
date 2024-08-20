@@ -1,9 +1,23 @@
-import { Dataset, Run } from "../schemas.js";
-import { FunctionMessage, HumanMessage } from "@langchain/core/messages";
+import { Dataset, Run, TracerSession } from "../schemas.js";
+import {
+  FunctionMessage,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
-import { deleteDataset, deleteProject, toArray, waitUntil } from "./utils.js";
+import {
+  createRunsFactory,
+  deleteDataset,
+  deleteProject,
+  toArray,
+  waitUntil,
+} from "./utils.js";
+import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI } from "@langchain/openai";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { load } from "langchain/load";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -70,7 +84,7 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   const example = await client.createExample(
     { col1: "addedExampleCol1" },
     { col2: "addedExampleCol2" },
-    { datasetId: newDataset.id }
+    { datasetId: newDataset.id, split: "my_split" }
   );
   const exampleValue = await client.readExample(example.id);
   expect(exampleValue.inputs.col1).toBe("addedExampleCol1");
@@ -82,18 +96,70 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
   expect(examples.length).toBe(2);
   expect(examples.map((e) => e.id)).toContain(example.id);
 
+  const _examples = await toArray(
+    client.listExamples({ datasetId: newDataset.id, splits: ["my_split"] })
+  );
+  expect(_examples.length).toBe(1);
+  expect(_examples.map((e) => e.id)).toContain(example.id);
+
   await client.updateExample(example.id, {
     inputs: { col1: "updatedExampleCol1" },
     outputs: { col2: "updatedExampleCol2" },
+    split: ["my_split2"],
   });
   // Says 'example updated' or something similar
   const newExampleValue = await client.readExample(example.id);
   expect(newExampleValue.inputs.col1).toBe("updatedExampleCol1");
+  expect(newExampleValue.metadata?.dataset_split).toStrictEqual(["my_split2"]);
+
+  await client.updateExample(example.id, {
+    inputs: { col1: "updatedExampleCol3" },
+    outputs: { col2: "updatedExampleCol4" },
+    split: "my_split3",
+  });
+  // Says 'example updated' or something similar
+  const newExampleValue2 = await client.readExample(example.id);
+  expect(newExampleValue2.inputs.col1).toBe("updatedExampleCol3");
+  expect(newExampleValue2.metadata?.dataset_split).toStrictEqual(["my_split3"]);
+
+  const newExample = await client.createExample(
+    { col1: "newAddedExampleCol1" },
+    { col2: "newAddedExampleCol2" },
+    { datasetId: newDataset.id }
+  );
+  const newExampleValue_ = await client.readExample(newExample.id);
+  expect(newExampleValue_.inputs.col1).toBe("newAddedExampleCol1");
+  expect(newExampleValue_.outputs?.col2).toBe("newAddedExampleCol2");
+
+  await client.updateExamples([
+    {
+      id: newExample.id,
+      inputs: { col1: "newUpdatedExampleCol1" },
+      outputs: { col2: "newUpdatedExampleCol2" },
+      metadata: { foo: "baz" },
+    },
+    {
+      id: example.id,
+      inputs: { col1: "newNewUpdatedExampleCol" },
+      outputs: { col2: "newNewUpdatedExampleCol2" },
+      metadata: { foo: "qux" },
+    },
+  ]);
+  const updatedExample = await client.readExample(newExample.id);
+  expect(updatedExample.inputs.col1).toBe("newUpdatedExampleCol1");
+  expect(updatedExample.outputs?.col2).toBe("newUpdatedExampleCol2");
+  expect(updatedExample.metadata?.foo).toBe("baz");
+
+  const updatedExample2 = await client.readExample(example.id);
+  expect(updatedExample2.inputs.col1).toBe("newNewUpdatedExampleCol");
+  expect(updatedExample2.outputs?.col2).toBe("newNewUpdatedExampleCol2");
+  expect(updatedExample2.metadata?.foo).toBe("qux");
+
   await client.deleteExample(example.id);
   const examples2 = await toArray(
     client.listExamples({ datasetId: newDataset.id })
   );
-  expect(examples2.length).toBe(1);
+  expect(examples2.length).toBe(2);
 
   await client.deleteDataset({ datasetId });
   const rawDataset = await client.createDataset(fileName, {
@@ -475,6 +541,7 @@ test.concurrent(
         { output: "hi there 3" },
       ],
       metadata: [{ key: "value 1" }, { key: "value 2" }, { key: "value 3" }],
+      splits: ["train", "test", ["train", "validation"]],
       datasetId: dataset.id,
     });
     const initialExamplesList = await toArray(
@@ -485,6 +552,22 @@ test.concurrent(
       client.listExamples({ datasetId: dataset.id })
     );
     expect(examplesList.length).toEqual(4);
+
+    const examplesListLimited = await toArray(
+      client.listExamples({ datasetId: dataset.id, limit: 2 })
+    );
+    expect(examplesListLimited.length).toEqual(2);
+
+    const examplesListOffset = await toArray(
+      client.listExamples({ datasetId: dataset.id, offset: 2 })
+    );
+    expect(examplesListOffset.length).toEqual(2);
+
+    const examplesListLimitedOffset = await toArray(
+      client.listExamples({ datasetId: dataset.id, limit: 1, offset: 2 })
+    );
+    expect(examplesListLimitedOffset.length).toEqual(1);
+
     await client.deleteExample(example.id);
     const examplesList2 = await toArray(
       client.listExamples({ datasetId: dataset.id })
@@ -505,16 +588,20 @@ test.concurrent(
     );
     expect(example1?.outputs?.output).toEqual("hi there 1");
     expect(example1?.metadata?.key).toEqual("value 1");
+    expect(example1?.metadata?.dataset_split).toEqual(["train"]);
     const example2 = examplesList2.find(
       (e) => e.inputs.input === "hello world 2"
     );
     expect(example2?.outputs?.output).toEqual("hi there 2");
     expect(example2?.metadata?.key).toEqual("value 2");
+    expect(example2?.metadata?.dataset_split).toEqual(["test"]);
     const example3 = examplesList2.find(
       (e) => e.inputs.input === "hello world 3"
     );
     expect(example3?.outputs?.output).toEqual("hi there 3");
     expect(example3?.metadata?.key).toEqual("value 3");
+    expect(example3?.metadata?.dataset_split).toContain("train");
+    expect(example3?.metadata?.dataset_split).toContain("validation");
 
     await client.createExample(
       { input: "hello world" },
@@ -554,7 +641,436 @@ test.concurrent(
     expect(examplesList3[0].metadata?.foo).toEqual("bar");
     expect(examplesList3[0].metadata?.baz).toEqual("qux");
 
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        filter: 'exists(metadata, "baz")',
+      })
+    );
+    expect(examplesList3.length).toEqual(1);
+    expect(examplesList3[0].metadata?.foo).toEqual("bar");
+    expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        filter: 'has("metadata", \'{"foo": "bar"}\')',
+      })
+    );
+    expect(examplesList3.length).toEqual(1);
+    expect(examplesList3[0].metadata?.foo).toEqual("bar");
+    expect(examplesList3[0].metadata?.baz).toEqual("qux");
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        filter: 'exists(metadata, "bazzz")',
+      })
+    );
+    expect(examplesList3.length).toEqual(0);
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        splits: ["train"],
+      })
+    );
+    expect(examplesList3.length).toEqual(2);
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        splits: ["test"],
+      })
+    );
+    expect(examplesList3.length).toEqual(1);
+
+    examplesList3 = await toArray(
+      client.listExamples({
+        datasetId: dataset.id,
+        splits: ["train", "test"],
+      })
+    );
+    expect(examplesList3.length).toEqual(3);
+
     await client.deleteDataset({ datasetId: dataset.id });
   },
   180_000
 );
+
+test.concurrent("list runs limit arg works", async () => {
+  const client = new Client();
+
+  const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
+  const limit = 6;
+
+  // delete the project just in case
+  if (await client.hasProject({ projectName })) {
+    await client.deleteProject({ projectName });
+  }
+
+  try {
+    const runsArr: Array<Run> = [];
+    // create a fresh project with 10 runs --default amount created by createRunsFactory
+    await client.createProject({ projectName });
+    await Promise.all(
+      createRunsFactory(projectName).map(async (payload) => {
+        if (!payload.id) payload.id = uuidv4();
+        await client.createRun(payload);
+        await waitUntilRunFound(client, payload.id);
+      })
+    );
+
+    let iters = 0;
+    for await (const run of client.listRuns({ limit, projectName })) {
+      expect(run).toBeDefined();
+      runsArr.push(run);
+      iters += 1;
+      if (iters > limit) {
+        throw new Error(
+          `More runs returned than expected.\nExpected: ${limit}\nReceived: ${iters}`
+        );
+      }
+    }
+
+    expect(runsArr.length).toBe(limit);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (e: any) {
+    if (e.message.startsWith("More runs returned than expected.")) {
+      throw e;
+    } else {
+      console.error(e);
+    }
+  } finally {
+    if (await client.hasProject({ projectName })) {
+      await client.deleteProject({ projectName });
+    }
+  }
+});
+
+test.concurrent("Test run stats", async () => {
+  const client = new Client();
+  const stats = await client.getRunStats({
+    projectNames: ["default"],
+    runType: "llm",
+  });
+  expect(stats).toBeDefined();
+});
+
+test("Test list prompts", async () => {
+  const client = new Client();
+  const uid = uuidv4();
+  // push 3 prompts
+  const promptName1 = `test_prompt_${uid}__0`;
+  const promptName2 = `test_prompt_${uid}__1`;
+  const promptName3 = `test_prompt_${uid}__2`;
+
+  await client.pushPrompt(promptName1, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+    isPublic: true,
+  });
+  await client.pushPrompt(promptName2, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+  await client.pushPrompt(promptName3, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+
+  // expect at least one of the prompts to have promptName1
+  const response = client.listPrompts({ isPublic: true, query: uid });
+  let found = false;
+  expect(response).toBeDefined();
+  for await (const prompt of response) {
+    expect(prompt).toBeDefined();
+    if (prompt.repo_handle === promptName1) {
+      found = true;
+    }
+  }
+  expect(found).toBe(true);
+
+  // expect the prompts to be sorted by updated_at
+  const response2 = client.listPrompts({ sortField: "updated_at", query: uid });
+  expect(response2).toBeDefined();
+  let lastUpdatedAt: number | undefined;
+  for await (const prompt of response2) {
+    expect(prompt.updated_at).toBeDefined();
+    const currentUpdatedAt = new Date(prompt.updated_at).getTime();
+    if (lastUpdatedAt !== undefined) {
+      expect(currentUpdatedAt).toBeLessThanOrEqual(lastUpdatedAt);
+    }
+    lastUpdatedAt = currentUpdatedAt;
+  }
+  expect(lastUpdatedAt).toBeDefined();
+});
+
+test("Test get prompt", async () => {
+  const client = new Client();
+  const promptName = `test_prompt_${uuidv4().slice(0, 8)}`;
+  const promptTemplate = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "{{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
+
+  const url = await client.pushPrompt(promptName, { object: promptTemplate });
+  expect(url).toBeDefined();
+
+  const prompt = await client.getPrompt(promptName);
+  expect(prompt).toBeDefined();
+  expect(prompt?.repo_handle).toBe(promptName);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test prompt exists", async () => {
+  const client = new Client();
+  const nonExistentPrompt = `non_existent_${uuidv4().slice(0, 8)}`;
+  expect(await client.promptExists(nonExistentPrompt)).toBe(false);
+
+  const existentPrompt = `existent_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(existentPrompt, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+  expect(await client.promptExists(existentPrompt)).toBe(true);
+
+  await client.deletePrompt(existentPrompt);
+});
+
+test("Test update prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_update_prompt_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+
+  const updatedData = await client.updatePrompt(promptName, {
+    description: "Updated description",
+    isPublic: true,
+    tags: ["test", "update"],
+  });
+
+  expect(updatedData).toBeDefined();
+
+  const updatedPrompt = await client.getPrompt(promptName);
+  expect(updatedPrompt?.description).toBe("Updated description");
+  expect(updatedPrompt?.is_public).toBe(true);
+  expect(updatedPrompt?.tags).toEqual(
+    expect.arrayContaining(["test", "update"])
+  );
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test delete prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_delete_prompt_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+
+  expect(await client.promptExists(promptName)).toBe(true);
+  await client.deletePrompt(promptName);
+  expect(await client.promptExists(promptName)).toBe(false);
+});
+
+test("test listing projects by metadata", async () => {
+  const client = new Client();
+  const uid = uuidv4();
+  const projectName = `my_metadata_project_${uid}`;
+
+  await client.createProject({
+    projectName: projectName,
+    metadata: {
+      foobar: uid,
+      baz: "barfooqux",
+    },
+  });
+
+  const projects = await client.listProjects({ metadata: { foobar: uid } });
+
+  let myProject: TracerSession | null = null;
+  for await (const project of projects) {
+    myProject = project;
+  }
+  expect(myProject?.name).toEqual(projectName);
+
+  await client.deleteProject({ projectName: projectName });
+});
+
+test("Test create commit", async () => {
+  const client = new Client();
+
+  const promptName = `test_create_commit_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+
+  const newTemplate = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "My question is: {{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
+  const commitUrl = await client.createCommit(promptName, newTemplate);
+
+  expect(commitUrl).toBeDefined();
+  expect(commitUrl).toContain(promptName);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test like and unlike prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_like_prompt_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, {
+    object: ChatPromptTemplate.fromMessages(
+      [
+        new SystemMessage({ content: "System message" }),
+        new HumanMessage({ content: "{{question}}" }),
+      ],
+      { templateFormat: "mustache" }
+    ),
+  });
+
+  await client.likePrompt(promptName);
+  let prompt = await client.getPrompt(promptName);
+  expect(prompt?.num_likes).toBe(1);
+
+  await client.unlikePrompt(promptName);
+  prompt = await client.getPrompt(promptName);
+  expect(prompt?.num_likes).toBe(0);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test pull prompt commit", async () => {
+  const client = new Client();
+
+  const promptName = `test_pull_commit_${uuidv4().slice(0, 8)}`;
+  const initialTemplate = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "{{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
+  await client.pushPrompt(promptName, { object: initialTemplate });
+
+  const promptCommit = await client.pullPromptCommit(promptName);
+  expect(promptCommit).toBeDefined();
+  expect(promptCommit.repo).toBe(promptName);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test push and pull prompt", async () => {
+  const client = new Client();
+
+  const promptName = `test_push_pull_${uuidv4().slice(0, 8)}`;
+  const template = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "{{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
+  const template2 = ChatPromptTemplate.fromMessages(
+    [
+      new SystemMessage({ content: "System message" }),
+      new HumanMessage({ content: "My question is: {{question}}" }),
+    ],
+    { templateFormat: "mustache" }
+  );
+
+  await client.pushPrompt(promptName, {
+    object: template,
+    description: "Test description",
+    readme: "Test readme",
+    tags: ["test", "tag"],
+  });
+
+  // test you can push an updated manifest without any other options
+  await client.pushPrompt(promptName, {
+    object: template2,
+  });
+
+  const pulledPrompt = await client._pullPrompt(promptName);
+  expect(pulledPrompt).toBeDefined();
+
+  const promptInfo = await client.getPrompt(promptName);
+  expect(promptInfo?.description).toBe("Test description");
+  expect(promptInfo?.readme).toBe("Test readme");
+  expect(promptInfo?.tags).toEqual(expect.arrayContaining(["test", "tag"]));
+  expect(promptInfo?.is_public).toBe(false);
+
+  await client.deletePrompt(promptName);
+});
+
+test("Test pull prompt include model", async () => {
+  const client = new Client();
+  const model = new ChatOpenAI({});
+  const promptTemplate = PromptTemplate.fromTemplate(
+    "Tell me a joke about {topic}"
+  );
+  const promptWithModel = promptTemplate.pipe(model);
+
+  const promptName = `test_prompt_with_model_${uuidv4().slice(0, 8)}`;
+  await client.pushPrompt(promptName, { object: promptWithModel });
+
+  const pulledPrompt = await client._pullPrompt(promptName, {
+    includeModel: true,
+  });
+  const rs: RunnableSequence = await load(pulledPrompt);
+  expect(rs).toBeDefined();
+  expect(rs).toBeInstanceOf(RunnableSequence);
+
+  await client.deletePrompt(promptName);
+});

@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "async_hooks";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
   RunTree,
@@ -7,141 +7,26 @@ import {
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
-import { KVMap } from "./schemas.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { InvocationParamsSchema, KVMap } from "./schemas.js";
+import { isTracingEnabled } from "./env.js";
+import {
+  ROOT,
+  AsyncLocalStorageProviderSingleton,
+} from "./singletons/traceable.js";
+import { TraceableFunction } from "./singletons/types.js";
+import {
+  isKVMap,
+  isReadableStream,
+  isAsyncIterable,
+  isIteratorLike,
+  isThenable,
+  isGenerator,
+  isPromiseMethod,
+} from "./utils/asserts.js";
 
-function isPromiseMethod(
-  x: string | symbol
-): x is "then" | "catch" | "finally" {
-  if (x === "then" || x === "catch" || x === "finally") {
-    return true;
-  }
-  return false;
-}
-
-const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
-
-export const ROOT = Symbol("langsmith:traceable:root");
-
-export type RunTreeLike = RunTree;
-
-type SmartPromise<T> = T extends AsyncGenerator
-  ? T
-  : T extends Promise<unknown>
-  ? T
-  : Promise<T>;
-
-type WrapArgReturnPair<Pair> = Pair extends [
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  infer Args extends any[],
-  infer Return
-]
-  ? Args extends [RunTreeLike, ...infer RestArgs]
-    ? {
-        (
-          runTree: RunTreeLike | typeof ROOT,
-          ...args: RestArgs
-        ): SmartPromise<Return>;
-        (config: RunnableConfigLike, ...args: RestArgs): SmartPromise<Return>;
-      }
-    : {
-        (...args: Args): SmartPromise<Return>;
-        (runTree: RunTreeLike, ...rest: Args): SmartPromise<Return>;
-        (config: RunnableConfigLike, ...args: Args): SmartPromise<Return>;
-      }
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (
-  x: infer I
-) => void
-  ? I
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TraceableFunction<Func extends (...args: any[]) => any> =
-  // function overloads are represented as intersections rather than unions
-  // matches the behavior introduced in https://github.com/microsoft/TypeScript/pull/54448
-  Func extends {
-    (...args: infer A1): infer R1;
-    (...args: infer A2): infer R2;
-    (...args: infer A3): infer R3;
-    (...args: infer A4): infer R4;
-    (...args: infer A5): infer R5;
-  }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4] | [A5, R5]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-        (...args: infer A4): infer R4;
-      }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1]>>
-    : never;
-
-const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
-  x != null &&
-  typeof x === "object" &&
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  typeof (x as any)[Symbol.asyncIterator] === "function";
-
-const GeneratorFunction = function* () {}.constructor;
-
-const isIteratorLike = (x: unknown): x is Iterator<unknown> =>
-  x != null &&
-  typeof x === "object" &&
-  "next" in x &&
-  typeof x.next === "function";
-
-const isGenerator = (x: unknown): x is Generator =>
-  // eslint-disable-next-line no-instanceof/no-instanceof
-  x != null && typeof x === "function" && x instanceof GeneratorFunction;
-
-const isThenable = (x: unknown): x is Promise<unknown> =>
-  x != null &&
-  typeof x === "object" &&
-  "then" in x &&
-  typeof x.then === "function";
-
-const isReadableStream = (x: unknown): x is ReadableStream =>
-  x != null &&
-  typeof x === "object" &&
-  "getReader" in x &&
-  typeof x.getReader === "function";
-
-const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
-  if (tracingEnabled !== undefined) {
-    return tracingEnabled;
-  }
-  const envVars = [
-    "LANGSMITH_TRACING_V2",
-    "LANGCHAIN_TRACING_V2",
-    "LANGSMITH_TRACING",
-    "LANGCHAIN_TRACING",
-  ];
-  return Boolean(
-    envVars.find((envVar) => getEnvironmentVariable(envVar) === "true")
-  );
-};
+AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
+  new AsyncLocalStorage<RunTree | undefined>()
+);
 
 const handleRunInputs = (rawInputs: unknown[]): KVMap => {
   const firstInput = rawInputs[0];
@@ -153,6 +38,7 @@ const handleRunInputs = (rawInputs: unknown[]): KVMap => {
   if (rawInputs.length > 1) {
     return { args: rawInputs };
   }
+
   if (isKVMap(firstInput)) {
     return firstInput;
   }
@@ -167,16 +53,28 @@ const handleRunOutputs = (rawOutputs: unknown): KVMap => {
   return { outputs: rawOutputs };
 };
 
-const getTracingRunTree = (
+const getTracingRunTree = <Args extends unknown[]>(
   runTree: RunTree,
-  inputs: unknown[]
+  inputs: Args,
+  getInvocationParams:
+    | ((...args: Args) => InvocationParamsSchema | undefined)
+    | undefined
 ): RunTree | undefined => {
-  const tracingEnabled_ = tracingIsEnabled(runTree.tracingEnabled);
-  if (!tracingEnabled_) {
+  if (!isTracingEnabled(runTree.tracingEnabled)) {
     return undefined;
   }
 
   runTree.inputs = handleRunInputs(inputs);
+
+  const invocationParams = getInvocationParams?.(...inputs);
+  if (invocationParams != null) {
+    runTree.extra ??= {};
+    runTree.extra.metadata = {
+      ...invocationParams,
+      ...runTree.extra.metadata,
+    };
+  }
+
   return runTree;
 };
 
@@ -381,13 +279,31 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+    __finalTracedIteratorKey?: string;
+
+    /**
+     * Extract invocation parameters from the arguments of the traced function.
+     * This is useful for LangSmith to properly track common metadata like
+     * provider, model name and temperature.
+     *
+     * @param args Arguments of the traced function
+     * @returns Key-value map of the invocation parameters, which will be merged with the existing metadata
+     */
+    getInvocationParams?: (
+      ...args: Parameters<Func>
+    ) => InvocationParamsSchema | undefined;
   }
 ) {
   type Inputs = Parameters<Func>;
-  const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
+  const {
+    aggregator,
+    argsConfigPath,
+    __finalTracedIteratorKey,
+    ...runTreeConfig
+  } = config ?? {};
 
   const traceableFunc = (
-    ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
+    ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ) => {
     let ensuredConfig: RunTreeConfig;
     try {
@@ -440,6 +356,8 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
     }
 
+    const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
+
     // TODO: deal with possible nested promises and async iterables
     const processedArgs = args as unknown as Inputs;
     for (let i = 0; i < processedArgs.length; i++) {
@@ -454,13 +372,14 @@ export function traceable<Func extends (...args: any[]) => any>(
         return [
           getTracingRunTree(
             RunTree.fromRunnableConfig(firstArg, ensuredConfig),
-            restArgs
+            restArgs as Inputs,
+            config?.getInvocationParams
           ),
           restArgs as Inputs,
         ];
       }
 
-      // legacy CallbackManagerRunTree used in runOnDataset
+      // deprecated: legacy CallbackManagerRunTree used in runOnDataset
       // override ALS and do not pass-through the run tree
       if (
         isRunTree(firstArg) &&
@@ -477,7 +396,8 @@ export function traceable<Func extends (...args: any[]) => any>(
           firstArg === ROOT
             ? new RunTree(ensuredConfig)
             : firstArg.createChild(ensuredConfig),
-          restArgs
+          restArgs as Inputs,
+          config?.getInvocationParams
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -490,7 +410,8 @@ export function traceable<Func extends (...args: any[]) => any>(
         return [
           getTracingRunTree(
             prevRunFromStore.createChild(ensuredConfig),
-            processedArgs
+            processedArgs,
+            config?.getInvocationParams
           ),
           processedArgs as Inputs,
         ];
@@ -498,7 +419,8 @@ export function traceable<Func extends (...args: any[]) => any>(
 
       const currentRunTree = getTracingRunTree(
         new RunTree(ensuredConfig),
-        processedArgs
+        processedArgs,
+        config?.getInvocationParams
       );
       return [currentRunTree, processedArgs as Inputs];
     })();
@@ -518,14 +440,54 @@ export function traceable<Func extends (...args: any[]) => any>(
         return chunks;
       }
 
-      async function* wrapAsyncGeneratorForTracing(
-        iterable: AsyncIterable<unknown>,
+      function tapReadableStreamForTracing(
+        stream: ReadableStream<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        const reader = stream.getReader();
+        let finished = false;
+        const chunks: unknown[] = [];
+
+        const tappedStream = new ReadableStream({
+          async start(controller) {
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+              const result = await (snapshot
+                ? snapshot(() => reader.read())
+                : reader.read());
+              if (result.done) {
+                finished = true;
+                await currentRunTree?.end(
+                  handleRunOutputs(await handleChunks(chunks))
+                );
+                await handleEnd();
+                controller.close();
+                break;
+              }
+              chunks.push(result.value);
+              controller.enqueue(result.value);
+            }
+          },
+          async cancel(reason) {
+            if (!finished) await currentRunTree?.end(undefined, "Cancelled");
+            await currentRunTree?.end(
+              handleRunOutputs(await handleChunks(chunks))
+            );
+            await handleEnd();
+            return reader.cancel(reason);
+          },
+        });
+
+        return tappedStream;
+      }
+
+      async function* wrapAsyncIteratorForTracing(
+        iterator: AsyncIterator<unknown, unknown, undefined>,
         snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
       ) {
         let finished = false;
         const chunks: unknown[] = [];
         try {
-          const iterator = iterable[Symbol.asyncIterator]();
           while (true) {
             const { value, done } = await (snapshot
               ? snapshot(() => iterator.next())
@@ -547,6 +509,19 @@ export function traceable<Func extends (...args: any[]) => any>(
           );
           await handleEnd();
         }
+      }
+
+      function wrapAsyncGeneratorForTracing(
+        iterable: AsyncIterable<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        if (isReadableStream(iterable)) {
+          return tapReadableStreamForTracing(iterable, snapshot);
+        }
+        const iterator = iterable[Symbol.asyncIterator]();
+        const wrappedIterator = wrapAsyncIteratorForTracing(iterator, snapshot);
+        iterable[Symbol.asyncIterator] = () => wrappedIterator;
+        return iterable;
       }
 
       async function handleEnd() {
@@ -588,6 +563,25 @@ export function traceable<Func extends (...args: any[]) => any>(
         return wrapAsyncGeneratorForTracing(returnValue, snapshot);
       }
 
+      if (
+        !Array.isArray(returnValue) &&
+        typeof returnValue === "object" &&
+        returnValue != null &&
+        __finalTracedIteratorKey !== undefined &&
+        isAsyncIterable(
+          (returnValue as Record<string, any>)[__finalTracedIteratorKey]
+        )
+      ) {
+        const snapshot = AsyncLocalStorage.snapshot();
+        return {
+          ...returnValue,
+          [__finalTracedIteratorKey]: wrapAsyncGeneratorForTracing(
+            (returnValue as Record<string, any>)[__finalTracedIteratorKey],
+            snapshot
+          ),
+        };
+      }
+
       const tracedPromise = new Promise<unknown>((resolve, reject) => {
         Promise.resolve(returnValue)
           .then(
@@ -597,6 +591,27 @@ export function traceable<Func extends (...args: any[]) => any>(
                 return resolve(
                   wrapAsyncGeneratorForTracing(rawOutput, snapshot)
                 );
+              }
+
+              if (
+                !Array.isArray(rawOutput) &&
+                typeof rawOutput === "object" &&
+                rawOutput != null &&
+                __finalTracedIteratorKey !== undefined &&
+                isAsyncIterable(
+                  (rawOutput as Record<string, any>)[__finalTracedIteratorKey]
+                )
+              ) {
+                const snapshot = AsyncLocalStorage.snapshot();
+                return {
+                  ...rawOutput,
+                  [__finalTracedIteratorKey]: wrapAsyncGeneratorForTracing(
+                    (rawOutput as Record<string, any>)[
+                      __finalTracedIteratorKey
+                    ],
+                    snapshot
+                  ),
+                };
               }
 
               if (isGenerator(wrappedFunc) && isIteratorLike(rawOutput)) {
@@ -664,56 +679,11 @@ export function traceable<Func extends (...args: any[]) => any>(
   return traceableFunc as TraceableFunction<Func>;
 }
 
-/**
- * Return the current run tree from within a traceable-wrapped function.
- * Will throw an error if called outside of a traceable function.
- *
- * @returns The run tree for the given context.
- */
-export function getCurrentRunTree(): RunTree {
-  const runTree = asyncLocalStorage.getStore();
-  if (runTree === undefined) {
-    throw new Error(
-      [
-        "Could not get the current run tree.",
-        "",
-        "Please make sure you are calling this method within a traceable function.",
-      ].join("\n")
-    );
-  }
-  return runTree;
-}
+export {
+  getCurrentRunTree,
+  isTraceableFunction,
+  withRunTree,
+  ROOT,
+} from "./singletons/traceable.js";
 
-export function isTraceableFunction(
-  x: unknown
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): x is TraceableFunction<any> {
-  return typeof x === "function" && "langsmith:traceable" in x;
-}
-
-function isKVMap(x: unknown): x is Record<string, unknown> {
-  if (typeof x !== "object" || x == null) {
-    return false;
-  }
-
-  const prototype = Object.getPrototypeOf(x);
-  return (
-    (prototype === null ||
-      prototype === Object.prototype ||
-      Object.getPrototypeOf(prototype) === null) &&
-    !(Symbol.toStringTag in x) &&
-    !(Symbol.iterator in x)
-  );
-}
-
-export function wrapFunctionAndEnsureTraceable<
-  Func extends (...args: any[]) => any
->(target: Func, options: Partial<RunTreeConfig>, name = "target") {
-  if (typeof target === "function") {
-    return traceable<Func>(target, {
-      ...options,
-      name,
-    });
-  }
-  throw new Error("Target must be runnable function");
-}
+export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";

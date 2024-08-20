@@ -22,7 +22,7 @@ from typing_extensions import TypedDict
 try:
     from pydantic.v1 import BaseModel, Field, ValidationError  # type: ignore[import]
 except ImportError:
-    from pydantic import BaseModel, Field, ValidationError
+    from pydantic import BaseModel, Field, ValidationError  # type: ignore[assignment]
 
 from functools import wraps
 
@@ -181,9 +181,8 @@ class DynamicRunEvaluator(RunEvaluator):
             self.afunc = run_helpers.ensure_traceable(func)
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
-            self.func = cast(
-                run_helpers.SupportsLangsmithExtra[_RUNNABLE_OUTPUT],
-                run_helpers.ensure_traceable(func),
+            self.func = run_helpers.ensure_traceable(
+                cast(Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT], func)
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
@@ -383,9 +382,14 @@ class DynamicComparisonRunEvaluator:
             self.afunc = run_helpers.ensure_traceable(func)
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
-            self.func = cast(
-                run_helpers.SupportsLangsmithExtra[_COMPARISON_OUTPUT],
-                run_helpers.ensure_traceable(func),
+            self.func = run_helpers.ensure_traceable(
+                cast(
+                    Callable[
+                        [Sequence[Run], Optional[Example]],
+                        _COMPARISON_OUTPUT,
+                    ],
+                    func,
+                )
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 

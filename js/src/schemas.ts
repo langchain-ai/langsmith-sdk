@@ -229,6 +229,7 @@ export interface RunUpdate {
 export interface ExampleCreate extends BaseExample {
   id?: string;
   created_at?: string;
+  split?: string | string[];
 }
 
 export interface Example extends BaseExample {
@@ -244,6 +245,11 @@ export interface ExampleUpdate {
   inputs?: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  split?: string | string[];
+}
+
+export interface ExampleUpdateWithId extends ExampleUpdate {
+  id: string;
 }
 export interface BaseDataset {
   name: string;
@@ -379,4 +385,84 @@ export interface ComparativeExperiment {
   extra?: Record<string, unknown>;
   experiments_info?: Array<Record<string, unknown>>;
   feedback_stats?: Record<string, unknown>;
+}
+
+/**
+ * Represents the expected output schema returned by traceable
+ * or by run tree output for LangSmith to correctly display
+ * documents in the UI
+ */
+export type RetrieverOutput = Array<{
+  page_content: string;
+  type: "Document";
+  metadata?: KVMap;
+}>;
+
+export interface InvocationParamsSchema {
+  ls_provider?: string;
+  ls_model_name?: string;
+  ls_model_type: "chat" | "text";
+  ls_temperature?: number;
+  ls_max_tokens?: number;
+  ls_stop?: string[];
+}
+
+export interface PromptCommit {
+  owner: string;
+  repo: string;
+  commit_hash: string;
+  manifest: Record<string, any>;
+  examples: Array<Record<any, any>>;
+}
+
+export interface Prompt {
+  repo_handle: string;
+  description?: string;
+  readme?: string;
+  id: string;
+  tenant_id: string;
+  created_at: string;
+  updated_at: string;
+  is_public: boolean;
+  is_archived: boolean;
+  tags: string[];
+  original_repo_id?: string;
+  upstream_repo_id?: string;
+  owner?: string;
+  full_name: string;
+  num_likes: number;
+  num_downloads: number;
+  num_views: number;
+  liked_by_auth_user: boolean;
+  last_commit_hash?: string;
+  num_commits: number;
+  original_repo_full_name?: string;
+  upstream_repo_full_name?: string;
+}
+
+export interface ListPromptsResponse {
+  repos: Prompt[];
+  total: number;
+}
+
+export interface ListCommitsResponse {
+  commits: PromptCommit[];
+  total: number;
+}
+
+export type PromptSortField =
+  | "num_downloads"
+  | "num_views"
+  | "updated_at"
+  | "num_likes";
+
+export interface LikePromptResponse {
+  likes: number;
+}
+
+export interface LangSmithSettings {
+  id: string;
+  display_name: string;
+  created_at: string;
+  tenant_handle?: string;
 }

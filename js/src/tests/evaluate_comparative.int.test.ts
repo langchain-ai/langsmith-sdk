@@ -1,6 +1,7 @@
 import { evaluate } from "../evaluation/_runner.js";
 import { evaluateComparative } from "../evaluation/evaluate_comparative.js";
 import { Client } from "../index.js";
+import { waitUntilRunFound } from "./utils.js";
 
 const TESTING_DATASET_NAME = "test_evaluate_comparative_js";
 
@@ -27,6 +28,8 @@ afterAll(async () => {
 
 describe("evaluate comparative", () => {
   test("basic", async () => {
+    const client = new Client();
+
     const firstEval = await evaluate(
       (input) => ({ foo: `first:${input.input}` }),
       { data: TESTING_DATASET_NAME }
@@ -35,6 +38,12 @@ describe("evaluate comparative", () => {
     const secondEval = await evaluate(
       (input) => ({ foo: `second:${input.input}` }),
       { data: TESTING_DATASET_NAME }
+    );
+
+    await Promise.all(
+      [firstEval, secondEval].flatMap(({ results }) =>
+        results.flatMap(({ run }) => waitUntilRunFound(client, run.id))
+      )
     );
 
     const pairwise = await evaluateComparative(
@@ -49,7 +58,29 @@ describe("evaluate comparative", () => {
       }
     );
 
-    // TODO: we should a) wait for runs to be persisted, b) allow passing runnables / traceables directly
-    expect(pairwise.results.length).toBeGreaterThanOrEqual(1);
+    expect(pairwise.results.length).toEqual(2);
+  });
+
+  test("pass directly", async () => {
+    const pairwise = await evaluateComparative(
+      [
+        evaluate((input) => ({ foo: `first:${input.input}` }), {
+          data: TESTING_DATASET_NAME,
+        }),
+        evaluate((input) => ({ foo: `second:${input.input}` }), {
+          data: TESTING_DATASET_NAME,
+        }),
+      ],
+      {
+        evaluators: [
+          (runs) => ({
+            key: "latter_precedence",
+            scores: Object.fromEntries(runs.map((run, i) => [run.id, i % 2])),
+          }),
+        ],
+      }
+    );
+
+    expect(pairwise.results.length).toEqual(2);
   });
 });

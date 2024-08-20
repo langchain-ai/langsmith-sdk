@@ -1,13 +1,33 @@
 import { v4 as uuid4, validate } from "uuid";
 import { Client } from "../index.js";
-import { ComparisonEvaluationResult, Example, Run } from "../schemas.js";
+import {
+  ComparisonEvaluationResult as ComparisonEvaluationResultRow,
+  Example,
+  Run,
+} from "../schemas.js";
 import { shuffle } from "../utils/shuffle.js";
+import { AsyncCaller } from "../utils/async_caller.js";
+import { evaluate } from "./index.js";
+import pRetry from "p-retry";
+import { getCurrentRunTree, traceable } from "../traceable.js";
 
-function loadExperiment(client: Client, experiment: string) {
+type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;
+
+function isExperimentResultsList(
+  value: ExperimentResults[] | string[]
+): value is ExperimentResults[] {
+  return value.some((x) => typeof x !== "string");
+}
+
+async function loadExperiment(
+  client: Client,
+  experiment: string | ExperimentResults
+) {
+  const value =
+    typeof experiment === "string" ? experiment : experiment.experimentName;
+
   return client.readProject(
-    validate(experiment)
-      ? { projectId: experiment }
-      : { projectName: experiment }
+    validate(value) ? { projectId: value } : { projectName: value }
   );
 }
 
@@ -57,7 +77,7 @@ export interface EvaluateComparativeOptions {
     (
       runs: Run[],
       example: Example
-    ) => ComparisonEvaluationResult | Promise<ComparisonEvaluationResult>
+    ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>
   >;
   /**
    * Randomize the order of outputs for each evaluation
@@ -97,11 +117,14 @@ export interface EvaluateComparativeOptions {
 }
 
 export interface ComparisonEvaluationResults {
-  results: ComparisonEvaluationResult[];
+  experimentName: string;
+  results: ComparisonEvaluationResultRow[];
 }
 
 export async function evaluateComparative(
-  experiments: Array<string>,
+  experiments:
+    | Array<string>
+    | Array<Promise<ExperimentResults> | ExperimentResults>,
   options: EvaluateComparativeOptions
 ): Promise<ComparisonEvaluationResults> {
   if (experiments.length < 2) {
@@ -119,10 +142,34 @@ export async function evaluateComparative(
   }
 
   const client = options.client ?? new Client();
+  const resolvedExperiments = await Promise.all(experiments);
 
-  const projects = await Promise.all(
-    experiments.map((experiment) => loadExperiment(client, experiment))
-  );
+  const projects = await (() => {
+    if (!isExperimentResultsList(resolvedExperiments)) {
+      return Promise.all(
+        resolvedExperiments.map((experiment) =>
+          loadExperiment(client, experiment)
+        )
+      );
+    }
+
+    // if we know the number of runs beforehand, check if the
+    // number of runs in the project matches the expected number of runs
+    return Promise.all(
+      resolvedExperiments.map((experiment) =>
+        pRetry(
+          async () => {
+            const project = await loadExperiment(client, experiment);
+            if (project.run_count !== experiment?.results.length) {
+              throw new Error("Experiment is missing runs. Retrying.");
+            }
+            return project;
+          },
+          { factor: 2, minTimeout: 1000, retries: 10 }
+        )
+      )
+    );
+  })();
 
   if (new Set(projects.map((p) => p.reference_dataset_id)).size > 1) {
     throw new Error("All experiments must have the same reference dataset.");
@@ -146,7 +193,7 @@ export async function evaluateComparative(
   const datasetVersion = projects.at(0)?.extra?.metadata?.dataset_version;
 
   const id = uuid4();
-  const name = (() => {
+  const experimentName = (() => {
     if (!options.experimentPrefix) {
       const names = projects
         .map((p) => p.name)
@@ -159,16 +206,45 @@ export async function evaluateComparative(
   })();
 
   // TODO: add URL to the comparative experiment
-  console.log(`Starting pairwise evaluation of: ${name}`);
+  console.log(`Starting pairwise evaluation of: ${experimentName}`);
 
   const comparativeExperiment = await client.createComparativeExperiment({
     id,
-    name,
+    name: experimentName,
     experimentIds: projects.map((p) => p.id),
     description: options.description,
     metadata: options.metadata,
     referenceDatasetId: projects.at(0)?.reference_dataset_id,
   });
+
+  const viewUrl = await (async () => {
+    const projectId = projects.at(0)?.id ?? projects.at(1)?.id;
+    const datasetId = comparativeExperiment?.reference_dataset_id;
+
+    if (projectId && datasetId) {
+      const hostUrl = (await client.getProjectUrl({ projectId }))
+        .split("/projects/p/")
+        .at(0);
+
+      const result = new URL(`${hostUrl}/datasets/${datasetId}/compare`);
+      result.searchParams.set(
+        "selectedSessions",
+        projects.map((p) => p.id).join(",")
+      );
+
+      result.searchParams.set(
+        "comparativeExperiment",
+        comparativeExperiment.id
+      );
+      return result.toString();
+    }
+
+    return null;
+  })();
+
+  if (viewUrl != null) {
+    console.log(`View results at: ${viewUrl}`);
+  }
 
   const experimentRuns = await Promise.all(
     projects.map((p) =>
@@ -225,41 +301,79 @@ export async function evaluateComparative(
     }
   }
 
-  const results: ComparisonEvaluationResult[] = [];
+  const caller = new AsyncCaller({ maxConcurrency: options.maxConcurrency });
 
-  // TODO: handle maxConcurrency
-  for (const [exampleId, runs] of Object.entries(runMapByExampleId)) {
-    const example = exampleMap[exampleId];
-    if (!example) throw new Error(`Example ${exampleId} not found.`);
+  async function evaluateAndSubmitFeedback(
+    runs: Run[],
+    example: Example,
+    evaluator: (
+      runs: Run[],
+      example: Example
+    ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>
+  ) {
+    const expectedRunIds = new Set(runs.map((r) => r.id));
+    const result = await evaluator(
+      options.randomizeOrder ? shuffle(runs) : runs,
+      example
+    );
 
-    for (const evaluator of options.evaluators) {
-      const expectedRunIds = new Set(runs.map((r) => r.id));
-
-      if (options.randomizeOrder) {
-        runs.sort(() => Math.random() - 0.5);
+    for (const [runId, score] of Object.entries(result.scores)) {
+      // validate if the run id
+      if (!expectedRunIds.has(runId)) {
+        throw new Error(`Returning an invalid run id ${runId} from evaluator.`);
       }
-      const result = await evaluator(
-        options.randomizeOrder ? shuffle(runs) : runs,
-        example
-      );
-      results.push(result);
 
-      for (const [runId, score] of Object.entries(result.scores)) {
-        // validate if the run id
-        if (!expectedRunIds.has(runId)) {
-          throw new Error(
-            `Returning an invalid run id ${runId} from evaluator.`
-          );
-        }
-
-        await client.createFeedback(runId, result.key, {
-          score,
-          sourceRunId: result.source_run_id,
-          comparativeExperimentId: comparativeExperiment.id,
-        });
-      }
+      await client.createFeedback(runId, result.key, {
+        score,
+        sourceRunId: result.source_run_id,
+        comparativeExperimentId: comparativeExperiment.id,
+      });
     }
+
+    return result;
   }
 
-  return { results };
+  const tracedEvaluators = options.evaluators.map((evaluator) =>
+    traceable(
+      async (
+        runs: Run[],
+        example: Example
+      ): Promise<ComparisonEvaluationResultRow> => {
+        const evaluatorRun = getCurrentRunTree();
+        const result = await evaluator(runs, example);
+
+        // sanitise the payload before sending to LangSmith
+        evaluatorRun.inputs = { runs: runs, example: example };
+        evaluatorRun.outputs = result;
+
+        return {
+          ...result,
+          source_run_id: result.source_run_id ?? evaluatorRun.id,
+        };
+      },
+      {
+        project_name: "evaluators",
+        name: evaluator.name || "evaluator",
+      }
+    )
+  );
+
+  const promises = Object.entries(runMapByExampleId).flatMap(
+    ([exampleId, runs]) => {
+      const example = exampleMap[exampleId];
+      if (!example) throw new Error(`Example ${exampleId} not found.`);
+
+      return tracedEvaluators.map((evaluator) =>
+        caller.call(
+          evaluateAndSubmitFeedback,
+          runs,
+          exampleMap[exampleId],
+          evaluator
+        )
+      );
+    }
+  );
+
+  const results: ComparisonEvaluationResultRow[] = await Promise.all(promises);
+  return { experimentName, results };
 }
