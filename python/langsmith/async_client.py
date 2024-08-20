@@ -9,7 +9,11 @@ from typing import (
     AsyncIterator,
     Dict,
     List,
+    Mapping,
     Optional,
+    Tuple,
+    Union,
+    cast,
 )
 
 import httpx
@@ -30,26 +34,39 @@ logger = logging.getLogger(__name__)
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
+    __slots__ = (
+        "_retry_config",
+        "_client",
+    )
+
     def __init__(
         self,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        timeout_ms: Optional[int] = None,
-        retry_config: Optional[Dict[str, Any]] = None,
+        timeout_ms: Optional[
+            Union[
+                int, Tuple[Optional[int], Optional[int], Optional[int], Optional[int]]
+            ]
+        ] = None,
+        retry_config: Optional[Mapping[str, Any]] = None,
     ):
         """Initialize the async client."""
-        self.api_url = ls_utils.get_api_url(api_url)
-        self.api_key = ls_utils.get_api_key(api_key)
-        self.timeout_ms = timeout_ms or 10_000
-        self.retry_config = retry_config or {"max_retries": 3}
-        self._headers = {
+        self._retry_config = retry_config or {"max_retries": 3}
+        _headers = {
             "Content-Type": "application/json",
-            X_API_KEY: self.api_key,
         }
+        api_key = ls_utils.get_api_key(api_key)
+        if api_key:
+            _headers[X_API_KEY] = api_key
+
+        if isinstance(timeout_ms, int):
+            timeout_: Union[Tuple, float] = (timeout_ms / 1000, None, None, None)
+        elif isinstance(timeout_ms, tuple):
+            timeout_ = tuple([t / 1000 if t is not None else None for t in timeout_ms])
+        else:
+            timeout_ = 10
         self._client = httpx.AsyncClient(
-            base_url=self.api_url,
-            headers=self._headers,
-            timeout=self.timeout_ms / 1000,
+            base_url=ls_utils.get_api_url(api_url), headers=_headers, timeout=timeout_
         )
 
     async def __aenter__(self) -> "AsyncClient":
@@ -71,7 +88,7 @@ class AsyncClient:
         **kwargs: Any,
     ) -> httpx.Response:
         """Make an async HTTP request with retries."""
-        max_retries = self.retry_config.get("max_retries", 3)
+        max_retries = cast(int, self._retry_config.get("max_retries", 3))
         for attempt in range(max_retries):
             try:
                 response = await self._client.request(method, endpoint, **kwargs)
@@ -85,6 +102,9 @@ class AsyncClient:
                 if attempt == max_retries - 1:
                     raise ls_utils.LangSmithConnectionError(f"Request error: {e}")
                 await asyncio.sleep(2**attempt)
+        raise ls_utils.LangSmithAPIError(
+            "Unexpected error connecting to the LangSmith API"
+        )
 
     async def _aget_paginated_list(
         self,

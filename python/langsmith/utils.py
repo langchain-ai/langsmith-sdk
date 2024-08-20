@@ -32,6 +32,7 @@ from typing import (
     cast,
 )
 
+import httpx
 import requests
 from typing_extensions import ParamSpec
 from urllib3.util import Retry
@@ -123,7 +124,9 @@ def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     return decorator
 
 
-def raise_for_status_with_text(response: requests.Response) -> None:
+def raise_for_status_with_text(
+    response: Union[requests.Response, httpx.Response],
+) -> None:
     """Raise an error with the response text."""
     try:
         response.raise_for_status()
