@@ -2230,7 +2230,7 @@ export class Client {
   public async similarExamples(
     inputs: KVMap,
     datasetId: string,
-    limit: SVGAnimatedNumber
+    limit: number
   ): Promise<ExampleSearch[]> {
     const data = {
       limit: limit,
