@@ -2971,7 +2971,7 @@ class Client:
         *,
         source_api_url: Optional[str] = None,
         dataset_name: Optional[str] = None,
-    ) -> None:
+    ) -> str:
         """Clone a public dataset to your own langsmith tenant.
 
         This operation is idempotent. If you already have a dataset with the given name,
@@ -3028,6 +3028,7 @@ class Client:
                 raise e
         finally:
             del source_client
+        return str(dataset.id)
 
     def _get_data_type(self, dataset_id: ID_TYPE) -> ls_schemas.DataType:
         dataset = self.read_dataset(dataset_id=dataset_id)
