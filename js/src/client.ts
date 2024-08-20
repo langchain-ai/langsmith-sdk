@@ -42,7 +42,7 @@ import {
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 
-interface ClientConfig {
+export interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
