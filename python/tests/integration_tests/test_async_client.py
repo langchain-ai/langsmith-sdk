@@ -110,7 +110,6 @@ async def test_list_runs(async_client: AsyncClient):
         )
 
     filter_ = f'and(eq(metadata_key, "uid"), eq(metadata_value, "{meta_uid}"))'
-    import langsmith
 
     async def check_runs():
         runs = [
@@ -239,45 +238,3 @@ async def test_list_feedback(async_client: AsyncClient):
         return len(feedbacks) == 3
 
     await wait_for(check_feedbacks, timeout=10)
-
-
-@pytest.mark.asyncio
-async def test_create_dataset_split(async_client: AsyncClient):
-    dataset_name = "__test_create_dataset_split" + uuid.uuid4().hex[:8]
-    dataset = await async_client.create_dataset(dataset_name)
-
-    examples = []
-    for i in range(3):
-        example = await async_client.create_example(
-            inputs={"input": f"hello_{i}"},
-            outputs={"output": f"world_{i}"},
-            dataset_id=dataset.id,
-        )
-        examples.append(example)
-
-    example_ids = [example.id for example in examples]
-    await async_client.create_dataset_split(dataset.id, "test_split", example_ids)
-
-    split_ids = await async_client.read_dataset_split(dataset.id, "test_split")
-    assert set(split_ids) == set(str(id) for id in example_ids)
-
-    await async_client.delete_dataset(dataset_id=dataset.id)
-
-
-@pytest.mark.asyncio
-async def test_create_prompt(async_client: AsyncClient):
-    prompt_name = "__test_create_prompt" + uuid.uuid4().hex[:8]
-
-    prompt = await async_client.create_prompt(
-        name=prompt_name,
-        prompt="This is a test prompt",
-        description="Test description",
-        tags=["test"],
-    )
-
-    assert prompt.name == prompt_name
-    assert prompt.prompt == "This is a test prompt"
-    assert prompt.description == "Test description"
-    assert prompt.tags == ["test"]
-
-    await async_client.delete_prompt(prompt_id=prompt.id)

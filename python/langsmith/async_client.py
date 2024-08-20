@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import logging
 import uuid
+import warnings
 from typing import (
     Any,
     AsyncIterator,
@@ -18,7 +19,6 @@ from typing import (
     Union,
     cast,
 )
-import warnings
 
 import httpx
 
@@ -51,7 +51,7 @@ class AsyncClient:
     ):
         """Initialize the async client."""
         warnings.warn(
-            f"Class AsyncClient is in beta.", ls_beta.LangSmithBetaWarning, stacklevel=2
+            "Class AsyncClient is in beta.", ls_beta.LangSmithBetaWarning, stacklevel=2
         )
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
@@ -440,7 +440,9 @@ class AsyncClient:
             raise ValueError("Either project_name or project_id must be provided")
         if project_id is None:
             project = await self.read_project(project_name=project_name)
-            project_id = project.id
+            project_id = str(project.id)
+        if not project_id:
+            raise ValueError("Project not found")
         await self._arequest_with_retries(
             "DELETE",
             f"/sessions/{ls_client._as_uuid(project_id)}",
@@ -534,6 +536,7 @@ class AsyncClient:
 
     async def list_examples(
         self,
+        *,
         dataset_id: Optional[ls_client.ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
@@ -591,7 +594,6 @@ class AsyncClient:
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Feedback]:
         """List feedback."""
-
         params = {
             "run": (
                 [str(ls_client._as_uuid(id_)) for id_ in run_ids] if run_ids else None
@@ -609,220 +611,6 @@ class AsyncClient:
             ix += 1
             if limit is not None and ix >= limit:
                 break
-
-    async def update_feedback(
-        self,
-        feedback_id: ls_client.ID_TYPE,
-        **kwargs: Any,
-    ) -> None:
-        """Update feedback."""
-        await self._arequest_with_retries(
-            "PATCH",
-            f"/feedback/{ls_client._as_uuid(feedback_id)}",
-            content=ls_client._dumps_json(kwargs),
-        )
-
-    async def delete_feedback(self, feedback_id: ls_client.ID_TYPE) -> None:
-        """Delete feedback."""
-        await self._arequest_with_retries(
-            "DELETE",
-            f"/feedback/{ls_client._as_uuid(feedback_id)}",
-        )
-
-    async def create_annotation_queue(
-        self,
-        name: str,
-        description: Optional[str] = None,
-        **kwargs: Any,
-    ) -> ls_schemas.AnnotationQueue:
-        """Create an annotation queue."""
-        data = {"name": name, "description": description, **kwargs}
-        response = await self._arequest_with_retries(
-            "POST", "/annotation-queues", content=ls_client._dumps_json(data)
-        )
-        return ls_schemas.AnnotationQueue(**response.json())
-
-    async def read_annotation_queue(
-        self, queue_id: ls_client.ID_TYPE
-    ) -> ls_schemas.AnnotationQueue:
-        """Read an annotation queue."""
-        response = await self._arequest_with_retries(
-            "GET", f"/annotation-queues/{ls_client._as_uuid(queue_id)}"
-        )
-        return ls_schemas.AnnotationQueue(**response.json())
-
-    async def update_annotation_queue(
-        self,
-        queue_id: ls_client.ID_TYPE,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        """Update an annotation queue."""
-        data = {
-            "name": name,
-            "description": description,
-            **kwargs,
-        }
-        await self._arequest_with_retries(
-            "PATCH",
-            f"/annotation-queues/{ls_client._as_uuid(queue_id)}",
-            content=ls_client._dumps_json(
-                {k: v for k, v in data.items() if v is not None}
-            ),
-        )
-
-    async def delete_annotation_queue(self, queue_id: ls_client.ID_TYPE) -> None:
-        """Delete an annotation queue."""
-        await self._arequest_with_retries(
-            "DELETE",
-            f"/annotation-queues/{ls_client._as_uuid(queue_id)}",
-        )
-
-    async def list_annotation_queues(
-        self,
-        **kwargs: Any,
-    ) -> AsyncIterator[ls_schemas.AnnotationQueue]:
-        """List annotation queues."""
-        async for queue in self._aget_paginated_list(
-            "/annotation-queues", params=kwargs
-        ):
-            yield ls_schemas.AnnotationQueue(**queue)
-
-    async def add_runs_to_annotation_queue(
-        self,
-        queue_id: ls_client.ID_TYPE,
-        run_ids: List[ls_client.ID_TYPE],
-    ) -> None:
-        """Add runs to an annotation queue."""
-        data = [str(ls_client._as_uuid(run_id)) for run_id in run_ids]
-        await self._arequest_with_retries(
-            "POST",
-            f"/annotation-queues/{ls_client._as_uuid(queue_id)}/runs",
-            json=data,
-        )
-
-    async def list_runs_from_annotation_queue(
-        self,
-        queue_id: ls_client.ID_TYPE,
-        **kwargs: Any,
-    ) -> AsyncIterator[ls_schemas.RunWithAnnotationQueueInfo]:
-        """List runs from an annotation queue."""
-        async for run in self._aget_paginated_list(
-            f"/annotation-queues/{ls_client._as_uuid(queue_id)}/runs", params=kwargs
-        ):
-            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
-
-    async def create_comparative_experiment(
-        self,
-        name: str,
-        experiment_ids: List[ls_client.ID_TYPE],
-        reference_dataset_id: ls_client.ID_TYPE,
-        **kwargs: Any,
-    ) -> ls_schemas.ComparativeExperiment:
-        """Create a comparative experiment."""
-        data = {
-            "name": name,
-            "experiment_ids": [ls_client._as_uuid(id) for id in experiment_ids],
-            "reference_dataset_id": ls_client._as_uuid(reference_dataset_id),
-            **kwargs,
-        }
-        response = await self._arequest_with_retries(
-            "POST", "/datasets/comparative", content=ls_client._dumps_json(data)
-        )
-        return ls_schemas.ComparativeExperiment(**response.json())
-
-    async def read_comparative_experiment(
-        self, experiment_id: ls_client.ID_TYPE
-    ) -> ls_schemas.ComparativeExperiment:
-        """Read a comparative experiment."""
-        response = await self._arequest_with_retries(
-            "GET", f"/datasets/comparative/{ls_client._as_uuid(experiment_id)}"
-        )
-        return ls_schemas.ComparativeExperiment(**response.json())
-
-    async def list_comparative_experiments(
-        self, **kwargs: Any
-    ) -> AsyncIterator[ls_schemas.ComparativeExperiment]:
-        """List comparative experiments."""
-        async for experiment in self._aget_paginated_list(
-            "/datasets/comparative", params=kwargs
-        ):
-            yield ls_schemas.ComparativeExperiment(**experiment)
-
-    async def delete_comparative_experiment(
-        self, experiment_id: ls_client.ID_TYPE
-    ) -> None:
-        """Delete a comparative experiment."""
-        await self._arequest_with_retries(
-            "DELETE",
-            f"/datasets/comparative/{ls_client._as_uuid(experiment_id)}",
-        )
-
-    async def create_prompt(
-        self,
-        name: str,
-        prompt: Any,
-        description: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> ls_schemas.Prompt:
-        """Create a prompt."""
-        data = {
-            "name": name,
-            "prompt": prompt,
-            "description": description,
-            "tags": tags,
-            **kwargs,
-        }
-        response = await self._arequest_with_retries(
-            "POST", "/prompts", content=ls_client._dumps_json(data)
-        )
-        return ls_schemas.Prompt(**response.json())
-
-    async def read_prompt(self, prompt_id: ls_client.ID_TYPE) -> ls_schemas.Prompt:
-        """Read a prompt."""
-        response = await self._arequest_with_retries(
-            "GET", f"/prompts/{ls_client._as_uuid(prompt_id)}"
-        )
-        return ls_schemas.Prompt(**response.json())
-
-    async def update_prompt(
-        self,
-        prompt_id: ls_client.ID_TYPE,
-        name: Optional[str] = None,
-        prompt: Optional[Any] = None,
-        description: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> None:
-        """Update a prompt."""
-        data = {
-            "name": name,
-            "prompt": prompt,
-            "description": description,
-            "tags": tags,
-            **kwargs,
-        }
-        await self._arequest_with_retries(
-            "PATCH",
-            f"/prompts/{ls_client._as_uuid(prompt_id)}",
-            content=ls_client._dumps_json(
-                {k: v for k, v in data.items() if v is not None}
-            ),
-        )
-
-    async def delete_prompt(self, prompt_id: ls_client.ID_TYPE) -> None:
-        """Delete a prompt."""
-        await self._arequest_with_retries(
-            "DELETE",
-            f"/prompts/{ls_client._as_uuid(prompt_id)}",
-        )
-
-    async def list_prompts(self, **kwargs: Any) -> AsyncIterator[ls_schemas.Prompt]:
-        """List prompts."""
-        async for prompt in self._aget_paginated_list("/prompts", params=kwargs):
-            yield ls_schemas.Prompt(**prompt)
 
     @ls_beta.warn_beta
     async def index_dataset(
