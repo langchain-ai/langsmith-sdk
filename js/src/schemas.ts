@@ -251,6 +251,11 @@ export interface ExampleUpdate {
 export interface ExampleUpdateWithId extends ExampleUpdate {
   id: string;
 }
+
+export interface SimilarExample extends BaseExample {
+  id: string;
+}
+
 export interface BaseDataset {
   name: string;
   description: string;

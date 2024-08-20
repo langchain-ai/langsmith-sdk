@@ -27,6 +27,7 @@ import {
   RunCreate,
   RunUpdate,
   ScoreType,
+  SimilarExample,
   TimeDelta,
   TracerSession,
   TracerSessionResult,
@@ -1892,7 +1893,14 @@ export class Client {
     {
       description,
       dataType,
-    }: { description?: string; dataType?: DataType } = {}
+      inputsSchema,
+      outputsSchema,
+    }: {
+      description?: string;
+      dataType?: DataType;
+      inputsSchema?: KVMap;
+      outputsSchema?: KVMap;
+    } = {}
   ): Promise<Dataset> {
     const body: KVMap = {
       name,
@@ -1900,6 +1908,12 @@ export class Client {
     };
     if (dataType) {
       body.data_type = dataType;
+    }
+    if (inputsSchema) {
+      body.inputs_schema_definition = inputsSchema;
+    }
+    if (outputsSchema) {
+      body.outputs_schema_definition = outputsSchema;
     }
     const response = await this.caller.call(fetch, `${this.apiUrl}/datasets`, {
       method: "POST",
@@ -2146,6 +2160,80 @@ export class Client {
       );
     }
     await response.json();
+  }
+
+  public async indexDataset({
+    datasetId,
+    datasetName,
+    tag,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    tag?: string;
+  }): Promise<void> {
+    let datasetId_ = datasetId;
+    if (datasetId_ === undefined && datasetName === undefined) {
+      throw new Error("Must provide either datasetName or datasetId");
+    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId_ === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    }
+    assertUuid(datasetId_);
+
+    const data = {
+      tag: tag,
+    };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId_}/index`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to index dataset ${datasetId_}: ${response.status} ${response.statusText}`
+      );
+    }
+    await response.json();
+  }
+
+  public async similarExamples(
+    inputs: KVMap,
+    datasetId: string,
+    limit: number
+  ): Promise<SimilarExample[]> {
+    const data = {
+      limit: limit,
+      inputs: inputs,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId}/search`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch similar examples: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+    return result["examples"] as SimilarExample[];
   }
 
   public async createExample(
