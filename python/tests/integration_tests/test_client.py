@@ -336,9 +336,11 @@ def test_persist_update_run(langchain_client: Client) -> None:
         langchain_client.create_run(**run)
         run["outputs"] = {"output": ["Hi"]}
         run["extra"]["foo"] = "bar"
+        run["name"] = "test_run_updated"
         langchain_client.update_run(run["id"], **run)
         wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
         stored_run = langchain_client.read_run(run["id"])
+        assert stored_run.name == run["name"]
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
