@@ -2214,6 +2214,7 @@ export class Client {
       inputs: inputs,
     };
 
+    assertUuid(datasetId);
     const response = await this.caller.call(
       fetch,
       `${this.apiUrl}/datasets/${datasetId}/search`,
