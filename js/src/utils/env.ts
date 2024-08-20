@@ -200,6 +200,15 @@ export function getEnvironmentVariable(name: string): string | undefined {
   }
 }
 
+export function getLangSmithEnvironmentVariable(
+  name: string
+): string | undefined {
+  return (
+    getEnvironmentVariable(`LANGSMITH_${name}`) ||
+    getEnvironmentVariable(`LANGCHAIN_${name}`)
+  );
+}
+
 export function setEnvironmentVariable(name: string, value: string): void {
   if (typeof process !== "undefined") {
     // eslint-disable-next-line no-process-env
