@@ -252,7 +252,7 @@ export interface ExampleUpdateWithId extends ExampleUpdate {
   id: string;
 }
 
-export interface SimilarExample extends BaseExample {
+export interface ExampleSearch extends BaseExample {
   id: string;
 }
 

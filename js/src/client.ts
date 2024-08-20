@@ -27,7 +27,7 @@ import {
   RunCreate,
   RunUpdate,
   ScoreType,
-  SimilarExample,
+  ExampleSearch,
   TimeDelta,
   TracerSession,
   TracerSessionResult,
@@ -2204,11 +2204,34 @@ export class Client {
     await response.json();
   }
 
+  /**
+   * Lets you run a similarity search query on a dataset.
+   * 
+   * Requires the dataset to be indexed. Please see the `indexDataset` method to set up indexing.
+   * 
+   * @param inputs      The input on which to run the similarity search. Must have the
+   *                    same schema as the dataset.
+   * 
+   * @param datasetId   The dataset to search for similar examples.
+   * 
+   * @param limit       The maximum number of examples to return. Will return the top `limit` most
+   *                    similar examples in order of most similar to least similar. If no similar
+   *                    examples are found, random examples will be returned.
+   * 
+   * @returns           A list of similar examples.
+   * 
+   * 
+   * @example
+   * dataset_id = "123e4567-e89b-12d3-a456-426614174000"
+   * inputs = {"text": "How many people live in Berlin?"}
+   * limit = 5
+   * examples = await client.similarExamples(inputs, dataset_id, limit)
+   */
   public async similarExamples(
     inputs: KVMap,
     datasetId: string,
-    limit: number
-  ): Promise<SimilarExample[]> {
+    limit: SVGAnimatedNumber
+  ): Promise<ExampleSearch[]> {
     const data = {
       limit: limit,
       inputs: inputs,
@@ -2234,7 +2257,7 @@ export class Client {
     }
 
     const result = await response.json();
-    return result["examples"] as SimilarExample[];
+    return result["examples"] as ExampleSearch[];
   }
 
   public async createExample(

@@ -1,4 +1,4 @@
-import { KVMap, SimilarExample } from "../schemas.js";
+import { KVMap, ExampleSearch } from "../schemas.js";
 import { Client } from "../index.js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -42,7 +42,7 @@ test("evaluate can evaluate", async () => {
   await client.indexDataset({ datasetId: dataset.id });
 
   let i = 0;
-  let examples: SimilarExample[] = [];
+  let examples: ExampleSearch[] = [];
   while (i < 10) {
     examples = await client.similarExamples(
       { name: "foo" },
