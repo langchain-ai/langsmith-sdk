@@ -10,8 +10,8 @@ from langsmith.async_client import AsyncClient
 @pytest.mark.asyncio
 async def test_indexed_datasets():
     class InputsSchema(BaseModel):
-        name: str
-        age: int
+        name: str  # type: ignore[annotation-unchecked]
+        age: int  # type: ignore[annotation-unchecked]
 
     async with AsyncClient() as client:
         # Create a new dataset
