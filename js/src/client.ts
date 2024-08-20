@@ -2172,11 +2172,11 @@ export class Client {
     tag?: string;
   }): Promise<void> {
     let datasetId_ = datasetId;
-    if (datasetId_ === undefined && datasetName === undefined) {
+    if (!datasetId_ && !datasetName) {
       throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+    } else if (datasetId_ && !datasetName) {
       throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (datasetId_ === undefined) {
+    } else if (!datasetId_) {
       const dataset = await this.readDataset({ datasetName });
       datasetId_ = dataset.id;
     }
