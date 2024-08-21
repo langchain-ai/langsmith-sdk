@@ -22,7 +22,6 @@ export function printErrorStackTrace(e: unknown) {
   console.error(stack);
 }
 
-
 /**
  * LangSmithConflictError
  *
@@ -57,7 +56,7 @@ export function printErrorStackTrace(e: unknown) {
 export class LangSmithConflictError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "ConflictError";
+    this.name = "LangSmithConflictError";
   }
 }
 
