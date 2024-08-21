@@ -1156,7 +1156,7 @@ def test_io_interops():
         return {**stage_added["child_output"], **inputs}
 
     @RunnableLambda
-    def parent(inputs: dict) -> dict:
+    def the_parent(inputs: dict) -> dict:
         return {
             **stage_added["parent_output"],
             **child.invoke({**stage_added["child_input"], **inputs}),
@@ -1167,12 +1167,14 @@ def test_io_interops():
     for stage in stage_added:
         current = {**current, **stage_added[stage]}
         expected_at_stage[stage] = current
-    parent_result = parent.invoke(stage_added["parent_input"], {"callbacks": [tracer]})
+    parent_result = the_parent.invoke(
+        stage_added["parent_input"], {"callbacks": [tracer]}
+    )
     assert parent_result == expected_at_stage["parent_output"]
     mock_posts = _get_calls(tracer.client, minimum=2)
     assert len(mock_posts) == 2
     datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_posts]
-    assert datas[0]["name"] == "parent"
+    assert datas[0]["name"] == "the_parent"
     assert datas[0]["inputs"] == expected_at_stage["parent_input"]
     assert not datas[0]["outputs"]
     assert datas[1]["name"] == "child"
@@ -1188,10 +1190,12 @@ def test_io_interops():
     assert child_patch["id"] == child_uid
     assert child_patch["outputs"] == expected_at_stage["child_output"]
     assert child_patch["inputs"] == expected_at_stage["child_input"]
+    assert child_patch["name"] == "child"
     parent_patch = json.loads(mock_patches[1].kwargs["data"])
     assert parent_patch["id"] == parent_uid
     assert parent_patch["outputs"] == expected_at_stage["parent_output"]
     assert parent_patch["inputs"] == expected_at_stage["parent_input"]
+    assert parent_patch["name"] == "the_parent"
 
 
 def test_trace_respects_tracing_context():
