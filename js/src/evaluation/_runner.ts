@@ -141,7 +141,7 @@ interface ExperimentResultRow {
  * Supports lazily running predictions and evaluations in parallel to facilitate
  * result streaming and early debugging.
  */
-class _ExperimentManager {
+export class _ExperimentManager {
   _data?: DataT;
 
   _runs?: AsyncGenerator<Run>;
@@ -315,23 +315,21 @@ class _ExperimentManager {
 
   async _createProject(firstExample: Example, projectMetadata: KVMap) {
     // Create the project, updating the experimentName until we find a unique one.
-    let experimentName = this._experimentName;
     let project: TracerSession;
-    let attempt = 0;
-    while (true) {
+    for (;;) {
       try {
         project = await this.client.createProject({
-          projectName: experimentName,
+          projectName: this._experimentName,
           referenceDatasetId: firstExample.dataset_id,
           metadata: projectMetadata,
           description: this._description,
         });
         return project;
-        // Now catch LangSmithConflictError's and try again.
       } catch (e) {
+        // Naming collision
         if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
-          this._experimentName = `${this._experimentName}-${attempt}`;
-          attempt++;
+          const ent = uuidv4().slice(0, 4);
+          this._experimentName = `${this._experimentName}-${ent}`;
         } else {
           throw e;
         }
