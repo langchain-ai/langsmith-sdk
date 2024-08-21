@@ -3522,13 +3522,17 @@ export class Client {
     );
     const sourceClient = new Client({
       apiUrl: parsedApiUrl,
+      // Placeholder API key not needed anymore in most cases, but
+      // some private deployments may have API key-based rate limiting
+      // that would cause this to fail if we provide no value.
+      apiKey: "placeholder",
     });
 
     const ds = await sourceClient.readSharedDataset(tokenUuid);
     const finalDatasetName = datasetName || ds.name;
 
     try {
-      if (await sourceClient.hasDataset({ datasetId: finalDatasetName })) {
+      if (await this.hasDataset({ datasetId: finalDatasetName })) {
         console.log(
           `Dataset ${finalDatasetName} already exists in your tenant. Skipping.`
         );
@@ -3541,12 +3545,12 @@ export class Client {
 
     // Fetch examples first, then create the dataset
     const examples = await sourceClient.listSharedExamples(tokenUuid);
-    const dataset = await sourceClient.createDataset(finalDatasetName, {
+    const dataset = await this.createDataset(finalDatasetName, {
       description: ds.description,
       dataType: ds.data_type || "kv",
     });
     try {
-      await sourceClient.createExamples({
+      await this.createExamples({
         inputs: examples.map((e) => e.inputs),
         outputs: examples.flatMap((e) => (e.outputs ? [e.outputs] : [])),
         datasetId: dataset.id,
