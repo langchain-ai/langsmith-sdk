@@ -3641,7 +3641,6 @@ export class Client {
     });
 
     const ds = await sourceClient.readSharedDataset(tokenUuid);
-    console.log("DATASET!", ds);
     const finalDatasetName = datasetName || ds.name;
 
     try {
