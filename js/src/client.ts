@@ -55,6 +55,7 @@ import {
   isVersionGreaterOrEqual,
   parsePromptIdentifier,
 } from "./utils/prompts.js";
+import { raiseForStatus } from "./utils/error.js";
 
 interface ClientConfig {
   apiUrl?: string;
@@ -311,17 +312,6 @@ const isLocalhost = (url: string): boolean => {
   );
 };
 
-const raiseForStatus = async (response: Response, operation: string) => {
-  // consume the response body to release the connection
-  // https://undici.nodejs.org/#/?id=garbage-collection
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `Failed to ${operation}: ${response.status} ${response.statusText} ${body}`
-    );
-  }
-};
-
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const item of iterable) {
@@ -568,11 +558,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `Failed to fetch ${path}`);
     return response;
   }
 
@@ -601,12 +587,7 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch ${path}: ${response.status} ${response.statusText}`
-        );
-      }
-
+      await raiseForStatus(response, `Failed to fetch ${path}`);
       const items: T[] = transform
         ? transform(await response.json())
         : await response.json();
@@ -746,12 +727,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      // consume the response body to release the connection
-      // https://undici.nodejs.org/#/?id=garbage-collection
-      await response.text();
-      throw new Error("Failed to retrieve server info.");
-    }
+    await raiseForStatus(response, "get server info");
     return response.json();
   }
 
@@ -807,7 +783,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    await raiseForStatus(response, "create run");
+    await raiseForStatus(response, "create run", true);
   }
 
   /**
@@ -936,7 +912,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "batch create run");
+    await raiseForStatus(response, "batch create run", true);
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
@@ -982,7 +958,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "update run");
+    await raiseForStatus(response, "update run", true);
   }
 
   public async readRun(
@@ -1382,7 +1358,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "unshare run");
+    await raiseForStatus(response, "unshare run", true);
   }
 
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
@@ -1509,7 +1485,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "unshare dataset");
+    await raiseForStatus(response, "unshare dataset", true);
   }
 
   public async readSharedDataset(shareToken: string): Promise<Dataset> {
@@ -1565,11 +1541,7 @@ export class Client {
       ...this.fetchOptions,
     });
     const result = await response.json();
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create session ${projectName}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "create project");
     return result as TracerSession;
   }
 
@@ -1608,11 +1580,7 @@ export class Client {
       ...this.fetchOptions,
     });
     const result = await response.json();
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update project ${projectId}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "update project");
     return result as TracerSession;
   }
 
@@ -1833,7 +1801,8 @@ export class Client {
     );
     await raiseForStatus(
       response,
-      `delete session ${projectId_} (${projectName})`
+      `delete session ${projectId_} (${projectName})`,
+      true
     );
   }
 
@@ -1873,16 +1842,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-
-    if (!response.ok) {
-      const result = await response.json();
-      if (result.detail && result.detail.includes("already exists")) {
-        throw new Error(`Dataset ${fileName} already exists`);
-      }
-      throw new Error(
-        `Failed to upload CSV: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "upload CSV");
 
     const result = await response.json();
     return result as Dataset;
@@ -1922,17 +1882,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-
-    if (!response.ok) {
-      const result = await response.json();
-      if (result.detail && result.detail.includes("already exists")) {
-        throw new Error(`Dataset ${name} already exists`);
-      }
-      throw new Error(
-        `Failed to create dataset ${response.status} ${response.statusText}`
-      );
-    }
-
+    await raiseForStatus(response, "create dataset");
     const result = await response.json();
     return result as Dataset;
   }
@@ -2119,11 +2069,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update dataset ${_datasetId}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "update dataset");
     return (await response.json()) as Dataset;
   }
 
@@ -2154,11 +2100,8 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `delete ${path}`);
+
     await response.json();
   }
 
@@ -2196,11 +2139,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to index dataset ${datasetId_}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "index dataset");
     await response.json();
   }
 
@@ -2249,13 +2188,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch similar examples: ${response.status} ${response.statusText}`
-      );
-    }
-
+    await raiseForStatus(response, "fetch similar examples");
     const result = await response.json();
     return result["examples"] as ExampleSearch[];
   }
@@ -2301,12 +2234,7 @@ export class Client {
       ...this.fetchOptions,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create example: ${response.status} ${response.statusText}`
-      );
-    }
-
+    await raiseForStatus(response, "create example");
     const result = await response.json();
     return result as Example;
   }
@@ -2363,13 +2291,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create examples: ${response.status} ${response.statusText}`
-      );
-    }
-
+    await raiseForStatus(response, "create examples");
     const result = await response.json();
     return result as Example[];
   }
@@ -2501,11 +2423,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `delete ${path}`);
     await response.json();
   }
 
@@ -2525,11 +2443,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update example ${exampleId}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "update example");
     const result = await response.json();
     return result;
   }
@@ -2546,11 +2460,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update examples: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "update examples");
     const result = await response.json();
     return result;
   }
@@ -2643,7 +2553,7 @@ export class Client {
       }
     );
 
-    await raiseForStatus(response, "update dataset splits");
+    await raiseForStatus(response, "update dataset splits", true);
   }
 
   /**
@@ -2764,7 +2674,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    await raiseForStatus(response, "create feedback");
+    await raiseForStatus(response, "create feedback", true);
     return feedback as Feedback;
   }
 
@@ -2807,7 +2717,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "update feedback");
+    await raiseForStatus(response, "update feedback", true);
   }
 
   public async readFeedback(feedbackId: string): Promise<Feedback> {
@@ -2826,11 +2736,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `delete ${path}`);
     await response.json();
   }
 
@@ -3132,14 +3038,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to ${like ? "like" : "unlike"} prompt: ${
-          response.status
-        } ${await response.text()}`
-      );
-    }
+    await raiseForStatus(response, `${like ? "like" : "unlike"} prompt`);
 
     return await response.json();
   }
@@ -3247,12 +3146,7 @@ export class Client {
     if (response.status === 404) {
       return null;
     }
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get prompt: ${response.status} ${await response.text()}`
-      );
-    }
+    await raiseForStatus(response, "get prompt");
 
     const result = await response.json();
     if (result.repo) {
@@ -3302,11 +3196,7 @@ export class Client {
       ...this.fetchOptions,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create prompt: ${response.status} ${await response.text()}`
-      );
-    }
+    await raiseForStatus(response, "create prompt");
 
     const { repo } = await response.json();
     return repo as Prompt;
@@ -3346,11 +3236,7 @@ export class Client {
       }
     );
 
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create commit: ${response.status} ${await response.text()}`
-      );
-    }
+    await raiseForStatus(response, "create commit");
 
     const result = await response.json();
     return this._getPromptUrl(
@@ -3410,11 +3296,7 @@ export class Client {
       }
     );
 
-    if (!response.ok) {
-      throw new Error(
-        `HTTP Error: ${response.status} - ${await response.text()}`
-      );
-    }
+    await raiseForStatus(response, "update prompt");
 
     return response.json();
   }
@@ -3484,11 +3366,7 @@ export class Client {
       }
     );
 
-    if (!response.ok) {
-      throw new Error(
-        `Failed to pull prompt commit: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "pull prompt commit");
 
     const result = await response.json();
 
