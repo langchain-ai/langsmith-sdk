@@ -1527,6 +1527,53 @@ export class Client {
     return dataset as Dataset;
   }
 
+  /**
+   * Get shared examples.
+   * @param {string} shareToken The share token to get examples for.
+   * @param {Object} [options] Additional options for listing the examples.
+   * @param {string[] | undefined} [options.exampleIds] A list of example IDs to filter by.
+   * @returns {Promise<Example[]>} The shared examples.
+   */
+  public async listSharedExamples(
+    shareToken: string,
+    options?: { exampleIds?: string[] }
+  ): Promise<Example[]> {
+    const params: Record<string, string | string[]> = {};
+    if (options?.exampleIds) {
+      params.id = options.exampleIds;
+    }
+
+    const urlParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((v) => urlParams.append(key, v));
+      } else {
+        urlParams.append(key, value);
+      }
+    });
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        `Failed to list shared examples: ${response.status} ${response.statusText}`
+      );
+    }
+    return result.map((example: any) => ({
+      ...example,
+      _hostUrl: this.getHostUrl(),
+    }));
+  }
+
   public async createProject({
     projectName,
     description = null,
@@ -3448,5 +3495,100 @@ export class Client {
       parentCommitHash: options?.parentCommitHash,
     });
     return url;
+  }
+
+  /**
+   * Clone a public dataset to your own langsmith tenant. 
+   * This operation is idempotent. If you already have a dataset with the given name, 
+   * this function will do nothing.
+
+   * @param {string} tokenOrUrl The token of the public dataset to clone.
+   * @param {Object} [options] Additional options for cloning the dataset.
+   * @param {string} [options.sourceApiUrl] The URL of the langsmith server where the data is hosted. Defaults to the API URL of your current client.
+   * @param {string} [options.datasetName] The name of the dataset to create in your tenant. Defaults to the name of the public dataset.
+   * @returns {Promise<void>}
+   */
+  async clonePublicDataset(
+    tokenOrUrl: string,
+    options: {
+      sourceApiUrl?: string;
+      datasetName?: string;
+    } = {}
+  ): Promise<void> {
+    const { sourceApiUrl = this.apiUrl, datasetName } = options;
+    const [parsedApiUrl, tokenUuid] = this.parseTokenOrUrl(
+      tokenOrUrl,
+      sourceApiUrl
+    );
+    const sourceClient = new Client({
+      apiUrl: parsedApiUrl,
+    });
+
+    const ds = await sourceClient.readSharedDataset(tokenUuid);
+    const finalDatasetName = datasetName || ds.name;
+
+    try {
+      if (await sourceClient.hasDataset({ datasetId: finalDatasetName })) {
+        console.log(
+          `Dataset ${finalDatasetName} already exists in your tenant. Skipping.`
+        );
+        return;
+      }
+    } catch (_) {
+      // `.hasDataset` will throw an error if the dataset does not exist.
+      // no-op in that case
+    }
+
+    // Fetch examples first, then create the dataset
+    const examples = await sourceClient.listSharedExamples(tokenUuid);
+    const dataset = await sourceClient.createDataset(finalDatasetName, {
+      description: ds.description,
+      dataType: ds.data_type || "kv",
+    });
+    try {
+      await sourceClient.createExamples({
+        inputs: examples.map((e) => e.inputs),
+        outputs: examples.flatMap((e) => (e.outputs ? [e.outputs] : [])),
+        datasetId: dataset.id,
+      });
+    } catch (e) {
+      console.error(
+        `An error occurred while creating dataset ${finalDatasetName}. ` +
+          "You should delete it manually."
+      );
+      throw e;
+    }
+  }
+
+  private parseTokenOrUrl(
+    urlOrToken: string,
+    apiUrl: string,
+    numParts = 2,
+    kind = "dataset"
+  ): [string, string] {
+    // Try parsing as UUID
+    try {
+      assertUuid(urlOrToken); // Will throw if it's not a UUID.
+      return [apiUrl, urlOrToken];
+    } catch (_) {
+      // no-op if it's not a uuid
+    }
+
+    // Parse as URL
+    try {
+      const parsedUrl = new URL(urlOrToken);
+      const pathParts = parsedUrl.pathname
+        .split("/")
+        .filter((part) => part !== "");
+
+      if (pathParts.length >= numParts) {
+        const tokenUuid = pathParts[pathParts.length - numParts];
+        return [apiUrl, tokenUuid];
+      } else {
+        throw new Error(`Invalid public ${kind} URL: ${urlOrToken}`);
+      }
+    } catch (error) {
+      throw new Error(`Invalid public ${kind} URL or token: ${urlOrToken}`);
+    }
   }
 }
