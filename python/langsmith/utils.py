@@ -32,6 +32,7 @@ from typing import (
     cast,
 )
 
+import httpx
 import requests
 from typing_extensions import ParamSpec
 from urllib3.util import Retry
@@ -123,12 +124,17 @@ def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     return decorator
 
 
-def raise_for_status_with_text(response: requests.Response) -> None:
+def raise_for_status_with_text(
+    response: Union[requests.Response, httpx.Response],
+) -> None:
     """Raise an error with the response text."""
     try:
         response.raise_for_status()
     except requests.HTTPError as e:
         raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
+
+    except httpx.HTTPError as e:
+        raise httpx.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
 
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
@@ -687,3 +693,25 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
             timeout=timeout,
             chunksize=chunksize,
         )
+
+
+def get_api_url(api_url: Optional[str]) -> str:
+    """Get the LangSmith API URL from the environment or the given value."""
+    _api_url = api_url or cast(
+        str,
+        get_env_var(
+            "ENDPOINT",
+            default="https://api.smith.langchain.com",
+        ),
+    )
+    if not _api_url.strip():
+        raise LangSmithUserError("LangSmith API URL cannot be empty")
+    return _api_url.strip().strip('"').strip("'").rstrip("/")
+
+
+def get_api_key(api_key: Optional[str]) -> Optional[str]:
+    """Get the API key from the environment or the given value."""
+    api_key_ = api_key if api_key is not None else get_env_var("API_KEY", default=None)
+    if api_key_ is None or not api_key_.strip():
+        return None
+    return api_key_.strip().strip('"').strip("'")
