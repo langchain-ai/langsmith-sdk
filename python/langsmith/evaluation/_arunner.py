@@ -105,7 +105,7 @@ async def aevaluate(
         >>> from langsmith.evaluation import evaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
-        >>> client.clone_public_dataset(
+        >>> dataset = client.clone_public_dataset(
         ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
         ... )
         >>> dataset_name = "Evaluate Examples"
