@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith._testing import test, unit
+    from langsmith.async_client import AsyncClient
     from langsmith.client import Client
     from langsmith.evaluation import aevaluate, evaluate
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
@@ -33,6 +34,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.client import Client
 
         return Client
+    elif name == "AsyncClient":
+        from langsmith.async_client import AsyncClient
+
+        return AsyncClient
     elif name == "RunTree":
         from langsmith.run_trees import RunTree
 
@@ -118,4 +123,5 @@ __all__ = [
     "get_tracing_context",
     "get_current_run_tree",
     "ContextThreadPoolExecutor",
+    "AsyncClient",
 ]

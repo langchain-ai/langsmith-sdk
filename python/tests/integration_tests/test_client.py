@@ -269,6 +269,50 @@ def test_list_examples(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+@pytest.mark.slow
+def test_similar_examples(langchain_client: Client) -> None:
+    inputs = [{"text": "how are you"}, {"text": "good bye"}, {"text": "see ya later"}]
+    outputs = [
+        {"response": "good how are you"},
+        {"response": "ta ta"},
+        {"response": "tootles"},
+    ]
+    dataset_name = "__test_similar_examples" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        inputs_schema={
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        outputs_schema={
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "response": {"type": "string"},
+            },
+            "required": ["response"],
+            "additionalProperties": False,
+        },
+    )
+    langchain_client.create_examples(
+        inputs=inputs, outputs=outputs, dataset_id=dataset.id
+    )
+    langchain_client.index_dataset(dataset_id=dataset.id)
+    # Need to wait for indexing to finish.
+    time.sleep(5)
+    similar_list = langchain_client.similar_examples(
+        {"text": "howdy"}, limit=2, dataset_id=dataset.id
+    )
+    assert len(similar_list) == 2
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
@@ -292,9 +336,11 @@ def test_persist_update_run(langchain_client: Client) -> None:
         langchain_client.create_run(**run)
         run["outputs"] = {"output": ["Hi"]}
         run["extra"]["foo"] = "bar"
+        run["name"] = "test_run_updated"
         langchain_client.update_run(run["id"], **run)
         wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
         stored_run = langchain_client.read_run(run["id"])
+        assert stored_run.name == run["name"]
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]

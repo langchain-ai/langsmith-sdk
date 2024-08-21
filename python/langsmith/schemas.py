@@ -99,6 +99,12 @@ class Example(ExampleBase):
         return None
 
 
+class ExampleSearch(ExampleBase):
+    """Example returned via search."""
+
+    id: UUID
+
+
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
 

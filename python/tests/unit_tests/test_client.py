@@ -33,8 +33,6 @@ from langsmith import schemas as ls_schemas
 from langsmith.client import (
     Client,
     _dumps_json,
-    _get_api_key,
-    _get_api_url,
     _is_langchain_hosted,
     _is_localhost,
     _serialize_json,
@@ -258,40 +256,6 @@ def test_async_methods() -> None:
             f"Extra args for {async_method} "
             f"(compared to {sync_method}): {extra_args}"
         )
-
-
-def test_get_api_key() -> None:
-    assert _get_api_key("provided_api_key") == "provided_api_key"
-    assert _get_api_key("'provided_api_key'") == "provided_api_key"
-    assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
-
-    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
-        assert _get_api_key(None) == "env_api_key"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_key(None) is None
-
-    assert _get_api_key("") is None
-    assert _get_api_key(" ") is None
-
-
-def test_get_api_url() -> None:
-    assert _get_api_url("http://provided.url") == "http://provided.url"
-
-    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None) == "http://env.url"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_url(None) == "https://api.smith.langchain.com"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_url(None) == "https://api.smith.langchain.com"
-
-    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None) == "http://env.url"
-
-    with pytest.raises(ls_utils.LangSmithUserError):
-        _get_api_url(" ")
 
 
 def test_create_run_unicode() -> None:
