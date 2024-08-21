@@ -1579,8 +1579,8 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    const result = await response.json();
     await raiseForStatus(response, "update project");
+    const result = await response.json();
     return result as TracerSession;
   }
 

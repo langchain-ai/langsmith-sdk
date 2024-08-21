@@ -1,6 +1,5 @@
 import { _ExperimentManager } from "../evaluation/_runner.js";
 import { Client } from "../index.js";
-import { waitUntilRunFound } from "./utils.js";
 import { v4 as uuidv4 } from "uuid";
 
 const TESTING_DATASET_NAME = `test_experiment_manager_${uuidv4()}`;
