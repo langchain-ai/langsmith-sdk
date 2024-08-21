@@ -355,38 +355,6 @@ def _get_tracing_sampling_rate() -> float | None:
     return sampling_rate
 
 
-def _get_env(var_names: Sequence[str], default: Optional[str] = None) -> Optional[str]:
-    for var_name in var_names:
-        var = os.getenv(var_name)
-        if var is not None:
-            return var
-    return default
-
-
-def _get_api_key(api_key: Optional[str]) -> Optional[str]:
-    api_key_ = (
-        api_key
-        if api_key is not None
-        else _get_env(("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"))
-    )
-    if api_key_ is None or not api_key_.strip():
-        return None
-    return api_key_.strip().strip('"').strip("'")
-
-
-def _get_api_url(api_url: Optional[str]) -> str:
-    _api_url = api_url or cast(
-        str,
-        _get_env(
-            ("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
-            "https://api.smith.langchain.com",
-        ),
-    )
-    if not _api_url.strip():
-        raise ls_utils.LangSmithUserError("LangSmith API URL cannot be empty")
-    return _api_url.strip().strip('"').strip("'").rstrip("/")
-
-
 def _get_write_api_urls(_write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
     _write_api_urls = _write_api_urls or json.loads(
         os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
@@ -563,8 +531,8 @@ class Client:
             self.api_url = next(iter(self._write_api_urls))
             self.api_key: Optional[str] = self._write_api_urls[self.api_url]
         else:
-            self.api_url = _get_api_url(api_url)
-            self.api_key = _get_api_key(api_key)
+            self.api_url = ls_utils.get_api_url(api_url)
+            self.api_key = ls_utils.get_api_key(api_key)
             _validate_api_key_if_hosted(self.api_url, self.api_key)
             self._write_api_urls = {self.api_url: self.api_key}
         self.retry_config = retry_config or _default_retry_config()
@@ -1435,6 +1403,7 @@ class Client:
         self,
         run_id: ID_TYPE,
         *,
+        name: Optional[str] = None,
         end_time: Optional[datetime.datetime] = None,
         error: Optional[str] = None,
         inputs: Optional[Dict] = None,
@@ -1450,6 +1419,8 @@ class Client:
         ----------
         run_id : str or UUID
             The ID of the run to update.
+        name : str or None, default=None
+            The name of the run.
         end_time : datetime or None
             The end time of the run.
         error : str or None, default=None
@@ -1469,6 +1440,7 @@ class Client:
         """
         data: Dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
+            "name": name,
             "trace_id": kwargs.pop("trace_id", None),
             "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),

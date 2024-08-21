@@ -27,6 +27,7 @@ import {
   RunCreate,
   RunUpdate,
   ScoreType,
+  ExampleSearch,
   TimeDelta,
   TracerSession,
   TracerSessionResult,
@@ -1939,7 +1940,14 @@ export class Client {
     {
       description,
       dataType,
-    }: { description?: string; dataType?: DataType } = {}
+      inputsSchema,
+      outputsSchema,
+    }: {
+      description?: string;
+      dataType?: DataType;
+      inputsSchema?: KVMap;
+      outputsSchema?: KVMap;
+    } = {}
   ): Promise<Dataset> {
     const body: KVMap = {
       name,
@@ -1947,6 +1955,12 @@ export class Client {
     };
     if (dataType) {
       body.data_type = dataType;
+    }
+    if (inputsSchema) {
+      body.inputs_schema_definition = inputsSchema;
+    }
+    if (outputsSchema) {
+      body.outputs_schema_definition = outputsSchema;
     }
     const response = await this.caller.call(fetch, `${this.apiUrl}/datasets`, {
       method: "POST",
@@ -2193,6 +2207,104 @@ export class Client {
       );
     }
     await response.json();
+  }
+
+  public async indexDataset({
+    datasetId,
+    datasetName,
+    tag,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    tag?: string;
+  }): Promise<void> {
+    let datasetId_ = datasetId;
+    if (!datasetId_ && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    } else if (datasetId_ && datasetName) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (!datasetId_) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    }
+    assertUuid(datasetId_);
+
+    const data = {
+      tag: tag,
+    };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId_}/index`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Failed to index dataset ${datasetId_}: ${response.status} ${response.statusText}`
+      );
+    }
+    await response.json();
+  }
+
+  /**
+   * Lets you run a similarity search query on a dataset.
+   *
+   * Requires the dataset to be indexed. Please see the `indexDataset` method to set up indexing.
+   *
+   * @param inputs      The input on which to run the similarity search. Must have the
+   *                    same schema as the dataset.
+   *
+   * @param datasetId   The dataset to search for similar examples.
+   *
+   * @param limit       The maximum number of examples to return. Will return the top `limit` most
+   *                    similar examples in order of most similar to least similar. If no similar
+   *                    examples are found, random examples will be returned.
+   *
+   * @returns           A list of similar examples.
+   *
+   *
+   * @example
+   * dataset_id = "123e4567-e89b-12d3-a456-426614174000"
+   * inputs = {"text": "How many people live in Berlin?"}
+   * limit = 5
+   * examples = await client.similarExamples(inputs, dataset_id, limit)
+   */
+  public async similarExamples(
+    inputs: KVMap,
+    datasetId: string,
+    limit: number
+  ): Promise<ExampleSearch[]> {
+    const data = {
+      limit: limit,
+      inputs: inputs,
+    };
+
+    assertUuid(datasetId);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId}/search`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch similar examples: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+    return result["examples"] as ExampleSearch[];
   }
 
   public async createExample(
