@@ -15,6 +15,7 @@ import {
   RunEvaluator,
   runEvaluator,
 } from "./evaluator.js";
+import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -312,17 +313,38 @@ class _ExperimentManager {
     return projectMetadata;
   }
 
+  async _createProject(firstExample: Example, projectMetadata: KVMap) {
+    // Create the project, updating the experimentName until we find a unique one.
+    let experimentName = this._experimentName;
+    let project: TracerSession;
+    let attempt = 0;
+    while (true) {
+      try {
+        project = await this.client.createProject({
+          projectName: experimentName,
+          referenceDatasetId: firstExample.dataset_id,
+          metadata: projectMetadata,
+          description: this._description,
+        });
+        return project;
+        // Now catch LangSmithConflictError's and try again.
+      } catch (e) {
+        if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
+          this._experimentName = `${this._experimentName}-${attempt}`;
+          attempt++;
+        } else {
+          throw e;
+        }
+      }
+    }
+  }
+
   async _getProject(firstExample: Example): Promise<TracerSession> {
     let project: TracerSession;
     if (!this._experiment) {
       try {
         const projectMetadata = await this._getExperimentMetadata();
-        project = await this.client.createProject({
-          projectName: this.experimentName,
-          referenceDatasetId: firstExample.dataset_id,
-          metadata: projectMetadata,
-          description: this._description,
-        });
+        project = await this._createProject(firstExample, projectMetadata);
         this._experiment = project;
       } catch (e) {
         if (String(e).includes("already exists")) {
