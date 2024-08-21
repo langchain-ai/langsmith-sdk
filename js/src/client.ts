@@ -3641,6 +3641,7 @@ export class Client {
     });
 
     const ds = await sourceClient.readSharedDataset(tokenUuid);
+    console.log("DATASET!", ds);
     const finalDatasetName = datasetName || ds.name;
 
     try {
@@ -3660,6 +3661,8 @@ export class Client {
     const dataset = await this.createDataset(finalDatasetName, {
       description: ds.description,
       dataType: ds.data_type || "kv",
+      inputsSchema: ds.inputs_schema_definition ?? undefined,
+      outputsSchema: ds.outputs_schema_definition ?? undefined,
     });
     try {
       await this.createExamples({

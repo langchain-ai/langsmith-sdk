@@ -1085,7 +1085,7 @@ test("list shared examples can list shared examples", async () => {
   expect(sharedExamples.length).toBeGreaterThan(0);
 });
 
-test("clonePublicDataset method can clone a dataset", async () => {
+test.only("clonePublicDataset method can clone a dataset", async () => {
   const client = new Client();
   const datasetName = "multiverse_math_public_testing";
   const multiverseMathPublicDatasetURL =
