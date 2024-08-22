@@ -461,7 +461,9 @@ def test_list_datasets(langchain_client: Client) -> None:
     ds1n = "__test_list_datasets1" + uuid4().hex[:4]
     ds2n = "__test_list_datasets2" + uuid4().hex[:4]
     try:
-        dataset1 = langchain_client.create_dataset(ds1n, data_type=DataType.llm)
+        dataset1 = langchain_client.create_dataset(
+            ds1n, data_type=DataType.llm, metadata={"foo": "barqux"}
+        )
         dataset2 = langchain_client.create_dataset(ds2n, data_type=DataType.kv)
         assert dataset1.url is not None
         assert dataset2.url is not None
@@ -481,6 +483,13 @@ def test_list_datasets(langchain_client: Client) -> None:
         datasets = list(
             langchain_client.list_datasets(
                 dataset_ids=[dataset1.id, dataset2.id], dataset_name=ds1n
+            )
+        )
+        assert len(datasets) == 1
+        # Sub-filter on metadata
+        datasets = list(
+            langchain_client.list_datasets(
+                dataset_ids=[dataset1.id, dataset2.id], metadata={"foo": "barqux"}
             )
         )
         assert len(datasets) == 1
