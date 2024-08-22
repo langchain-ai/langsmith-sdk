@@ -30,7 +30,6 @@ from typing import (
     cast,
 )
 
-from requests import HTTPError
 from typing_extensions import TypedDict
 
 import langsmith
@@ -958,24 +957,33 @@ class _ExperimentManagerMixin:
             }
         return project_metadata
 
+    def _create_experiment(
+        self, dataset_id: uuid.UUID, metadata: dict
+    ) -> schemas.TracerSession:
+        # There is a chance of name collision, so we'll retry
+        starting_name = self._experiment_name
+        num_attempts = 10
+        for _ in range(num_attempts):
+            try:
+                return self.client.create_project(
+                    self._experiment_name,
+                    description=self._description,
+                    reference_dataset_id=dataset_id,
+                    metadata=metadata,
+                )
+            except ls_utils.LangSmithConflictError:
+                self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
+        raise ValueError(
+            f"Could not find a unique experiment name in {num_attempts} attempts."
+            " Please try again with a different experiment name."
+        )
+
     def _get_project(self, first_example: schemas.Example) -> schemas.TracerSession:
         if self._experiment is None:
-            try:
-                project_metadata = self._get_experiment_metadata()
-                project = self.client.create_project(
-                    self.experiment_name,
-                    description=self._description,
-                    reference_dataset_id=first_example.dataset_id,
-                    metadata=project_metadata,
-                )
-            except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
-                if "already exists " not in str(e):
-                    raise e
-                raise ValueError(
-                    # TODO: Better error
-                    f"Experiment {self.experiment_name} already exists."
-                    " Please use a different name."
-                )
+            project_metadata = self._get_experiment_metadata()
+            project = self._create_experiment(
+                first_example.dataset_id, project_metadata
+            )
         else:
             project = self._experiment
         return project
