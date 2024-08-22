@@ -2944,7 +2944,7 @@ class Client:
         *,
         source_api_url: Optional[str] = None,
         dataset_name: Optional[str] = None,
-    ) -> None:
+    ) -> ls_schemas.Dataset:
         """Clone a public dataset to your own langsmith tenant.
 
         This operation is idempotent. If you already have a dataset with the given name,
@@ -2957,6 +2957,10 @@ class Client:
             dataset_name (str): The name of the dataset to create in your tenant.
                 Defaults to the name of the public dataset.
 
+        Returns:
+        -------
+        Dataset
+            The created dataset.
         """
         source_api_url = source_api_url or self.api_url
         source_api_url, token_uuid = _parse_token_or_url(token_or_url, source_api_url)
@@ -2969,11 +2973,15 @@ class Client:
         )
         ds = source_client.read_shared_dataset(token_uuid)
         dataset_name = dataset_name or ds.name
-        if self.has_dataset(dataset_name=dataset_name):
+        try:
+            ds = self.read_dataset(dataset_name=dataset_name)
             logger.info(
                 f"Dataset {dataset_name} already exists in your tenant. Skipping."
             )
-            return
+            return ds
+        except ls_utils.LangSmithNotFoundError:
+            pass
+
         try:
             # Fetch examples first
             examples = list(source_client.list_shared_examples(token_uuid))
@@ -3001,6 +3009,7 @@ class Client:
                 raise e
         finally:
             del source_client
+        return dataset
 
     def _get_data_type(self, dataset_id: ID_TYPE) -> ls_schemas.DataType:
         dataset = self.read_dataset(dataset_id=dataset_id)
