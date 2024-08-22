@@ -56,7 +56,7 @@ import {
   parsePromptIdentifier,
 } from "./utils/prompts.js";
 
-interface ClientConfig {
+export interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
