@@ -261,6 +261,8 @@ export interface BaseDataset {
   description: string;
   tenant_id: string;
   data_type?: DataType;
+  inputs_schema_definition?: KVMap;
+  outputs_schema_definition?: KVMap;
 }
 
 export interface Dataset extends BaseDataset {
