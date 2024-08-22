@@ -9,13 +9,14 @@ import {
 import { z } from "zod";
 import { wrapAISDKModel } from "../wrappers/vercel.js";
 
+const DEBUG = false;
 test("AI SDK generateText", async () => {
   const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
   const { text } = await generateText({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
   });
-  console.log(text);
+  DEBUG && console.log(text);
 });
 
 test("AI SDK generateText with a tool", async () => {
@@ -36,7 +37,7 @@ test("AI SDK generateText with a tool", async () => {
     },
     maxToolRoundtrips: 2,
   });
-  console.log(text);
+  DEBUG && console.log(text);
 });
 
 test("AI SDK generateObject", async () => {
@@ -48,7 +49,7 @@ test("AI SDK generateObject", async () => {
       ingredients: z.array(z.string()),
     }),
   });
-  console.log(object);
+  DEBUG && console.log(object);
 });
 
 test("AI SDK streamText", async () => {
@@ -58,7 +59,7 @@ test("AI SDK streamText", async () => {
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
   });
   for await (const chunk of textStream) {
-    console.log(chunk);
+    DEBUG && console.log(chunk);
   }
 });
 
@@ -72,6 +73,6 @@ test("AI SDK streamObject", async () => {
     }),
   });
   for await (const chunk of partialObjectStream) {
-    console.log(chunk);
+    DEBUG && console.log(chunk);
   }
 });
