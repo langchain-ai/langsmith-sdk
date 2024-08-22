@@ -316,6 +316,7 @@ export class _ExperimentManager {
   async _createProject(firstExample: Example, projectMetadata: KVMap) {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
+    const originalExperimentName = this._experimentName;
     for (;;) {
       try {
         project = await this.client.createProject({
@@ -328,8 +329,8 @@ export class _ExperimentManager {
       } catch (e) {
         // Naming collision
         if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
-          const ent = uuidv4().slice(0, 4);
-          this._experimentName = `${this._experimentName}-${ent}`;
+          const ent = uuidv4().slice(0, 6);
+          this._experimentName = `${originalExperimentName}-${ent}`;
         } else {
           throw e;
         }
