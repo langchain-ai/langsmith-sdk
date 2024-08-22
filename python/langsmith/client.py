@@ -2978,7 +2978,7 @@ class Client:
             logger.info(
                 f"Dataset {dataset_name} already exists in your tenant. Skipping."
             )
-            return str(ds.id)
+            return ds
         except ls_utils.LangSmithNotFoundError:
             pass
 
