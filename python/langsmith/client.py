@@ -2504,6 +2504,7 @@ class Client:
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
         inputs_schema: Optional[Dict[str, Any]] = None,
         outputs_schema: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -2515,6 +2516,8 @@ class Client:
             The description of the dataset.
         data_type : DataType or None, default=DataType.kv
             The data type of the dataset.
+        metadata: dict or None, default=None
+            Additional metadata to associate with the dataset.
 
         Returns:
         -------
@@ -2525,6 +2528,7 @@ class Client:
             "name": dataset_name,
             "data_type": data_type.value,
             "created_at": datetime.datetime.now().isoformat(),
+            "extra": {"metadata": metadata} if metadata else None,
         }
         if description is not None:
             dataset["description"] = description
@@ -2737,6 +2741,7 @@ class Client:
         data_type: Optional[str] = None,
         dataset_name: Optional[str] = None,
         dataset_name_contains: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.Dataset]:
         """List the datasets on the LangSmith API.
@@ -2757,6 +2762,8 @@ class Client:
             params["name"] = dataset_name
         if dataset_name_contains is not None:
             params["name_contains"] = dataset_name_contains
+        if metadata is not None:
+            params["metadata"] = json.dumps(metadata)
         for i, dataset in enumerate(
             self._get_paginated_list("/datasets", params=params)
         ):
