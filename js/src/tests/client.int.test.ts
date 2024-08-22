@@ -183,6 +183,7 @@ test.concurrent(
     });
     const dataset = await langchainClient.createDataset(datasetName, {
       dataType: "llm",
+      metadata: { key: "valuefoo" },
     });
     await langchainClient.createExample(
       { input: "hello world" },
@@ -193,6 +194,12 @@ test.concurrent(
     );
     const loadedDataset = await langchainClient.readDataset({ datasetName });
     expect(loadedDataset.data_type).toEqual("llm");
+
+    const datasetsByMetadata = await toArray(
+      langchainClient.listDatasets({ metadata: { key: "valuefoo" } })
+    );
+    expect(datasetsByMetadata.length).toEqual(1);
+    expect(datasetsByMetadata.map((d) => d.id)).toContain(dataset.id);
     await langchainClient.deleteDataset({ datasetName });
   },
   180_000
