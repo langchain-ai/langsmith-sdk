@@ -317,7 +317,7 @@ export class _ExperimentManager {
     // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
     const originalExperimentName = this._experimentName;
-    for (;;) {
+    for (let i = 0; i < 10; i++) {
       try {
         project = await this.client.createProject({
           projectName: this._experimentName,
@@ -336,6 +336,10 @@ export class _ExperimentManager {
         }
       }
     }
+    throw new Error(
+      "Could not generate a unique experiment name within 10 attempts." +
+        " Please try again with a different name."
+    );
   }
 
   async _getProject(firstExample: Example): Promise<TracerSession> {
