@@ -1,4 +1,4 @@
-import { Dataset, Run, TracerSession } from "../schemas.js";
+import { Dataset, Example, Run, TracerSession } from "../schemas.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -1073,4 +1073,43 @@ test("Test pull prompt include model", async () => {
   expect(rs).toBeInstanceOf(RunnableSequence);
 
   await client.deletePrompt(promptName);
+});
+
+test("list shared examples can list shared examples", async () => {
+  const client = new Client();
+  const multiverseMathPublicDatasetShareToken =
+    "620596ee-570b-4d2b-8c8f-f828adbe5242";
+  const sharedExamples = await client.listSharedExamples(
+    multiverseMathPublicDatasetShareToken
+  );
+  expect(sharedExamples.length).toBeGreaterThan(0);
+});
+
+test("clonePublicDataset method can clone a dataset", async () => {
+  const client = new Client();
+  const datasetName = "multiverse_math_public_testing";
+  const multiverseMathPublicDatasetURL =
+    "https://smith.langchain.com/public/620596ee-570b-4d2b-8c8f-f828adbe5242/d";
+
+  try {
+    await client.clonePublicDataset(multiverseMathPublicDatasetURL, {
+      datasetName,
+    });
+
+    const clonedDataset = await client.hasDataset({ datasetName });
+    expect(clonedDataset).toBe(true);
+
+    const examples: Example[] = [];
+    for await (const ex of client.listExamples({ datasetName })) {
+      examples.push(ex);
+    }
+    expect(examples.length).toBeGreaterThan(0);
+  } finally {
+    try {
+      // Attempt to remove the newly created dataset if successful.
+      await client.deleteDataset({ datasetName });
+    } catch (_) {
+      // no-op if failure
+    }
+  }
 });
