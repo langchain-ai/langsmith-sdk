@@ -1910,16 +1910,19 @@ export class Client {
       dataType,
       inputsSchema,
       outputsSchema,
+      metadata,
     }: {
       description?: string;
       dataType?: DataType;
       inputsSchema?: KVMap;
       outputsSchema?: KVMap;
+      metadata?: RecordStringAny;
     } = {}
   ): Promise<Dataset> {
     const body: KVMap = {
       name,
       description,
+      extra: metadata ? { metadata } : undefined,
     };
     if (dataType) {
       body.data_type = dataType;
@@ -2065,12 +2068,14 @@ export class Client {
     datasetIds,
     datasetName,
     datasetNameContains,
+    metadata,
   }: {
     limit?: number;
     offset?: number;
     datasetIds?: string[];
     datasetName?: string;
     datasetNameContains?: string;
+    metadata?: RecordStringAny;
   } = {}): AsyncIterable<Dataset> {
     const path = "/datasets";
     const params = new URLSearchParams({
@@ -2087,6 +2092,9 @@ export class Client {
     }
     if (datasetNameContains !== undefined) {
       params.append("name_contains", datasetNameContains);
+    }
+    if (metadata !== undefined) {
+      params.append("metadata", JSON.stringify(metadata));
     }
     for await (const datasets of this._getPaginated<Dataset>(path, params)) {
       yield* datasets;
