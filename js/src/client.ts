@@ -1530,7 +1530,8 @@ export class Client {
 
   /**
    * Get shared examples.
-   * @param {string} shareToken The share token to get examples for.
+   *
+   * @param {string} shareToken The share token to get examples for. A share token is the UUID (or LangSmith URL, including UUID) generated when explicitly marking an example as public.
    * @param {Object} [options] Additional options for listing the examples.
    * @param {string[] | undefined} [options.exampleIds] A list of example IDs to filter by.
    * @returns {Promise<Example[]>} The shared examples.
@@ -1565,6 +1566,13 @@ export class Client {
     );
     const result = await response.json();
     if (!response.ok) {
+      if ("detail" in result) {
+        throw new Error(
+          `Failed to list shared examples.\nStatus: ${
+            response.status
+          }\nMessage: ${result.detail.join("\n")}`
+        );
+      }
       throw new Error(
         `Failed to list shared examples: ${response.status} ${response.statusText}`
       );
