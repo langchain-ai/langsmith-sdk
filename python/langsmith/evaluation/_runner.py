@@ -1256,6 +1256,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 "project_name": "evaluators",
                 "metadata": metadata,
                 "enabled": True,
+                "client": self.client,
             }
         ):
             run = current_results["run"]
@@ -1340,6 +1341,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     **current_context,
                     "project_name": "evaluators",
                     "metadata": metadata,
+                    "client": self.client,
+                    "enabled": True,
                 }
             ):
                 for evaluator in summary_evaluators:

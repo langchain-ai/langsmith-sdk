@@ -3,13 +3,16 @@
 import asyncio
 import json
 import random
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
 from threading import Lock
-from typing import List
+from typing import Callable, List
 from unittest import mock
 from unittest.mock import MagicMock
+
+import pytest
 
 from langsmith import evaluate
 from langsmith import schemas as ls_schemas
@@ -73,7 +76,11 @@ class FakeRequest:
                 return response
             elif endpoint == "http://localhost:1984/runs/query":
                 res = MagicMock()
-                res.json.return_value = {"runs": list(self.runs.values())}
+                res.json.return_value = {
+                    "runs": [
+                        r for r in self.runs.values() if "reference_example_id" in r
+                    ]
+                }
                 return res
             elif endpoint == "http://localhost:1984/feedback":
                 response = MagicMock()
@@ -100,6 +107,16 @@ class FakeRequest:
             raise ValueError(f"Unknown verb: {verb}, {endpoint}")
 
 
+def _wait_until(condition: Callable, timeout: int = 5):
+    start = time.time()
+    while time.time() - start < timeout:
+        if condition():
+            return
+        time.sleep(0.1)
+    raise TimeoutError("Condition not met")
+
+
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 def test_evaluate_results() -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
@@ -173,13 +190,13 @@ def test_evaluate_results() -> None:
         num_repetitions=NUM_REPETITIONS,
     )
     assert fake_request.created_session
-    time.sleep(0.25)
-    assert fake_request.runs
+    _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
-    assert len(ordering_of_stuff) == N_PREDS * 2
+    _wait_until(lambda: len(ordering_of_stuff) == N_PREDS * 2)
+    _wait_until(lambda: slow_index is not None)
     # Want it to be interleaved
     assert ordering_of_stuff != ["predict"] * N_PREDS + ["evaluate"] * N_PREDS
-    assert slow_index is not None
+
     # It's delayed, so it'll be the penultimate event
     # Will run all other preds and evals, then this, then the last eval
     assert slow_index == (N_PREDS * 2) - 2
@@ -199,6 +216,7 @@ def test_evaluate_results() -> None:
     assert not fake_request.should_fail
 
 
+@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 async def test_aevaluate_results() -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
@@ -272,10 +290,10 @@ async def test_aevaluate_results() -> None:
         num_repetitions=NUM_REPETITIONS,
     )
     assert fake_request.created_session
-    time.sleep(0.25)
-    assert fake_request.runs
+    _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
-    assert len(ordering_of_stuff) == N_PREDS * 2
+    _wait_until(lambda: len(ordering_of_stuff) == N_PREDS * 2)
+    _wait_until(lambda: slow_index is not None)
     # Want it to be interleaved
     assert ordering_of_stuff != ["predict"] * N_PREDS + ["evaluate"] * N_PREDS
     assert slow_index is not None

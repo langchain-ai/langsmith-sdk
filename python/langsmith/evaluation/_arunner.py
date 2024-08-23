@@ -628,6 +628,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 "project_name": "evaluators",
                 "metadata": metadata,
                 "enabled": True,
+                "client": self.client,
             }
         ):
             run = current_results["run"]
@@ -683,6 +684,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 "project_name": "evaluators",
                 "metadata": metadata,
                 "enabled": True,
+                "client": self.client,
             }
         ):
             for evaluator in summary_evaluators:
