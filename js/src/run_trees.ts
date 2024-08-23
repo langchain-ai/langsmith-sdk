@@ -421,6 +421,8 @@ export class RunTree implements BaseRun {
     const parentRunTree = new RunTree({
       name: parentRun.name,
       id: parentRun.id,
+      trace_id: parentRun.trace_id,
+      dotted_order: parentRun.dotted_order,
       client,
       tracingEnabled,
       project_name: projectName,
