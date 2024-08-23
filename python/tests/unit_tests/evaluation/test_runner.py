@@ -168,7 +168,7 @@ def test_evaluate_results() -> None:
             with lock:
                 if len(ordering_of_stuff) == 3 and not locked:
                     locked = True
-                    time.sleep(0.1)
+                    time.sleep(1)
                     slow_index = len(ordering_of_stuff)
                     ordering_of_stuff.append("predict")
                 else:
@@ -268,7 +268,7 @@ async def test_aevaluate_results() -> None:
             with lock:
                 if len(ordering_of_stuff) == 3 and not locked:
                     locked = True
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(1)
                     slow_index = len(ordering_of_stuff)
                     ordering_of_stuff.append("predict")
                 else:
