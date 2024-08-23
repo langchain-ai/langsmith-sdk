@@ -54,10 +54,12 @@ test.concurrent(
       timeout_ms: 30_000,
     });
     try {
+      const runId = uuidv4();
       const result = await app.invoke(
         [new HumanMessage({ content: "Hello!" })],
         {
           callbacks: [tracer],
+          runId,
         }
       );
       expect(result[result.length - 1].content).toEqual("Hello! world");
@@ -84,6 +86,7 @@ test.concurrent(
       const trace = traces[0];
       expect(trace.name).toEqual("add_negligible_value");
       expect(trace.parent_run_id).not.toBeNull();
+      expect(trace.trace_id).toEqual(runId);
     } catch (e) {
       console.error(e);
       throw e;
