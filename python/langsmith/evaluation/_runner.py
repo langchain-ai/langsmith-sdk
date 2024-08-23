@@ -1084,7 +1084,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     @property
     def evaluation_results(self) -> Iterable[EvaluationResults]:
         if self._evaluation_results is None:
-            return [{"results": []} for _ in self.examples]
+            return ({"results": []} for _ in self.examples)
         return self._evaluation_results
 
     @property
