@@ -58,12 +58,14 @@ _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", defaul
 _TRACING_ENABLED = contextvars.ContextVar[Optional[bool]](
     "_TRACING_ENABLED", default=None
 )
+_CLIENT = contextvars.ContextVar[Optional[ls_client.Client]]("_CLIENT", default=None)
 _CONTEXT_KEYS: Dict[str, contextvars.ContextVar] = {
     "parent": _PARENT_RUN_TREE,
     "project_name": _PROJECT_NAME,
     "tags": _TAGS,
     "metadata": _METADATA,
     "enabled": _TRACING_ENABLED,
+    "client": _CLIENT,
 }
 
 
@@ -83,6 +85,7 @@ def get_tracing_context(
             "tags": _TAGS.get(),
             "metadata": _METADATA.get(),
             "enabled": _TRACING_ENABLED.get(),
+            "client": _CLIENT.get(),
         }
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
 
@@ -102,6 +105,7 @@ def tracing_context(
     metadata: Optional[Dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str]] = None,
     enabled: Optional[bool] = None,
+    client: Optional[ls_client.Client] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
@@ -113,8 +117,10 @@ def tracing_context(
         parent: The parent run to use for the context. Can be a Run/RunTree object,
             request headers (for distributed tracing), or the dotted order string.
             Defaults to None.
+        client: The client to use for logging the run to LangSmith. Defaults to None,
         enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
             current context value or environment variables.
+
 
     """
     if kwargs:
@@ -129,7 +135,6 @@ def tracing_context(
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
     enabled = enabled if enabled is not None else current_context.get("enabled")
-
     _set_tracing_context(
         {
             "parent": parent_run,
@@ -137,6 +142,7 @@ def tracing_context(
             "tags": tags,
             "metadata": metadata,
             "enabled": enabled,
+            "client": client,
         }
     )
     try:
@@ -829,11 +835,12 @@ class trace:
 
         outer_tags = _TAGS.get()
         outer_metadata = _METADATA.get()
+        client_ = self.client or self.old_ctx.get("client")
         parent_run_ = _get_parent_run(
             {
                 "parent": self.parent,
                 "run_tree": self.run_tree,
-                "client": self.client,
+                "client": client_,
             }
         )
 
@@ -870,7 +877,7 @@ class trace:
                 project_name=project_name_ or "default",
                 inputs=self.inputs or {},
                 tags=tags_,
-                client=self.client,  # type: ignore[arg-type]
+                client=client_,  # type: ignore
             )
 
         if enabled:
@@ -879,6 +886,7 @@ class trace:
             _METADATA.set(metadata)
             _PARENT_RUN_TREE.set(self.new_run)
             _PROJECT_NAME.set(project_name_)
+            _CLIENT.set(client_)
 
         return self.new_run
 
@@ -1248,7 +1256,7 @@ def _setup_run(
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
     name = langsmith_extra.get("name") or container_input.get("name")
-    client_ = langsmith_extra.get("client", client)
+    client_ = langsmith_extra.get("client", client) or _CLIENT.get()
     parent_run_ = _get_parent_run(
         {**langsmith_extra, "client": client_}, kwargs.get("config")
     )
