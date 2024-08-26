@@ -105,7 +105,7 @@ async def aevaluate(
         >>> from langsmith.evaluation import evaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
-        >>> client.clone_public_dataset(
+        >>> dataset = client.clone_public_dataset(
         ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
         ... )
         >>> dataset_name = "Evaluate Examples"
@@ -329,6 +329,7 @@ async def aevaluate_existing(
         max_concurrency=max_concurrency,
         client=client,
         blocking=blocking,
+        experiment=project,
     )
 
 
@@ -622,7 +623,13 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             **{"experiment": self.experiment_name},
         }
         with rh.tracing_context(
-            **{**current_context, "project_name": "evaluators", "metadata": metadata}
+            **{
+                **current_context,
+                "project_name": "evaluators",
+                "metadata": metadata,
+                "enabled": True,
+                "client": self.client,
+            }
         ):
             run = current_results["run"]
             example = current_results["example"]
@@ -676,11 +683,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
+                "enabled": True,
+                "client": self.client,
             }
         ):
             for evaluator in summary_evaluators:
                 try:
-                    # TODO: Support async evaluators
                     summary_eval_result = evaluator(runs, examples)
                     flattened_results = self.client._select_eval_results(
                         summary_eval_result,
@@ -808,30 +816,31 @@ async def _aforward(
         nonlocal run
         run = r
 
-    try:
-        await fn(
-            example.inputs,
-            langsmith_extra=rh.LangSmithExtra(
-                reference_example_id=example.id,
-                on_end=_get_run,
-                project_name=experiment_name,
-                metadata={
-                    **metadata,
-                    "example_version": (
-                        example.modified_at.isoformat()
-                        if example.modified_at
-                        else example.created_at.isoformat()
-                    ),
-                },
-                client=client,
-            ),
+    with rh.tracing_context(enabled=True):
+        try:
+            await fn(
+                example.inputs,
+                langsmith_extra=rh.LangSmithExtra(
+                    reference_example_id=example.id,
+                    on_end=_get_run,
+                    project_name=experiment_name,
+                    metadata={
+                        **metadata,
+                        "example_version": (
+                            example.modified_at.isoformat()
+                            if example.modified_at
+                            else example.created_at.isoformat()
+                        ),
+                    },
+                    client=client,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error running target function: {e}")
+        return _ForwardResults(
+            run=cast(schemas.Run, run),
+            example=example,
         )
-    except Exception as e:
-        logger.error(f"Error running target function: {e}")
-    return _ForwardResults(
-        run=cast(schemas.Run, run),
-        example=example,
-    )
 
 
 def _ensure_async_traceable(

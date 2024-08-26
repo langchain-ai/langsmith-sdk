@@ -264,3 +264,84 @@ def test_deepish_copy():
         "fake_json": ClassWithFakeJson(),
     }
     assert ls_utils.deepish_copy(my_dict) == my_dict
+
+
+def test_is_version_greater_or_equal():
+    # Test versions equal to 0.5.23
+    assert ls_utils.is_version_greater_or_equal("0.5.23", "0.5.23")
+
+    # Test versions greater than 0.5.23
+    assert ls_utils.is_version_greater_or_equal("0.5.24", "0.5.23")
+    assert ls_utils.is_version_greater_or_equal("0.6.0", "0.5.23")
+    assert ls_utils.is_version_greater_or_equal("1.0.0", "0.5.23")
+
+    # Test versions less than 0.5.23
+    assert not ls_utils.is_version_greater_or_equal("0.5.22", "0.5.23")
+    assert not ls_utils.is_version_greater_or_equal("0.5.0", "0.5.23")
+    assert not ls_utils.is_version_greater_or_equal("0.4.99", "0.5.23")
+
+
+def test_parse_prompt_identifier():
+    # Valid cases
+    assert ls_utils.parse_prompt_identifier("name") == ("-", "name", "latest")
+    assert ls_utils.parse_prompt_identifier("owner/name") == ("owner", "name", "latest")
+    assert ls_utils.parse_prompt_identifier("owner/name:commit") == (
+        "owner",
+        "name",
+        "commit",
+    )
+    assert ls_utils.parse_prompt_identifier("name:commit") == ("-", "name", "commit")
+
+    # Invalid cases
+    invalid_identifiers = [
+        "",
+        "/",
+        ":",
+        "owner/",
+        "/name",
+        "owner//name",
+        "owner/name/",
+        "owner/name/extra",
+        ":commit",
+    ]
+
+    for invalid_id in invalid_identifiers:
+        try:
+            ls_utils.parse_prompt_identifier(invalid_id)
+            assert False, f"Expected ValueError for identifier: {invalid_id}"
+        except ValueError:
+            pass  # This is the expected behavior
+
+
+def test_get_api_key() -> None:
+    assert ls_utils.get_api_key("provided_api_key") == "provided_api_key"
+    assert ls_utils.get_api_key("'provided_api_key'") == "provided_api_key"
+    assert ls_utils.get_api_key('"_provided_api_key"') == "_provided_api_key"
+
+    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
+        assert ls_utils.get_api_key(None) == "env_api_key"
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_key(None) is None
+
+    assert ls_utils.get_api_key("") is None
+    assert ls_utils.get_api_key(" ") is None
+
+
+def test_get_api_url() -> None:
+    assert ls_utils.get_api_url("http://provided.url") == "http://provided.url"
+
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert ls_utils.get_api_url(None) == "http://env.url"
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_url(None) == "https://api.smith.langchain.com"
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_url(None) == "https://api.smith.langchain.com"
+
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert ls_utils.get_api_url(None) == "http://env.url"
+
+    with pytest.raises(ls_utils.LangSmithUserError):
+        ls_utils.get_api_url(" ")

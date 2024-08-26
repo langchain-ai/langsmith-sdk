@@ -99,6 +99,12 @@ class Example(ExampleBase):
         return None
 
 
+class ExampleSearch(ExampleBase):
+    """Example returned via search."""
+
+    id: UUID
+
+
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
 
@@ -135,13 +141,6 @@ class DatasetBase(BaseModel):
         frozen = True
 
 
-class DatasetCreate(DatasetBase):
-    """Dataset create model."""
-
-    id: Optional[UUID] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
 class Dataset(DatasetBase):
     """Dataset ORM model."""
 
@@ -151,6 +150,8 @@ class Dataset(DatasetBase):
     example_count: Optional[int] = None
     session_count: Optional[int] = None
     last_session_start_time: Optional[datetime] = None
+    inputs_schema: Optional[Dict[str, Any]] = None
+    outputs_schema: Optional[Dict[str, Any]] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
     _public_path: Optional[str] = PrivateAttr(default=None)
@@ -163,6 +164,12 @@ class Dataset(DatasetBase):
         **kwargs: Any,
     ) -> None:
         """Initialize a Dataset object."""
+        if "inputs_schema_definition" in kwargs:
+            kwargs["inputs_schema"] = kwargs.pop("inputs_schema_definition")
+
+        if "outputs_schema_definition" in kwargs:
+            kwargs["outputs_schema"] = kwargs.pop("outputs_schema_definition")
+
         super().__init__(**kwargs)
         self._host_url = _host_url
         self._tenant_id = _tenant_id
@@ -667,6 +674,18 @@ class LangSmithInfo(BaseModel):
 Example.update_forward_refs()
 
 
+class LangSmithSettings(BaseModel):
+    """Settings for the LangSmith tenant."""
+
+    id: str
+    """The ID of the tenant."""
+    display_name: str
+    """The display name of the tenant."""
+    created_at: datetime
+    """The creation time of the tenant."""
+    tenant_handle: Optional[str] = None
+
+
 class FeedbackIngestToken(BaseModel):
     """Represents the schema for a feedback ingest token.
 
@@ -744,3 +763,97 @@ class ComparativeExperiment(BaseModel):
         if self.extra is None or "metadata" not in self.extra:
             return {}
         return self.extra["metadata"]
+
+
+class PromptCommit(BaseModel):
+    """Represents a Prompt with a manifest.
+
+    Attributes:
+        owner (str): The handle of the owner of the prompt.
+        repo (str): The name of the prompt.
+        commit_hash (str): The commit hash of the prompt.
+        manifest (Dict[str, Any]): The manifest of the prompt.
+        examples (List[dict]): The list of examples.
+    """
+
+    owner: str
+    """The handle of the owner of the prompt."""
+    repo: str
+    """The name of the prompt."""
+    commit_hash: str
+    """The commit hash of the prompt."""
+    manifest: Dict[str, Any]
+    """The manifest of the prompt."""
+    examples: List[dict]
+    """The list of examples."""
+
+
+class Prompt(BaseModel):
+    """Represents a Prompt with metadata."""
+
+    repo_handle: str
+    """The name of the prompt."""
+    description: Optional[str] = None
+    """The description of the prompt."""
+    readme: Optional[str] = None
+    """The README of the prompt."""
+    id: str
+    """The ID of the prompt."""
+    tenant_id: str
+    """The tenant ID of the prompt owner."""
+    created_at: datetime
+    """The creation time of the prompt."""
+    updated_at: datetime
+    """The last update time of the prompt."""
+    is_public: bool
+    """Whether the prompt is public."""
+    is_archived: bool
+    """Whether the prompt is archived."""
+    tags: List[str]
+    """The tags associated with the prompt."""
+    original_repo_id: Optional[str] = None
+    """The ID of the original prompt, if forked."""
+    upstream_repo_id: Optional[str] = None
+    """The ID of the upstream prompt, if forked."""
+    owner: Optional[str]
+    """The handle of the owner of the prompt."""
+    full_name: str
+    """The full name of the prompt. (owner + repo_handle)"""
+    num_likes: int
+    """The number of likes."""
+    num_downloads: int
+    """The number of downloads."""
+    num_views: int
+    """The number of views."""
+    liked_by_auth_user: bool
+    """Whether the prompt is liked by the authenticated user."""
+    last_commit_hash: Optional[str] = None
+    """The hash of the last commit."""
+    num_commits: int
+    """The number of commits."""
+    original_repo_full_name: Optional[str] = None
+    """The full name of the original prompt, if forked."""
+    upstream_repo_full_name: Optional[str] = None
+    """The full name of the upstream prompt, if forked."""
+
+
+class ListPromptsResponse(BaseModel):
+    """A list of prompts with metadata."""
+
+    repos: List[Prompt]
+    """The list of prompts."""
+    total: int
+    """The total number of prompts."""
+
+
+class PromptSortField(str, Enum):
+    """Enum for sorting fields for prompts."""
+
+    num_downloads = "num_downloads"
+    """Number of downloads."""
+    num_views = "num_views"
+    """Number of views."""
+    updated_at = "updated_at"
+    """Last updated time."""
+    num_likes = "num_likes"
+    """Number of likes."""

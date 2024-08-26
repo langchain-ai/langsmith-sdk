@@ -9,7 +9,7 @@ from langsmith.schemas import Example, Run
 
 def test_evaluate():
     client = Client()
-    client.clone_public_dataset(
+    _ = client.clone_public_dataset(
         "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
     )
     dataset_name = "Evaluate Examples"
@@ -41,7 +41,6 @@ def test_evaluate():
         },
         num_repetitions=3,
     )
-    results.wait()
     assert len(results) == 30
     examples = client.list_examples(dataset_name=dataset_name)
     for example in examples:
@@ -50,7 +49,7 @@ def test_evaluate():
 
 async def test_aevaluate():
     client = Client()
-    client.clone_public_dataset(
+    _ = client.clone_public_dataset(
         "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
     )
     dataset_name = "Evaluate Examples"

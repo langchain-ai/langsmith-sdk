@@ -32,6 +32,7 @@ from typing import (
     cast,
 )
 
+import httpx
 import requests
 from typing_extensions import ParamSpec
 from urllib3.util import Retry
@@ -73,11 +74,11 @@ class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
-def tracing_is_enabled() -> bool:
+def tracing_is_enabled(ctx: Optional[dict] = None) -> bool:
     """Return True if tracing is enabled."""
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
-    tc = get_tracing_context()
+    tc = ctx or get_tracing_context()
     # You can manually override the environment using context vars.
     # Check that first.
     # Doing this before checking the run tree lets us
@@ -123,12 +124,17 @@ def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
     return decorator
 
 
-def raise_for_status_with_text(response: requests.Response) -> None:
+def raise_for_status_with_text(
+    response: Union[requests.Response, httpx.Response],
+) -> None:
     """Raise an error with the response text."""
     try:
         response.raise_for_status()
     except requests.HTTPError as e:
         raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
+
+    except httpx.HTTPError as e:
+        raise httpx.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
 
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
@@ -571,6 +577,50 @@ def deepish_copy(val: T) -> T:
         return _middle_copy(val, memo)
 
 
+def is_version_greater_or_equal(current_version: str, target_version: str) -> bool:
+    """Check if the current version is greater or equal to the target version."""
+    from packaging import version
+
+    current = version.parse(current_version)
+    target = version.parse(target_version)
+    return current >= target
+
+
+def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
+    """Parse a string in the format of owner/name:hash, name:hash, owner/name, or name.
+
+    Args:
+        identifier (str): The prompt identifier to parse.
+
+    Returns:
+        Tuple[str, str, str]: A tuple containing (owner, name, hash).
+
+    Raises:
+        ValueError: If the identifier doesn't match the expected formats.
+    """
+    if (
+        not identifier
+        or identifier.count("/") > 1
+        or identifier.startswith("/")
+        or identifier.endswith("/")
+    ):
+        raise ValueError(f"Invalid identifier format: {identifier}")
+
+    parts = identifier.split(":", 1)
+    owner_name = parts[0]
+    commit = parts[1] if len(parts) > 1 else "latest"
+
+    if "/" in owner_name:
+        owner, name = owner_name.split("/", 1)
+        if not owner or not name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return owner, name, commit
+    else:
+        if not owner_name:
+            raise ValueError(f"Invalid identifier format: {identifier}")
+        return "-", owner_name, commit
+
+
 P = ParamSpec("P")
 
 
@@ -643,3 +693,25 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
             timeout=timeout,
             chunksize=chunksize,
         )
+
+
+def get_api_url(api_url: Optional[str]) -> str:
+    """Get the LangSmith API URL from the environment or the given value."""
+    _api_url = api_url or cast(
+        str,
+        get_env_var(
+            "ENDPOINT",
+            default="https://api.smith.langchain.com",
+        ),
+    )
+    if not _api_url.strip():
+        raise LangSmithUserError("LangSmith API URL cannot be empty")
+    return _api_url.strip().strip('"').strip("'").rstrip("/")
+
+
+def get_api_key(api_key: Optional[str]) -> Optional[str]:
+    """Get the API key from the environment or the given value."""
+    api_key_ = api_key if api_key is not None else get_env_var("API_KEY", default=None)
+    if api_key_ is None or not api_key_.strip():
+        return None
+    return api_key_.strip().strip('"').strip("'")
