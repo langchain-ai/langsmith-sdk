@@ -97,12 +97,12 @@
   },
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
-    "@types/uuid": "^9.0.1",
+    "@types/uuid": "^10.0.0",
     "commander": "^10.0.1",
     "p-queue": "^6.6.2",
     "p-retry": "4",
     "semver": "^7.6.3",
-    "uuid": "^9.0.0"
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@ai-sdk/openai": "^0.0.40",
