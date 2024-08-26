@@ -625,6 +625,7 @@ def traceable(
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
             results: List[Any] = []
+            function_return: Any = None
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
@@ -653,8 +654,13 @@ def traceable(
                             yield item
                         except GeneratorExit:
                             break
-                except StopIteration:
-                    pass
+                except StopIteration as e:
+                    function_return = e.value
+                    if function_return is not None:
+                        # In 99% of cases, people yield OR return; to keep
+                        # backwards compatibility, we'll only return if there's
+                        # return value is non-null.
+                        results.append(function_return)
 
             except BaseException as e:
                 _on_run_end(run_container, error=e)
@@ -671,6 +677,7 @@ def traceable(
             else:
                 function_result = None
             _on_run_end(run_container, outputs=function_result)
+            return function_return
 
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper
