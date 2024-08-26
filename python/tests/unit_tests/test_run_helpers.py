@@ -7,7 +7,14 @@ import sys
 import time
 import uuid
 import warnings
-from typing import Any, AsyncGenerator, Generator, Optional, Set, cast
+from typing import (
+    Any,
+    AsyncGenerator,
+    Generator,
+    Optional,
+    Set,
+    cast,
+)
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1464,3 +1471,18 @@ async def test_process_inputs_outputs():
         ]
         assert result == [42]
     _check_client(mock_client)
+
+
+def test_traceable_stop_iteration():
+    def my_generator():
+        yield from range(5)
+        return ("last", "vals")
+
+    def consume(gen):
+        last_vals = yield from gen()
+        assert last_vals == ("last", "vals")
+
+    assert list(consume(my_generator)) == list(range(5))
+
+    wrapped = traceable(my_generator)
+    assert list(consume(wrapped)) == list(range(5))
