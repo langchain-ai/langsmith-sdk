@@ -30,7 +30,6 @@ from typing import (
     cast,
 )
 
-from requests import HTTPError
 from typing_extensions import TypedDict
 
 import langsmith
@@ -131,7 +130,7 @@ def evaluate(
         >>> from langsmith.evaluation import evaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
-        >>> client.clone_public_dataset(
+        >>> dataset = client.clone_public_dataset(
         ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
         ... )
         >>> dataset_name = "Evaluate Examples"
@@ -199,6 +198,7 @@ def evaluate(
         Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
         >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> from langchain_openai import ChatOpenAI
         >>> def prepare_criteria_data(run: Run, example: Example):
         ...     return {
         ...         "prediction": run.outputs["output"],
@@ -218,6 +218,7 @@ def evaluate(
         ...                     "usefulness": "The prediction is useful if it is correct"
         ...                     " and/or asks a useful followup question."
         ...                 },
+        ...                 "llm": ChatOpenAI(model="gpt-4o"),
         ...             },
         ...             prepare_data=prepare_criteria_data,
         ...         ),
@@ -479,7 +480,7 @@ def evaluate_comparative(
         >>> from langsmith.evaluation import evaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
-        >>> client.clone_public_dataset(
+        >>> dataset = client.clone_public_dataset(
         ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
         ... )
         >>> dataset_name = "Evaluate Examples"
@@ -689,7 +690,9 @@ def evaluate_comparative(
         return result
 
     tqdm = _load_tqdm()
-    with cf.ThreadPoolExecutor(max_workers=max_concurrency or 1) as executor:
+    with ls_utils.ContextThreadPoolExecutor(
+        max_workers=max_concurrency or 1
+    ) as executor:
         futures = []
         for example_id, runs_list in tqdm(runs_dict.items()):
             results[example_id] = {
@@ -954,24 +957,33 @@ class _ExperimentManagerMixin:
             }
         return project_metadata
 
+    def _create_experiment(
+        self, dataset_id: uuid.UUID, metadata: dict
+    ) -> schemas.TracerSession:
+        # There is a chance of name collision, so we'll retry
+        starting_name = self._experiment_name
+        num_attempts = 10
+        for _ in range(num_attempts):
+            try:
+                return self.client.create_project(
+                    self._experiment_name,
+                    description=self._description,
+                    reference_dataset_id=dataset_id,
+                    metadata=metadata,
+                )
+            except ls_utils.LangSmithConflictError:
+                self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
+        raise ValueError(
+            f"Could not find a unique experiment name in {num_attempts} attempts."
+            " Please try again with a different experiment name."
+        )
+
     def _get_project(self, first_example: schemas.Example) -> schemas.TracerSession:
         if self._experiment is None:
-            try:
-                project_metadata = self._get_experiment_metadata()
-                project = self.client.create_project(
-                    self.experiment_name,
-                    description=self._description,
-                    reference_dataset_id=first_example.dataset_id,
-                    metadata=project_metadata,
-                )
-            except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
-                if "already exists " not in str(e):
-                    raise e
-                raise ValueError(
-                    # TODO: Better error
-                    f"Experiment {self.experiment_name} already exists."
-                    " Please use a different name."
-                )
+            project_metadata = self._get_experiment_metadata()
+            project = self._create_experiment(
+                first_example.dataset_id, project_metadata
+            )
         else:
             project = self._experiment
         return project
@@ -1072,7 +1084,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     @property
     def evaluation_results(self) -> Iterable[EvaluationResults]:
         if self._evaluation_results is None:
-            return [{"results": []} for _ in self.examples]
+            return ({"results": []} for _ in self.examples)
         return self._evaluation_results
 
     @property
@@ -1207,7 +1219,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 )
 
         else:
-            with cf.ThreadPoolExecutor(max_concurrency) as executor:
+            with ls_utils.ContextThreadPoolExecutor(max_concurrency) as executor:
                 futures = [
                     executor.submit(
                         _forward,
@@ -1239,7 +1251,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
             },
         }
         with rh.tracing_context(
-            **{**current_context, "project_name": "evaluators", "metadata": metadata}
+            **{
+                **current_context,
+                "project_name": "evaluators",
+                "metadata": metadata,
+                "enabled": True,
+                "client": self.client,
+            }
         ):
             run = current_results["run"]
             example = current_results["example"]
@@ -1280,10 +1298,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
         (e.g. from a previous prediction step)
         """
         if max_concurrency == 0:
+            context = copy_context()
             for current_results in self.get_results():
-                yield self._run_evaluators(evaluators, current_results)
+                yield context.run(self._run_evaluators, evaluators, current_results)
         else:
-            with cf.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+            with ls_utils.ContextThreadPoolExecutor(
+                max_workers=max_concurrency
+            ) as executor:
                 futures = []
                 for current_results in self.get_results():
                     futures.append(
@@ -1305,7 +1326,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs.append(run)
             examples.append(example)
         aggregate_feedback = []
-        with cf.ThreadPoolExecutor() as executor:
+        with ls_utils.ContextThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id
             current_context = rh.get_tracing_context()
             metadata = {
@@ -1320,6 +1341,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     **current_context,
                     "project_name": "evaluators",
                     "metadata": metadata,
+                    "client": self.client,
+                    "enabled": True,
                 }
             ):
                 for evaluator in summary_evaluators:
@@ -1447,30 +1470,31 @@ def _forward(
         nonlocal run
         run = r
 
-    try:
-        fn(
-            example.inputs,
-            langsmith_extra=rh.LangSmithExtra(
-                reference_example_id=example.id,
-                on_end=_get_run,
-                project_name=experiment_name,
-                metadata={
-                    **metadata,
-                    "example_version": (
-                        example.modified_at.isoformat()
-                        if example.modified_at
-                        else example.created_at.isoformat()
-                    ),
-                },
-                client=client,
-            ),
+    with rh.tracing_context(enabled=True):
+        try:
+            fn(
+                example.inputs,
+                langsmith_extra=rh.LangSmithExtra(
+                    reference_example_id=example.id,
+                    on_end=_get_run,
+                    project_name=experiment_name,
+                    metadata={
+                        **metadata,
+                        "example_version": (
+                            example.modified_at.isoformat()
+                            if example.modified_at
+                            else example.created_at.isoformat()
+                        ),
+                    },
+                    client=client,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error running target function: {e}")
+        return _ForwardResults(
+            run=cast(schemas.Run, run),
+            example=example,
         )
-    except Exception as e:
-        logger.error(f"Error running target function: {e}")
-    return _ForwardResults(
-        run=cast(schemas.Run, run),
-        example=example,
-    )
 
 
 def _resolve_data(

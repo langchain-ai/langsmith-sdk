@@ -6,6 +6,10 @@ import {
   getLangChainEnvVars,
   getLangChainEnvVarsMetadata,
 } from "../utils/env.js";
+import {
+  isVersionGreaterOrEqual,
+  parsePromptIdentifier,
+} from "../utils/prompts.js";
 
 describe("Client", () => {
   describe("createLLMExample", () => {
@@ -115,6 +119,15 @@ describe("Client", () => {
       expect(result).toBe("https://dev.smith.langchain.com");
     });
 
+    it("should return 'https://eu.smith.langchain.com' if apiUrl contains 'eu'", () => {
+      const client = new Client({
+        apiUrl: "https://eu.smith.langchain.com/api",
+        apiKey: "test-api-key",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://eu.smith.langchain.com");
+    });
+
     it("should return 'https://smith.langchain.com' for any other apiUrl", () => {
       const client = new Client({
         apiUrl: "https://smith.langchain.com/api",
@@ -163,6 +176,64 @@ describe("Client", () => {
       expect(langchainMetadataEnvVars).toEqual({
         revision_id: "test_revision_id",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
+      });
+    });
+  });
+
+  describe("isVersionGreaterOrEqual", () => {
+    it("should return true if the version is greater or equal", () => {
+      // Test versions equal to 0.5.23
+      expect(isVersionGreaterOrEqual("0.5.23", "0.5.23")).toBe(true);
+
+      // Test versions greater than 0.5.23
+      expect(isVersionGreaterOrEqual("0.5.24", "0.5.23"));
+      expect(isVersionGreaterOrEqual("0.6.0", "0.5.23"));
+      expect(isVersionGreaterOrEqual("1.0.0", "0.5.23"));
+
+      // Test versions less than 0.5.23
+      expect(isVersionGreaterOrEqual("0.5.22", "0.5.23")).toBe(false);
+      expect(isVersionGreaterOrEqual("0.5.0", "0.5.23")).toBe(false);
+      expect(isVersionGreaterOrEqual("0.4.99", "0.5.23")).toBe(false);
+    });
+  });
+
+  describe("parsePromptIdentifier", () => {
+    it("should parse valid identifiers correctly", () => {
+      expect(parsePromptIdentifier("name")).toEqual(["-", "name", "latest"]);
+      expect(parsePromptIdentifier("owner/name")).toEqual([
+        "owner",
+        "name",
+        "latest",
+      ]);
+      expect(parsePromptIdentifier("owner/name:commit")).toEqual([
+        "owner",
+        "name",
+        "commit",
+      ]);
+      expect(parsePromptIdentifier("name:commit")).toEqual([
+        "-",
+        "name",
+        "commit",
+      ]);
+    });
+
+    it("should throw an error for invalid identifiers", () => {
+      const invalidIdentifiers = [
+        "",
+        "/",
+        ":",
+        "owner/",
+        "/name",
+        "owner//name",
+        "owner/name/",
+        "owner/name/extra",
+        ":commit",
+      ];
+
+      invalidIdentifiers.forEach((identifier) => {
+        expect(() => parsePromptIdentifier(identifier)).toThrowError(
+          `Invalid identifier format: ${identifier}`
+        );
       });
     });
   });

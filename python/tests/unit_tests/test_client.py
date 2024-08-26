@@ -28,13 +28,11 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
-from langsmith import run_trees
+from langsmith import EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith.client import (
     Client,
     _dumps_json,
-    _get_api_key,
-    _get_api_url,
     _is_langchain_hosted,
     _is_localhost,
     _serialize_json,
@@ -258,40 +256,6 @@ def test_async_methods() -> None:
             f"Extra args for {async_method} "
             f"(compared to {sync_method}): {extra_args}"
         )
-
-
-def test_get_api_key() -> None:
-    assert _get_api_key("provided_api_key") == "provided_api_key"
-    assert _get_api_key("'provided_api_key'") == "provided_api_key"
-    assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
-
-    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
-        assert _get_api_key(None) == "env_api_key"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_key(None) is None
-
-    assert _get_api_key("") is None
-    assert _get_api_key(" ") is None
-
-
-def test_get_api_url() -> None:
-    assert _get_api_url("http://provided.url") == "http://provided.url"
-
-    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None) == "http://env.url"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_url(None) == "https://api.smith.langchain.com"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_url(None) == "https://api.smith.langchain.com"
-
-    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None) == "http://env.url"
-
-    with pytest.raises(ls_utils.LangSmithUserError):
-        _get_api_url(" ")
 
 
 def test_create_run_unicode() -> None:
@@ -898,6 +862,9 @@ def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="http://localhost:8000", api_key="API_KEY")
     assert client._host_url == "http://localhost"
 
+    client = Client(api_url="https://eu.api.smith.langchain.com", api_key="API_KEY")
+    assert client._host_url == "https://eu.smith.langchain.com"
+
     client = Client(api_url="https://dev.api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://dev.smith.langchain.com"
 
@@ -1074,3 +1041,42 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
 
     # Check that no duplicate run_ids are present in the request bodies
     assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
+
+
+def test_select_eval_results():
+    expected = EvaluationResult(
+        key="foo",
+        value="bar",
+        score=7899082,
+        metadata={"a": "b"},
+        comment="hi",
+        feedback_config={"c": "d"},
+    )
+    client = Client(api_key="test")
+    for count, input_ in [
+        (1, expected),
+        (1, expected.dict()),
+        (1, {"results": [expected]}),
+        (1, {"results": [expected.dict()]}),
+        (2, {"results": [expected.dict(), expected.dict()]}),
+        (2, {"results": [expected, expected]}),
+    ]:
+        op = client._select_eval_results(input_)
+        assert len(op) == count
+        assert op == [expected] * count
+
+    expected2 = EvaluationResult(
+        key="foo",
+        metadata={"a": "b"},
+        comment="this is a comment",
+        feedback_config={"c": "d"},
+    )
+
+    as_reasoning = {
+        "reasoning": expected2.comment,
+        **expected2.dict(exclude={"comment"}),
+    }
+    for input_ in [as_reasoning, {"results": [as_reasoning]}, {"results": [expected2]}]:
+        assert client._select_eval_results(input_) == [
+            expected2,
+        ]

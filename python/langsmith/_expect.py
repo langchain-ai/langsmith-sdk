@@ -46,7 +46,6 @@ Example usage:
 from __future__ import annotations
 
 import atexit
-import concurrent.futures
 import inspect
 from typing import (
     TYPE_CHECKING,
@@ -91,15 +90,13 @@ class _Matcher:
         client: Optional[ls_client.Client],
         key: str,
         value: Any,
-        _executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
+        _executor: Optional[ls_utils.ContextThreadPoolExecutor] = None,
         run_id: Optional[str] = None,
     ):
         self._client = client
         self.key = key
         self.value = value
-        self._executor = _executor or concurrent.futures.ThreadPoolExecutor(
-            max_workers=3
-        )
+        self._executor = _executor or ls_utils.ContextThreadPoolExecutor(max_workers=3)
         rt = rh.get_current_run_tree()
         self._run_id = rt.trace_id if rt else run_id
 
@@ -255,7 +252,7 @@ class _Expect:
 
     def __init__(self, *, client: Optional[ls_client.Client] = None):
         self._client = client
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        self.executor = ls_utils.ContextThreadPoolExecutor(max_workers=3)
         atexit.register(self.executor.shutdown, wait=True)
 
     def embedding_distance(

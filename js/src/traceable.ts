@@ -279,6 +279,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+    __finalTracedIteratorKey?: string;
 
     /**
      * Extract invocation parameters from the arguments of the traced function.
@@ -294,7 +295,12 @@ export function traceable<Func extends (...args: any[]) => any>(
   }
 ) {
   type Inputs = Parameters<Func>;
-  const { aggregator, argsConfigPath, ...runTreeConfig } = config ?? {};
+  const {
+    aggregator,
+    argsConfigPath,
+    __finalTracedIteratorKey,
+    ...runTreeConfig
+  } = config ?? {};
 
   const traceableFunc = (
     ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -434,14 +440,54 @@ export function traceable<Func extends (...args: any[]) => any>(
         return chunks;
       }
 
-      async function* wrapAsyncGeneratorForTracing(
-        iterable: AsyncIterable<unknown>,
+      function tapReadableStreamForTracing(
+        stream: ReadableStream<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        const reader = stream.getReader();
+        let finished = false;
+        const chunks: unknown[] = [];
+
+        const tappedStream = new ReadableStream({
+          async start(controller) {
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+              const result = await (snapshot
+                ? snapshot(() => reader.read())
+                : reader.read());
+              if (result.done) {
+                finished = true;
+                await currentRunTree?.end(
+                  handleRunOutputs(await handleChunks(chunks))
+                );
+                await handleEnd();
+                controller.close();
+                break;
+              }
+              chunks.push(result.value);
+              controller.enqueue(result.value);
+            }
+          },
+          async cancel(reason) {
+            if (!finished) await currentRunTree?.end(undefined, "Cancelled");
+            await currentRunTree?.end(
+              handleRunOutputs(await handleChunks(chunks))
+            );
+            await handleEnd();
+            return reader.cancel(reason);
+          },
+        });
+
+        return tappedStream;
+      }
+
+      async function* wrapAsyncIteratorForTracing(
+        iterator: AsyncIterator<unknown, unknown, undefined>,
         snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
       ) {
         let finished = false;
         const chunks: unknown[] = [];
         try {
-          const iterator = iterable[Symbol.asyncIterator]();
           while (true) {
             const { value, done } = await (snapshot
               ? snapshot(() => iterator.next())
@@ -463,6 +509,19 @@ export function traceable<Func extends (...args: any[]) => any>(
           );
           await handleEnd();
         }
+      }
+
+      function wrapAsyncGeneratorForTracing(
+        iterable: AsyncIterable<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        if (isReadableStream(iterable)) {
+          return tapReadableStreamForTracing(iterable, snapshot);
+        }
+        const iterator = iterable[Symbol.asyncIterator]();
+        const wrappedIterator = wrapAsyncIteratorForTracing(iterator, snapshot);
+        iterable[Symbol.asyncIterator] = () => wrappedIterator;
+        return iterable;
       }
 
       async function handleEnd() {
@@ -504,6 +563,25 @@ export function traceable<Func extends (...args: any[]) => any>(
         return wrapAsyncGeneratorForTracing(returnValue, snapshot);
       }
 
+      if (
+        !Array.isArray(returnValue) &&
+        typeof returnValue === "object" &&
+        returnValue != null &&
+        __finalTracedIteratorKey !== undefined &&
+        isAsyncIterable(
+          (returnValue as Record<string, any>)[__finalTracedIteratorKey]
+        )
+      ) {
+        const snapshot = AsyncLocalStorage.snapshot();
+        return {
+          ...returnValue,
+          [__finalTracedIteratorKey]: wrapAsyncGeneratorForTracing(
+            (returnValue as Record<string, any>)[__finalTracedIteratorKey],
+            snapshot
+          ),
+        };
+      }
+
       const tracedPromise = new Promise<unknown>((resolve, reject) => {
         Promise.resolve(returnValue)
           .then(
@@ -513,6 +591,27 @@ export function traceable<Func extends (...args: any[]) => any>(
                 return resolve(
                   wrapAsyncGeneratorForTracing(rawOutput, snapshot)
                 );
+              }
+
+              if (
+                !Array.isArray(rawOutput) &&
+                typeof rawOutput === "object" &&
+                rawOutput != null &&
+                __finalTracedIteratorKey !== undefined &&
+                isAsyncIterable(
+                  (rawOutput as Record<string, any>)[__finalTracedIteratorKey]
+                )
+              ) {
+                const snapshot = AsyncLocalStorage.snapshot();
+                return {
+                  ...rawOutput,
+                  [__finalTracedIteratorKey]: wrapAsyncGeneratorForTracing(
+                    (rawOutput as Record<string, any>)[
+                      __finalTracedIteratorKey
+                    ],
+                    snapshot
+                  ),
+                };
               }
 
               if (isGenerator(wrappedFunc) && isIteratorLike(rawOutput)) {
