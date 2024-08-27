@@ -52,8 +52,10 @@ class AsyncClient:
             "Content-Type": "application/json",
         }
         api_key = ls_utils.get_api_key(api_key)
+        api_url = ls_utils.get_api_url(api_url)
         if api_key:
             _headers[ls_client.X_API_KEY] = api_key
+        ls_client._validate_api_key_if_hosted(api_url, api_key)
 
         if isinstance(timeout_ms, int):
             timeout_: Union[Tuple, float] = (timeout_ms / 1000, None, None, None)
@@ -62,7 +64,7 @@ class AsyncClient:
         else:
             timeout_ = 10
         self._client = httpx.AsyncClient(
-            base_url=ls_utils.get_api_url(api_url), headers=_headers, timeout=timeout_
+            base_url=api_url, headers=_headers, timeout=timeout_
         )
 
     async def __aenter__(self) -> "AsyncClient":
