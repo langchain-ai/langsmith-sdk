@@ -673,11 +673,12 @@ export class _ExperimentManager {
             this.client._selectEvalResults(summaryEvalResult);
           aggregateFeedback.push(...flattenedResults);
           for (const result of flattenedResults) {
-            const { targetRunId, ...feedback } = result;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { targetRunId, key, ...feedback } = result;
             const evaluatorInfo = feedback.evaluatorInfo;
             delete feedback.evaluatorInfo;
 
-            await this.client.createFeedback(null, "key", {
+            await this.client.createFeedback(null, key, {
               ...feedback,
               projectId: projectId,
               sourceInfo: evaluatorInfo,
