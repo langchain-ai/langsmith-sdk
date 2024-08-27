@@ -74,6 +74,17 @@ class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
+## Warning classes
+
+
+class LangSmithWarning(UserWarning):
+    """Base class for warnings."""
+
+
+class LangSmithMissingAPIKeyWarning(LangSmithWarning):
+    """Warning for missing API key."""
+
+
 def tracing_is_enabled(ctx: Optional[dict] = None) -> bool:
     """Return True if tracing is enabled."""
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context

@@ -10,11 +10,12 @@ import sys
 import threading
 import time
 import uuid
+import warnings
 import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -28,7 +29,7 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
-from langsmith import EvaluationResult, run_trees
+from langsmith import AsyncClient, EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith.client import (
     Client,
@@ -52,16 +53,6 @@ def test__is_langchain_hosted() -> None:
     assert _is_langchain_hosted("https://api.smith.langchain.com")
     assert _is_langchain_hosted("https://beta.api.smith.langchain.com")
     assert _is_langchain_hosted("https://dev.api.smith.langchain.com")
-
-
-def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    with pytest.raises(ls_utils.LangSmithUserError, match="API key must be provided"):
-        Client(api_url="https://api.smith.langchain.com")
-    client = Client(api_url="http://localhost:1984")
-    assert client.api_url == "http://localhost:1984"
-    assert client.api_key is None
 
 
 def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1080,3 +1071,17 @@ def test_select_eval_results():
         assert client._select_eval_results(input_) == [
             expected2,
         ]
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+def test_validate_api_key_if_hosted(
+    monkeypatch: pytest.MonkeyPatch, client_cls: Union[Type[Client], Type[AsyncClient]]
+) -> None:
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    with pytest.warns(ls_utils.LangSmithMissingAPIKeyWarning):
+        client_cls(api_url="https://api.smith.langchain.com")
+    with warnings.catch_warnings():
+        # Check no warning is raised here.
+        warnings.simplefilter("error")
+        client_cls(api_url="http://localhost:1984")
