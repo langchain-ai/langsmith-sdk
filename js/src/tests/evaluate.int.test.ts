@@ -266,7 +266,7 @@ test("evaluate can evaluate with summary evaluators", async () => {
     const runIds = runs.map(({ id }) => id).join(", ");
     const exampleIds = examples?.map(({ id }) => id).join(", ");
     return Promise.resolve({
-      key: "key",
+      key: "MyCustomScore",
       score: 1,
       comment: `Runs: ${runIds} Examples: ${exampleIds}`,
     });
@@ -279,7 +279,7 @@ test("evaluate can evaluate with summary evaluators", async () => {
   });
 
   expect(evalRes.summaryResults.results).toHaveLength(1);
-  expect(evalRes.summaryResults.results[0].key).toBe("key");
+  expect(evalRes.summaryResults.results[0].key).toBe("MyCustomScore");
   expect(evalRes.summaryResults.results[0].score).toBe(1);
   const allRuns = evalRes.results.map(({ run }) => run);
   const allExamples = evalRes.results.map(({ example }) => example);
