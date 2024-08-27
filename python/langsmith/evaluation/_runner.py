@@ -39,6 +39,7 @@ from langsmith import run_trees, schemas
 from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import (
     ComparisonEvaluationResult,
+    DynamicComparisonRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
@@ -529,7 +530,10 @@ def evaluate_comparative(
             Finally, you would compare the two prompts directly:
         >>> import json
         >>> from langsmith.evaluation import evaluate_comparative
-        >>> def score_preferences(runs: list, example):
+        >>> def score_preferences(runs: list, example: schemas.Example):
+        ...     assert len(runs) == 2  # Comparing 2 systems
+        ...     assert isinstance(example, schemas.Example)
+        ...     assert all(run.reference_example_id == example.id for run in runs)
         ...     pred_a = runs[0].outputs["output"]
         ...     pred_b = runs[1].outputs["output"]
         ...     ground_truth = example.outputs["answer"]
@@ -586,12 +590,40 @@ def evaluate_comparative(
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 0, runs[1].id: 1},
         ...         }
+        >>> def score_length_difference(runs: list, example: schemas.Example):
+        ...     # Just return whichever response is longer.
+        ...     # Just an example, not actually useful in real life.
+        ...     assert len(runs) == 2  # Comparing 2 systems
+        ...     assert isinstance(example, schemas.Example)
+        ...     assert all(run.reference_example_id == example.id for run in runs)
+        ...     pred_a = runs[0].outputs["output"]
+        ...     pred_b = runs[1].outputs["output"]
+        ...     if len(pred_a) > len(pred_b):
+        ...         return {
+        ...             "key": "length_difference",
+        ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...         }
+        ...     else:
+        ...         return {
+        ...             "key": "length_difference",
+        ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...         }
         >>> results = evaluate_comparative(
         ...     [results_1.experiment_name, results_2.experiment_name],
-        ...     evaluators=[score_preferences],
+        ...     evaluators=[score_preferences, score_length_difference],
         ...     client=client,
         ... )  # doctest: +ELLIPSIS
         View the pairwise evaluation results at:...
+        >>> eval_results = list(results)
+        >>> assert len(eval_results) >= 10
+        >>> assert all(
+        ...     "feedback.ranked_preference" in r["evaluation_results"]
+        ...     for r in eval_results
+        ... )
+        >>> assert all(
+        ...     "feedback.length_difference" in r["evaluation_results"]
+        ...     for r in eval_results
+        ... )
     """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
@@ -669,14 +701,18 @@ def evaluate_comparative(
     results: dict = {}
 
     def evaluate_and_submit_feedback(
-        runs_list: list[schemas.Run], example: schemas.Example, executor: cf.Executor
+        runs_list: list[schemas.Run],
+        example: schemas.Example,
+        comparator: DynamicComparisonRunEvaluator,
+        executor: cf.Executor,
     ) -> ComparisonEvaluationResult:
         feedback_group_id = uuid.uuid4()
         if randomize_order:
             random.shuffle(runs_list)
-        result = comparator.compare_runs(runs_list, example)
-        if client is None:
-            raise ValueError("Client is required to submit feedback.")
+        with rh.tracing_context(project_name="evaluators", client=client):
+            result = comparator.compare_runs(runs_list, example)
+            if client is None:
+                raise ValueError("Client is required to submit feedback.")
         for run_id, score in result.scores.items():
             executor.submit(
                 client.create_feedback,
@@ -704,12 +740,13 @@ def evaluate_comparative(
                         evaluate_and_submit_feedback,
                         runs_list,
                         data[example_id],
+                        comparator,
                         executor,
                     )
                     futures.append(future)
                 else:
                     result = evaluate_and_submit_feedback(
-                        runs_list, data[example_id], executor
+                        runs_list, data[example_id], comparator, executor
                     )
                     results[example_id][f"feedback.{result.key}"] = result
             if futures:
@@ -718,7 +755,7 @@ def evaluate_comparative(
                     result = future.result()
                     results[example_id][f"feedback.{result.key}"] = result
 
-    return ComparativeExperimentResults(results)
+    return ComparativeExperimentResults(results, data)
 
 
 class ComparativeExperimentResults:
@@ -736,12 +773,21 @@ class ComparativeExperimentResults:
     def __init__(
         self,
         results: dict,
+        examples: Optional[Dict[uuid.UUID, schemas.Example]] = None,
     ):
         self._results = results
+        self._examples = examples
 
     def __getitem__(self, key):
         """Return the result associated with the given key."""
         return self._results[key]
+
+    def __iter__(self):
+        for key, value in self._results.items():
+            yield {
+                "example": self._examples[key] if self._examples else None,
+                "evaluation_results": value,
+            }
 
 
 ## Private API
