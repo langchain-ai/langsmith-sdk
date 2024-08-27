@@ -1305,15 +1305,23 @@ class _ExperimentManager(_ExperimentManagerMixin):
             with ls_utils.ContextThreadPoolExecutor(
                 max_workers=max_concurrency
             ) as executor:
-                futures = []
+                futures = set()
                 for current_results in self.get_results():
-                    futures.append(
+                    futures.add(
                         executor.submit(
                             self._run_evaluators,
                             evaluators,
                             current_results,
                         )
                     )
+                    try:
+                        # Since prediction may be slow, yield (with a timeout) to
+                        # allow for early results to be emitted.
+                        for future in cf.as_completed(futures, timeout=0.001):
+                            yield future.result()
+                            futures.remove(future)
+                    except TimeoutError:
+                        pass
                 for future in cf.as_completed(futures):
                     result = future.result()
                     yield result

@@ -591,7 +591,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 )
 
         async for result in aitertools.aiter_with_concurrency(
-            max_concurrency, predict_all()
+            max_concurrency, predict_all(), __eager_consumption_timeout=0.001
         ):
             yield result
 
@@ -608,7 +608,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 yield self._arun_evaluators(evaluators, current_results)
 
         async for result in aitertools.aiter_with_concurrency(
-            max_concurrency, score_all()
+            max_concurrency, score_all(), __eager_consumption_timeout=0.001
         ):
             yield result
 
@@ -772,6 +772,10 @@ class AsyncExperimentResults:
         return self
 
     async def __anext__(self) -> ExperimentResultRow:
+        async def _wait_until_index(index: int) -> None:
+            while self._processed_count < index:
+                await asyncio.sleep(0.05)
+
         while True:
             async with self._lock:
                 if self._processed_count < len(self._results):
@@ -780,8 +784,9 @@ class AsyncExperimentResults:
                     return result
                 elif self._task.done():
                     raise StopAsyncIteration
+
             await asyncio.shield(
-                asyncio.wait([self._task], return_when=asyncio.FIRST_COMPLETED)
+                asyncio.wait_for(_wait_until_index(len(self._results)), timeout=None)
             )
 
     async def _process_data(self, manager: _AsyncExperimentManager) -> None:
