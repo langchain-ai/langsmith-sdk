@@ -256,14 +256,14 @@ def aiter_with_concurrency(
     n: Optional[int],
     generator: AsyncIterator[Coroutine[None, None, T]],
     *,
-    __eager_consumption_timeout: float = 0,
+    _eager_consumption_timeout: float = 0,
 ) -> AsyncGenerator[T, None]:
     """Process async generator with max parallelism.
 
     Args:
         n: The number of tasks to run concurrently.
         generator: The async generator to process.
-        __eager_consumption_timeout: If set, check for completed tasks after
+        _eager_consumption_timeout: If set, check for completed tasks after
             each iteration and yield their results. This can be used to
             consume the generator eagerly while still respecting the concurrency
             limit.
@@ -278,7 +278,9 @@ def aiter_with_concurrency(
                 yield await item
 
         return consume()
-    semaphore: AsyncContextManager = asyncio.Semaphore(n) if n is not None else NoLock()
+    semaphore = cast(
+        asyncio.Semaphore, asyncio.Semaphore(n) if n is not None else NoLock()
+    )
 
     async def process_item(ix: int, item):
         async with semaphore:
@@ -297,11 +299,11 @@ def aiter_with_concurrency(
                 task = asyncio.create_task(process_item(ix, item))
             tasks[ix] = task
             ix += 1
-            if __eager_consumption_timeout > 0:
+            if _eager_consumption_timeout > 0:
                 try:
                     for _fut in asyncio.as_completed(
                         tasks.values(),
-                        timeout=__eager_consumption_timeout,
+                        timeout=_eager_consumption_timeout,
                     ):
                         task_idx, res = await _fut
                         yield res

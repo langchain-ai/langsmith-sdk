@@ -1320,7 +1320,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         for future in cf.as_completed(futures, timeout=0.001):
                             yield future.result()
                             futures.remove(future)
-                    except TimeoutError:
+                    except (cf.TimeoutError, TimeoutError):
                         pass
                 for future in cf.as_completed(futures):
                     result = future.result()

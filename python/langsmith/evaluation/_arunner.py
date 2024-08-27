@@ -591,7 +591,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 )
 
         async for result in aitertools.aiter_with_concurrency(
-            max_concurrency, predict_all(), __eager_consumption_timeout=0.001
+            max_concurrency, predict_all(), _eager_consumption_timeout=0.001
         ):
             yield result
 
@@ -608,7 +608,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 yield self._arun_evaluators(evaluators, current_results)
 
         async for result in aitertools.aiter_with_concurrency(
-            max_concurrency, score_all(), __eager_consumption_timeout=0.001
+            max_concurrency, score_all(), _eager_consumption_timeout=0.001
         ):
             yield result
 

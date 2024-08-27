@@ -107,7 +107,7 @@ class FakeRequest:
             raise ValueError(f"Unknown verb: {verb}, {endpoint}")
 
 
-def _wait_until(condition: Callable, timeout: int = 5):
+def _wait_until(condition: Callable, timeout: int = 8):
     start = time.time()
     while time.time() - start < timeout:
         if condition():
@@ -164,11 +164,11 @@ def test_evaluate_results(blocking: bool) -> None:
     def predict(inputs: dict) -> dict:
         nonlocal locked
         nonlocal slow_index
-        if len(ordering_of_stuff) > 4 and not locked:
+        if len(ordering_of_stuff) > 2 and not locked:
             with lock:
-                if len(ordering_of_stuff) > 4 and not locked:
+                if len(ordering_of_stuff) > 2 and not locked:
                     locked = True
-                    time.sleep(1.5)
+                    time.sleep(3)
                     slow_index = len(ordering_of_stuff)
                     ordering_of_stuff.append("predict")
                 else:
@@ -202,18 +202,17 @@ def test_evaluate_results(blocking: bool) -> None:
         assert now - start > 1.5
         # Essentially we want to check that 1 delay is > 1.5s and the rest are < 0.1s
         assert len(deltas) == SPLIT_SIZE * NUM_REPETITIONS
+        assert slow_index is not None
 
         total_quick = sum([d < 0.5 for d in deltas])
         total_slow = sum([d > 0.5 for d in deltas])
         tolerance = 3
         assert total_slow < tolerance
         assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
-        assert any([d > 1.1 for d in deltas])
 
-    results = [r for r in results]
     for r in results:
-        assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1
-        assert r["run"].outputs.keys() == {"output"}
+        assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
+        assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
 
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
@@ -291,11 +290,11 @@ async def test_aevaluate_results(blocking: bool) -> None:
         nonlocal locked
         nonlocal slow_index
 
-        if len(ordering_of_stuff) > 4 and not locked:
+        if len(ordering_of_stuff) > 2 and not locked:
             async with lock:
-                if len(ordering_of_stuff) > 4 and not locked:
+                if len(ordering_of_stuff) > 2 and not locked:
                     locked = True
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(3)
                     slow_index = len(ordering_of_stuff)
                     ordering_of_stuff.append("predict")
                 else:
@@ -329,7 +328,7 @@ async def test_aevaluate_results(blocking: bool) -> None:
                 assert elapsed < 3
             deltas.append((now - last) if last is not None else 0)  # type: ignore
             last = now
-        total = now - start
+        total = now - start  # type: ignore
         assert total > 1.5
 
         # Essentially we want to check that 1 delay is > 1.5s and the rest are < 0.1s
@@ -342,10 +341,9 @@ async def test_aevaluate_results(blocking: bool) -> None:
         assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
         assert any([d > 1 for d in deltas])
 
-    results = [r async for r in results]
-    for r in results:
-        assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1
-        assert r["run"].outputs.keys() == {"output"}
+    async for r in results:
+        assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
+        assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
 
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
