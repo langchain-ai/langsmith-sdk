@@ -107,7 +107,7 @@ class FakeRequest:
             raise ValueError(f"Unknown verb: {verb}, {endpoint}")
 
 
-def _wait_until(condition: Callable, timeout: int = 5):
+def _wait_until(condition: Callable, timeout: int = 8):
     start = time.time()
     while time.time() - start < timeout:
         if condition():
@@ -117,7 +117,8 @@ def _wait_until(condition: Callable, timeout: int = 5):
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
-def test_evaluate_results() -> None:
+@pytest.mark.parametrize("blocking", [False, True])
+def test_evaluate_results(blocking: bool) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
@@ -163,12 +164,11 @@ def test_evaluate_results() -> None:
     def predict(inputs: dict) -> dict:
         nonlocal locked
         nonlocal slow_index
-
-        if len(ordering_of_stuff) == 3 and not locked:
+        if len(ordering_of_stuff) > 2 and not locked:
             with lock:
-                if len(ordering_of_stuff) == 3 and not locked:
+                if len(ordering_of_stuff) > 2 and not locked:
                     locked = True
-                    time.sleep(1)
+                    time.sleep(3)
                     slow_index = len(ordering_of_stuff)
                     ordering_of_stuff.append("predict")
                 else:
@@ -182,13 +182,38 @@ def test_evaluate_results() -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": 0.3}
 
-    evaluate(
+    results = evaluate(
         predict,
         client=client,
         data=dev_split,
         evaluators=[score_value_first],
         num_repetitions=NUM_REPETITIONS,
+        blocking=blocking,
     )
+    if not blocking:
+        deltas = []
+        last = None
+        start = time.time()
+        now = start
+        for _ in results:
+            now = time.time()
+            deltas.append((now - last) if last is not None else 0)  # type: ignore
+            last = now
+        assert now - start > 1.5
+        # Essentially we want to check that 1 delay is > 1.5s and the rest are < 0.1s
+        assert len(deltas) == SPLIT_SIZE * NUM_REPETITIONS
+        assert slow_index is not None
+
+        total_quick = sum([d < 0.5 for d in deltas])
+        total_slow = sum([d > 0.5 for d in deltas])
+        tolerance = 3
+        assert total_slow < tolerance
+        assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
+
+    for r in results:
+        assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
+        assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
+
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
@@ -217,7 +242,8 @@ def test_evaluate_results() -> None:
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
-async def test_aevaluate_results() -> None:
+@pytest.mark.parametrize("blocking", [False, True])
+async def test_aevaluate_results(blocking: bool) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
@@ -257,18 +283,18 @@ async def test_aevaluate_results() -> None:
     ordering_of_stuff: List[str] = []
     locked = False
 
-    lock = Lock()
+    lock = asyncio.Lock()
     slow_index = None
 
     async def predict(inputs: dict) -> dict:
         nonlocal locked
         nonlocal slow_index
 
-        if len(ordering_of_stuff) == 3 and not locked:
-            with lock:
-                if len(ordering_of_stuff) == 3 and not locked:
+        if len(ordering_of_stuff) > 2 and not locked:
+            async with lock:
+                if len(ordering_of_stuff) > 2 and not locked:
                     locked = True
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(3)
                     slow_index = len(ordering_of_stuff)
                     ordering_of_stuff.append("predict")
                 else:
@@ -282,13 +308,43 @@ async def test_aevaluate_results() -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": 0.3}
 
-    await aevaluate(
+    results = await aevaluate(
         predict,
         client=client,
         data=dev_split,
         evaluators=[score_value_first],
         num_repetitions=NUM_REPETITIONS,
+        blocking=blocking,
     )
+    if not blocking:
+        deltas = []
+        last = None
+        start = time.time()
+        now = None
+        async for _ in results:
+            now = time.time()
+            if last is None:
+                elapsed = now - start
+                assert elapsed < 3
+            deltas.append((now - last) if last is not None else 0)  # type: ignore
+            last = now
+        total = now - start  # type: ignore
+        assert total > 1.5
+
+        # Essentially we want to check that 1 delay is > 1.5s and the rest are < 0.1s
+        assert len(deltas) == SPLIT_SIZE * NUM_REPETITIONS
+
+        total_quick = sum([d < 0.5 for d in deltas])
+        total_slow = sum([d > 0.5 for d in deltas])
+        tolerance = 3
+        assert total_slow < tolerance
+        assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
+        assert any([d > 1 for d in deltas])
+
+    async for r in results:
+        assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
+        assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
+
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
