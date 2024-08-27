@@ -253,13 +253,20 @@ def ensure_async_iterator(
 
 
 def aiter_with_concurrency(
-    n: Optional[int], generator: AsyncIterator[Coroutine[None, None, T]]
+    n: Optional[int],
+    generator: AsyncIterator[Coroutine[None, None, T]],
+    *,
+    _eager_consumption_timeout: float = 0,
 ) -> AsyncGenerator[T, None]:
     """Process async generator with max parallelism.
 
     Args:
         n: The number of tasks to run concurrently.
         generator: The async generator to process.
+        _eager_consumption_timeout: If set, check for completed tasks after
+            each iteration and yield their results. This can be used to
+            consume the generator eagerly while still respecting the concurrency
+            limit.
 
     Yields:
         The processed items yielded by the async generator.
@@ -271,32 +278,50 @@ def aiter_with_concurrency(
                 yield await item
 
         return consume()
-    semaphore = asyncio.Semaphore(n) if n is not None else NoLock()
+    semaphore = cast(
+        asyncio.Semaphore, asyncio.Semaphore(n) if n is not None else NoLock()
+    )
 
-    async def process_item(item):
+    async def process_item(ix: int, item):
         async with semaphore:
-            return await item
+            res = await item
+            return (ix, res)
 
     async def process_generator():
-        tasks = []
+        tasks = {}
         accepts_context = asyncio_accepts_context()
+        ix = 0
         async for item in generator:
             if accepts_context:
                 context = contextvars.copy_context()
-                task = asyncio.create_task(process_item(item), context=context)
+                task = asyncio.create_task(process_item(ix, item), context=context)
             else:
-                task = asyncio.create_task(process_item(item))
-            tasks.append(task)
+                task = asyncio.create_task(process_item(ix, item))
+            tasks[ix] = task
+            ix += 1
+            if _eager_consumption_timeout > 0:
+                try:
+                    for _fut in asyncio.as_completed(
+                        tasks.values(),
+                        timeout=_eager_consumption_timeout,
+                    ):
+                        task_idx, res = await _fut
+                        yield res
+                        del tasks[task_idx]
+                except asyncio.TimeoutError:
+                    pass
             if n is not None and len(tasks) >= n:
-                done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
+                done, _ = await asyncio.wait(
+                    tasks.values(), return_when=asyncio.FIRST_COMPLETED
                 )
-                tasks = list(pending)
                 for task in done:
-                    yield task.result()
+                    task_idx, res = task.result()
+                    yield res
+                    del tasks[task_idx]
 
-        for task in asyncio.as_completed(tasks):
-            yield await task
+        for task in asyncio.as_completed(tasks.values()):
+            _, res = await task
+            yield res
 
     return process_generator()
 
