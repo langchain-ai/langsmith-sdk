@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import queue
 import concurrent.futures as cf
 import datetime
 import functools
@@ -375,11 +376,11 @@ class ExperimentResults:
         experiment_manager: _ExperimentManager,
     ):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
-        self._lock = threading.RLock()
-        self._thread = threading.Thread(
-            target=lambda: self._process_data(self._manager)
-        )
+        self._results = []
+        self._queue = queue.Queue()
+        self._lock = threading.Lock()
+        self._processing_complete = threading.Event()
+        self._thread = threading.Thread(target=self._process_data)
         self._thread.start()
 
     @property
@@ -387,27 +388,34 @@ class ExperimentResults:
         return self._manager.experiment_name
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
-        processed_count = 0
         while True:
-            with self._lock:
-                if processed_count < len(self._results):
-                    yield self._results[processed_count]
-                    processed_count += 1
-                elif not self._thread.is_alive():
+            try:
+                item = self._queue.get(block=True, timeout=0.1)
+                if item is None:  # Sentinel value to indicate completion
+                    break
+                yield item
+            except queue.Empty:
+                if self._processing_complete.is_set():
                     break
 
-    def _process_data(self, manager: _ExperimentManager) -> None:
+    def _process_data(self) -> None:
         tqdm = _load_tqdm()
-        results = manager.get_results()
+        results = self._manager.get_results()
         for item in tqdm(results):
+            self._queue.put(item)
             with self._lock:
                 self._results.append(item)
-        summary_scores = manager.get_summary_scores()
+        
+        summary_scores = self._manager.get_summary_scores()
         with self._lock:
             self._summary_results = summary_scores
+        
+        self._queue.put(None)  # Sentinel value to indicate completion
+        self._processing_complete.set()
 
     def __len__(self) -> int:
-        return len(self._results)
+        with self._lock:
+            return len(self._results)
 
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
