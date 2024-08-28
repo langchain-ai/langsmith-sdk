@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import collections
-import queue
 import concurrent.futures as cf
 import datetime
 import functools
 import itertools
 import logging
 import pathlib
+import queue
 import random
 import threading
 import uuid
@@ -405,11 +405,11 @@ class ExperimentResults:
             self._queue.put(item)
             with self._lock:
                 self._results.append(item)
-        
+
         summary_scores = self._manager.get_summary_scores()
         with self._lock:
             self._summary_results = summary_scores
-        
+
         self._queue.put(None)  # Sentinel value to indicate completion
         self._processing_complete.set()
 
