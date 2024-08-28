@@ -376,9 +376,9 @@ class ExperimentResults:
         experiment_manager: _ExperimentManager,
     ):
         self._manager = experiment_manager
-        self._results = []
+        self._results: List[ExperimentResultRow]= []
         self._queue = queue.Queue()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._processing_complete = threading.Event()
         self._thread = threading.Thread(target=self._process_data)
         self._thread.start()
