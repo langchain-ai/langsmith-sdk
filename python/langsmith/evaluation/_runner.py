@@ -388,15 +388,12 @@ class ExperimentResults:
         return self._manager.experiment_name
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
-        while True:
+        while not self._processing_complete.is_set() or not self._queue.empty():
             try:
                 item = self._queue.get(block=True, timeout=0.1)
-                if item is None:  # Sentinel value to indicate completion
-                    break
                 yield item
             except queue.Empty:
-                if self._processing_complete.is_set():
-                    break
+                continue
 
     def _process_data(self) -> None:
         tqdm = _load_tqdm()
@@ -410,7 +407,6 @@ class ExperimentResults:
         with self._lock:
             self._summary_results = summary_scores
 
-        self._queue.put(None)  # Sentinel value to indicate completion
         self._processing_complete.set()
 
     def __len__(self) -> int:
