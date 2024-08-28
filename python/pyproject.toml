@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.83"
+version = "0.1.106"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -32,6 +32,7 @@ pydantic = [
 ]
 requests = "^2"
 orjson = "^3.9.14"
+httpx = ">=0.23.0,<1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -101,3 +102,4 @@ disallow_untyped_defs = "True"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [ "slow: long-running tests",]

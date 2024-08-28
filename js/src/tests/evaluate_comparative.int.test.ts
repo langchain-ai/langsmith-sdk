@@ -2,8 +2,9 @@ import { evaluate } from "../evaluation/_runner.js";
 import { evaluateComparative } from "../evaluation/evaluate_comparative.js";
 import { Client } from "../index.js";
 import { waitUntilRunFound } from "./utils.js";
+import { v4 as uuidv4 } from "uuid";
 
-const TESTING_DATASET_NAME = "test_evaluate_comparative_js";
+const TESTING_DATASET_NAME = `test_evaluate_comparative_js_${uuidv4()}`;
 
 beforeAll(async () => {
   const client = new Client();

@@ -15,6 +15,7 @@ import {
   RunEvaluator,
   runEvaluator,
 } from "./evaluator.js";
+import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,7 +141,7 @@ interface ExperimentResultRow {
  * Supports lazily running predictions and evaluations in parallel to facilitate
  * result streaming and early debugging.
  */
-class _ExperimentManager {
+export class _ExperimentManager {
   _data?: DataT;
 
   _runs?: AsyncGenerator<Run>;
@@ -312,17 +313,41 @@ class _ExperimentManager {
     return projectMetadata;
   }
 
+  async _createProject(firstExample: Example, projectMetadata: KVMap) {
+    // Create the project, updating the experimentName until we find a unique one.
+    let project: TracerSession;
+    const originalExperimentName = this._experimentName;
+    for (let i = 0; i < 10; i++) {
+      try {
+        project = await this.client.createProject({
+          projectName: this._experimentName,
+          referenceDatasetId: firstExample.dataset_id,
+          metadata: projectMetadata,
+          description: this._description,
+        });
+        return project;
+      } catch (e) {
+        // Naming collision
+        if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
+          const ent = uuidv4().slice(0, 6);
+          this._experimentName = `${originalExperimentName}-${ent}`;
+        } else {
+          throw e;
+        }
+      }
+    }
+    throw new Error(
+      "Could not generate a unique experiment name within 10 attempts." +
+        " Please try again with a different name."
+    );
+  }
+
   async _getProject(firstExample: Example): Promise<TracerSession> {
     let project: TracerSession;
     if (!this._experiment) {
       try {
         const projectMetadata = await this._getExperimentMetadata();
-        project = await this.client.createProject({
-          projectName: this.experimentName,
-          referenceDatasetId: firstExample.dataset_id,
-          metadata: projectMetadata,
-          description: this._description,
-        });
+        project = await this._createProject(firstExample, projectMetadata);
         this._experiment = project;
       } catch (e) {
         if (String(e).includes("already exists")) {
@@ -648,11 +673,12 @@ class _ExperimentManager {
             this.client._selectEvalResults(summaryEvalResult);
           aggregateFeedback.push(...flattenedResults);
           for (const result of flattenedResults) {
-            const { targetRunId, ...feedback } = result;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { targetRunId, key, ...feedback } = result;
             const evaluatorInfo = feedback.evaluatorInfo;
             delete feedback.evaluatorInfo;
 
-            await this.client.createFeedback(null, "key", {
+            await this.client.createFeedback(null, key, {
               ...feedback,
               projectId: projectId,
               sourceInfo: evaluatorInfo,
@@ -882,7 +908,7 @@ async function _forward(
   if (!run) {
     throw new Error(`Run not created by target function.
 This is most likely due to tracing not being enabled.\n
-Try setting "LANGCHAIN_TRACING_V2=true" in your environment.`);
+Try setting "LANGSMITH_TRACING=true" in your environment.`);
   }
 
   return {

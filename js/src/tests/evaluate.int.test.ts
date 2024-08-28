@@ -7,8 +7,9 @@ import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
-
-const TESTING_DATASET_NAME = "test_dataset_js_evaluate_123";
+import { v4 as uuidv4 } from "uuid";
+const TESTING_DATASET_NAME = `test_dataset_js_evaluate_${uuidv4()}`;
+const TESTING_DATASET_NAME2 = `my_splits_ds_${uuidv4()}`;
 
 beforeAll(async () => {
   const client = new Client();
@@ -46,7 +47,6 @@ afterAll(async () => {
 
 test("evaluate can evaluate", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -84,7 +84,6 @@ test("evaluate can evaluate", async () => {
 
 test("evaluate can repeat", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -184,7 +183,6 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
 
 test("evaluate can evaluate with custom evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -256,7 +254,6 @@ test("evaluate can evaluate with custom evaluators", async () => {
 
 test("evaluate can evaluate with summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -269,7 +266,7 @@ test("evaluate can evaluate with summary evaluators", async () => {
     const runIds = runs.map(({ id }) => id).join(", ");
     const exampleIds = examples?.map(({ id }) => id).join(", ");
     return Promise.resolve({
-      key: "key",
+      key: "MyCustomScore",
       score: 1,
       comment: `Runs: ${runIds} Examples: ${exampleIds}`,
     });
@@ -282,7 +279,7 @@ test("evaluate can evaluate with summary evaluators", async () => {
   });
 
   expect(evalRes.summaryResults.results).toHaveLength(1);
-  expect(evalRes.summaryResults.results[0].key).toBe("key");
+  expect(evalRes.summaryResults.results[0].key).toBe("MyCustomScore");
   expect(evalRes.summaryResults.results[0].score).toBe(1);
   const allRuns = evalRes.results.map(({ run }) => run);
   const allExamples = evalRes.results.map(({ example }) => example);
@@ -314,7 +311,6 @@ test("evaluate can evaluate with summary evaluators", async () => {
 
 test.skip("can iterate over evaluate results", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -343,7 +339,6 @@ test.skip("can iterate over evaluate results", async () => {
 
 test("can pass multiple evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -391,7 +386,7 @@ test("can pass multiple evaluators", async () => {
 test("split info saved correctly", async () => {
   const client = new Client();
   // create a new dataset
-  await client.createDataset("my_splits_ds2", {
+  await client.createDataset(TESTING_DATASET_NAME2, {
     description:
       "For testing purposed. Is created & deleted for each test run.",
   });
@@ -400,21 +395,22 @@ test("split info saved correctly", async () => {
     inputs: [{ input: 1 }, { input: 2 }, { input: 3 }],
     outputs: [{ output: 2 }, { output: 3 }, { output: 4 }],
     splits: [["test"], ["train"], ["validation", "test"]],
-    datasetName: "my_splits_ds2",
+    datasetName: TESTING_DATASET_NAME2,
   });
 
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
   };
   await evaluate(targetFunc, {
-    data: client.listExamples({ datasetName: "my_splits_ds2" }),
+    data: client.listExamples({ datasetName: TESTING_DATASET_NAME2 }),
     description: "splits info saved correctly",
   });
 
-  const exp = client.listProjects({ referenceDatasetName: "my_splits_ds2" });
+  const exp = client.listProjects({
+    referenceDatasetName: TESTING_DATASET_NAME2,
+  });
   let myExp: TracerSession | null = null;
   for await (const session of exp) {
     myExp = session;
@@ -425,13 +421,15 @@ test("split info saved correctly", async () => {
 
   await evaluate(targetFunc, {
     data: client.listExamples({
-      datasetName: "my_splits_ds2",
+      datasetName: TESTING_DATASET_NAME2,
       splits: ["test"],
     }),
     description: "splits info saved correctly",
   });
 
-  const exp2 = client.listProjects({ referenceDatasetName: "my_splits_ds2" });
+  const exp2 = client.listProjects({
+    referenceDatasetName: TESTING_DATASET_NAME2,
+  });
   let myExp2: TracerSession | null = null;
   for await (const session of exp2) {
     if (myExp2 === null || session.start_time > myExp2.start_time) {
@@ -445,13 +443,15 @@ test("split info saved correctly", async () => {
 
   await evaluate(targetFunc, {
     data: client.listExamples({
-      datasetName: "my_splits_ds2",
+      datasetName: TESTING_DATASET_NAME2,
       splits: ["train"],
     }),
     description: "splits info saved correctly",
   });
 
-  const exp3 = client.listProjects({ referenceDatasetName: "my_splits_ds2" });
+  const exp3 = client.listProjects({
+    referenceDatasetName: TESTING_DATASET_NAME2,
+  });
   let myExp3: TracerSession | null = null;
   for await (const session of exp3) {
     if (myExp3 === null || session.start_time > myExp3.start_time) {
@@ -466,7 +466,6 @@ test("split info saved correctly", async () => {
 
 test("can pass multiple summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -517,7 +516,6 @@ test("can pass AsyncIterable of Example's to evaluator instead of dataset name",
   });
 
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -551,7 +549,6 @@ test("can pass AsyncIterable of Example's to evaluator instead of dataset name",
 
 test("max concurrency works with custom evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -587,7 +584,6 @@ test("max concurrency works with custom evaluators", async () => {
 
 test("max concurrency works with summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };
@@ -704,7 +700,6 @@ test("evaluate can accept array of examples", async () => {
   }
 
   const targetFunc = (input: Record<string, any>) => {
-    console.log("__input__", input);
     return {
       foo: input.input + 1,
     };

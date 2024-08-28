@@ -3,7 +3,7 @@ import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from typing import AsyncGenerator, Generator, Optional
+from typing import AsyncGenerator, Generator, Optional, Sequence
 
 import pytest  # type: ignore
 
@@ -117,7 +117,6 @@ async def test_list_runs_multi_project(langchain_client: Client):
     filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
 
     poll_runs_until_count(langchain_client, project_names[0], 1, filter_=filter_)
-    poll_runs_until_count(langchain_client, project_names[1], 1, filter_=filter_)
     runs = list(
         langchain_client.list_runs(
             project_name=project_names,
@@ -132,8 +131,6 @@ async def test_list_runs_multi_project(langchain_client: Client):
 async def test_nested_async_runs(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
     executor = ThreadPoolExecutor(max_workers=1)
 
     @traceable(run_type="chain")
@@ -156,10 +153,15 @@ async def test_nested_async_runs(langchain_client: Client):
     async def my_chain_run(text: str):
         return await my_run(text)
 
-    await my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
+    meta = uuid.uuid4().hex
+    await my_chain_run(
+        "foo",
+        langsmith_extra=dict(project_name=project_name, metadata={"test_run": meta}),
+    )
     executor.shutdown(wait=True)
-    poll_runs_until_count(langchain_client, project_name, 4)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
+    poll_runs_until_count(langchain_client, project_name, 4, filter_=_filter)
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     assert len(runs) == 4
     runs_dict = {run.name: run for run in runs}
     assert runs_dict["my_chain_run"].parent_run_id is None
@@ -175,14 +177,11 @@ async def test_nested_async_runs(langchain_client: Client):
         "text": "foo",
         "my_arg": 20,
     }
-    langchain_client.delete_project(project_name=project_name)
 
 
 async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs_with_threadpol"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="llm")
     async def async_llm(text: str):
@@ -204,7 +203,12 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         thread_pool = ThreadPoolExecutor(max_workers=1)
         for i in range(3):
             thread_pool.submit(
-                my_tool_run, f"Child Tool {i}", langsmith_extra={"run_tree": run_tree}
+                my_tool_run,
+                f"Child Tool {i}",
+                langsmith_extra={
+                    "run_tree": run_tree,
+                    "metadata": getattr(run_tree, "metadata", {}),
+                },
             )
         thread_pool.shutdown(wait=True)
         return llm_run_result
@@ -216,16 +220,27 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
         thread_pool = ThreadPoolExecutor(max_workers=3)
         for i in range(2):
             thread_pool.submit(
-                my_run, f"Child {i}", langsmith_extra=dict(run_tree=run_tree)
+                my_run,
+                f"Child {i}",
+                langsmith_extra=dict(run_tree=run_tree, metadata=run_tree.metadata),
             )
         thread_pool.shutdown(wait=True)
         return text
 
-    await my_chain_run("foo", langsmith_extra=dict(project_name=project_name))
+    meta = uuid.uuid4().hex
+    await my_chain_run(
+        "foo",
+        langsmith_extra=dict(project_name=project_name, metadata={"test_run": meta}),
+    )
     executor.shutdown(wait=True)
-    poll_runs_until_count(langchain_client, project_name, 17)
-    runs = list(langchain_client.list_runs(project_name=project_name))
-    trace_runs = list(langchain_client.list_runs(trace_id=runs[0].trace_id))
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
+    poll_runs_until_count(langchain_client, project_name, 17, filter_=filter_)
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
+    trace_runs = list(
+        langchain_client.list_runs(
+            trace_id=runs[0].trace_id, project_name=project_name, filter=filter_
+        )
+    )
     assert len(trace_runs) == 17
     assert len(runs) == 17
     assert sum([run.run_type == "llm" for run in runs]) == 8
@@ -257,14 +272,15 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
 
 async def test_context_manager(langchain_client: Client) -> None:
     project_name = "__My Tracer Project - test_context_manager"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
 
     @traceable(run_type="llm")
     async def my_llm(prompt: str) -> str:
         return f"LLM {prompt}"
 
-    with trace("my_context", "chain", project_name=project_name) as run_tree:
+    meta = uuid.uuid4().hex
+    with trace(
+        "my_context", "chain", project_name=project_name, metadata={"test_run": meta}
+    ) as run_tree:
         await my_llm("foo")
         with trace("my_context2", "chain", run_tree=run_tree) as run_tree2:
             runs = [my_llm("baz"), my_llm("qux")]
@@ -273,25 +289,35 @@ async def test_context_manager(langchain_client: Client) -> None:
                 await my_llm("corge")
             await asyncio.gather(*runs)
         run_tree.end(outputs={"End val": "my_context2"})
-    poll_runs_until_count(langchain_client, project_name, 8)
-    runs_ = list(langchain_client.list_runs(project_name=project_name))
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
+    poll_runs_until_count(langchain_client, project_name, 8, filter_=_filter)
+    runs_ = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     assert len(runs_) == 8
 
 
-async def test_sync_generator(langchain_client: Client):
+def test_sync_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
+    run_meta = uuid.uuid4().hex
 
     @traceable(run_type="chain")
     def my_generator(num: int) -> Generator[str, None, None]:
         for i in range(num):
             yield f"Yielded {i}"
 
-    results = list(my_generator(5, langsmith_extra=dict(project_name=project_name)))
+    results = list(
+        my_generator(
+            5,
+            langsmith_extra=dict(
+                project_name=project_name, metadata={"test_run": run_meta}
+            ),
+        )
+    )
     assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
-    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     run = runs[0]
     assert run.run_type == "chain"
     assert run.name == "my_generator"
@@ -300,12 +326,11 @@ async def test_sync_generator(langchain_client: Client):
     }
 
 
-async def test_sync_generator_reduce_fn(langchain_client: Client):
+def test_sync_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_sync_generator_reduce_fn"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
+    run_meta = uuid.uuid4().hex
 
-    def reduce_fn(outputs: list) -> dict:
+    def reduce_fn(outputs: Sequence) -> dict:
         return {"my_output": " ".join(outputs)}
 
     @traceable(run_type="chain", reduce_fn=reduce_fn)
@@ -313,10 +338,20 @@ async def test_sync_generator_reduce_fn(langchain_client: Client):
         for i in range(num):
             yield f"Yielded {i}"
 
-    results = list(my_generator(5, langsmith_extra=dict(project_name=project_name)))
+    results = list(
+        my_generator(
+            5,
+            langsmith_extra=dict(
+                project_name=project_name, metadata={"test_run": run_meta}
+            ),
+        )
+    )
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     assert results == ["Yielded 0", "Yielded 1", "Yielded 2", "Yielded 3", "Yielded 4"]
-    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=filter_
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     run = runs[0]
     assert run.run_type == "chain"
     assert run.name == "my_generator"
@@ -329,8 +364,7 @@ async def test_sync_generator_reduce_fn(langchain_client: Client):
 
 async def test_async_generator(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
+    run_meta = uuid.uuid4().hex
 
     @traceable(run_type="chain")
     async def my_async_generator(num: int) -> AsyncGenerator[str, None]:
@@ -341,7 +375,10 @@ async def test_async_generator(langchain_client: Client):
     results = [
         item
         async for item in my_async_generator(
-            5, langsmith_extra=dict(project_name=project_name)
+            5,
+            langsmith_extra=dict(
+                project_name=project_name, metadata={"test_run": run_meta}
+            ),
         )
     ]
     assert results == [
@@ -351,8 +388,11 @@ async def test_async_generator(langchain_client: Client):
         "Async yielded 3",
         "Async yielded 4",
     ]
-    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     run = runs[0]
     assert run.run_type == "chain"
     assert run.name == "my_async_generator"
@@ -369,10 +409,9 @@ async def test_async_generator(langchain_client: Client):
 
 async def test_async_generator_reduce_fn(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_generator_reduce_fn"
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
+    run_meta = uuid.uuid4().hex
 
-    def reduce_fn(outputs: list) -> dict:
+    def reduce_fn(outputs: Sequence) -> dict:
         return {"my_output": " ".join(outputs)}
 
     @traceable(run_type="chain", reduce_fn=reduce_fn)
@@ -384,7 +423,10 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
     results = [
         item
         async for item in my_async_generator(
-            5, langsmith_extra=dict(project_name=project_name)
+            5,
+            langsmith_extra=dict(
+                project_name=project_name, metadata={"test_run": run_meta}
+            ),
         )
     ]
     assert results == [
@@ -394,11 +436,11 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
         "Async yielded 3",
         "Async yielded 4",
     ]
-
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
-        langchain_client, project_name, 1, max_retries=20, sleep_time=5
+        langchain_client, project_name, 1, max_retries=20, sleep_time=5, filter_=filter_
     )
-    runs = list(langchain_client.list_runs(project_name=project_name))
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
     run = runs[0]
     assert run.run_type == "chain"
     assert run.name == "my_async_generator"

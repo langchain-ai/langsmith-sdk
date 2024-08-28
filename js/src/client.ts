@@ -10,15 +10,24 @@ import {
   Example,
   ExampleCreate,
   ExampleUpdate,
+  ExampleUpdateWithId,
   Feedback,
   FeedbackConfig,
   FeedbackIngestToken,
   KVMap,
   LangChainBaseMessage,
+  LangSmithSettings,
+  LikePromptResponse,
+  ListCommitsResponse,
+  ListPromptsResponse,
+  Prompt,
+  PromptCommit,
+  PromptSortField,
   Run,
   RunCreate,
   RunUpdate,
   ScoreType,
+  ExampleSearch,
   TimeDelta,
   TracerSession,
   TracerSessionResult,
@@ -29,8 +38,8 @@ import {
   isLangChainMessage,
 } from "./utils/messages.js";
 import {
-  getEnvironmentVariable,
   getLangChainEnvVarsMetadata,
+  getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
 
@@ -42,8 +51,13 @@ import {
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
+import {
+  isVersionGreaterOrEqual,
+  parsePromptIdentifier,
+} from "./utils/prompts.js";
+import { raiseForStatus } from "./utils/error.js";
 
-interface ClientConfig {
+export interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
   callerOptions?: AsyncCallerParams;
@@ -274,8 +288,8 @@ async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
 }
 
 const getTracingSamplingRate = () => {
-  const samplingRateStr = getEnvironmentVariable(
-    "LANGCHAIN_TRACING_SAMPLING_RATE"
+  const samplingRateStr = getLangSmithEnvironmentVariable(
+    "TRACING_SAMPLING_RATE"
   );
   if (samplingRateStr === undefined) {
     return undefined;
@@ -283,7 +297,7 @@ const getTracingSamplingRate = () => {
   const samplingRate = parseFloat(samplingRateStr);
   if (samplingRate < 0 || samplingRate > 1) {
     throw new Error(
-      `LANGCHAIN_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
+      `LANGSMITH_TRACING_SAMPLING_RATE must be between 0 and 1 if set. Got: ${samplingRate}`
     );
   }
   return samplingRate;
@@ -296,17 +310,6 @@ const isLocalhost = (url: string): boolean => {
   return (
     hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
   );
-};
-
-const raiseForStatus = async (response: Response, operation: string) => {
-  // consume the response body to release the connection
-  // https://undici.nodejs.org/#/?id=garbage-collection
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `Failed to ${operation}: ${response.status} ${response.statusText} ${body}`
-    );
-  }
 };
 
 async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
@@ -417,6 +420,8 @@ export class Client {
 
   private fetchOptions: RequestInit;
 
+  private settings: Promise<LangSmithSettings> | null;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -449,14 +454,14 @@ export class Client {
     hideInputs?: boolean;
     hideOutputs?: boolean;
   } {
-    const apiKey = getEnvironmentVariable("LANGCHAIN_API_KEY");
+    const apiKey = getLangSmithEnvironmentVariable("API_KEY");
     const apiUrl =
-      getEnvironmentVariable("LANGCHAIN_ENDPOINT") ??
+      getLangSmithEnvironmentVariable("ENDPOINT") ??
       "https://api.smith.langchain.com";
     const hideInputs =
-      getEnvironmentVariable("LANGCHAIN_HIDE_INPUTS") === "true";
+      getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
-      getEnvironmentVariable("LANGCHAIN_HIDE_OUTPUTS") === "true";
+      getLangSmithEnvironmentVariable("HIDE_OUTPUTS") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
@@ -480,6 +485,9 @@ export class Client {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("dev")) {
       this.webUrl = "https://dev.smith.langchain.com";
+      return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
+      this.webUrl = "https://eu.smith.langchain.com";
       return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
@@ -550,11 +558,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `Failed to fetch ${path}`);
     return response;
   }
 
@@ -565,9 +569,10 @@ export class Client {
     const response = await this._getResponse(path, queryParams);
     return response.json() as T;
   }
-  private async *_getPaginated<T>(
+  private async *_getPaginated<T, TResponse = unknown>(
     path: string,
-    queryParams: URLSearchParams = new URLSearchParams()
+    queryParams: URLSearchParams = new URLSearchParams(),
+    transform?: (data: TResponse) => T[]
   ): AsyncIterable<T[]> {
     let offset = Number(queryParams.get("offset")) || 0;
     const limit = Number(queryParams.get("limit")) || 100;
@@ -582,12 +587,10 @@ export class Client {
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch ${path}: ${response.status} ${response.statusText}`
-        );
-      }
-      const items: T[] = await response.json();
+      await raiseForStatus(response, `Failed to fetch ${path}`);
+      const items: T[] = transform
+        ? transform(await response.json())
+        : await response.json();
 
       if (items.length === 0) {
         break;
@@ -724,12 +727,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      // consume the response body to release the connection
-      // https://undici.nodejs.org/#/?id=garbage-collection
-      await response.text();
-      throw new Error("Failed to retrieve server info.");
-    }
+    await raiseForStatus(response, "get server info");
     return response.json();
   }
 
@@ -740,6 +738,14 @@ export class Client {
       return false;
     }
     return true;
+  }
+
+  protected async _getSettings() {
+    if (!this.settings) {
+      this.settings = this._get("/settings");
+    }
+
+    return await this.settings;
   }
 
   public async createRun(run: CreateRunParams): Promise<void> {
@@ -777,7 +783,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    await raiseForStatus(response, "create run");
+    await raiseForStatus(response, "create run", true);
   }
 
   /**
@@ -906,7 +912,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "batch create run");
+    await raiseForStatus(response, "batch create run", true);
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
@@ -952,7 +958,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "update run");
+    await raiseForStatus(response, "update run", true);
   }
 
   public async readRun(
@@ -988,7 +994,7 @@ export class Client {
         sessionId = projectOpts?.projectId;
       } else {
         const project = await this.readProject({
-          projectName: getEnvironmentVariable("LANGCHAIN_PROJECT") || "default",
+          projectName: getLangSmithEnvironmentVariable("PROJECT") || "default",
         });
         sessionId = project.id;
       }
@@ -1225,6 +1231,94 @@ export class Client {
     }
   }
 
+  public async getRunStats({
+    id,
+    trace,
+    parentRun,
+    runType,
+    projectNames,
+    projectIds,
+    referenceExampleIds,
+    startTime,
+    endTime,
+    error,
+    query,
+    filter,
+    traceFilter,
+    treeFilter,
+    isRoot,
+    dataSourceType,
+  }: {
+    id?: string[];
+    trace?: string;
+    parentRun?: string;
+    runType?: string;
+    projectNames?: string[];
+    projectIds?: string[];
+    referenceExampleIds?: string[];
+    startTime?: string;
+    endTime?: string;
+    error?: boolean;
+    query?: string;
+    filter?: string;
+    traceFilter?: string;
+    treeFilter?: string;
+    isRoot?: boolean;
+    dataSourceType?: string;
+  }): Promise<any> {
+    let projectIds_ = projectIds || [];
+    if (projectNames) {
+      projectIds_ = [
+        ...(projectIds || []),
+        ...(await Promise.all(
+          projectNames.map((name) =>
+            this.readProject({ projectName: name }).then(
+              (project) => project.id
+            )
+          )
+        )),
+      ];
+    }
+
+    const payload = {
+      id,
+      trace,
+      parent_run: parentRun,
+      run_type: runType,
+      session: projectIds_,
+      reference_example: referenceExampleIds,
+      start_time: startTime,
+      end_time: endTime,
+      error,
+      query,
+      filter,
+      trace_filter: traceFilter,
+      tree_filter: treeFilter,
+      is_root: isRoot,
+      data_source_type: dataSourceType,
+    };
+
+    // Remove undefined values from the payload
+    const filteredPayload = Object.fromEntries(
+      Object.entries(payload).filter(([_, value]) => value !== undefined)
+    );
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/runs/stats`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify(filteredPayload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const result = await response.json();
+    return result;
+  }
+
   public async shareRun(
     runId: string,
     { shareId }: { shareId?: string } = {}
@@ -1264,7 +1358,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "unshare run");
+    await raiseForStatus(response, "unshare run", true);
   }
 
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
@@ -1391,7 +1485,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "unshare dataset");
+    await raiseForStatus(response, "unshare dataset", true);
   }
 
   public async readSharedDataset(shareToken: string): Promise<Dataset> {
@@ -1408,6 +1502,61 @@ export class Client {
     );
     const dataset = await response.json();
     return dataset as Dataset;
+  }
+
+  /**
+   * Get shared examples.
+   *
+   * @param {string} shareToken The share token to get examples for. A share token is the UUID (or LangSmith URL, including UUID) generated when explicitly marking an example as public.
+   * @param {Object} [options] Additional options for listing the examples.
+   * @param {string[] | undefined} [options.exampleIds] A list of example IDs to filter by.
+   * @returns {Promise<Example[]>} The shared examples.
+   */
+  public async listSharedExamples(
+    shareToken: string,
+    options?: { exampleIds?: string[] }
+  ): Promise<Example[]> {
+    const params: Record<string, string | string[]> = {};
+    if (options?.exampleIds) {
+      params.id = options.exampleIds;
+    }
+
+    const urlParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((v) => urlParams.append(key, v));
+      } else {
+        urlParams.append(key, value);
+      }
+    });
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      if ("detail" in result) {
+        throw new Error(
+          `Failed to list shared examples.\nStatus: ${
+            response.status
+          }\nMessage: ${result.detail.join("\n")}`
+        );
+      }
+      throw new Error(
+        `Failed to list shared examples: ${response.status} ${response.statusText}`
+      );
+    }
+    return result.map((example: any) => ({
+      ...example,
+      _hostUrl: this.getHostUrl(),
+    }));
   }
 
   public async createProject({
@@ -1446,12 +1595,8 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
+    await raiseForStatus(response, "create project");
     const result = await response.json();
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create session ${projectName}: ${response.status} ${response.statusText}`
-      );
-    }
     return result as TracerSession;
   }
 
@@ -1489,12 +1634,8 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
+    await raiseForStatus(response, "update project");
     const result = await response.json();
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update project ${projectId}: ${response.status} ${response.statusText}`
-      );
-    }
     return result as TracerSession;
   }
 
@@ -1641,6 +1782,7 @@ export class Client {
     referenceDatasetId,
     referenceDatasetName,
     referenceFree,
+    metadata,
   }: {
     projectIds?: string[];
     name?: string;
@@ -1648,6 +1790,7 @@ export class Client {
     referenceDatasetId?: string;
     referenceDatasetName?: string;
     referenceFree?: boolean;
+    metadata?: RecordStringAny;
   } = {}): AsyncIterable<TracerSession> {
     const params = new URLSearchParams();
     if (projectIds !== undefined) {
@@ -1671,6 +1814,9 @@ export class Client {
     }
     if (referenceFree !== undefined) {
       params.append("reference_free", referenceFree.toString());
+    }
+    if (metadata !== undefined) {
+      params.append("metadata", JSON.stringify(metadata));
     }
     for await (const projects of this._getPaginated<TracerSession>(
       "/sessions",
@@ -1710,7 +1856,8 @@ export class Client {
     );
     await raiseForStatus(
       response,
-      `delete session ${projectId_} (${projectName})`
+      `delete session ${projectId_} (${projectName})`,
+      true
     );
   }
 
@@ -1750,16 +1897,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-
-    if (!response.ok) {
-      const result = await response.json();
-      if (result.detail && result.detail.includes("already exists")) {
-        throw new Error(`Dataset ${fileName} already exists`);
-      }
-      throw new Error(
-        `Failed to upload CSV: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "upload CSV");
 
     const result = await response.json();
     return result as Dataset;
@@ -1770,14 +1908,30 @@ export class Client {
     {
       description,
       dataType,
-    }: { description?: string; dataType?: DataType } = {}
+      inputsSchema,
+      outputsSchema,
+      metadata,
+    }: {
+      description?: string;
+      dataType?: DataType;
+      inputsSchema?: KVMap;
+      outputsSchema?: KVMap;
+      metadata?: RecordStringAny;
+    } = {}
   ): Promise<Dataset> {
     const body: KVMap = {
       name,
       description,
+      extra: metadata ? { metadata } : undefined,
     };
     if (dataType) {
       body.data_type = dataType;
+    }
+    if (inputsSchema) {
+      body.inputs_schema_definition = inputsSchema;
+    }
+    if (outputsSchema) {
+      body.outputs_schema_definition = outputsSchema;
     }
     const response = await this.caller.call(fetch, `${this.apiUrl}/datasets`, {
       method: "POST",
@@ -1786,17 +1940,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-
-    if (!response.ok) {
-      const result = await response.json();
-      if (result.detail && result.detail.includes("already exists")) {
-        throw new Error(`Dataset ${name} already exists`);
-      }
-      throw new Error(
-        `Failed to create dataset ${response.status} ${response.statusText}`
-      );
-    }
-
+    await raiseForStatus(response, "create dataset");
     const result = await response.json();
     return result as Dataset;
   }
@@ -1924,12 +2068,14 @@ export class Client {
     datasetIds,
     datasetName,
     datasetNameContains,
+    metadata,
   }: {
     limit?: number;
     offset?: number;
     datasetIds?: string[];
     datasetName?: string;
     datasetNameContains?: string;
+    metadata?: RecordStringAny;
   } = {}): AsyncIterable<Dataset> {
     const path = "/datasets";
     const params = new URLSearchParams({
@@ -1946,6 +2092,9 @@ export class Client {
     }
     if (datasetNameContains !== undefined) {
       params.append("name_contains", datasetNameContains);
+    }
+    if (metadata !== undefined) {
+      params.append("metadata", JSON.stringify(metadata));
     }
     for await (const datasets of this._getPaginated<Dataset>(path, params)) {
       yield* datasets;
@@ -1983,11 +2132,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update dataset ${_datasetId}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "update dataset");
     return (await response.json()) as Dataset;
   }
 
@@ -2018,12 +2163,97 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `delete ${path}`);
+
     await response.json();
+  }
+
+  public async indexDataset({
+    datasetId,
+    datasetName,
+    tag,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    tag?: string;
+  }): Promise<void> {
+    let datasetId_ = datasetId;
+    if (!datasetId_ && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    } else if (datasetId_ && datasetName) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (!datasetId_) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    }
+    assertUuid(datasetId_);
+
+    const data = {
+      tag: tag,
+    };
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId_}/index`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "index dataset");
+    await response.json();
+  }
+
+  /**
+   * Lets you run a similarity search query on a dataset.
+   *
+   * Requires the dataset to be indexed. Please see the `indexDataset` method to set up indexing.
+   *
+   * @param inputs      The input on which to run the similarity search. Must have the
+   *                    same schema as the dataset.
+   *
+   * @param datasetId   The dataset to search for similar examples.
+   *
+   * @param limit       The maximum number of examples to return. Will return the top `limit` most
+   *                    similar examples in order of most similar to least similar. If no similar
+   *                    examples are found, random examples will be returned.
+   *
+   * @returns           A list of similar examples.
+   *
+   *
+   * @example
+   * dataset_id = "123e4567-e89b-12d3-a456-426614174000"
+   * inputs = {"text": "How many people live in Berlin?"}
+   * limit = 5
+   * examples = await client.similarExamples(inputs, dataset_id, limit)
+   */
+  public async similarExamples(
+    inputs: KVMap,
+    datasetId: string,
+    limit: number
+  ): Promise<ExampleSearch[]> {
+    const data = {
+      limit: limit,
+      inputs: inputs,
+    };
+
+    assertUuid(datasetId);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId}/search`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "fetch similar examples");
+    const result = await response.json();
+    return result["examples"] as ExampleSearch[];
   }
 
   public async createExample(
@@ -2067,12 +2297,7 @@ export class Client {
       ...this.fetchOptions,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create example: ${response.status} ${response.statusText}`
-      );
-    }
-
+    await raiseForStatus(response, "create example");
     const result = await response.json();
     return result as Example;
   }
@@ -2129,13 +2354,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create examples: ${response.status} ${response.statusText}`
-      );
-    }
-
+    await raiseForStatus(response, "create examples");
     const result = await response.json();
     return result as Example[];
   }
@@ -2267,11 +2486,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `delete ${path}`);
     await response.json();
   }
 
@@ -2291,13 +2506,117 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    if (!response.ok) {
-      throw new Error(
-        `Failed to update example ${exampleId}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, "update example");
     const result = await response.json();
     return result;
+  }
+
+  public async updateExamples(update: ExampleUpdateWithId[]): Promise<object> {
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/examples/bulk`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "update examples");
+    const result = await response.json();
+    return result;
+  }
+
+  public async listDatasetSplits({
+    datasetId,
+    datasetName,
+    asOf,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: string | Date;
+  }): Promise<string[]> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const params = new URLSearchParams();
+    const dataset_version = asOf
+      ? typeof asOf === "string"
+        ? asOf
+        : asOf?.toISOString()
+      : undefined;
+    if (dataset_version) {
+      params.append("as_of", dataset_version);
+    }
+
+    const response = await this._get<string[]>(
+      `/datasets/${datasetId_}/splits`,
+      params
+    );
+    return response;
+  }
+
+  public async updateDatasetSplits({
+    datasetId,
+    datasetName,
+    splitName,
+    exampleIds,
+    remove = false,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    splitName: string;
+    exampleIds: string[];
+    remove?: boolean;
+  }): Promise<void> {
+    let datasetId_: string;
+    if (datasetId === undefined && datasetName === undefined) {
+      throw new Error("Must provide dataset name or ID");
+    } else if (datasetId !== undefined && datasetName !== undefined) {
+      throw new Error("Must provide either datasetName or datasetId, not both");
+    } else if (datasetId === undefined) {
+      const dataset = await this.readDataset({ datasetName });
+      datasetId_ = dataset.id;
+    } else {
+      datasetId_ = datasetId;
+    }
+
+    assertUuid(datasetId_);
+
+    const data = {
+      split_name: splitName,
+      examples: exampleIds.map((id) => {
+        assertUuid(id);
+        return id;
+      }),
+      remove,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/datasets/${datasetId_}/splits`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "update dataset splits", true);
   }
 
   /**
@@ -2418,7 +2737,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    await raiseForStatus(response, "create feedback");
+    await raiseForStatus(response, "create feedback", true);
     return feedback as Feedback;
   }
 
@@ -2461,7 +2780,7 @@ export class Client {
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "update feedback");
+    await raiseForStatus(response, "update feedback", true);
   }
 
   public async readFeedback(feedbackId: string): Promise<Feedback> {
@@ -2480,11 +2799,7 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to delete ${path}: ${response.status} ${response.statusText}`
-      );
-    }
+    await raiseForStatus(response, `delete ${path}`);
     await response.json();
   }
 
@@ -2716,5 +3031,576 @@ export class Client {
       sourceInfo
     );
     return results;
+  }
+
+  protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
+    const settings = await this._getSettings();
+    return owner == "-" || settings.tenant_handle === owner;
+  }
+
+  protected async _ownerConflictError(
+    action: string,
+    owner: string
+  ): Promise<Error> {
+    const settings = await this._getSettings();
+    return new Error(
+      `Cannot ${action} for another tenant.\n
+      Current tenant: ${settings.tenant_handle}\n
+      Requested tenant: ${owner}`
+    );
+  }
+
+  protected async _getLatestCommitHash(
+    promptOwnerAndName: string
+  ): Promise<string | undefined> {
+    const res = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    const json = await res.json();
+    if (!res.ok) {
+      const detail =
+        typeof json.detail === "string"
+          ? json.detail
+          : JSON.stringify(json.detail);
+      const error = new Error(
+        `Error ${res.status}: ${res.statusText}\n${detail}`
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (error as any).statusCode = res.status;
+      throw error;
+    }
+
+    if (json.commits.length === 0) {
+      return undefined;
+    }
+
+    return json.commits[0].commit_hash;
+  }
+
+  protected async _likeOrUnlikePrompt(
+    promptIdentifier: string,
+    like: boolean
+  ): Promise<LikePromptResponse> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/likes/${owner}/${promptName}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ like: like }),
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, `${like ? "like" : "unlike"} prompt`);
+
+    return await response.json();
+  }
+
+  protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
+    const [owner, promptName, commitHash] =
+      parsePromptIdentifier(promptIdentifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      if (commitHash !== "latest") {
+        return `${this.getHostUrl()}/hub/${owner}/${promptName}/${commitHash.substring(
+          0,
+          8
+        )}`;
+      } else {
+        return `${this.getHostUrl()}/hub/${owner}/${promptName}`;
+      }
+    } else {
+      const settings = await this._getSettings();
+      if (commitHash !== "latest") {
+        return `${this.getHostUrl()}/prompts/${promptName}/${commitHash.substring(
+          0,
+          8
+        )}?organizationId=${settings.id}`;
+      } else {
+        return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${
+          settings.id
+        }`;
+      }
+    }
+  }
+
+  public async promptExists(promptIdentifier: string): Promise<boolean> {
+    const prompt = await this.getPrompt(promptIdentifier);
+    return !!prompt;
+  }
+
+  public async likePrompt(
+    promptIdentifier: string
+  ): Promise<LikePromptResponse> {
+    return this._likeOrUnlikePrompt(promptIdentifier, true);
+  }
+
+  public async unlikePrompt(
+    promptIdentifier: string
+  ): Promise<LikePromptResponse> {
+    return this._likeOrUnlikePrompt(promptIdentifier, false);
+  }
+
+  public async *listCommits(
+    promptOwnerAndName: string
+  ): AsyncIterableIterator<PromptCommit> {
+    for await (const commits of this._getPaginated<
+      PromptCommit,
+      ListCommitsResponse
+    >(
+      `/commits/${promptOwnerAndName}/`,
+      {} as URLSearchParams,
+      (res) => res.commits
+    )) {
+      yield* commits;
+    }
+  }
+
+  public async *listPrompts(options?: {
+    isPublic?: boolean;
+    isArchived?: boolean;
+    sortField?: PromptSortField;
+    query?: string;
+  }): AsyncIterableIterator<Prompt> {
+    const params = new URLSearchParams();
+    params.append("sort_field", options?.sortField ?? "updated_at");
+    params.append("sort_direction", "desc");
+    params.append("is_archived", (!!options?.isArchived).toString());
+
+    if (options?.isPublic !== undefined) {
+      params.append("is_public", options.isPublic.toString());
+    }
+
+    if (options?.query) {
+      params.append("query", options.query);
+    }
+
+    for await (const prompts of this._getPaginated<Prompt, ListPromptsResponse>(
+      "/repos",
+      params,
+      (res) => res.repos
+    )) {
+      yield* prompts;
+    }
+  }
+
+  public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+    await raiseForStatus(response, "get prompt");
+
+    const result = await response.json();
+    if (result.repo) {
+      return result.repo as Prompt;
+    } else {
+      return null;
+    }
+  }
+
+  public async createPrompt(
+    promptIdentifier: string,
+    options?: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+    }
+  ): Promise<Prompt> {
+    const settings = await this._getSettings();
+    if (options?.isPublic && !settings.tenant_handle) {
+      throw new Error(
+        `Cannot create a public prompt without first\n
+        creating a LangChain Hub handle. 
+        You can add a handle by creating a public prompt at:\n
+        https://smith.langchain.com/prompts`
+      );
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("create a prompt", owner);
+    }
+
+    const data = {
+      repo_handle: promptName,
+      ...(options?.description && { description: options.description }),
+      ...(options?.readme && { readme: options.readme }),
+      ...(options?.tags && { tags: options.tags }),
+      is_public: !!options?.isPublic,
+    };
+
+    const response = await this.caller.call(fetch, `${this.apiUrl}/repos/`, {
+      method: "POST",
+      headers: { ...this.headers, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(this.timeout_ms),
+      ...this.fetchOptions,
+    });
+
+    await raiseForStatus(response, "create prompt");
+
+    const { repo } = await response.json();
+    return repo as Prompt;
+  }
+
+  public async createCommit(
+    promptIdentifier: string,
+    object: any,
+    options?: {
+      parentCommitHash?: string;
+    }
+  ): Promise<string> {
+    if (!(await this.promptExists(promptIdentifier))) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+    const resolvedParentCommitHash =
+      options?.parentCommitHash === "latest" || !options?.parentCommitHash
+        ? await this._getLatestCommitHash(`${owner}/${promptName}`)
+        : options?.parentCommitHash;
+
+    const payload = {
+      manifest: JSON.parse(JSON.stringify(object)),
+      parent_commit: resolvedParentCommitHash,
+    };
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${owner}/${promptName}`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "create commit");
+
+    const result = await response.json();
+    return this._getPromptUrl(
+      `${owner}/${promptName}${
+        result.commit_hash ? `:${result.commit_hash}` : ""
+      }`
+    );
+  }
+
+  public async updatePrompt(
+    promptIdentifier: string,
+    options?: {
+      description?: string;
+      readme?: string;
+      tags?: string[];
+      isPublic?: boolean;
+      isArchived?: boolean;
+    }
+  ): Promise<Record<string, any>> {
+    if (!(await this.promptExists(promptIdentifier))) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
+
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("update a prompt", owner);
+    }
+
+    const payload: Record<string, any> = {};
+
+    if (options?.description !== undefined)
+      payload.description = options.description;
+    if (options?.readme !== undefined) payload.readme = options.readme;
+    if (options?.tags !== undefined) payload.tags = options.tags;
+    if (options?.isPublic !== undefined) payload.is_public = options.isPublic;
+    if (options?.isArchived !== undefined)
+      payload.is_archived = options.isArchived;
+
+    // Check if payload is empty
+    if (Object.keys(payload).length === 0) {
+      throw new Error("No valid update options provided");
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+        headers: {
+          ...this.headers,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "update prompt");
+
+    return response.json();
+  }
+
+  public async deletePrompt(promptIdentifier: string): Promise<void> {
+    if (!(await this.promptExists(promptIdentifier))) {
+      throw new Error("Prompt does not exist, you must create it first.");
+    }
+
+    const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
+
+    if (!(await this._currentTenantIsOwner(owner))) {
+      throw await this._ownerConflictError("delete a prompt", owner);
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/repos/${owner}/${promptName}`,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    return await response.json();
+  }
+
+  public async pullPromptCommit(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean;
+    }
+  ): Promise<PromptCommit> {
+    const [owner, promptName, commitHash] =
+      parsePromptIdentifier(promptIdentifier);
+    const serverInfo = await this._getServerInfo();
+    const useOptimization = isVersionGreaterOrEqual(
+      serverInfo.version,
+      "0.5.23"
+    );
+
+    let passedCommitHash = commitHash;
+
+    if (!useOptimization && commitHash === "latest") {
+      const latestCommitHash = await this._getLatestCommitHash(
+        `${owner}/${promptName}`
+      );
+      if (!latestCommitHash) {
+        throw new Error("No commits found");
+      } else {
+        passedCommitHash = latestCommitHash;
+      }
+    }
+
+    const response = await this.caller.call(
+      fetch,
+      `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${
+        options?.includeModel ? "?include_model=true" : ""
+      }`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "pull prompt commit");
+
+    const result = await response.json();
+
+    return {
+      owner,
+      repo: promptName,
+      commit_hash: result.commit_hash,
+      manifest: result.manifest,
+      examples: result.examples,
+    };
+  }
+
+  /**
+   *
+   * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
+   * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
+   * @private
+   *
+   */
+  public async _pullPrompt(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean;
+    }
+  ): Promise<any> {
+    const promptObject = await this.pullPromptCommit(promptIdentifier, {
+      includeModel: options?.includeModel,
+    });
+    const prompt = JSON.stringify(promptObject.manifest);
+    return prompt;
+  }
+
+  public async pushPrompt(
+    promptIdentifier: string,
+    options?: {
+      object?: any;
+      parentCommitHash?: string;
+      isPublic?: boolean;
+      description?: string;
+      readme?: string;
+      tags?: string[];
+    }
+  ): Promise<string> {
+    // Create or update prompt metadata
+    if (await this.promptExists(promptIdentifier)) {
+      if (options && Object.keys(options).some((key) => key !== "object")) {
+        await this.updatePrompt(promptIdentifier, {
+          description: options?.description,
+          readme: options?.readme,
+          tags: options?.tags,
+          isPublic: options?.isPublic,
+        });
+      }
+    } else {
+      await this.createPrompt(promptIdentifier, {
+        description: options?.description,
+        readme: options?.readme,
+        tags: options?.tags,
+        isPublic: options?.isPublic,
+      });
+    }
+
+    if (!options?.object) {
+      return await this._getPromptUrl(promptIdentifier);
+    }
+
+    // Create a commit with the new manifest
+    const url = await this.createCommit(promptIdentifier, options?.object, {
+      parentCommitHash: options?.parentCommitHash,
+    });
+    return url;
+  }
+
+  /**
+   * Clone a public dataset to your own langsmith tenant. 
+   * This operation is idempotent. If you already have a dataset with the given name, 
+   * this function will do nothing.
+
+   * @param {string} tokenOrUrl The token of the public dataset to clone.
+   * @param {Object} [options] Additional options for cloning the dataset.
+   * @param {string} [options.sourceApiUrl] The URL of the langsmith server where the data is hosted. Defaults to the API URL of your current client.
+   * @param {string} [options.datasetName] The name of the dataset to create in your tenant. Defaults to the name of the public dataset.
+   * @returns {Promise<void>}
+   */
+  async clonePublicDataset(
+    tokenOrUrl: string,
+    options: {
+      sourceApiUrl?: string;
+      datasetName?: string;
+    } = {}
+  ): Promise<void> {
+    const { sourceApiUrl = this.apiUrl, datasetName } = options;
+    const [parsedApiUrl, tokenUuid] = this.parseTokenOrUrl(
+      tokenOrUrl,
+      sourceApiUrl
+    );
+    const sourceClient = new Client({
+      apiUrl: parsedApiUrl,
+      // Placeholder API key not needed anymore in most cases, but
+      // some private deployments may have API key-based rate limiting
+      // that would cause this to fail if we provide no value.
+      apiKey: "placeholder",
+    });
+
+    const ds = await sourceClient.readSharedDataset(tokenUuid);
+    const finalDatasetName = datasetName || ds.name;
+
+    try {
+      if (await this.hasDataset({ datasetId: finalDatasetName })) {
+        console.log(
+          `Dataset ${finalDatasetName} already exists in your tenant. Skipping.`
+        );
+        return;
+      }
+    } catch (_) {
+      // `.hasDataset` will throw an error if the dataset does not exist.
+      // no-op in that case
+    }
+
+    // Fetch examples first, then create the dataset
+    const examples = await sourceClient.listSharedExamples(tokenUuid);
+    const dataset = await this.createDataset(finalDatasetName, {
+      description: ds.description,
+      dataType: ds.data_type || "kv",
+      inputsSchema: ds.inputs_schema_definition ?? undefined,
+      outputsSchema: ds.outputs_schema_definition ?? undefined,
+    });
+    try {
+      await this.createExamples({
+        inputs: examples.map((e) => e.inputs),
+        outputs: examples.flatMap((e) => (e.outputs ? [e.outputs] : [])),
+        datasetId: dataset.id,
+      });
+    } catch (e) {
+      console.error(
+        `An error occurred while creating dataset ${finalDatasetName}. ` +
+          "You should delete it manually."
+      );
+      throw e;
+    }
+  }
+
+  private parseTokenOrUrl(
+    urlOrToken: string,
+    apiUrl: string,
+    numParts = 2,
+    kind = "dataset"
+  ): [string, string] {
+    // Try parsing as UUID
+    try {
+      assertUuid(urlOrToken); // Will throw if it's not a UUID.
+      return [apiUrl, urlOrToken];
+    } catch (_) {
+      // no-op if it's not a uuid
+    }
+
+    // Parse as URL
+    try {
+      const parsedUrl = new URL(urlOrToken);
+      const pathParts = parsedUrl.pathname
+        .split("/")
+        .filter((part) => part !== "");
+
+      if (pathParts.length >= numParts) {
+        const tokenUuid = pathParts[pathParts.length - numParts];
+        return [apiUrl, tokenUuid];
+      } else {
+        throw new Error(`Invalid public ${kind} URL: ${urlOrToken}`);
+      }
+    } catch (error) {
+      throw new Error(`Invalid public ${kind} URL or token: ${urlOrToken}`);
+    }
   }
 }

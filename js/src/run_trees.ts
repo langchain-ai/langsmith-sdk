@@ -80,16 +80,19 @@ export interface RunnableConfigLike {
 interface CallbackManagerLike {
   handlers: TracerLike[];
   getParentRunId?: () => string | undefined;
+  copy?: () => CallbackManagerLike;
 }
 
 interface TracerLike {
   name: string;
 }
+
 interface LangChainTracerLike extends TracerLike {
   name: "langchain_tracer";
   projectName: string;
   getRun?: (id: string) => RunTree | undefined;
   client: Client;
+  updateFromRunTree?: (runTree: RunTree) => void;
 }
 
 interface HeadersLike {
@@ -235,6 +238,36 @@ export class RunTree implements BaseRun {
       execution_order: child_execution_order,
       child_execution_order: child_execution_order,
     });
+
+    type ExtraWithSymbol = Record<string | symbol, unknown>;
+    const LC_CHILD = Symbol.for("lc:child_config");
+
+    const presentConfig =
+      (config.extra as ExtraWithSymbol | undefined)?.[LC_CHILD] ??
+      (this.extra as ExtraWithSymbol)[LC_CHILD];
+
+    // tracing for LangChain is defined by the _parentRunId and runMap of the tracer
+    if (isRunnableConfigLike(presentConfig)) {
+      const newConfig: RunnableConfigLike = { ...presentConfig };
+      const callbacks: CallbackManagerLike | unknown[] | undefined =
+        isCallbackManagerLike(newConfig.callbacks)
+          ? newConfig.callbacks.copy?.()
+          : undefined;
+
+      if (callbacks) {
+        // update the parent run id
+        Object.assign(callbacks, { _parentRunId: child.id });
+
+        // only populate if we're in a newer LC.JS version
+        callbacks.handlers
+          ?.find(isLangChainTracerLike)
+          ?.updateFromRunTree?.(child);
+
+        newConfig.callbacks = callbacks;
+      }
+
+      (child.extra as ExtraWithSymbol)[LC_CHILD] = newConfig;
+    }
 
     // propagate child_execution_order upwards
     const visited = new Set<string>();
@@ -388,6 +421,8 @@ export class RunTree implements BaseRun {
     const parentRunTree = new RunTree({
       name: parentRun.name,
       id: parentRun.id,
+      trace_id: parentRun.trace_id,
+      dotted_order: parentRun.dotted_order,
       client,
       tracingEnabled,
       project_name: projectName,
@@ -475,15 +510,26 @@ export function isRunTree(x?: unknown): x is RunTree {
   );
 }
 
-function containsLangChainTracerLike(x?: unknown): x is LangChainTracerLike[] {
+function isLangChainTracerLike(x: unknown): x is LangChainTracerLike {
   return (
-    Array.isArray(x) &&
-    x.some((callback: unknown) => {
-      return (
-        typeof (callback as LangChainTracerLike).name === "string" &&
-        (callback as LangChainTracerLike).name === "langchain_tracer"
-      );
-    })
+    typeof x === "object" &&
+    x != null &&
+    typeof (x as LangChainTracerLike).name === "string" &&
+    (x as LangChainTracerLike).name === "langchain_tracer"
+  );
+}
+
+function containsLangChainTracerLike(x: unknown): x is LangChainTracerLike[] {
+  return (
+    Array.isArray(x) && x.some((callback) => isLangChainTracerLike(callback))
+  );
+}
+
+function isCallbackManagerLike(x: unknown): x is CallbackManagerLike {
+  return (
+    typeof x === "object" &&
+    x != null &&
+    Array.isArray((x as CallbackManagerLike).handlers)
   );
 }
 
