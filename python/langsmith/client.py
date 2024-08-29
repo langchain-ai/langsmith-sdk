@@ -178,7 +178,7 @@ def _default_retry_config() -> Retry:
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
-_MAX_DEPTH = 2
+_MAX_DEPTH = 1
 
 
 class _Fragment(NamedTuple):
