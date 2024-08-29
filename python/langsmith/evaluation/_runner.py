@@ -9,6 +9,7 @@ import functools
 import itertools
 import logging
 import pathlib
+import queue
 import random
 import threading
 import uuid
@@ -376,10 +377,9 @@ class ExperimentResults:
     ):
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
-        self._lock = threading.RLock()
-        self._thread = threading.Thread(
-            target=lambda: self._process_data(self._manager)
-        )
+        self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
+        self._processing_complete = threading.Event()
+        self._thread = threading.Thread(target=self._process_data)
         self._thread.start()
 
     @property
@@ -387,24 +387,32 @@ class ExperimentResults:
         return self._manager.experiment_name
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
-        processed_count = 0
-        while True:
-            with self._lock:
-                if processed_count < len(self._results):
-                    yield self._results[processed_count]
-                    processed_count += 1
-                elif not self._thread.is_alive():
-                    break
+        ix = 0
+        while (
+            not self._processing_complete.is_set()
+            or not self._queue.empty()
+            or ix < len(self._results)
+        ):
+            try:
+                if ix < len(self._results):
+                    yield self._results[ix]
+                    ix += 1
+                else:
+                    self._queue.get(block=True, timeout=0.1)
+            except queue.Empty:
+                continue
 
-    def _process_data(self, manager: _ExperimentManager) -> None:
+    def _process_data(self) -> None:
         tqdm = _load_tqdm()
-        results = manager.get_results()
+        results = self._manager.get_results()
         for item in tqdm(results):
-            with self._lock:
-                self._results.append(item)
-        summary_scores = manager.get_summary_scores()
-        with self._lock:
-            self._summary_results = summary_scores
+            self._queue.put(item)
+            self._results.append(item)
+
+        summary_scores = self._manager.get_summary_scores()
+        self._summary_results = summary_scores
+
+        self._processing_complete.set()
 
     def __len__(self) -> int:
         return len(self._results)

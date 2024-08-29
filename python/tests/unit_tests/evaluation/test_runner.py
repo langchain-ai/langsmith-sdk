@@ -1,6 +1,7 @@
 """Test the eval runner."""
 
 import asyncio
+import itertools
 import json
 import random
 import sys
@@ -232,7 +233,13 @@ def test_evaluate_results(blocking: bool) -> None:
     ex_results = evaluate_existing(
         fake_request.created_session["name"], evaluators=[score_value], client=client
     )
-    assert len(list(ex_results)) == SPLIT_SIZE * NUM_REPETITIONS
+    second_item = next(itertools.islice(iter(ex_results), 1, 2))
+    first_list = list(ex_results)
+    second_list = list(ex_results)
+    second_item_after = next(itertools.islice(iter(ex_results), 1, 2))
+    assert len(first_list) == len(second_list) == SPLIT_SIZE * NUM_REPETITIONS
+    assert first_list == second_list
+    assert second_item == second_item_after
     dev_xample_ids = [e.id for e in dev_split]
     for r in ex_results:
         assert r["example"].id in dev_xample_ids
