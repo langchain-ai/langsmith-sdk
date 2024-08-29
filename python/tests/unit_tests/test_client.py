@@ -1,6 +1,7 @@
 """Test the LangSmith client."""
 
 import asyncio
+import base64
 import dataclasses
 import gc
 import itertools
@@ -677,6 +678,9 @@ def test_serialize_json() -> None:
             self.a_dict = {"foo": "bar"}
             self.my_bytes = b"foo"
 
+        def __repr__(self) -> str:
+            return "I fell back"
+
     class ClassWithTee:
         def __init__(self) -> None:
             tee_a, tee_b = itertools.tee(range(10))
@@ -789,7 +793,7 @@ def test_serialize_json() -> None:
             "a_tuple": [1, 2, 3],
             "a_set": [1, 2, 3],
             "a_dict": {"foo": "bar"},
-            "my_bytes": "foo",
+            "my_bytes": base64.b64encode(b"foo",).decode(),
         },
         "class_with_tee": lambda val: all(
             ["_tee object" in val[key] for key in ["tee_a", "tee_b"]]
