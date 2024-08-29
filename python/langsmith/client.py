@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import atexit
+import base64
 import collections
 import concurrent.futures as cf
 import datetime
+import decimal
 import functools
 import importlib
 import importlib.metadata
 import io
+import ipaddress
 import json
 import logging
 import os
+import pathlib
 import random
 import re
 import socket
@@ -36,6 +40,7 @@ from typing import (
     List,
     Literal,
     Mapping,
+    NamedTuple,
     Optional,
     Sequence,
     Tuple,
@@ -44,6 +49,7 @@ from typing import (
     cast,
 )
 from urllib import parse as urllib_parse
+import zoneinfo
 
 import orjson
 import requests
@@ -175,17 +181,56 @@ def _default_retry_config() -> Retry:
 _MAX_DEPTH = 2
 
 
-def _simple_default(obj: Any) -> Any:
-    # Don't traverse into nested objects
+class _Fragment(NamedTuple):
+    buf: bytes
+
+
+def _simple_default(obj):
     try:
-        if isinstance(obj, datetime.datetime):
-            return obj.isoformat()
-        if isinstance(obj, uuid.UUID):
+        # Only need to handle types that orjson doesn't serialize by default
+        # https://github.com/ijl/orjson#serialize
+        if isinstance(obj, _Fragment):
+            return orjson.Fragment(obj.buf)
+        if hasattr(obj, "model_dump") and callable(obj.model_dump):
+            return obj.model_dump()
+        elif hasattr(obj, "dict") and callable(obj.dict):
+            return obj.dict()
+        elif hasattr(obj, "_asdict") and callable(obj._asdict):
+            return obj._asdict()
+        elif isinstance(obj, BaseException):
+            return {"error": type(obj).__name__, "message": str(obj)}
+        elif isinstance(obj, (set, frozenset, collections.deque)):
+            return list(obj)
+        elif isinstance(obj, (datetime.timezone, zoneinfo.ZoneInfo)):
+            return obj.tzname(None)
+        elif isinstance(obj, datetime.timedelta):
+            return obj.total_seconds()
+        elif isinstance(obj, decimal.Decimal):
+            if obj.as_tuple().exponent >= 0:
+                return int(obj)
+            else:
+                return float(obj)
+        elif isinstance(
+            obj,
+            (
+                ipaddress.IPv4Address,
+                ipaddress.IPv4Interface,
+                ipaddress.IPv4Network,
+                ipaddress.IPv6Address,
+                ipaddress.IPv6Interface,
+                ipaddress.IPv6Network,
+                pathlib.Path,
+            ),
+        ):
             return str(obj)
-        return json.loads(json.dumps(obj))
+        elif isinstance(obj, re.Pattern):
+            return obj.pattern
+        elif isinstance(obj, (bytes, bytearray)):
+            return base64.b64encode(obj).decode()
+        return repr(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-        return repr(obj)
+    return repr(obj)
 
 
 def _serialize_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> Any:
@@ -201,28 +246,23 @@ def _serialize_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> Any:
             return orjson.loads(_dumps_json_single(list(obj)))
 
         serialization_methods = [
-            ("model_dump_json", True),  # Pydantic V2
-            ("json", True),  # Pydantic V1
-            ("to_json", False),  # dataclass_json
             ("model_dump", True),  # Pydantic V2 with non-serializable fields
+            ("to_json", False),  # dataclass_json
             ("dict", False),  # Pydantic V1 with non-serializable fields
+            ("_asdict", False),  # dataclasses
         ]
         for attr, exclude_none in serialization_methods:
             if hasattr(obj, attr) and callable(getattr(obj, attr)):
                 try:
                     method = getattr(obj, attr)
-                    json_str = (
+                    return (
                         method(exclude_none=exclude_none) if exclude_none else method()
                     )
-                    if isinstance(json_str, str):
-                        return json.loads(json_str)
-                    return orjson.loads(
-                        _dumps_json(
-                            json_str, depth=depth + 1, serialize_py=serialize_py
-                        )
-                    )
                 except Exception as e:
-                    logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
+                    logger.error(
+                        f"Failed to use {attr} to serialize {type(obj)} to"
+                        f" JSON: {repr(e)}"
+                    )
                     pass
         if serialize_py:
             all_attrs = {}
@@ -236,9 +276,7 @@ def _serialize_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> Any:
                 filtered = {
                     k: v if v is not obj else repr(v) for k, v in all_attrs.items()
                 }
-                return orjson.loads(
-                    _dumps_json(filtered, depth=depth + 1, serialize_py=serialize_py)
-                )
+                return orjson.loads(_dumps_json_single(filtered))
         return repr(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
@@ -257,7 +295,7 @@ def _dumps_json_single(
     try:
         return orjson.dumps(
             obj,
-            default=default,
+            default=default or _simple_default,
             option=orjson.OPT_SERIALIZE_NUMPY
             | orjson.OPT_SERIALIZE_DATACLASS
             | orjson.OPT_SERIALIZE_UUID
