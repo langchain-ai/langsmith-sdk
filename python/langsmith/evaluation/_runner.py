@@ -377,7 +377,7 @@ class ExperimentResults:
     ):
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
-        self._queue = queue.Queue()
+        self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
         self._thread = threading.Thread(target=self._process_data)
         self._thread.start()
