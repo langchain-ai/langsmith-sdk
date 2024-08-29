@@ -378,7 +378,6 @@ class ExperimentResults:
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
         self._queue = queue.Queue()
-        self._lock = threading.RLock()
         self._processing_complete = threading.Event()
         self._thread = threading.Thread(target=self._process_data)
         self._thread.start()
@@ -388,10 +387,18 @@ class ExperimentResults:
         return self._manager.experiment_name
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
-        while not self._processing_complete.is_set() or not self._queue.empty():
+        ix = 0
+        while (
+            not self._processing_complete.is_set()
+            or not self._queue.empty()
+            or ix < len(self._results)
+        ):
             try:
-                item = self._queue.get(block=True, timeout=0.1)
-                yield item
+                if ix < len(self._results):
+                    yield self._results[ix]
+                    ix += 1
+                else:
+                    self._queue.get(block=True, timeout=0.1)
             except queue.Empty:
                 continue
 
@@ -400,18 +407,15 @@ class ExperimentResults:
         results = self._manager.get_results()
         for item in tqdm(results):
             self._queue.put(item)
-            with self._lock:
-                self._results.append(item)
+            self._results.append(item)
 
         summary_scores = self._manager.get_summary_scores()
-        with self._lock:
-            self._summary_results = summary_scores
+        self._summary_results = summary_scores
 
         self._processing_complete.set()
 
     def __len__(self) -> int:
-        with self._lock:
-            return len(self._results)
+        return len(self._results)
 
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
