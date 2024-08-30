@@ -15,7 +15,6 @@ import logging
 import os
 import random
 import re
-import socket
 import sys
 import threading
 import time
@@ -66,27 +65,6 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
-
-
-def _is_localhost(url: str) -> bool:
-    """Check if the URL is localhost.
-
-    Parameters
-    ----------
-    url : str
-        The URL to check.
-
-    Returns:
-    -------
-    bool
-        True if the URL is localhost, False otherwise.
-    """
-    try:
-        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
-        ip = socket.gethostbyname(netloc)
-        return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
-    except socket.gaierror:
-        return False
 
 
 def _parse_token_or_url(
@@ -619,22 +597,7 @@ class Client:
     @property
     def _host_url(self) -> str:
         """The web host url."""
-        if self._web_url:
-            link = self._web_url
-        else:
-            parsed_url = urllib_parse.urlparse(self.api_url)
-            if _is_localhost(self.api_url):
-                link = "http://localhost"
-            elif parsed_url.path.endswith("/api"):
-                new_path = parsed_url.path.rsplit("/api", 1)[0]
-                link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
-            elif parsed_url.netloc.startswith("eu."):
-                link = "https://eu.smith.langchain.com"
-            elif parsed_url.netloc.startswith("dev."):
-                link = "https://dev.smith.langchain.com"
-            else:
-                link = "https://smith.langchain.com"
-        return link
+        return ls_utils.get_host_url(self._web_url, self.api_url)
 
     @property
     def _headers(self) -> Dict[str, str]:
