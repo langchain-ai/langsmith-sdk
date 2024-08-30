@@ -1,9 +1,11 @@
 import asyncio
-from typing import Optional
+import logging
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import pytest
 
+from langsmith import schemas
 from langsmith.evaluation.evaluator import (
     DynamicRunEvaluator,
     EvaluationResult,
@@ -294,3 +296,67 @@ async def test_run_evaluator_decorator_return_multi_evaluation_result_async(
     assert result["results"][0].score == 1.0
     assert result["results"][1].key == "test2"
     assert result["results"][1].score == 2.0
+
+
+@pytest.mark.parametrize("response", [None, {}, {"accuracy": 5}])
+async def test_evaluator_raises_for_null_ouput(response: Any):
+    @run_evaluator  # type: ignore
+    def bad_evaluator(run: schemas.Run, example: schemas.Example):
+        return response
+
+    @run_evaluator  # type: ignore
+    async def abad_evaluator(run: schemas.Run, example: schemas.Example):
+        return response
+
+    fake_run = MagicMock()
+    fake_example = MagicMock()
+
+    with pytest.raises(ValueError, match="Expected an EvaluationResult "):
+        bad_evaluator.evaluate_run(fake_run, fake_example)
+
+    with pytest.raises(ValueError, match="Expected an EvaluationResult "):
+        await bad_evaluator.aevaluate_run(fake_run, fake_example)
+
+    with pytest.raises(ValueError, match="Expected an EvaluationResult "):
+        await abad_evaluator.aevaluate_run(fake_run, fake_example)
+
+
+def test_check_value_non_numeric(caplog):
+    # Test when score is None and value is numeric
+    with caplog.at_level(logging.WARNING):
+        EvaluationResult(key="test", value=5)
+
+    assert (
+        "Numeric values should be provided in the 'score' field, not 'value'. Got: 5"
+        in caplog.text
+    )
+
+    # Test when score is provided and value is numeric (should not log)
+    with caplog.at_level(logging.WARNING):
+        caplog.clear()
+        EvaluationResult(key="test", score=5, value="non-numeric")
+
+    assert (
+        "Numeric values should be provided in the 'score' field, not 'value'."
+        not in caplog.text
+    )
+
+    # Test when both score and value are None (should not log)
+    with caplog.at_level(logging.WARNING):
+        caplog.clear()
+        EvaluationResult(key="test")
+
+    assert (
+        "Numeric values should be provided in the 'score' field, not 'value'."
+        not in caplog.text
+    )
+
+    # Test when value is non-numeric (should not log)
+    with caplog.at_level(logging.WARNING):
+        caplog.clear()
+        EvaluationResult(key="test", value="non-numeric")
+
+    assert (
+        "Numeric values should be provided in the 'score' field, not 'value'."
+        not in caplog.text
+    )

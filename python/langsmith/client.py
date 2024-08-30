@@ -3961,7 +3961,7 @@ class Client:
         key: str,
         *,
         score: Union[float, int, bool, None] = None,
-        value: Union[float, int, bool, str, dict, None] = None,
+        value: Union[str, dict, None] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,
