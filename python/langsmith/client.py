@@ -1182,7 +1182,10 @@ class Client:
         else:
             sampled = []
             for run in runs:
-                if random.random() < self.tracing_sample_rate:
+                if (
+                    run["id"] != run.get("trace_id")
+                    or random.random() < self.tracing_sample_rate
+                ):
                     sampled.append(run)
                     self._sampled_post_uuids.add(_as_uuid(run["id"]))
             return sampled
