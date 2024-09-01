@@ -400,7 +400,7 @@ export class Client {
 
   private tracingSampleRate?: number;
 
-  private sampledPostUuids = new Set();
+  private filteredPostUuids = new Set();
 
   private autoBatchTracing = true;
 
@@ -648,9 +648,10 @@ export class Client {
     if (patch) {
       const sampled = [];
       for (const run of runs) {
-        if (this.sampledPostUuids.has(run.id)) {
+        if (!this.filteredPostUuids.has(run.id)) {
           sampled.push(run);
-          this.sampledPostUuids.delete(run.id);
+        } else {
+          this.filteredPostUuids.delete(run.id);
         }
       }
       return sampled;
@@ -659,11 +660,12 @@ export class Client {
       for (const run of runs) {
         if (
           (run.id !== run.trace_id &&
-            this.sampledPostUuids.has(run.trace_id)) ||
+            !this.filteredPostUuids.has(run.trace_id)) ||
           Math.random() < this.tracingSampleRate
         ) {
           sampled.push(run);
-          this.sampledPostUuids.add(run.id);
+        } else {
+          this.filteredPostUuids.add(run.id);
         }
       }
       return sampled;
