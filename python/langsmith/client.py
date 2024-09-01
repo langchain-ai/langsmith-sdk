@@ -1183,9 +1183,12 @@ class Client:
             sampled = []
             for run in runs:
                 if (
+                    # Child run
                     run["id"] != run.get("trace_id")
-                    or random.random() < self.tracing_sample_rate
-                ):
+                    # Whose trace is included
+                    and run.get("trace_id") in self._sampled_post_uuids
+                    # Or a root that's randomly sampled
+                ) or random.random() < self.tracing_sample_rate:
                     sampled.append(run)
                     self._sampled_post_uuids.add(_as_uuid(run["id"]))
             return sampled

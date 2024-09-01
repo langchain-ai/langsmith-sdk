@@ -657,12 +657,11 @@ export class Client {
     } else {
       const sampled = [];
       for (const run of runs) {
-        if (run.id !== run.trace_id) {
-          sampled.push(run);
-          this.sampledPostUuids.add(run.id);
-          continue;
-        }
-        if (Math.random() < this.tracingSampleRate) {
+        if (
+          (run.id !== run.trace_id &&
+            this.sampledPostUuids.has(run.trace_id)) ||
+          Math.random() < this.tracingSampleRate
+        ) {
           sampled.push(run);
           this.sampledPostUuids.add(run.id);
         }
