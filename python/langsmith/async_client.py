@@ -29,10 +29,7 @@ from langsmith._internal import _beta_decorator as ls_beta
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = (
-        "_retry_config",
-        "_client",
-    )
+    __slots__ = ("_retry_config", "_client", "_web_url")
 
     def __init__(
         self,
@@ -44,6 +41,7 @@ class AsyncClient:
             ]
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
+        web_url: Optional[str] = None,
     ):
         """Initialize the async client."""
         ls_beta._warn_once("Class AsyncClient is in beta.")
@@ -66,6 +64,7 @@ class AsyncClient:
         self._client = httpx.AsyncClient(
             base_url=api_url, headers=_headers, timeout=timeout_
         )
+        self._web_url = web_url
 
     async def __aenter__(self) -> "AsyncClient":
         """Enter the async client."""
@@ -78,6 +77,15 @@ class AsyncClient:
     async def aclose(self):
         """Close the async client."""
         await self._client.aclose()
+
+    @property
+    def _api_url(self):
+        return str(self._client.base_url)
+
+    @property
+    def _host_url(self) -> str:
+        """The web host url."""
+        return ls_utils.get_host_url(self._web_url, self._api_url)
 
     async def _arequest_with_retries(
         self,
@@ -374,6 +382,64 @@ class AsyncClient:
             if limit is not None and ix >= limit:
                 break
 
+    async def share_run(
+        self, run_id: ls_client.ID_TYPE, *, share_id: Optional[ls_client.ID_TYPE] = None
+    ) -> str:
+        """Get a share link for a run asynchronously.
+
+        Args:
+            run_id (ID_TYPE): The ID of the run to share.
+            share_id (Optional[ID_TYPE], optional): Custom share ID.
+                If not provided, a random UUID will be generated.
+
+        Returns:
+            str: The URL of the shared run.
+
+        Raises:
+            httpx.HTTPStatusError: If the API request fails.
+        """
+        run_id_ = ls_client._as_uuid(run_id, "run_id")
+        data = {
+            "run_id": str(run_id_),
+            "share_token": str(share_id or uuid.uuid4()),
+        }
+        response = await self._arequest_with_retries(
+            "PUT",
+            f"/runs/{run_id_}/share",
+            content=ls_client._dumps_json(data),
+        )
+        ls_utils.raise_for_status_with_text(response)
+        share_token = response.json()["share_token"]
+        return f"{self._host_url}/public/{share_token}/r"
+
+    async def run_is_shared(self, run_id: ls_client.ID_TYPE) -> bool:
+        """Get share state for a run asynchronously."""
+        link = await self.read_run_shared_link(ls_client._as_uuid(run_id, "run_id"))
+        return link is not None
+
+    async def read_run_shared_link(self, run_id: ls_client.ID_TYPE) -> Optional[str]:
+        """Retrieve the shared link for a specific run asynchronously.
+
+        Args:
+            run_id (ID_TYPE): The ID of the run.
+
+        Returns:
+            Optional[str]: The shared link for the run, or None if the link is not
+            available.
+
+        Raises:
+            httpx.HTTPStatusError: If the API request fails.
+        """
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/runs/{ls_client._as_uuid(run_id, 'run_id')}/share",
+        )
+        ls_utils.raise_for_status_with_text(response)
+        result = response.json()
+        if result is None or "share_token" not in result:
+            return None
+        return f"{self._host_url}/public/{result['share_token']}/r"
+
     async def create_project(
         self,
         project_name: str,
@@ -549,7 +615,23 @@ class AsyncClient:
         comment: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
-        """Create feedback."""
+        """Create feedback for a run.
+
+        Args:
+            run_id (Optional[ls_client.ID_TYPE]): The ID of the run to provide feedback for.
+                Can be None for project-level feedback.
+            key (str): The name of the metric or aspect this feedback is about.
+            score (Optional[float]): The score to rate this run on the metric or aspect.
+            value (Optional[Any]): The display value or non-numeric value for this feedback.
+            comment (Optional[str]): A comment about this feedback.
+            **kwargs: Additional keyword arguments to include in the feedback data.
+
+        Returns:
+            ls_schemas.Feedback: The created feedback object.
+
+        Raises:
+            httpx.HTTPStatusError: If the API request fails.
+        """  # noqa: E501
         data = {
             "run_id": ls_client._ensure_uuid(run_id, accept_null=True),
             "key": key,
@@ -562,6 +644,124 @@ class AsyncClient:
             "POST", "/feedback", content=ls_client._dumps_json(data)
         )
         return ls_schemas.Feedback(**response.json())
+
+    async def create_feedback_from_token(
+        self,
+        token_or_url: Union[str, uuid.UUID],
+        score: Union[float, int, bool, None] = None,
+        *,
+        value: Union[float, int, bool, str, dict, None] = None,
+        correction: Union[dict, None] = None,
+        comment: Union[str, None] = None,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """Create feedback from a presigned token or URL.
+
+        Args:
+            token_or_url (Union[str, uuid.UUID]): The token or URL from which to create
+                 feedback.
+            score (Union[float, int, bool, None], optional): The score of the feedback.
+                Defaults to None.
+            value (Union[float, int, bool, str, dict, None], optional): The value of the
+                feedback. Defaults to None.
+            correction (Union[dict, None], optional): The correction of the feedback.
+                Defaults to None.
+            comment (Union[str, None], optional): The comment of the feedback. Defaults
+                to None.
+            metadata (Optional[dict], optional): Additional metadata for the feedback.
+                Defaults to None.
+
+        Raises:
+            ValueError: If the source API URL is invalid.
+
+        Returns:
+            None: This method does not return anything.
+        """
+        source_api_url, token_uuid = ls_client._parse_token_or_url(
+            token_or_url, self._api_url, num_parts=1
+        )
+        if source_api_url != self._api_url:
+            raise ValueError(f"Invalid source API URL. {source_api_url}")
+        response = await self._arequest_with_retries(
+            "POST",
+            f"/feedback/tokens/{ls_client._as_uuid(token_uuid)}",
+            content=ls_client._dumps_json(
+                {
+                    "score": score,
+                    "value": value,
+                    "correction": correction,
+                    "comment": comment,
+                    "metadata": metadata,
+                    # TODO: Add ID once the API supports it.
+                }
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    async def create_presigned_feedback_token(
+        self,
+        run_id: ls_client.ID_TYPE,
+        feedback_key: str,
+        *,
+        expiration: Optional[datetime.datetime | datetime.timedelta] = None,
+        feedback_config: Optional[ls_schemas.FeedbackConfig] = None,
+        feedback_id: Optional[ls_client.ID_TYPE] = None,
+    ) -> ls_schemas.FeedbackIngestToken:
+        """Create a pre-signed URL to send feedback data to.
+
+        This is useful for giving browser-based clients a way to upload
+        feedback data directly to LangSmith without accessing the
+        API key.
+
+        Args:
+            run_id:
+            feedback_key:
+            expiration: The expiration time of the pre-signed URL.
+                Either a datetime or a timedelta offset from now.
+                Default to 3 hours.
+            feedback_config: FeedbackConfig or None.
+                If creating a feedback_key for the first time,
+                this defines how the metric should be interpreted,
+                such as a continuous score (w/ optional bounds),
+                or distribution over categorical values.
+            feedback_id: The ID of the feedback to create. If not provided, a new
+                feedback will be created.
+
+        Returns:
+            The pre-signed URL for uploading feedback data.
+        """
+        body: Dict[str, Any] = {
+            "run_id": run_id,
+            "feedback_key": feedback_key,
+            "feedback_config": feedback_config,
+            "id": feedback_id or str(uuid.uuid4()),
+        }
+        if expiration is None:
+            body["expires_in"] = ls_schemas.TimeDeltaInput(
+                days=0,
+                hours=3,
+                minutes=0,
+            )
+        elif isinstance(expiration, datetime.datetime):
+            body["expires_at"] = expiration.isoformat()
+        elif isinstance(expiration, datetime.timedelta):
+            body["expires_in"] = ls_schemas.TimeDeltaInput(
+                days=expiration.days,
+                hours=expiration.seconds // 3600,
+                minutes=(expiration.seconds % 3600) // 60,
+            )
+        else:
+            raise ValueError(
+                f"Invalid expiration type: {type(expiration)}. "
+                "Expected datetime.datetime or datetime.timedelta."
+            )
+
+        response = await self._arequest_with_retries(
+            "POST",
+            "/feedback/tokens",
+            content=ls_client._dumps_json(body),
+        )
+        return ls_schemas.FeedbackIngestToken(**response.json())
 
     async def read_feedback(
         self, feedback_id: ls_client.ID_TYPE
