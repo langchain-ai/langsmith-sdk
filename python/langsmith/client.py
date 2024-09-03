@@ -439,7 +439,7 @@ class Client:
         "_web_url",
         "_tenant_id",
         "tracing_sample_rate",
-        "_sampled_post_uuids",
+        "_filtered_post_uuids",
         "tracing_queue",
         "_anonymizer",
         "_hide_inputs",
@@ -524,7 +524,7 @@ class Client:
             )
 
         self.tracing_sample_rate = _get_tracing_sampling_rate()
-        self._sampled_post_uuids: set[uuid.UUID] = set()
+        self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
@@ -1175,19 +1175,24 @@ class Client:
             sampled = []
             for run in runs:
                 run_id = _as_uuid(run["id"])
-                if run_id in self._sampled_post_uuids:
+                if run_id not in self._filtered_post_uuids:
                     sampled.append(run)
-                    self._sampled_post_uuids.remove(run_id)
+                else:
+                    self._filtered_post_uuids.remove(run_id)
             return sampled
         else:
             sampled = []
             for run in runs:
                 if (
+                    # Child run
                     run["id"] != run.get("trace_id")
-                    or random.random() < self.tracing_sample_rate
-                ):
+                    # Whose trace is included
+                    and run.get("trace_id") not in self._filtered_post_uuids
+                    # Or a root that's randomly sampled
+                ) or random.random() < self.tracing_sample_rate:
                     sampled.append(run)
-                    self._sampled_post_uuids.add(_as_uuid(run["id"]))
+                else:
+                    self._filtered_post_uuids.add(_as_uuid(run["id"]))
             return sampled
 
     def create_run(
