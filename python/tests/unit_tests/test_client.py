@@ -35,7 +35,6 @@ from langsmith.client import (
     Client,
     _dumps_json,
     _is_langchain_hosted,
-    _is_localhost,
     _serialize_json,
 )
 
@@ -43,10 +42,10 @@ _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
 
 def test_is_localhost() -> None:
-    assert _is_localhost("http://localhost:1984")
-    assert _is_localhost("http://localhost:1984")
-    assert _is_localhost("http://0.0.0.0:1984")
-    assert not _is_localhost("http://example.com:1984")
+    assert ls_utils._is_localhost("http://localhost:1984")
+    assert ls_utils._is_localhost("http://localhost:1984")
+    assert ls_utils._is_localhost("http://0.0.0.0:1984")
+    assert not ls_utils._is_localhost("http://example.com:1984")
 
 
 def test__is_langchain_hosted() -> None:

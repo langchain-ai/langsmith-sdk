@@ -210,6 +210,40 @@ async def test_create_feedback(async_client: AsyncClient):
     assert feedback.value == "test_value"
     assert feedback.comment == "test_comment"
 
+    token = await async_client.create_presigned_feedback_token(
+        run_id=run_id, feedback_key="test_presigned_key"
+    )
+    await async_client.create_feedback_from_token(
+        token.id, score=0.8, value="presigned_value", comment="presigned_comment"
+    )
+    await async_client.create_feedback_from_token(
+        str(token.url), score=0.9, value="presigned_value", comment="presigned_comment"
+    )
+
+    async def check_feedback():
+        feedbacks = [
+            feedback async for feedback in async_client.list_feedback(run_ids=[run_id])
+        ]
+        return sum(feedback.key == "test_presigned_key" for feedback in feedbacks) == 2
+
+    await wait_for(check_feedback, timeout=10)
+    feedbacks = [
+        feedback async for feedback in async_client.list_feedback(run_ids=[run_id])
+    ]
+    presigned_feedbacks = [f for f in feedbacks if f.key == "test_presigned_key"]
+    assert len(presigned_feedbacks) == 2
+    assert all(f.value == "presigned_value" for f in presigned_feedbacks)
+    assert len(presigned_feedbacks) == 2
+    for feedback in presigned_feedbacks:
+        assert feedback.value == "presigned_value"
+        assert feedback.comment == "presigned_comment"
+        assert feedback.score in {0.8, 0.9}
+    assert set(f.score for f in presigned_feedbacks) == {0.8, 0.9}
+
+    shared_run_url = await async_client.share_run(run_id)
+    run_is_shared = await async_client.run_is_shared(run_id)
+    assert run_is_shared, f"Run isn't shared; failed link: {shared_run_url}"
+
 
 @pytest.mark.asyncio
 async def test_list_feedback(async_client: AsyncClient):
