@@ -3488,6 +3488,7 @@ class Client:
         *,
         limit: int,
         dataset_id: ID_TYPE,
+        filter: Optional[str] = None,
         **kwargs: Any,
     ) -> List[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
@@ -3500,6 +3501,9 @@ class Client:
                 input schema. Must be JSON serializable.
             limit (int): The maximum number of examples to return.
             dataset_id (str or UUID): The ID of the dataset to search over.
+            filter (str, optional): A filter string to apply to the search results. Uses
+            the same syntax as the `filter` parameter in `list_runs()`. Only a subset
+            of operations are supported. Defaults to None.
             kwargs (Any): Additional keyword args to pass as part of request body.
 
         Returns:
@@ -3545,11 +3549,19 @@ class Client:
 
         """  # noqa: E501
         dataset_id = _as_uuid(dataset_id, "dataset_id")
+        req = {
+            "inputs": inputs,
+            "limit": limit,
+            **kwargs,
+        }
+        if filter is not None:
+            req["filter"] = filter
+
         resp = self.request_with_retries(
             "POST",
             f"/datasets/{dataset_id}/search",
             headers=self._headers,
-            data=json.dumps({"inputs": inputs, "limit": limit, **kwargs}),
+            data=json.dumps(req),
         )
         ls_utils.raise_for_status_with_text(resp)
         examples = []
