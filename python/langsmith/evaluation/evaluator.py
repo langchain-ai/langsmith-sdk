@@ -196,7 +196,9 @@ class DynamicRunEvaluator(RunEvaluator):
         from langsmith import run_helpers  # type: ignore
 
         if afunc is not None:
-            self.afunc = run_helpers.ensure_traceable(afunc)
+            self.afunc = run_helpers.ensure_traceable(
+                afunc, process_inputs=_serialize_inputs
+            )
             self._name = getattr(afunc, "__name__", "DynamicRunEvaluator")
         if inspect.iscoroutinefunction(func):
             if afunc is not None:
@@ -205,11 +207,14 @@ class DynamicRunEvaluator(RunEvaluator):
                     "also provided. If providing both, func should be a regular "
                     "function to avoid ambiguity."
                 )
-            self.afunc = run_helpers.ensure_traceable(func)
+            self.afunc = run_helpers.ensure_traceable(
+                func, process_inputs=_serialize_inputs
+            )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
             self.func = run_helpers.ensure_traceable(
-                cast(Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT], func)
+                cast(Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT], func),
+                process_inputs=_serialize_inputs,
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
@@ -387,6 +392,22 @@ def run_evaluator(
     return DynamicRunEvaluator(func)
 
 
+_MAXSIZE = 10_000
+
+
+def _maxsize_repr(obj: Any):
+    s = repr(obj)
+    if len(s) > _MAXSIZE:
+        s = s[: _MAXSIZE - 4] + "...)"
+    return s
+
+
+def _serialize_inputs(inputs: dict) -> dict:
+    run_truncated = _maxsize_repr(inputs.get("run"))
+    example_truncated = _maxsize_repr(inputs.get("example"))
+    return {"run": run_truncated, "example": example_truncated}
+
+
 class DynamicComparisonRunEvaluator:
     """Compare predictions (as traces) from 2 or more runs."""
 
@@ -414,7 +435,9 @@ class DynamicComparisonRunEvaluator:
         from langsmith import run_helpers  # type: ignore
 
         if afunc is not None:
-            self.afunc = run_helpers.ensure_traceable(afunc)
+            self.afunc = run_helpers.ensure_traceable(
+                afunc, process_inputs=_serialize_inputs
+            )
             self._name = getattr(afunc, "__name__", "DynamicRunEvaluator")
         if inspect.iscoroutinefunction(func):
             if afunc is not None:
@@ -423,7 +446,9 @@ class DynamicComparisonRunEvaluator:
                     "also provided. If providing both, func should be a regular "
                     "function to avoid ambiguity."
                 )
-            self.afunc = run_helpers.ensure_traceable(func)
+            self.afunc = run_helpers.ensure_traceable(
+                func, process_inputs=_serialize_inputs
+            )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
             self.func = run_helpers.ensure_traceable(
@@ -433,7 +458,8 @@ class DynamicComparisonRunEvaluator:
                         _COMPARISON_OUTPUT,
                     ],
                     func,
-                )
+                ),
+                process_inputs=_serialize_inputs,
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
