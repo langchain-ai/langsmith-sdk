@@ -672,6 +672,7 @@ class Client:
                 f"The content length of {content_length} bytes exceeds the "
                 f"maximum size limit of {size_limit} bytes."
             )
+        return None
 
     def request_with_retries(
         self,
@@ -833,7 +834,9 @@ class Client:
                     )
                     try:
                         content_length = int(
-                            e.request.headers.get("Content-Length") if e.request else ""
+                            str(e.request.headers.get("Content-Length"))
+                            if e.request
+                            else ""
                         )
                         size_rec = self._content_above_size(content_length)
                         if size_rec:
