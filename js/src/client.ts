@@ -2245,7 +2245,7 @@ export class Client {
       filter?: string;
     } = {}
   ): Promise<ExampleSearch[]> {
-    let data: KVMap = {
+    const data: KVMap = {
       limit: limit,
       inputs: inputs,
     };
