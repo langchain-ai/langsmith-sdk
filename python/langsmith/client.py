@@ -1132,7 +1132,7 @@ class Client:
 
     @staticmethod
     def _insert_runtime_env(runs: Sequence[dict]) -> None:
-        runtime_env = ls_env.get_runtime_and_metrics()
+        runtime_env = ls_env.get_runtime_environment()
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
             # update runtime
