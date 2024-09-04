@@ -667,6 +667,7 @@ class Client:
         retry_on: Optional[Sequence[Type[BaseException]]] = None,
         to_ignore: Optional[Sequence[Type[BaseException]]] = None,
         handle_response: Optional[Callable[[requests.Response, int], Any]] = None,
+        _context: str = "",
         **kwargs: Any,
     ) -> requests.Response:
         """Send a request with retries.
@@ -739,7 +740,6 @@ class Client:
         )
         to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
         response = None
-
         for idx in range(stop_after_attempt):
             try:
                 try:
@@ -776,22 +776,26 @@ class Client:
                                 f"Server error caused failure to {method}"
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 429:
                             raise ls_utils.LangSmithRateLimitError(
                                 f"Rate limit exceeded for {pathname}. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 401:
                             raise ls_utils.LangSmithAuthError(
                                 f"Authentication failed for {pathname}. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 404:
                             raise ls_utils.LangSmithNotFoundError(
                                 f"Resource not found for {pathname}. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
-                                f"Conflict for {pathname}. {repr(e)}"
+                                f"Conflict for {pathname}. {repr(e)}" f"{_context}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -805,6 +809,15 @@ class Client:
                             f" {repr(e)}"
                         )
                 except requests.ConnectionError as e:
+                    content_length = (
+                        e.request.headers.get("Content-Length") if e.request else ""
+                    )
+                    api_key = (
+                        e.request.headers.get("x-api-key") or "" if e.request else ""
+                    )
+                    prefix, suffix = api_key[:6], api_key[-4:]
+                    filler = "*" * (max(0, len(api_key) - 10))
+                    masked_api_key = f"{prefix}{filler}{suffix}"
                     recommendation = (
                         "Please confirm your LANGCHAIN_ENDPOINT"
                         if self.api_url != "https://api.smith.langchain.com"
@@ -814,6 +827,9 @@ class Client:
                         f"Connection error caused failure to {method} {pathname}"
                         f"  in LangSmith API. {recommendation}."
                         f" {repr(e)}"
+                        f"\nContent-Length: {content_length}"
+                        f"\nAPI Key: {masked_api_key}"
+                        f"{_context}"
                     ) from e
                 except Exception as e:
                     args = list(e.args)
@@ -829,6 +845,7 @@ class Client:
                         emsg = msg
                     raise ls_utils.LangSmithError(
                         f"Failed to {method} {pathname} in LangSmith API. {emsg}"
+                        f"{_context}"
                     ) from e
             except to_ignore_ as e:
                 if response is not None:
@@ -1338,21 +1355,42 @@ class Client:
             "post": [_dumps_json(run) for run in raw_body["post"]],
             "patch": [_dumps_json(run) for run in raw_body["patch"]],
         }
+        ids = {
+            "post": [
+                f"trace={run.get('trace_id')},id={run.get('id')}"
+                for run in raw_body["post"]
+            ],
+            "patch": [
+                f"trace={run.get('trace_id')},id={run.get('id')}"
+                for run in raw_body["patch"]
+            ],
+        }
+
         body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
         body_size = 0
         for key in ["post", "patch"]:
             body = collections.deque(partial_body[key])
+            ids_ = collections.deque(ids[key])
             while body:
                 if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
-                    self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+                    self._post_batch_ingest_runs(
+                        orjson.dumps(body_chunks),
+                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                    )
                     body_size = 0
                     body_chunks.clear()
+                    context_ids.clear()
                 body_size += len(body[0])
                 body_chunks[key].append(orjson.Fragment(body.popleft()))
+                context_ids[key].append(ids_.popleft())
         if body_size:
-            self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
+            self._post_batch_ingest_runs(
+                orjson.dumps(body_chunks), _context="\n" + context
+            )
 
-    def _post_batch_ingest_runs(self, body: bytes):
+    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
             try:
                 self.request_with_retries(
@@ -1367,6 +1405,7 @@ class Client:
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
                     stop_after_attempt=3,
+                    _context=_context,
                 )
             except Exception as e:
                 logger.warning(f"Failed to batch ingest runs: {repr(e)}")
