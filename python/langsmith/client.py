@@ -657,6 +657,22 @@ class Client:
 
         return self._settings
 
+    def _content_above_size(self, content_length: Optional[int]) -> Optional[str]:
+        if content_length is None or self._info is None:
+            return None
+        info = cast(ls_schemas.LangSmithInfo, self._info)
+        bic = info.batch_ingest_config
+        if not bic:
+            return None
+        size_limit = bic.get("size_limit_bytes")
+        if size_limit is None:
+            return None
+        if content_length > size_limit:
+            return (
+                f"The content length of {content_length} bytes exceeds the "
+                f"maximum size limit of {size_limit} bytes."
+            )
+
     def request_with_retries(
         self,
         /,
@@ -810,23 +826,31 @@ class Client:
                             f" {repr(e)}"
                         )
                 except requests.ConnectionError as e:
-                    content_length = (
-                        e.request.headers.get("Content-Length") if e.request else ""
+                    recommendation = (
+                        "Please confirm your LANGCHAIN_ENDPOINT."
+                        if self.api_url != "https://api.smith.langchain.com"
+                        else "Please confirm your internet connection."
                     )
+                    try:
+                        content_length = int(
+                            e.request.headers.get("Content-Length") if e.request else ""
+                        )
+                        size_rec = self._content_above_size(content_length)
+                        if size_rec:
+                            recommendation = size_rec
+                    except ValueError:
+                        content_length = None
+
                     api_key = (
                         e.request.headers.get("x-api-key") or "" if e.request else ""
                     )
                     prefix, suffix = api_key[:5], api_key[-2:]
                     filler = "*" * (max(0, len(api_key) - 7))
                     masked_api_key = f"{prefix}{filler}{suffix}"
-                    recommendation = (
-                        "Please confirm your LANGCHAIN_ENDPOINT"
-                        if self.api_url != "https://api.smith.langchain.com"
-                        else "Please confirm your internet connection."
-                    )
+
                     raise ls_utils.LangSmithConnectionError(
                         f"Connection error caused failure to {method} {pathname}"
-                        f"  in LangSmith API. {recommendation}."
+                        f" in LangSmith API. {recommendation}"
                         f" {repr(e)}"
                         f"\nContent-Length: {content_length}"
                         f"\nAPI Key: {masked_api_key}"
