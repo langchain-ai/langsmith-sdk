@@ -62,7 +62,8 @@ async def wait_for(condition, timeout=10):
 
 @pytest.fixture
 async def async_client():
-    client = AsyncClient()
+    ls_utils.get_env_var.cache_clear()
+    client = AsyncClient(api_url="https://api.smith.langchain.com")
     yield client
     await client.aclose()
 
