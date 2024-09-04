@@ -352,6 +352,7 @@ def is_base_message_like(obj: object) -> bool:
     )
 
 
+@functools.lru_cache(maxsize=100)
 def get_env_var(
     name: str,
     default: Optional[str] = None,
@@ -379,6 +380,7 @@ def get_env_var(
     return default
 
 
+@functools.lru_cache(maxsize=1)
 def get_tracer_project(return_default_value=True) -> Optional[str]:
     """Get the project name for a LangSmith tracer."""
     return os.environ.get(
