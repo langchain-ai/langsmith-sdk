@@ -41,7 +41,8 @@ def wait_for(
 
 @pytest.fixture
 def langchain_client() -> Client:
-    return Client()
+    get_env_var.cache_clear()
+    return Client(api_url="https://api.smith.langchain.com")
 
 
 def test_datasets(langchain_client: Client) -> None:
