@@ -2238,12 +2238,21 @@ export class Client {
   public async similarExamples(
     inputs: KVMap,
     datasetId: string,
-    limit: number
+    limit: number,
+    {
+      filter,
+    }: {
+      filter?: string;
+    } = {}
   ): Promise<ExampleSearch[]> {
-    const data = {
+    let data: KVMap = {
       limit: limit,
       inputs: inputs,
     };
+
+    if (filter !== undefined) {
+      data["filter"] = filter;
+    }
 
     assertUuid(datasetId);
     const response = await this.caller.call(

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 
 const TESTING_DATASET_NAME = `test_dataset_few_shot_js_${uuidv4()}`;
 
-test("evaluate can evaluate", async () => {
+test("few shot search", async () => {
   const client = new Client();
 
   const schema: KVMap = {
@@ -33,6 +33,7 @@ test("evaluate can evaluate", async () => {
   const res = await client.createExamples({
     inputs: [{ name: "foo" }, { name: "bar" }],
     outputs: [{ output: 2 }, { output: 3 }],
+    metadata: [{ somekey: "somevalue" }, { somekey: "someothervalue" }],
     datasetName: TESTING_DATASET_NAME,
   });
   if (res.length !== 2) {
@@ -62,4 +63,16 @@ test("evaluate can evaluate", async () => {
   expect(examples.length).toBe(2);
   expect(examples[0].inputs).toEqual({ name: "foo" });
   expect(examples[1].inputs).toEqual({ name: "bar" });
+
+  let filtered_examples = await client.similarExamples(
+    { name: "foo" },
+    dataset.id,
+    1,
+    {
+      filter: "eq(metadata.somekey, 'somevalue')",
+    }
+  );
+
+  expect(filtered_examples.length).toBe(1);
+  expect(filtered_examples[0].inputs).toEqual({ name: "foo" });
 });
