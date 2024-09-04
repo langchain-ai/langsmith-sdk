@@ -18,6 +18,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 import typing
 import uuid
 import warnings
@@ -815,8 +816,8 @@ class Client:
                     api_key = (
                         e.request.headers.get("x-api-key") or "" if e.request else ""
                     )
-                    prefix, suffix = api_key[:6], api_key[-4:]
-                    filler = "*" * (max(0, len(api_key) - 10))
+                    prefix, suffix = api_key[:5], api_key[-2:]
+                    filler = "*" * (max(0, len(api_key) - 7))
                     masked_api_key = f"{prefix}{filler}{suffix}"
                     recommendation = (
                         "Please confirm your LANGCHAIN_ENDPOINT"
@@ -1408,7 +1409,12 @@ class Client:
                     _context=_context,
                 )
             except Exception as e:
-                logger.warning(f"Failed to batch ingest runs: {repr(e)}")
+                try:
+                    exc_desc_lines = traceback.format_exception_only(type(e), e)
+                    exc_desc = "".join(exc_desc_lines).rstrip()
+                    logger.warning(f"Failed to batch ingest runs: {exc_desc}")
+                except Exception:
+                    logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def update_run(
         self,
