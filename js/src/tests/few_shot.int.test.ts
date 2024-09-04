@@ -64,7 +64,7 @@ test("few shot search", async () => {
   expect(examples[0].inputs).toEqual({ name: "foo" });
   expect(examples[1].inputs).toEqual({ name: "bar" });
 
-  let filtered_examples = await client.similarExamples(
+  const filtered_examples = await client.similarExamples(
     { name: "foo" },
     dataset.id,
     1,
