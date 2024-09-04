@@ -166,11 +166,31 @@ def is_traceable_function(
     )
 
 
-def ensure_traceable(func: Callable[P, R]) -> SupportsLangsmithExtra[P, R]:
+def ensure_traceable(
+    func: Callable[P, R],
+    *,
+    name: Optional[str] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
+    tags: Optional[List[str]] = None,
+    client: Optional[ls_client.Client] = None,
+    reduce_fn: Optional[Callable[[Sequence], dict]] = None,
+    project_name: Optional[str] = None,
+    process_inputs: Optional[Callable[[dict], dict]] = None,
+    process_outputs: Optional[Callable[..., dict]] = None,
+) -> SupportsLangsmithExtra[P, R]:
     """Ensure that a function is traceable."""
     if is_traceable_function(func):
         return func
-    return traceable()(func)
+    return traceable(
+        name=name,
+        metadata=metadata,
+        tags=tags,
+        client=client,
+        reduce_fn=reduce_fn,
+        project_name=project_name,
+        process_inputs=process_inputs,
+        process_outputs=process_outputs,
+    )(func)
 
 
 def is_async(func: Callable) -> bool:
