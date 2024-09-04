@@ -41,7 +41,7 @@ except ImportError:
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
-VALUE_TYPE = Union[Dict, StrictBool, StrictInt, StrictFloat, str, None]
+VALUE_TYPE = Union[Dict, str, None]
 
 
 class ExampleBase(BaseModel):
