@@ -3504,6 +3504,9 @@ class Client:
             filter (str, optional): A filter string to apply to the search results. Uses
             the same syntax as the `filter` parameter in `list_runs()`. Only a subset
             of operations are supported. Defaults to None.
+
+            For example, you can use `and(eq(metadata.some_tag, 'some_value'), neq(metadata.env, 'dev'))`
+            to filter only examples where some_tag has some_value, and the environment is not dev.
             kwargs (Any): Additional keyword args to pass as part of request body.
 
         Returns:
