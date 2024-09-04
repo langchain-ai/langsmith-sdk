@@ -17,7 +17,11 @@ from pydantic import BaseModel
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import DataType
-from langsmith.utils import LangSmithConnectionError, LangSmithError
+from langsmith.utils import (
+    LangSmithConnectionError,
+    LangSmithError,
+    get_env_var,
+)
 
 
 def wait_for(
@@ -351,6 +355,7 @@ def test_persist_update_run(langchain_client: Client) -> None:
 
 @pytest.mark.parametrize("uri", ["http://localhost:1981", "http://api.langchain.minus"])
 def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -> None:
+    get_env_var.cache_clear()
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", uri)
     monkeypatch.setenv("LANGCHAIN_API_KEY", "test")
     client = Client()
