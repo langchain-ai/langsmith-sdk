@@ -10,6 +10,7 @@ import functools
 import logging
 import os
 import pathlib
+import socket
 import subprocess
 import sys
 import threading
@@ -31,6 +32,7 @@ from typing import (
     Union,
     cast,
 )
+from urllib import parse as urllib_parse
 
 import httpx
 import requests
@@ -726,3 +728,44 @@ def get_api_key(api_key: Optional[str]) -> Optional[str]:
     if api_key_ is None or not api_key_.strip():
         return None
     return api_key_.strip().strip('"').strip("'")
+
+
+def _is_localhost(url: str) -> bool:
+    """Check if the URL is localhost.
+
+    Parameters
+    ----------
+    url : str
+        The URL to check.
+
+    Returns:
+    -------
+    bool
+        True if the URL is localhost, False otherwise.
+    """
+    try:
+        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
+        ip = socket.gethostbyname(netloc)
+        return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
+    except socket.gaierror:
+        return False
+
+
+@functools.lru_cache(maxsize=2)
+def get_host_url(web_url: Optional[str], api_url: str):
+    """Get the host URL based on the web URL or API URL."""
+    if web_url:
+        return web_url
+    parsed_url = urllib_parse.urlparse(api_url)
+    if _is_localhost(api_url):
+        link = "http://localhost"
+    elif str(parsed_url.path).endswith("/api"):
+        new_path = str(parsed_url.path).rsplit("/api", 1)[0]
+        link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
+    elif str(parsed_url.netloc).startswith("eu."):
+        link = "https://eu.smith.langchain.com"
+    elif str(parsed_url.netloc).startswith("dev."):
+        link = "https://dev.smith.langchain.com"
+    else:
+        link = "https://smith.langchain.com"
+    return link
