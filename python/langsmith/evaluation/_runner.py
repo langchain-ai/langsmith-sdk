@@ -23,6 +23,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -94,35 +95,34 @@ def evaluate(
     max_concurrency: Optional[int] = None,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
-    blocking: bool = True,
+    blocking: Union[bool, Literal["yield"]] = True,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
     Args:
         target (TARGET_T): The target system or function to evaluate.
-        data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
-            examples, or a generator of examples.
-        evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
+        data (DATA_T): The dataset for evaluation. Can be a dataset name, UUID,
+            or an iterable of examples.
+        evaluators (Optional[Sequence[EVALUATOR_T]]): Row-level evaluators to run
             on each example. Defaults to None.
-        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
-            evaluators to run on the entire dataset. Defaults to None.
-        metadata (Optional[dict]): Metadata to attach to the experiment.
+        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Evaluators to run
+            on the entire dataset, providing aggregate metrics. Defaults to None.
+        metadata (Optional[dict]): Additional metadata to attach to the experiment.
             Defaults to None.
-        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+        experiment_prefix (Optional[str]): A prefix for the experiment name.
             Defaults to None.
-        description (Optional[str]): A free-form text description for the experiment.
-        max_concurrency (Optional[int]): The maximum number of concurrent
-            evaluations to run. Defaults to None (max number of workers).
+        description (Optional[str]): A free-form text description of the experiment.
+            Defaults to None.
+        max_concurrency (Optional[int]): Maximum number of concurrent evaluations.
+            Defaults to None (uses maximum available workers).
         client (Optional[langsmith.Client]): The LangSmith client to use.
             Defaults to None.
-        blocking (bool): Whether to block until the evaluation is complete.
-            Defaults to True.
-        num_repetitions (int): The number of times to run the evaluation.
-            Each item in the dataset will be run and evaluated this many times.
+        blocking (Union[bool, Literal["yield"]]): Execution mode for the evaluation:
+            - If True: Runs the full experiment before returning (default).
+            - If False: Returns immediately, running the experiment in a background thread.
+            - If "yield": Returns an iterator, allowing manual iteration over examples.
+        num_repetitions (int): Number of times to evaluate each dataset item.
             Defaults to 1.
-
-    Returns:
-        ExperimentResults: The results of the evaluation.
 
     Examples:
         Prepare the dataset:
@@ -371,19 +371,24 @@ class ExperimentResults:
         wait() -> None: Waits for the experiment data to be processed.
     """
 
-    def __init__(self, experiment_manager: _ExperimentManager, blocking: bool = True):
+    def __init__(
+        self,
+        experiment_manager: _ExperimentManager,
+        blocking: Union[bool, Literal["yield"]] = True,
+    ):
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
         self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
-        if not blocking:
+        if blocking is False:
             self._thread: Optional[threading.Thread] = threading.Thread(
                 target=self._process_data
             )
             self._thread.start()
-        else:
+        else:  # True or "yield"
             self._thread = None
-            self._process_data()
+            if blocking is True:
+                self._process_data()
 
     @property
     def experiment_name(self) -> str:
@@ -391,6 +396,7 @@ class ExperimentResults:
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
         ix = 0
+        iterable = self._iter_data()
         while (
             not self._processing_complete.is_set()
             or not self._queue.empty()
@@ -401,16 +407,29 @@ class ExperimentResults:
                     yield self._results[ix]
                     ix += 1
                 else:
+                    if self._thread is None:
+                        try:
+                            # If we have to process in the main thread,
+                            # we need to consume
+                            next(iterable)
+                        except StopIteration:
+                            pass
+
                     self._queue.get(block=True, timeout=0.1)
             except queue.Empty:
                 continue
 
     def _process_data(self) -> None:
+        for _ in self._iter_data():
+            pass
+
+    def _iter_data(self):
         tqdm = _load_tqdm()
         results = self._manager.get_results()
         for item in tqdm(results):
             self._queue.put(item)
             self._results.append(item)
+            yield item
 
         summary_scores = self._manager.get_summary_scores()
         self._summary_results = summary_scores
@@ -840,7 +859,7 @@ def _evaluate(
     max_concurrency: Optional[int] = None,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
-    blocking: bool = True,
+    blocking: Union[bool, Literal["yield"]] = True,
     experiment: Optional[schemas.TracerSession] = None,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
