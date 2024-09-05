@@ -400,7 +400,7 @@ class TracingQueueItem:
     """
 
     priority: str
-    action: str
+    action: Literal["create", "update", "create_feedback"]
     item: Any = field(compare=False)
 
 
@@ -3949,22 +3949,38 @@ class Client:
                 run_id_ = res.target_run_id
             elif run is not None:
                 run_id_ = run.id
-            self.create_feedback(
-                run_id_,
-                res.key,
-                score=res.score,
-                value=res.value,
-                comment=res.comment,
-                correction=res.correction,
-                source_info=source_info_,
-                source_run_id=res.source_run_id,
-                feedback_config=cast(
+            feedback_id = uuid.uuid4()
+            fb = {
+                "run_id": run_id_,
+                "key": res.key,
+                "score": res.score,
+                "value": res.value,
+                "comment": res.comment,
+                "correction": res.correction,
+                "source_info": source_info_,
+                "source_run_id": res.source_run_id,
+                "feedback_config": cast(
                     Optional[ls_schemas.FeedbackConfig], res.feedback_config
                 ),
-                feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
-                project_id=project_id,
-            )
+                "feedback_source_type": ls_schemas.FeedbackSourceType.MODEL,
+                "project_id": project_id,
+                "feedback_id": feedback_id,
+            }
+            if self.tracing_queue is not None:
+                self.tracing_queue.put(
+                    TracingQueueItem("zfb" + str(feedback_id), "create_feedback", fb)
+                )
+            else:
+                self.create_feedback(**fb)
         return results
+
+    def _batch_log_feedback(self, feedbacks: list) -> None:
+        # TODO: Update to use batch feedback ingestion endpoint when available
+        for fb in feedbacks:
+            try:
+                self.create_feedback(**fb)
+            except Exception:
+                logger.warning("Error ingesting feedback", exc_info=True)
 
     async def aevaluate_run(
         self,
@@ -5617,13 +5633,21 @@ def _tracing_thread_handle_batch(
 ) -> None:
     create = [it.item for it in batch if it.action == "create"]
     update = [it.item for it in batch if it.action == "update"]
+    feedbacks = [it.item for it in batch if it.action == "create_feedback"]
     try:
-        client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
-    except Exception:
-        logger.error("Error in tracing queue", exc_info=True)
-        # exceptions are logged elsewhere, but we need to make sure the
-        # background thread continues to run
-        pass
+        try:
+            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+        except Exception:
+            logger.error("Error in tracing queue", exc_info=True)
+            # exceptions are logged elsewhere, but we need to make sure the
+            # background thread continues to run
+            pass
+        if feedbacks:
+            try:
+                client._batch_log_feedback(feedbacks)
+            except Exception:
+                logger.error("Error creating feedback in tracing queue", exc_info=True)
+                pass
     finally:
         for _ in batch:
             tracing_queue.task_done()
