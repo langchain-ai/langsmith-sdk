@@ -49,10 +49,10 @@ from typing import (
     cast,
 )
 from urllib import parse as urllib_parse
-import zoneinfo
 
 import orjson
 import requests
+import zoneinfo
 from requests import adapters as requests_adapters
 from typing_extensions import TypeGuard
 from urllib3.util import Retry
@@ -170,6 +170,10 @@ def _simple_default(obj):
         # https://github.com/ijl/orjson#serialize
         if isinstance(obj, _Fragment):
             return orjson.Fragment(obj.buf)
+        if isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
         if hasattr(obj, "model_dump") and callable(obj.model_dump):
             return obj.model_dump()
         elif hasattr(obj, "dict") and callable(obj.dict):
@@ -212,7 +216,7 @@ def _simple_default(obj):
     return repr(obj)
 
 
-def _serialize_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> Any:
+def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
         if depth >= _MAX_DEPTH:
             try:
@@ -226,9 +230,7 @@ def _serialize_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> Any:
 
         serialization_methods = [
             ("model_dump", True),  # Pydantic V2 with non-serializable fields
-            ("to_json", False),  # dataclass_json
-            ("dict", False),  # Pydantic V1 with non-serializable fields
-            ("_asdict", False),  # dataclasses
+            ("dict", False),  # Pydantic V1 with non-serializable field
         ]
         for attr, exclude_none in serialization_methods:
             if hasattr(obj, attr) and callable(getattr(obj, attr)):
@@ -243,20 +245,8 @@ def _serialize_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> Any:
                         f" JSON: {repr(e)}"
                     )
                     pass
-        if serialize_py:
-            all_attrs = {}
-            if hasattr(obj, "__slots__"):
-                all_attrs.update(
-                    {slot: getattr(obj, slot, None) for slot in obj.__slots__}
-                )
-            if hasattr(obj, "__dict__"):
-                all_attrs.update(vars(obj))
-            if all_attrs:
-                filtered = {
-                    k: v if v is not obj else repr(v) for k, v in all_attrs.items()
-                }
-                return orjson.loads(_dumps_json_single(filtered))
-        return repr(obj)
+        else:
+            return _simple_default(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
@@ -297,7 +287,7 @@ def _dumps_json_single(
         return result
 
 
-def _dumps_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> bytes:
+def _dumps_json(obj: Any, depth: int = 0) -> bytes:
     """Serialize an object to a JSON formatted string.
 
     Parameters
@@ -312,9 +302,7 @@ def _dumps_json(obj: Any, depth: int = 0, serialize_py: bool = True) -> bytes:
     str
         The JSON formatted string.
     """
-    return _dumps_json_single(
-        obj, functools.partial(_serialize_json, depth=depth, serialize_py=serialize_py)
-    )
+    return _dumps_json_single(obj, functools.partial(_serialize_json, depth=depth))
 
 
 def close_session(session: requests.Session) -> None:
