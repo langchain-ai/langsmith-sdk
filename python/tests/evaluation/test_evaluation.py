@@ -3,7 +3,7 @@ from typing import Sequence
 
 import pytest
 
-from langsmith import Client, aevaluate, evaluate, expect, test
+from langsmith import Client, aevaluate, evaluate, expect, test, traceable
 from langsmith.schemas import Example, Run
 
 
@@ -21,8 +21,13 @@ def precision(runs: Sequence[Run], examples: Sequence[Example]):
     return {"score": tp / (tp + fp)}
 
 
-def predict(inputs: dict) -> dict:
+@traceable
+def sub_predict(val):
     return {"output": "Yes"}
+
+
+def predict(inputs: dict) -> dict:
+    return sub_predict(inputs)
 
 
 def test_evaluate():
