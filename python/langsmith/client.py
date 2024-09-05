@@ -220,13 +220,13 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
     try:
         if depth >= _MAX_DEPTH:
             try:
-                return orjson.loads(_dumps_json_single(obj))
+                return _dumps_json_single(obj)
             except BaseException:
                 return repr(obj)
         if isinstance(obj, bytes):
             return obj.decode("utf-8")
         if isinstance(obj, (set, tuple)):
-            return orjson.loads(_dumps_json_single(list(obj)))
+            return _dumps_json_single(list(obj))
 
         serialization_methods = [
             ("model_dump", True),  # Pydantic V2 with non-serializable fields
@@ -245,8 +245,7 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
                         f" JSON: {repr(e)}"
                     )
                     pass
-        else:
-            return _simple_default(obj)
+        return _simple_default(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return repr(obj)
@@ -3964,8 +3963,17 @@ class Client:
         run: Optional[ls_schemas.Run] = None,
         source_info: Optional[Dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
+        *,
+        _executor: Optional[cf.ThreadPoolExecutor] = None,
     ) -> List[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
+
+        def _submit_feedback(**kwargs):
+            if _executor:
+                _executor.submit(self.create_feedback, **kwargs)
+            else:
+                self.create_feedback(**kwargs)
+
         for res in results:
             source_info_ = source_info or {}
             if res.evaluator_info:
@@ -3975,9 +3983,10 @@ class Client:
                 run_id_ = res.target_run_id
             elif run is not None:
                 run_id_ = run.id
-            self.create_feedback(
-                run_id_,
-                res.key,
+
+            _submit_feedback(
+                run_id=run_id_,
+                key=res.key,
                 score=res.score,
                 value=res.value,
                 comment=res.comment,
