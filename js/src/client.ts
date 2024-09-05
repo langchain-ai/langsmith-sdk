@@ -2226,6 +2226,13 @@ export class Client {
    *                    similar examples in order of most similar to least similar. If no similar
    *                    examples are found, random examples will be returned.
    *
+   * @param filter      A filter string to apply to the search. Only examples will be returned that
+   *                    match the filter string. Some examples of filters
+   *
+   *                    - eq(metadata.mykey, "value")
+   *                    - and(neq(metadata.my.nested.key, "value"), neq(metadata.mykey, "value"))
+   *                    - or(eq(metadata.mykey, "value"), eq(metadata.mykey, "othervalue"))
+   *
    * @returns           A list of similar examples.
    *
    *
