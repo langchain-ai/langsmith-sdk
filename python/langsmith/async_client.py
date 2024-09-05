@@ -841,6 +841,7 @@ class AsyncClient:
         *,
         limit: int,
         dataset_id: ls_client.ID_TYPE,
+        filter: Optional[str] = None,
         **kwargs: Any,
     ) -> List[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
@@ -853,6 +854,9 @@ class AsyncClient:
                 input schema. Must be JSON serializable.
             limit (int): The maximum number of examples to return.
             dataset_id (str or UUID): The ID of the dataset to search over.
+            filter (str, optional): A filter string to apply to the search results. Uses
+                the same syntax as the `filter` parameter in `list_runs()`. Only a subset
+                of operations are supported. Defaults to None.
             kwargs (Any): Additional keyword args to pass as part of request body.
 
         Returns:
@@ -898,10 +902,18 @@ class AsyncClient:
 
         """  # noqa: E501
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
+        req = {
+            "inputs": inputs,
+            "limit": limit,
+            **kwargs,
+        }
+        if filter:
+            req["filter"] = filter
+
         resp = await self._arequest_with_retries(
             "POST",
             f"/datasets/{dataset_id}/search",
-            content=ls_client._dumps_json({"inputs": inputs, "limit": limit, **kwargs}),
+            content=ls_client._dumps_json(req),
         )
         ls_utils.raise_for_status_with_text(resp)
         examples = []
