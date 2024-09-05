@@ -95,7 +95,7 @@ def evaluate(
     max_concurrency: Optional[int] = None,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
-    blocking: Union[bool, Literal["yield"]] = True,
+    blocking: Literal["block", "background", "lazy"] = "block",
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -117,10 +117,11 @@ def evaluate(
             Defaults to None (uses maximum available workers).
         client (Optional[langsmith.Client]): The LangSmith client to use.
             Defaults to None.
-        blocking (Union[bool, Literal["yield"]]): Execution mode for the evaluation:
-            - If True: Runs the full experiment before returning (default).
-            - If False: Returns immediately, running the experiment in a background thread.
-            - If "yield": Returns an iterator, allowing manual iteration over examples.
+        blocking (Literal["block", "background", "lazy"]): Execution mode for the evaluation:
+            - "block": Runs the full experiment before returning (default).
+            - "background": Returns immediately, running the experiment in a background thread.
+            - "lazy": Returns an iterator, allowing manual iteration over examples.
+                You must iterate until completion for the experiment to finish.
         num_repetitions (int): Number of times to evaluate each dataset item.
             Defaults to 1.
 
@@ -272,22 +273,24 @@ def evaluate_existing(
     max_concurrency: Optional[int] = None,
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
-    blocking: bool = True,
+    blocking: Union[Literal["block", "background", "lazy"], bool] = "block",
 ) -> ExperimentResults:
     r"""Evaluate existing experiment runs.
 
     Args:
         experiment (Union[str, uuid.UUID]): The identifier of the experiment to evaluate.
-        data (DATA_T): The data to use for evaluation.
         evaluators (Optional[Sequence[EVALUATOR_T]]): Optional sequence of evaluators to use for individual run evaluation.
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
             to apply over the entire dataset.
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
         max_concurrency (Optional[int]): Optional maximum number of concurrent evaluations.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
-        load_nested: Whether to load all child runs for the experiment.
+        load_nested (bool): Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
-        blocking (bool): Whether to block until evaluation is complete.
+        blocking (Union[Literal["block", "background", "lazy"], bool]): Controls the blocking behavior of the evaluation.
+            "block" (default) waits for all results, "background" starts asynchronously and returns immediately,
+            "lazy" evaluates examples lazily as they are iterated over. Boolean values are accepted for backwards compatibility,
+            where True is equivalent to "block" and False is equivalent to "background".
 
     Returns:
         ExperimentResults: The evaluation results.
@@ -374,21 +377,26 @@ class ExperimentResults:
     def __init__(
         self,
         experiment_manager: _ExperimentManager,
-        blocking: Union[bool, Literal["yield"]] = True,
+        blocking: Literal["block", "background", "lazy"] = "block",
     ):
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
         self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
-        if blocking is False:
-            self._thread: Optional[threading.Thread] = threading.Thread(
-                target=self._process_data
-            )
+        self._thread: Optional[threading.Thread] = None
+        if blocking == "background":
+            self._thread = threading.Thread(target=self._process_data)
             self._thread.start()
-        else:  # True or "yield"
-            self._thread = None
-            if blocking is True:
-                self._process_data()
+        elif blocking == "lazy":
+            pass
+        else:
+            if blocking != "block":
+                logger.warning(
+                    f"Invalid value for 'blocking' parameter: '{blocking}'. "
+                    "Expected values are 'block', 'background', or 'lazy'. "
+                    "Defaulting to 'block' behavior."
+                )
+            self._process_data()
 
     @property
     def experiment_name(self) -> str:
@@ -859,9 +867,14 @@ def _evaluate(
     max_concurrency: Optional[int] = None,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
-    blocking: Union[bool, Literal["yield"]] = True,
+    blocking: Union[Literal["block", "background", "lazy"], bool] = "block",
     experiment: Optional[schemas.TracerSession] = None,
 ) -> ExperimentResults:
+    if isinstance(blocking, bool):
+        if blocking is True:
+            blocking = "block"
+        else:
+            blocking = "background"
     # Initialize the experiment manager.
     client = client or langsmith.Client()
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
