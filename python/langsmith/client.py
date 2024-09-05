@@ -3943,7 +3943,7 @@ class Client:
     ) -> List[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
 
-        def _submit(**kwargs):
+        def _submit_feedback(**kwargs):
             if _executor:
                 _executor.submit(self.create_feedback, **kwargs)
             else:
@@ -3959,7 +3959,7 @@ class Client:
             elif run is not None:
                 run_id_ = run.id
 
-            _submit(
+            _submit_feedback(
                 run_id=run_id_,
                 key=res.key,
                 score=res.score,
