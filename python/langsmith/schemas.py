@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import threading
-import weakref
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -195,9 +193,6 @@ class DatasetVersion(BaseModel):
     as_of: datetime
 
 
-_LOCKS = weakref.WeakKeyDictionary()
-
-
 class RunBase(BaseModel):
     """Base Run schema.
 
@@ -223,7 +218,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     """End time of the run, if applicable."""
 
-    extra: Optional[dict] = None
+    extra: Optional[dict] = Field(default_factory=dict)
     """Additional metadata or settings related to the run."""
 
     error: Optional[str] = None
@@ -254,10 +249,7 @@ class RunBase(BaseModel):
     @property
     def metadata(self) -> dict[str, Any]:
         """Retrieve the metadata (if any)."""
-        with _LOCKS[self]:
-            if self.extra is None:
-                self.extra = {}
-            metadata = self.extra.setdefault("metadata", {})
+        metadata = self.extra.setdefault("metadata", {})
         return metadata
 
     @property
@@ -268,7 +260,8 @@ class RunBase(BaseModel):
     def __post_init__(self):
         """Run after initialization to perform any necessary setup or validation."""
         super().__post_init__()
-        _LOCKS[self] = threading.Lock()
+        if not self.extra:
+            self.extra = {}
 
 
 class Run(RunBase):

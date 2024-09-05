@@ -574,6 +574,20 @@ class Client:
             self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
     def __reduce__(self):
+        """Implement object serialization for the Client class.
+
+        This method allows the Client instance to be pickled and unpickled.
+        It returns a tuple containing the Client class and a dictionary of
+        arguments needed to reconstruct the instance.
+
+        Returns:
+            tuple: A tuple containing the Client class and a dictionary of
+                   initialization arguments.
+
+        Note:
+            - The session object is not included in the serialization.
+            - Multiple API write URLs are not supported in the serialization.
+        """
         return (
             Client,
             (
@@ -589,7 +603,6 @@ class Client:
                     hide_inputs=self._hide_inputs,
                     hide_outputs=self._hide_outputs,
                     info=self._info,
-                    # Multiple API write Urls not supported
                 ),
             ),
         )

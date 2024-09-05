@@ -842,6 +842,8 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[schemas.TracerSession] = None,
+    *,
+    _experimental_multiprocessing: bool = False,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or langsmith.Client()
@@ -851,7 +853,12 @@ def _evaluate(
         runs,
         client,
     )
-    executor = ls_utils.ContextProcessPoolExecutor(
+    executor_cls = (
+        ls_utils.ContextProcessPoolExecutor
+        if _experimental_multiprocessing
+        else ls_utils.ThreadPoolExecutor
+    )
+    executor = executor_cls(
         # If 0, we will run the system in the main thread but still
         # submit the feedback in a background thread
         max_workers=max_concurrency if max_concurrency != 0 else 1
@@ -1544,14 +1551,10 @@ def _forward(
     run: Optional[schemas.RunBase] = None
 
     def _get_run(r: run_trees.RunTree) -> None:
-        with open("foo.txt", "a") as f:
-            f.write(f"GOT RUN {r}")
         nonlocal run
         run = r
 
     with rh.tracing_context(enabled=True):
-        with open("foo.txt", "a") as f:
-            f.write(f"client {client}\n")
         try:
             fn(
                 example.inputs,
@@ -1572,8 +1575,6 @@ def _forward(
             )
         except Exception as e:
             logger.error(f"Error running target function: {e}")
-            with open("foo.txt", "a") as f:
-                f.write(f"Error running target function: {e}")
         return _ForwardResults(
             run=cast(schemas.Run, run),
             example=example,
