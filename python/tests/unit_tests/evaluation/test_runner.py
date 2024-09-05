@@ -118,7 +118,7 @@ def _wait_until(condition: Callable, timeout: int = 8):
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
-@pytest.mark.parametrize("blocking", [False, True, "yield"])
+@pytest.mark.parametrize("blocking", [False, True, "background", "block", "lazy"])
 def test_evaluate_results(blocking: Union[bool, Literal["yield"]]) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
@@ -189,12 +189,13 @@ def test_evaluate_results(blocking: Union[bool, Literal["yield"]]) -> None:
         data=dev_split,
         evaluators=[score_value_first],
         num_repetitions=NUM_REPETITIONS,
-        blocking=blocking,
+        # Ignore to check backwards compat when it was a bool
+        blocking=blocking,  # type: ignore[arg-type]
     )
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
 
-    if blocking in (False, "yield"):
-        if blocking == "yield":
+    if blocking in (False, "lazy", "background"):
+        if blocking == "lazy":
             assert len(results._results) == 0
         deltas = []
         last = None
