@@ -851,7 +851,7 @@ def _evaluate(
         runs,
         client,
     )
-    executor = ls_utils.ContextThreadPoolExecutor(
+    executor = ls_utils.ContextProcessPoolExecutor(
         # If 0, we will run the system in the main thread but still
         # submit the feedback in a background thread
         max_workers=max_concurrency if max_concurrency != 0 else 1

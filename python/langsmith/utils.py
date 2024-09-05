@@ -729,56 +729,15 @@ class ContextProcessPoolExecutor(ProcessPoolExecutor):
         Returns:
             Future[T]: The future for the function.
         """
+        context = contextvars.copy_context()
         return super().submit(
             cast(
                 Callable[..., T],
-                functools.partial(
-                    contextvars.copy_context().run, func, *args, **kwargs
-                ),
+                functools.partial(context.run, func, *args, **kwargs),
             )
         )
 
-    def map(
-        self,
-        fn: Callable[..., T],
-        *iterables: Iterable[Any],
-        timeout: Optional[float] = None,
-        chunksize: int = 1,
-    ) -> Iterator[T]:
-        """Return an iterator equivalent to stdlib map.
-
-        Each function will receive it's own copy of the context from the parent thread.
-
-        Args:
-            fn: A callable that will take as many arguments as there are
-                passed iterables.
-            timeout: The maximum number of seconds to wait. If None, then there
-                is no limit on the wait time.
-            chunksize: The size of the chunks the iterable will be broken into
-                before being passed to a child process. This argument is only
-                used by ProcessPoolExecutor; it is ignored by
-                ThreadPoolExecutor.
-
-        Returns:
-            An iterator equivalent to: map(func, *iterables) but the calls may
-            be evaluated out-of-order.
-
-        Raises:
-            TimeoutError: If the entire result iterator could not be generated
-                before the given timeout.
-            Exception: If fn(*args) raises for any values.
-        """
-        contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
-
-        def _wrapped_fn(*args: Any) -> T:
-            return contexts.pop().run(fn, *args)
-
-        return super().map(
-            _wrapped_fn,
-            *iterables,
-            timeout=timeout,
-            chunksize=chunksize,
-        )
+    # Note map() not subclassed atm (not used in evals for now)
 
 
 def get_api_url(api_url: Optional[str]) -> str:
