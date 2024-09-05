@@ -714,7 +714,10 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
 def _to_submit(func: Callable, *args, __ctx: dict, **kwargs):
     from langsmith.run_helpers import _set_tracing_context
 
+    with open("foo.txt", "a") as f:
+        f.write(f"ARGS, {__ctx}\n")
     _set_tracing_context(__ctx)
+
     return func(*args, **kwargs)
 
 
@@ -723,8 +726,6 @@ def worker_function(func_name, module_name, *args, **kwargs):
     module = __import__(module_name, fromlist=[func_name])
     func = getattr(module, func_name)
     # Call the function and return the result
-    with open("foo.txt", "a") as f:
-        f.write(f"ARGS, {str(args)}, {str(kwargs)}")
     return func(*args, **kwargs)
 
 
@@ -760,14 +761,17 @@ class ContextProcessPoolExecutor(ProcessPoolExecutor):
             func_name = func.__name__
             partialed = functools.partial(worker_function, func_name, module_name)
         else:
+            if not hasattr(func, "func"):
+                breakpoint()
             partialed = func
+        ctx = get_tracing_context()
+        with open("foo.txt", "a") as f:
+            f.write(f"FROM, {ctx}\n")
         return super().submit(
             cast(
                 Callable[..., T],
-                functools.partial(partialed, *args, **kwargs),
-                # functools.partial(
-                #     _to_submit, partialed, *args, **kwargs, __ctx=get_tracing_context()
-                # ),
+                # functools.partial(partialed, *args, **kwargs),
+                functools.partial(_to_submit, partialed, *args, **kwargs, __ctx=ctx),
             )
         )
 

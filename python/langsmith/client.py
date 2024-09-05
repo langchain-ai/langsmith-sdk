@@ -490,7 +490,7 @@ class Client:
             If both api_url and api_urls are provided.
         """
         if isinstance(api_url, dict):
-            self.__class__(**api_url)
+            self.__init__(**api_url)
         else:
             if api_url and api_urls:
                 raise ls_utils.LangSmithUserError(

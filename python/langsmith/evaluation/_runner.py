@@ -1278,10 +1278,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self, target: TARGET_T, /, max_concurrency: Optional[int] = None
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
+        fn = _ensure_traceable(target)
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    target, example, self.experiment_name, self._metadata, self.client
+                    fn, example, self.experiment_name, self._metadata, self.client
                 )
 
         else:
@@ -1289,7 +1290,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 self._executor.submit(
                     functools.partial(
                         _forward,
-                        target,
+                        target,  # not fn since pickling issues
                         example,
                         self.experiment_name,
                         self._metadata,
@@ -1363,14 +1364,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
         Expects runs to be available in the manager.
         (e.g. from a previous prediction step)
         """
-        if max_concurrency == 0:
+        if max_concurrency == 0 or True:
             context = copy_context()
             for current_results in self.get_results():
                 yield context.run(
                     self._run_evaluators,
                     evaluators,
                     current_results,
-                    executor=self._executor,
                 )
         else:
             futures = set()
@@ -1544,10 +1544,14 @@ def _forward(
     run: Optional[schemas.RunBase] = None
 
     def _get_run(r: run_trees.RunTree) -> None:
+        with open("foo.txt", "a") as f:
+            f.write(f"GOT RUN {r}")
         nonlocal run
         run = r
 
     with rh.tracing_context(enabled=True):
+        with open("foo.txt", "a") as f:
+            f.write(f"client {client}\n")
         try:
             fn(
                 example.inputs,
@@ -1568,6 +1572,8 @@ def _forward(
             )
         except Exception as e:
             logger.error(f"Error running target function: {e}")
+            with open("foo.txt", "a") as f:
+                f.write(f"Error running target function: {e}")
         return _ForwardResults(
             run=cast(schemas.Run, run),
             example=example,

@@ -1,5 +1,4 @@
 import asyncio
-import functools
 from typing import Sequence
 
 import pytest
@@ -34,10 +33,10 @@ def test_evaluate():
     dataset_name = "Evaluate Examples"
 
     results = evaluate(
-        functools.partial(predict),
+        predict,
         data=dataset_name,
-        # evaluators=[accuracy],
-        # summary_evaluators=[precision],
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
         description="My sync experiment",
         metadata={
             "my-prompt-version": "abcd-1234",
