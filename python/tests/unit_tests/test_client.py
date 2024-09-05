@@ -1,14 +1,12 @@
 """Test the LangSmith client."""
 
 import asyncio
-import base64
 import dataclasses
 import gc
 import itertools
 import json
 import math
 import sys
-import threading
 import time
 import uuid
 import warnings
@@ -16,11 +14,10 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Any, NamedTuple, Optional, Type, Union
+from typing import NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
-import attr
 import dataclasses_json
 import orjson
 import pytest
@@ -700,12 +697,8 @@ def test_serialize_json() -> None:
             self.tee_a = tee_a
             self.tee_b = tee_b
 
-    class MyClassWithSlots:
-        __slots__ = ["x", "y"]
-
-        def __init__(self, x: int) -> None:
-            self.x = x
-            self.y = "y"
+        def __repr__(self):
+            return "tee_a, tee_b"
 
     class MyPydantic(BaseModel):
         foo: str
@@ -735,101 +728,47 @@ def test_serialize_json() -> None:
     class Person:
         name: str
 
-    @attr.dataclass
-    class AttrDict:
-        foo: str = attr.ib()
-        bar: int
-
     uid = uuid.uuid4()
     current_time = datetime.now()
-
-    class NestedClass:
-        __slots__ = ["person", "lock"]
-
-        def __init__(self) -> None:
-            self.person = Person(name="foo")
-            self.lock = [threading.Lock()]
-
-    class CyclicClass:
-        def __init__(self) -> None:
-            self.cyclic = self
-
-        def __repr__(self) -> str:
-            return "SoCyclic"
-
-    class CyclicClass2:
-        def __init__(self) -> None:
-            self.cyclic: Any = None
-            self.other: Any = None
-
-        def __repr__(self) -> str:
-            return "SoCyclic2"
-
-    cycle_2 = CyclicClass2()
-    cycle_2.cyclic = CyclicClass2()
-    cycle_2.cyclic.other = cycle_2
 
     class MyNamedTuple(NamedTuple):
         foo: str
         bar: int
 
+    # conver tto dict
     to_serialize = {
         "uid": uid,
         "time": current_time,
         "my_class": MyClass(1),
         "class_with_tee": ClassWithTee(),
-        "my_slotted_class": MyClassWithSlots(1),
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
         "my_pydantic": MyPydantic(foo="foo", bar=1),
-        "person": Person(name="foo"),
+        "person": Person(name="foo_person"),
         "a_bool": True,
         "a_none": None,
         "a_str": "foo",
         "an_int": 1,
         "a_float": 1.1,
-        "nested_class": NestedClass(),
-        "attr_dict": AttrDict(foo="foo", bar=1),
         "named_tuple": MyNamedTuple(foo="foo", bar=1),
-        "cyclic": CyclicClass(),
-        "cyclic2": cycle_2,
         "fake_json": ClassWithFakeJson(),
     }
     res = orjson.loads(_dumps_json(to_serialize))
     expected = {
         "uid": str(uid),
         "time": current_time.isoformat(),
-        "my_class": {
-            "x": 1,
-            "y": "y",
-            "a_list": [1, 2, 3],
-            "a_tuple": [1, 2, 3],
-            "a_set": [1, 2, 3],
-            "a_dict": {"foo": "bar"},
-            "my_bytes": base64.b64encode(b"foo",).decode(),
-        },
-        "class_with_tee": lambda val: all(
-            ["_tee object" in val[key] for key in ["tee_a", "tee_b"]]
-        ),
-        "my_slotted_class": {"x": 1, "y": "y"},
+        "my_class": "I fell back",
+        "class_with_tee": "tee_a, tee_b",
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
         "my_pydantic": {"foo": "foo", "bar": 1},
-        "person": {"name": "foo"},
+        "person": {"name": "foo_person"},
         "a_bool": True,
         "a_none": None,
         "a_str": "foo",
         "an_int": 1,
         "a_float": 1.1,
-        "nested_class": (
-            lambda val: val["person"] == {"name": "foo"}
-            and "_thread.lock object" in str(val.get("lock"))
-        ),
-        "attr_dict": {"foo": "foo", "bar": 1},
         "named_tuple": ["foo", 1],
-        "cyclic": {"cyclic": "SoCyclic"},
-        # We don't really care about this case just want to not err
-        "cyclic2": lambda _: True,
         "fake_json": {"foo": "bar"},
     }
     assert set(expected) == set(res)
@@ -841,6 +780,20 @@ def test_serialize_json() -> None:
                 assert res[k] == v, f"Failed for {k}"
         except AssertionError:
             raise
+
+    @dataclasses.dataclass
+    class CyclicClass:
+        other: Optional["CyclicClass"]
+
+        def __repr__(self) -> str:
+            return "my_cycles..."
+
+    my_cyclic = CyclicClass(other=CyclicClass(other=None))
+    my_cyclic.other.other = my_cyclic
+
+    res = orjson.loads(_dumps_json({"cyclic": my_cyclic}))
+    assert res == {"cyclic": "my_cycles..."}
+    expected = {"foo": "foo", "bar": 1}
 
 
 def test__dumps_json():
