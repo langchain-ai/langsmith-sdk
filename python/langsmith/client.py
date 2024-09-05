@@ -3938,8 +3938,17 @@ class Client:
         run: Optional[ls_schemas.Run] = None,
         source_info: Optional[Dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
+        *,
+        _executor: Optional[cf.ThreadPoolExecutor] = None,
     ) -> List[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
+
+        def _submit(**kwargs):
+            if _executor:
+                _executor.submit(self.create_feedback, **kwargs)
+            else:
+                self.create_feedback(**kwargs)
+
         for res in results:
             source_info_ = source_info or {}
             if res.evaluator_info:
@@ -3949,9 +3958,10 @@ class Client:
                 run_id_ = res.target_run_id
             elif run is not None:
                 run_id_ = run.id
-            self.create_feedback(
-                run_id_,
-                res.key,
+
+            _submit(
+                run_id=run_id_,
+                key=res.key,
                 score=res.score,
                 value=res.value,
                 comment=res.comment,
