@@ -8,6 +8,7 @@ import copy
 import enum
 import functools
 import logging
+import multiprocessing
 import os
 import pathlib
 import socket
@@ -710,8 +711,31 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
         )
 
 
+def _to_submit(func: Callable, *args, __ctx: dict, **kwargs):
+    from langsmith.run_helpers import _set_tracing_context
+
+    _set_tracing_context(__ctx)
+    return func(*args, **kwargs)
+
+
+def worker_function(func_name, module_name, *args, **kwargs):
+    # Import the function within the worker process
+    module = __import__(module_name, fromlist=[func_name])
+    func = getattr(module, func_name)
+    # Call the function and return the result
+    with open("foo.txt", "a") as f:
+        f.write(f"ARGS, {str(args)}, {str(kwargs)}")
+    return func(*args, **kwargs)
+
+
 class ContextProcessPoolExecutor(ProcessPoolExecutor):
     """ThreadPoolExecutor that copies the context to the child thread."""
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        """Create executor."""
+        if "mp_context" not in kwargs:
+            kwargs = {"mp_context": multiprocessing.get_context("fork"), **kwargs}
+        super().__init__(*args, **kwargs)
 
     def submit(  # type: ignore[override]
         self,
@@ -729,11 +753,22 @@ class ContextProcessPoolExecutor(ProcessPoolExecutor):
         Returns:
             Future[T]: The future for the function.
         """
-        context = contextvars.copy_context()
+        from langsmith.run_helpers import get_tracing_context
+
+        if hasattr(func, "__name__"):
+            module_name = func.__module__
+            func_name = func.__name__
+            partialed = functools.partial(worker_function, func_name, module_name)
+        else:
+            breakpoint()
+            partialed = func
         return super().submit(
             cast(
                 Callable[..., T],
-                functools.partial(context.run, func, *args, **kwargs),
+                functools.partial(partialed, *args, **kwargs),
+                # functools.partial(
+                #     _to_submit, partialed, *args, **kwargs, __ctx=get_tracing_context()
+                # ),
             )
         )
 

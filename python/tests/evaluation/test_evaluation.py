@@ -1,10 +1,28 @@
 import asyncio
+import functools
 from typing import Sequence
 
 import pytest
 
 from langsmith import Client, aevaluate, evaluate, expect, test
 from langsmith.schemas import Example, Run
+
+
+def accuracy(run: Run, example: Example):
+    pred = run.outputs["output"]  # type: ignore
+    expected = example.outputs["answer"]  # type: ignore
+    return {"score": expected.lower() == pred.lower()}
+
+
+def precision(runs: Sequence[Run], examples: Sequence[Example]):
+    predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
+    expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
+    tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+    fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+    return {"score": tp / (tp + fp)}
+
+def predict(inputs: dict) -> dict:
+    return {"output": "Yes"}
 
 
 def test_evaluate():
@@ -14,26 +32,11 @@ def test_evaluate():
     )
     dataset_name = "Evaluate Examples"
 
-    def accuracy(run: Run, example: Example):
-        pred = run.outputs["output"]  # type: ignore
-        expected = example.outputs["answer"]  # type: ignore
-        return {"score": expected.lower() == pred.lower()}
-
-    def precision(runs: Sequence[Run], examples: Sequence[Example]):
-        predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
-        expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
-        tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
-        fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
-        return {"score": tp / (tp + fp)}
-
-    def predict(inputs: dict) -> dict:
-        return {"output": "Yes"}
-
     results = evaluate(
-        predict,
+        functools.partial(predict),
         data=dataset_name,
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
+        # evaluators=[accuracy],
+        # summary_evaluators=[precision],
         description="My sync experiment",
         metadata={
             "my-prompt-version": "abcd-1234",

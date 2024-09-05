@@ -1288,12 +1288,14 @@ class _ExperimentManager(_ExperimentManagerMixin):
         else:
             futures = [
                 self._executor.submit(
-                    _forward,
-                    fn,
-                    example,
-                    self.experiment_name,
-                    self._metadata,
-                    self.client,
+                    functools.partial(
+                        _forward,
+                        fn,
+                        example,
+                        self.experiment_name,
+                        self._metadata,
+                        self.client,
+                    )
                 )
                 for example in self.examples
             ]
