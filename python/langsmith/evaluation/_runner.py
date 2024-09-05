@@ -1294,6 +1294,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self,
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
+        executor: cf.ThreadPoolExecutor,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
@@ -1325,8 +1326,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     eval_results["results"].extend(
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
-                            evaluator_response,
-                            run=run,
+                            evaluator_response, run=run, _executor=executor
                         )
                     )
                 except Exception as e:
@@ -1351,14 +1351,19 @@ class _ExperimentManager(_ExperimentManagerMixin):
         Expects runs to be available in the manager.
         (e.g. from a previous prediction step)
         """
-        if max_concurrency == 0:
-            context = copy_context()
-            for current_results in self.get_results():
-                yield context.run(self._run_evaluators, evaluators, current_results)
-        else:
-            with ls_utils.ContextThreadPoolExecutor(
-                max_workers=max_concurrency
-            ) as executor:
+        with ls_utils.ContextThreadPoolExecutor(
+            max_workers=max_concurrency
+        ) as executor:
+            if max_concurrency == 0:
+                context = copy_context()
+                for current_results in self.get_results():
+                    yield context.run(
+                        self._run_evaluators,
+                        evaluators,
+                        current_results,
+                        executor=executor,
+                    )
+            else:
                 futures = set()
                 for current_results in self.get_results():
                     futures.add(
@@ -1366,6 +1371,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             self._run_evaluators,
                             evaluators,
                             current_results,
+                            executor=executor,
                         )
                     )
                     try:
