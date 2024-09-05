@@ -332,9 +332,13 @@ class RunTree(ls_schemas.RunBase):
                 "RunTree.from_runnable_config requires langchain-core to be installed. "
                 "You can install it with `pip install langchain-core`."
             ) from e
-        config_ = ensure_config(
-            cast(RunnableConfig, config) if isinstance(config, dict) else None
-        )
+        if config is None:
+            config_ = ensure_config(
+                cast(RunnableConfig, config) if isinstance(config, dict) else None
+            )
+        else:
+            config_ = cast(RunnableConfig, config)
+
         if (
             (cb := config_.get("callbacks"))
             and isinstance(cb, (CallbackManager, AsyncCallbackManager))
