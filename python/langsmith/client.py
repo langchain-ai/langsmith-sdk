@@ -1156,6 +1156,13 @@ class Client:
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+
+        # Only retain LLM & Prompt manifests
+        if "serialized" in run_create and run_create.get("run_type") not in (
+            "llm",
+            "prompt",
+        ):
+            run_create = {k: v for k, v in run_create.items() if k != "serialized"}
         return run_create
 
     @staticmethod
@@ -1570,7 +1577,11 @@ class Client:
         return run
 
     def read_run(
-        self, run_id: ID_TYPE, load_child_runs: bool = False
+        self,
+        run_id: ID_TYPE,
+        load_child_runs: bool = False,
+        *,
+        exclude_s3_stored_attributes: Optional[bool] = None,
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
@@ -1586,10 +1597,18 @@ class Client:
         Run
             The run.
         """
+        query_params = {}
+        if exclude_s3_stored_attributes is not None:
+            query_params = {
+                "exclude_s3_stored_attributes": exclude_s3_stored_attributes
+            }
         response = self.request_with_retries(
-            "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
+            "GET",
+            f"/runs/{_as_uuid(run_id, 'run_id')}",
+            request_kwargs={"params": query_params},
         )
-        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
+        jval = response.json()
+        run = ls_schemas.Run(**jval, _host_url=self._host_url)
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run

@@ -1140,8 +1140,10 @@ def test_from_runnable_config():
 
 def test_io_interops():
     try:
-        from langchain.callbacks.tracers import LangChainTracer
-        from langchain.schema.runnable import RunnableLambda
+        from langchain_core.language_models import FakeListChatModel
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.runnables import RunnableLambda
+        from langchain_core.tracers import LangChainTracer
     except ImportError:
         pytest.skip("Skipping test that requires langchain")
     tracer = LangChainTracer(client=_get_mock_client(auto_batch_tracing=False))
@@ -1152,8 +1154,14 @@ def test_io_interops():
         "parent_output": {"parent_output": "parent_output_value"},
     }
 
+    llm = FakeListChatModel(responses=["bar"])
+    prompt = ChatPromptTemplate.from_messages([("system", "Hi {name}")])
+    some_chain = prompt | llm
+
     @RunnableLambda
     def child(inputs: dict) -> dict:
+        res = some_chain.invoke({"name": "foo"})
+        assert res.content == "bar"
         return {**stage_added["child_output"], **inputs}
 
     @RunnableLambda
@@ -1172,31 +1180,54 @@ def test_io_interops():
         stage_added["parent_input"], {"callbacks": [tracer]}
     )
     assert parent_result == expected_at_stage["parent_output"]
-    mock_posts = _get_calls(tracer.client, minimum=2)
-    assert len(mock_posts) == 2
+    mock_posts = _get_calls(tracer.client, minimum=5)
+    assert len(mock_posts) == 5
     datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_posts]
+    names = [
+        "the_parent",
+        "child",
+        "RunnableSequence",
+        "ChatPromptTemplate",
+        "FakeListChatModel",
+    ]
+    contains_serialized = {"ChatPromptTemplate", "FakeListChatModel"}
+    ids_contains_serialized = set()
+    for n, d in zip(names, datas):
+        assert n == d["name"]
+        if n in contains_serialized:
+            assert d["serialized"]
+            ids_contains_serialized.add(d["id"])
+        else:
+            assert d.get("serialized") is None
+
     assert datas[0]["name"] == "the_parent"
     assert datas[0]["inputs"] == expected_at_stage["parent_input"]
     assert not datas[0]["outputs"]
     assert datas[1]["name"] == "child"
     assert datas[1]["inputs"] == expected_at_stage["child_input"]
     assert not datas[1]["outputs"]
-    parent_uid = datas[0]["id"]
-    child_uid = datas[1]["id"]
+    ids = {d["name"]: d["id"] for d in datas}
 
     # Check the patch requests
-    mock_patches = _get_calls(tracer.client, verbs={"PATCH"}, minimum=2)
-    assert len(mock_patches) == 2
-    child_patch = json.loads(mock_patches[0].kwargs["data"])
-    assert child_patch["id"] == child_uid
+    mock_patches = _get_calls(tracer.client, verbs={"PATCH"}, minimum=5)
+    assert len(mock_patches) == 5
+    patches_datas = [
+        json.loads(mock_patch.kwargs["data"]) for mock_patch in mock_patches
+    ]
+    patches_dict = {d["id"]: d for d in patches_datas}
+    child_patch = patches_dict[ids["child"]]
     assert child_patch["outputs"] == expected_at_stage["child_output"]
     assert child_patch["inputs"] == expected_at_stage["child_input"]
     assert child_patch["name"] == "child"
-    parent_patch = json.loads(mock_patches[1].kwargs["data"])
-    assert parent_patch["id"] == parent_uid
+    parent_patch = patches_dict[ids["the_parent"]]
     assert parent_patch["outputs"] == expected_at_stage["parent_output"]
     assert parent_patch["inputs"] == expected_at_stage["parent_input"]
     assert parent_patch["name"] == "the_parent"
+    for d in patches_datas:
+        if d["id"] in ids_contains_serialized:
+            assert "serialized" not in d or d.get("serialized")
+        else:
+            assert d.get("serialized") is None
 
 
 def test_trace_respects_tracing_context():
