@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures as cf
 import datetime
 import logging
 import pathlib
@@ -603,9 +604,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         max_concurrency: Optional[int] = None,
     ) -> AsyncIterator[ExperimentResultRow]:
         async def score_all():
-            async for current_results in self.aget_results():
-                # Yield the coroutine to be awaited later in aiter_with_concurrency
-                yield self._arun_evaluators(evaluators, current_results)
+            with cf.ThreadPoolExecutor(max_workers=4) as executor:
+                async for current_results in self.aget_results():
+                    # Yield the coroutine to be awaited later in aiter_with_concurrency
+                    yield self._arun_evaluators(
+                        evaluators, current_results, executor=executor
+                    )
 
         async for result in aitertools.aiter_with_concurrency(
             max_concurrency, score_all(), _eager_consumption_timeout=0.001
@@ -616,6 +620,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self,
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
+        executor: cf.ThreadPoolExecutor,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
@@ -642,8 +647,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     )
                     eval_results["results"].extend(
                         self.client._log_evaluation_feedback(
-                            evaluator_response,
-                            run=run,
+                            evaluator_response, run=run, _executor=executor
                         )
                     )
                 except Exception as e:
