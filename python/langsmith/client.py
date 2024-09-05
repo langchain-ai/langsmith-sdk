@@ -489,86 +489,110 @@ class Client:
             If the API key is not provided when using the hosted service.
             If both api_url and api_urls are provided.
         """
-        if api_url and api_urls:
-            raise ls_utils.LangSmithUserError(
-                "You cannot provide both api_url and api_urls."
+        if isinstance(api_url, dict):
+            self.__class__(**api_url)
+        else:
+            if api_url and api_urls:
+                raise ls_utils.LangSmithUserError(
+                    "You cannot provide both api_url and api_urls."
+                )
+
+            if (
+                os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")
+            ) and os.getenv("LANGSMITH_RUNS_ENDPOINTS"):
+                raise ls_utils.LangSmithUserError(
+                    "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
+                    "and LANGSMITH_RUNS_ENDPOINTS."
+                )
+
+            self.tracing_sample_rate = _get_tracing_sampling_rate()
+            self._filtered_post_uuids: set[uuid.UUID] = set()
+            self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
+                api_urls
+            )
+            if self._write_api_urls:
+                self.api_url = next(iter(self._write_api_urls))
+                self.api_key: Optional[str] = self._write_api_urls[self.api_url]
+            else:
+                self.api_url = ls_utils.get_api_url(api_url)
+                self.api_key = ls_utils.get_api_key(api_key)
+                _validate_api_key_if_hosted(self.api_url, self.api_key)
+                self._write_api_urls = {self.api_url: self.api_key}
+            self.retry_config = retry_config or _default_retry_config()
+            self.timeout_ms = (
+                (timeout_ms, timeout_ms)
+                if isinstance(timeout_ms, int)
+                else (timeout_ms or (10_000, 90_001))
+            )
+            self._web_url = web_url
+            self._tenant_id: Optional[uuid.UUID] = None
+            # Create a session and register a finalizer to close it
+            session_ = session if session else requests.Session()
+            self.session = session_
+            self._info = (
+                info
+                if info is None or isinstance(info, ls_schemas.LangSmithInfo)
+                else ls_schemas.LangSmithInfo(**info)
+            )
+            weakref.finalize(self, close_session, self.session)
+            atexit.register(close_session, session_)
+            # Initialize auto batching
+            if auto_batch_tracing:
+                self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
+
+                threading.Thread(
+                    target=_tracing_control_thread_func,
+                    # arg must be a weakref to self to avoid the Thread object
+                    # preventing garbage collection of the Client object
+                    args=(weakref.ref(self),),
+                ).start()
+            else:
+                self.tracing_queue = None
+
+            # Mount the HTTPAdapter with the retry configuration.
+            adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
+            # Don't overwrite if session already has an adapter
+            if not self.session.get_adapter("http://"):
+                self.session.mount("http://", adapter)
+            if not self.session.get_adapter("https://"):
+                self.session.mount("https://", adapter)
+            self._get_data_type_cached = functools.lru_cache(maxsize=10)(
+                self._get_data_type
+            )
+            self._anonymizer = anonymizer
+            self._hide_inputs = (
+                hide_inputs
+                if hide_inputs is not None
+                else ls_utils.get_env_var("HIDE_INPUTS") == "true"
+            )
+            self._hide_outputs = (
+                hide_outputs
+                if hide_outputs is not None
+                else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
             )
 
-        if (
-            os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")
-        ) and os.getenv("LANGSMITH_RUNS_ENDPOINTS"):
-            raise ls_utils.LangSmithUserError(
-                "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
-                "and LANGSMITH_RUNS_ENDPOINTS."
-            )
+            self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
-        self.tracing_sample_rate = _get_tracing_sampling_rate()
-        self._filtered_post_uuids: set[uuid.UUID] = set()
-        self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
-            api_urls
+    def __reduce__(self):
+        return (
+            Client,
+            (
+                dict(
+                    api_url=self.api_url,
+                    api_key=self.api_key,
+                    retry_config=self.retry_config,
+                    timeout_ms=self.timeout_ms,
+                    web_url=self._web_url,
+                    session=None,
+                    auto_batch_tracing=True if self.tracing_queue else False,
+                    anonymizer=self._anonymizer,
+                    hide_inputs=self._hide_inputs,
+                    hide_outputs=self._hide_outputs,
+                    info=self._info,
+                    # Multiple API write Urls not supported
+                ),
+            ),
         )
-        if self._write_api_urls:
-            self.api_url = next(iter(self._write_api_urls))
-            self.api_key: Optional[str] = self._write_api_urls[self.api_url]
-        else:
-            self.api_url = ls_utils.get_api_url(api_url)
-            self.api_key = ls_utils.get_api_key(api_key)
-            _validate_api_key_if_hosted(self.api_url, self.api_key)
-            self._write_api_urls = {self.api_url: self.api_key}
-        self.retry_config = retry_config or _default_retry_config()
-        self.timeout_ms = (
-            (timeout_ms, timeout_ms)
-            if isinstance(timeout_ms, int)
-            else (timeout_ms or (10_000, 90_001))
-        )
-        self._web_url = web_url
-        self._tenant_id: Optional[uuid.UUID] = None
-        # Create a session and register a finalizer to close it
-        session_ = session if session else requests.Session()
-        self.session = session_
-        self._info = (
-            info
-            if info is None or isinstance(info, ls_schemas.LangSmithInfo)
-            else ls_schemas.LangSmithInfo(**info)
-        )
-        weakref.finalize(self, close_session, self.session)
-        atexit.register(close_session, session_)
-        # Initialize auto batching
-        if auto_batch_tracing:
-            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
-
-            threading.Thread(
-                target=_tracing_control_thread_func,
-                # arg must be a weakref to self to avoid the Thread object
-                # preventing garbage collection of the Client object
-                args=(weakref.ref(self),),
-            ).start()
-        else:
-            self.tracing_queue = None
-
-        # Mount the HTTPAdapter with the retry configuration.
-        adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
-        # Don't overwrite if session already has an adapter
-        if not self.session.get_adapter("http://"):
-            self.session.mount("http://", adapter)
-        if not self.session.get_adapter("https://"):
-            self.session.mount("https://", adapter)
-        self._get_data_type_cached = functools.lru_cache(maxsize=10)(
-            self._get_data_type
-        )
-        self._anonymizer = anonymizer
-        self._hide_inputs = (
-            hide_inputs
-            if hide_inputs is not None
-            else ls_utils.get_env_var("HIDE_INPUTS") == "true"
-        )
-        self._hide_outputs = (
-            hide_outputs
-            if hide_outputs is not None
-            else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
-        )
-
-        self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.

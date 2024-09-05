@@ -1278,11 +1278,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self, target: TARGET_T, /, max_concurrency: Optional[int] = None
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
-        fn = _ensure_traceable(target)
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client
+                    target, example, self.experiment_name, self._metadata, self.client
                 )
 
         else:
@@ -1290,7 +1289,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 self._executor.submit(
                     functools.partial(
                         _forward,
-                        fn,
+                        target,
                         example,
                         self.experiment_name,
                         self._metadata,
@@ -1535,12 +1534,13 @@ class _ForwardResults(TypedDict):
 
 
 def _forward(
-    fn: rh.SupportsLangsmithExtra,
+    fn: Callable | rh.SupportsLangsmithExtra,
     example: schemas.Example,
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
 ) -> _ForwardResults:
+    fn = _ensure_traceable(fn)
     run: Optional[schemas.RunBase] = None
 
     def _get_run(r: run_trees.RunTree) -> None:

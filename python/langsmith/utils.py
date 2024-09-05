@@ -760,7 +760,6 @@ class ContextProcessPoolExecutor(ProcessPoolExecutor):
             func_name = func.__name__
             partialed = functools.partial(worker_function, func_name, module_name)
         else:
-            breakpoint()
             partialed = func
         return super().submit(
             cast(

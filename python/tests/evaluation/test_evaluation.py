@@ -21,6 +21,7 @@ def precision(runs: Sequence[Run], examples: Sequence[Example]):
     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
     return {"score": tp / (tp + fp)}
 
+
 def predict(inputs: dict) -> dict:
     return {"output": "Yes"}
 
