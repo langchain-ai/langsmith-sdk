@@ -2226,6 +2226,13 @@ export class Client {
    *                    similar examples in order of most similar to least similar. If no similar
    *                    examples are found, random examples will be returned.
    *
+   * @param filter      A filter string to apply to the search. Only examples will be returned that
+   *                    match the filter string. Some examples of filters
+   *
+   *                    - eq(metadata.mykey, "value")
+   *                    - and(neq(metadata.my.nested.key, "value"), neq(metadata.mykey, "value"))
+   *                    - or(eq(metadata.mykey, "value"), eq(metadata.mykey, "othervalue"))
+   *
    * @returns           A list of similar examples.
    *
    *
@@ -2238,12 +2245,21 @@ export class Client {
   public async similarExamples(
     inputs: KVMap,
     datasetId: string,
-    limit: number
+    limit: number,
+    {
+      filter,
+    }: {
+      filter?: string;
+    } = {}
   ): Promise<ExampleSearch[]> {
-    const data = {
+    const data: KVMap = {
       limit: limit,
       inputs: inputs,
     };
+
+    if (filter !== undefined) {
+      data["filter"] = filter;
+    }
 
     assertUuid(datasetId);
     const response = await this.caller.call(
