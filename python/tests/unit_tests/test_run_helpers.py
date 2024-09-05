@@ -1196,6 +1196,7 @@ def test_io_interops():
         assert n == d["name"]
         if n in contains_serialized:
             assert d["serialized"]
+            assert "graph" not in d["serialized"]
             ids_contains_serialized.add(d["id"])
         else:
             assert d.get("serialized") is None

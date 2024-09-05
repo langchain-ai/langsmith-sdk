@@ -1586,11 +1586,7 @@ class Client:
         return run
 
     def read_run(
-        self,
-        run_id: ID_TYPE,
-        load_child_runs: bool = False,
-        *,
-        exclude_s3_stored_attributes: Optional[bool] = None,
+        self, run_id: ID_TYPE, load_child_runs: bool = False
     ) -> ls_schemas.Run:
         """Read a run from the LangSmith API.
 
@@ -1606,18 +1602,10 @@ class Client:
         Run
             The run.
         """
-        query_params = {}
-        if exclude_s3_stored_attributes is not None:
-            query_params = {
-                "exclude_s3_stored_attributes": exclude_s3_stored_attributes
-            }
         response = self.request_with_retries(
-            "GET",
-            f"/runs/{_as_uuid(run_id, 'run_id')}",
-            request_kwargs={"params": query_params},
+            "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
-        jval = response.json()
-        run = ls_schemas.Run(**jval, _host_url=self._host_url)
+        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
