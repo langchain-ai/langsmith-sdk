@@ -19,10 +19,10 @@ import os
 import pathlib
 import random
 import re
-import socket
 import sys
 import threading
 import time
+import traceback
 import typing
 import uuid
 import warnings
@@ -72,27 +72,6 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
-
-
-def _is_localhost(url: str) -> bool:
-    """Check if the URL is localhost.
-
-    Parameters
-    ----------
-    url : str
-        The URL to check.
-
-    Returns:
-    -------
-    bool
-        True if the URL is localhost, False otherwise.
-    """
-    try:
-        netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
-        ip = socket.gethostbyname(netloc)
-        return ip == "127.0.0.1" or ip.startswith("0.0.0.0") or ip.startswith("::")
-    except socket.gaierror:
-        return False
 
 
 def _parse_token_or_url(
@@ -477,7 +456,7 @@ class Client:
         "_web_url",
         "_tenant_id",
         "tracing_sample_rate",
-        "_sampled_post_uuids",
+        "_filtered_post_uuids",
         "tracing_queue",
         "_anonymizer",
         "_hide_inputs",
@@ -562,7 +541,7 @@ class Client:
             )
 
         self.tracing_sample_rate = _get_tracing_sampling_rate()
-        self._sampled_post_uuids: set[uuid.UUID] = set()
+        self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
@@ -657,22 +636,7 @@ class Client:
     @property
     def _host_url(self) -> str:
         """The web host url."""
-        if self._web_url:
-            link = self._web_url
-        else:
-            parsed_url = urllib_parse.urlparse(self.api_url)
-            if _is_localhost(self.api_url):
-                link = "http://localhost"
-            elif parsed_url.path.endswith("/api"):
-                new_path = parsed_url.path.rsplit("/api", 1)[0]
-                link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
-            elif parsed_url.netloc.startswith("eu."):
-                link = "https://eu.smith.langchain.com"
-            elif parsed_url.netloc.startswith("dev."):
-                link = "https://dev.smith.langchain.com"
-            else:
-                link = "https://smith.langchain.com"
-        return link
+        return ls_utils.get_host_url(self._web_url, self.api_url)
 
     @property
     def _headers(self) -> Dict[str, str]:
@@ -731,6 +695,23 @@ class Client:
 
         return self._settings
 
+    def _content_above_size(self, content_length: Optional[int]) -> Optional[str]:
+        if content_length is None or self._info is None:
+            return None
+        info = cast(ls_schemas.LangSmithInfo, self._info)
+        bic = info.batch_ingest_config
+        if not bic:
+            return None
+        size_limit = bic.get("size_limit_bytes")
+        if size_limit is None:
+            return None
+        if content_length > size_limit:
+            return (
+                f"The content length of {content_length} bytes exceeds the "
+                f"maximum size limit of {size_limit} bytes."
+            )
+        return None
+
     def request_with_retries(
         self,
         /,
@@ -742,6 +723,7 @@ class Client:
         retry_on: Optional[Sequence[Type[BaseException]]] = None,
         to_ignore: Optional[Sequence[Type[BaseException]]] = None,
         handle_response: Optional[Callable[[requests.Response, int], Any]] = None,
+        _context: str = "",
         **kwargs: Any,
     ) -> requests.Response:
         """Send a request with retries.
@@ -814,7 +796,6 @@ class Client:
         )
         to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
         response = None
-
         for idx in range(stop_after_attempt):
             try:
                 try:
@@ -851,22 +832,26 @@ class Client:
                                 f"Server error caused failure to {method}"
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 429:
                             raise ls_utils.LangSmithRateLimitError(
                                 f"Rate limit exceeded for {pathname}. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 401:
                             raise ls_utils.LangSmithAuthError(
                                 f"Authentication failed for {pathname}. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 404:
                             raise ls_utils.LangSmithNotFoundError(
                                 f"Resource not found for {pathname}. {repr(e)}"
+                                f"{_context}"
                             )
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
-                                f"Conflict for {pathname}. {repr(e)}"
+                                f"Conflict for {pathname}. {repr(e)}" f"{_context}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -881,14 +866,36 @@ class Client:
                         )
                 except requests.ConnectionError as e:
                     recommendation = (
-                        "Please confirm your LANGCHAIN_ENDPOINT"
+                        "Please confirm your LANGCHAIN_ENDPOINT."
                         if self.api_url != "https://api.smith.langchain.com"
                         else "Please confirm your internet connection."
                     )
+                    try:
+                        content_length = int(
+                            str(e.request.headers.get("Content-Length"))
+                            if e.request
+                            else ""
+                        )
+                        size_rec = self._content_above_size(content_length)
+                        if size_rec:
+                            recommendation = size_rec
+                    except ValueError:
+                        content_length = None
+
+                    api_key = (
+                        e.request.headers.get("x-api-key") or "" if e.request else ""
+                    )
+                    prefix, suffix = api_key[:5], api_key[-2:]
+                    filler = "*" * (max(0, len(api_key) - 7))
+                    masked_api_key = f"{prefix}{filler}{suffix}"
+
                     raise ls_utils.LangSmithConnectionError(
                         f"Connection error caused failure to {method} {pathname}"
-                        f"  in LangSmith API. {recommendation}."
+                        f" in LangSmith API. {recommendation}"
                         f" {repr(e)}"
+                        f"\nContent-Length: {content_length}"
+                        f"\nAPI Key: {masked_api_key}"
+                        f"{_context}"
                     ) from e
                 except Exception as e:
                     args = list(e.args)
@@ -904,6 +911,7 @@ class Client:
                         emsg = msg
                     raise ls_utils.LangSmithError(
                         f"Failed to {method} {pathname} in LangSmith API. {emsg}"
+                        f"{_context}"
                     ) from e
             except to_ignore_ as e:
                 if response is not None:
@@ -1190,7 +1198,7 @@ class Client:
 
     @staticmethod
     def _insert_runtime_env(runs: Sequence[dict]) -> None:
-        runtime_env = ls_env.get_runtime_and_metrics()
+        runtime_env = ls_env.get_runtime_environment()
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
             # update runtime
@@ -1213,16 +1221,24 @@ class Client:
             sampled = []
             for run in runs:
                 run_id = _as_uuid(run["id"])
-                if run_id in self._sampled_post_uuids:
+                if run_id not in self._filtered_post_uuids:
                     sampled.append(run)
-                    self._sampled_post_uuids.remove(run_id)
+                else:
+                    self._filtered_post_uuids.remove(run_id)
             return sampled
         else:
             sampled = []
             for run in runs:
-                if random.random() < self.tracing_sample_rate:
+                if (
+                    # Child run
+                    run["id"] != run.get("trace_id")
+                    # Whose trace is included
+                    and run.get("trace_id") not in self._filtered_post_uuids
+                    # Or a root that's randomly sampled
+                ) or random.random() < self.tracing_sample_rate:
                     sampled.append(run)
-                    self._sampled_post_uuids.add(_as_uuid(run["id"]))
+                else:
+                    self._filtered_post_uuids.add(_as_uuid(run["id"]))
             return sampled
 
     def create_run(
@@ -1405,21 +1421,42 @@ class Client:
             "post": [_dumps_json(run) for run in raw_body["post"]],
             "patch": [_dumps_json(run) for run in raw_body["patch"]],
         }
+        ids = {
+            "post": [
+                f"trace={run.get('trace_id')},id={run.get('id')}"
+                for run in raw_body["post"]
+            ],
+            "patch": [
+                f"trace={run.get('trace_id')},id={run.get('id')}"
+                for run in raw_body["patch"]
+            ],
+        }
+
         body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
         body_size = 0
         for key in ["post", "patch"]:
             body = collections.deque(partial_body[key])
+            ids_ = collections.deque(ids[key])
             while body:
                 if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
-                    self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+                    self._post_batch_ingest_runs(
+                        orjson.dumps(body_chunks),
+                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                    )
                     body_size = 0
                     body_chunks.clear()
+                    context_ids.clear()
                 body_size += len(body[0])
                 body_chunks[key].append(orjson.Fragment(body.popleft()))
+                context_ids[key].append(ids_.popleft())
         if body_size:
-            self._post_batch_ingest_runs(orjson.dumps(body_chunks))
+            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
+            self._post_batch_ingest_runs(
+                orjson.dumps(body_chunks), _context="\n" + context
+            )
 
-    def _post_batch_ingest_runs(self, body: bytes):
+    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
             try:
                 self.request_with_retries(
@@ -1434,9 +1471,15 @@ class Client:
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
                     stop_after_attempt=3,
+                    _context=_context,
                 )
             except Exception as e:
-                logger.warning(f"Failed to batch ingest runs: {repr(e)}")
+                try:
+                    exc_desc_lines = traceback.format_exception_only(type(e), e)
+                    exc_desc = "".join(exc_desc_lines).rstrip()
+                    logger.warning(f"Failed to batch ingest runs: {exc_desc}")
+                except Exception:
+                    logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def update_run(
         self,
@@ -3483,6 +3526,7 @@ class Client:
         *,
         limit: int,
         dataset_id: ID_TYPE,
+        filter: Optional[str] = None,
         **kwargs: Any,
     ) -> List[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
@@ -3495,6 +3539,12 @@ class Client:
                 input schema. Must be JSON serializable.
             limit (int): The maximum number of examples to return.
             dataset_id (str or UUID): The ID of the dataset to search over.
+            filter (str, optional): A filter string to apply to the search results. Uses
+            the same syntax as the `filter` parameter in `list_runs()`. Only a subset
+            of operations are supported. Defaults to None.
+
+            For example, you can use `and(eq(metadata.some_tag, 'some_value'), neq(metadata.env, 'dev'))`
+            to filter only examples where some_tag has some_value, and the environment is not dev.
             kwargs (Any): Additional keyword args to pass as part of request body.
 
         Returns:
@@ -3540,11 +3590,19 @@ class Client:
 
         """  # noqa: E501
         dataset_id = _as_uuid(dataset_id, "dataset_id")
+        req = {
+            "inputs": inputs,
+            "limit": limit,
+            **kwargs,
+        }
+        if filter is not None:
+            req["filter"] = filter
+
         resp = self.request_with_retries(
             "POST",
             f"/datasets/{dataset_id}/search",
             headers=self._headers,
-            data=json.dumps({"inputs": inputs, "limit": limit, **kwargs}),
+            data=json.dumps(req),
         )
         ls_utils.raise_for_status_with_text(resp)
         examples = []
@@ -3999,7 +4057,7 @@ class Client:
         key: str,
         *,
         score: Union[float, int, bool, None] = None,
-        value: Union[float, int, bool, str, dict, None] = None,
+        value: Union[str, dict, None] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[Dict[str, Any]] = None,

@@ -7,14 +7,7 @@ import sys
 import time
 import uuid
 import warnings
-from typing import (
-    Any,
-    AsyncGenerator,
-    Generator,
-    Optional,
-    Set,
-    cast,
-)
+from typing import Any, AsyncGenerator, Generator, Optional, Set, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +15,7 @@ import pytest
 import langsmith
 from langsmith import Client
 from langsmith import schemas as ls_schemas
+from langsmith import utils as ls_utils
 from langsmith.run_helpers import (
     _get_inputs,
     as_runnable,
@@ -1333,6 +1327,7 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
 @pytest.mark.parametrize("env_var", [True, False])
 @pytest.mark.parametrize("context", [True, False, None])
 async def test_trace_respects_env_var(env_var: bool, context: Optional[bool]):
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client()
     with patch.dict(os.environ, {"LANGSMITH_TRACING": "true" if env_var else "false "}):
         with tracing_context(enabled=context):
