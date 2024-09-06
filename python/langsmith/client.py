@@ -165,9 +165,6 @@ def _default_retry_config() -> Retry:
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
-_MAX_DEPTH = 1
-
-
 class _Fragment(NamedTuple):
     buf: bytes
 
@@ -224,15 +221,8 @@ def _simple_default(obj):
     return repr(obj)
 
 
-def _serialize_json(obj: Any, depth: int = 0) -> Any:
+def _serialize_json(obj: Any) -> Any:
     try:
-        if depth >= _MAX_DEPTH:
-            try:
-                return _dumps_json_single(obj)
-            except BaseException:
-                return repr(obj)
-        if isinstance(obj, bytes):
-            return obj.decode("utf-8")
         if isinstance(obj, (set, tuple)):
             if hasattr(obj, "_asdict") and callable(obj._asdict):
                 # NamedTuple
@@ -313,7 +303,7 @@ def _dumps_json(obj: Any, depth: int = 0) -> bytes:
     str
         The JSON formatted string.
     """
-    return _dumps_json_single(obj, functools.partial(_serialize_json, depth=depth))
+    return _dumps_json_single(obj, _serialize_json)
 
 
 def close_session(session: requests.Session) -> None:
