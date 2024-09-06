@@ -234,11 +234,15 @@ def _serialize_json(obj: Any, depth: int = 0) -> Any:
         if isinstance(obj, bytes):
             return obj.decode("utf-8")
         if isinstance(obj, (set, tuple)):
-            return _dumps_json_single(list(obj))
+            if hasattr(obj, "_asdict") and callable(obj._asdict):
+                # NamedTuple
+                return obj._asdict()
+            return list(obj)
 
         serialization_methods = [
             ("model_dump", True),  # Pydantic V2 with non-serializable fields
             ("dict", False),  # Pydantic V1 with non-serializable field
+            ("to_dict", False),  # dataclasses-json
         ]
         for attr, exclude_none in serialization_methods:
             if hasattr(obj, attr) and callable(getattr(obj, attr)):
