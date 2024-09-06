@@ -95,6 +95,8 @@ def evaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
+    *,
+    _experimental_multiprocessing: bool = False,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -260,6 +262,7 @@ def evaluate(
         num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
+        _experimental_multiprocessing=_experimental_multiprocessing,
     )
 
 
