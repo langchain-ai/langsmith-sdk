@@ -14,7 +14,7 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import NamedTuple, Optional, Type, Union
+from typing import Dict, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -691,6 +691,9 @@ def test_serialize_json() -> None:
         def __repr__(self) -> str:
             return "I fell back"
 
+        def __hash__(self) -> int:
+            return 1
+
     class ClassWithTee:
         def __init__(self) -> None:
             tee_a, tee_b = itertools.tee(range(10))
@@ -716,11 +719,11 @@ def test_serialize_json() -> None:
         FOO = "foo"
         BAR = "bar"
 
-    class ClassWithFakeJson:
-        def json(self):
+    class ClassWithFakeDict:
+        def dict(self) -> Dict:
             raise ValueError("This should not be called")
 
-        def to_json(self) -> dict:
+        def to_dict(self) -> Dict:
             return {"foo": "bar"}
 
     @dataclasses_json.dataclass_json
@@ -735,7 +738,6 @@ def test_serialize_json() -> None:
         foo: str
         bar: int
 
-    # conver tto dict
     to_serialize = {
         "uid": uid,
         "time": current_time,
@@ -751,7 +753,9 @@ def test_serialize_json() -> None:
         "an_int": 1,
         "a_float": 1.1,
         "named_tuple": MyNamedTuple(foo="foo", bar=1),
-        "fake_json": ClassWithFakeJson(),
+        "fake_json": ClassWithFakeDict(),
+        "some_set": set("a"),
+        "set_with_class": set([MyClass(1)]),
     }
     res = orjson.loads(_dumps_json(to_serialize))
     expected = {
@@ -768,8 +772,10 @@ def test_serialize_json() -> None:
         "a_str": "foo",
         "an_int": 1,
         "a_float": 1.1,
-        "named_tuple": ["foo", 1],
+        "named_tuple": {"bar": 1, "foo": "foo"},
         "fake_json": {"foo": "bar"},
+        "some_set": ["a"],
+        "set_with_class": ["I fell back"],
     }
     assert set(expected) == set(res)
     for k, v in expected.items():
@@ -789,7 +795,7 @@ def test_serialize_json() -> None:
             return "my_cycles..."
 
     my_cyclic = CyclicClass(other=CyclicClass(other=None))
-    my_cyclic.other.other = my_cyclic
+    my_cyclic.other.other = my_cyclic  # type: ignore
 
     res = orjson.loads(_dumps_json({"cyclic": my_cyclic}))
     assert res == {"cyclic": "my_cycles..."}
