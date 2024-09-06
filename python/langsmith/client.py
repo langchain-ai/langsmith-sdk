@@ -1156,6 +1156,22 @@ class Client:
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+
+        # Only retain LLM & Prompt manifests
+        if "serialized" in run_create:
+            if run_create.get("run_type") not in (
+                "llm",
+                "prompt",
+            ):
+                # Drop completely
+                run_create = {k: v for k, v in run_create.items() if k != "serialized"}
+            else:
+                # Drop graph
+                serialized = {
+                    k: v for k, v in run_create["serialized"].items() if k != "graph"
+                }
+                run_create = {**run_create, "serialized": serialized}
+
         return run_create
 
     @staticmethod
