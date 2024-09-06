@@ -52,7 +52,6 @@ from urllib import parse as urllib_parse
 
 import orjson
 import requests
-import zoneinfo
 from requests import adapters as requests_adapters
 from typing_extensions import TypeGuard
 from urllib3.util import Retry
@@ -63,10 +62,19 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal._beta_decorator import warn_beta
 
+try:
+    from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
+except ImportError:
+
+    class ZoneInfo:  # type: ignore[no-redef]
+        """Introduced in python 3.9."""
+
+
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
 
     from langsmith.evaluation import evaluator as ls_evaluator
+
 
 logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
@@ -184,7 +192,7 @@ def _simple_default(obj):
             return {"error": type(obj).__name__, "message": str(obj)}
         elif isinstance(obj, (set, frozenset, collections.deque)):
             return list(obj)
-        elif isinstance(obj, (datetime.timezone, zoneinfo.ZoneInfo)):
+        elif isinstance(obj, (datetime.timezone, ZoneInfo)):
             return obj.tzname(None)
         elif isinstance(obj, datetime.timedelta):
             return obj.total_seconds()
@@ -1181,6 +1189,22 @@ class Client:
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+
+        # Only retain LLM & Prompt manifests
+        if "serialized" in run_create:
+            if run_create.get("run_type") not in (
+                "llm",
+                "prompt",
+            ):
+                # Drop completely
+                run_create = {k: v for k, v in run_create.items() if k != "serialized"}
+            else:
+                # Drop graph
+                serialized = {
+                    k: v for k, v in run_create["serialized"].items() if k != "graph"
+                }
+                run_create = {**run_create, "serialized": serialized}
+
         return run_create
 
     @staticmethod
