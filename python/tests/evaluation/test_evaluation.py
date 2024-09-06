@@ -30,7 +30,8 @@ def predict(inputs: dict) -> dict:
     return sub_predict(inputs)
 
 
-def test_evaluate():
+@pytest.mark.parametrize("experimental_mp", [True, False])
+def test_evaluate(experimental_mp: bool):
     client = Client()
     _ = client.clone_public_dataset(
         "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
@@ -48,6 +49,7 @@ def test_evaluate():
             "function": "evaluate",
         },
         num_repetitions=3,
+        _experimental_multiprocessing=experimental_mp,
     )
     assert len(results) == 30
     examples = client.list_examples(dataset_name=dataset_name)
