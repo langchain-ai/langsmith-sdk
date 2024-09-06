@@ -79,6 +79,8 @@ class RunTree(ls_schemas.RunBase):
                 values["name"] = values["serialized"]["name"]
             elif "id" in values["serialized"]:
                 values["name"] = values["serialized"]["id"][-1]
+        if "client" in values:  # Handle user-constructed clients
+            values["_client"] = values["client"]
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
         if "id" not in values:
@@ -240,7 +242,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
-            client=self.client,
+            _client=self._client,
             tags=tags,
         )
         self.child_runs.append(run)
