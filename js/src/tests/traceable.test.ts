@@ -70,6 +70,41 @@ test("nested traceable implementation", async () => {
   });
 });
 
+test("trace circular input and output objects", async () => {
+  const { client, callSpy } = mockClient();
+  const a: Record<string, any> = {};
+  const b: Record<string, any> = {};
+  a.b = b;
+  b.a = a;
+  const llm = traceable(
+    async function foo(_: any) {
+      return a;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  await llm(a);
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["foo:0"],
+    edges: [],
+    data: {
+      "foo:0": {
+        inputs: {
+          error: {
+            message: expect.any(String),
+          },
+        },
+        outputs: {
+          error: {
+            message: expect.any(String),
+          },
+        },
+      },
+    },
+  });
+});
+
 test("passing run tree manually", async () => {
   const { client, callSpy } = mockClient();
   const child = traceable(

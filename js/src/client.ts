@@ -344,6 +344,29 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
+const sanitizeParams = (run: Record<string, any>) => {
+  const runCopy = { ...run };
+  try {
+    JSON.stringify(run.inputs);
+  } catch (e: any) {
+    runCopy.inputs = {
+      error: {
+        message: `Failed to serialize run inputs: ${e.message}`,
+      },
+    };
+  }
+  try {
+    JSON.stringify(run.outputs);
+  } catch (e: any) {
+    runCopy.outputs = {
+      error: {
+        message: `Failed to serialize run outputs: ${e.message}`,
+      },
+    };
+  }
+  return runCopy;
+};
+
 export class Queue<T> {
   items: [T, () => void][] = [];
 
@@ -785,7 +808,7 @@ export class Client {
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,
-      body: JSON.stringify(mergedRunCreateParams[0]),
+      body: JSON.stringify(sanitizeParams(mergedRunCreateParams[0])),
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
@@ -881,6 +904,7 @@ export class Client {
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
+        batchItem = sanitizeParams(batchItem);
         const stringifiedBatchItem = JSON.stringify(batchItem);
         if (
           currentBatchSizeBytes > 0 &&
@@ -959,7 +983,7 @@ export class Client {
       {
         method: "PATCH",
         headers,
-        body: JSON.stringify(run),
+        body: JSON.stringify(sanitizeParams(run)),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
