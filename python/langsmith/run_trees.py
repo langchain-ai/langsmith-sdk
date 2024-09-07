@@ -9,12 +9,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
+    from pydantic.v1 import Field, root_validator  # type: ignore[import]
 except ImportError:
     from pydantic import (  # type: ignore[assignment, no-redef]
         Field,
         root_validator,
-        validator,
     )
 
 import threading
@@ -59,7 +58,7 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=_get_client, exclude=True)
+    _client: Optional[Client] = Field(default=None)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -72,18 +71,16 @@ class RunTree(ls_schemas.RunBase):
         allow_population_by_field_name = True
         extra = "allow"
 
-    @validator("client", pre=True)
-    def validate_client(cls, v: Optional[Client]) -> Client:
-        """Ensure the client is specified."""
-        if v is None:
-            return _get_client()
-        return v
-
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
-        if "serialized" not in values:
-            values["serialized"] = {"name": values["name"]}
+        if values.get("name") is None and "serialized" in values:
+            if "name" in values["serialized"]:
+                values["name"] = values["serialized"]["name"]
+            elif "id" in values["serialized"]:
+                values["name"] = values["serialized"]["id"][-1]
+        if "client" in values:  # Handle user-constructed clients
+            values["_client"] = values["client"]
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
         if "id" not in values:
@@ -118,6 +115,15 @@ class RunTree(ls_schemas.RunBase):
         else:
             values["dotted_order"] = current_dotted_order
         return values
+
+    @property
+    def client(self) -> Client:
+        """Return the client."""
+        # Lazily load the client
+        # If you never use this for API calls, it will never be loaded
+        if not self._client:
+            self._client = _get_client()
+        return self._client
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
@@ -236,7 +242,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
-            client=self.client,
+            _client=self._client,
             tags=tags,
         )
         self.child_runs.append(run)
