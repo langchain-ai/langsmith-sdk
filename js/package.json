@@ -53,10 +53,6 @@
     "singletons/traceable.js",
     "singletons/traceable.d.ts",
     "singletons/traceable.d.cts",
-    "singletons/fetch.cjs",
-    "singletons/fetch.js",
-    "singletons/fetch.d.ts",
-    "singletons/fetch.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -277,15 +273,6 @@
       },
       "import": "./singletons/traceable.js",
       "require": "./singletons/traceable.cjs"
-    },
-    "./singletons/fetch": {
-      "types": {
-        "import": "./singletons/fetch.d.ts",
-        "require": "./singletons/fetch.d.cts",
-        "default": "./singletons/fetch.d.ts"
-      },
-      "import": "./singletons/fetch.js",
-      "require": "./singletons/fetch.cjs"
     },
     "./package.json": "./package.json"
   }

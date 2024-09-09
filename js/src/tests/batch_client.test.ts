@@ -3,7 +3,7 @@ import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
-import { getFetchImplementation } from "../singletons/fetch.js";
+import { _getFetchImplementation } from "../singletons/fetch.js";
 
 describe("Batch client tracing", () => {
   it("should create a batched run with the given input", async () => {
@@ -56,7 +56,7 @@ describe("Batch client tracing", () => {
     });
 
     expect(callSpy).toHaveBeenCalledWith(
-      getFetchImplementation(),
+      _getFetchImplementation(),
       "https://api.smith.langchain.com/runs/batch",
       expect.objectContaining({ body: expect.any(String) })
     );
@@ -162,7 +162,7 @@ describe("Batch client tracing", () => {
     });
 
     expect(callSpy).toHaveBeenCalledWith(
-      getFetchImplementation(),
+      _getFetchImplementation(),
       "https://api.smith.langchain.com/runs/batch",
       expect.objectContaining({ body: expect.any(String) })
     );
@@ -506,7 +506,7 @@ describe("Batch client tracing", () => {
     });
 
     expect(callSpy).toHaveBeenCalledWith(
-      getFetchImplementation(),
+      _getFetchImplementation(),
       "https://api.smith.langchain.com/runs",
       expect.objectContaining({ body: expect.any(String) })
     );

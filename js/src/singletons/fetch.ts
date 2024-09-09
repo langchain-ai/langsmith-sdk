@@ -8,11 +8,20 @@ const LANGSMITH_FETCH_IMPLEMENTATION_KEY = Symbol.for(
   "ls:fetch_implementation"
 );
 
-export const setFetchImplementation = (fetch: (...args: any[]) => any) => {
+/**
+ * Overrides the fetch implementation used for LangSmith calls.
+ * You should use this if you need to use an implementation of fetch
+ * other than the default global (e.g. for dealing with proxies).
+ * @param fetch The new fetch functino to use.
+ */
+export const overrideFetchImplementation = (fetch: (...args: any[]) => any) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
 };
 
-export const getFetchImplementation: () => (...args: any[]) => any = () => {
+/**
+ * @internal
+ */
+export const _getFetchImplementation: () => (...args: any[]) => any = () => {
   return (
     (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] ??
     DEFAULT_FETCH_IMPLEMENTATION
