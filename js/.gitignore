@@ -79,6 +79,10 @@ Chinook_Sqlite.sql
 /singletons/traceable.js
 /singletons/traceable.d.ts
 /singletons/traceable.d.cts
+/singletons/fetch.cjs
+/singletons/fetch.js
+/singletons/fetch.d.ts
+/singletons/fetch.d.cts
 /index.cjs
 /index.js
 /index.d.ts

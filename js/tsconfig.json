@@ -43,7 +43,8 @@
       "src/anonymizer/index.ts",
       "src/wrappers/openai.ts",
       "src/wrappers/vercel.ts",
-      "src/singletons/traceable.ts"
+      "src/singletons/traceable.ts",
+      "src/singletons/fetch.ts"
     ]
   }
 }

@@ -19,6 +19,7 @@ const entrypoints = {
   "wrappers/openai": "wrappers/openai",
   "wrappers/vercel": "wrappers/vercel",
   "singletons/traceable": "singletons/traceable",
+  "singletons/fetch": "singletons/fetch",
 };
 
 const updateJsonFile = (relativePath, updateFunction) => {
