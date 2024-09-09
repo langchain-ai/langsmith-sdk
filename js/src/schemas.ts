@@ -60,6 +60,7 @@ export interface BaseExample {
   inputs: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  source_run_id?: string;
 }
 
 /**
