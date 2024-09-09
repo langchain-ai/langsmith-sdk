@@ -3,6 +3,7 @@ import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
+import { CIRCULAR_VALUE_REPLACEMENT_STRING } from "../utils/serde.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
 describe("Batch client tracing", () => {
@@ -508,6 +509,83 @@ describe("Batch client tracing", () => {
     expect(callSpy).toHaveBeenCalledWith(
       _getFetchImplementation(),
       "https://api.smith.langchain.com/runs",
+      expect.objectContaining({ body: expect.any(String) })
+    );
+  });
+
+  it("Should handle circular values", async () => {
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+    });
+    const callSpy = jest
+      .spyOn((client as any).batchIngestCaller, "call")
+      .mockResolvedValue({
+        ok: true,
+        text: () => "",
+      });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(true);
+    const projectName = "__test_batch";
+    const a: Record<string, any> = {};
+    const b: Record<string, any> = {};
+    a.b = b;
+    b.a = a;
+
+    const runId = uuidv4();
+    const dottedOrder = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId
+    );
+    await client.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: a,
+      trace_id: runId,
+      dotted_order: dottedOrder,
+    });
+
+    const endTime = Math.floor(new Date().getTime() / 1000);
+
+    await client.updateRun(runId, {
+      outputs: b,
+      dotted_order: dottedOrder,
+      trace_id: runId,
+      end_time: endTime,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const calledRequestParam: any = callSpy.mock.calls[0][2];
+    expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runId,
+          run_type: "llm",
+          inputs: {
+            b: {
+              a: {
+                result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+              },
+            },
+          },
+          outputs: {
+            result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+          },
+          end_time: endTime,
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        }),
+      ],
+      patch: [],
+    });
+
+    expect(callSpy).toHaveBeenCalledWith(
+      _getFetchImplementation(),
+      "https://api.smith.langchain.com/runs/batch",
       expect.objectContaining({ body: expect.any(String) })
     );
   });

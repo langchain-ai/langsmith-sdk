@@ -2,6 +2,7 @@ import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
+import { CIRCULAR_VALUE_REPLACEMENT_STRING } from "../utils/serde.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -67,6 +68,41 @@ test("nested traceable implementation", async () => {
       ["chain:0", "llm:1"],
       ["chain:0", "str:2"],
     ],
+  });
+});
+
+test("trace circular input and output objects", async () => {
+  const { client, callSpy } = mockClient();
+  const a: Record<string, any> = {};
+  const b: Record<string, any> = {};
+  a.b = b;
+  b.a = a;
+  const llm = traceable(
+    async function foo(_: any) {
+      return a;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  await llm(a);
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["foo:0"],
+    edges: [],
+    data: {
+      "foo:0": {
+        inputs: {
+          b: {
+            a: {
+              result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+            },
+          },
+        },
+        outputs: {
+          result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+        },
+      },
+    },
   });
 });
 

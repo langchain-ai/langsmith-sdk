@@ -56,6 +56,7 @@ import {
   parsePromptIdentifier,
 } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
+import { stringifyForTracing } from "./utils/serde.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
 export interface ClientConfig {
@@ -800,7 +801,7 @@ export class Client {
       {
         method: "POST",
         headers,
-        body: JSON.stringify(mergedRunCreateParams[0]),
+        body: stringifyForTracing(mergedRunCreateParams[0]),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -897,12 +898,12 @@ export class Client {
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        const stringifiedBatchItem = JSON.stringify(batchItem);
+        const stringifiedBatchItem = stringifyForTracing(batchItem);
         if (
           currentBatchSizeBytes > 0 &&
           currentBatchSizeBytes + stringifiedBatchItem.length > sizeLimitBytes
         ) {
-          await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+          await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
           currentBatchSizeBytes = 0;
           batchChunks.post = [];
           batchChunks.patch = [];
@@ -913,7 +914,7 @@ export class Client {
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+      await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
     }
   }
 
@@ -975,7 +976,7 @@ export class Client {
       {
         method: "PATCH",
         headers,
-        body: JSON.stringify(run),
+        body: stringifyForTracing(run),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
