@@ -56,6 +56,7 @@ import {
   parsePromptIdentifier,
 } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
+import { stringifyForTracing } from "./utils/serde.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -349,29 +350,6 @@ const handle429 = async (response?: Response) => {
   }
   // Fall back to existing status checks
   return false;
-};
-
-const sanitizeParams = (run: Record<string, any>) => {
-  const runCopy = { ...run };
-  try {
-    JSON.stringify(run.inputs);
-  } catch (e: any) {
-    runCopy.inputs = {
-      error: {
-        message: `Failed to serialize run inputs: ${e.message}`,
-      },
-    };
-  }
-  try {
-    JSON.stringify(run.outputs);
-  } catch (e: any) {
-    runCopy.outputs = {
-      error: {
-        message: `Failed to serialize run outputs: ${e.message}`,
-      },
-    };
-  }
-  return runCopy;
 };
 
 export class Queue<T> {
@@ -815,7 +793,7 @@ export class Client {
     const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
       method: "POST",
       headers,
-      body: JSON.stringify(sanitizeParams(mergedRunCreateParams[0])),
+      body: stringifyForTracing(mergedRunCreateParams[0]),
       signal: AbortSignal.timeout(this.timeout_ms),
       ...this.fetchOptions,
     });
@@ -911,13 +889,12 @@ export class Client {
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        batchItem = sanitizeParams(batchItem);
-        const stringifiedBatchItem = JSON.stringify(batchItem);
+        const stringifiedBatchItem = stringifyForTracing(batchItem);
         if (
           currentBatchSizeBytes > 0 &&
           currentBatchSizeBytes + stringifiedBatchItem.length > sizeLimitBytes
         ) {
-          await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+          await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
           currentBatchSizeBytes = 0;
           batchChunks.post = [];
           batchChunks.patch = [];
@@ -928,7 +905,7 @@ export class Client {
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+      await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
     }
   }
 
@@ -990,7 +967,7 @@ export class Client {
       {
         method: "PATCH",
         headers,
-        body: JSON.stringify(sanitizeParams(run)),
+        body: stringifyForTracing(run),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }

@@ -3,6 +3,7 @@ import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
+import { CIRCULAR_VALUE_REPLACEMENT_STRING } from "../utils/serde.js";
 
 describe("Batch client tracing", () => {
   it("should create a batched run with the given input", async () => {
@@ -511,7 +512,7 @@ describe("Batch client tracing", () => {
     );
   });
 
-  it("Create + update batching should merge into a single call", async () => {
+  it("Should handle circular values", async () => {
     const client = new Client({
       apiKey: "test-api-key",
       autoBatchTracing: true,
@@ -564,14 +565,14 @@ describe("Batch client tracing", () => {
           id: runId,
           run_type: "llm",
           inputs: {
-            error: {
-              message: expect.any(String),
+            b: {
+              a: {
+                result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+              },
             },
           },
           outputs: {
-            error: {
-              message: expect.any(String),
-            },
+            result: CIRCULAR_VALUE_REPLACEMENT_STRING,
           },
           end_time: endTime,
           trace_id: runId,
