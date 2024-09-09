@@ -249,13 +249,20 @@ type RecordStringAny = Record<string, any>;
 export type FeedbackSourceType = "model" | "api" | "app";
 
 export type CreateExampleOptions = {
+  /** The ID of the dataset to create the example in. */
   datasetId?: string;
+  /** The name of the dataset to create the example in (if dataset ID is not provided). */
   datasetName?: string;
+  /** The creation date of the example. */
   createdAt?: Date;
+  /** A unique identifier for the example. */
   exampleId?: string;
-
+  /** Additional metadata associated with the example. */
   metadata?: KVMap;
+  /** The split(s) to assign the example to. */
   split?: string | string[];
+  /** The ID of the source run associated with this example. */
+  sourceRunId?: string;
 };
 
 type AutoBatchQueueItem = {
@@ -2288,6 +2295,7 @@ export class Client {
       exampleId,
       metadata,
       split,
+      sourceRunId,
     }: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = datasetId;
@@ -2309,6 +2317,7 @@ export class Client {
       id: exampleId,
       metadata,
       split,
+      source_run_id: sourceRunId,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {

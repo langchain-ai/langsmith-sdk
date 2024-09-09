@@ -3307,6 +3307,7 @@ class Client:
         metadata: Optional[Mapping[str, Any]] = None,
         split: Optional[str | List[str]] = None,
         example_id: Optional[ID_TYPE] = None,
+        source_run_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
@@ -3330,9 +3331,11 @@ class Client:
             split : str or List[str] or None, default=None
                 The splits for the example, which are divisions
                 of your dataset such as 'train', 'test', or 'validation'.
-            exemple_id : UUID or None, default=None
+            example_id : UUID or None, default=None
                 The ID of the example to create. If not provided, a new
                 example will be created.
+            source_run_id : UUID or None, default=None
+                The ID of the source run associated with this example.
 
         Returns:
             Example: The created example.
@@ -3346,6 +3349,7 @@ class Client:
             "dataset_id": dataset_id,
             "metadata": metadata,
             "split": split,
+            "source_run_id": source_run_id,
         }
         if created_at:
             data["created_at"] = created_at.isoformat()
