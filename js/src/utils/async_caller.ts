@@ -153,8 +153,9 @@ export class AsyncCaller {
 
   fetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
     return this.call(() =>
-      getFetchImplementation()(...args).then((res) =>
-        res.ok ? res : Promise.reject(res)
+      getFetchImplementation()(...args).then(
+        (res: Awaited<ReturnType<typeof fetch>>) =>
+          res.ok ? res : Promise.reject(res)
       )
     );
   }

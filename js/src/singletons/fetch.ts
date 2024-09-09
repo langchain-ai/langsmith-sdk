@@ -12,7 +12,7 @@ export const setFetchImplementation = (fetch: (...args: any[]) => any) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
 };
 
-export const getFetchImplementation = () => {
+export const getFetchImplementation: () => (...args: any[]) => any = () => {
   return (
     (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] ??
     DEFAULT_FETCH_IMPLEMENTATION
