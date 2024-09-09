@@ -230,6 +230,7 @@ export interface ExampleCreate extends BaseExample {
   id?: string;
   created_at?: string;
   split?: string | string[];
+  source_run_id?: string;
 }
 
 export interface Example extends BaseExample {

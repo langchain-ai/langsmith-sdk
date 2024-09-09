@@ -256,6 +256,7 @@ export type CreateExampleOptions = {
 
   metadata?: KVMap;
   split?: string | string[];
+  sourceRunId?: string;
 };
 
 type AutoBatchQueueItem = {
@@ -2287,6 +2288,7 @@ export class Client {
       createdAt,
       exampleId,
       metadata,
+      sourceRunId,
       split,
     }: CreateExampleOptions
   ): Promise<Example> {
@@ -2309,6 +2311,7 @@ export class Client {
       id: exampleId,
       metadata,
       split,
+      source_run_id: sourceRunId,
     };
 
     const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
