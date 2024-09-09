@@ -18,6 +18,7 @@ import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { RunnableSequence } from "@langchain/core/runnables";
 import { load } from "langchain/load";
+import { _getFetchImplementation } from "../singletons/fetch.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -221,7 +222,7 @@ test.concurrent(
 
     await waitUntilRunFound(langchainClient, runId);
     const sharedUrl = await langchainClient.shareRun(runId);
-    const response = await fetch(sharedUrl);
+    const response = await _getFetchImplementation()(sharedUrl);
     expect(response.status).toEqual(200);
     expect(await langchainClient.readRunSharedLink(runId)).toEqual(sharedUrl);
 
