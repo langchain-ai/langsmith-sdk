@@ -18,10 +18,6 @@ help:
 generate-api-rst:
 	python ./create_api_rst.py
 
-# Build HTML documentation
-build-html:
-	python -m sphinx -T -E -b html -d ./_build/doctrees -c . docs/api_reference ../langchain-api-docs-build/api_reference_build/html $(SPHINXOPTS)
-
 # Combined target to generate API RST and build HTML
 api-docs: generate-api-rst build-html
 
