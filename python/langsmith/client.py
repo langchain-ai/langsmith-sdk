@@ -1,4 +1,14 @@
-"""The LangSmith Client."""
+"""Client for interacting with the LangSmith API.
+
+Use the client to customize API keys / workspace ocnnections, SSl certs, 
+etc. for tracing. 
+
+Also used to create, read, update, and delete LangSmith resources
+such as runs (~trace spans), datasets, examples (~records),
+feedback (~metrics), projects (tracer sessions/groups), etc.
+
+For detailed API documentation, visit: https://docs.smith.langchain.com/.
+"""
 
 from __future__ import annotations
 
@@ -1673,12 +1683,12 @@ class Client:
         **kwargs : Any
             Additional keyword arguments.
 
-        Yields:
+        Yields
         ------
         Run
             The runs.
 
-        Examples:
+        Examples
         --------
         .. code-block:: python
 
@@ -2375,7 +2385,7 @@ class Client:
         immediately available in the DB upon evaluation run completion.
 
         Returns:
-        -------
+        --------
         pd.DataFrame
             A dataframe containing the test results.
         """
@@ -2708,14 +2718,14 @@ class Client:
         to_version : str or datetime.datetime
             The ending version for the diff.
 
-        Returns:
+        Returns
         -------
         DatasetDiffInfo
             The difference between the two versions of the dataset.
 
-        Examples:
+        Examples
         --------
-        ..code-block:: python
+        .. code-block:: python
 
             # Get the difference between two tagged versions of a dataset
             from_version = "prod"
@@ -2728,7 +2738,6 @@ class Client:
             print(diff)
 
             # Get the difference between two timestamped versions of a dataset
-
             from_version = datetime.datetime(2024, 1, 1)
             to_version = datetime.datetime(2024, 2, 1)
             diff = client.diff_dataset_versions(
@@ -2807,7 +2816,7 @@ class Client:
         """List the datasets on the LangSmith API.
 
         Yields:
-        ------
+        -------
         Dataset
             The datasets.
         """
@@ -2888,7 +2897,7 @@ class Client:
         tag : str
             The new tag to apply to the dataset.
 
-        Examples:
+        Examples
         --------
         .. code-block:: python
 
@@ -2978,7 +2987,7 @@ class Client:
 
 
         Examples:
-        --------
+        ---------
         .. code-block:: python
 
             # Get the latest version of a dataset
@@ -3023,11 +3032,6 @@ class Client:
                 Defaults to the API URL of your current client.
             dataset_name (str): The name of the dataset to create in your tenant.
                 Defaults to the name of the public dataset.
-
-        Returns:
-        -------
-        Dataset
-            The created dataset.
         """
         source_api_url = source_api_url or self.api_url
         source_api_url, token_uuid = _parse_token_or_url(token_or_url, source_api_url)
@@ -3242,7 +3246,7 @@ class Client:
             The output values for the examples.
         metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The metadata for the examples.
-        split :  Optional[Sequence[Optional[str | List[str]]]], default=None
+        splits :  Optional[Sequence[Optional[str | List[str]]]], default=None
             The splits for the examples, which are divisions
             of your dataset such as 'train', 'test', or 'validation'.
         source_run_ids : Optional[Sequence[Optional[ID_TYPE]]], default=None
@@ -3253,15 +3257,6 @@ class Client:
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
             The name of the dataset to create the examples in.
-
-        Returns:
-        -------
-        None
-
-        Raises:
-        ------
-        ValueError
-            If both `dataset_id` and `dataset_name` are `None`.
         """
         if dataset_id is None and dataset_name is None:
             raise ValueError("Either dataset_id or dataset_name must be provided.")
@@ -3514,7 +3509,7 @@ class Client:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
         **Note**: Must have few-shot indexing enabled for the dataset. See
-        ``client.index_dataset()``.
+        `client.index_dataset()`.
 
         Args:
             inputs (dict): The inputs to use as a search query. Must match the dataset
@@ -3522,17 +3517,14 @@ class Client:
             limit (int): The maximum number of examples to return.
             dataset_id (str or UUID): The ID of the dataset to search over.
             filter (str, optional): A filter string to apply to the search results. Uses
-            the same syntax as the `filter` parameter in `list_runs()`. Only a subset
-            of operations are supported. Defaults to None.
+                the same syntax as the `filter` parameter in `list_runs()`. Only a subset
+                of operations are supported. Defaults to None.
 
-            For example, you can use `and(eq(metadata.some_tag, 'some_value'), neq(metadata.env, 'dev'))`
-            to filter only examples where some_tag has some_value, and the environment is not dev.
-            kwargs (Any): Additional keyword args to pass as part of request body.
+                For example, you can use ``and(eq(metadata.some_tag, 'some_value'), neq(metadata.env, 'dev'))``
+                to filter only examples where some_tag has some_value, and the environment is not dev.
+                kwargs (Any): Additional keyword args to pass as part of request body.
 
-        Returns:
-            List of ExampleSearch objects.
-
-        Example:
+        Examples:
             .. code-block:: python
 
                 from langsmith import Client
@@ -3549,7 +3541,7 @@ class Client:
                 [
                     ExampleSearch(
                         inputs={'question': 'How do I cache a Chat model? What caches can I use?'},
-                        outputs={'answer': 'You can use LangChain\'s caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you\'re often requesting the same completion multiple times, and speed up your application.\n\n```python\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\')\n\n```\n\nYou can also use SQLite Cache which uses a SQLite database:\n\n```python\n  rm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=".langchain.db")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\') \n```\n'},
+                        outputs={'answer': 'You can use LangChain\'s caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you\'re often requesting the same completion multiple times, and speed up your application.\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\')\n\nYou can also use SQLite Cache which uses a SQLite database:\n\nrm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=".langchain.db")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\') \n'},
                         metadata=None,
                         id=UUID('b2ddd1c4-dff6-49ae-8544-f48e39053398'),
                         dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
@@ -3563,14 +3555,14 @@ class Client:
                     ),
                     ExampleSearch(
                         inputs={'question': 'Show me how to use RecursiveURLLoader'},
-                        outputs={'answer': 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\n```python\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n```\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'},
+                        outputs={'answer': 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'},
                         metadata=None,
                         id=UUID('0308ea70-a803-4181-a37d-39e95f138f8c'),
                         dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
                     ),
                 ]
 
-        """  # noqa: E501
+        """
         dataset_id = _as_uuid(dataset_id, "dataset_id")
         req = {
             "inputs": inputs,
@@ -4093,7 +4085,7 @@ class Client:
         feedback_id : str or UUID or None, default=None
             The ID of the feedback to create. If not provided, a random UUID will be
             generated.
-        feedback_config: FeedbackConfig or None, default=None,
+        feedback_config: langsmith.schemas.FeedbackConfig or None, default=None,
             The configuration specifying how to interpret feedback with this key.
             Examples include continuous (with min/max bounds), categorical,
             or freeform.
@@ -4786,115 +4778,10 @@ class Client:
     ) -> Dict[str, Any]:
         """Asynchronously run the Chain or language model on a dataset.
 
-        Store traces to the specified project name.
+        .. deprecated:: 0.1.0
+           This method is deprecated. Use :func:`langsmith.aevaluate` instead.
 
-        Args:
-            dataset_name: Name of the dataset to run the chain on.
-            llm_or_chain_factory: Language model or Chain constructor to run
-                over the dataset. The Chain constructor is used to permit
-                independent calls on each example without carrying over state.
-            evaluation: Optional evaluation configuration to use when evaluating
-            concurrency_level: The number of async tasks to run concurrently.
-            project_name: Name of the project to store the traces in.
-                Defaults to a randomly generated name.
-            project_metadata: Optional metadata to store with the project.
-            dataset_version: Optional version identifier to run the dataset on.
-                Can be a timestamp or a string tag.
-            verbose: Whether to print progress.
-            tags: Tags to add to each run in the project.
-            input_mapper: A function to map to the inputs dictionary from an Example
-                to the format expected by the model to be evaluated. This is useful if
-                your model needs to deserialize more complex schema or if your dataset
-                has inputs with keys that differ from what is expected by your chain
-                or agent.
-            revision_id: Optional revision identifier to assign this test run to
-                track the performance of different versions of your system.
-
-        Returns:
-            A dictionary containing the run's project name and the
-            resulting model outputs.
-
-        For the synchronous version, see client.run_on_dataset.
-
-        Examples:
-        --------
-        .. code-block:: python
-
-            from langsmith import Client
-            from langchain.chat_models import ChatOpenAI
-            from langchain.chains import LLMChain
-            from langchain.smith import RunEvalConfig
-
-
-            # Chains may have memory. Passing in a constructor function lets the
-            # evaluation framework avoid cross-contamination between runs.
-            def construct_chain():
-                llm = ChatOpenAI(temperature=0)
-                chain = LLMChain.from_string(llm, "What's the answer to {your_input_key}")
-                return chain
-
-
-            # Load off-the-shelf evaluators via config or the EvaluatorType (string or enum)
-            evaluation_config = RunEvalConfig(
-                evaluators=[
-                    "qa",  # "Correctness" against a reference answer
-                    "embedding_distance",
-                    RunEvalConfig.Criteria("helpfulness"),
-                    RunEvalConfig.Criteria(
-                        {
-                            "fifth-grader-score": "Do you have to be smarter than a fifth grader to answer this question?"
-                        }
-                    ),
-                ]
-            )
-
-            client = Client()
-            await client.arun_on_dataset(
-                "<my_dataset_name>",
-                construct_chain,
-                evaluation=evaluation_config,
-            )
-
-        You can also create custom evaluators by subclassing the
-        :class:`StringEvaluator <langchain.evaluation.schema.StringEvaluator>`
-        or LangSmith's `RunEvaluator` classes.
-
-        .. code-block:: python
-
-            from typing import Optional
-            from langchain.evaluation import StringEvaluator
-
-
-            class MyStringEvaluator(StringEvaluator):
-                @property
-                def requires_input(self) -> bool:
-                    return False
-
-                @property
-                def requires_reference(self) -> bool:
-                    return True
-
-                @property
-                def evaluation_name(self) -> str:
-                    return "exact_match"
-
-                def _evaluate_strings(
-                    self, prediction, reference=None, input=None, **kwargs
-                ) -> dict:
-                    return {"score": prediction == reference}
-
-
-            evaluation_config = RunEvalConfig(
-                custom_evaluators=[MyStringEvaluator()],
-            )
-
-            await client.arun_on_dataset(
-                "<my_dataset_name>",
-                construct_chain,
-                evaluation=evaluation_config,
-            )
         """  # noqa: E501
-        # warn as deprecated and to use `aevaluate` instead
         warnings.warn(
             "The `arun_on_dataset` method is deprecated and"
             " will be removed in a future version."
@@ -4940,115 +4827,10 @@ class Client:
     ) -> Dict[str, Any]:
         """Run the Chain or language model on a dataset.
 
-        Store traces to the specified project name.
+        .. deprecated:: 0.1.0
+           This method is deprecated. Use :func:`langsmith.aevaluate` instead.
 
-        Args:
-            dataset_name: Name of the dataset to run the chain on.
-            llm_or_chain_factory: Language model or Chain constructor to run
-                over the dataset. The Chain constructor is used to permit
-                independent calls on each example without carrying over state.
-            evaluation: Configuration for evaluators to run on the
-                results of the chain
-            concurrency_level: The number of tasks to execute concurrently.
-            project_name: Name of the project to store the traces in.
-                Defaults to a randomly generated name.
-            project_metadata: Metadata to store with the project.
-            dataset_version: Optional version identifier to run the dataset on.
-                Can be a timestamp or a string tag.
-            verbose: Whether to print progress.
-            tags: Tags to add to each run in the project.
-            input_mapper: A function to map to the inputs dictionary from an Example
-                to the format expected by the model to be evaluated. This is useful if
-                your model needs to deserialize more complex schema or if your dataset
-                has inputs with keys that differ from what is expected by your chain
-                or agent.
-            revision_id: Optional revision identifier to assign this test run to
-                track the performance of different versions of your system.
-
-        Returns:
-            A dictionary containing the run's project name and the resulting model outputs.
-
-
-        For the (usually faster) async version of this function, see `client.arun_on_dataset`.
-
-        Examples:
-        --------
-        .. code-block:: python
-
-            from langsmith import Client
-            from langchain.chat_models import ChatOpenAI
-            from langchain.chains import LLMChain
-            from langchain.smith import RunEvalConfig
-
-
-            # Chains may have memory. Passing in a constructor function lets the
-            # evaluation framework avoid cross-contamination between runs.
-            def construct_chain():
-                llm = ChatOpenAI(temperature=0)
-                chain = LLMChain.from_string(llm, "What's the answer to {your_input_key}")
-                return chain
-
-
-            # Load off-the-shelf evaluators via config or the EvaluatorType (string or enum)
-            evaluation_config = RunEvalConfig(
-                evaluators=[
-                    "qa",  # "Correctness" against a reference answer
-                    "embedding_distance",
-                    RunEvalConfig.Criteria("helpfulness"),
-                    RunEvalConfig.Criteria(
-                        {
-                            "fifth-grader-score": "Do you have to be smarter than a fifth grader to answer this question?"
-                        }
-                    ),
-                ]
-            )
-
-            client = Client()
-            client.run_on_dataset(
-                "<my_dataset_name>",
-                construct_chain,
-                evaluation=evaluation_config,
-            )
-
-        You can also create custom evaluators by subclassing the
-        :class:`StringEvaluator <langchain.evaluation.schema.StringEvaluator>`
-        or LangSmith's `RunEvaluator` classes.
-
-        .. code-block:: python
-
-            from typing import Optional
-            from langchain.evaluation import StringEvaluator
-
-
-            class MyStringEvaluator(StringEvaluator):
-                @property
-                def requires_input(self) -> bool:
-                    return False
-
-                @property
-                def requires_reference(self) -> bool:
-                    return True
-
-                @property
-                def evaluation_name(self) -> str:
-                    return "exact_match"
-
-                def _evaluate_strings(
-                    self, prediction, reference=None, input=None, **kwargs
-                ) -> dict:
-                    return {"score": prediction == reference}
-
-
-            evaluation_config = RunEvalConfig(
-                custom_evaluators=[MyStringEvaluator()],
-            )
-
-            client.run_on_dataset(
-                "<my_dataset_name>",
-                construct_chain,
-                evaluation=evaluation_config,
-            )
-        """  # noqa: E501
+        """  # noqa: E501  # noqa: E501
         warnings.warn(
             "The `run_on_dataset` method is deprecated and"
             " will be removed in a future version."

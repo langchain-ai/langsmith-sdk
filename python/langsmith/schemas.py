@@ -467,21 +467,17 @@ class FeedbackCategory(TypedDict, total=False):
 
 
 class FeedbackConfig(TypedDict, total=False):
-    """Represents _how_ a feedback value ought to be interpreted.
-
-    Attributes:
-        type (Literal["continuous", "categorical", "freeform"]): The type of feedback.
-        min (Optional[float]): The minimum value for continuous feedback.
-        max (Optional[float]): The maximum value for continuous feedback.
-        categories (Optional[List[FeedbackCategory]]): If feedback is categorical,
-            This defines the valid categories the server will accept.
-            Not applicable to continuosu or freeform feedback types.
-    """
+    """Represents _how_ a feedback value ought to be interpreted."""
 
     type: Literal["continuous", "categorical", "freeform"]
+    """The type of feedback."""
     min: Optional[float]
+    """The minimum value for continuous feedback."""
     max: Optional[float]
+    """The maximum value for continuous feedback."""
     categories: Optional[List[FeedbackCategory]]
+    """If feedback is categorical, this defines the valid categories the server will accept.
+    Not applicable to continuous or freeform feedback types."""  # noqa
 
 
 class FeedbackCreate(FeedbackBase):
@@ -766,15 +762,7 @@ class ComparativeExperiment(BaseModel):
 
 
 class PromptCommit(BaseModel):
-    """Represents a Prompt with a manifest.
-
-    Attributes:
-        owner (str): The handle of the owner of the prompt.
-        repo (str): The name of the prompt.
-        commit_hash (str): The commit hash of the prompt.
-        manifest (Dict[str, Any]): The manifest of the prompt.
-        examples (List[dict]): The list of examples.
-    """
+    """Represents a Prompt with a manifest."""
 
     owner: str
     """The handle of the owner of the prompt."""

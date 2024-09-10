@@ -676,7 +676,7 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
     ) -> Iterator[T]:
         """Return an iterator equivalent to stdlib map.
 
-        Each function will receive it's own copy of the context from the parent thread.
+        Each function will receive its own copy of the context from the parent thread.
 
         Args:
             fn: A callable that will take as many arguments as there are

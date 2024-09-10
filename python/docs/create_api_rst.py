@@ -166,6 +166,17 @@ def _load_package_modules(
     return modules_by_namespace
 
 
+module_order = [
+    "client",
+    "async_client",
+    "evaluation",
+    "run_helpers",
+    "run_trees",
+    "schemas",
+    "utils",
+]
+
+
 def _construct_doc(
     package_namespace: str,
     members_by_namespace: Dict[str, ModuleMembers],
@@ -191,7 +202,12 @@ def _construct_doc(
     
 """
 
-    for module in sorted(members_by_namespace):
+    def _priority(mod: str):
+        if mod in module_order:
+            return module_order.index(mod)
+        return len(module_order) + hash(mod)
+
+    for module in sorted(members_by_namespace, key=lambda x: _priority(x)):
         index_doc += f"    {module}\n"
         module_doc = f"""\
 .. currentmodule:: {package_namespace}
