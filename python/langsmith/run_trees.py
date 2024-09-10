@@ -169,8 +169,7 @@ class RunTree(ls_schemas.RunBase):
             events (Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent],
                     Sequence[dict], dict, str]):
                 The event(s) to be added. It can be a single event, a sequence
-                    of events,
-                a sequence of dictionaries, a dictionary, or a string.
+                of events, a sequence of dictionaries, a dictionary, or a string.
 
         Returns:
             None
