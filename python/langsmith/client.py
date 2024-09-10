@@ -1,7 +1,7 @@
 """Client for interacting with the LangSmith API.
 
-Use the client to customize API keys / workspace ocnnections, SSl certs, 
-etc. for tracing. 
+Use the client to customize API keys / workspace ocnnections, SSl certs,
+etc. for tracing.
 
 Also used to create, read, update, and delete LangSmith resources
 such as runs (~trace spans), datasets, examples (~records),
@@ -375,15 +375,13 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
 
 
 @typing.overload
-def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID:
-    ...
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
 
 
 @typing.overload
 def _ensure_uuid(
     value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = True
-) -> Optional[uuid.UUID]:
-    ...
+) -> Optional[uuid.UUID]: ...
 
 
 def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = False):
