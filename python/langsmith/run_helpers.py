@@ -795,6 +795,8 @@ class trace:
             ...     async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
             ...         result = "foo"  # Await async operation
             ...         run.metadata["some-key"] = "some-value"
+            ...         # "end" just adds the outputs and sets error to None
+            ...         # The actual patching of the run happens when the context exits
             ...         run.end(outputs={"result": result})
             >>> asyncio.run(main())
 
@@ -804,8 +806,8 @@ class trace:
 
             >>> import pytest
             >>> with trace("Test", exceptions_to_handle=(pytest.skip.Exception,)):
-            ...     if condition:
-            ...         pytest.skip("Skipping test")
+            ...     if sys.platform == "win32": # Just an example
+            ...         pytest.skip("Skipping test for windows")
             ...     result = "foo"  # Perform test operation
     """
 
