@@ -56,6 +56,8 @@ import {
   parsePromptIdentifier,
 } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
+import { stringifyForTracing } from "./utils/serde.js";
+import { _getFetchImplementation } from "./singletons/fetch.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -559,7 +561,7 @@ export class Client {
   ): Promise<Response> {
     const paramsString = queryParams?.toString() ?? "";
     const url = `${this.apiUrl}${path}?${paramsString}`;
-    const response = await this.caller.call(fetch, url, {
+    const response = await this.caller.call(_getFetchImplementation(), url, {
       method: "GET",
       headers: this.headers,
       signal: AbortSignal.timeout(this.timeout_ms),
@@ -588,7 +590,7 @@ export class Client {
       queryParams.set("limit", String(limit));
 
       const url = `${this.apiUrl}${path}?${queryParams}`;
-      const response = await this.caller.call(fetch, url, {
+      const response = await this.caller.call(_getFetchImplementation(), url, {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
@@ -618,13 +620,17 @@ export class Client {
   ): AsyncIterable<T[]> {
     const bodyParams = body ? { ...body } : {};
     while (true) {
-      const response = await this.caller.call(fetch, `${this.apiUrl}${path}`, {
-        method: requestMethod,
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-        body: JSON.stringify(bodyParams),
-      });
+      const response = await this.caller.call(
+        _getFetchImplementation(),
+        `${this.apiUrl}${path}`,
+        {
+          method: requestMethod,
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: JSON.stringify(bodyParams),
+        }
+      );
       const responseBody = await response.json();
       if (!responseBody) {
         break;
@@ -734,7 +740,7 @@ export class Client {
   }
 
   protected async _getServerInfo() {
-    const response = await fetch(`${this.apiUrl}/info`, {
+    const response = await _getFetchImplementation()(`${this.apiUrl}/info`, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(this.timeout_ms),
@@ -789,13 +795,17 @@ export class Client {
       runCreate,
     ]);
 
-    const response = await this.caller.call(fetch, `${this.apiUrl}/runs`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(mergedRunCreateParams[0]),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/runs`,
+      {
+        method: "POST",
+        headers,
+        body: stringifyForTracing(mergedRunCreateParams[0]),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, "create run", true);
   }
 
@@ -888,12 +898,12 @@ export class Client {
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        const stringifiedBatchItem = JSON.stringify(batchItem);
+        const stringifiedBatchItem = stringifyForTracing(batchItem);
         if (
           currentBatchSizeBytes > 0 &&
           currentBatchSizeBytes + stringifiedBatchItem.length > sizeLimitBytes
         ) {
-          await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+          await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
           currentBatchSizeBytes = 0;
           batchChunks.post = [];
           batchChunks.patch = [];
@@ -904,7 +914,7 @@ export class Client {
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(JSON.stringify(batchChunks));
+      await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
     }
   }
 
@@ -915,7 +925,7 @@ export class Client {
       Accept: "application/json",
     };
     const response = await this.batchIngestCaller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/runs/batch`,
       {
         method: "POST",
@@ -961,12 +971,12 @@ export class Client {
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/runs/${runId}`,
       {
         method: "PATCH",
         headers,
-        body: JSON.stringify(run),
+        body: stringifyForTracing(run),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -1317,7 +1327,7 @@ export class Client {
     );
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/runs/stats`,
       {
         method: "POST",
@@ -1342,7 +1352,7 @@ export class Client {
     };
     assertUuid(runId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/runs/${runId}/share`,
       {
         method: "PUT",
@@ -1362,7 +1372,7 @@ export class Client {
   public async unshareRun(runId: string): Promise<void> {
     assertUuid(runId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/runs/${runId}/share`,
       {
         method: "DELETE",
@@ -1377,7 +1387,7 @@ export class Client {
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
     assertUuid(runId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/runs/${runId}/share`,
       {
         method: "GET",
@@ -1411,7 +1421,7 @@ export class Client {
     }
     assertUuid(shareToken);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
       {
         method: "GET",
@@ -1437,7 +1447,7 @@ export class Client {
     }
     assertUuid(datasetId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/${datasetId}/share`,
       {
         method: "GET",
@@ -1469,7 +1479,7 @@ export class Client {
     };
     assertUuid(datasetId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/${datasetId}/share`,
       {
         method: "PUT",
@@ -1489,7 +1499,7 @@ export class Client {
   public async unshareDataset(datasetId: string): Promise<void> {
     assertUuid(datasetId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/${datasetId}/share`,
       {
         method: "DELETE",
@@ -1504,7 +1514,7 @@ export class Client {
   public async readSharedDataset(shareToken: string): Promise<Dataset> {
     assertUuid(shareToken);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/public/${shareToken}/datasets`,
       {
         method: "GET",
@@ -1544,7 +1554,7 @@ export class Client {
     });
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
       {
         method: "GET",
@@ -1601,13 +1611,17 @@ export class Client {
     if (referenceDatasetId !== null) {
       body["reference_dataset_id"] = referenceDatasetId;
     }
-    const response = await this.caller.call(fetch, endpoint, {
-      method: "POST",
-      headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      endpoint,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, "create project");
     const result = await response.json();
     return result as TracerSession;
@@ -1640,13 +1654,17 @@ export class Client {
       description,
       end_time: endTime ? new Date(endTime).toISOString() : null,
     };
-    const response = await this.caller.call(fetch, endpoint, {
-      method: "PATCH",
-      headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      endpoint,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, "update project");
     const result = await response.json();
     return result as TracerSession;
@@ -1673,7 +1691,7 @@ export class Client {
       throw new Error("Must provide projectName or projectId");
     }
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}${path}?${params}`,
       {
         method: "GET",
@@ -1858,7 +1876,7 @@ export class Client {
     }
     assertUuid(projectId_);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/sessions/${projectId_}`,
       {
         method: "DELETE",
@@ -1903,7 +1921,7 @@ export class Client {
       formData.append("name", name);
     }
 
-    const response = await this.caller.call(fetch, url, {
+    const response = await this.caller.call(_getFetchImplementation(), url, {
       method: "POST",
       headers: this.headers,
       body: formData,
@@ -1946,13 +1964,17 @@ export class Client {
     if (outputsSchema) {
       body.outputs_schema_definition = outputsSchema;
     }
-    const response = await this.caller.call(fetch, `${this.apiUrl}/datasets`, {
-      method: "POST",
-      headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/datasets`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, "create dataset");
     const result = await response.json();
     return result as Dataset;
@@ -2135,7 +2157,7 @@ export class Client {
     assertUuid(_datasetId);
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/${_datasetId}`,
       {
         method: "PATCH",
@@ -2170,12 +2192,16 @@ export class Client {
     } else {
       throw new Error("Must provide datasetName or datasetId");
     }
-    const response = await this.caller.call(fetch, this.apiUrl + path, {
-      method: "DELETE",
-      headers: this.headers,
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      this.apiUrl + path,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, `delete ${path}`);
 
     await response.json();
@@ -2205,7 +2231,7 @@ export class Client {
       tag: tag,
     };
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/${datasetId_}/index`,
       {
         method: "POST",
@@ -2270,7 +2296,7 @@ export class Client {
 
     assertUuid(datasetId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/${datasetId}/search`,
       {
         method: "POST",
@@ -2320,13 +2346,17 @@ export class Client {
       source_run_id: sourceRunId,
     };
 
-    const response = await this.caller.call(fetch, `${this.apiUrl}/examples`, {
-      method: "POST",
-      headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/examples`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
 
     await raiseForStatus(response, "create example");
     const result = await response.json();
@@ -2375,7 +2405,7 @@ export class Client {
     });
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/examples/bulk`,
       {
         method: "POST",
@@ -2511,12 +2541,16 @@ export class Client {
   public async deleteExample(exampleId: string): Promise<void> {
     assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
-    const response = await this.caller.call(fetch, this.apiUrl + path, {
-      method: "DELETE",
-      headers: this.headers,
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      this.apiUrl + path,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, `delete ${path}`);
     await response.json();
   }
@@ -2527,7 +2561,7 @@ export class Client {
   ): Promise<object> {
     assertUuid(exampleId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/examples/${exampleId}`,
       {
         method: "PATCH",
@@ -2544,7 +2578,7 @@ export class Client {
 
   public async updateExamples(update: ExampleUpdateWithId[]): Promise<object> {
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/examples/bulk`,
       {
         method: "PATCH",
@@ -2636,7 +2670,7 @@ export class Client {
     };
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/${datasetId_}/splits`,
       {
         method: "PUT",
@@ -2761,7 +2795,7 @@ export class Client {
       session_id: projectId,
     };
     const url = `${this.apiUrl}/feedback`;
-    const response = await this.caller.call(fetch, url, {
+    const response = await this.caller.call(_getFetchImplementation(), url, {
       method: "POST",
       headers: { ...this.headers, "Content-Type": "application/json" },
       body: JSON.stringify(feedback),
@@ -2801,7 +2835,7 @@ export class Client {
     }
     assertUuid(feedbackId);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/feedback/${feedbackId}`,
       {
         method: "PATCH",
@@ -2824,12 +2858,16 @@ export class Client {
   public async deleteFeedback(feedbackId: string): Promise<void> {
     assertUuid(feedbackId);
     const path = `/feedback/${feedbackId}`;
-    const response = await this.caller.call(fetch, this.apiUrl + path, {
-      method: "DELETE",
-      headers: this.headers,
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      this.apiUrl + path,
+      {
+        method: "DELETE",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, `delete ${path}`);
     await response.json();
   }
@@ -2909,7 +2947,7 @@ export class Client {
     }
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/feedback/tokens`,
       {
         method: "POST",
@@ -2969,7 +3007,7 @@ export class Client {
     if (metadata) body.extra["metadata"] = metadata;
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/datasets/comparative`,
       {
         method: "POST",
@@ -3085,7 +3123,7 @@ export class Client {
     promptOwnerAndName: string
   ): Promise<string | undefined> {
     const res = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
       {
         method: "GET",
@@ -3122,7 +3160,7 @@ export class Client {
   ): Promise<LikePromptResponse> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/likes/${owner}/${promptName}`,
       {
         method: "POST",
@@ -3227,7 +3265,7 @@ export class Client {
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/repos/${owner}/${promptName}`,
       {
         method: "GET",
@@ -3282,13 +3320,17 @@ export class Client {
       is_public: !!options?.isPublic,
     };
 
-    const response = await this.caller.call(fetch, `${this.apiUrl}/repos/`, {
-      method: "POST",
-      headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/repos/`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
 
     await raiseForStatus(response, "create prompt");
 
@@ -3319,7 +3361,7 @@ export class Client {
     };
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/commits/${owner}/${promptName}`,
       {
         method: "POST",
@@ -3376,7 +3418,7 @@ export class Client {
     }
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/repos/${owner}/${promptName}`,
       {
         method: "PATCH",
@@ -3407,7 +3449,7 @@ export class Client {
     }
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/repos/${owner}/${promptName}`,
       {
         method: "DELETE",
@@ -3448,7 +3490,7 @@ export class Client {
     }
 
     const response = await this.caller.call(
-      fetch,
+      _getFetchImplementation(),
       `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${
         options?.includeModel ? "?include_model=true" : ""
       }`,
