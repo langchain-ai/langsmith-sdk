@@ -5,7 +5,7 @@ import inspect
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Sequence, TypedDict, Union
+from typing import Dict, List, Literal, Sequence, TypedDict, Union
 from enum import Enum
 
 import toml
@@ -332,15 +332,10 @@ def main() -> None:
     print("Starting to build API reference files.")
     package_members = _load_package_modules(PACKAGE_DIR)
     package_version = _get_package_version(PACKAGE_DIR)
-    output_dir = HERE / "langsmith"
-    output_dir.mkdir(exist_ok=True)
     rsts = _construct_doc("langsmith", package_members, package_version)
     for name, rst in rsts:
-        with open(output_dir / name, "w") as f:
+        with open(HERE / name, "w") as f:
             f.write(rst)
-        if name == "index.rst":
-            with open(HERE / name, "w") as f:
-                f.write(rst)
     print("API reference files built.")
 
 
