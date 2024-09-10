@@ -20,7 +20,7 @@ evals:
 
 lint:
 	poetry run ruff check .
-	poetry run mypy .
+	poetry run mypy langsmith 
 	poetry run black . --check
 
 format:

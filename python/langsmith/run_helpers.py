@@ -204,16 +204,27 @@ class LangSmithExtra(TypedDict, total=False):
     """Any additional info to be injected into the run dynamically."""
 
     name: Optional[str]
+    """Optional name for the run."""
     reference_example_id: Optional[ls_client.ID_TYPE]
+    """Optional ID of a reference example."""
     run_extra: Optional[Dict]
+    """Optional additional run information."""
     parent: Optional[Union[run_trees.RunTree, str, Mapping]]
+    """Optional parent run, can be a RunTree, string, or mapping."""
     run_tree: Optional[run_trees.RunTree]  # TODO: Deprecate
+    """Optional run tree (deprecated)."""
     project_name: Optional[str]
+    """Optional name of the project."""
     metadata: Optional[Dict[str, Any]]
+    """Optional metadata for the run."""
     tags: Optional[List[str]]
+    """Optional list of tags for the run."""
     run_id: Optional[ls_client.ID_TYPE]
+    """Optional ID for the run."""
     client: Optional[ls_client.Client]
+    """Optional LangSmith client."""
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
+    """Optional callback function to be called when the run ends."""
 
 
 R = TypeVar("R", covariant=True)
@@ -293,17 +304,15 @@ def traceable(
             None, which will use the default client.
         reduce_fn: A function to reduce the output of the function if the function
             returns a generator. Defaults to None, which means the values will be
-                logged as a list. Note: if the iterator is never exhausted (e.g.
-                the function returns an infinite generator), this will never be
-                called, and the run itself will be stuck in a pending state.
+            logged as a list. Note: if the iterator is never exhausted (e.g.
+            the function returns an infinite generator), this will never be
+            called, and the run itself will be stuck in a pending state.
         project_name: The name of the project to log the run to. Defaults to None,
             which will use the default project.
         process_inputs: Custom serialization / processing function for inputs.
             Defaults to None.
         process_outputs: Custom serialization / processing function for outputs.
             Defaults to None.
-
-
 
     Returns:
             Union[Callable, Callable[[Callable], Callable]]: The decorated function.
@@ -312,15 +321,10 @@ def traceable(
             - Requires that LANGSMITH_TRACING_V2 be set to 'true' in the environment.
 
     Examples:
+        Basic usage:
+
         .. code-block:: python
-            import httpx
-            import asyncio
 
-            from typing import Iterable
-            from langsmith import traceable, Client
-
-
-            # Basic usage:
             @traceable
             def my_function(x: float, y: float) -> float:
                 return x + y
@@ -341,8 +345,10 @@ def traceable(
 
             asyncio.run(my_async_function({"param": "value"}))
 
+        Streaming data with a generator:
 
-            # Streaming data with a generator:
+        .. code-block:: python
+
             @traceable
             def my_generator(n: int) -> Iterable:
                 for i in range(n):
@@ -352,8 +358,10 @@ def traceable(
             for item in my_generator(5):
                 print(item)
 
+        Async streaming data:
 
-            # Async streaming data
+        .. code-block:: python
+
             @traceable
             async def my_async_generator(query_params: dict) -> Iterable:
                 async with httpx.AsyncClient() as http_client:
@@ -372,8 +380,10 @@ def traceable(
 
             asyncio.run(async_code())
 
+        Specifying a run type and name:
 
-            # Specifying a run type and name:
+        .. code-block:: python
+
             @traceable(name="CustomName", run_type="tool")
             def another_function(a: float, b: float) -> float:
                 return a * b
@@ -381,8 +391,10 @@ def traceable(
 
             another_function(5, 6)
 
+        Logging with custom metadata and tags:
 
-            # Logging with custom metadata and tags:
+        .. code-block:: python
+
             @traceable(
                 metadata={"version": "1.0", "author": "John Doe"}, tags=["beta", "test"]
             )
@@ -392,7 +404,10 @@ def traceable(
 
             tagged_function(5)
 
-            # Specifying a custom client and project name:
+        Specifying a custom client and project name:
+
+        .. code-block:: python
+
             custom_client = Client(api_key="your_api_key")
 
 
@@ -403,15 +418,17 @@ def traceable(
 
             project_specific_function({"data": "to process"})
 
+        Manually passing langsmith_extra:
 
-            # Manually passing langsmith_extra:
+        .. code-block:: python
+
             @traceable
             def manual_extra_function(x):
                 return x**2
 
 
             manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
-    """  # noqa: E501
+    """
     run_type: ls_client.RUN_TYPE_T = (
         args[0]
         if args and isinstance(args[0], str)
@@ -742,64 +759,57 @@ def traceable(
 
 
 class trace:
-    """Manage a langsmith run in context.
+    """Manage a LangSmith run in context.
 
     This class can be used as both a synchronous and asynchronous context manager.
 
-    Parameters:
-    -----------
-    name : str
-        Name of the run
-    run_type : ls_client.RUN_TYPE_T, optional
-        Type of run (e.g., "chain", "llm", "tool"). Defaults to "chain".
-    inputs : Optional[Dict], optional
-        Initial input data for the run
-    project_name : Optional[str], optional
-        Associates the run with a specific project, overriding defaults
-    parent : Optional[Union[run_trees.RunTree, str, Mapping]], optional
-        Parent run, accepts RunTree, dotted order string, or tracing headers
-    tags : Optional[List[str]], optional
-        Categorization labels for the run
-    metadata : Optional[Mapping[str, Any]], optional
-        Arbitrary key-value pairs for run annotation
-    client : Optional[ls_client.Client], optional
-        LangSmith client for specifying a different tenant,
-        setting custom headers, or modifying API endpoint
-    run_id : Optional[ls_client.ID_TYPE], optional
-        Preset identifier for the run
-    reference_example_id : Optional[ls_client.ID_TYPE], optional
-        You typically won't set this. It associates this run with a dataset example.
-        This is only valid for root runs (not children) in an evaluation context.
-    exceptions_to_handle : Optional[Tuple[Type[BaseException], ...]], optional
-        Typically not set. Exception types to ignore in what is sent up to LangSmith
-    extra : Optional[Dict], optional
-        Typically not set. Use 'metadata' instead. Extra data to be sent to LangSmith.
+    Args:
+        name (str): Name of the run.
+        run_type (ls_client.RUN_TYPE_T, optional): Type of run (e.g., "chain", "llm", "tool"). Defaults to "chain".
+        inputs (Optional[Dict], optional): Initial input data for the run. Defaults to None.
+        project_name (Optional[str], optional): Project name to associate the run with. Defaults to None.
+        parent (Optional[Union[run_trees.RunTree, str, Mapping]], optional): Parent run. Can be a RunTree, dotted order string, or tracing headers. Defaults to None.
+        tags (Optional[List[str]], optional): List of tags for the run. Defaults to None.
+        metadata (Optional[Mapping[str, Any]], optional): Additional metadata for the run. Defaults to None.
+        client (Optional[ls_client.Client], optional): LangSmith client for custom settings. Defaults to None.
+        run_id (Optional[ls_client.ID_TYPE], optional): Preset identifier for the run. Defaults to None.
+        reference_example_id (Optional[ls_client.ID_TYPE], optional): Associates run with a dataset example. Only for root runs in evaluation. Defaults to None.
+        exceptions_to_handle (Optional[Tuple[Type[BaseException], ...]], optional): Exception types to ignore. Defaults to None.
+        extra (Optional[Dict], optional): Extra data to send to LangSmith. Use 'metadata' instead. Defaults to None.
 
     Examples:
-    ---------
-    Synchronous usage:
-    >>> with trace("My Operation", run_type="tool", tags=["important"]) as run:
-    ...     result = "foo"  # Do some_operation()
-    ...     run.metadata["some-key"] = "some-value"
-    ...     run.end(outputs={"result": result})
+        Synchronous usage:
 
-    Asynchronous usage:
-    >>> async def main():
-    ...     async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
-    ...         result = "foo"  # Can await some_async_operation()
-    ...         run.metadata["some-key"] = "some-value"
-    ...         # "end" just adds the outputs and sets error to None
-    ...         # The actual patching of the run happens when the context exits
-    ...         run.end(outputs={"result": result})
-    >>> asyncio.run(main())
+        .. code-block:: python
 
-    Allowing pytest.skip in a test:
-    >>> import sys
-    >>> import pytest
-    >>> with trace("OS-Specific Test", exceptions_to_handle=(pytest.skip.Exception,)):
-    ...     if sys.platform == "win32":
-    ...         pytest.skip("Not supported on Windows")
-    ...     result = "foo"  # e.g., do some unix_specific_operation()
+            >>> with trace("My Operation", run_type="tool", tags=["important"]) as run:
+            ...     result = "foo"  # Perform operation
+            ...     run.metadata["some-key"] = "some-value"
+            ...     run.end(outputs={"result": result})
+
+        Asynchronous usage:
+
+        .. code-block:: python
+
+            >>> async def main():
+            ...     async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
+            ...         result = "foo"  # Await async operation
+            ...         run.metadata["some-key"] = "some-value"
+            ...         # "end" just adds the outputs and sets error to None
+            ...         # The actual patching of the run happens when the context exits
+            ...         run.end(outputs={"result": result})
+            >>> asyncio.run(main())
+
+        Handling specific exceptions:
+
+        .. code-block:: python
+
+            >>> import pytest
+            >>> import sys
+            >>> with trace("Test", exceptions_to_handle=(pytest.skip.Exception,)):
+            ...     if sys.platform == "win32": # Just an example
+            ...         pytest.skip("Skipping test for windows")
+            ...     result = "foo"  # Perform test operation
     """
 
     def __init__(
