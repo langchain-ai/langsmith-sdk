@@ -82,6 +82,11 @@ class RuleNodeProcessor(StringNodeProcessor):
     """String node processor that uses a list of rules to replace sensitive data."""
 
     rules: List[StringNodeRule]
+    """List of rules to apply for replacing sensitive data.
+
+    Each rule is a StringNodeRule, which contains a regex pattern to match
+    and an optional replacement string.
+    """
 
     def __init__(self, rules: List[StringNodeRule]):
         """Initialize the processor with a list of rules."""
@@ -110,7 +115,17 @@ class CallableNodeProcessor(StringNodeProcessor):
     """String node processor that uses a callable function to replace sensitive data."""
 
     func: Union[Callable[[str], str], Callable[[str, List[Union[str, int]]], str]]
+    """The callable function used to replace sensitive data.
+    
+    It can be either a function that takes a single string argument and returns a string,
+    or a function that takes a string and a list of path elements (strings or integers) 
+    and returns a string."""
+
     accepts_path: bool
+    """Indicates whether the callable function accepts a path argument.
+    
+    If True, the function expects two arguments: the string to be processed and the path to that string.
+    If False, the function expects only the string to be processed."""
 
     def __init__(
         self,
