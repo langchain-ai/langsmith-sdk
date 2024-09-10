@@ -29,8 +29,6 @@ sys.path.insert(0, os.path.abspath("../python"))
 
 with (_DIR.parent / "pyproject.toml").open("r") as f:
     data = toml.load(f)
-with (_DIR / "guide_imports.json").open("r") as f:
-    imported_classes = json.load(f)
 
 
 class ExampleLinksDirective(SphinxDirective):
@@ -49,7 +47,7 @@ class ExampleLinksDirective(SphinxDirective):
         Called any time :example_links:`ClassName` is used
         in the template *.rst files."""
         class_or_func_name = self.arguments[0]
-        links = imported_classes.get(class_or_func_name, {})
+        links = {}
         list_node = nodes.bullet_list()
         for doc_name, link in sorted(links.items()):
             item_node = nodes.list_item()
@@ -175,7 +173,7 @@ html_theme_options = {
     "show_toc_level": 3,
     "navbar_align": "left",
     "header_links_before_dropdown": 5,
-    "header_dropdown_text": "Integrations",
+    "header_dropdown_text": "Modules",
     "logo": {
         "image_light": "_static/wordmark-api.svg",
         "image_dark": "_static/wordmark-api-dark.svg",
