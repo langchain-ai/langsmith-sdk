@@ -41,7 +41,8 @@ U = TypeVar("U")
 @overload
 def test(
     func: Callable,
-) -> Callable: ...
+) -> Callable:
+    ...
 
 
 @overload
@@ -51,7 +52,8 @@ def test(
     output_keys: Optional[Sequence[str]] = None,
     client: Optional[ls_client.Client] = None,
     test_suite_name: Optional[str] = None,
-) -> Callable[[Callable], Callable]: ...
+) -> Callable[[Callable], Callable]:
+    ...
 
 
 def test(*args: Any, **kwargs: Any) -> Callable:

@@ -8,7 +8,6 @@
 
 # -- Path setup --------------------------------------------------------------
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -36,7 +35,8 @@ class ExampleLinksDirective(SphinxDirective):
 
     We have a script that extracts links to API reference docs
     from our notebook examples. This directive uses that information
-    to backlink to the examples from the API reference docs."""
+    to backlink to the examples from the API reference docs.
+    """
 
     has_content = False
     required_arguments = 1
@@ -45,7 +45,8 @@ class ExampleLinksDirective(SphinxDirective):
         """Run the directive.
 
         Called any time :example_links:`ClassName` is used
-        in the template *.rst files."""
+        in the template *.rst files.
+        """
         class_or_func_name = self.arguments[0]
         links = {}
         list_node = nodes.bullet_list()

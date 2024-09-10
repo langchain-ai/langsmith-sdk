@@ -275,12 +275,12 @@ class AsyncClient:
         **kwargs : Any
             Additional keyword arguments.
 
-        Yields
+        Yields:
         ------
         Run
             The runs.
 
-        Examples
+        Examples:
         --------
         List all runs in a project:
 

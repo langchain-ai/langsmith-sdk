@@ -2,15 +2,15 @@
 
 import importlib
 import inspect
+import logging
 import os
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Literal, Sequence, TypedDict, Union
-from enum import Enum
 
 import toml
 from pydantic import BaseModel
-import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -87,6 +87,8 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
     functions: List[FunctionInfo] = []
     module = importlib.import_module(module_path)
     for name, type_ in inspect.getmembers(module):
+        if "evaluation" in module_path:
+            print(module_path, name)
         if (
             not hasattr(type_, "__module__")
             or type_.__module__ != module_path
@@ -103,7 +105,9 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 else (
                     "enum"
                     if issubclass(type_, Enum)
-                    else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
+                    else "Pydantic"
+                    if issubclass(type_, BaseModel)
+                    else "Regular"
                 )
             )
             classes_.append(
@@ -129,7 +133,7 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
 
 
 def _load_package_modules(
-    package_directory: Union[str, Path]
+    package_directory: Union[str, Path],
 ) -> Dict[str, ModuleMembers]:
     package_path = Path(package_directory)
     modules_by_namespace = {}
@@ -139,7 +143,13 @@ def _load_package_modules(
         if file_path.name.startswith("_") or any(
             part.startswith("_") for part in file_path.relative_to(package_path).parts
         ):
-            continue
+            if file_path.name not in {
+                "_runner.py",
+                "_arunner.py",
+                "_testing.py",
+                "_expect.py",
+            }:
+                continue
 
         namespace = (
             str(file_path.relative_to(package_path))
@@ -177,6 +187,7 @@ module_order = [
     "run_trees",
     "schemas",
     "utils",
+    "anonymizer",
 ]
 
 
@@ -208,6 +219,7 @@ def _construct_doc(
     def _priority(mod: str):
         if mod in module_order:
             return module_order.index(mod)
+        print(mod, "not in ", module_order)
         return len(module_order) + hash(mod)
 
     for module in sorted(members_by_namespace, key=lambda x: _priority(x)):

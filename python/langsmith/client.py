@@ -375,13 +375,15 @@ def _as_uuid(value: ID_TYPE, var: Optional[str] = None) -> uuid.UUID:
 
 
 @typing.overload
-def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID: ...
+def _ensure_uuid(value: Optional[Union[str, uuid.UUID]]) -> uuid.UUID:
+    ...
 
 
 @typing.overload
 def _ensure_uuid(
     value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = True
-) -> Optional[uuid.UUID]: ...
+) -> Optional[uuid.UUID]:
+    ...
 
 
 def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = False):
@@ -1683,12 +1685,12 @@ class Client:
         **kwargs : Any
             Additional keyword arguments.
 
-        Yields
+        Yields:
         ------
         Run
             The runs.
 
-        Examples
+        Examples:
         --------
         .. code-block:: python
 
@@ -2718,12 +2720,12 @@ class Client:
         to_version : str or datetime.datetime
             The ending version for the diff.
 
-        Returns
+        Returns:
         -------
         DatasetDiffInfo
             The difference between the two versions of the dataset.
 
-        Examples
+        Examples:
         --------
         .. code-block:: python
 
@@ -2897,7 +2899,7 @@ class Client:
         tag : str
             The new tag to apply to the dataset.
 
-        Examples
+        Examples:
         --------
         .. code-block:: python
 

@@ -269,7 +269,8 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
 @overload
 def traceable(
     func: Callable[P, R],
-) -> SupportsLangsmithExtra[P, R]: ...
+) -> SupportsLangsmithExtra[P, R]:
+    ...
 
 
 @overload
@@ -285,7 +286,8 @@ def traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
-) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
+) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]:
+    ...
 
 
 def traceable(
@@ -329,7 +331,9 @@ def traceable(
             def my_function(x: float, y: float) -> float:
                 return x + y
 
+
             my_function(5, 6)
+
 
             @traceable
             async def my_async_function(query_params: dict) -> dict:
@@ -339,6 +343,7 @@ def traceable(
                         params=query_params,
                     )
                     return response.json()
+
 
             asyncio.run(my_async_function({"param": "value"}))
 
@@ -350,6 +355,7 @@ def traceable(
             def my_generator(n: int) -> Iterable:
                 for i in range(n):
                     yield i
+
 
             for item in my_generator(5):
                 print(item)
@@ -368,9 +374,11 @@ def traceable(
                     for item in response.json():
                         yield item
 
+
             async def async_code():
                 async for item in my_async_generator({"param": "value"}):
                     print(item)
+
 
             asyncio.run(async_code())
 
@@ -381,6 +389,7 @@ def traceable(
             @traceable(name="CustomName", run_type="tool")
             def another_function(a: float, b: float) -> float:
                 return a * b
+
 
             another_function(5, 6)
 
@@ -394,6 +403,7 @@ def traceable(
             def tagged_function(x):
                 return x**2
 
+
             tagged_function(5)
 
         Specifying a custom client and project name:
@@ -402,9 +412,11 @@ def traceable(
 
             custom_client = Client(api_key="your_api_key")
 
+
             @traceable(client=custom_client, project_name="My Special Project")
             def project_specific_function(data):
                 return data
+
 
             project_specific_function({"data": "to process"})
 
@@ -415,6 +427,7 @@ def traceable(
             @traceable
             def manual_extra_function(x):
                 return x**2
+
 
             manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
     """
@@ -768,7 +781,7 @@ class trace:
 
     Examples:
         Synchronous usage:
-        
+
         .. code-block:: python
 
             >>> with trace("My Operation", run_type="tool", tags=["important"]) as run:

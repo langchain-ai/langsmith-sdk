@@ -410,10 +410,12 @@ class _Expect:
     ## Private Methods
 
     @overload
-    def __call__(self, value: Any, /) -> _Matcher: ...
+    def __call__(self, value: Any, /) -> _Matcher:
+        ...
 
     @overload
-    def __call__(self, /, *, client: ls_client.Client) -> _Expect: ...
+    def __call__(self, /, *, client: ls_client.Client) -> _Expect:
+        ...
 
     def __call__(
         self,
