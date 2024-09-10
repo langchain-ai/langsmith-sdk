@@ -82,6 +82,11 @@ class RuleNodeProcessor(StringNodeProcessor):
     """String node processor that uses a list of rules to replace sensitive data."""
 
     rules: List[StringNodeRule]
+    """List of rules to apply for replacing sensitive data.
+
+    Each rule is a StringNodeRule, which contains a regex pattern to match
+    and an optional replacement string.
+    """
 
     def __init__(self, rules: List[StringNodeRule]):
         """Initialize the processor with a list of rules."""

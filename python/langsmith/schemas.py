@@ -308,8 +308,8 @@ class Run(RunBase):
     sorted in the order it was executed.
 
     Example:
-    - Parent: 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8
-    - Children:
+        - Parent: 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8
+        - Children:
         - 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155649Z809ed3a2-0172-4f4d-8a02-a64e9b7a0f8a
         - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
     """  # noqa: E501
@@ -389,15 +389,12 @@ class FeedbackSourceBase(BaseModel):
 
     This represents whether feedback is submitted from the API, model, human labeler,
         etc.
-
-    Attributes:
-        type (str): The type of the feedback source.
-        metadata (Optional[Dict[str, Any]]): Additional metadata for the feedback
-            source.
     """
 
     type: str
+    """The type of the feedback source."""
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    """Additional metadata for the feedback source."""
 
 
 class APIFeedbackSource(FeedbackSourceBase):
@@ -463,7 +460,9 @@ class FeedbackCategory(TypedDict, total=False):
     """Specific value and label pair for feedback."""
 
     value: float
+    """The numeric value associated with this feedback category."""
     label: Optional[str]
+    """An optional label to interpret the value for this feedback category."""
 
 
 class FeedbackConfig(TypedDict, total=False):
@@ -595,7 +594,9 @@ class BaseMessageLike(Protocol):
     """A protocol representing objects similar to BaseMessage."""
 
     content: str
-    additional_kwargs: Dict
+    """The content of the message."""
+    additional_kwargs: Dict[Any, Any]
+    """Additional keyword arguments associated with the message."""
 
     @property
     def type(self) -> str:
@@ -603,58 +604,46 @@ class BaseMessageLike(Protocol):
 
 
 class DatasetShareSchema(TypedDict, total=False):
-    """Represents the schema for a dataset share.
-
-    Attributes:
-        dataset_id (UUID): The ID of the dataset.
-        share_token (UUID): The token for sharing the dataset.
-        url (str): The URL of the shared dataset.
-    """
+    """Represents the schema for a dataset share."""
 
     dataset_id: UUID
+    """The ID of the dataset."""
     share_token: UUID
+    """The token for sharing the dataset."""
     url: str
+    """The URL of the shared dataset."""
 
 
 class AnnotationQueue(BaseModel):
-    """Represents an annotation queue.
-
-    Attributes:
-        id (UUID): The ID of the annotation queue.
-        name (str): The name of the annotation queue.
-        description (Optional[str], optional): The description of the annotation queue.
-            Defaults to None.
-        created_at (datetime, optional): The creation timestamp of the annotation queue.
-            Defaults to the current UTC time.
-        updated_at (datetime, optional): The last update timestamp of the annotation
-             queue. Defaults to the current UTC time.
-        tenant_id (UUID): The ID of the tenant associated with the annotation queue.
-    """
+    """Represents an annotation queue."""
 
     id: UUID
+    """The unique identifier of the annotation queue."""
     name: str
+    """The name of the annotation queue."""
     description: Optional[str] = None
+    """An optional description of the annotation queue."""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    """The timestamp when the annotation queue was created."""
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    """The timestamp when the annotation queue was last updated."""
     tenant_id: UUID
+    """The ID of the tenant associated with the annotation queue."""
 
 
 class BatchIngestConfig(TypedDict, total=False):
-    """Configuration for batch ingestion.
-
-    Attributes:
-        scale_up_qsize_trigger (int): The queue size threshold that triggers scaling up.
-        scale_up_nthreads_limit (int): The maximum number of threads to scale up to.
-        scale_down_nempty_trigger (int): The number of empty threads that triggers
-            scaling down.
-        size_limit (int): The maximum size limit for the batch.
-    """
+    """Configuration for batch ingestion."""
 
     scale_up_qsize_trigger: int
+    """The queue size threshold that triggers scaling up."""
     scale_up_nthreads_limit: int
+    """The maximum number of threads to scale up to."""
     scale_down_nempty_trigger: int
+    """The number of empty threads that triggers scaling down."""
     size_limit: int
+    """The maximum size limit for the batch."""
     size_limit_bytes: Optional[int]
+    """The maximum size limit in bytes for the batch."""
 
 
 class LangSmithInfo(BaseModel):
@@ -683,17 +672,14 @@ class LangSmithSettings(BaseModel):
 
 
 class FeedbackIngestToken(BaseModel):
-    """Represents the schema for a feedback ingest token.
-
-    Attributes:
-        id (UUID): The ID of the feedback ingest token.
-        token (str): The token for ingesting feedback.
-        expires_at (datetime): The expiration time of the token.
-    """
+    """Represents the schema for a feedback ingest token."""
 
     id: UUID
-    url: str
+    """The ID of the feedback ingest token."""
+    token: str
+    """The token for ingesting feedback."""
     expires_at: datetime
+    """The expiration time of the token."""
 
 
 class RunEvent(TypedDict, total=False):
@@ -719,20 +705,14 @@ class TimeDeltaInput(TypedDict, total=False):
 
 
 class DatasetDiffInfo(BaseModel):
-    """Represents the difference information between two datasets.
-
-    Attributes:
-        examples_modified (List[UUID]): A list of UUIDs representing
-            the modified examples.
-        examples_added (List[UUID]): A list of UUIDs representing
-            the added examples.
-        examples_removed (List[UUID]): A list of UUIDs representing
-            the removed examples.
-    """
+    """Represents the difference information between two datasets."""
 
     examples_modified: List[UUID]
+    """A list of UUIDs representing the modified examples."""
     examples_added: List[UUID]
+    """A list of UUIDs representing the added examples."""
     examples_removed: List[UUID]
+    """A list of UUIDs representing the removed examples."""
 
 
 class ComparativeExperiment(BaseModel):
@@ -743,15 +723,25 @@ class ComparativeExperiment(BaseModel):
     """
 
     id: UUID
+    """The unique identifier for the comparative experiment."""
     name: Optional[str] = None
+    """The optional name of the comparative experiment."""
     description: Optional[str] = None
+    """An optional description of the comparative experiment."""
     tenant_id: UUID
+    """The identifier of the tenant associated with this experiment."""
     created_at: datetime
+    """The timestamp when the comparative experiment was created."""
     modified_at: datetime
+    """The timestamp when the comparative experiment was last modified."""
     reference_dataset_id: UUID
+    """The identifier of the reference dataset used in this experiment."""
     extra: Optional[Dict[str, Any]] = None
+    """Optional additional information about the experiment."""
     experiments_info: Optional[List[dict]] = None
+    """Optional list of dictionaries containing information about individual experiments."""
     feedback_stats: Optional[Dict[str, Any]] = None
+    """Optional dictionary containing feedback statistics for the experiment."""
 
     @property
     def metadata(self) -> dict[str, Any]:
