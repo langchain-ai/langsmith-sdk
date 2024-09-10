@@ -676,8 +676,8 @@ class FeedbackIngestToken(BaseModel):
 
     id: UUID
     """The ID of the feedback ingest token."""
-    token: str
-    """The token for ingesting feedback."""
+    url: str
+    """The URL to GET when logging the feedback."""
     expires_at: datetime
     """The expiration time of the token."""
 
