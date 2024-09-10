@@ -2378,7 +2378,7 @@ class Client:
         *,
         project_id: Optional[ID_TYPE] = None,
         project_name: Optional[str] = None,
-    ) -> "pd.DataFrame":
+    ) -> pd.DataFrame:
         """Read the record-level information from an experiment into a Pandas DF.
 
         Note: this will fetch whatever data exists in the DB. Results are not

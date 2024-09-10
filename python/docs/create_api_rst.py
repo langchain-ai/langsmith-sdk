@@ -105,9 +105,7 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 else (
                     "enum"
                     if issubclass(type_, Enum)
-                    else "Pydantic"
-                    if issubclass(type_, BaseModel)
-                    else "Regular"
+                    else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
                 )
             )
             classes_.append(
@@ -351,7 +349,7 @@ def _construct_doc(
 
 def _get_package_version(package_dir: Path) -> str:
     try:
-        with open(package_dir.parent / "pyproject.toml", "r") as f:
+        with open(package_dir.parent / "pyproject.toml") as f:
             pyproject = toml.load(f)
         return pyproject["tool"]["poetry"]["version"]
     except FileNotFoundError:

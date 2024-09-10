@@ -66,7 +66,7 @@ class AsyncClient:
         )
         self._web_url = web_url
 
-    async def __aenter__(self) -> "AsyncClient":
+    async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
         return self
 
@@ -123,10 +123,8 @@ class AsyncClient:
         params["limit"] = params.get("limit", 100)
         while True:
             params["offset"] = offset
-            print(f"path: {path}, params: {params}", flush=True)
             response = await self._arequest_with_retries("GET", path, params=params)
             items = response.json()
-            print(f"items: {items}, response: {response}", flush=True)
             if not items:
                 break
             for item in items:

@@ -34,7 +34,7 @@ def process_toc_h3_elements(html_content: str) -> str:
 if __name__ == "__main__":
     dir = sys.argv[1]
     for fn in glob(str(f"{dir.rstrip('/')}/**/*.html"), recursive=True):
-        with open(fn, "r") as f:
+        with open(fn) as f:
             html = f.read()
         processed_html = process_toc_h3_elements(html)
         with open(fn, "w") as f:
