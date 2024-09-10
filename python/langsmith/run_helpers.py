@@ -805,6 +805,7 @@ class trace:
         .. code-block:: python
 
             >>> import pytest
+            >>> import sys
             >>> with trace("Test", exceptions_to_handle=(pytest.skip.Exception,)):
             ...     if sys.platform == "win32": # Just an example
             ...         pytest.skip("Skipping test for windows")
