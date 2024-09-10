@@ -775,7 +775,9 @@ test("Test createProject raises LangSmithConflictError on duplicate name", async
 
     // Attempt to create the project with the same name again
     await expect(client.createProject({ projectName })).rejects.toThrow(
-      "LangSmithConflictError"
+      expect.objectContaining({
+        name: "LangSmithConflictError",
+      })
     );
   } finally {
     try {
