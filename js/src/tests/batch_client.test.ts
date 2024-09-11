@@ -3,7 +3,6 @@ import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
-import { CIRCULAR_VALUE_REPLACEMENT_STRING } from "../utils/serde.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
 describe("Batch client tracing", () => {
@@ -568,12 +567,14 @@ describe("Batch client tracing", () => {
           inputs: {
             b: {
               a: {
-                result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+                result: "[Circular]",
               },
             },
           },
           outputs: {
-            result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+            a: {
+              result: "[Circular]",
+            },
           },
           end_time: endTime,
           trace_id: runId,
