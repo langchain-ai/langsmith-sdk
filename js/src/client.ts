@@ -56,8 +56,9 @@ import {
   parsePromptIdentifier,
 } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
-import { stringifyForTracing } from "./utils/serde.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
+
+import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
 
 export interface ClientConfig {
   apiUrl?: string;
