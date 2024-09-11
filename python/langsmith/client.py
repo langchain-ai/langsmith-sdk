@@ -3956,7 +3956,7 @@ class Client:
         results = self._select_eval_results(evaluator_response)
 
         def _submit_feedback(**kwargs):
-            if _executor:
+            if _executor and not _executor._shutdown:
                 _executor.submit(self.create_feedback, **kwargs)
             else:
                 self.create_feedback(**kwargs)
