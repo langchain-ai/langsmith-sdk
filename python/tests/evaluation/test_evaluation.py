@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Callable, Sequence, TypeVar
+from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
 
@@ -11,7 +11,7 @@ T = TypeVar("T")
 
 
 def wait_for(
-    condition: Callable[[], tuple[T, bool]],
+    condition: Callable[[], Tuple[T, bool]],
     max_sleep_time: int = 120,
     sleep_time: int = 3,
 ) -> T:
