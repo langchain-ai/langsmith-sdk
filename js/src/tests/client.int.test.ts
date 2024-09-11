@@ -765,6 +765,32 @@ test.concurrent("Test run stats", async () => {
   expect(stats).toBeDefined();
 });
 
+test("Test createProject raises LangSmithConflictError on duplicate name", async () => {
+  const client = new Client();
+  const projectName = `test_project_${uuidv4()}`;
+
+  try {
+    // Create the project for the first time
+    await client.createProject({ projectName });
+
+    // Attempt to create the project with the same name again
+    await expect(client.createProject({ projectName })).rejects.toThrow(
+      expect.objectContaining({
+        name: "LangSmithConflictError",
+      })
+    );
+  } finally {
+    try {
+      // Clean up: delete the project
+      if (await client.hasProject({ projectName })) {
+        await client.deleteProject({ projectName });
+      }
+    } catch (e) {
+      // Everyone has those days.
+    }
+  }
+});
+
 test("Test list prompts", async () => {
   const client = new Client();
   const uid = uuidv4();

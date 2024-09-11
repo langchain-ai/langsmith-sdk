@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.117"
+version = "0.1.19"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -79,8 +79,12 @@ lint.select = [
   "I",    # isort
   "D",    # pydocstyle
   "D401", # First line should be in imperative mood
+  "T201",
+  "UP",
 ]
 lint.ignore = [
+  "UP006",
+  "UP007",
   # Relax the convention by _not_ requiring documentation for every function parameter.
   "D417",
 ]
@@ -88,8 +92,18 @@ lint.ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D"]
-"langsmith/cli/*" = ["D"]
+"langsmith/run_helpers.py" = ["E501"]
+"docs/conf.py" = ["E501"]
+"langsmith/cli/*" = ["T201", "D", "UP"]
+"docs/create_api_rst.py" = ["D101", "D103"]
+"docs/scripts/custom_formatter.py" = ["D100"]
+"langsmith/anonymizer.py" = ["E501"]
+"langsmith/async_client.py" = ["E501"]
+"langsmith/client.py" = ["E501"]
+"langsmith/schemas.py" = ["E501"]
+"tests/evaluation/__init__.py" = ["E501"]
+"tests/*" = ["D", "UP"]
+"docs/*" = ["T", "D"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -102,4 +116,4 @@ disallow_untyped_defs = "True"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-markers = [ "slow: long-running tests",]
+markers = ["slow: long-running tests"]

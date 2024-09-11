@@ -1061,7 +1061,9 @@ class _ExperimentManagerMixin:
             )
         else:
             # HACKHACK
-            print("Starting evaluation of experiment: %s", self.experiment_name)
+            print(  # noqa: T201
+                "Starting evaluation of experiment: %s", self.experiment_name
+            )
 
 
 class _ExperimentManager(_ExperimentManagerMixin):
