@@ -605,6 +605,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         with cf.ThreadPoolExecutor(max_workers=4) as executor:
 
             async def score_all():
+
                 async for current_results in self.aget_results():
                     # Yield the coroutine to be awaited later in aiter_with_concurrency
                     yield self._arun_evaluators(

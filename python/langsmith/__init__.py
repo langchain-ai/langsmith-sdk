@@ -72,10 +72,19 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation import evaluate
 
         return evaluate
+
+    elif name == "evaluate_existing":
+        from langsmith.evaluation import evaluate_existing
+
+        return evaluate_existing
     elif name == "aevaluate":
         from langsmith.evaluation import aevaluate
 
         return aevaluate
+    elif name == "aevaluate_existing":
+        from langsmith.evaluation import aevaluate_existing
+
+        return aevaluate_existing
     elif name == "tracing_context":
         from langsmith.run_helpers import tracing_context
 
