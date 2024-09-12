@@ -95,6 +95,7 @@ def evaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
+    experiment: Optional[schemas.TracerSession] = None,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -120,6 +121,9 @@ def evaluate(
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
+        experiment (Optional[schemas.TracerSession]): An existing experiment to
+            extend. If provided, experiment_prefix is ignored. For advanced
+            usage only.
 
     Returns:
         ExperimentResults: The results of the evaluation.
@@ -248,6 +252,19 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if experiment:
+        if experiment_prefix:
+            raise ValueError(
+                "Expected at most one of 'experiment' or 'experiment_prefix',"
+                " but both were provided. "
+                f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+            )
+        if not experiment.reference_dataset_id:
+            if experiment.reference_dataset_id is None:
+                raise ValueError(
+                    "Experiment must have an associated reference_dataset_id, "
+                    "but none was provided."
+                )
     return _evaluate(
         target,
         data=data,
@@ -260,11 +277,12 @@ def evaluate(
         num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
+        experiment=experiment,
     )
 
 
 def evaluate_existing(
-    experiment: Union[str, uuid.UUID],
+    experiment: Union[str, uuid.UUID, schemas.TracerSession],
     /,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
@@ -336,7 +354,11 @@ def evaluate_existing(
         View the evaluation results for experiment:...
     """  # noqa: E501
     client = client or langsmith.Client()
-    project = _load_experiment(experiment, client)
+    project = (
+        experiment
+        if isinstance(experiment, schemas.TracerSession)
+        else _load_experiment(experiment, client)
+    )
     runs = _load_traces(experiment, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
@@ -903,14 +925,18 @@ def _load_experiment(
 
 
 def _load_traces(
-    project: Union[str, uuid.UUID], client: langsmith.Client, load_nested: bool = False
+    project: Union[str, uuid.UUID, schemas.TracerSession],
+    client: langsmith.Client,
+    load_nested: bool = False,
 ) -> List[schemas.Run]:
     """Load nested traces for a given project."""
-    execution_order = None if load_nested else 1
-    if isinstance(project, uuid.UUID) or _is_uuid(project):
-        runs = client.list_runs(project_id=project, execution_order=execution_order)
+    is_root = None if load_nested else True
+    if isinstance(project, schemas.TracerSession):
+        runs = client.list_runs(project_id=project.id, is_root=is_root)
+    elif isinstance(project, uuid.UUID) or _is_uuid(project):
+        runs = client.list_runs(project_id=project, is_root=is_root)
     else:
-        runs = client.list_runs(project_name=project, execution_order=execution_order)
+        runs = client.list_runs(project_name=project, is_root=is_root)
     if not load_nested:
         return list(runs)
 
