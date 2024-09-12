@@ -384,12 +384,15 @@ def run_evaluator(
     func: Callable[
         [Run, Optional[Example]], Union[_RUNNABLE_OUTPUT, Awaitable[_RUNNABLE_OUTPUT]]
     ],
+    afunc: Optional[
+        Callable[[Run, Optional[Example]], Awaitable[_RUNNABLE_OUTPUT]]
+    ] = None,
 ):
     """Create a run evaluator from a function.
 
     Decorator that transforms a function into a `RunEvaluator`.
     """
-    return DynamicRunEvaluator(func)
+    return DynamicRunEvaluator(func, afunc)
 
 
 _MAXSIZE = 10_000

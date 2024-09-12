@@ -260,4 +260,14 @@ evaluator = LangChainStringEvaluator(..., prepare_data=prepare_data)
             results = self.evaluator.evaluate_strings(**eval_inputs)
             return {"key": self.evaluator.evaluation_name, **results}
 
-        return run_evaluator(evaluate)
+        @traceable(name=self.evaluator.evaluation_name)
+        async def aevaluate(run: Run, example: Optional[Example] = None) -> dict:
+            eval_inputs = (
+                prepare_evaluator_inputs(run, example)
+                if self._prepare_data is None
+                else self._prepare_data(run, example)
+            )
+            results = await self.evaluator.aevaluate_strings(**eval_inputs)
+            return {"key": self.evaluator.evaluation_name, **results}
+
+        return run_evaluator(evaluate, aevaluate)
