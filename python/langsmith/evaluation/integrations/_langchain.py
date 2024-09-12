@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
 
-from langsmith.evaluation.evaluator import run_evaluator
+from langsmith.evaluation.evaluator import DynamicRunEvaluator
 from langsmith.run_helpers import traceable
 from langsmith.schemas import Example, Run
 
@@ -270,4 +270,4 @@ evaluator = LangChainStringEvaluator(..., prepare_data=prepare_data)
             results = await self.evaluator.aevaluate_strings(**eval_inputs)
             return {"key": self.evaluator.evaluation_name, **results}
 
-        return run_evaluator(evaluate, aevaluate)
+        return DynamicRunEvaluator(evaluate, aevaluate)

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Any, Optional
+from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
@@ -369,7 +370,8 @@ def test_langchain_run_evaluator_native_async():
     except ImportError:
         pytest.skip("Skipping test that requires langchain")
 
-    res = LangChainStringEvaluator(evaluator="qa")
+    with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "fake_api_key"}):
+        res = LangChainStringEvaluator(evaluator="qa")
     run_evaluator = res.as_run_evaluator()
     assert hasattr(run_evaluator, "afunc")
     assert hasattr(run_evaluator, "func")
