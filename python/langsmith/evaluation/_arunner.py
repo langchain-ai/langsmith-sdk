@@ -65,7 +65,7 @@ async def aevaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[schemas.TracerSession] = None,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
     r"""Evaluate an async target system or function on a given dataset.
 
@@ -224,19 +224,12 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    if experiment:
-        if experiment_prefix:
-            raise ValueError(
-                "Expected at most one of 'experiment' or 'experiment_prefix',"
-                " but both were provided. "
-                f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
-            )
-        if not experiment.reference_dataset_id:
-            if experiment.reference_dataset_id is None:
-                raise ValueError(
-                    "Experiment must have an associated reference_dataset_id, "
-                    "but none was provided."
-                )
+    if experiment and experiment_prefix:
+        raise ValueError(
+            "Expected at most one of 'experiment' or 'experiment_prefix',"
+            " but both were provided. "
+            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+        )
     return await _aevaluate(
         target,
         data=data,
@@ -368,7 +361,7 @@ async def _aevaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[schemas.TracerSession] = None,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
     is_async_target = asyncio.iscoroutinefunction(target) or (
         hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())

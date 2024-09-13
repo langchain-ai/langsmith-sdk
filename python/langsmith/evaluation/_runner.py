@@ -95,7 +95,7 @@ def evaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[schemas.TracerSession] = None,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -252,19 +252,12 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    if experiment:
-        if experiment_prefix:
-            raise ValueError(
-                "Expected at most one of 'experiment' or 'experiment_prefix',"
-                " but both were provided. "
-                f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
-            )
-        if not experiment.reference_dataset_id:
-            if experiment.reference_dataset_id is None:
-                raise ValueError(
-                    "Experiment must have an associated reference_dataset_id, "
-                    "but none was provided."
-                )
+    if experiment and experiment_prefix:
+        raise ValueError(
+            "Expected at most one of 'experiment' or 'experiment_prefix',"
+            " but both were provided. "
+            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+        )
     return _evaluate(
         target,
         data=data,
@@ -863,7 +856,7 @@ def _evaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[schemas.TracerSession] = None,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or langsmith.Client()
@@ -1619,7 +1612,7 @@ def _ensure_traceable(
 
 
 def _resolve_experiment(
-    experiment: Optional[schemas.TracerSession],
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]],
     runs: Optional[Iterable[schemas.Run]],
     client: langsmith.Client,
 ) -> Tuple[
@@ -1627,18 +1620,28 @@ def _resolve_experiment(
 ]:
     # TODO: Remove this, handle outside the manager
     if experiment is not None:
-        if not experiment.name:
+        if isinstance(experiment, schemas.TracerSession):
+            experiment_ = experiment
+        else:
+            experiment_ = _load_experiment(experiment, client)
+
+        if not experiment_.name:
             raise ValueError("Experiment name must be defined if provided.")
-        return experiment, runs
+        if not experiment_.reference_dataset_id:
+            raise ValueError(
+                "Experiment must have an associated reference_dataset_id, "
+                "but none was provided."
+            )
+        return experiment_, runs
     # If we have runs, that means the experiment was already started.
     if runs is not None:
         if runs is not None:
             runs_, runs = itertools.tee(runs)
             first_run = next(runs_)
-        experiment = client.read_project(project_id=first_run.session_id)
-        if not experiment.name:
+        experiment_ = client.read_project(project_id=first_run.session_id)
+        if not experiment_.name:
             raise ValueError("Experiment name not found for provided runs.")
-        return experiment, runs
+        return experiment_, runs
     return None, None
 
 
