@@ -345,22 +345,11 @@ export class _ExperimentManager {
   async _getProject(firstExample: Example): Promise<TracerSession> {
     let project: TracerSession;
     if (!this._experiment) {
-      try {
-        const projectMetadata = await this._getExperimentMetadata();
-        project = await this._createProject(firstExample, projectMetadata);
-        this._experiment = project;
-      } catch (e) {
-        if (String(e).includes("already exists")) {
-          throw e;
-        }
-        throw new Error(
-          `Experiment ${this._experimentName} already exists. Please use a different name.`
-        );
-      }
-    } else {
-      project = this._experiment;
+      const projectMetadata = await this._getExperimentMetadata();
+      project = await this._createProject(firstExample, projectMetadata);
+      this._experiment = project;
     }
-    return project;
+    return this._experiment;
   }
 
   protected async _printExperimentStart(): Promise<void> {

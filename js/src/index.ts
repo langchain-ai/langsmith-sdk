@@ -11,5 +11,7 @@ export type {
 
 export { RunTree, type RunTreeConfig } from "./run_trees.js";
 
+export { overrideFetchImplementation } from "./singletons/fetch.js";
+
 // Update using yarn bump-version
-export const __version__ = "0.1.51";
+export const __version__ = "0.1.55";

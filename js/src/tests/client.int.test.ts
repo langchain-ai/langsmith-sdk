@@ -18,6 +18,7 @@ import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { RunnableSequence } from "@langchain/core/runnables";
 import { load } from "langchain/load";
+import { _getFetchImplementation } from "../singletons/fetch.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -221,7 +222,7 @@ test.concurrent(
 
     await waitUntilRunFound(langchainClient, runId);
     const sharedUrl = await langchainClient.shareRun(runId);
-    const response = await fetch(sharedUrl);
+    const response = await _getFetchImplementation()(sharedUrl);
     expect(response.status).toEqual(200);
     expect(await langchainClient.readRunSharedLink(runId)).toEqual(sharedUrl);
 
@@ -762,6 +763,32 @@ test.concurrent("Test run stats", async () => {
     runType: "llm",
   });
   expect(stats).toBeDefined();
+});
+
+test("Test createProject raises LangSmithConflictError on duplicate name", async () => {
+  const client = new Client();
+  const projectName = `test_project_${uuidv4()}`;
+
+  try {
+    // Create the project for the first time
+    await client.createProject({ projectName });
+
+    // Attempt to create the project with the same name again
+    await expect(client.createProject({ projectName })).rejects.toThrow(
+      expect.objectContaining({
+        name: "LangSmithConflictError",
+      })
+    );
+  } finally {
+    try {
+      // Clean up: delete the project
+      if (await client.hasProject({ projectName })) {
+        await client.deleteProject({ projectName });
+      }
+    } catch (e) {
+      // Everyone has those days.
+    }
+  }
 });
 
 test("Test list prompts", async () => {

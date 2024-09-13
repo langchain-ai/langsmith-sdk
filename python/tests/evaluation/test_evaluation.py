@@ -1,10 +1,35 @@
 import asyncio
-from typing import Sequence
+import time
+from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
 
 from langsmith import Client, aevaluate, evaluate, expect, test
 from langsmith.schemas import Example, Run
+
+T = TypeVar("T")
+
+
+def wait_for(
+    condition: Callable[[], Tuple[T, bool]],
+    max_sleep_time: int = 120,
+    sleep_time: int = 3,
+) -> T:
+    """Wait for a condition to be true."""
+    start_time = time.time()
+    last_e = None
+    while time.time() - start_time < max_sleep_time:
+        try:
+            res, cond = condition()
+            if cond:
+                return res
+        except Exception as e:
+            last_e = e
+            time.sleep(sleep_time)
+    total_time = time.time() - start_time
+    if last_e is not None:
+        raise last_e
+    raise ValueError(f"Callable did not return within {total_time}")
 
 
 def test_evaluate():
@@ -59,6 +84,12 @@ async def test_aevaluate():
         expected = example.outputs["answer"]  # type: ignore
         return {"score": expected.lower() == pred.lower()}
 
+    async def slow_accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        await asyncio.sleep(5)
+        return {"score": expected.lower() == pred.lower()}
+
     def precision(runs: Sequence[Run], examples: Sequence[Example]):
         predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
         expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
@@ -73,7 +104,7 @@ async def test_aevaluate():
     results = await aevaluate(
         apredict,
         data=dataset_name,
-        evaluators=[accuracy],
+        evaluators=[accuracy, slow_accuracy],
         summary_evaluators=[precision],
         experiment_prefix="My Experiment",
         description="My Experiment Description",
@@ -86,12 +117,30 @@ async def test_aevaluate():
     assert len(results) == 20
     examples = client.list_examples(dataset_name=dataset_name)
     all_results = [r async for r in results]
+    all_examples = []
     for example in examples:
         count = 0
         for r in all_results:
             if r["run"].reference_example_id == example.id:
                 count += 1
         assert count == 2
+        all_examples.append(example)
+
+    # Wait for there to be 2x runs vs. examples
+    def check_run_count():
+        current_runs = list(
+            client.list_runs(project_name=results.experiment_name, is_root=True)
+        )
+        for r in current_runs:
+            assert "accuracy" in r.feedback_stats
+            assert "slow_accuracy" in r.feedback_stats
+        return current_runs, len(current_runs) == 2 * len(all_examples)
+
+    final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
+
+    assert len(final_runs) == 2 * len(
+        all_examples
+    ), f"Expected {2 * len(all_examples)} runs, but got {len(final_runs)}"
 
 
 @test

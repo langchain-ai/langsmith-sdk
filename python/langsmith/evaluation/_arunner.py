@@ -102,8 +102,7 @@ async def aevaluate(
 
     Examples:
         >>> from typing import Sequence
-        >>> from langsmith import Client
-        >>> from langsmith.evaluation import evaluate
+        >>> from langsmith import Client, aevaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
         >>> dataset = client.clone_public_dataset(
@@ -206,7 +205,7 @@ async def aevaluate(
 
         >>> async def helpfulness(run: Run, example: Example):
         ...     # Row-level evaluator for helpfulness.
-        ...     await asyncio.sleep(0.1)  # Replace with your LLM API call
+        ...     await asyncio.sleep(5)  # Replace with your LLM API call
         ...     return {"score": run.outputs["output"] == "Yes"}
 
         >>> results = asyncio.run(
@@ -286,7 +285,7 @@ async def aevaluate_existing(
 
         Load the experiment and run the evaluation.
 
-        >>> from langsmith.evaluation import aevaluate, aevaluate_existing
+        >>> from langsmith import aevaluate, aevaluate_existing
         >>> dataset_name = "Evaluate Examples"
         >>> async def apredict(inputs: dict) -> dict:
         ...     # This can be any async function or just an API call to your app.
@@ -603,18 +602,19 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
     ) -> AsyncIterator[ExperimentResultRow]:
-        async def score_all():
-            with cf.ThreadPoolExecutor(max_workers=4) as executor:
+        with cf.ThreadPoolExecutor(max_workers=4) as executor:
+
+            async def score_all():
                 async for current_results in self.aget_results():
                     # Yield the coroutine to be awaited later in aiter_with_concurrency
                     yield self._arun_evaluators(
                         evaluators, current_results, executor=executor
                     )
 
-        async for result in aitertools.aiter_with_concurrency(
-            max_concurrency, score_all(), _eager_consumption_timeout=0.001
-        ):
-            yield result
+            async for result in aitertools.aiter_with_concurrency(
+                max_concurrency, score_all(), _eager_consumption_timeout=0.001
+            ):
+                yield result
 
     async def _arun_evaluators(
         self,
