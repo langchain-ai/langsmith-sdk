@@ -50,7 +50,6 @@ from typing import (
     List,
     Literal,
     Mapping,
-    NamedTuple,
     Optional,
     Sequence,
     Tuple,
@@ -175,16 +174,10 @@ def _default_retry_config() -> Retry:
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
-class _Fragment(NamedTuple):
-    buf: bytes
-
-
 def _simple_default(obj):
     try:
         # Only need to handle types that orjson doesn't serialize by default
         # https://github.com/ijl/orjson#serialize
-        if isinstance(obj, _Fragment):
-            return orjson.Fragment(obj.buf)
         if isinstance(obj, datetime.datetime):
             return obj.isoformat()
         if isinstance(obj, uuid.UUID):
