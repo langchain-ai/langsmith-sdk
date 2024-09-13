@@ -71,6 +71,37 @@ def test_evaluate():
     for example in examples:
         assert len([r for r in results if r["example"].id == example.id]) == 3
 
+    # Run it again with the existing project
+    results2 = evaluate(
+        predict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=results.experiment_name,
+    )
+    assert len(results2) == 10
+
+    # ... and again with the object
+    experiment = client.read_project(project_name=results.experiment_name)
+    results3 = evaluate(
+        predict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=experiment,
+    )
+    assert len(results3) == 10
+
+    # ... and again with the ID
+    results4 = evaluate(
+        predict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=str(experiment.id),
+    )
+    assert len(results4) == 10
+
 
 async def test_aevaluate():
     client = Client()
@@ -141,6 +172,37 @@ async def test_aevaluate():
     assert len(final_runs) == 2 * len(
         all_examples
     ), f"Expected {2 * len(all_examples)} runs, but got {len(final_runs)}"
+
+    # Run it again with the existing project
+    results2 = await aevaluate(
+        apredict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=results.experiment_name,
+    )
+    assert len(results2) == 10
+
+    # ... and again with the object
+    experiment = client.read_project(project_name=results.experiment_name)
+    results3 = await aevaluate(
+        apredict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=experiment,
+    )
+    assert len(results3) == 10
+
+    # ... and again with the ID
+    results4 = await aevaluate(
+        apredict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=str(experiment.id),
+    )
+    assert len(results4) == 10
 
 
 @test
