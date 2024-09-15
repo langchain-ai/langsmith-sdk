@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.1.55",
+  "version": "0.1.56",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -135,18 +135,10 @@
     "zod": "^3.23.8"
   },
   "peerDependencies": {
-    "@langchain/core": "*",
-    "langchain": "*",
     "openai": "*"
   },
   "peerDependenciesMeta": {
     "openai": {
-      "optional": true
-    },
-    "langchain": {
-      "optional": true
-    },
-    "@langchain/core": {
       "optional": true
     }
   },
