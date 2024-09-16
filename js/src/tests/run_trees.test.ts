@@ -31,7 +31,7 @@ test("Should work with manually set API key", async () => {
       project_name: projectName,
     });
     await runTree.postRun();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     expect(callSpy).toHaveBeenCalled();
   } finally {
     process.env.LANGCHAIN_API_KEY = key;
