@@ -1,7 +1,8 @@
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { jest } from "@jest/globals";
-import { Client } from "../../index.js";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import { Client } from "../../index.js";
 
 type ClientParams = Exclude<ConstructorParameters<typeof Client>[0], undefined>;
 export const mockClient = (config?: Omit<ClientParams, "autoBatchTracing">) => {
