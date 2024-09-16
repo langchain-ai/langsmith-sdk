@@ -890,7 +890,7 @@ async function _forward(
             // no-op
           }
           // Issue with retrieving LangChain callbacks, rely on interop
-          if (langChainCallbacks !== undefined) {
+          if (langChainCallbacks === undefined) {
             return await fn.invoke(inputs);
           } else {
             return await fn.invoke(inputs, { callbacks: langChainCallbacks });
