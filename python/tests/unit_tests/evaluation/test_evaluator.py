@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from typing import Any, Optional
 from unittest import mock
 from unittest.mock import MagicMock
@@ -8,6 +9,8 @@ import pytest
 
 from langsmith import schemas
 from langsmith.evaluation.evaluator import (
+    ComparisonEvaluationResult,
+    DynamicComparisonRunEvaluator,
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
@@ -46,6 +49,24 @@ def test_run_evaluator_decorator(run_1: Run, example_1: Example):
     assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
+
+
+async def test_dynamie_comparison_run_evaluator():
+    def foo(runs: list, example):
+        return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
+
+    async def afoo(runs: list, example):
+        return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
+
+    evaluators = [
+        DynamicComparisonRunEvaluator(foo),
+        DynamicComparisonRunEvaluator(afoo),
+        DynamicComparisonRunEvaluator(foo, afoo),
+    ]
+    for e in evaluators:
+        res = await e.acompare_runs([], None)
+        assert res.key == "bar"
+        repr(e)
 
 
 def test_run_evaluator_decorator_dict(run_1: Run, example_1: Example):
