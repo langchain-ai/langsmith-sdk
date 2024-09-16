@@ -1,7 +1,10 @@
 // These `@langchain/core` imports are intentionally not peer dependencies
 // to avoid package manager issues around circular dependencies.
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { CallbackManager } from "@langchain/core/callbacks/manager";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import {
   Runnable,
   RunnableConfig,

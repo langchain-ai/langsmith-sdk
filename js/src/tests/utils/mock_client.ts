@@ -1,5 +1,6 @@
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { jest } from "@jest/globals";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import { Client } from "../../index.js";
 
