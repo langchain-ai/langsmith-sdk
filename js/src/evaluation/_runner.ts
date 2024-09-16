@@ -1,5 +1,4 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
-import { getLangchainCallbacks } from "../langchain.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
@@ -882,8 +881,7 @@ async function _forward(
   const wrappedFn =
     "invoke" in fn
       ? traceable(async (inputs) => {
-          const callbacks = await getLangchainCallbacks();
-          return fn.invoke(inputs, { callbacks });
+          return await fn.invoke(inputs);
         }, options)
       : traceable(fn, options);
 

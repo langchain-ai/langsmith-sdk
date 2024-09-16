@@ -1,3 +1,5 @@
+// These `@langchain/core` imports are intentionally not peer dependencies
+// to avoid package manager issues around circular dependencies.
 import { CallbackManager } from "@langchain/core/callbacks/manager";
 import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
 import {
