@@ -7,6 +7,7 @@ import pytest
 
 from langsmith import run_trees
 from langsmith.client import Client
+from langsmith.run_trees import RunTree
 
 
 def test_run_tree_accepts_tpe() -> None:
@@ -17,6 +18,11 @@ def test_run_tree_accepts_tpe() -> None:
         client=mock_client,
         executor=ThreadPoolExecutor(),  # type: ignore
     )
+
+
+def test_lazy_rt() -> None:
+    run_tree = RunTree(name="foo")
+    assert isinstance(run_tree.client, Client)
 
 
 @pytest.mark.parametrize(
