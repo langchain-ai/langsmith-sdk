@@ -881,7 +881,20 @@ async function _forward(
   const wrappedFn =
     "invoke" in fn
       ? traceable(async (inputs) => {
-          return await fn.invoke(inputs);
+          let langChainCallbacks;
+          try {
+            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+            const { getLangchainCallbacks } = await import("../langchain.js");
+            langChainCallbacks = await getLangchainCallbacks();
+          } catch {
+            // no-op
+          }
+          // Issue with retrieving LangChain callbacks, rely on interop
+          if (langChainCallbacks !== undefined) {
+            return await fn.invoke(inputs);
+          } else {
+            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          }
         }, options)
       : traceable(fn, options);
 
