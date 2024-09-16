@@ -771,3 +771,21 @@ def get_host_url(web_url: Optional[str], api_url: str):
     else:
         link = "https://smith.langchain.com"
     return link
+
+
+def _get_function_name(fn: Callable, depth: int = 0) -> str:
+    if depth > 2 or not callable(fn):
+        return str(fn)
+
+    if hasattr(fn, "__name__"):
+        return fn.__name__
+
+    if isinstance(fn, functools.partial):
+        return _get_function_name(fn.func, depth + 1)
+
+    if hasattr(fn, "__call__"):
+        if hasattr(fn, "__class__") and hasattr(fn.__class__, "__name__"):
+            return fn.__class__.__name__
+        return _get_function_name(fn.__call__, depth + 1)
+
+    return str(fn)

@@ -550,7 +550,7 @@ class DynamicComparisonRunEvaluator:
 
     def __repr__(self) -> str:
         """Represent the DynamicRunEvaluator object."""
-        return f"<DynamicComparisonRunEvaluator {getattr(self.func, '__name__')}>"
+        return f"<DynamicComparisonRunEvaluator {self._name}>"
 
     @staticmethod
     def _get_tags(runs: Sequence[Run]) -> List[str]:
