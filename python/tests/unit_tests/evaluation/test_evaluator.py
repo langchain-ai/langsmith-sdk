@@ -6,13 +6,11 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
-from python.langsmith.evaluation.evaluator import (
-    ComparisonEvaluationResult,
-    DynamicComparisonRunEvaluator,
-)
 
 from langsmith import schemas
 from langsmith.evaluation.evaluator import (
+    ComparisonEvaluationResult,
+    DynamicComparisonRunEvaluator,
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,

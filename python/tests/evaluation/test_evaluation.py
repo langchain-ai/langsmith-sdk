@@ -54,7 +54,6 @@ def test_evaluate():
     def predict(inputs: dict) -> dict:
         return {"output": "Yes"}
 
-    experiment = client.read_project(project_name="My Experiment-cb4ff0a6")
     results = evaluate(
         predict,
         data=dataset_name,
@@ -66,7 +65,6 @@ def test_evaluate():
             "function": "evaluate",
         },
         num_repetitions=3,
-        experiment=experiment,
     )
     assert len(results) == 30
     examples = client.list_examples(dataset_name=dataset_name)
