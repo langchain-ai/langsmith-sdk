@@ -108,6 +108,16 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                     else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
                 )
             )
+            # Check methods within __slots__ classes
+            if hasattr(type_, '__slots__'):
+                for method_name, method_type in inspect.getmembers(type_):
+                    if inspect.isfunction(method_type):
+                        functions.append(FunctionInfo(
+                            name=method_name,
+                            qualified_name=f"{namespace}.{name}.{method_name}",
+                            is_public=not method_name.startswith("_"),
+                            is_deprecated=".. deprecated::" in (method_type.__doc__ or "")
+                        ))
             classes_.append(
                 ClassInfo(
                     name=name,
