@@ -32,6 +32,8 @@ import {
   TracerSession,
   TracerSessionResult,
   ValueType,
+  AnnotationQueue,
+  RunWithAnnotationQueueInfo,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -3101,6 +3103,217 @@ export class Client {
       sourceInfo
     );
     return results;
+  }
+
+  /**
+   * API for managing annotation queues
+   */
+
+  /**
+   * List the annotation queues on the LangSmith API.
+   * @param options - The options for listing annotation queues
+   * @param options.queueIds - The IDs of the queues to filter by
+   * @param options.name - The name of the queue to filter by
+   * @param options.nameContains - The substring that the queue name should contain
+   * @param options.limit - The maximum number of queues to return
+   * @returns An iterator of AnnotationQueue objects
+   */
+  public async *listAnnotationQueues(
+    options: {
+      queueIds?: string[];
+      name?: string;
+      nameContains?: string;
+      limit?: number;
+    } = {}
+  ): AsyncIterableIterator<AnnotationQueue> {
+    const { queueIds, name, nameContains, limit } = options;
+    const params: Record<string, any> = {
+      ids: queueIds?.map((id, i) => assertUuid(id, `queueIds[${i}]`)),
+      name,
+      name_contains: nameContains,
+      limit: limit !== undefined ? Math.min(limit, 100) : 100,
+    };
+
+    let count = 0;
+    for await (const queue of this._getPaginated(
+      "/annotation-queues",
+      params as URLSearchParams
+    )) {
+      yield queue as unknown as AnnotationQueue;
+      count++;
+      if (limit !== undefined && count >= limit) break;
+    }
+  }
+
+  /**
+   * Create an annotation queue on the LangSmith API.
+   * @param options - The options for creating an annotation queue
+   * @param options.name - The name of the annotation queue
+   * @param options.description - The description of the annotation queue
+   * @param options.queueId - The ID of the annotation queue
+   * @returns The created AnnotationQueue object
+   */
+  public async createAnnotationQueue(options: {
+    name: string;
+    description?: string;
+    queueId?: string;
+  }): Promise<AnnotationQueue> {
+    const { name, description, queueId } = options;
+    const body = {
+      name,
+      description,
+      id: queueId || uuid.v4(),
+    };
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(
+          Object.fromEntries(
+            Object.entries(body).filter(([_, v]) => v !== undefined)
+          )
+        ),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "create annotation queue");
+    const data = await response.json();
+    return data as AnnotationQueue;
+  }
+
+  /**
+   * Read an annotation queue with the specified queue ID.
+   * @param queueId - The ID of the annotation queue to read
+   * @returns The AnnotationQueue object
+   */
+  public async readAnnotationQueue(queueId: string): Promise<AnnotationQueue> {
+    // TODO: Replace when actual endpoint is added
+    const queue = await this.listAnnotationQueues({
+      queueIds: [queueId],
+    }).next();
+    if (queue.done) {
+      throw new Error(`Annotation queue with ID ${queueId} not found`);
+    }
+    return queue.value;
+  }
+
+  /**
+   * Update an annotation queue with the specified queue ID.
+   * @param queueId - The ID of the annotation queue to update
+   * @param options - The options for updating the annotation queue
+   * @param options.name - The new name for the annotation queue
+   * @param options.description - The new description for the annotation queue
+   */
+  public async updateAnnotationQueue(
+    queueId: string,
+    options: {
+      name: string;
+      description?: string;
+    }
+  ): Promise<void> {
+    const { name, description } = options;
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+      {
+        method: "PATCH",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description }),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "update annotation queue");
+  }
+
+  /**
+   * Delete an annotation queue with the specified queue ID.
+   * @param queueId - The ID of the annotation queue to delete
+   */
+  public async deleteAnnotationQueue(queueId: string): Promise<void> {
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+      {
+        method: "DELETE",
+        headers: { ...this.headers, Accept: "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "delete annotation queue");
+  }
+
+  /**
+   * Add runs to an annotation queue with the specified queue ID.
+   * @param queueId - The ID of the annotation queue
+   * @param runIds - The IDs of the runs to be added to the annotation queue
+   */
+  public async addRunsToAnnotationQueue(
+    queueId: string,
+    runIds: string[]
+  ): Promise<void> {
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/runs`,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(
+          runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString())
+        ),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "add runs to annotation queue");
+  }
+
+  /**
+   * List runs from an annotation queue with the specified queue ID.
+   * @param queueId - The ID of the annotation queue
+   * @param limit - The maximum number of runs to return
+   * @returns An iterator of RunWithAnnotationQueueInfo objects
+   */
+  public async *listRunsFromAnnotationQueue(
+    queueId: string,
+    limit?: number
+  ): AsyncIterableIterator<RunWithAnnotationQueueInfo> {
+    const path = `/annotation-queues/${assertUuid(queueId, "queueId")}/runs`;
+    const limit_ = limit !== undefined ? Math.min(limit, 100) : 100;
+
+    let offset = 0;
+    let count = 0;
+    while (true) {
+      const url = `${this.apiUrl}${path}?offset=${offset}&limit=${limit_}`;
+      const response = await this.caller.call(_getFetchImplementation(), url, {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      });
+      await raiseForStatus(response, `Failed to fetch ${path}`);
+      const data = await response.json();
+      const runs = data.runs as RunWithAnnotationQueueInfo[];
+
+      if (runs.length === 0) {
+        break;
+      }
+
+      for (const run of runs) {
+        yield run;
+        count++;
+        if (limit !== undefined && count >= limit) {
+          return;
+        }
+      }
+
+      offset += runs.length;
+    }
   }
 
   protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
