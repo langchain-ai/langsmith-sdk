@@ -109,13 +109,13 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 )
             )
             if hasattr(type_, '__slots__'):
-                for method_name, method_type in inspect.getmembers(type_):
-                    if inspect.isfunction(method_type):
+                for func_name, func_type in inspect.getmembers(type_):
+                    if inspect.isfunction(func_type):
                         functions.append(FunctionInfo(
-                            name=method_name,
-                            qualified_name=f"{namespace}.{name}.{method_name}",
-                            is_public=not method_name.startswith("_"),
-                            is_deprecated=".. deprecated::" in (method_type.__doc__ or "")
+                            name=func_name,
+                            qualified_name=f"{namespace}.{name}.{func_name}",
+                            is_public=not func_name.startswith("_"),
+                            is_deprecated=".. deprecated::" in (func_type.__doc__ or "")
                         ))
             classes_.append(
                 ClassInfo(
