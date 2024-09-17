@@ -15,6 +15,7 @@ from __future__ import annotations
 import atexit
 import collections
 import concurrent.futures as cf
+import contextlib
 import datetime
 import functools
 import importlib
@@ -5294,11 +5295,19 @@ class Client:
                 "The client.pull_prompt function requires the langchain_core"
                 "package to run.\nInstall with `pip install langchain_core`"
             )
+        try:
+            from langchain_core._api import suppress_langchain_beta_warning
+        except ImportError:
+
+            @contextlib.contextmanager
+            def suppress_langchain_beta_warning():
+                yield
 
         prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
-        prompt = loads(json.dumps(prompt_object.manifest))
+        with suppress_langchain_beta_warning():
+            prompt = loads(json.dumps(prompt_object.manifest))
 
         if (
             isinstance(prompt, BasePromptTemplate)
