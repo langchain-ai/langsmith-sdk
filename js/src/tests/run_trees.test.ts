@@ -112,3 +112,12 @@ test("distributed", () => {
       "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001",
   });
 });
+
+test("shared client between run trees", () => {
+  const runTree1 = new RunTree({ name: "tree_1" });
+  const runTree2 = new RunTree({ name: "tree_2" });
+
+  expect(runTree1.client).toBeDefined();
+  expect(runTree2.client).toBeDefined();
+  expect(runTree1.client).toBe(runTree2.client);
+});
