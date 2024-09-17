@@ -1,4 +1,5 @@
 import { Client } from "../client.js";
+import * as uuid from "uuid";
 import {
   RunTree,
   RunTreeConfig,
@@ -14,14 +15,8 @@ import {
 test.concurrent(
   "Test post and patch run",
   async () => {
-    const projectName = `__test_run_tree`;
+    const projectName = `__test_run_tree_js ${uuid.v4()}`;
     const langchainClient = new Client({ timeout_ms: 30000 });
-    try {
-      await langchainClient.readProject({ projectName });
-      await langchainClient.deleteProject({ projectName });
-    } catch (e) {
-      // Pass
-    }
     const parentRunConfig: RunTreeConfig = {
       name: "parent_run",
       run_type: "chain",
@@ -113,6 +108,20 @@ test.concurrent(
       runMap.get("parent_run")?.id
     );
     expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
+    await waitUntil(
+      async () => {
+        try {
+          const runs_ = await toArray(
+            langchainClient.listRuns({ traceId: runs[0].trace_id })
+          );
+          return runs_.length === 5;
+        } catch (e) {
+          return false;
+        }
+      },
+      30_000, // Wait up to 30 seconds
+      3000 // every 3 second
+    );
 
     const traceRunsIter = langchainClient.listRuns({
       traceId: runs[0].trace_id,

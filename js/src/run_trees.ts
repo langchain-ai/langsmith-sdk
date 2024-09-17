@@ -146,6 +146,8 @@ class Baggage {
 }
 
 export class RunTree implements BaseRun {
+  private static sharedClient: Client | null = null;
+
   id: string;
   name: RunTreeConfig["name"];
   run_type: string;
@@ -173,7 +175,7 @@ export class RunTree implements BaseRun {
   constructor(originalConfig: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
     const { metadata, ...config } = originalConfig;
-    const client = config.client ?? new Client();
+    const client = config.client ?? RunTree.getSharedClient();
     const dedupedMetadata = {
       ...metadata,
       ...config?.extra?.metadata,
@@ -224,6 +226,13 @@ export class RunTree implements BaseRun {
       inputs: {},
       extra: {},
     };
+  }
+
+  private static getSharedClient(): Client {
+    if (!RunTree.sharedClient) {
+      RunTree.sharedClient = new Client();
+    }
+    return RunTree.sharedClient;
   }
 
   public createChild(config: RunTreeConfig): RunTree {
