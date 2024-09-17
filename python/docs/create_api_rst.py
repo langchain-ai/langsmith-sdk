@@ -108,15 +108,18 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                     else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
                 )
             )
-            if hasattr(type_, '__slots__'):
+            if hasattr(type_, "__slots__"):
                 for func_name, func_type in inspect.getmembers(type_):
                     if inspect.isfunction(func_type):
-                        functions.append(FunctionInfo(
-                            name=func_name,
-                            qualified_name=f"{namespace}.{name}.{func_name}",
-                            is_public=not func_name.startswith("_"),
-                            is_deprecated=".. deprecated::" in (func_type.__doc__ or "")
-                        ))
+                        functions.append(
+                            FunctionInfo(
+                                name=func_name,
+                                qualified_name=f"{namespace}.{name}.{func_name}",
+                                is_public=not func_name.startswith("_"),
+                                is_deprecated=".. deprecated::"
+                                in (func_type.__doc__ or ""),
+                            )
+                        )
             classes_.append(
                 ClassInfo(
                     name=name,
