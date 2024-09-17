@@ -3730,11 +3730,9 @@ export class Client {
   }
 
   /**
-   *
    * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
    * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
    * @private
-   *
    */
   public async _pullPrompt(
     promptIdentifier: string,

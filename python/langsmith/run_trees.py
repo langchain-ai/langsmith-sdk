@@ -58,7 +58,7 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    _client: Optional[Client] = Field(default=None)
+    _client: Optional[Client] = None
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )

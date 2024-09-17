@@ -116,6 +116,7 @@ describe("to langchain", () => {
 
     const result = await main({ texts: ["Hello world", "Who are you?"] });
 
+    await awaitAllCallbacks();
     expect(result).toEqual(["Hello world", "Who are you?"]);
     expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
       nodes: [
