@@ -4688,21 +4688,38 @@ class Client:
 
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue.
+            limit (Optional[int]): The maximum number of runs to return.
 
         Yields:
             ls_schemas.RunWithAnnotationQueueInfo: An iterator of runs from the
                 annotation queue.
         """
-        path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
-        limit_ = min(limit, 100) if limit is not None else 100
-        for i, run in enumerate(
-            self._get_paginated_list(
-                path, params={"headers": self._headers, "limit": limit_}
-            )
-        ):
-            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
-            if limit is not None and i + 1 >= limit:
+        base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/run"
+        index = 0
+        i = 0
+        while True:
+            try:
+                response = self.request_with_retries(
+                    "GET",
+                    f"{base_url}/{index}",
+                    headers=self._headers,
+                )
+                if response.status_code == 404:
+                    break
+                ls_utils.raise_for_status_with_text(response)
+
+                run = ls_schemas.RunWithAnnotationQueueInfo(**response.json())
+                yield run
+
+                i += 1
+                if limit is not None and i >= limit:
+                    return
+
+                index += 1
+            except ls_utils.LangSmithNotFoundError:
                 break
+            except ls_utils.LangSmithError as e:
+                raise e
 
     def create_comparative_experiment(
         self,

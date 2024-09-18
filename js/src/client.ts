@@ -3142,11 +3142,11 @@ export class Client {
     );
 
     let count = 0;
-    for await (const queue of this._getPaginated(
+    for await (const queues of this._getPaginated<AnnotationQueue>(
       "/annotation-queues",
       params
     )) {
-      yield queue as unknown as AnnotationQueue;
+      yield* queues;
       count++;
       if (limit !== undefined && count >= limit) break;
     }
@@ -3199,13 +3199,13 @@ export class Client {
    */
   public async readAnnotationQueue(queueId: string): Promise<AnnotationQueue> {
     // TODO: Replace when actual endpoint is added
-    const queue = await this.listAnnotationQueues({
+    const queueIteratorResult = await this.listAnnotationQueues({
       queueIds: [queueId],
     }).next();
-    if (queue.done) {
+    if (queueIteratorResult.done) {
       throw new Error(`Annotation queue with ID ${queueId} not found`);
     }
-    return queue.value;
+    return queueIteratorResult.value;
   }
 
   /**
@@ -3284,42 +3284,57 @@ export class Client {
    * List runs from an annotation queue with the specified queue ID.
    * @param queueId - The ID of the annotation queue
    * @param limit - The maximum number of runs to return
-   * @returns An iterator of RunWithAnnotationQueueInfo objects
+   * @returns An async iterable of RunWithAnnotationQueueInfo objects
    */
   public async *listRunsFromAnnotationQueue(
     queueId: string,
     limit?: number
-  ): AsyncIterableIterator<RunWithAnnotationQueueInfo> {
-    const path = `/annotation-queues/${assertUuid(queueId, "queueId")}/runs`;
-    const limit_ = limit !== undefined ? Math.min(limit, 100) : 100;
-
-    let offset = 0;
-    let count = 0;
+  ): AsyncIterable<RunWithAnnotationQueueInfo> {
+    const baseUrl = `/annotation-queues/${assertUuid(queueId, "queueId")}/run`;
+    let index = 0;
+    let i = 0;
     while (true) {
-      const url = `${this.apiUrl}${path}?offset=${offset}&limit=${limit_}`;
-      const response = await this.caller.call(_getFetchImplementation(), url, {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      });
-      await raiseForStatus(response, `Failed to fetch ${path}`);
-      const data = await response.json();
-      const runs = data.runs as RunWithAnnotationQueueInfo[];
+      try {
+        console.log("GETTT", `${this.apiUrl}${baseUrl}/${index}`);
+        const response = await this.caller.call(
+          _getFetchImplementation(),
+          `${this.apiUrl}${baseUrl}/${index}`,
+          {
+            method: "GET",
+            headers: this.headers,
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+          }
+        );
 
-      if (runs.length === 0) {
-        break;
-      }
+        if (!response.ok) {
+          if (response.status === 404) {
+            break;
+          }
+          await raiseForStatus(response, "list runs from annotation queue");
+        }
 
-      for (const run of runs) {
+        const run: RunWithAnnotationQueueInfo = await response.json();
         yield run;
-        count++;
-        if (limit !== undefined && count >= limit) {
+
+        i++;
+        if (limit !== undefined && i >= limit) {
           return;
         }
-      }
 
-      offset += runs.length;
+        index++;
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "message" in error &&
+          typeof error.message === "string" &&
+          error.message.includes("404")
+        ) {
+          break;
+        }
+        throw error;
+      }
     }
   }
 
