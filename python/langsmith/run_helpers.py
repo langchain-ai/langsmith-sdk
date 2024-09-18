@@ -1324,7 +1324,7 @@ def _setup_run(
         )
     id_ = id_ or str(uuid.uuid4())
     signature = inspect.signature(func)
-    name_ = name or utils._get_function_name(func)
+    name_ = name or utils._get_function_name(func, args)
     docstring = func.__doc__
     extra_inner = _collect_extra(extra_outer, langsmith_extra)
     outer_metadata = _METADATA.get()

@@ -7,6 +7,7 @@ import contextvars
 import copy
 import enum
 import functools
+import inspect
 import logging
 import os
 import pathlib
@@ -773,19 +774,50 @@ def get_host_url(web_url: Optional[str], api_url: str):
     return link
 
 
-def _get_function_name(fn: Callable, depth: int = 0) -> str:
+def _get_function_name(
+    fn: Callable,
+    args: Optional[Tuple] = None,
+    *,
+    depth: int = 0,
+    exclude_self: bool = False,
+) -> str:
     if depth > 2 or not callable(fn):
+        if hasattr(fn, "__name__"):
+            return fn.__name__
         return str(fn)
-
+    if args:
+        if inspect.isclass(args[0]):
+            # Class method
+            fname = _get_function_name(fn, depth=depth + 1, exclude_self=exclude_self)
+            return f"{args[0].__name__}.{fname}"
+        if hasattr(args[0], "__class__"):
+            # Instance method
+            clsname = getattr(args[0].__class__, "__name__", "")
+            fname = _get_function_name(fn, depth=depth + 1, exclude_self=True)
+            return f"{clsname}.{fname}"
+    if not exclude_self and hasattr(fn, "__self__"):
+        # Static method
+        self = fn.__self__
+        cls = getattr(self, "__class__", None)
+        if cls is not type:
+            class_name = getattr(cls, "__name__", None)
+            if class_name not in ("builtin_function_or_method", "module"):
+                fname = _get_function_name(fn, depth=depth + 1, exclude_self=True)
+                return f"{class_name}.{fname}"
     if hasattr(fn, "__name__"):
         return fn.__name__
 
     if isinstance(fn, functools.partial):
-        return _get_function_name(fn.func, depth + 1)
+        # Merge args
+        return _get_function_name(
+            fn.func, args, depth=depth + 1, exclude_self=exclude_self
+        )
 
     if hasattr(fn, "__call__"):
         if hasattr(fn, "__class__") and hasattr(fn.__class__, "__name__"):
             return fn.__class__.__name__
-        return _get_function_name(fn.__call__, depth + 1)
+        return _get_function_name(
+            fn.__call__, args, depth=depth + 1, exclude_self=exclude_self
+        )
 
     return str(fn)

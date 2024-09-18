@@ -398,3 +398,104 @@ def test_get_func_name():
     assert ls_utils._get_function_name(print) == "print"
 
     assert ls_utils._get_function_name("not_a_function") == "not_a_function"
+
+    class TestClass:
+        def instance_method(self):
+            pass
+
+        @classmethod
+        def class_method(cls):
+            pass
+
+        @staticmethod
+        def static_method():
+            pass
+
+    test_instance = TestClass()
+
+    # Test instance method
+    assert (
+        ls_utils._get_function_name(test_instance.instance_method, (test_instance,))
+        == "TestClass.instance_method"
+    )
+
+    # Test class method
+    assert (
+        ls_utils._get_function_name(TestClass.class_method, (TestClass,))
+        == "TestClass.class_method"
+    )
+    assert (
+        ls_utils._get_function_name(test_instance.class_method, (TestClass,))
+        == "TestClass.class_method"
+    )
+
+    # Test static method
+    assert ls_utils._get_function_name(TestClass.static_method, ()) == "static_method"
+    assert (
+        ls_utils._get_function_name(test_instance.static_method, ()) == "static_method"
+    )
+
+    # Test bound method
+    bound_method = test_instance.instance_method
+    assert ls_utils._get_function_name(bound_method, ()) == "TestClass.instance_method"
+
+    # Test partial with instance method
+    partial_instance_method = functools.partial(test_instance.instance_method)
+    assert (
+        ls_utils._get_function_name(partial_instance_method, ())
+        == "TestClass.instance_method"
+    )
+
+    # Test partial with class method
+    partial_class_method = functools.partial(TestClass.class_method)
+    partial_class_method()
+    assert (
+        ls_utils._get_function_name(partial_class_method, (TestClass,))
+        == "TestClass.class_method"
+    )
+
+    # Test partial with static method
+    partial_static_method = functools.partial(TestClass.static_method)
+    assert ls_utils._get_function_name(partial_static_method, ()) == "static_method"
+
+    # Test subclass
+    class SubTestClass(TestClass):
+        def subclass_method(self):
+            pass
+
+    sub_test_instance = SubTestClass()
+
+    # Test instance method of subclass
+    assert (
+        ls_utils._get_function_name(
+            sub_test_instance.instance_method, (sub_test_instance,)
+        )
+        == "SubTestClass.instance_method"
+    )
+
+    # Test subclass-specific method
+    assert (
+        ls_utils._get_function_name(
+            sub_test_instance.subclass_method, (sub_test_instance,)
+        )
+        == "SubTestClass.subclass_method"
+    )
+
+    # Test class method inherited by subclass
+    assert (
+        ls_utils._get_function_name(SubTestClass.class_method, (SubTestClass,))
+        == "SubTestClass.class_method"
+    )
+    assert (
+        ls_utils._get_function_name(sub_test_instance.class_method, (SubTestClass,))
+        == "SubTestClass.class_method"
+    )
+
+    # Test static method inherited by subclass
+    assert (
+        ls_utils._get_function_name(SubTestClass.static_method, ()) == "static_method"
+    )
+    assert (
+        ls_utils._get_function_name(sub_test_instance.static_method, ())
+        == "static_method"
+    )

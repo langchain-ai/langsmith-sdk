@@ -1291,6 +1291,46 @@ def test_tracing_disabled_project_name_set():
     assert not mock_calls
 
 
+def test_traceable_method_names():
+    class MyClass:
+        @traceable
+        def noop(self, bar: int) -> int:
+            return bar
+
+        @classmethod
+        @traceable
+        def noopcls(cls, bar: int) -> int:
+            return bar
+
+        @staticmethod
+        @traceable
+        def noopstatic(bar: int) -> int:
+            return bar
+
+    instance = MyClass()
+    mock_client = _get_mock_client()
+    with tracing_context(enabled=True):
+        # Test instance method
+        instance.noop(1, langsmith_extra={"client": mock_client})
+
+        instance.noopcls(2, langsmith_extra={"client": mock_client})
+        MyClass.noopcls(3, langsmith_extra={"client": mock_client})
+
+        # Test static method (both ways)
+        instance.noopstatic(4, langsmith_extra={"client": mock_client})
+        MyClass.noopstatic(5, langsmith_extra={"client": mock_client})
+    mock_calls = _get_calls(mock_client, verbs={"POST"})
+    assert len(mock_calls) == 5
+
+    run_names = [json.loads(call.kwargs["data"])["name"] for call in mock_calls]
+
+    assert run_names[0] == "MyClass.noop"
+    assert run_names[1] == "MyClass.noopcls"
+    assert run_names[2] == "MyClass.noopcls"
+    assert run_names[3] == "noopstatic"
+    assert run_names[4] == "noopstatic"
+
+
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 async def test_traceable_async_exception(auto_batch_tracing: bool):
     mock_client = _get_mock_client(
