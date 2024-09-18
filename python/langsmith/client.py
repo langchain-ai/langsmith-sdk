@@ -4681,28 +4681,30 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def list_runs_from_annotation_queue(
-        self, queue_id: ID_TYPE, *, limit: Optional[int] = None
-    ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
-        """List runs from an annotation queue with the specified queue ID.
+    def get_run_from_annotation_queue(
+        self, queue_id: ID_TYPE, *, index: int
+    ) -> ls_schemas.RunWithAnnotationQueueInfo:
+        """Get a run from an annotation queue at the specified index.
 
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue.
+            index (int): The index of the run to retrieve.
 
-        Yields:
-            ls_schemas.RunWithAnnotationQueueInfo: An iterator of runs from the
-                annotation queue.
+        Returns:
+            ls_schemas.RunWithAnnotationQueueInfo: The run at the specified index.
+
+        Raises:
+            ls_utils.LangSmithNotFoundError: If the run is not found at the given index.
+            ls_utils.LangSmithError: For other API-related errors.
         """
-        path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
-        limit_ = min(limit, 100) if limit is not None else 100
-        for i, run in enumerate(
-            self._get_paginated_list(
-                path, params={"headers": self._headers, "limit": limit_}
-            )
-        ):
-            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
-            if limit is not None and i + 1 >= limit:
-                break
+        base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/run"
+        response = self.request_with_retries(
+            "GET",
+            f"{base_url}/{index}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
     def create_comparative_experiment(
         self,
