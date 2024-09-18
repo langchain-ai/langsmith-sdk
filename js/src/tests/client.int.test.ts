@@ -1147,3 +1147,96 @@ test("clonePublicDataset method can clone a dataset", async () => {
     }
   }
 });
+
+test("annotationqueue crud", async () => {
+  const client = new Client();
+  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
+  const queueId = uuidv4();
+
+  try {
+    // 1. Create an annotation queue
+    const queue = await client.createAnnotationQueue({
+      name: queueName,
+      description: "Initial description",
+      queueId,
+    });
+    expect(queue).toBeDefined();
+    expect(queue.name).toBe(queueName);
+
+    // 1a. Get the annotation queue
+    const fetchedQueue = await client.readAnnotationQueue(queue.id);
+    expect(fetchedQueue).toBeDefined();
+    expect(fetchedQueue.name).toBe(queueName);
+
+    // 1b. List annotation queues and check nameContains
+    const listedQueues = await toArray(
+      client.listAnnotationQueues({ nameContains: queueName })
+    );
+    expect(listedQueues.length).toBeGreaterThan(0);
+    expect(listedQueues.some((q) => q.id === queue.id)).toBe(true);
+
+    // 2. Create a run in a random project
+    await client.createProject({ projectName });
+    const runId = uuidv4();
+    await client.createRun({
+      id: runId,
+      name: "Test Run",
+      run_type: "chain",
+      inputs: { foo: "bar" },
+      outputs: { baz: "qux" },
+      project_name: projectName,
+    });
+
+    // Wait for run to be found in the db
+    const maxWaitTime = 30000; // 30 seconds
+    const startTime = Date.now();
+    let foundRun = null;
+
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        foundRun = await client.readRun(runId);
+        if (foundRun) break;
+      } catch (error) {
+        // If run is not found, getRun might throw an error
+        // We'll ignore it and keep trying
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before trying again
+    }
+
+    if (!foundRun) {
+      throw new Error(
+        `Run with ID ${runId} not found after ${maxWaitTime / 1000} seconds`
+      );
+    }
+
+    // 3. Add the run to the annotation queue
+    await client.addRunsToAnnotationQueue(fetchedQueue.id, [runId]);
+
+    // 4. Update the annotation queue description and check that it is updated
+    const newDescription = "Updated description";
+    await client.updateAnnotationQueue(queue.id, {
+      name: queueName,
+      description: newDescription,
+    });
+    const updatedQueue = await client.readAnnotationQueue(queue.id);
+    expect(updatedQueue.description).toBe(newDescription);
+
+    // Get the run from the annotation queue
+    const run = await client.getRunFromAnnotationQueue(queueId, 0);
+    expect(run).toBeDefined();
+    expect(run.id).toBe(runId);
+    expect(run.name).toBe("Test Run");
+    expect(run.run_type).toBe("chain");
+    expect(run.inputs).toEqual({ foo: "bar" });
+    expect(run.outputs).toEqual({ baz: "qux" });
+  } finally {
+    // 6. Delete the annotation queue
+    await client.deleteAnnotationQueue(queueId);
+
+    // Clean up the project
+    if (await client.hasProject({ projectName })) {
+      await client.deleteProject({ projectName });
+    }
+  }
+});
