@@ -566,6 +566,7 @@ export class _ExperimentManager {
               : new Date(example.created_at).toISOString(),
           },
           client: fields.client,
+          tracingEnabled: true,
         };
         const evaluatorResponse = await evaluator.evaluateRun(
           run,

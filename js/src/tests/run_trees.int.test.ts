@@ -16,7 +16,7 @@ test.concurrent(
   "Test post and patch run",
   async () => {
     const projectName = `__test_run_tree_js ${uuid.v4()}`;
-    const langchainClient = new Client({ timeout_ms: 30000 });
+    const langchainClient = new Client({ timeout_ms: 30_000 });
     const parentRunConfig: RunTreeConfig = {
       name: "parent_run",
       run_type: "chain",
@@ -33,7 +33,7 @@ test.concurrent(
     );
     await parent_run.postRun();
 
-    const child_llm_run = await parent_run.createChild({
+    const child_llm_run = parent_run.createChild({
       name: "child_run",
       run_type: "llm",
       inputs: { text: "hello world" },
