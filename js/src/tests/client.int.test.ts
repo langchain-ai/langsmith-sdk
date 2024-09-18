@@ -1213,13 +1213,7 @@ test("annotationqueue crud", async () => {
     // 3. Add the run to the annotation queue
     await client.addRunsToAnnotationQueue(fetchedQueue.id, [runId]);
 
-    // 4. Check that the run is in the annotation queue
-    const queuedRuns = await toArray(
-      client.listRunsFromAnnotationQueue(queue.id)
-    );
-    expect(queuedRuns.some((r) => r.id === runId)).toBe(true);
-
-    // 5. Update the annotation queue description and check that it is updated
+    // 4. Update the annotation queue description and check that it is updated
     const newDescription = "Updated description";
     await client.updateAnnotationQueue(queue.id, {
       name: queueName,
@@ -1227,6 +1221,15 @@ test("annotationqueue crud", async () => {
     });
     const updatedQueue = await client.readAnnotationQueue(queue.id);
     expect(updatedQueue.description).toBe(newDescription);
+
+    // Get the run from the annotation queue
+    const run = await client.getRunFromAnnotationQueue(queueId, 0);
+    expect(run).toBeDefined();
+    expect(run.id).toBe(runId);
+    expect(run.name).toBe("Test Run");
+    expect(run.run_type).toBe("chain");
+    expect(run.inputs).toEqual({ foo: "bar" });
+    expect(run.outputs).toEqual({ baz: "qux" });
   } finally {
     // 6. Delete the annotation queue
     await client.deleteAnnotationQueue(queueId);

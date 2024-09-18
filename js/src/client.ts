@@ -3281,61 +3281,30 @@ export class Client {
   }
 
   /**
-   * List runs from an annotation queue with the specified queue ID.
+   * Get a run from an annotation queue at the specified index.
    * @param queueId - The ID of the annotation queue
-   * @param limit - The maximum number of runs to return
-   * @returns An async iterable of RunWithAnnotationQueueInfo objects
+   * @param index - The index of the run to retrieve
+   * @returns A Promise that resolves to a RunWithAnnotationQueueInfo object
+   * @throws {Error} If the run is not found at the given index or for other API-related errors
    */
-  public async *listRunsFromAnnotationQueue(
+  public async getRunFromAnnotationQueue(
     queueId: string,
-    limit?: number
-  ): AsyncIterable<RunWithAnnotationQueueInfo> {
+    index: number
+  ): Promise<RunWithAnnotationQueueInfo> {
     const baseUrl = `/annotation-queues/${assertUuid(queueId, "queueId")}/run`;
-    let index = 0;
-    let i = 0;
-    while (true) {
-      try {
-        console.log("GETTT", `${this.apiUrl}${baseUrl}/${index}`);
-        const response = await this.caller.call(
-          _getFetchImplementation(),
-          `${this.apiUrl}${baseUrl}/${index}`,
-          {
-            method: "GET",
-            headers: this.headers,
-            signal: AbortSignal.timeout(this.timeout_ms),
-            ...this.fetchOptions,
-          }
-        );
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            break;
-          }
-          await raiseForStatus(response, "list runs from annotation queue");
-        }
-
-        const run: RunWithAnnotationQueueInfo = await response.json();
-        yield run;
-
-        i++;
-        if (limit !== undefined && i >= limit) {
-          return;
-        }
-
-        index++;
-      } catch (error) {
-        if (
-          error &&
-          typeof error === "object" &&
-          "message" in error &&
-          typeof error.message === "string" &&
-          error.message.includes("404")
-        ) {
-          break;
-        }
-        throw error;
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}${baseUrl}/${index}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
       }
-    }
+    );
+
+    await raiseForStatus(response, "get run from annotation queue");
+    return await response.json();
   }
 
   protected async _currentTenantIsOwner(owner: string): Promise<boolean> {

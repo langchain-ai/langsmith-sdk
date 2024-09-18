@@ -4681,45 +4681,30 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def list_runs_from_annotation_queue(
-        self, queue_id: ID_TYPE, *, limit: Optional[int] = None
-    ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
-        """List runs from an annotation queue with the specified queue ID.
+    def get_run_from_annotation_queue(
+        self, queue_id: ID_TYPE, *, index: int
+    ) -> ls_schemas.RunWithAnnotationQueueInfo:
+        """Get a run from an annotation queue at the specified index.
 
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue.
-            limit (Optional[int]): The maximum number of runs to return.
+            index (int): The index of the run to retrieve.
 
-        Yields:
-            ls_schemas.RunWithAnnotationQueueInfo: An iterator of runs from the
-                annotation queue.
+        Returns:
+            ls_schemas.RunWithAnnotationQueueInfo: The run at the specified index.
+
+        Raises:
+            ls_utils.LangSmithNotFoundError: If the run is not found at the given index.
+            ls_utils.LangSmithError: For other API-related errors.
         """
         base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/run"
-        index = 0
-        i = 0
-        while True:
-            try:
-                response = self.request_with_retries(
-                    "GET",
-                    f"{base_url}/{index}",
-                    headers=self._headers,
-                )
-                if response.status_code == 404:
-                    break
-                ls_utils.raise_for_status_with_text(response)
-
-                run = ls_schemas.RunWithAnnotationQueueInfo(**response.json())
-                yield run
-
-                i += 1
-                if limit is not None and i >= limit:
-                    return
-
-                index += 1
-            except ls_utils.LangSmithNotFoundError:
-                break
-            except ls_utils.LangSmithError as e:
-                raise e
+        response = self.request_with_retries(
+            "GET",
+            f"{base_url}/{index}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
     def create_comparative_experiment(
         self,
