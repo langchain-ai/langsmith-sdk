@@ -15,7 +15,6 @@ from __future__ import annotations
 import atexit
 import collections
 import concurrent.futures as cf
-import contextlib
 import datetime
 import functools
 import importlib
@@ -3152,7 +3151,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
-        """Add an example (row) to an LLM-type dataset."""
+        """Add an example (row) to a dataset from a Run"""
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
             dataset_name = None  # Nested call expects only 1 defined
@@ -4961,7 +4960,7 @@ class Client:
         return True if prompt else False
 
     def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
-        """Check if a prompt exists.
+        """Like a prompt.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -5295,19 +5294,11 @@ class Client:
                 "The client.pull_prompt function requires the langchain_core"
                 "package to run.\nInstall with `pip install langchain_core`"
             )
-        try:
-            from langchain_core._api import suppress_langchain_beta_warning
-        except ImportError:
-
-            @contextlib.contextmanager
-            def suppress_langchain_beta_warning():
-                yield
 
         prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
-        with suppress_langchain_beta_warning():
-            prompt = loads(json.dumps(prompt_object.manifest))
+        prompt = loads(json.dumps(prompt_object.manifest))
 
         if (
             isinstance(prompt, BasePromptTemplate)
