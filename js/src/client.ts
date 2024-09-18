@@ -3127,17 +3127,24 @@ export class Client {
     } = {}
   ): AsyncIterableIterator<AnnotationQueue> {
     const { queueIds, name, nameContains, limit } = options;
-    const params: Record<string, any> = {
-      ids: queueIds?.map((id, i) => assertUuid(id, `queueIds[${i}]`)),
-      name,
-      name_contains: nameContains,
-      limit: limit !== undefined ? Math.min(limit, 100) : 100,
-    };
+    const params = new URLSearchParams();
+    if (queueIds) {
+      queueIds.forEach((id, i) => {
+        assertUuid(id, `queueIds[${i}]`);
+        params.append("ids", id);
+      });
+    }
+    if (name) params.append("name", name);
+    if (nameContains) params.append("name_contains", nameContains);
+    params.append(
+      "limit",
+      (limit !== undefined ? Math.min(limit, 100) : 100).toString()
+    );
 
     let count = 0;
     for await (const queue of this._getPaginated(
       "/annotation-queues",
-      params as URLSearchParams
+      params
     )) {
       yield queue as unknown as AnnotationQueue;
       count++;
@@ -3441,7 +3448,7 @@ export class Client {
       ListCommitsResponse
     >(
       `/commits/${promptOwnerAndName}/`,
-      {} as URLSearchParams,
+      new URLSearchParams(),
       (res) => res.commits
     )) {
       yield* commits;
