@@ -3152,7 +3152,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
-        """Add an example (row) to an LLM-type dataset."""
+        """Add an example (row) to a dataset from a run."""
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
             dataset_name = None  # Nested call expects only 1 defined
@@ -4963,7 +4963,7 @@ class Client:
         return True if prompt else False
 
     def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
-        """Check if a prompt exists.
+        """Like a prompt.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
