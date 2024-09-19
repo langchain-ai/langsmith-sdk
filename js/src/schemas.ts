@@ -4,9 +4,9 @@ export interface TracerSession {
   // The ID of the project (alias for session)
   id: string;
   // The start time of the project
-  start_time: number;
+  start_time: string;
   // The end time of the project
-  end_time?: number;
+  end_time?: string;
   // A description of the project
   description?: string;
   // The name of the project
@@ -33,7 +33,7 @@ export interface TracerSessionResult extends TracerSession {
   // The total number of completion tokens consumed in the session.
   completion_tokens?: number;
   // The start time of the last run in the session.
-  last_run_start_time?: number;
+  last_run_start_time?: string;
   // Feedback stats for the session.
   feedback_stats?: Record<string, unknown>;
   // Facets for the runs in the session.
@@ -75,13 +75,13 @@ export interface BaseRun {
   name: string;
 
   /** The epoch time at which the run started, if available. */
-  start_time?: number;
+  start_time?: string;
 
   /** Specifies the type of run (tool, chain, llm, etc.). */
   run_type: string;
 
   /** The epoch time at which the run ended, if applicable. */
-  end_time?: number;
+  end_time?: string;
 
   /** Any additional metadata or settings for the run. */
   extra?: KVMap;
@@ -199,7 +199,7 @@ export interface RunCreate extends BaseRun {
 
 export interface RunUpdate {
   id?: string;
-  end_time?: number;
+  end_time?: string;
   extra?: KVMap;
   tags?: string[];
   error?: string;
@@ -272,7 +272,7 @@ export interface Dataset extends BaseDataset {
   modified_at: string;
   example_count?: number;
   session_count?: number;
-  last_session_start_time?: number;
+  last_session_start_time?: string;
 }
 export interface DatasetShareSchema {
   dataset_id: string;
