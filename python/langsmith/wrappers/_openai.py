@@ -243,6 +243,6 @@ def wrap_openai(
         completions_name,
         _reduce_completions,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "text"),
+        invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
     )
     return client

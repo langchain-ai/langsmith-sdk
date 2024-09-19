@@ -263,7 +263,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
 
         return {
           ls_provider: "openai",
-          ls_model_type: "text",
+          ls_model_type: "llm",
           ls_model_name: params.model,
           ls_max_tokens: params.max_tokens ?? undefined,
           ls_temperature: params.temperature ?? undefined,
