@@ -48,7 +48,7 @@ class ExampleBase(BaseModel):
     """Example base model."""
 
     dataset_id: UUID
-    inputs: Dict[str, Any]
+    inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
 
@@ -70,7 +70,10 @@ class Example(ExampleBase):
     """Example model."""
 
     id: UUID
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.fromtimestamp(0, tz=timezone.utc)
+    )
+    dataset_id: UUID = Field(default=UUID("00000000-0000-0000-0000-000000000000"))
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
