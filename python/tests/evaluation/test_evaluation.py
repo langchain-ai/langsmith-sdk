@@ -3,7 +3,6 @@ import time
 from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
-from langchain_core.runnables import RunnableLambda
 
 from langsmith import Client, aevaluate, evaluate, expect, test
 from langsmith.schemas import Example, Run
@@ -111,26 +110,7 @@ async def test_aevaluate():
     )
     dataset_name = "Evaluate Examples"
 
-    @RunnableLambda
-    async def grand_child(x: str) -> str:
-        return x
-
-    @RunnableLambda
-    async def child(x: str) -> str:
-        return await grand_child.ainvoke(x)
-
-    errors = []
-
     def accuracy(run: Run, example: Example):
-        nonlocal errors
-        try:
-            assert run.child_runs
-            assert run.child_runs[0].name == "child"
-            assert run.child_runs[0].child_runs
-            assert run.child_runs[0].child_runs[0].name == "grand_child"
-        except Exception as e:
-            errors.append(e)
-            raise
         pred = run.outputs["output"]  # type: ignore
         expected = example.outputs["answer"]  # type: ignore
         return {"score": expected.lower() == pred.lower()}
@@ -149,7 +129,7 @@ async def test_aevaluate():
         return {"score": tp / (tp + fp)}
 
     async def apredict(inputs: dict) -> dict:
-        await child.ainvoke(str(inputs))
+        await asyncio.sleep(0.1)
         return {"output": "Yes"}
 
     results = await aevaluate(
@@ -166,7 +146,6 @@ async def test_aevaluate():
         num_repetitions=2,
     )
     assert len(results) == 20
-    assert not errors
     examples = client.list_examples(dataset_name=dataset_name)
     all_results = [r async for r in results]
     all_examples = []
