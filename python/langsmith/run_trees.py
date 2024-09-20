@@ -58,6 +58,10 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
+    tags: Optional[List[str]] = Field(default_factory=list)
+    events: List[Dict] = Field(default_factory=list)
+    """List of events associated with the run, like
+    start and end events."""
     _client: Optional[Client] = None
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
