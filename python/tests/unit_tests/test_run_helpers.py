@@ -16,6 +16,7 @@ import langsmith
 from langsmith import Client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
     _get_inputs,
     as_runnable,
@@ -32,7 +33,7 @@ def _get_calls(
     mock_client: Any,
     minimum: Optional[int] = 0,
     verbs: Set[str] = {"POST"},
-    attempts: int = 5,
+    attempts: int = 10,
 ) -> list:
     calls = []
     for _ in range(attempts):
@@ -200,29 +201,38 @@ def mock_client() -> Client:
 
 
 @pytest.mark.parametrize("use_next", [True, False])
-def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
+@pytest.mark.parametrize("return_val", [None, "foo"])
+def test_traceable_iterator(
+    use_next: bool, return_val: Optional[str], mock_client: Client
+) -> None:
     with tracing_context(enabled=True):
 
         @traceable(client=mock_client)
-        def my_iterator_fn(a, b, d, **kwargs):
+        def my_iterator_fn(a, b, d, **kwargs) -> Any:
             assert kwargs == {"e": 5}
             for i in range(a + b + d):
                 yield i
+            return return_val
 
         expected = [0, 1, 2, 3, 4, 5]
+        if return_val is not None:
+            expected.append(return_val)
         genout = my_iterator_fn(1, 2, 3, e=5)
         if use_next:
             results = []
             while True:
                 try:
                     results.append(next(genout))
-                except StopIteration:
+                except StopIteration as e:
+                    assert e.value == return_val
+                    if e.value is not None:
+                        results.append(e.value)
                     break
         else:
             results = list(genout)
+            if return_val is not None:
+                results.append(return_val)
         assert results == expected
-    # Wait for batcher
-
     # check the mock_calls
     mock_calls = _get_calls(mock_client, minimum=1)
     assert 1 <= len(mock_calls) <= 2
@@ -233,6 +243,109 @@ def test_traceable_iterator(use_next: bool, mock_client: Client) -> None:
     body = json.loads(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == expected
+
+
+class MyStreamObject:
+    def __init__(self, some_values: list):
+        self.vals = some_values
+        self._iter = iter(self.vals)
+
+    def __next__(self):
+        return next(self._iter)
+
+    def __iter__(self):
+        yield from self.vals
+
+
+class MyAsyncStreamObject:
+    def __init__(self, some_values: list):
+        self.vals = some_values
+
+        async def iter():
+            for val in some_values:
+                yield val
+
+        self._iter = iter()
+
+    async def __anext__(self):
+        return await aitertools.py_anext(self._iter)
+
+    async def __aiter__(self):
+        async for val in self._iter:
+            yield val
+
+
+@pytest.mark.parametrize("use_next", [True, False])
+@pytest.mark.parametrize("response_type", ["async", "async"])
+async def test_traceable_stream(
+    use_next: bool, response_type: str, mock_client: Client
+) -> None:
+    def reduce_fn(results: list):
+        return {"my_output": results}
+
+    @traceable(client=mock_client, reduce_fn=reduce_fn)
+    def my_stream_fn(a, b, d, **kwargs):
+        assert kwargs == {"e": 5}
+        vals = [0, 1, 2, 3, 4, 5]
+        if response_type == "sync":
+            return MyStreamObject(vals)
+        else:
+            return MyAsyncStreamObject(vals)
+
+    with tracing_context(enabled=True):
+        expected = [0, 1, 2, 3, 4, 5]
+        genout = my_stream_fn(1, 2, 3, e=5)
+        # assert getattr(genout, "vals") == expected
+        if use_next:
+            results = []
+            if response_type == "sync":
+                while True:
+                    try:
+                        results.append(next(genout))
+                    except StopIteration:
+                        break
+            else:
+                while True:
+                    try:
+                        results.append(await aitertools.py_anext(genout))
+                    except StopAsyncIteration:
+                        break
+
+        else:
+            if response_type == "sync":
+                results = list(genout)
+            else:
+                results = [r async for r in genout]
+        assert results == expected
+    # check the mock_calls
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert 1 <= len(mock_calls) <= 2
+
+    call = mock_calls[0]
+    assert call.args[0] == "POST"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    call_data = [json.loads(mock_call.kwargs["data"]) for mock_call in mock_calls]
+    body = call_data[0]
+    assert body["post"]
+    assert body["post"][0]["name"] == "my_stream_fn"
+    if body["post"][0]["outputs"]:
+        assert body["post"][0]["outputs"] == {"my_output": expected}
+    else:
+        first_patch = next((d for d in call_data if d.get("patch")), None)
+        attempt = 0
+        while first_patch is None:
+            time.sleep(0.2)
+            if attempt > 2:
+                assert False, "Could not get patch"
+            mock_calls = _get_calls(mock_client, minimum=1)
+            call_data = [
+                json.loads(mock_call.kwargs["data"]) for mock_call in mock_calls
+            ]
+            first_patch = next((d for d in call_data if d.get("patch")), None)
+            attempt += 1
+
+        assert first_patch["name"] == "my_stream_fn"
+        assert first_patch[0]["outputs"] == {"my_output": expected}
 
 
 @pytest.mark.parametrize("use_next", [True, False])
