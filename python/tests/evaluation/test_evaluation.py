@@ -3,10 +3,10 @@ import time
 from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
+from langchain_core.runnables import RunnableLambda
 
 from langsmith import Client, aevaluate, evaluate, expect, test
 from langsmith.schemas import Example, Run
-from langchain_core.runnables import RunnableLambda
 
 T = TypeVar("T")
 
