@@ -78,11 +78,13 @@ class RunTree(ls_schemas.RunBase):
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
-        if values.get("name") is None and "serialized" in values:
+        if values.get("name") is None and values.get("serialized") is not None:
             if "name" in values["serialized"]:
                 values["name"] = values["serialized"]["name"]
             elif "id" in values["serialized"]:
                 values["name"] = values["serialized"]["id"][-1]
+        if values.get("name") is None:
+            values["name"] = "Unnamed"
         if "client" in values:  # Handle user-constructed clients
             values["_client"] = values["client"]
         if values.get("parent_run") is not None:
