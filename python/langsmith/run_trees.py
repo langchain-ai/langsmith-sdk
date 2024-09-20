@@ -31,7 +31,8 @@ _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()
 
 
-def _get_client() -> Client:
+# Note, this is called directly by langchain. Do not remove.
+def get_cached_client() -> Client:
     global _CLIENT
     if _CLIENT is None:
         with _LOCK:
@@ -128,7 +129,7 @@ class RunTree(ls_schemas.RunBase):
         # Lazily load the client
         # If you never use this for API calls, it will never be loaded
         if not self._client:
-            self._client = _get_client()
+            self._client = get_cached_client()
         return self._client
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:

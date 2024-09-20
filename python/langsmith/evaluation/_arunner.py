@@ -26,6 +26,7 @@ from typing import (
 import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
+from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.evaluation._runner import (
@@ -324,7 +325,7 @@ async def aevaluate_existing(
 
 
     """  # noqa: E501
-    client = client or langsmith.Client()
+    client = client or run_trees.get_cached_client()
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)
@@ -366,7 +367,7 @@ async def _aevaluate(
     is_async_target = asyncio.iscoroutinefunction(target) or (
         hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())
     )
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
     experiment_, runs = await aitertools.aio_to_thread(
         _resolve_experiment,
