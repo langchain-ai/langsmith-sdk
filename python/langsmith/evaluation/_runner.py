@@ -36,7 +36,8 @@ from typing_extensions import TypedDict
 import langsmith
 from langsmith import env as ls_env
 from langsmith import run_helpers as rh
-from langsmith import run_trees, schemas
+from langsmith import run_trees as rt
+from langsmith import schemas
 from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import (
     ComparisonEvaluationResult,
@@ -346,7 +347,7 @@ def evaluate_existing(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)
@@ -660,7 +661,7 @@ def evaluate_comparative(
         )
     if max_concurrency < 0:
         raise ValueError("max_concurrency must be a positive integer.")
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
 
     # TODO: Add information about comparison experiments
     projects = [_load_experiment(experiment, client) for experiment in experiments]
@@ -859,7 +860,7 @@ def _evaluate(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
     experiment_, runs = _resolve_experiment(
         experiment,
@@ -982,7 +983,7 @@ class _ExperimentManagerMixin:
         client: Optional[langsmith.Client] = None,
         description: Optional[str] = None,
     ):
-        self.client = client or langsmith.Client()
+        self.client = client or rt.get_cached_client()
         self._experiment: Optional[schemas.TracerSession] = None
         if experiment is None:
             self._experiment_name = _get_random_name()
@@ -1556,7 +1557,7 @@ def _forward(
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
-    def _get_run(r: run_trees.RunTree) -> None:
+    def _get_run(r: rt.RunTree) -> None:
         nonlocal run
         run = r
 

@@ -18,6 +18,7 @@ from typing_extensions import TypedDict
 from langsmith import client as ls_client
 from langsmith import env as ls_env
 from langsmith import run_helpers as rh
+from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 
@@ -387,7 +388,7 @@ class _LangSmithTestSuite:
         experiment: ls_schemas.TracerSession,
         dataset: ls_schemas.Dataset,
     ):
-        self.client = client or ls_client.Client()
+        self.client = client or rt.get_cached_client()
         self._experiment = experiment
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
@@ -413,7 +414,7 @@ class _LangSmithTestSuite:
         func: Callable,
         test_suite_name: Optional[str] = None,
     ) -> _LangSmithTestSuite:
-        client = client or ls_client.Client()
+        client = client or rt.get_cached_client()
         test_suite_name = test_suite_name or _get_test_suite_name(func)
         with cls._lock:
             if not cls._instances:
@@ -526,7 +527,7 @@ def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
 ) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
-    client = langtest_extra["client"] or ls_client.Client()
+    client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
     inputs: dict = rh._get_inputs_safe(signature, *args, **kwargs)

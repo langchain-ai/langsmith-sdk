@@ -9,6 +9,7 @@ import itertools
 import uuid
 from typing import DefaultDict, List, Optional, Sequence, Tuple, TypeVar
 
+import langsmith.run_trees as rt
 import langsmith.schemas as ls_schemas
 from langsmith import evaluation as ls_eval
 from langsmith._internal._beta_decorator import warn_beta
@@ -121,7 +122,7 @@ def convert_runs_to_test(
     """
     if not runs:
         raise ValueError(f"""Expected a non-empty sequence of runs. Received: {runs}""")
-    client = client or Client()
+    client = client or rt.get_cached_client()
     ds = client.create_dataset(dataset_name=dataset_name)
     outputs = [r.outputs for r in runs] if include_outputs else None
     client.create_examples(
@@ -229,7 +230,7 @@ def compute_test_metrics(
             raise NotImplementedError(
                 f"Evaluation not yet implemented for evaluator of type {type(func)}"
             )
-    client = client or Client()
+    client = client or rt.get_cached_client()
     traces = _load_nested_traces(project_name, client)
     with ContextThreadPoolExecutor(max_workers=max_concurrency) as executor:
         results = executor.map(
