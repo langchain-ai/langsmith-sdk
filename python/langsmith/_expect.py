@@ -59,6 +59,7 @@ from typing import (
 
 from langsmith import client as ls_client
 from langsmith import run_helpers as rh
+from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ class _Matcher:
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
             if not self._client:
-                self._client = ls_client.Client()
+                self._client = rt.get_cached_client()
             self._executor.submit(
                 self._client.create_feedback,
                 run_id=self._run_id,
@@ -431,7 +432,7 @@ class _Expect:
         run_id = current_run.trace_id if current_run else None
         if not ls_utils.test_tracking_is_disabled():
             if not self._client:
-                self._client = ls_client.Client()
+                self._client = rt.get_cached_client()
             self.executor.submit(
                 self._client.create_feedback, run_id=run_id, key=key, **results
             )
