@@ -147,11 +147,6 @@ def _get_wrapper(
             process_inputs=_strip_not_given,
             **textra,
         )
-        if stream:
-            # TODO: This slightly alters the output to be a generator instead of the
-            # stream object. We can probably fix this with a bit of simple changes
-            res = decorator(original_create)(*args, stream=stream, **kwargs)
-            return res
         return await decorator(original_create)(*args, **kwargs)
 
     return acreate if run_helpers.is_async(original_create) else create
