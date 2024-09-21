@@ -9,6 +9,8 @@ import functools
 import itertools
 import logging
 import pathlib
+import queue
+import random
 import threading
 import uuid
 from contextvars import copy_context
@@ -29,16 +31,17 @@ from typing import (
     cast,
 )
 
-from requests import HTTPError
 from typing_extensions import TypedDict
 
 import langsmith
 from langsmith import env as ls_env
 from langsmith import run_helpers as rh
-from langsmith import run_trees, schemas
+from langsmith import run_trees as rt
+from langsmith import schemas
 from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import (
     ComparisonEvaluationResult,
+    DynamicComparisonRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
@@ -54,14 +57,23 @@ TARGET_T = Callable[[dict], dict]
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
-SUMMARY_EVALUATOR_T = Callable[
-    [Sequence[schemas.Run], Sequence[schemas.Example]],
-    Union[EvaluationResult, EvaluationResults],
+SUMMARY_EVALUATOR_T = Union[
+    Callable[
+        [Sequence[schemas.Run], Sequence[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
+    Callable[
+        [List[schemas.Run], List[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
 ]
 # Row-level evaluator
 EVALUATOR_T = Union[
     RunEvaluator,
-    Callable[[schemas.Run, Optional[schemas.Example]], EvaluationResult],
+    Callable[
+        [schemas.Run, Optional[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
 ]
 AEVALUATOR_T = Union[
     Callable[
@@ -81,8 +93,10 @@ def evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -100,11 +114,17 @@ def evaluate(
             Defaults to None.
         description (Optional[str]): A free-form text description for the experiment.
         max_concurrency (Optional[int]): The maximum number of concurrent
-            evaluations to run. Defaults to None.
+            evaluations to run. Defaults to None (max number of workers).
         client (Optional[langsmith.Client]): The LangSmith client to use.
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
+        num_repetitions (int): The number of times to run the evaluation.
+            Each item in the dataset will be run and evaluated this many times.
+            Defaults to 1.
+        experiment (Optional[schemas.TracerSession]): An existing experiment to
+            extend. If provided, experiment_prefix is ignored. For advanced
+            usage only.
 
     Returns:
         ExperimentResults: The results of the evaluation.
@@ -117,7 +137,7 @@ def evaluate(
         >>> from langsmith.evaluation import evaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
-        >>> client.clone_public_dataset(
+        >>> dataset = client.clone_public_dataset(
         ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
         ... )
         >>> dataset_name = "Evaluate Examples"
@@ -185,6 +205,7 @@ def evaluate(
         Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
         >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> from langchain_openai import ChatOpenAI
         >>> def prepare_criteria_data(run: Run, example: Example):
         ...     return {
         ...         "prediction": run.outputs["output"],
@@ -204,6 +225,7 @@ def evaluate(
         ...                     "usefulness": "The prediction is useful if it is correct"
         ...                     " and/or asks a useful followup question."
         ...                 },
+        ...                 "llm": ChatOpenAI(model="gpt-4o"),
         ...             },
         ...             prepare_data=prepare_criteria_data,
         ...         ),
@@ -231,6 +253,12 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if experiment and experiment_prefix:
+        raise ValueError(
+            "Expected at most one of 'experiment' or 'experiment_prefix',"
+            " but both were provided. "
+            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+        )
     return _evaluate(
         target,
         data=data,
@@ -240,13 +268,15 @@ def evaluate(
         experiment_prefix=experiment_prefix,
         description=description,
         max_concurrency=max_concurrency,
+        num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
+        experiment=experiment,
     )
 
 
 def evaluate_existing(
-    experiment: Union[str, uuid.UUID],
+    experiment: Union[str, uuid.UUID, schemas.TracerSession],
     /,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
@@ -317,17 +347,15 @@ def evaluate_existing(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    client = client or langsmith.Client()
-    project = _load_experiment(experiment, client)
-    runs = _load_traces(experiment, client, load_nested=load_nested)
-    data = list(
-        client.list_examples(
-            dataset_id=project.reference_dataset_id,
-            as_of=project.metadata.get("dataset_version"),
-        )
+    client = client or rt.get_cached_client()
+    project = (
+        experiment
+        if isinstance(experiment, schemas.TracerSession)
+        else _load_experiment(experiment, client)
     )
-    runs = sorted(runs, key=lambda r: str(r.reference_example_id))
-    data = sorted(data, key=lambda d: str(d.id))
+    runs = _load_traces(experiment, client, load_nested=load_nested)
+    data_map = _load_examples_map(client, project)
+    data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
     return _evaluate(
         runs,
         data=data,
@@ -337,6 +365,7 @@ def evaluate_existing(
         max_concurrency=max_concurrency,
         client=client,
         blocking=blocking,
+        experiment=project,
     )
 
 
@@ -358,41 +387,51 @@ class ExperimentResults:
         wait() -> None: Waits for the experiment data to be processed.
     """
 
-    def __init__(
-        self,
-        experiment_manager: _ExperimentManager,
-    ):
+    def __init__(self, experiment_manager: _ExperimentManager, blocking: bool = True):
         self._manager = experiment_manager
         self._results: List[ExperimentResultRow] = []
-        self._lock = threading.RLock()
-        self._thread = threading.Thread(
-            target=lambda: self._process_data(self._manager)
-        )
-        self._thread.start()
+        self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
+        self._processing_complete = threading.Event()
+        if not blocking:
+            self._thread: Optional[threading.Thread] = threading.Thread(
+                target=self._process_data
+            )
+            self._thread.start()
+        else:
+            self._thread = None
+            self._process_data()
 
     @property
     def experiment_name(self) -> str:
         return self._manager.experiment_name
 
     def __iter__(self) -> Iterator[ExperimentResultRow]:
-        processed_count = 0
-        while True:
-            with self._lock:
-                if processed_count < len(self._results):
-                    yield self._results[processed_count]
-                    processed_count += 1
-                elif not self._thread.is_alive():
-                    break
+        ix = 0
+        while (
+            not self._processing_complete.is_set()
+            or not self._queue.empty()
+            or ix < len(self._results)
+        ):
+            try:
+                if ix < len(self._results):
+                    yield self._results[ix]
+                    ix += 1
+                else:
+                    self._queue.get(block=True, timeout=0.1)
+            except queue.Empty:
+                continue
 
-    def _process_data(self, manager: _ExperimentManager) -> None:
+    def _process_data(self) -> None:
         tqdm = _load_tqdm()
-        results = manager.get_results()
+        results = self._manager.get_results()
         for item in tqdm(results):
-            with self._lock:
-                self._results.append(item)
-        summary_scores = manager.get_summary_scores()
-        with self._lock:
-            self._summary_results = summary_scores
+            self._queue.put(item)
+            self._results.append(item)
+
+        summary_scores = self._manager.get_summary_scores()
+        self._summary_results = summary_scores
+
+        self._processing_complete.set()
 
     def __len__(self) -> int:
         return len(self._results)
@@ -406,7 +445,8 @@ class ExperimentResults:
         This method blocks the current thread until the evaluation runner has
         finished its execution.
         """
-        self._thread.join()
+        if self._thread:
+            self._thread.join()
 
 
 ## Public API for Comparison Experiments
@@ -431,6 +471,7 @@ def evaluate_comparative(
     client: Optional[langsmith.Client] = None,
     metadata: Optional[dict] = None,
     load_nested: bool = False,
+    randomize_order: bool = False,
 ) -> ComparativeExperimentResults:
     r"""Evaluate existing experiment runs against each other.
 
@@ -453,6 +494,8 @@ def evaluate_comparative(
             Defaults to None.
         load_nested (bool): Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
+        randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
+            Default is False.
 
     Returns:
         ComparativeExperimentResults: The results of the comparative evaluation.
@@ -466,7 +509,7 @@ def evaluate_comparative(
         >>> from langsmith.evaluation import evaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
-        >>> client.clone_public_dataset(
+        >>> dataset = client.clone_public_dataset(
         ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
         ... )
         >>> dataset_name = "Evaluate Examples"
@@ -509,11 +552,16 @@ def evaluate_comparative(
         View the evaluation results for experiment:...
         >>> results_1.wait()
         >>> results_2.wait()
+        >>> import time
+        >>> time.sleep(10)  # Wait for the traces to be fully processed
 
             Finally, you would compare the two prompts directly:
         >>> import json
         >>> from langsmith.evaluation import evaluate_comparative
-        >>> def score_preferences(runs: list, example):
+        >>> def score_preferences(runs: list, example: schemas.Example):
+        ...     assert len(runs) == 2  # Comparing 2 systems
+        ...     assert isinstance(example, schemas.Example)
+        ...     assert all(run.reference_example_id == example.id for run in runs)
         ...     pred_a = runs[0].outputs["output"]
         ...     pred_b = runs[1].outputs["output"]
         ...     ground_truth = example.outputs["answer"]
@@ -570,11 +618,40 @@ def evaluate_comparative(
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 0, runs[1].id: 1},
         ...         }
+        >>> def score_length_difference(runs: list, example: schemas.Example):
+        ...     # Just return whichever response is longer.
+        ...     # Just an example, not actually useful in real life.
+        ...     assert len(runs) == 2  # Comparing 2 systems
+        ...     assert isinstance(example, schemas.Example)
+        ...     assert all(run.reference_example_id == example.id for run in runs)
+        ...     pred_a = runs[0].outputs["output"]
+        ...     pred_b = runs[1].outputs["output"]
+        ...     if len(pred_a) > len(pred_b):
+        ...         return {
+        ...             "key": "length_difference",
+        ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...         }
+        ...     else:
+        ...         return {
+        ...             "key": "length_difference",
+        ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...         }
         >>> results = evaluate_comparative(
         ...     [results_1.experiment_name, results_2.experiment_name],
-        ...     evaluators=[score_preferences],
+        ...     evaluators=[score_preferences, score_length_difference],
         ...     client=client,
         ... )  # doctest: +ELLIPSIS
+        View the pairwise evaluation results at:...
+        >>> eval_results = list(results)
+        >>> assert len(eval_results) >= 10
+        >>> assert all(
+        ...     "feedback.ranked_preference" in r["evaluation_results"]
+        ...     for r in eval_results
+        ... )
+        >>> assert all(
+        ...     "feedback.length_difference" in r["evaluation_results"]
+        ...     for r in eval_results
+        ... )
     """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
@@ -584,7 +661,7 @@ def evaluate_comparative(
         )
     if max_concurrency < 0:
         raise ValueError("max_concurrency must be a positive integer.")
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
 
     # TODO: Add information about comparison experiments
     projects = [_load_experiment(experiment, client) for experiment in experiments]
@@ -607,7 +684,13 @@ def evaluate_comparative(
         metadata=metadata,
         id=comparative_experiment_id,
     )
-    # TODO: Print out the URL for the experiment.
+    _print_comparative_experiment_start(
+        cast(
+            Tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+            tuple(projects),
+        ),
+        comparative_experiment,
+    )
     runs = [
         _load_traces(experiment, client, load_nested=load_nested)
         for experiment in experiments
@@ -646,12 +729,18 @@ def evaluate_comparative(
     results: dict = {}
 
     def evaluate_and_submit_feedback(
-        runs_list: list[schemas.Run], example: schemas.Example, executor: cf.Executor
+        runs_list: list[schemas.Run],
+        example: schemas.Example,
+        comparator: DynamicComparisonRunEvaluator,
+        executor: cf.Executor,
     ) -> ComparisonEvaluationResult:
         feedback_group_id = uuid.uuid4()
-        result = comparator.compare_runs(runs_list, example)
-        if client is None:
-            raise ValueError("Client is required to submit feedback.")
+        if randomize_order:
+            random.shuffle(runs_list)
+        with rh.tracing_context(project_name="evaluators", client=client):
+            result = comparator.compare_runs(runs_list, example)
+            if client is None:
+                raise ValueError("Client is required to submit feedback.")
         for run_id, score in result.scores.items():
             executor.submit(
                 client.create_feedback,
@@ -665,7 +754,9 @@ def evaluate_comparative(
         return result
 
     tqdm = _load_tqdm()
-    with cf.ThreadPoolExecutor(max_workers=max_concurrency or 1) as executor:
+    with ls_utils.ContextThreadPoolExecutor(
+        max_workers=max_concurrency or 1
+    ) as executor:
         futures = []
         for example_id, runs_list in tqdm(runs_dict.items()):
             results[example_id] = {
@@ -677,12 +768,13 @@ def evaluate_comparative(
                         evaluate_and_submit_feedback,
                         runs_list,
                         data[example_id],
+                        comparator,
                         executor,
                     )
                     futures.append(future)
                 else:
                     result = evaluate_and_submit_feedback(
-                        runs_list, data[example_id], executor
+                        runs_list, data[example_id], comparator, executor
                     )
                     results[example_id][f"feedback.{result.key}"] = result
             if futures:
@@ -691,7 +783,7 @@ def evaluate_comparative(
                     result = future.result()
                     results[example_id][f"feedback.{result.key}"] = result
 
-    return ComparativeExperimentResults(results)
+    return ComparativeExperimentResults(results, data)
 
 
 class ComparativeExperimentResults:
@@ -709,15 +801,43 @@ class ComparativeExperimentResults:
     def __init__(
         self,
         results: dict,
+        examples: Optional[Dict[uuid.UUID, schemas.Example]] = None,
     ):
         self._results = results
+        self._examples = examples
 
     def __getitem__(self, key):
         """Return the result associated with the given key."""
         return self._results[key]
 
+    def __iter__(self):
+        for key, value in self._results.items():
+            yield {
+                "example": self._examples[key] if self._examples else None,
+                "evaluation_results": value,
+            }
+
 
 ## Private API
+
+
+def _print_comparative_experiment_start(
+    experiments: Tuple[schemas.TracerSession, schemas.TracerSession],
+    comparative_experiment: schemas.ComparativeExperiment,
+) -> None:
+    url = experiments[0].url or experiments[1].url
+    if url:
+        project_url = url.split("?")[0]
+        dataset_id = comparative_experiment.reference_dataset_id
+        base_url = project_url.split("/projects/p/")[0]
+        comparison_url = (
+            f"{base_url}/datasets/{dataset_id}/compare?"
+            f"selectedSessions={'%2C'.join([str(e.id) for e in experiments])}"
+            f"&comparativeExperiment={comparative_experiment.id}"
+        )
+        print(  # noqa: T201
+            f"View the pairwise evaluation results at:\n{comparison_url}\n\n"
+        )
 
 
 def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run]]) -> bool:
@@ -734,12 +854,13 @@ def _evaluate(
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[schemas.TracerSession] = None,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
     experiment_, runs = _resolve_experiment(
         experiment,
@@ -753,6 +874,7 @@ def _evaluate(
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
         description=description,
+        num_repetitions=num_repetitions,
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
@@ -776,10 +898,7 @@ def _evaluate(
             # Apply the experiment-level summary evaluators.
             manager = manager.with_summary_evaluators(summary_evaluators)
         # Start consuming the results.
-        results = ExperimentResults(manager)
-        if blocking:
-            # Wait for the evaluation to complete.
-            results.wait()
+        results = ExperimentResults(manager, blocking=blocking)
         return results
 
 
@@ -800,14 +919,18 @@ def _load_experiment(
 
 
 def _load_traces(
-    project: Union[str, uuid.UUID], client: langsmith.Client, load_nested: bool = False
+    project: Union[str, uuid.UUID, schemas.TracerSession],
+    client: langsmith.Client,
+    load_nested: bool = False,
 ) -> List[schemas.Run]:
     """Load nested traces for a given project."""
-    execution_order = None if load_nested else 1
-    if isinstance(project, uuid.UUID) or _is_uuid(project):
-        runs = client.list_runs(project_id=project, execution_order=execution_order)
+    is_root = None if load_nested else True
+    if isinstance(project, schemas.TracerSession):
+        runs = client.list_runs(project_id=project.id, is_root=is_root)
+    elif isinstance(project, uuid.UUID) or _is_uuid(project):
+        runs = client.list_runs(project_id=project, is_root=is_root)
     else:
-        runs = client.list_runs(project_name=project, execution_order=execution_order)
+        runs = client.list_runs(project_name=project, is_root=is_root)
     if not load_nested:
         return list(runs)
 
@@ -823,6 +946,18 @@ def _load_traces(
     for run_id, child_runs in treemap.items():
         all_runs[run_id].child_runs = sorted(child_runs, key=lambda r: r.dotted_order)
     return results
+
+
+def _load_examples_map(
+    client: langsmith.Client, project: schemas.TracerSession
+) -> Dict[uuid.UUID, schemas.Example]:
+    return {
+        e.id: e
+        for e in client.list_examples(
+            dataset_id=project.reference_dataset_id,
+            as_of=project.metadata.get("dataset_version"),
+        )
+    }
 
 
 IT = TypeVar("IT")
@@ -848,7 +983,7 @@ class _ExperimentManagerMixin:
         client: Optional[langsmith.Client] = None,
         description: Optional[str] = None,
     ):
-        self.client = client or langsmith.Client()
+        self.client = client or rt.get_cached_client()
         self._experiment: Optional[schemas.TracerSession] = None
         if experiment is None:
             self._experiment_name = _get_random_name()
@@ -897,24 +1032,33 @@ class _ExperimentManagerMixin:
             }
         return project_metadata
 
+    def _create_experiment(
+        self, dataset_id: uuid.UUID, metadata: dict
+    ) -> schemas.TracerSession:
+        # There is a chance of name collision, so we'll retry
+        starting_name = self._experiment_name
+        num_attempts = 10
+        for _ in range(num_attempts):
+            try:
+                return self.client.create_project(
+                    self._experiment_name,
+                    description=self._description,
+                    reference_dataset_id=dataset_id,
+                    metadata=metadata,
+                )
+            except ls_utils.LangSmithConflictError:
+                self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
+        raise ValueError(
+            f"Could not find a unique experiment name in {num_attempts} attempts."
+            " Please try again with a different experiment name."
+        )
+
     def _get_project(self, first_example: schemas.Example) -> schemas.TracerSession:
         if self._experiment is None:
-            try:
-                project_metadata = self._get_experiment_metadata()
-                project = self.client.create_project(
-                    self.experiment_name,
-                    description=self._description,
-                    reference_dataset_id=first_example.dataset_id,
-                    metadata=project_metadata,
-                )
-            except (HTTPError, ValueError, ls_utils.LangSmithError) as e:
-                if "already exists " not in str(e):
-                    raise e
-                raise ValueError(
-                    # TODO: Better error
-                    f"Experiment {self.experiment_name} already exists."
-                    " Please use a different name."
-                )
+            project_metadata = self._get_experiment_metadata()
+            project = self._create_experiment(
+                first_example.dataset_id, project_metadata
+            )
         else:
             project = self._experiment
         return project
@@ -937,7 +1081,9 @@ class _ExperimentManagerMixin:
             )
         else:
             # HACKHACK
-            print("Starting evaluation of experiment: %s", self.experiment_name)
+            print(  # noqa: T201
+                "Starting evaluation of experiment: %s", self.experiment_name
+            )
 
 
 class _ExperimentManager(_ExperimentManagerMixin):
@@ -949,6 +1095,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     Args:
         data (DATA_T): The data used for the experiment. Can be a dataset name or ID OR
             a generator of examples.
+        num_repetitions (int): The number of times to run over the data.
         runs (Optional[Iterable[schemas.Run]]): The runs associated with the experiment
             predictions.
         experiment (Optional[schemas.TracerSession]): The tracer session
@@ -974,6 +1121,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
+        num_repetitions: int = 1,
     ):
         super().__init__(
             experiment=experiment,
@@ -986,11 +1134,16 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._runs = runs
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
+        self._num_repetitions = num_repetitions
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
             self._examples = _resolve_data(self._data, client=self.client)
+            if self._num_repetitions > 1:
+                self._examples = itertools.chain.from_iterable(
+                    itertools.tee(self._examples, self._num_repetitions)
+                )
         self._examples, examples_iter = itertools.tee(self._examples)
         return examples_iter
 
@@ -1008,7 +1161,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     @property
     def evaluation_results(self) -> Iterable[EvaluationResults]:
         if self._evaluation_results is None:
-            return [{"results": []} for _ in self.examples]
+            return ({"results": []} for _ in self.examples)
         return self._evaluation_results
 
     @property
@@ -1024,6 +1177,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         first_example = next(itertools.islice(self.examples, 1))
         project = self._get_project(first_example)
         self._print_experiment_start(project, first_example)
+        self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
             self.examples,
             experiment=project,
@@ -1142,7 +1296,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 )
 
         else:
-            with cf.ThreadPoolExecutor(max_concurrency) as executor:
+            with ls_utils.ContextThreadPoolExecutor(max_concurrency) as executor:
                 futures = [
                     executor.submit(
                         _forward,
@@ -1163,6 +1317,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self,
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
+        executor: cf.ThreadPoolExecutor,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
@@ -1174,7 +1329,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
             },
         }
         with rh.tracing_context(
-            **{**current_context, "project_name": "evaluators", "metadata": metadata}
+            **{
+                **current_context,
+                "project_name": "evaluators",
+                "metadata": metadata,
+                "enabled": True,
+                "client": self.client,
+            }
         ):
             run = current_results["run"]
             example = current_results["example"]
@@ -1188,8 +1349,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     eval_results["results"].extend(
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
-                            evaluator_response,
-                            run=run,
+                            evaluator_response, run=run, _executor=executor
                         )
                     )
                 except Exception as e:
@@ -1214,20 +1374,37 @@ class _ExperimentManager(_ExperimentManagerMixin):
         Expects runs to be available in the manager.
         (e.g. from a previous prediction step)
         """
-        if max_concurrency == 0:
-            for current_results in self.get_results():
-                yield self._run_evaluators(evaluators, current_results)
-        else:
-            with cf.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-                futures = []
+        with ls_utils.ContextThreadPoolExecutor(
+            max_workers=max_concurrency
+        ) as executor:
+            if max_concurrency == 0:
+                context = copy_context()
                 for current_results in self.get_results():
-                    futures.append(
+                    yield context.run(
+                        self._run_evaluators,
+                        evaluators,
+                        current_results,
+                        executor=executor,
+                    )
+            else:
+                futures = set()
+                for current_results in self.get_results():
+                    futures.add(
                         executor.submit(
                             self._run_evaluators,
                             evaluators,
                             current_results,
+                            executor=executor,
                         )
                     )
+                    try:
+                        # Since prediction may be slow, yield (with a timeout) to
+                        # allow for early results to be emitted.
+                        for future in cf.as_completed(futures, timeout=0.001):
+                            yield future.result()
+                            futures.remove(future)
+                    except (cf.TimeoutError, TimeoutError):
+                        pass
                 for future in cf.as_completed(futures):
                     result = future.result()
                     yield result
@@ -1240,7 +1417,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs.append(run)
             examples.append(example)
         aggregate_feedback = []
-        with cf.ThreadPoolExecutor() as executor:
+        with ls_utils.ContextThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id
             current_context = rh.get_tracing_context()
             metadata = {
@@ -1255,6 +1432,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     **current_context,
                     "project_name": "evaluators",
                     "metadata": metadata,
+                    "client": self.client,
+                    "enabled": True,
                 }
             ):
                 for evaluator in summary_evaluators:
@@ -1290,6 +1469,23 @@ class _ExperimentManager(_ExperimentManagerMixin):
         max_modified_at = max(modified_at) if modified_at else None
         return max_modified_at.isoformat() if max_modified_at else None
 
+    def _get_dataset_splits(self) -> Optional[list[str]]:
+        examples = list(self.examples)
+        splits = set()
+        for example in examples:
+            if (
+                example.metadata
+                and example.metadata.get("dataset_split")
+                and isinstance(example.metadata["dataset_split"], list)
+            ):
+                for split in example.metadata["dataset_split"]:
+                    if isinstance(split, str):
+                        splits.add(split)
+            else:
+                splits.add("base")
+
+        return list(splits)
+
     def _end(self) -> None:
         experiment = self._experiment
         if experiment is None:
@@ -1297,6 +1493,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
         project_metadata = self._get_experiment_metadata()
         project_metadata["dataset_version"] = self._get_dataset_version()
+        project_metadata["dataset_splits"] = self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
             end_time=datetime.datetime.now(datetime.timezone.utc),
@@ -1332,7 +1529,7 @@ def _wrap_summary_evaluators(
             def _wrapper_super_inner(
                 runs_: str, examples_: str
             ) -> Union[EvaluationResult, EvaluationResults]:
-                return evaluator(runs, examples)
+                return evaluator(list(runs), list(examples))
 
             return _wrapper_super_inner(
                 f"Runs[] (Length={len(runs)})", f"Examples[] (Length={len(examples)})"
@@ -1360,34 +1557,35 @@ def _forward(
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
-    def _get_run(r: run_trees.RunTree) -> None:
+    def _get_run(r: rt.RunTree) -> None:
         nonlocal run
         run = r
 
-    try:
-        fn(
-            example.inputs,
-            langsmith_extra=rh.LangSmithExtra(
-                reference_example_id=example.id,
-                on_end=_get_run,
-                project_name=experiment_name,
-                metadata={
-                    **metadata,
-                    "example_version": (
-                        example.modified_at.isoformat()
-                        if example.modified_at
-                        else example.created_at.isoformat()
-                    ),
-                },
-                client=client,
-            ),
+    with rh.tracing_context(enabled=True):
+        try:
+            fn(
+                example.inputs,
+                langsmith_extra=rh.LangSmithExtra(
+                    reference_example_id=example.id,
+                    on_end=_get_run,
+                    project_name=experiment_name,
+                    metadata={
+                        **metadata,
+                        "example_version": (
+                            example.modified_at.isoformat()
+                            if example.modified_at
+                            else example.created_at.isoformat()
+                        ),
+                    },
+                    client=client,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error running target function: {e}")
+        return _ForwardResults(
+            run=cast(schemas.Run, run),
+            example=example,
         )
-    except Exception as e:
-        logger.error(f"Error running target function: {e}")
-    return _ForwardResults(
-        run=cast(schemas.Run, run),
-        example=example,
-    )
 
 
 def _resolve_data(
@@ -1401,19 +1599,21 @@ def _resolve_data(
     return data
 
 
-def _ensure_traceable(target: TARGET_T) -> rh.SupportsLangsmithExtra:
+def _ensure_traceable(
+    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],
+) -> rh.SupportsLangsmithExtra[[dict], dict]:
     """Ensure the target function is traceable."""
     if not callable(target):
         raise ValueError("Target must be a callable function.")
     if rh.is_traceable_function(target):
-        fn = cast(rh.SupportsLangsmithExtra, target)
+        fn = target
     else:
         fn = rh.traceable(name="Target")(target)
     return fn
 
 
 def _resolve_experiment(
-    experiment: Optional[schemas.TracerSession],
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]],
     runs: Optional[Iterable[schemas.Run]],
     client: langsmith.Client,
 ) -> Tuple[
@@ -1421,18 +1621,28 @@ def _resolve_experiment(
 ]:
     # TODO: Remove this, handle outside the manager
     if experiment is not None:
-        if not experiment.name:
+        if isinstance(experiment, schemas.TracerSession):
+            experiment_ = experiment
+        else:
+            experiment_ = _load_experiment(experiment, client)
+
+        if not experiment_.name:
             raise ValueError("Experiment name must be defined if provided.")
-        return experiment, None
+        if not experiment_.reference_dataset_id:
+            raise ValueError(
+                "Experiment must have an associated reference_dataset_id, "
+                "but none was provided."
+            )
+        return experiment_, runs
     # If we have runs, that means the experiment was already started.
     if runs is not None:
         if runs is not None:
             runs_, runs = itertools.tee(runs)
             first_run = next(runs_)
-        experiment = client.read_project(project_id=first_run.session_id)
-        if not experiment.name:
+        experiment_ = client.read_project(project_id=first_run.session_id)
+        if not experiment_.name:
             raise ValueError("Experiment name not found for provided runs.")
-        return experiment, runs
+        return experiment_, runs
     return None, None
 
 

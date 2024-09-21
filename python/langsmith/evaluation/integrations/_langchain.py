@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, Union
 
-from langsmith.evaluation.evaluator import run_evaluator
+from langsmith.evaluation.evaluator import DynamicRunEvaluator
 from langsmith.run_helpers import traceable
 from langsmith.schemas import Example, Run
 
@@ -44,6 +44,7 @@ class LangChainStringEvaluator:
         Converting a LangChainStringEvaluator to a RunEvaluator:
 
         >>> from langsmith.evaluation import LangChainStringEvaluator
+        >>> from langchain_openai import ChatOpenAI
         >>> evaluator = LangChainStringEvaluator(
         ...     "criteria",
         ...     config={
@@ -51,6 +52,7 @@ class LangChainStringEvaluator:
         ...             "usefulness": "The prediction is useful if"
         ...             " it is correct and/or asks a useful followup question."
         ...         },
+        ...         "llm": ChatOpenAI(model="gpt-4o"),
         ...     },
         ... )
         >>> run_evaluator = evaluator.as_run_evaluator()
@@ -111,6 +113,7 @@ class LangChainStringEvaluator:
         ...             "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
         ...         },
         ...         "normalize_by": 10,
+        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229"),
         ...     },
         ...     prepare_data=prepare_data,
         ... )
@@ -257,4 +260,14 @@ evaluator = LangChainStringEvaluator(..., prepare_data=prepare_data)
             results = self.evaluator.evaluate_strings(**eval_inputs)
             return {"key": self.evaluator.evaluation_name, **results}
 
-        return run_evaluator(evaluate)
+        @traceable(name=self.evaluator.evaluation_name)
+        async def aevaluate(run: Run, example: Optional[Example] = None) -> dict:
+            eval_inputs = (
+                prepare_evaluator_inputs(run, example)
+                if self._prepare_data is None
+                else self._prepare_data(run, example)
+            )
+            results = await self.evaluator.aevaluate_strings(**eval_inputs)
+            return {"key": self.evaluator.evaluation_name, **results}
+
+        return DynamicRunEvaluator(evaluate, aevaluate)

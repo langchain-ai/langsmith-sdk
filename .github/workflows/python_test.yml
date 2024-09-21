@@ -20,6 +20,8 @@ jobs:
       matrix:
         python-version:
           - "3.8"
+          - "3.9"
+          - "3.10"
           - "3.11"
           - "3.12"
     defaults:
@@ -42,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --with dev,lint
-          poetry run pip install -U langchain
+          poetry run pip install -U langchain langchain-core langchain_anthropic langchain_openai
       - name: Build ${{ matrix.python-version }}
         run: poetry build
       - name: Lint ${{ matrix.python-version }}

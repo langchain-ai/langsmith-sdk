@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
-    # TODO: Use importlib
     if name == "evaluate":
         from langsmith.evaluation._runner import evaluate
 

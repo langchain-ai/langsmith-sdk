@@ -60,6 +60,7 @@ export interface BaseExample {
   inputs: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  source_run_id?: string;
 }
 
 /**
@@ -229,6 +230,7 @@ export interface RunUpdate {
 export interface ExampleCreate extends BaseExample {
   id?: string;
   created_at?: string;
+  split?: string | string[];
 }
 
 export interface Example extends BaseExample {
@@ -244,12 +246,24 @@ export interface ExampleUpdate {
   inputs?: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  split?: string | string[];
 }
+
+export interface ExampleUpdateWithId extends ExampleUpdate {
+  id: string;
+}
+
+export interface ExampleSearch extends BaseExample {
+  id: string;
+}
+
 export interface BaseDataset {
   name: string;
   description: string;
   tenant_id: string;
   data_type?: DataType;
+  inputs_schema_definition?: KVMap;
+  outputs_schema_definition?: KVMap;
 }
 
 export interface Dataset extends BaseDataset {
@@ -360,4 +374,131 @@ export interface DatasetDiffInfo {
   examples_modified: string[];
   examples_added: string[];
   examples_removed: string[];
+}
+
+export interface ComparisonEvaluationResult {
+  key: string;
+  scores: Record<string, ScoreType>;
+  source_run_id?: string;
+}
+
+export interface ComparativeExperiment {
+  id: string;
+  name: string;
+  description: string;
+  tenant_id: string;
+  created_at: string;
+  modified_at: string;
+  reference_dataset_id: string;
+  extra?: Record<string, unknown>;
+  experiments_info?: Array<Record<string, unknown>>;
+  feedback_stats?: Record<string, unknown>;
+}
+
+/**
+ * Represents the expected output schema returned by traceable
+ * or by run tree output for LangSmith to correctly display
+ * documents in the UI
+ */
+export type RetrieverOutput = Array<{
+  page_content: string;
+  type: "Document";
+  metadata?: KVMap;
+}>;
+
+export interface InvocationParamsSchema {
+  ls_provider?: string;
+  ls_model_name?: string;
+  ls_model_type: "chat" | "llm";
+  ls_temperature?: number;
+  ls_max_tokens?: number;
+  ls_stop?: string[];
+}
+
+export interface PromptCommit {
+  owner: string;
+  repo: string;
+  commit_hash: string;
+  manifest: Record<string, any>;
+  examples: Array<Record<any, any>>;
+}
+
+export interface Prompt {
+  repo_handle: string;
+  description?: string;
+  readme?: string;
+  id: string;
+  tenant_id: string;
+  created_at: string;
+  updated_at: string;
+  is_public: boolean;
+  is_archived: boolean;
+  tags: string[];
+  original_repo_id?: string;
+  upstream_repo_id?: string;
+  owner?: string;
+  full_name: string;
+  num_likes: number;
+  num_downloads: number;
+  num_views: number;
+  liked_by_auth_user: boolean;
+  last_commit_hash?: string;
+  num_commits: number;
+  original_repo_full_name?: string;
+  upstream_repo_full_name?: string;
+}
+
+export interface ListPromptsResponse {
+  repos: Prompt[];
+  total: number;
+}
+
+export interface ListCommitsResponse {
+  commits: PromptCommit[];
+  total: number;
+}
+
+export type PromptSortField =
+  | "num_downloads"
+  | "num_views"
+  | "updated_at"
+  | "num_likes";
+
+export interface LikePromptResponse {
+  likes: number;
+}
+
+export interface LangSmithSettings {
+  id: string;
+  display_name: string;
+  created_at: string;
+  tenant_handle?: string;
+}
+
+export interface AnnotationQueue {
+  /** The unique identifier of the annotation queue. */
+  id: string;
+
+  /** The name of the annotation queue. */
+  name: string;
+
+  /** An optional description of the annotation queue. */
+  description?: string;
+
+  /** The timestamp when the annotation queue was created. */
+  created_at: string;
+
+  /** The timestamp when the annotation queue was last updated. */
+  updated_at: string;
+
+  /** The ID of the tenant associated with the annotation queue. */
+  tenant_id: string;
+}
+
+export interface RunWithAnnotationQueueInfo extends BaseRun {
+  /** The last time this run was reviewed. */
+  last_reviewed_time?: string;
+
+  /** The time this run was added to the queue. */
+  added_at?: string;
 }

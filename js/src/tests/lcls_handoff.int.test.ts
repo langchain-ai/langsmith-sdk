@@ -35,19 +35,18 @@ test.concurrent(
     };
 
     // Define the two nodes we will cycle between
-    workflow.addNode(
-      "agent",
-      new RunnableLambda({
-        func: async () => new HumanMessage({ content: "Hello!" }),
-      })
-    );
-    workflow.addNode("action", new RunnableLambda({ func: myFunc }));
+    workflow
+      .addNode(
+        "agent",
+        new RunnableLambda({
+          func: async () => new HumanMessage({ content: "Hello!" }),
+        })
+      )
+      .addNode("action", new RunnableLambda({ func: myFunc }))
+      .addEdge("__start__", "agent")
+      .addEdge("agent", "action")
+      .addEdge("action", "__end__");
 
-    // Set the entrypoint as `agent`
-    // This means that this node is the first one called
-    workflow.setEntryPoint("agent");
-    workflow.addEdge("agent", "action");
-    workflow.setFinishPoint("action");
     const app = workflow.compile();
     const tracer = new LangChainTracer({ projectName });
     const client = new Client({
@@ -55,10 +54,12 @@ test.concurrent(
       timeout_ms: 30_000,
     });
     try {
+      const runId = uuidv4();
       const result = await app.invoke(
         [new HumanMessage({ content: "Hello!" })],
         {
           callbacks: [tracer],
+          runId,
         }
       );
       expect(result[result.length - 1].content).toEqual("Hello! world");
@@ -85,6 +86,7 @@ test.concurrent(
       const trace = traces[0];
       expect(trace.name).toEqual("add_negligible_value");
       expect(trace.parent_run_id).not.toBeNull();
+      expect(trace.trace_id).toEqual(runId);
     } catch (e) {
       console.error(e);
       throw e;

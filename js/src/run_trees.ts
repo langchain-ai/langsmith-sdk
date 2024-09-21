@@ -6,15 +6,8 @@ import {
   getRuntimeEnvironment,
 } from "./utils/env.js";
 import { Client } from "./client.js";
-
-const warnedMessages: Record<string, boolean> = {};
-
-function warnOnce(message: string): void {
-  if (!warnedMessages[message]) {
-    console.warn(message);
-    warnedMessages[message] = true;
-  }
-}
+import { isTracingEnabled } from "./env.js";
+import { warnOnce } from "./utils/warn.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -58,6 +51,9 @@ export interface RunTreeConfig {
   on_end?: (runTree: RunTree) => void;
   execution_order?: number;
   child_execution_order?: number;
+
+  trace_id?: string;
+  dotted_order?: string;
 }
 
 export interface RunnableConfigLike {
@@ -84,18 +80,74 @@ export interface RunnableConfigLike {
 interface CallbackManagerLike {
   handlers: TracerLike[];
   getParentRunId?: () => string | undefined;
+  copy?: () => CallbackManagerLike;
 }
 
 interface TracerLike {
   name: string;
 }
+
 interface LangChainTracerLike extends TracerLike {
   name: "langchain_tracer";
   projectName: string;
   getRun?: (id: string) => RunTree | undefined;
+  client: Client;
+  updateFromRunTree?: (runTree: RunTree) => void;
+}
+
+interface HeadersLike {
+  get(name: string): string | null;
+  set(name: string, value: string): void;
+}
+
+/**
+ * Baggage header information
+ */
+class Baggage {
+  metadata: KVMap | undefined;
+  tags: string[] | undefined;
+
+  constructor(metadata: KVMap | undefined, tags: string[] | undefined) {
+    this.metadata = metadata;
+    this.tags = tags;
+  }
+
+  static fromHeader(value: string) {
+    const items = value.split(",");
+    let metadata: KVMap = {};
+    let tags: string[] = [];
+    for (const item of items) {
+      const [key, uriValue] = item.split("=");
+      const value = decodeURIComponent(uriValue);
+      if (key === "langsmith-metadata") {
+        metadata = JSON.parse(value);
+      } else if (key === "langsmith-tags") {
+        tags = value.split(",");
+      }
+    }
+
+    return new Baggage(metadata, tags);
+  }
+
+  toHeader(): string {
+    const items = [];
+    if (this.metadata && Object.keys(this.metadata).length > 0) {
+      items.push(
+        `langsmith-metadata=${encodeURIComponent(
+          JSON.stringify(this.metadata)
+        )}`
+      );
+    }
+    if (this.tags && this.tags.length > 0) {
+      items.push(`langsmith-tags=${encodeURIComponent(this.tags.join(","))}`);
+    }
+    return items.join(",");
+  }
 }
 
 export class RunTree implements BaseRun {
+  private static sharedClient: Client | null = null;
+
   id: string;
   name: RunTreeConfig["name"];
   run_type: string;
@@ -123,7 +175,7 @@ export class RunTree implements BaseRun {
   constructor(originalConfig: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
     const { metadata, ...config } = originalConfig;
-    const client = config.client ?? new Client();
+    const client = config.client ?? RunTree.getSharedClient();
     const dedupedMetadata = {
       ...metadata,
       ...config?.extra?.metadata,
@@ -156,47 +208,6 @@ export class RunTree implements BaseRun {
     }
   }
 
-  static fromRunnableConfig(
-    config: RunnableConfigLike,
-    props: {
-      name: string;
-      tags?: string[];
-      metadata?: KVMap;
-    }
-  ): RunTree {
-    // We only handle the callback manager case for now
-    const callbackManager = config?.callbacks as
-      | CallbackManagerLike
-      | undefined;
-    let parentRun: RunTree | undefined;
-    let projectName: string | undefined;
-    if (callbackManager) {
-      const parentRunId = callbackManager?.getParentRunId?.() ?? "";
-      const langChainTracer = callbackManager?.handlers?.find(
-        (handler: TracerLike) => handler?.name == "langchain_tracer"
-      ) as LangChainTracerLike | undefined;
-      parentRun = langChainTracer?.getRun?.(parentRunId);
-      projectName = langChainTracer?.projectName;
-    }
-    const dedupedTags = [
-      ...new Set((parentRun?.tags ?? []).concat(config?.tags ?? [])),
-    ];
-    const dedupedMetadata = {
-      ...parentRun?.extra?.metadata,
-      ...config?.metadata,
-    };
-    const rt = new RunTree({
-      name: props?.name ?? "<lambda>",
-      parent_run: parentRun,
-      tags: dedupedTags,
-      extra: {
-        metadata: dedupedMetadata,
-      },
-      project_name: projectName,
-    });
-    return rt;
-  }
-
   private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
@@ -217,6 +228,13 @@ export class RunTree implements BaseRun {
     };
   }
 
+  private static getSharedClient(): Client {
+    if (!RunTree.sharedClient) {
+      RunTree.sharedClient = new Client();
+    }
+    return RunTree.sharedClient;
+  }
+
   public createChild(config: RunTreeConfig): RunTree {
     const child_execution_order = this.child_execution_order + 1;
 
@@ -229,6 +247,36 @@ export class RunTree implements BaseRun {
       execution_order: child_execution_order,
       child_execution_order: child_execution_order,
     });
+
+    type ExtraWithSymbol = Record<string | symbol, unknown>;
+    const LC_CHILD = Symbol.for("lc:child_config");
+
+    const presentConfig =
+      (config.extra as ExtraWithSymbol | undefined)?.[LC_CHILD] ??
+      (this.extra as ExtraWithSymbol)[LC_CHILD];
+
+    // tracing for LangChain is defined by the _parentRunId and runMap of the tracer
+    if (isRunnableConfigLike(presentConfig)) {
+      const newConfig: RunnableConfigLike = { ...presentConfig };
+      const callbacks: CallbackManagerLike | unknown[] | undefined =
+        isCallbackManagerLike(newConfig.callbacks)
+          ? newConfig.callbacks.copy?.()
+          : undefined;
+
+      if (callbacks) {
+        // update the parent run id
+        Object.assign(callbacks, { _parentRunId: child.id });
+
+        // only populate if we're in a newer LC.JS version
+        callbacks.handlers
+          ?.find(isLangChainTracerLike)
+          ?.updateFromRunTree?.(child);
+
+        newConfig.callbacks = callbacks;
+      }
+
+      (child.extra as ExtraWithSymbol)[LC_CHILD] = newConfig;
+    }
 
     // propagate child_execution_order upwards
     const visited = new Set<string>();
@@ -326,6 +374,7 @@ export class RunTree implements BaseRun {
     const runUpdate: RunUpdate = {
       end_time: this.end_time,
       error: this.error,
+      inputs: this.inputs,
       outputs: this.outputs,
       parent_run_id: this.parent_run?.id,
       reference_example_id: this.reference_example_id,
@@ -342,6 +391,124 @@ export class RunTree implements BaseRun {
   toJSON() {
     return this._convertToCreate(this, undefined, false);
   }
+
+  static fromRunnableConfig(
+    parentConfig: RunnableConfigLike,
+    props: RunTreeConfig
+  ): RunTree {
+    // We only handle the callback manager case for now
+    const callbackManager = parentConfig?.callbacks as
+      | CallbackManagerLike
+      | undefined;
+    let parentRun: RunTree | undefined;
+    let projectName: string | undefined;
+    let client: Client | undefined;
+
+    let tracingEnabled = isTracingEnabled();
+
+    if (callbackManager) {
+      const parentRunId = callbackManager?.getParentRunId?.() ?? "";
+      const langChainTracer = callbackManager?.handlers?.find(
+        (handler: TracerLike) => handler?.name == "langchain_tracer"
+      ) as LangChainTracerLike | undefined;
+
+      parentRun = langChainTracer?.getRun?.(parentRunId);
+      projectName = langChainTracer?.projectName;
+      client = langChainTracer?.client;
+      tracingEnabled = tracingEnabled || !!langChainTracer;
+    }
+
+    if (!parentRun) {
+      return new RunTree({
+        ...props,
+        client,
+        tracingEnabled,
+        project_name: projectName,
+      });
+    }
+
+    const parentRunTree = new RunTree({
+      name: parentRun.name,
+      id: parentRun.id,
+      trace_id: parentRun.trace_id,
+      dotted_order: parentRun.dotted_order,
+      client,
+      tracingEnabled,
+      project_name: projectName,
+      tags: [
+        ...new Set((parentRun?.tags ?? []).concat(parentConfig?.tags ?? [])),
+      ],
+      extra: {
+        metadata: {
+          ...parentRun?.extra?.metadata,
+          ...parentConfig?.metadata,
+        },
+      },
+    });
+
+    return parentRunTree.createChild(props);
+  }
+
+  static fromDottedOrder(dottedOrder: string): RunTree | undefined {
+    return this.fromHeaders({ "langsmith-trace": dottedOrder });
+  }
+
+  static fromHeaders(
+    headers: Record<string, string | string[]> | HeadersLike,
+    inheritArgs?: RunTreeConfig
+  ): RunTree | undefined {
+    const rawHeaders: Record<string, string | string[] | null> =
+      "get" in headers && typeof headers.get === "function"
+        ? {
+            "langsmith-trace": headers.get("langsmith-trace"),
+            baggage: headers.get("baggage"),
+          }
+        : (headers as Record<string, string | string[]>);
+
+    const headerTrace = rawHeaders["langsmith-trace"];
+    if (!headerTrace || typeof headerTrace !== "string") return undefined;
+
+    const parentDottedOrder = headerTrace.trim();
+    const parsedDottedOrder = parentDottedOrder.split(".").map((part) => {
+      const [strTime, uuid] = part.split("Z");
+      return { strTime, time: Date.parse(strTime + "Z"), uuid };
+    });
+
+    const traceId = parsedDottedOrder[0].uuid;
+
+    const config: RunTreeConfig = {
+      ...inheritArgs,
+      name: inheritArgs?.["name"] ?? "parent",
+      run_type: inheritArgs?.["run_type"] ?? "chain",
+      start_time: inheritArgs?.["start_time"] ?? Date.now(),
+      id: parsedDottedOrder.at(-1)?.uuid,
+      trace_id: traceId,
+      dotted_order: parentDottedOrder,
+    };
+
+    if (rawHeaders["baggage"] && typeof rawHeaders["baggage"] === "string") {
+      const baggage = Baggage.fromHeader(rawHeaders["baggage"]);
+      config.metadata = baggage.metadata;
+      config.tags = baggage.tags;
+    }
+
+    return new RunTree(config);
+  }
+
+  toHeaders(headers?: HeadersLike) {
+    const result = {
+      "langsmith-trace": this.dotted_order,
+      baggage: new Baggage(this.extra?.metadata, this.tags).toHeader(),
+    };
+
+    if (headers) {
+      for (const [key, value] of Object.entries(result)) {
+        headers.set(key, value);
+      }
+    }
+
+    return result;
+  }
 }
 
 export function isRunTree(x?: unknown): x is RunTree {
@@ -352,15 +519,26 @@ export function isRunTree(x?: unknown): x is RunTree {
   );
 }
 
-function containsLangChainTracerLike(x?: unknown): x is LangChainTracerLike[] {
+function isLangChainTracerLike(x: unknown): x is LangChainTracerLike {
   return (
-    Array.isArray(x) &&
-    x.some((callback: unknown) => {
-      return (
-        typeof (callback as LangChainTracerLike).name === "string" &&
-        (callback as LangChainTracerLike).name === "langchain_tracer"
-      );
-    })
+    typeof x === "object" &&
+    x != null &&
+    typeof (x as LangChainTracerLike).name === "string" &&
+    (x as LangChainTracerLike).name === "langchain_tracer"
+  );
+}
+
+function containsLangChainTracerLike(x: unknown): x is LangChainTracerLike[] {
+  return (
+    Array.isArray(x) && x.some((callback) => isLangChainTracerLike(callback))
+  );
+}
+
+function isCallbackManagerLike(x: unknown): x is CallbackManagerLike {
+  return (
+    typeof x === "object" &&
+    x != null &&
+    Array.isArray((x as CallbackManagerLike).handlers)
   );
 }
 

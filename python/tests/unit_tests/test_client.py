@@ -10,11 +10,12 @@ import sys
 import threading
 import time
 import uuid
+import warnings
 import weakref
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -28,25 +29,23 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
+from langsmith import AsyncClient, EvaluationResult, run_trees
+from langsmith import schemas as ls_schemas
 from langsmith.client import (
     Client,
     _dumps_json,
-    _get_api_key,
-    _get_api_url,
     _is_langchain_hosted,
-    _is_localhost,
     _serialize_json,
 )
-from langsmith.schemas import Example
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
 
 def test_is_localhost() -> None:
-    assert _is_localhost("http://localhost:1984")
-    assert _is_localhost("http://localhost:1984")
-    assert _is_localhost("http://0.0.0.0:1984")
-    assert not _is_localhost("http://example.com:1984")
+    assert ls_utils._is_localhost("http://localhost:1984")
+    assert ls_utils._is_localhost("http://localhost:1984")
+    assert ls_utils._is_localhost("http://0.0.0.0:1984")
+    assert not ls_utils._is_localhost("http://example.com:1984")
 
 
 def test__is_langchain_hosted() -> None:
@@ -55,19 +54,14 @@ def test__is_langchain_hosted() -> None:
     assert _is_langchain_hosted("https://dev.api.smith.langchain.com")
 
 
-def test_validate_api_key_if_hosted(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    with pytest.raises(ls_utils.LangSmithUserError, match="API key must be provided"):
-        Client(api_url="https://api.smith.langchain.com")
-    client = Client(api_url="http://localhost:1984")
-    assert client.api_url == "http://localhost:1984"
-    assert client.api_key is None
+def _clear_env_cache():
+    ls_utils.get_env_var.cache_clear()
 
 
 def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     # Scenario 1: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT
     # are set, but api_url is not
+    _clear_env_cache()
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
@@ -76,6 +70,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Scenario 2: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT
     #  are set, and api_url is set
+    _clear_env_cache()
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
@@ -83,6 +78,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_url == "https://api.smith.langchain.com"
 
     # Scenario 3: LANGCHAIN_ENDPOINT is set, but LANGSMITH_ENDPOINT is not
+    _clear_env_cache()
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
 
@@ -90,6 +86,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_url == "https://api.smith.langchain-endpoint.com"
 
     # Scenario 4: LANGCHAIN_ENDPOINT is not set, but LANGSMITH_ENDPOINT is set
+    _clear_env_cache()
     monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
@@ -100,6 +97,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     # Scenario 1: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set,
     # but api_key is not
+    _clear_env_cache()
     monkeypatch.setenv("LANGCHAIN_API_KEY", "env_langchain_api_key")
     monkeypatch.setenv("LANGSMITH_API_KEY", "env_langsmith_api_key")
 
@@ -108,6 +106,7 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Scenario 2: Both LANGCHAIN_API_KEY and LANGSMITH_API_KEY are set,
     # and api_key is set
+    _clear_env_cache()
     monkeypatch.setenv("LANGCHAIN_API_KEY", "env_langchain_api_key")
     monkeypatch.setenv("LANGSMITH_API_KEY", "env_langsmith_api_key")
 
@@ -122,6 +121,7 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_key == "env_langchain_api_key"
 
     # Scenario 4: LANGCHAIN_API_KEY is not set, but LANGSMITH_API_KEY is set
+    _clear_env_cache()
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
     monkeypatch.setenv("LANGSMITH_API_KEY", "env_langsmith_api_key")
 
@@ -130,6 +130,7 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
@@ -160,6 +161,7 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
     with patch.dict("os.environ", {}, clear=True):
         client = Client(api_url="http://localhost:1984", api_key="123")
@@ -172,15 +174,16 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @mock.patch("langsmith.client.requests.Session")
 def test_upload_csv(mock_session_cls: mock.Mock) -> None:
+    _clear_env_cache()
     dataset_id = str(uuid.uuid4())
-    example_1 = Example(
+    example_1 = ls_schemas.Example(
         id=str(uuid.uuid4()),
         created_at=_CREATED_AT,
         inputs={"input": "1"},
         outputs={"output": "2"},
         dataset_id=dataset_id,
     )
-    example_2 = Example(
+    example_2 = ls_schemas.Example(
         id=str(uuid.uuid4()),
         created_at=_CREATED_AT,
         inputs={"input": "3"},
@@ -197,7 +200,13 @@ def test_upload_csv(mock_session_cls: mock.Mock) -> None:
         "examples": [example_1, example_2],
     }
     mock_session = mock.Mock()
-    mock_session.post.return_value = mock_response
+
+    def mock_request(*args, **kwargs):  # type: ignore
+        if args[0] == "POST" and args[1].endswith("datasets"):
+            return mock_response
+        return MagicMock()
+
+    mock_session.request.return_value = mock_response
     mock_session_cls.return_value = mock_session
 
     client = Client(
@@ -253,40 +262,6 @@ def test_async_methods() -> None:
         )
 
 
-def test_get_api_key() -> None:
-    assert _get_api_key("provided_api_key") == "provided_api_key"
-    assert _get_api_key("'provided_api_key'") == "provided_api_key"
-    assert _get_api_key('"_provided_api_key"') == "_provided_api_key"
-
-    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
-        assert _get_api_key(None) == "env_api_key"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_key(None) is None
-
-    assert _get_api_key("") is None
-    assert _get_api_key(" ") is None
-
-
-def test_get_api_url() -> None:
-    assert _get_api_url("http://provided.url") == "http://provided.url"
-
-    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None) == "http://env.url"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_url(None) == "https://api.smith.langchain.com"
-
-    with patch.dict("os.environ", {}, clear=True):
-        assert _get_api_url(None) == "https://api.smith.langchain.com"
-
-    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
-        assert _get_api_url(None) == "http://env.url"
-
-    with pytest.raises(ls_utils.LangSmithUserError):
-        _get_api_url(" ")
-
-
 def test_create_run_unicode() -> None:
     inputs = {
         "foo": "これは私の友達です",
@@ -301,6 +276,74 @@ def test_create_run_unicode() -> None:
     id_ = uuid.uuid4()
     client.create_run("my_run", inputs=inputs, run_type="llm", id=id_)
     client.update_run(id_, status="completed")
+
+
+def test_create_run_mutate() -> None:
+    inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
+    session = mock.Mock()
+    session.request = mock.Mock()
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    id_ = uuid.uuid4()
+    run_dict = dict(
+        id=id_,
+        name="my_run",
+        inputs=inputs,
+        run_type="llm",
+        trace_id=id_,
+        dotted_order=run_trees._create_current_dotted_order(
+            datetime.now(timezone.utc), id_
+        ),
+    )
+    client.create_run(**run_dict)  # type: ignore
+    inputs["messages"].append("there")  # type: ignore
+    outputs = {"messages": ["hi", "there"]}
+    client.update_run(
+        id_,
+        outputs=outputs,
+        end_time=datetime.now(timezone.utc),
+        trace_id=id_,
+        dotted_order=run_dict["dotted_order"],
+    )
+    for _ in range(10):
+        time.sleep(0.1)  # Give the background thread time to stop
+        payloads = [
+            json.loads(call[2]["data"])
+            for call in session.request.mock_calls
+            if call.args and call.args[1].endswith("runs/batch")
+        ]
+        if payloads:
+            break
+    posts = [pr for payload in payloads for pr in payload.get("post", [])]
+    patches = [pr for payload in payloads for pr in payload.get("patch", [])]
+    inputs = next(
+        (pr["inputs"] for pr in itertools.chain(posts, patches) if pr.get("inputs")),
+        {},
+    )
+    outputs = next(
+        (pr["outputs"] for pr in itertools.chain(posts, patches) if pr.get("outputs")),
+        {},
+    )
+    # Check that the mutated value wasn't posted
+    assert "messages" in inputs
+    assert inputs["messages"] == ["hi"]
+    assert "mygen" in inputs
+    assert inputs["mygen"].startswith(  # type: ignore
+        "<generator object test_create_run_mutate.<locals>."
+    )
+    assert outputs == {"messages": ["hi", "there"]}
 
 
 class CallTracker:
@@ -356,27 +399,43 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
         assert client.tracing_queue
         client.tracing_queue.join()
 
-        request_calls = [call for call in session.request.mock_calls if call.args]
+        request_calls = [
+            call
+            for call in session.request.mock_calls
+            if call.args and call.args[0] == "POST"
+        ]
         assert len(request_calls) >= 1
 
         for call in request_calls:
             assert call.args[0] == "POST"
             assert call.args[1] == "http://localhost:1984/runs/batch"
-        get_calls = [call for call in session.get.mock_calls if call.args]
+        get_calls = [
+            call
+            for call in session.request.mock_calls
+            if call.args and call.args[0] == "GET"
+        ]
         # assert len(get_calls) == 1
         for call in get_calls:
-            assert call.args[0] == f"{api_url}/info"
+            assert call.args[1] == f"{api_url}/info"
     else:
-        request_calls = [call for call in session.request.mock_calls if call.args]
+        request_calls = [
+            call
+            for call in session.request.mock_calls
+            if call.args and call.args[0] == "POST"
+        ]
 
         assert len(request_calls) == 10
         for call in request_calls:
             assert call.args[0] == "POST"
             assert call.args[1] == "http://localhost:1984/runs"
         if auto_batch_tracing:
-            get_calls = [call for call in session.get.mock_calls if call.args]
+            get_calls = [
+                call
+                for call in session.get.mock_calls
+                if call.args and call.args[0] == "GET"
+            ]
             for call in get_calls:
-                assert call.args[0] == f"{api_url}/info"
+                assert call.args[1] == f"{api_url}/info"
     del client
     time.sleep(3)  # Give the background thread time to stop
     gc.collect()  # Force garbage collection
@@ -399,7 +458,11 @@ def test_client_gc_no_batched_runs(auto_batch_tracing: bool) -> None:
     # because no trace_id/dotted_order provided, auto batch is disabled
     for _ in range(10):
         client.create_run("my_run", inputs={}, run_type="llm", id=uuid.uuid4())
-    request_calls = [call for call in session.request.mock_calls if call.args]
+    request_calls = [
+        call
+        for call in session.request.mock_calls
+        if call.args and call.args[0] == "POST"
+    ]
     assert len(request_calls) == 10
     for call in request_calls:
         assert call.args[1] == "http://localhost:1984/runs"
@@ -441,7 +504,11 @@ def test_create_run_with_filters(auto_batch_tracing: bool) -> None:
         )
         expected.append(output_val + "goodbye")
 
-    request_calls = [call for call in session.request.mock_calls if call.args]
+    request_calls = [
+        call
+        for call in session.request.mock_calls
+        if call.args and call.args[0] in {"POST", "PATCH"}
+    ]
     all_posted = "\n".join(
         [call.kwargs["data"].decode("utf-8") for call in request_calls]
     )
@@ -480,7 +547,11 @@ def test_client_gc_after_autoscale() -> None:
     gc.collect()  # Force garbage collection
     assert tracker.counter == 1, "Client was not garbage collected"
 
-    request_calls = [call for call in session.request.mock_calls if call.args]
+    request_calls = [
+        call
+        for call in session.request.mock_calls
+        if call.args and call.args[0] == "POST"
+    ]
     assert len(request_calls) >= 500 and len(request_calls) <= 550
     for call in request_calls:
         assert call.args[0] == "POST"
@@ -795,6 +866,9 @@ def test_host_url(_: MagicMock) -> None:
     client = Client(api_url="http://localhost:8000", api_key="API_KEY")
     assert client._host_url == "http://localhost"
 
+    client = Client(api_url="https://eu.api.smith.langchain.com", api_key="API_KEY")
+    assert client._host_url == "https://eu.smith.langchain.com"
+
     client = Client(api_url="https://dev.api.smith.langchain.com", api_key="API_KEY")
     assert client._host_url == "https://dev.smith.langchain.com"
 
@@ -805,7 +879,7 @@ def test_host_url(_: MagicMock) -> None:
 @patch("langsmith.client.time.sleep")
 def test_retry_on_connection_error(mock_sleep: MagicMock):
     mock_session = MagicMock()
-    client = Client(api_key="test", session=mock_session)
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
     mock_session.request.side_effect = requests.ConnectionError()
 
     with pytest.raises(ls_utils.LangSmithConnectionError):
@@ -816,7 +890,7 @@ def test_retry_on_connection_error(mock_sleep: MagicMock):
 @patch("langsmith.client.time.sleep")
 def test_http_status_500_handling(mock_sleep):
     mock_session = MagicMock()
-    client = Client(api_key="test", session=mock_session)
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
     mock_response = MagicMock()
     mock_response.status_code = 500
     mock_response.raise_for_status.side_effect = HTTPError()
@@ -830,12 +904,11 @@ def test_http_status_500_handling(mock_sleep):
 @patch("langsmith.client.time.sleep")
 def test_pass_on_409_handling(mock_sleep):
     mock_session = MagicMock()
-    client = Client(api_key="test", session=mock_session)
+    client = Client(api_key="test", session=mock_session, auto_batch_tracing=False)
     mock_response = MagicMock()
     mock_response.status_code = 409
     mock_response.raise_for_status.side_effect = HTTPError()
     mock_session.request.return_value = mock_response
-
     response = client.request_with_retries(
         "GET",
         "https://test.url",
@@ -959,7 +1032,9 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
     request_bodies = [
         op
         for call in mock_session.request.call_args_list
-        for reqs in orjson.loads(call[1]["data"]).values()
+        for reqs in (
+            orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+        )
         for op in reqs
     ]
     all_run_ids = run_ids + patch_ids
@@ -970,3 +1045,56 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
 
     # Check that no duplicate run_ids are present in the request bodies
     assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
+
+
+def test_select_eval_results():
+    expected = EvaluationResult(
+        key="foo",
+        value="bar",
+        score=7899082,
+        metadata={"a": "b"},
+        comment="hi",
+        feedback_config={"c": "d"},
+    )
+    client = Client(api_key="test")
+    for count, input_ in [
+        (1, expected),
+        (1, expected.dict()),
+        (1, {"results": [expected]}),
+        (1, {"results": [expected.dict()]}),
+        (2, {"results": [expected.dict(), expected.dict()]}),
+        (2, {"results": [expected, expected]}),
+    ]:
+        op = client._select_eval_results(input_)
+        assert len(op) == count
+        assert op == [expected] * count
+
+    expected2 = EvaluationResult(
+        key="foo",
+        metadata={"a": "b"},
+        comment="this is a comment",
+        feedback_config={"c": "d"},
+    )
+
+    as_reasoning = {
+        "reasoning": expected2.comment,
+        **expected2.dict(exclude={"comment"}),
+    }
+    for input_ in [as_reasoning, {"results": [as_reasoning]}, {"results": [expected2]}]:
+        assert client._select_eval_results(input_) == [
+            expected2,
+        ]
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+def test_validate_api_key_if_hosted(
+    monkeypatch: pytest.MonkeyPatch, client_cls: Union[Type[Client], Type[AsyncClient]]
+) -> None:
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    with pytest.warns(ls_utils.LangSmithMissingAPIKeyWarning):
+        client_cls(api_url="https://api.smith.langchain.com")
+    with warnings.catch_warnings():
+        # Check no warning is raised here.
+        warnings.simplefilter("error")
+        client_cls(api_url="http://localhost:1984")
