@@ -4684,7 +4684,7 @@ class Client:
     def delete_run_from_annotation_queue(
         self, queue_id: ID_TYPE, *, run_id: ID_TYPE
     ) -> None:
-        """Deletes a run from an annotation queue with the specified queue ID and run ID.
+        """Delete a run from an annotation queue with the specified queue ID and run ID.
 
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue.
