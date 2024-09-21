@@ -4681,6 +4681,22 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def delete_run_from_annotation_queue(
+        self, queue_id: ID_TYPE, *, run_id: ID_TYPE
+    ) -> None:
+        """Delete a run from an annotation queue with the specified queue ID and run ID.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+            run_id (ID_TYPE): The ID of the run to be added to the annotation
+                queue.
+        """
+        response = self.request_with_retries(
+            "DELETE",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/{_as_uuid(run_id, 'run_id')}",
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     def get_run_from_annotation_queue(
         self, queue_id: ID_TYPE, *, index: int
     ) -> ls_schemas.RunWithAnnotationQueueInfo:
