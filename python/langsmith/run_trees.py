@@ -7,14 +7,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 from uuid import UUID, uuid4
+from pydantic import model_validator, ConfigDict
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
 except ImportError:
     from pydantic import (  # type: ignore[assignment, no-redef]
-        Field,
-        root_validator,
-    )
+        Field)
 
 import threading
 import urllib.parse
@@ -68,15 +67,10 @@ class RunTree(ls_schemas.RunBase):
         default="", description="The order of the run in the tree."
     )
     trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True, extra="allow")
 
-    class Config:
-        """Pydantic model configuration."""
-
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-        extra = "allow"
-
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
         if values.get("name") is None and values.get("serialized") is not None:
@@ -106,7 +100,8 @@ class RunTree(ls_schemas.RunBase):
             values["outputs"] = {}
         return values
 
-    @root_validator(pre=False)
+    @model_validator()
+    @classmethod
     def ensure_dotted_order(cls, values: dict) -> dict:
         """Ensure the dotted order of the run."""
         current_dotted_order = values.get("dotted_order")

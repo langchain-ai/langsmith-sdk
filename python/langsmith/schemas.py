@@ -18,6 +18,7 @@ from typing import (
 from uuid import UUID
 
 from typing_extensions import TypedDict
+from pydantic import ConfigDict
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
@@ -51,17 +52,13 @@ class ExampleBase(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class ExampleCreate(ExampleBase):
     """Example create model."""
 
-    id: Optional[UUID]
+    id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     split: Optional[Union[str, List[str]]] = None
 
@@ -116,11 +113,7 @@ class ExampleUpdate(BaseModel):
     outputs: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
     split: Optional[Union[str, List[str]]] = None
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class DataType(str, Enum):
@@ -137,11 +130,7 @@ class DatasetBase(BaseModel):
     name: str
     description: Optional[str] = None
     data_type: Optional[DataType] = None
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class Dataset(DatasetBase):
@@ -430,7 +419,7 @@ class FeedbackBase(BaseModel):
     """The time the feedback was created."""
     modified_at: Optional[datetime] = None
     """The time the feedback was last modified."""
-    run_id: Optional[UUID]
+    run_id: Optional[UUID] = None
     """The associated run ID this feedback is logged for."""
     key: str
     """The metric name, tag, or aspect to provide feedback on."""
@@ -452,11 +441,7 @@ class FeedbackBase(BaseModel):
     """For preference scoring, this group ID is shared across feedbacks for each
 
     run in the group that was being compared."""
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class FeedbackCategory(TypedDict, total=False):
@@ -522,7 +507,7 @@ class TracerSession(BaseModel):
     """Extra metadata for the project."""
     tenant_id: UUID
     """The tenant ID this project belongs to."""
-    reference_dataset_id: Optional[UUID]
+    reference_dataset_id: Optional[UUID] = None
     """The reference dataset IDs this project's runs were generated on."""
 
     _host_url: Optional[str] = PrivateAttr(default=None)
@@ -560,35 +545,35 @@ class TracerSessionResult(TracerSession):
     Sessions are also referred to as "Projects" in the UI.
     """
 
-    run_count: Optional[int]
+    run_count: Optional[int] = None
     """The number of runs in the project."""
-    latency_p50: Optional[timedelta]
+    latency_p50: Optional[timedelta] = None
     """The median (50th percentile) latency for the project."""
-    latency_p99: Optional[timedelta]
+    latency_p99: Optional[timedelta] = None
     """The 99th percentile latency for the project."""
-    total_tokens: Optional[int]
+    total_tokens: Optional[int] = None
     """The total number of tokens consumed in the project."""
-    prompt_tokens: Optional[int]
+    prompt_tokens: Optional[int] = None
     """The total number of prompt tokens consumed in the project."""
-    completion_tokens: Optional[int]
+    completion_tokens: Optional[int] = None
     """The total number of completion tokens consumed in the project."""
-    last_run_start_time: Optional[datetime]
+    last_run_start_time: Optional[datetime] = None
     """The start time of the last run in the project."""
-    feedback_stats: Optional[Dict[str, Any]]
+    feedback_stats: Optional[Dict[str, Any]] = None
     """Feedback stats for the project."""
-    run_facets: Optional[List[Dict[str, Any]]]
+    run_facets: Optional[List[Dict[str, Any]]] = None
     """Facets for the runs in the project."""
-    total_cost: Optional[Decimal]
+    total_cost: Optional[Decimal] = None
     """The total estimated LLM cost associated with the completion tokens."""
-    prompt_cost: Optional[Decimal]
+    prompt_cost: Optional[Decimal] = None
     """The estimated cost associated with the prompt (input) tokens."""
-    completion_cost: Optional[Decimal]
+    completion_cost: Optional[Decimal] = None
     """The estimated cost associated with the completion tokens."""
-    first_token_p50: Optional[timedelta]
+    first_token_p50: Optional[timedelta] = None
     """The median (50th percentile) time to process the first token."""
-    first_token_p99: Optional[timedelta]
+    first_token_p99: Optional[timedelta] = None
     """The 99th percentile time to process the first token."""
-    error_rate: Optional[float]
+    error_rate: Optional[float] = None
     """The error rate for the project."""
 
 
@@ -796,7 +781,7 @@ class Prompt(BaseModel):
     """The ID of the original prompt, if forked."""
     upstream_repo_id: Optional[str] = None
     """The ID of the upstream prompt, if forked."""
-    owner: Optional[str]
+    owner: Optional[str] = None
     """The handle of the owner of the prompt."""
     full_name: str
     """The full name of the prompt. (owner + repo_handle)"""

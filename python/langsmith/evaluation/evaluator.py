@@ -18,6 +18,7 @@ from typing import (
 )
 
 from typing_extensions import TypedDict
+from pydantic import ConfigDict
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
@@ -90,12 +91,10 @@ class EvaluationResult(BaseModel):
     
     If none provided, the evaluation feedback is applied to the
     root trace being."""
+    model_config = ConfigDict(allow_extra=False)
 
-    class Config:
-        """Pydantic model configuration."""
-
-        allow_extra = False
-
+    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
     @validator("value", pre=True)
     def check_value_non_numeric(cls, v, values):
         """Check that the value is not numeric."""
