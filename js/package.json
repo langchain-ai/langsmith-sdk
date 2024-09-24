@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.1.60",
+  "version": "0.1.61",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -53,6 +53,14 @@
     "singletons/traceable.js",
     "singletons/traceable.d.ts",
     "singletons/traceable.d.cts",
+    "utils/prompts/anthropic.cjs",
+    "utils/prompts/anthropic.js",
+    "utils/prompts/anthropic.d.ts",
+    "utils/prompts/anthropic.d.cts",
+    "utils/prompts/openai.cjs",
+    "utils/prompts/openai.js",
+    "utils/prompts/openai.d.ts",
+    "utils/prompts/openai.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -106,12 +114,14 @@
   },
   "devDependencies": {
     "@ai-sdk/openai": "^0.0.40",
+    "@anthropic-ai/sdk": "^0.27.3",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@jest/globals": "^29.5.0",
+    "@langchain/anthropic": "^0.3.2",
     "@langchain/core": "^0.3.1",
     "@langchain/langgraph": "^0.2.3",
-    "@langchain/openai": "^0.3.0",
+    "@langchain/openai": "^0.3.1",
     "@tsconfig/recommended": "^1.0.2",
     "@types/jest": "^29.5.1",
     "@typescript-eslint/eslint-plugin": "^5.59.8",
@@ -265,6 +275,24 @@
       },
       "import": "./singletons/traceable.js",
       "require": "./singletons/traceable.cjs"
+    },
+    "./utils/prompts/anthropic": {
+      "types": {
+        "import": "./utils/prompts/anthropic.d.ts",
+        "require": "./utils/prompts/anthropic.d.cts",
+        "default": "./utils/prompts/anthropic.d.ts"
+      },
+      "import": "./utils/prompts/anthropic.js",
+      "require": "./utils/prompts/anthropic.cjs"
+    },
+    "./utils/prompts/openai": {
+      "types": {
+        "import": "./utils/prompts/openai.d.ts",
+        "require": "./utils/prompts/openai.d.cts",
+        "default": "./utils/prompts/openai.d.ts"
+      },
+      "import": "./utils/prompts/openai.js",
+      "require": "./utils/prompts/openai.cjs"
     },
     "./package.json": "./package.json"
   }
