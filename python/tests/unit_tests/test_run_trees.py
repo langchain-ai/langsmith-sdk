@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -22,7 +23,36 @@ def test_run_tree_accepts_tpe() -> None:
 
 def test_lazy_rt() -> None:
     run_tree = RunTree(name="foo")
+    assert run_tree.ls_client is None
+    assert run_tree._client is None
     assert isinstance(run_tree.client, Client)
+    client = Client(api_key="foo")
+    run_tree._client = client
+    assert run_tree._client == client
+
+    assert RunTree(name="foo", client=client).client == client
+    assert RunTree(name="foo", ls_client=client).client == client
+
+
+def test_json_serializable():
+    run_tree = RunTree(name="foo")
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    assert isinstance(run_tree.client, Client)
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    d = json.loads(run_tree.json())
+    assert not d.get("client") and not d.get("ls_client")
+    run_tree = RunTree(name="foo", ls_client=Client())
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    d = json.loads(run_tree.json())
+    assert not d.get("client") and not d.get("ls_client")
+    run_tree = RunTree(name="foo", client=Client())
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    d = json.loads(run_tree.json())
+    assert not d.get("client") and not d.get("ls_client")
 
 
 @pytest.mark.parametrize(
