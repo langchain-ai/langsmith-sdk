@@ -79,6 +79,14 @@ Chinook_Sqlite.sql
 /singletons/traceable.js
 /singletons/traceable.d.ts
 /singletons/traceable.d.cts
+/utils/prompts/anthropic.cjs
+/utils/prompts/anthropic.js
+/utils/prompts/anthropic.d.ts
+/utils/prompts/anthropic.d.cts
+/utils/prompts/openai.cjs
+/utils/prompts/openai.js
+/utils/prompts/openai.d.ts
+/utils/prompts/openai.d.cts
 /index.cjs
 /index.js
 /index.d.ts
