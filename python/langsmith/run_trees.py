@@ -56,13 +56,13 @@ class RunTree(ls_schemas.RunBase):
     events: List[Dict] = Field(default_factory=list)
     """List of events associated with the run, like
     start and end events."""
-    _client: Optional[Client] = None
+    ls_client: Optional[Any] = Field(default=None, exclude=True)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
     trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
     model_config = ConfigDict(
-        arbitrary_types_allowed=True, populate_by_name=True, extra="allow"
+        arbitrary_types_allowed=True, populate_by_name=True, extra="ignore"
     )
 
     @model_validator(mode="before")
@@ -77,7 +77,11 @@ class RunTree(ls_schemas.RunBase):
         if values.get("name") is None:
             values["name"] = "Unnamed"
         if "client" in values:  # Handle user-constructed clients
-            values["_client"] = values["client"]
+            values["ls_client"] = values.pop("client")
+        elif "_client" in values:
+            values["ls_client"] = values.pop("_client")
+        if not values.get("ls_client"):
+            values["ls_client"] = None
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
         if "id" not in values:
@@ -117,9 +121,22 @@ class RunTree(ls_schemas.RunBase):
         """Return the client."""
         # Lazily load the client
         # If you never use this for API calls, it will never be loaded
-        if not self._client:
-            self._client = get_cached_client()
-        return self._client
+        if self.ls_client is None:
+            self.ls_client = get_cached_client()
+        return self.ls_client
+
+    @property
+    def _client(self) -> Optional[Client]:
+        # For backwards compat
+        return self.ls_client
+
+    def __setattr__(self, name, value):
+        """Set the _client specially."""
+        # For backwards compat
+        if name == "_client":
+            self.ls_client = value
+        else:
+            return super().__setattr__(name, value)
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
@@ -237,7 +254,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
-            _client=self._client,
+            ls_client=self.ls_client,
             tags=tags,
         )
         self.child_runs.append(run)

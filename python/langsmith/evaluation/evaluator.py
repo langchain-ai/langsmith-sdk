@@ -84,8 +84,6 @@ class EvaluationResult(BaseModel):
     root trace being."""
     model_config = ConfigDict(allow_extra=False)
 
-
-
     @field_validator("value", mode="before")
     def check_value_non_numeric(cls, score: Optional[Any], info: ValidationInfo) -> int:
         """Check that the value is not numeric."""
