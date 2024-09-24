@@ -16,11 +16,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncGenerator,
+    AsyncIterator,
     Awaitable,
     Callable,
     Dict,
     Generator,
     Generic,
+    Iterator,
     List,
     Mapping,
     Optional,
@@ -88,13 +90,6 @@ def get_tracing_context(
             "client": _CLIENT.get(),
         }
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
-
-
-def _set_tracing_context(context: Dict[str, Any]):
-    """Set the tracing context."""
-    for k, v in context.items():
-        var = _CONTEXT_KEYS[k]
-        var.set(v)
 
 
 @contextlib.contextmanager
@@ -465,19 +460,9 @@ def traceable(
         invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
     )
     outputs_processor = kwargs.pop("process_outputs", None)
-
-    def _on_run_end(
-        container: _TraceableContainer,
-        outputs: Optional[Any] = None,
-        error: Optional[BaseException] = None,
-    ) -> None:
-        """Handle the end of run."""
-        try:
-            if outputs_processor is not None:
-                outputs = outputs_processor(outputs)
-            _container_end(container, outputs=outputs, error=error)
-        except BaseException as e:
-            LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
+    _on_run_end = functools.partial(
+        _handle_container_end, outputs_processor=outputs_processor
+    )
 
     if kwargs:
         warnings.warn(
@@ -570,34 +555,19 @@ def traceable(
                             **get_tracing_context(run_container["context"])
                         ):
                             async_gen_result = await async_gen_result
-                try:
-                    while True:
-                        if accepts_context:
-                            item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
-                                aitertools.py_anext(async_gen_result),  # type: ignore[arg-type]
-                                context=run_container["context"],
-                            )
-                        else:
-                            # Python < 3.11
-                            with tracing_context(
-                                **get_tracing_context(run_container["context"])
-                            ):
-                                item = await aitertools.py_anext(async_gen_result)
-                        if run_type == "llm":
-                            if run_container["new_run"]:
-                                run_container["new_run"].add_event(
-                                    {
-                                        "name": "new_token",
-                                        "time": datetime.datetime.now(
-                                            datetime.timezone.utc
-                                        ).isoformat(),
-                                        "kwargs": {"token": item},
-                                    }
-                                )
-                        results.append(item)
-                        yield item
-                except StopAsyncIteration:
-                    pass
+
+                async for item in _process_async_iterator(
+                    generator=async_gen_result,
+                    run_container=run_container,
+                    is_llm_run=(
+                        run_container["new_run"].run_type == "llm"
+                        if run_container["new_run"]
+                        else False
+                    ),
+                    accepts_context=accepts_context,
+                    results=results,
+                ):
+                    yield item
             except BaseException as e:
                 await asyncio.shield(
                     aitertools.aio_to_thread(_on_run_end, run_container, error=e)
@@ -663,45 +633,28 @@ def traceable(
             )
             results: List[Any] = []
             function_return: Any = None
+
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                    # TODO: Nesting is ambiguous if a nested traceable function is only
-                    # called mid-generation. Need to explicitly accept run_tree to get
-                    # around this.
                 if not func_accepts_config:
                     kwargs.pop("config", None)
                 generator_result = run_container["context"].run(func, *args, **kwargs)
-                try:
-                    while True:
-                        item = run_container["context"].run(next, generator_result)
-                        if run_type == "llm":
-                            if run_container["new_run"]:
-                                run_container["new_run"].add_event(
-                                    {
-                                        "name": "new_token",
-                                        "time": datetime.datetime.now(
-                                            datetime.timezone.utc
-                                        ).isoformat(),
-                                        "kwargs": {"token": item},
-                                    }
-                                )
-                        results.append(item)
-                        try:
-                            yield item
-                        except GeneratorExit:
-                            break
-                except StopIteration as e:
-                    function_return = e.value
-                    if function_return is not None:
-                        # In 99% of cases, people yield OR return; to keep
-                        # backwards compatibility, we'll only return if there's
-                        # return value is non-null.
-                        results.append(function_return)
+
+                function_return = yield from _process_iterator(
+                    generator_result,
+                    run_container,
+                    is_llm_run=run_type == "llm",
+                    results=results,
+                )
+
+                if function_return is not None:
+                    results.append(function_return)
 
             except BaseException as e:
                 _on_run_end(run_container, error=e)
                 raise e
+
             if results:
                 if reduce_fn:
                     try:
@@ -716,17 +669,88 @@ def traceable(
             _on_run_end(run_container, outputs=function_result)
             return function_return
 
+        # "Stream" functions (used in methods like OpenAI/Anthropic's SDKs)
+        # are functions that return iterable responses and should not be
+        # considered complete until the streaming is completed
+        @functools.wraps(func)
+        def stream_wrapper(
+            *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
+        ) -> Any:
+            trace_container = _setup_run(
+                func,
+                container_input=container_input,
+                langsmith_extra=langsmith_extra,
+                args=args,
+                kwargs=kwargs,
+            )
+
+            try:
+                if func_accepts_parent_run:
+                    kwargs["run_tree"] = trace_container["new_run"]
+                if not func_accepts_config:
+                    kwargs.pop("config", None)
+                stream = trace_container["context"].run(func, *args, **kwargs)
+            except Exception as e:
+                _on_run_end(trace_container, error=e)
+                raise
+
+            if hasattr(stream, "__iter__"):
+                return _TracedStream(stream, trace_container, reduce_fn)
+            elif hasattr(stream, "__aiter__"):
+                # sync function -> async iterable (unexpected)
+                return _TracedAsyncStream(stream, trace_container, reduce_fn)
+
+            # If it's not iterable, end the trace immediately
+            _on_run_end(trace_container, outputs=stream)
+            return stream
+
+        @functools.wraps(func)
+        async def async_stream_wrapper(
+            *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
+        ) -> Any:
+            trace_container = await aitertools.aio_to_thread(
+                _setup_run,
+                func,
+                container_input=container_input,
+                langsmith_extra=langsmith_extra,
+                args=args,
+                kwargs=kwargs,
+            )
+
+            try:
+                if func_accepts_parent_run:
+                    kwargs["run_tree"] = trace_container["new_run"]
+                if not func_accepts_config:
+                    kwargs.pop("config", None)
+                stream = await func(*args, **kwargs)
+            except Exception as e:
+                await aitertools.aio_to_thread(_on_run_end, trace_container, error=e)
+                raise
+
+            if hasattr(stream, "__aiter__"):
+                return _TracedAsyncStream(stream, trace_container, reduce_fn)
+            elif hasattr(stream, "__iter__"):
+                # Async function -> sync iterable
+                return _TracedStream(stream, trace_container, reduce_fn)
+
+            # If it's not iterable, end the trace immediately
+            await aitertools.aio_to_thread(_on_run_end, trace_container, outputs=stream)
+            return stream
+
         if inspect.isasyncgenfunction(func):
             selected_wrapper: Callable = async_generator_wrapper
+        elif inspect.isgeneratorfunction(func):
+            selected_wrapper = generator_wrapper
         elif is_async(func):
             if reduce_fn:
-                selected_wrapper = async_generator_wrapper
+                selected_wrapper = async_stream_wrapper
             else:
                 selected_wrapper = async_wrapper
-        elif reduce_fn or inspect.isgeneratorfunction(func):
-            selected_wrapper = generator_wrapper
         else:
-            selected_wrapper = wrapper
+            if reduce_fn:
+                selected_wrapper = stream_wrapper
+            else:
+                selected_wrapper = wrapper
         setattr(selected_wrapper, "__langsmith_traceable__", True)
         sig = inspect.signature(selected_wrapper)
         if not sig.parameters.get("config"):
@@ -1154,7 +1178,6 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
 
 
 ## Private Methods and Objects
-
 _VALID_RUN_TYPES = {
     "tool",
     "chain",
@@ -1409,6 +1432,21 @@ def _setup_run(
     return response_container
 
 
+def _handle_container_end(
+    container: _TraceableContainer,
+    outputs: Optional[Any] = None,
+    error: Optional[BaseException] = None,
+    outputs_processor: Optional[Callable[..., dict]] = None,
+) -> None:
+    """Handle the end of run."""
+    try:
+        if outputs_processor is not None:
+            outputs = outputs_processor(outputs)
+        _container_end(container, outputs=outputs, error=error)
+    except BaseException as e:
+        LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
+
+
 def _is_traceable_function(func: Callable) -> bool:
     return getattr(func, "__langsmith_traceable__", False)
 
@@ -1441,3 +1479,233 @@ def _get_inputs_safe(
     except BaseException as e:
         LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}
+
+
+def _set_tracing_context(context: Dict[str, Any]):
+    """Set the tracing context."""
+    for k, v in context.items():
+        var = _CONTEXT_KEYS[k]
+        var.set(v)
+
+
+def _process_iterator(
+    generator: Iterator[T],
+    run_container: _TraceableContainer,
+    is_llm_run: bool,
+    # Results is mutated
+    results: List[Any],
+) -> Generator[T, None, Any]:
+    try:
+        while True:
+            item = run_container["context"].run(next, generator)
+            if is_llm_run and run_container["new_run"]:
+                run_container["new_run"].add_event(
+                    {
+                        "name": "new_token",
+                        "time": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
+                        "kwargs": {"token": item},
+                    }
+                )
+            results.append(item)
+            yield item
+    except StopIteration as e:
+        return e.value
+
+
+async def _process_async_iterator(
+    generator: AsyncIterator[T],
+    run_container: _TraceableContainer,
+    *,
+    is_llm_run: bool,
+    accepts_context: bool,
+    results: List[Any],
+) -> AsyncGenerator[T, None]:
+    try:
+        while True:
+            if accepts_context:
+                item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
+                    aitertools.py_anext(generator),  # type: ignore[arg-type]
+                    context=run_container["context"],
+                )
+            else:
+                # Python < 3.11
+                with tracing_context(**get_tracing_context(run_container["context"])):
+                    item = await aitertools.py_anext(generator)
+            if is_llm_run and run_container["new_run"]:
+                run_container["new_run"].add_event(
+                    {
+                        "name": "new_token",
+                        "time": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
+                        "kwargs": {"token": item},
+                    }
+                )
+            results.append(item)
+            yield item
+    except StopAsyncIteration:
+        pass
+
+
+T = TypeVar("T")
+
+
+class _TracedStreamBase(Generic[T]):
+    """Base class for traced stream objects."""
+
+    def __init__(
+        self,
+        stream: Union[Iterator[T], AsyncIterator[T]],
+        trace_container: _TraceableContainer,
+        reduce_fn: Optional[Callable] = None,
+    ):
+        self.__ls_stream__ = stream
+        self.__ls_trace_container__ = trace_container
+        self.__ls_completed__ = False
+        self.__ls_reduce_fn__ = reduce_fn
+        self.__ls_accumulated_output__: list[T] = []
+        self.__is_llm_run__ = (
+            trace_container["new_run"].run_type == "llm"
+            if trace_container["new_run"]
+            else False
+        )
+
+    def __getattr__(self, name: str):
+        return getattr(self.__ls_stream__, name)
+
+    def __dir__(self):
+        return list(set(dir(self.__class__) + dir(self.__ls_stream__)))
+
+    def __repr__(self):
+        return f"Traceable({self.__ls_stream__!r})"
+
+    def __str__(self):
+        return str(self.__ls_stream__)
+
+    def __del__(self):
+        try:
+            if not self.__ls_completed__:
+                self._end_trace()
+        except BaseException:
+            pass
+        try:
+            self.__ls_stream__.__del__()
+        except BaseException:
+            pass
+
+    def _end_trace(self, error: Optional[BaseException] = None):
+        if self.__ls_completed__:
+            return
+        try:
+            if self.__ls_reduce_fn__:
+                reduced_output = self.__ls_reduce_fn__(self.__ls_accumulated_output__)
+            else:
+                reduced_output = self.__ls_accumulated_output__
+            _container_end(
+                self.__ls_trace_container__, outputs=reduced_output, error=error
+            )
+        finally:
+            self.__ls_completed__ = True
+
+
+class _TracedStream(_TracedStreamBase, Generic[T]):
+    """A wrapper for synchronous stream objects that handles tracing."""
+
+    def __init__(
+        self,
+        stream: Iterator[T],
+        trace_container: _TraceableContainer,
+        reduce_fn: Optional[Callable] = None,
+    ):
+        super().__init__(
+            stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
+        )
+        self.__ls_stream__ = stream
+        self.__ls__gen__ = _process_iterator(
+            self.__ls_stream__,
+            self.__ls_trace_container__,
+            is_llm_run=self.__is_llm_run__,
+            results=self.__ls_accumulated_output__,
+        )
+
+    def __next__(self) -> T:
+        try:
+            return next(self.__ls__gen__)
+        except StopIteration:
+            self._end_trace()
+            raise
+
+    def __iter__(self) -> Iterator[T]:
+        try:
+            yield from self.__ls__gen__
+        except BaseException as e:
+            self._end_trace(error=e)
+            raise
+        else:
+            self._end_trace()
+
+    def __enter__(self):
+        return self.__ls_stream__.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return self.__ls_stream__.__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._end_trace(error=exc_val if exc_type else None)
+
+
+class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
+    """A wrapper for asynchronous stream objects that handles tracing."""
+
+    def __init__(
+        self,
+        stream: AsyncIterator[T],
+        trace_container: _TraceableContainer,
+        reduce_fn: Optional[Callable] = None,
+    ):
+        super().__init__(
+            stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
+        )
+        self.__ls_stream__ = stream
+        self.__ls_gen = _process_async_iterator(
+            generator=self.__ls_stream__,
+            run_container=self.__ls_trace_container__,
+            is_llm_run=self.__is_llm_run__,
+            accepts_context=aitertools.asyncio_accepts_context(),
+            results=self.__ls_accumulated_output__,
+        )
+
+    async def _aend_trace(self, error: Optional[BaseException] = None):
+        ctx = copy_context()
+        await asyncio.shield(
+            aitertools.aio_to_thread(self._end_trace, error, __ctx=ctx)
+        )
+        _set_tracing_context(get_tracing_context(ctx))
+
+    async def __anext__(self) -> T:
+        try:
+            return cast(T, await aitertools.py_anext(self.__ls_gen))
+        except StopAsyncIteration:
+            await self._aend_trace()
+            raise
+
+    async def __aiter__(self) -> AsyncIterator[T]:
+        try:
+            async for item in self.__ls_gen:
+                yield item
+        except BaseException:
+            await self._aend_trace()
+            raise
+        else:
+            await self._aend_trace()
+
+    async def __aenter__(self):
+        return await self.__ls_stream__.__aenter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return await self.__ls_stream__.__aexit__(exc_type, exc_val, exc_tb)
+        finally:
+            await self._aend_trace()
