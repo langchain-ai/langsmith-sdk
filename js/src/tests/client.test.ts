@@ -85,6 +85,12 @@ describe("Client", () => {
     });
   });
 
+  it("should trim trailing slash on a passed apiUrl", () => {
+    const client = new Client({ apiUrl: "https://example.com/" });
+    const result = (client as any).apiUrl;
+    expect(result).toBe("https://example.com");
+  });
+
   describe("getHostUrl", () => {
     it("should return the webUrl if it exists", () => {
       const client = new Client({
@@ -106,6 +112,12 @@ describe("Client", () => {
         webUrl: "https://example.com",
         apiKey: "test-api-key",
       });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://example.com");
+    });
+
+    it("should trim trailing slash on a passed webUrl", () => {
+      const client = new Client({ webUrl: "https://example.com/" });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://example.com");
     });
