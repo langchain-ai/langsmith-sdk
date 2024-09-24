@@ -972,6 +972,7 @@ def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
                 "id": str(uuid.uuid4()),
                 "trace_id": str(uuid.uuid4()),
                 "dotted_order": str(uuid.uuid4()),
+                "start_time": datetime.now(tz=timezone.utc),
             }
         ],
     )
