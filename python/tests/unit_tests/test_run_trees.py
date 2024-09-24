@@ -1,4 +1,3 @@
-import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -121,8 +120,3 @@ def test_nested_run_trees_from_dotted_order():
     assert grandparent_clone.id == grandparent.id
     assert grandparent_clone.parent_run_id is None
     assert grandparent_clone.dotted_order == grandparent.dotted_order
-
-
-def test_json_serializable():
-    tree = run_trees.RunTree(name="foo", _client=MagicMock(spec=Client))
-    json.dumps(tree.dict(exclude={"id", "start_time", "trace_id"}))

@@ -9,11 +9,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import Field, PrivateAttr, root_validator  # type: ignore[import]
+    from pydantic.v1 import Field, root_validator  # type: ignore[import]
 except ImportError:
     from pydantic import (  # type: ignore[assignment, no-redef]
         Field,
-        PrivateAttr,
         root_validator,
     )
 
@@ -64,7 +63,7 @@ class RunTree(ls_schemas.RunBase):
     events: List[Dict] = Field(default_factory=list)
     """List of events associated with the run, like
     start and end events."""
-    _client: Optional[Client] = PrivateAttr(default=None)
+    _client: Optional[Client] = Field(default=None, exclude=True)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
