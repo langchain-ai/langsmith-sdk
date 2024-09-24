@@ -141,6 +141,14 @@ class RunTree(ls_schemas.RunBase):
         # For backwards compat
         return self.ls_client
 
+    def __setattr__(self, name, value):
+        """Set the _client specially."""
+        # For backwards compat
+        if name == "_client":
+            self.ls_client = value
+        else:
+            return super().__setattr__(name, value)
+
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
         if isinstance(tags, str):

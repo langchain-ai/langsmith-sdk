@@ -24,8 +24,12 @@ def test_run_tree_accepts_tpe() -> None:
 def test_lazy_rt() -> None:
     run_tree = RunTree(name="foo")
     assert run_tree.ls_client is None
+    assert run_tree._client is None
     assert isinstance(run_tree.client, Client)
-    client = Client()
+    client = Client(api_key="foo")
+    run_tree._client = client
+    assert run_tree._client == client
+
     assert RunTree(name="foo", client=client).client == client
     assert RunTree(name="foo", ls_client=client).client == client
 
