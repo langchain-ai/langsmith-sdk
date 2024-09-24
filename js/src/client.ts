@@ -439,8 +439,14 @@ export class Client {
 
     this.tracingSampleRate = getTracingSamplingRate();
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
+    if (this.apiUrl.endsWith("/")) {
+      this.apiUrl = this.apiUrl.slice(0, -1);
+    }
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
+    if (this.webUrl?.endsWith("/")) {
+      this.webUrl = this.webUrl.slice(0, -1);
+    }
     this.timeout_ms = config.timeout_ms ?? 12_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
     this.batchIngestCaller = new AsyncCaller({
@@ -724,7 +730,7 @@ export class Client {
       immediatelyTriggerBatch ||
       this.autoBatchQueue.size > this.pendingAutoBatchedRunLimit
     ) {
-      await this.drainAutoBatchQueue();
+      await this.drainAutoBatchQueue().catch(console.error);
     }
     if (this.autoBatchQueue.size > 0) {
       this.autoBatchTimeout = setTimeout(

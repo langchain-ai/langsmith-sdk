@@ -769,6 +769,49 @@ class PromptCommit(BaseModel):
     """The list of examples."""
 
 
+class ListedPromptCommit(BaseModel):
+    """Represents a listed prompt commit with associated metadata."""
+
+    id: UUID
+    """The unique identifier for the prompt commit."""
+
+    owner: str
+    """The owner of the prompt commit."""
+
+    repo: str
+    """The repository name of the prompt commit."""
+
+    manifest_id: Optional[UUID] = None
+    """The optional identifier for the manifest associated with this commit."""
+
+    repo_id: Optional[UUID] = None
+    """The optional identifier for the repository."""
+
+    parent_id: Optional[UUID] = None
+    """The optional identifier for the parent commit."""
+
+    commit_hash: Optional[str] = None
+    """The optional hash of the commit."""
+
+    created_at: Optional[datetime] = None
+    """The optional timestamp when the commit was created."""
+
+    updated_at: Optional[datetime] = None
+    """The optional timestamp when the commit was last updated."""
+
+    example_run_ids: Optional[List[UUID]] = Field(default_factory=list)
+    """A list of example run identifiers associated with this commit."""
+
+    num_downloads: Optional[int] = 0
+    """The number of times this commit has been downloaded."""
+
+    num_views: Optional[int] = 0
+    """The number of times this commit has been viewed."""
+
+    parent_commit_hash: Optional[str] = None
+    """The optional hash of the parent commit."""
+
+
 class Prompt(BaseModel):
     """Represents a Prompt with metadata."""
 
