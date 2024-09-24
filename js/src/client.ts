@@ -722,7 +722,7 @@ export class Client {
       immediatelyTriggerBatch ||
       this.autoBatchQueue.size > this.pendingAutoBatchedRunLimit
     ) {
-      await this.drainAutoBatchQueue();
+      await this.drainAutoBatchQueue().catch(console.error);
     }
     if (this.autoBatchQueue.size > 0) {
       this.autoBatchTimeout = setTimeout(
