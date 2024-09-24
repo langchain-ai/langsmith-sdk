@@ -21,5 +21,5 @@ test("basic traceable implementation", async () => {
     stream: false,
   });
 
-  console.log(anthropicResponse);
+  expect(anthropicResponse.content).toBeDefined();
 });
