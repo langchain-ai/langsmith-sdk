@@ -1,7 +1,9 @@
+import { jest } from "@jest/globals";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
+import { Client, overrideFetchImplementation } from "../index.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -24,6 +26,37 @@ test("basic traceable implementation", async () => {
     nodes: ["llm:0"],
     edges: [],
   });
+});
+
+test("404s should only log, not throw an error", async () => {
+  const overriddenFetch = jest.fn(() =>
+    Promise.resolve({
+      ok: false,
+      status: 404,
+      statusText: "Expected test error",
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve("Expected test error."),
+    })
+  );
+  overrideFetchImplementation(overriddenFetch);
+  const client = new Client({
+    apiUrl: "https://foobar.notreal",
+  });
+  const llm = traceable(
+    async function* llm(input: string) {
+      const response = input.repeat(2).split("");
+      for (const char of response) {
+        yield char;
+      }
+    },
+    { client, tracingEnabled: true }
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of llm("Hello world")) {
+    // pass
+  }
+  expect(overriddenFetch).toHaveBeenCalled();
 });
 
 test("nested traceable implementation", async () => {
