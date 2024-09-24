@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from langsmith.evaluation import aevaluate, evaluate
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
     from langsmith.run_helpers import (
-        configure,
+        configure_context,
         get_current_run_tree,
         get_tracing_context,
         trace,
@@ -111,6 +111,10 @@ def __getattr__(name: str) -> Any:
         )
 
         return ContextThreadPoolExecutor
+    elif name == "configure_context":
+        from langsmith.run_helpers import configure_context
+
+        return configure_context
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -134,4 +138,5 @@ __all__ = [
     "get_current_run_tree",
     "ContextThreadPoolExecutor",
     "AsyncClient",
+    "configure_context",
 ]

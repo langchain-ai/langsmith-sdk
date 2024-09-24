@@ -111,7 +111,7 @@ class TracingContextVars(TypedDict, total=False):
     client: ls_client.Client
 
 
-def configure(**vars: TracingContextVars):
+def configure_context(**vars: TracingContextVars):
     """Set the tracing context."""
     for k, v in vars.items():
         var = _CONTEXT_KEYS[k]
@@ -156,7 +156,7 @@ def tracing_context(
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
     enabled = enabled if enabled is not None else current_context.get("enabled")
-    configure(
+    configure_context(
         {
             "parent": parent_run,
             "project_name": project_name,
@@ -169,7 +169,7 @@ def tracing_context(
     try:
         yield
     finally:
-        configure(current_context)
+        configure_context(current_context)
 
 
 # Alias for backwards compatibility
@@ -1009,7 +1009,7 @@ class trace:
             if enabled:
                 self.new_run.patch()
 
-            configure(self.old_ctx)
+            configure_context(self.old_ctx)
         else:
             warnings.warn("Tracing context was not set up properly.", RuntimeWarning)
 
@@ -1045,7 +1045,7 @@ class trace:
         ctx = copy_context()
         result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
         # Set the context for the current thread
-        configure(get_tracing_context(ctx))
+        configure_context(get_tracing_context(ctx))
         return result
 
     async def __aexit__(
@@ -1072,7 +1072,7 @@ class trace:
             await aitertools.aio_to_thread(
                 self._teardown, exc_type, exc_value, traceback, __ctx=ctx
             )
-        configure(get_tracing_context(ctx))
+        configure_context(get_tracing_context(ctx))
 
 
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
