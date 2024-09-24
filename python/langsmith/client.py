@@ -1153,10 +1153,15 @@ class Client:
             run_create: dict = run.dict()  # type: ignore
         else:
             run_create = cast(dict, run)
+        if not update and not run_create.get("start_time"):
+            # Should not hit here if you're using run_trees or other higher-order
+            # abstractions
+            run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
         if "id" not in run_create:
             run_create["id"] = uuid.uuid4()
         elif isinstance(run_create["id"], str):
             run_create["id"] = uuid.UUID(run_create["id"])
+
         if "inputs" in run_create and run_create["inputs"] is not None:
             if copy:
                 run_create["inputs"] = ls_utils.deepish_copy(run_create["inputs"])
@@ -1165,8 +1170,6 @@ class Client:
             if copy:
                 run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
-        if not update and not run_create.get("start_time"):
-            run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:

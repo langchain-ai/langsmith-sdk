@@ -81,6 +81,8 @@ class RunTree(ls_schemas.RunBase):
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
+        if not values.get("start_time"):
+            values["start_time"] = datetime.now(timezone.utc)
         if values.get("name") is None and values.get("serialized") is not None:
             if "name" in values["serialized"]:
                 values["name"] = values["serialized"]["name"]
