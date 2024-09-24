@@ -94,19 +94,17 @@ class RunTree(ls_schemas.RunBase):
             values["tags"] = []
         if values.get("outputs") is None:
             values["outputs"] = {}
-        return values
 
-    @model_validator()
-    @classmethod
-    def ensure_dotted_order(cls, values: dict) -> dict:
-        """Ensure the dotted order of the run."""
+        # Ensure dotted order is set.
         current_dotted_order = values.get("dotted_order")
         if current_dotted_order and current_dotted_order.strip():
             return values
+        if not values.get("start_time"):
+            values["start_time"] = datetime.now(timezone.utc)
         current_dotted_order = _create_current_dotted_order(
             values["start_time"], values["id"]
         )
-        if values["parent_run"]:
+        if values.get("parent_run"):
             values["dotted_order"] = (
                 values["parent_run"].dotted_order + "." + current_dotted_order
             )
@@ -247,7 +245,7 @@ class RunTree(ls_schemas.RunBase):
 
     def _get_dicts_safe(self):
         # Things like generators cannot be copied
-        self_dict = self.dict(
+        self_dict = self.model_dump(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
         if self.inputs is not None:

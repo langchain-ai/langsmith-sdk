@@ -623,7 +623,7 @@ class LangSmithInfo(BaseModel):
     batch_ingest_config: Optional[BatchIngestConfig] = None
 
 
-Example.update_forward_refs()
+Example.model_rebuild()
 
 
 class LangSmithSettings(BaseModel):

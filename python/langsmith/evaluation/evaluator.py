@@ -24,6 +24,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    ValidationInfo,
     field_validator,
 )
 from typing_extensions import TypedDict
@@ -83,19 +84,21 @@ class EvaluationResult(BaseModel):
     root trace being."""
     model_config = ConfigDict(allow_extra=False)
 
-    @field_validator("value", pre=True)
-    def check_value_non_numeric(cls, v, values):
+
+
+    @field_validator("value", mode="before")
+    def check_value_non_numeric(cls, score: Optional[Any], info: ValidationInfo) -> int:
         """Check that the value is not numeric."""
         # If a score isn't provided and the value is numeric
         # it's more likely the user intended use the score field
-        if "score" not in values or values["score"] is None:
-            if isinstance(v, (int, float)):
+        if score is None or not isinstance(score, (int, float)):
+            if isinstance(score, (int, float)):
                 logger.warning(
                     "Numeric values should be provided in"
                     " the 'score' field, not 'value'."
-                    f" Got: {v}"
+                    f" Got: {score}"
                 )
-        return v
+        return score
 
 
 class EvaluationResults(TypedDict, total=False):
