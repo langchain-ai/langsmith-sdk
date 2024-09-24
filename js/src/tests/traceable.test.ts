@@ -56,6 +56,7 @@ test("404s should only log, not throw an error", async () => {
   for await (const _ of llm("Hello world")) {
     // pass
   }
+  expect(overriddenFetch).toHaveBeenCalled();
 });
 
 test("nested traceable implementation", async () => {
