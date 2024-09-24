@@ -14,7 +14,7 @@ test("basic traceable implementation", async () => {
   const anthropicClient = new Anthropic();
 
   const anthropicResponse = await anthropicClient.messages.create({
-    model: "claude-3-5-sonnet-20240620",
+    model: "claude-3-haiku-20240307",
     system,
     messages: messages,
     max_tokens: 1024,
