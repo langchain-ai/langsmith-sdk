@@ -18,5 +18,5 @@ test("basic traceable implementation", async () => {
     messages,
   });
 
-  console.log(openAIResponse);
+  expect(openAIResponse.choices.length).toBeGreaterThan(0);
 });
