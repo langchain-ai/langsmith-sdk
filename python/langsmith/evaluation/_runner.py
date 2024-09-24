@@ -347,7 +347,7 @@ def evaluate_existing(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    client = client or rt.get_cached_client()
+    client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)

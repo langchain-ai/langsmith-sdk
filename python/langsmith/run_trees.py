@@ -32,12 +32,14 @@ _LOCK = threading.Lock()
 
 
 # Note, this is called directly by langchain. Do not remove.
-def get_cached_client() -> Client:
+
+
+def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
         with _LOCK:
             if _CLIENT is None:
-                _CLIENT = Client()
+                _CLIENT = Client(**init_kwargs)
     return _CLIENT
 
 
