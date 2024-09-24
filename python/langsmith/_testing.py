@@ -21,6 +21,7 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _cache_utils as cache_utils
 
 try:
     import pytest  # type: ignore
@@ -365,6 +366,7 @@ def _end_tests(
         },
     )
     test_suite.wait()
+    test_suite.cache_manager.close()
 
 
 VT = TypeVar("VT", bound=Optional[dict])
@@ -387,12 +389,20 @@ class _LangSmithTestSuite:
         client: Optional[ls_client.Client],
         experiment: ls_schemas.TracerSession,
         dataset: ls_schemas.Dataset,
+        cache: Optional[str] = None,
     ):
         self.client = client or rt.get_cached_client()
         self._experiment = experiment
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
         self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
+        cache_path = (
+            Path(cache) / f"{self._dataset.id}.yaml" if cache["cache"] else None
+        )
+        self.cache_manager = cache_utils.CacheManager(
+            path=cache_path, ignore_hosts=[self.client.api_url]
+        )
+        self.cache_manager.start_caching()
         atexit.register(_end_tests, self)
 
     @property
@@ -536,7 +546,7 @@ def _ensure_example(
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
     test_suite = _LangSmithTestSuite.from_test(
-        client, func, langtest_extra.get("test_suite_name")
+        client, func, langtest_extra.get("test_suite_name"), langtest_extra.get("cache")
     )
     example_id, example_name = _get_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id
@@ -592,11 +602,6 @@ def _run_test(
             except BaseException as e:
                 logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
 
-    cache_path = (
-        Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
-        if langtest_extra["cache"]
-        else None
-    )
     current_context = rh.get_tracing_context()
     metadata = {
         **(current_context["metadata"] or {}),
@@ -605,11 +610,7 @@ def _run_test(
             "reference_example_id": str(example_id),
         },
     }
-    with rh.tracing_context(
-        **{**current_context, "metadata": metadata}
-    ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_suite.client.api_url]
-    ):
+    with rh.tracing_context(**{**current_context, "metadata": metadata}):
         _test()
 
 

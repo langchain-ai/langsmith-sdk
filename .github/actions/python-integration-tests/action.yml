@@ -46,10 +46,11 @@ runs:
         LANGCHAIN_ENDPOINT: ${{ inputs.langchain-endpoint }}
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        LANGSMITH_TEST_CACHE: tests/cassettes
       run: make integration_tests_fast
       shell: bash
       working-directory: python
-    
+
     - name: Run doctest
       env:
         LANGCHAIN_TRACING_V2: "true"
@@ -57,19 +58,19 @@ runs:
         LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        LANGSMITH_TEST_CACHE: tests/cassettes
       run: make doctest
       shell: bash
       working-directory: python
-    
 
     - name: Run Evaluation
       env:
-          LANGCHAIN_TRACING_V2: "true"
-          LANGCHAIN_ENDPOINT: ${{ inputs.langchain-endpoint }}
-          LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
-          OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-          ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        LANGCHAIN_TRACING_V2: "true"
+        LANGCHAIN_ENDPOINT: ${{ inputs.langchain-endpoint }}
+        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        LANGSMITH_TEST_CACHE: tests/cassettes
       run: make evals
       shell: bash
       working-directory: python
-
