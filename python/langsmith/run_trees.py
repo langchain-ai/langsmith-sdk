@@ -134,6 +134,11 @@ class RunTree(ls_schemas.RunBase):
             self.ls_client = get_cached_client()
         return self.ls_client
 
+    @property
+    def _client(self) -> Optional[Client]:
+        # For backwards compat
+        return self.ls_client
+
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
         if isinstance(tags, str):
