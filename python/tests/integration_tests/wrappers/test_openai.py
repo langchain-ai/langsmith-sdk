@@ -114,6 +114,8 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         patched_chunks = list(patched)
         assert len(original_chunks) == len(patched_chunks)
         assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
+        assert original.response
+        assert patched.response
     else:
         assert type(original) == type(patched)
         assert original.choices == patched.choices
@@ -165,6 +167,8 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
             patched_chunks.append(chunk)
         assert len(original_chunks) == len(patched_chunks)
         assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
+        assert original.response
+        assert patched.response
     else:
         assert type(original) == type(patched)
         assert original.choices == patched.choices
