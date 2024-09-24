@@ -88,6 +88,8 @@ class RunTree(ls_schemas.RunBase):
             values["name"] = "Unnamed"
         if "client" in values:  # Handle user-constructed clients
             values["_client"] = values["client"]
+        if not values.get("_client"):
+            values["_client"] = None
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
         if "id" not in values:
