@@ -63,7 +63,7 @@ def cosine_similarity(X: Matrix, Y: Matrix) -> np.ndarray:
 def _get_openai_encoder() -> Callable[[Sequence[str]], Sequence[Sequence[float]]]:
     """Get the OpenAI GPT-3 encoder."""
     try:
-        from openai import Client
+        from openai import Client as OpenAIClient
     except ImportError:
         raise ImportError(
             "THe default encoder for the EmbeddingDistance class uses the OpenAI API. "
@@ -72,7 +72,7 @@ def _get_openai_encoder() -> Callable[[Sequence[str]], Sequence[Sequence[float]]
         )
 
     def encode_text(texts: Sequence[str]) -> Sequence[Sequence[float]]:
-        client = Client()
+        client = OpenAIClient()
         response = client.embeddings.create(
             input=list(texts), model="text-embedding-3-small"
         )

@@ -15,6 +15,7 @@ from __future__ import annotations
 import atexit
 import collections
 import concurrent.futures as cf
+import contextlib
 import datetime
 import functools
 import importlib
@@ -3151,7 +3152,7 @@ class Client:
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
-        """Add an example (row) to an LLM-type dataset."""
+        """Add an example (row) to a dataset from a run."""
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
             dataset_name = None  # Nested call expects only 1 defined
@@ -4680,28 +4681,46 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def list_runs_from_annotation_queue(
-        self, queue_id: ID_TYPE, *, limit: Optional[int] = None
-    ) -> Iterator[ls_schemas.RunWithAnnotationQueueInfo]:
-        """List runs from an annotation queue with the specified queue ID.
+    def delete_run_from_annotation_queue(
+        self, queue_id: ID_TYPE, *, run_id: ID_TYPE
+    ) -> None:
+        """Delete a run from an annotation queue with the specified queue ID and run ID.
 
         Args:
             queue_id (ID_TYPE): The ID of the annotation queue.
-
-        Yields:
-            ls_schemas.RunWithAnnotationQueueInfo: An iterator of runs from the
-                annotation queue.
+            run_id (ID_TYPE): The ID of the run to be added to the annotation
+                queue.
         """
-        path = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs"
-        limit_ = min(limit, 100) if limit is not None else 100
-        for i, run in enumerate(
-            self._get_paginated_list(
-                path, params={"headers": self._headers, "limit": limit_}
-            )
-        ):
-            yield ls_schemas.RunWithAnnotationQueueInfo(**run)
-            if limit is not None and i + 1 >= limit:
-                break
+        response = self.request_with_retries(
+            "DELETE",
+            f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/runs/{_as_uuid(run_id, 'run_id')}",
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def get_run_from_annotation_queue(
+        self, queue_id: ID_TYPE, *, index: int
+    ) -> ls_schemas.RunWithAnnotationQueueInfo:
+        """Get a run from an annotation queue at the specified index.
+
+        Args:
+            queue_id (ID_TYPE): The ID of the annotation queue.
+            index (int): The index of the run to retrieve.
+
+        Returns:
+            ls_schemas.RunWithAnnotationQueueInfo: The run at the specified index.
+
+        Raises:
+            ls_utils.LangSmithNotFoundError: If the run is not found at the given index.
+            ls_utils.LangSmithError: For other API-related errors.
+        """
+        base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}/run"
+        response = self.request_with_retries(
+            "GET",
+            f"{base_url}/{index}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
     def create_comparative_experiment(
         self,
@@ -4960,7 +4979,7 @@ class Client:
         return True if prompt else False
 
     def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
-        """Check if a prompt exists.
+        """Like a prompt.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -5294,11 +5313,19 @@ class Client:
                 "The client.pull_prompt function requires the langchain_core"
                 "package to run.\nInstall with `pip install langchain_core`"
             )
+        try:
+            from langchain_core._api import suppress_langchain_beta_warning
+        except ImportError:
+
+            @contextlib.contextmanager
+            def suppress_langchain_beta_warning():
+                yield
 
         prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
-        prompt = loads(json.dumps(prompt_object.manifest))
+        with suppress_langchain_beta_warning():
+            prompt = loads(json.dumps(prompt_object.manifest))
 
         if (
             isinstance(prompt, BasePromptTemplate)
