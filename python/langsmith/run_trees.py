@@ -4,19 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 from uuid import UUID, uuid4
-from pydantic import model_validator, ConfigDict
 
-try:
-    from pydantic.v1 import Field, root_validator  # type: ignore[import]
-except ImportError:
-    from pydantic import (  # type: ignore[assignment, no-redef]
-        Field)
-
-import threading
-import urllib.parse
+from pydantic import ConfigDict, Field, model_validator
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils
@@ -67,7 +61,9 @@ class RunTree(ls_schemas.RunBase):
         default="", description="The order of the run in the tree."
     )
     trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
-    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True, extra="allow")
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True, populate_by_name=True, extra="allow"
+    )
 
     @model_validator(mode="before")
     @classmethod

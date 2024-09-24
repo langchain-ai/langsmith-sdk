@@ -6,40 +6,19 @@ import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Protocol,
-    Union,
-    runtime_checkable,
-)
+from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
 from uuid import UUID
 
-from typing_extensions import TypedDict
-from pydantic import ConfigDict
-
-try:
-    from pydantic.v1 import (  # type: ignore[import]
-        BaseModel,
-        Field,
-        PrivateAttr,
-        StrictBool,
-        StrictFloat,
-        StrictInt,
-    )
-except ImportError:
-    from pydantic import (  # type: ignore[assignment]
-        BaseModel,
-        Field,
-        PrivateAttr,
-        StrictBool,
-        StrictFloat,
-        StrictInt,
-    )
-
-from typing_extensions import Literal
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+)
+from typing_extensions import Literal, TypedDict
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]

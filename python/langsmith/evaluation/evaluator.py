@@ -2,8 +2,10 @@
 
 import asyncio
 import inspect
+import logging
 import uuid
 from abc import abstractmethod
+from functools import wraps
 from typing import (
     Any,
     Awaitable,
@@ -17,26 +19,14 @@ from typing import (
     cast,
 )
 
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+)
 from typing_extensions import TypedDict
-from pydantic import ConfigDict
-
-try:
-    from pydantic.v1 import (  # type: ignore[import]
-        BaseModel,
-        Field,
-        ValidationError,
-        validator,
-    )
-except ImportError:
-    from pydantic import (  # type: ignore[assignment]
-        BaseModel,
-        Field,
-        ValidationError,
-        validator,
-    )
-
-import logging
-from functools import wraps
 
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
@@ -93,9 +83,7 @@ class EvaluationResult(BaseModel):
     root trace being."""
     model_config = ConfigDict(allow_extra=False)
 
-    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
-    @validator("value", pre=True)
+    @field_validator("value", pre=True)
     def check_value_non_numeric(cls, v, values):
         """Check that the value is not numeric."""
         # If a score isn't provided and the value is numeric
