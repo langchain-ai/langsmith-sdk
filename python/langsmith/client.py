@@ -5291,6 +5291,65 @@ class Client:
             **{"owner": owner, "repo": prompt_name, **response.json()}
         )
 
+    def list_prompt_commits(
+        self,
+        prompt_identifier: str,
+        *,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        include_model: bool = False,
+    ) -> Iterator[ls_schemas.ListedPromptCommit]:
+        """List commits for a given prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt in the format 'owner/repo_name'.
+            limit (Optional[int], optional): The maximum number of commits to return. If None, returns all commits. Defaults to None.
+            offset (int, optional): The number of commits to skip before starting to return results. Defaults to 0.
+            include_model (bool, optional): Whether to include the model information in the commit data. Defaults to False.
+
+        Returns:
+            Iterator[ls_schemas.ListedPromptCommit]: An iterator of ListedPromptCommit objects representing the commits.
+
+        Yields:
+            ls_schemas.ListedPromptCommit: A ListedPromptCommit object for each commit.
+
+        Note:
+            This method uses pagination to retrieve commits. It will make multiple API calls if necessary to retrieve all commits
+            or up to the specified limit.
+        """
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+
+        params = {
+            "limit": limit if limit is not None else 100,
+            "offset": offset,
+            "include_model": include_model,
+        }
+        i = 0
+        while True:
+            params["offset"] = offset
+            response = self.request_with_retries(
+                "GET",
+                f"/commits/{owner}/{prompt_name}/",
+                params=params,
+            )
+            val = response.json()
+            items = val["commits"]
+            total = val["total"]
+
+            if not items:
+                break
+            for it in items:
+                i += 1
+                yield ls_schemas.ListedPromptCommit(
+                    **{"owner": owner, "repo": prompt_name, **it}
+                )
+                if limit is not None and i >= limit:
+                    break
+
+            offset += len(items)
+            if offset >= total:
+                break
+
     def pull_prompt(
         self, prompt_identifier: str, *, include_model: Optional[bool] = False
     ) -> Any:
