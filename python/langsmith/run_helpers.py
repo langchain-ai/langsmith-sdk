@@ -90,9 +90,28 @@ def get_tracing_context(
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
 
 
-def _set_tracing_context(context: Dict[str, Any]):
+class TracingContextVars(TypedDict, total=False):
+    """Variables that can be globally set.
+
+    parent (run_trees.RunTree): The parent run tree for the current context.
+    project_name (str): The name of the project for the current tracing session.
+    tags (List[str]): A list of tags associated with the current tracing context.
+    metadata (Dict[str, Any]): Additional metadata for the current tracing context.
+    enabled (bool): Flag indicating whether tracing is enabled.
+    client (ls_client.Client): The LangSmith client used for tracing.
+    """
+
+    parent: run_trees.RunTree
+    project_name: str
+    tags: List[str]
+    metadata: Dict[str, Any]
+    enabled: bool
+    client: ls_client.Client
+
+
+def configure(**vars: TracingContextVars):
     """Set the tracing context."""
-    for k, v in context.items():
+    for k, v in vars.items():
         var = _CONTEXT_KEYS[k]
         var.set(v)
 
@@ -135,7 +154,7 @@ def tracing_context(
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
     enabled = enabled if enabled is not None else current_context.get("enabled")
-    _set_tracing_context(
+    configure(
         {
             "parent": parent_run,
             "project_name": project_name,
@@ -148,7 +167,7 @@ def tracing_context(
     try:
         yield
     finally:
-        _set_tracing_context(current_context)
+        configure(current_context)
 
 
 # Alias for backwards compatibility
@@ -959,7 +978,7 @@ class trace:
             if enabled:
                 self.new_run.patch()
 
-            _set_tracing_context(self.old_ctx)
+            configure(self.old_ctx)
         else:
             warnings.warn("Tracing context was not set up properly.", RuntimeWarning)
 
@@ -995,7 +1014,7 @@ class trace:
         ctx = copy_context()
         result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
         # Set the context for the current thread
-        _set_tracing_context(get_tracing_context(ctx))
+        configure(get_tracing_context(ctx))
         return result
 
     async def __aexit__(
@@ -1022,7 +1041,7 @@ class trace:
             await aitertools.aio_to_thread(
                 self._teardown, exc_type, exc_value, traceback, __ctx=ctx
             )
-        _set_tracing_context(get_tracing_context(ctx))
+        configure(get_tracing_context(ctx))
 
 
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:

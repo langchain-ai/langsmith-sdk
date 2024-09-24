@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from langsmith.evaluation import aevaluate, evaluate
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
     from langsmith.run_helpers import (
+        configure,
         get_current_run_tree,
         get_tracing_context,
         trace,
