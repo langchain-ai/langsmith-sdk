@@ -88,6 +88,8 @@ class RunTree(ls_schemas.RunBase):
             values["name"] = "Unnamed"
         if "client" in values:  # Handle user-constructed clients
             values["ls_client"] = values.pop("client")
+        elif "_client" in values:
+            values["ls_client"] = values.pop("_client")
         if not values.get("ls_client"):
             values["ls_client"] = None
         if values.get("parent_run") is not None:
@@ -130,7 +132,7 @@ class RunTree(ls_schemas.RunBase):
         """Return the client."""
         # Lazily load the client
         # If you never use this for API calls, it will never be loaded
-        if not isinstance(self.ls_client, Client):
+        if self.ls_client is None:
             self.ls_client = get_cached_client()
         return self.ls_client
 
