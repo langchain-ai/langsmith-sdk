@@ -5320,7 +5320,7 @@ class Client:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
 
         params = {
-            "limit": limit if limit is not None else 100,
+            "limit": min(100, limit) if limit is not None else limit,
             "offset": offset,
             "include_model": include_model,
         }
@@ -5339,12 +5339,12 @@ class Client:
             if not items:
                 break
             for it in items:
-                i += 1
+                if limit is not None and i >= limit:
+                    return  # Stop iteration if we've reached the limit
                 yield ls_schemas.ListedPromptCommit(
                     **{"owner": owner, "repo": prompt_name, **it}
                 )
-                if limit is not None and i >= limit:
-                    break
+                i += 1
 
             offset += len(items)
             if offset >= total:
