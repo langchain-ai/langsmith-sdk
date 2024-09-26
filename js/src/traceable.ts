@@ -617,20 +617,24 @@ export function traceable<Func extends (...args: any[]) => any>(
               if (isGenerator(wrappedFunc) && isIteratorLike(rawOutput)) {
                 const chunks = gatherAll(rawOutput);
 
-                await currentRunTree?.end(
-                  handleRunOutputs(
-                    await handleChunks(
-                      chunks.reduce<unknown[]>((memo, { value, done }) => {
-                        if (!done || typeof value !== "undefined") {
-                          memo.push(value);
-                        }
+                try {
+                  await currentRunTree?.end(
+                    handleRunOutputs(
+                      await handleChunks(
+                        chunks.reduce<unknown[]>((memo, { value, done }) => {
+                          if (!done || typeof value !== "undefined") {
+                            memo.push(value);
+                          }
 
-                        return memo;
-                      }, [])
+                          return memo;
+                        }, [])
+                      )
                     )
-                  )
-                );
-                await handleEnd();
+                  );
+                  await handleEnd();
+                } catch (e) {
+                  console.error("Error occurred during handleEnd:", e);
+                }
 
                 return (function* () {
                   for (const ret of chunks) {
