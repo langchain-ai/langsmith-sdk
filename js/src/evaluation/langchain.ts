@@ -1,5 +1,6 @@
-import type { Run, Example } from "../schemas.js";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { type LoadEvaluatorOptions, loadEvaluator } from "langchain/evaluation";
+import type { Run, Example } from "../schemas.js";
 import { getLangchainCallbacks } from "../langchain.js";
 
 function isStringifiable(
@@ -27,6 +28,8 @@ function getPrimitiveValue(value: unknown) {
 }
 
 /**
+ * @deprecated Use `evaluate` instead.
+ *
  * This utility function loads a LangChain string evaluator and returns a function
  * which can be used by newer `evaluate` function.
  *

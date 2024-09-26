@@ -48,7 +48,7 @@ class ExampleBase(BaseModel):
     """Example base model."""
 
     dataset_id: UUID
-    inputs: Dict[str, Any]
+    inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
 
@@ -70,7 +70,10 @@ class Example(ExampleBase):
     """Example model."""
 
     id: UUID
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.fromtimestamp(0, tz=timezone.utc)
+    )
+    dataset_id: UUID = Field(default=UUID("00000000-0000-0000-0000-000000000000"))
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
@@ -764,6 +767,49 @@ class PromptCommit(BaseModel):
     """The manifest of the prompt."""
     examples: List[dict]
     """The list of examples."""
+
+
+class ListedPromptCommit(BaseModel):
+    """Represents a listed prompt commit with associated metadata."""
+
+    id: UUID
+    """The unique identifier for the prompt commit."""
+
+    owner: str
+    """The owner of the prompt commit."""
+
+    repo: str
+    """The repository name of the prompt commit."""
+
+    manifest_id: Optional[UUID] = None
+    """The optional identifier for the manifest associated with this commit."""
+
+    repo_id: Optional[UUID] = None
+    """The optional identifier for the repository."""
+
+    parent_id: Optional[UUID] = None
+    """The optional identifier for the parent commit."""
+
+    commit_hash: Optional[str] = None
+    """The optional hash of the commit."""
+
+    created_at: Optional[datetime] = None
+    """The optional timestamp when the commit was created."""
+
+    updated_at: Optional[datetime] = None
+    """The optional timestamp when the commit was last updated."""
+
+    example_run_ids: Optional[List[UUID]] = Field(default_factory=list)
+    """A list of example run identifiers associated with this commit."""
+
+    num_downloads: Optional[int] = 0
+    """The number of times this commit has been downloaded."""
+
+    num_views: Optional[int] = 0
+    """The number of times this commit has been viewed."""
+
+    parent_commit_hash: Optional[str] = None
+    """The optional hash of the parent commit."""
 
 
 class Prompt(BaseModel):

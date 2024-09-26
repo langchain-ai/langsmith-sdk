@@ -26,6 +26,7 @@ from typing import (
 import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
+from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.evaluation._runner import (
@@ -65,6 +66,7 @@ async def aevaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
     r"""Evaluate an async target system or function on a given dataset.
 
@@ -90,6 +92,9 @@ async def aevaluate(
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
+        experiment (Optional[schemas.TracerSession]): An existing experiment to
+            extend. If provided, experiment_prefix is ignored. For advanced
+            usage only.
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
@@ -220,6 +225,12 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if experiment and experiment_prefix:
+        raise ValueError(
+            "Expected at most one of 'experiment' or 'experiment_prefix',"
+            " but both were provided. "
+            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+        )
     return await _aevaluate(
         target,
         data=data,
@@ -232,11 +243,12 @@ async def aevaluate(
         num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
+        experiment=experiment,
     )
 
 
 async def aevaluate_existing(
-    experiment: Union[str, uuid.UUID],
+    experiment: Union[str, uuid.UUID, schemas.TracerSession],
     /,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
@@ -313,8 +325,12 @@ async def aevaluate_existing(
 
 
     """  # noqa: E501
-    client = client or langsmith.Client()
-    project = await aitertools.aio_to_thread(_load_experiment, experiment, client)
+    client = client or run_trees.get_cached_client()
+    project = (
+        experiment
+        if isinstance(experiment, schemas.TracerSession)
+        else (await aitertools.aio_to_thread(_load_experiment, experiment, client))
+    )
     runs = await aitertools.aio_to_thread(
         _load_traces, experiment, client, load_nested=load_nested
     )
@@ -346,12 +362,12 @@ async def _aevaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[schemas.TracerSession] = None,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
     is_async_target = asyncio.iscoroutinefunction(target) or (
         hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())
     )
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
     experiment_, runs = await aitertools.aio_to_thread(
         _resolve_experiment,

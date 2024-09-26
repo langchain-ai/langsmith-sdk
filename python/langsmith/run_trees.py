@@ -31,12 +31,15 @@ _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()
 
 
-def _get_client() -> Client:
+# Note, this is called directly by langchain. Do not remove.
+
+
+def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
         with _LOCK:
             if _CLIENT is None:
-                _CLIENT = Client()
+                _CLIENT = Client(**init_kwargs)
     return _CLIENT
 
 
@@ -58,7 +61,11 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    _client: Optional[Client] = Field(default=None)
+    tags: Optional[List[str]] = Field(default_factory=list)
+    events: List[Dict] = Field(default_factory=list)
+    """List of events associated with the run, like
+    start and end events."""
+    ls_client: Optional[Any] = Field(default=None, exclude=True)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -69,18 +76,24 @@ class RunTree(ls_schemas.RunBase):
 
         arbitrary_types_allowed = True
         allow_population_by_field_name = True
-        extra = "allow"
+        extra = "ignore"
 
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
-        if values.get("name") is None and "serialized" in values:
+        if values.get("name") is None and values.get("serialized") is not None:
             if "name" in values["serialized"]:
                 values["name"] = values["serialized"]["name"]
             elif "id" in values["serialized"]:
                 values["name"] = values["serialized"]["id"][-1]
+        if values.get("name") is None:
+            values["name"] = "Unnamed"
         if "client" in values:  # Handle user-constructed clients
-            values["_client"] = values["client"]
+            values["ls_client"] = values.pop("client")
+        elif "_client" in values:
+            values["ls_client"] = values.pop("_client")
+        if not values.get("ls_client"):
+            values["ls_client"] = None
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
         if "id" not in values:
@@ -121,9 +134,22 @@ class RunTree(ls_schemas.RunBase):
         """Return the client."""
         # Lazily load the client
         # If you never use this for API calls, it will never be loaded
-        if not self._client:
-            self._client = _get_client()
-        return self._client
+        if self.ls_client is None:
+            self.ls_client = get_cached_client()
+        return self.ls_client
+
+    @property
+    def _client(self) -> Optional[Client]:
+        # For backwards compat
+        return self.ls_client
+
+    def __setattr__(self, name, value):
+        """Set the _client specially."""
+        # For backwards compat
+        if name == "_client":
+            self.ls_client = value
+        else:
+            return super().__setattr__(name, value)
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
@@ -241,7 +267,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
-            _client=self._client,
+            ls_client=self.ls_client,
             tags=tags,
         )
         self.child_runs.append(run)

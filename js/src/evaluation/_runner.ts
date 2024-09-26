@@ -1,5 +1,4 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
-import { getLangchainCallbacks } from "../langchain.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
@@ -567,6 +566,7 @@ export class _ExperimentManager {
               : new Date(example.created_at).toISOString(),
           },
           client: fields.client,
+          tracingEnabled: true,
         };
         const evaluatorResponse = await evaluator.evaluateRun(
           run,
@@ -882,8 +882,20 @@ async function _forward(
   const wrappedFn =
     "invoke" in fn
       ? traceable(async (inputs) => {
-          const callbacks = await getLangchainCallbacks();
-          return fn.invoke(inputs, { callbacks });
+          let langChainCallbacks;
+          try {
+            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+            const { getLangchainCallbacks } = await import("../langchain.js");
+            langChainCallbacks = await getLangchainCallbacks();
+          } catch {
+            // no-op
+          }
+          // Issue with retrieving LangChain callbacks, rely on interop
+          if (langChainCallbacks === undefined) {
+            return await fn.invoke(inputs);
+          } else {
+            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          }
         }, options)
       : traceable(fn, options);
 
