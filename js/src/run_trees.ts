@@ -356,36 +356,44 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
-    const runtimeEnv = await getRuntimeEnvironment();
-    const runCreate = await this._convertToCreate(this, runtimeEnv, true);
-    await this.client.createRun(runCreate);
+    try {
+      const runtimeEnv = await getRuntimeEnvironment();
+      const runCreate = await this._convertToCreate(this, runtimeEnv, true);
+      await this.client.createRun(runCreate);
 
-    if (!excludeChildRuns) {
-      warnOnce(
-        "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
-      );
-      for (const childRun of this.child_runs) {
-        await childRun.postRun(false);
+      if (!excludeChildRuns) {
+        warnOnce(
+          "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
+        );
+        for (const childRun of this.child_runs) {
+          await childRun.postRun(false);
+        }
       }
+    } catch (error) {
+      console.error(`Error in postRun for run ${this.id}:`, error);
     }
   }
 
   async patchRun(): Promise<void> {
-    const runUpdate: RunUpdate = {
-      end_time: this.end_time,
-      error: this.error,
-      inputs: this.inputs,
-      outputs: this.outputs,
-      parent_run_id: this.parent_run?.id,
-      reference_example_id: this.reference_example_id,
-      extra: this.extra,
-      events: this.events,
-      dotted_order: this.dotted_order,
-      trace_id: this.trace_id,
-      tags: this.tags,
-    };
+    try {
+      const runUpdate: RunUpdate = {
+        end_time: this.end_time,
+        error: this.error,
+        inputs: this.inputs,
+        outputs: this.outputs,
+        parent_run_id: this.parent_run?.id,
+        reference_example_id: this.reference_example_id,
+        extra: this.extra,
+        events: this.events,
+        dotted_order: this.dotted_order,
+        trace_id: this.trace_id,
+        tags: this.tags,
+      };
 
-    await this.client.updateRun(this.id, runUpdate);
+      await this.client.updateRun(this.id, runUpdate);
+    } catch (error) {
+      console.error(`Error in patchRun for run ${this.id}`, error);
+    }
   }
 
   toJSON() {
