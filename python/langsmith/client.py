@@ -1930,8 +1930,10 @@ class Client:
         str
             The URL for the run.
         """
-        if hasattr(run, "session_id") and run.session_id is not None:
-            session_id = run.session_id
+        if session_id := getattr(run, "session_id", None):
+            pass
+        elif session_name := getattr(run, "session_name", None):
+            session_id = self.read_project(project_name=session_name).id
         elif project_id is not None:
             session_id = project_id
         elif project_name is not None:
