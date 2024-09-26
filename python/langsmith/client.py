@@ -5269,9 +5269,15 @@ class Client:
         owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
             prompt_identifier
         )
-        use_optimization = ls_utils.is_version_greater_or_equal(
-            self.info.version, "0.5.23"
-        )
+        try:
+            use_optimization = ls_utils.is_version_greater_or_equal(
+                self.info.version, "0.5.23"
+            )
+        except ValueError:
+            logger.exception(
+                "Failed to parse LangSmith API version. Defaulting to using optimization."
+            )
+            use_optimization = True
 
         if not use_optimization and commit_hash == "latest":
             latest_commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
