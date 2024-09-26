@@ -1031,3 +1031,25 @@ test("argsConfigPath", async () => {
     },
   });
 });
+
+test("traceable continues execution when client throws error", async () => {
+  const errorClient = {
+    createRun: jest.fn().mockRejectedValue(new Error("Client error") as never),
+    updateRun: jest.fn().mockRejectedValue(new Error("Client error") as never),
+  };
+
+  const tracedFunction = traceable(
+    async (value: number): Promise<number> => value * 2,
+    {
+      client: errorClient as unknown as Client,
+      name: "errorTest",
+      tracingEnabled: true,
+    }
+  );
+
+  const result = await tracedFunction(5);
+
+  expect(result).toBe(10);
+  expect(errorClient.createRun).toHaveBeenCalled();
+  expect(errorClient.updateRun).toHaveBeenCalled();
+});
