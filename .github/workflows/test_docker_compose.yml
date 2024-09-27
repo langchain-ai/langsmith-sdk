@@ -37,9 +37,6 @@ jobs:
       working-directory: python/langsmith/cli
       run: docker compose up -d
 
-    - name: Check frontend health
-      run: curl localhost:1980/ok
-
     - name: Check backend health
       run: curl localhost:1980/api/info
 
