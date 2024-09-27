@@ -1,4 +1,17 @@
-.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals
+.PHONY: tests lint format build publish doctest integration_tests integration_tests_fast evals benchmark benchmark-fast
+
+
+OUTPUT ?= out/benchmark.json
+
+benchmark:
+	mkdir -p out
+	rm -f $(OUTPUT)
+	poetry run python -m bench -o $(OUTPUT) --rigorous
+
+benchmark-fast:
+	mkdir -p out
+	rm -f $(OUTPUT)
+	poetry run python -m bench -o $(OUTPUT) --fast
 
 tests:
 	 PYTHONDEVMODE=1 PYTHONASYNCIODEBUG=1 poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 tests/unit_tests
