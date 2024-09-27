@@ -11,6 +11,10 @@ on:
       - "python/langsmith/cli/docker-compose.yaml"
 
 
+concurrency:
+  group: "test-docker-compose"
+  cancel-in-progress: true
+
 jobs:
 
   docker-compose:
