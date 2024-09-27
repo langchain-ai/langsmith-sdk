@@ -1,4 +1,7 @@
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
 from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, Field
@@ -7,7 +10,17 @@ from pydantic.v1 import Field as FieldV1
 
 
 def _default():
-    return {"some_val": "😈"}
+
+    return {
+        "some_val": "😈",
+        "uuid_val": uuid.uuid4(),
+        "datetime_val": datetime.now(),
+        "list_val": [1, 2, 3],
+        "decimal_val": Decimal("3.14"),
+        "set_val": {1, 2, 3},
+        "tuple_val": (4, 5, 6),
+        "bytes_val": b"hello world",
+    }
 
 
 @dataclass
@@ -18,12 +31,10 @@ class DeeplyNested:
 
 
 class DeeplyNestedModel(BaseModel):
-
     vals: Dict[str, Any] = Field(default_factory=_default)
 
 
 class DeeplyNestedModelV1(BaseModelV1):
-
     vals: Dict[str, Any] = FieldV1(default_factory=_default)
 
 

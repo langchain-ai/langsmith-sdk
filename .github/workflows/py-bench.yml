@@ -1,9 +1,9 @@
-name: bench
+name: py-bench
 
 on:
   pull_request:
     paths:
-      - "libs/**"
+      - "python/langsmith/**"
 
 env:
   POETRY_VERSION: "1.7.1"
@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: "3.11"
           poetry-version: ${{ env.POETRY_VERSION }}
-          cache-key: bench
+          cache-key: py-bench
       - name: Install dependencies
         run: poetry install --with dev
       - name: Download baseline
@@ -37,7 +37,7 @@ jobs:
             ${{ runner.os }}-benchmark-baseline-
           fail-on-cache-miss: true
           path: |
-            libs/langgraph/out/benchmark-baseline.json
+            python/out/benchmark-baseline.json
       - name: Run benchmarks
         id: benchmark
         run: |

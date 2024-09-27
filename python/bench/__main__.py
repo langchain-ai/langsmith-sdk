@@ -1,11 +1,10 @@
-import random
-from uuid import uuid4
-
 from pyperf._runner import Runner
+
+from bench.create_run_tree import create_run_trees
 from bench.dumps_json import (
-    create_nested_instance,
     DeeplyNestedModel,
     DeeplyNestedModelV1,
+    create_nested_instance,
 )
 from langsmith.client import _dumps_json
 
@@ -17,46 +16,36 @@ class MyClass:
 
 benchmarks = (
     (
-        "dumps_dataclass_nested_200x10",
-        lambda x: _dumps_json({"input": x}),
-        create_nested_instance(200, 100),
+        "create_20_000_run_trees",
+        create_run_trees,
+        20_000,
     ),
     (
-        "dumps_pydantic_nested_200x10",
-        lambda x: _dumps_json({"input": x}),
-        create_nested_instance(200, 100, branch_constructor=DeeplyNestedModel),
-    ),
-    (
-        "dumps_pydanticv1_nested_200x10",
-        lambda x: _dumps_json({"input": x}),
-        create_nested_instance(200, 100, branch_constructor=DeeplyNestedModelV1),
-    ),
-    # Add random python class at the leaf
-    (
-        "dumps_dataclass_nested_py_leaf_200x10",
-        lambda x: _dumps_json({"input": x}),
-        create_nested_instance(200, 100, leaf_constructor=MyClass),
-    ),
-    (
-        "dumps_pydantic_nested_py_leaf_200x10",
+        "dumps_class_nested_py_branch_and_leaf_200x250",
         lambda x: _dumps_json({"input": x}),
         create_nested_instance(
-            200, 100, branch_constructor=DeeplyNestedModel, leaf_constructor=MyClass
+            200, 250, branch_constructor=MyClass, leaf_constructor=MyClass
         ),
     ),
     (
-        "dumps_pydanticv1_nested_py_leaf_200x10",
+        "dumps_class_nested_py_leaf_200x250",
         lambda x: _dumps_json({"input": x}),
-        create_nested_instance(
-            200, 100, branch_constructor=DeeplyNestedModelV1, leaf_constructor=MyClass
-        ),
+        create_nested_instance(200, 250, leaf_constructor=MyClass),
     ),
     (
-        "dumps_class_nested_py_leaf_200x10",
+        "dumps_dataclass_nested_200x250",
         lambda x: _dumps_json({"input": x}),
-        create_nested_instance(
-            200, 100, branch_constructor=MyClass, leaf_constructor=MyClass
-        ),
+        create_nested_instance(200, 250),
+    ),
+    (
+        "dumps_pydantic_nested_200x250",
+        lambda x: _dumps_json({"input": x}),
+        create_nested_instance(200, 250, branch_constructor=DeeplyNestedModel),
+    ),
+    (
+        "dumps_pydanticv1_nested_200x250",
+        lambda x: _dumps_json({"input": x}),
+        create_nested_instance(200, 250, branch_constructor=DeeplyNestedModelV1),
     ),
 )
 
@@ -64,4 +53,4 @@ benchmarks = (
 r = Runner()
 
 for name, fn, input_ in benchmarks:
-    r.bench_func(name, fn, input)
+    r.bench_func(name, fn, input_)
