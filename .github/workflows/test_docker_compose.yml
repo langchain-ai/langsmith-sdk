@@ -30,4 +30,5 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Start containers
+      working-directory: langsmith-sdk/python/langsmith/cli
       run: docker compose up
