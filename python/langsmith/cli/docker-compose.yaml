@@ -168,12 +168,6 @@ services:
       - 63791:6379
     volumes:
       - langchain-redis-data:/data
-    command:
-      [
-        "redis-server",
-        "--requirepass",
-        "password"
-      ]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
