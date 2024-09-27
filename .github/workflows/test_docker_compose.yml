@@ -37,6 +37,9 @@ jobs:
       working-directory: python/langsmith/cli
       run: docker compose up -d
 
+    - name: sleep 30 seconds
+      run: sleep 30
+
     - name: Check backend health
       run: curl localhost:1980/api/info
 
