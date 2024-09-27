@@ -1930,8 +1930,10 @@ class Client:
         str
             The URL for the run.
         """
-        if hasattr(run, "session_id") and run.session_id is not None:
-            session_id = run.session_id
+        if session_id := getattr(run, "session_id", None):
+            pass
+        elif session_name := getattr(run, "session_name", None):
+            session_id = self.read_project(project_name=session_name).id
         elif project_id is not None:
             session_id = project_id
         elif project_name is not None:
@@ -5269,9 +5271,15 @@ class Client:
         owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
             prompt_identifier
         )
-        use_optimization = ls_utils.is_version_greater_or_equal(
-            self.info.version, "0.5.23"
-        )
+        try:
+            use_optimization = ls_utils.is_version_greater_or_equal(
+                self.info.version, "0.5.23"
+            )
+        except ValueError:
+            logger.exception(
+                "Failed to parse LangSmith API version. Defaulting to using optimization."
+            )
+            use_optimization = True
 
         if not use_optimization and commit_hash == "latest":
             latest_commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
@@ -5320,7 +5328,7 @@ class Client:
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
 
         params = {
-            "limit": limit if limit is not None else 100,
+            "limit": min(100, limit) if limit is not None else limit,
             "offset": offset,
             "include_model": include_model,
         }
@@ -5339,12 +5347,12 @@ class Client:
             if not items:
                 break
             for it in items:
-                i += 1
+                if limit is not None and i >= limit:
+                    return  # Stop iteration if we've reached the limit
                 yield ls_schemas.ListedPromptCommit(
                     **{"owner": owner, "repo": prompt_name, **it}
                 )
-                if limit is not None and i >= limit:
-                    break
+                i += 1
 
             offset += len(items)
             if offset >= total:
