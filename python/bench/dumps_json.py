@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional
 from pydantic import BaseModel, Field
 from pydantic.v1 import BaseModel as BaseModelV1
 from pydantic.v1 import Field as FieldV1
+import numpy as np
 
 
 def _default():
@@ -15,11 +16,12 @@ def _default():
         "some_val": "😈",
         "uuid_val": uuid.uuid4(),
         "datetime_val": datetime.now(),
-        "list_val": [1, 2, 3],
+        "list_val": [238928376271863487] * 5,
         "decimal_val": Decimal("3.14"),
         "set_val": {1, 2, 3},
         "tuple_val": (4, 5, 6),
         "bytes_val": b"hello world",
+        "arr": np.random.random(10),
     }
 
 
