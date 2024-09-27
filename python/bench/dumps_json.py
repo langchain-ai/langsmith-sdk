@@ -67,8 +67,6 @@ def create_nested_instance(
 if __name__ == "__main__":
     import time
 
-    import uvloop
-
     from langsmith.client import _dumps_json
 
     class MyClass:
@@ -83,5 +81,4 @@ if __name__ == "__main__":
         print(f"Size: {len(res) / 1024:.2f} KB")
         print(f"Time taken: {end_time - start_time:.2f} seconds")
 
-    uvloop.install()
     run()

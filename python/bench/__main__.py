@@ -16,9 +16,19 @@ class MyClass:
 
 benchmarks = (
     (
+        "create_5_000_run_trees",
+        create_run_trees,
+        5_000,
+    ),
+    (
+        "create_10_000_run_trees",
+        create_run_trees,
+        10_000,
+    ),
+    (
         "create_20_000_run_trees",
         create_run_trees,
-        20_000,
+        10_000,
     ),
     (
         "dumps_class_nested_py_branch_and_leaf_200x150",
@@ -28,9 +38,14 @@ benchmarks = (
         ),
     ),
     (
-        "dumps_class_nested_py_leaf_200x150",
+        "dumps_class_nested_py_leaf_50x100",
         lambda x: _dumps_json({"input": x}),
-        create_nested_instance(200, 150, leaf_constructor=MyClass),
+        create_nested_instance(50, 100, leaf_constructor=MyClass),
+    ),
+    (
+        "dumps_class_nested_py_leaf_200x400",
+        lambda x: _dumps_json({"input": x}),
+        create_nested_instance(200, 400, leaf_constructor=MyClass),
     ),
     (
         "dumps_dataclass_nested_200x150",
@@ -38,9 +53,14 @@ benchmarks = (
         create_nested_instance(200, 150),
     ),
     (
-        "dumps_pydantic_nested_200x150",
+        "dumps_pydantic_nested_200x400",
         lambda x: _dumps_json({"input": x}),
-        create_nested_instance(200, 150, branch_constructor=DeeplyNestedModel),
+        create_nested_instance(200, 400, branch_constructor=DeeplyNestedModel),
+    ),
+    (
+        "dumps_pydantic_nested_50x100",
+        lambda x: _dumps_json({"input": x}),
+        create_nested_instance(50, 100, branch_constructor=DeeplyNestedModel),
     ),
     (
         "dumps_pydanticv1_nested_200x150",

@@ -57,7 +57,6 @@ fastapi = "^0.110.1"
 uvicorn = "^0.29.0"
 pytest-rerunfailures = "^14.0"
 pytest-socket = "^0.7.0"
-uvloop = "^0.20.0"
 pyperf = "^2.7.0"
 py-spy = "^0.3.14"
 
