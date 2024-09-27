@@ -1,0 +1,28 @@
+name: "CI: Test Docker Compose"
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/test_docker_compose.yml"
+      - "langsmith-sdk/python/langsmith/cli/docker-compose.yaml"
+
+
+jobs:
+
+  docker-compose:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+
+    env:
+      LANGSMITH_LICENSE_KEY: ${{ secrets.LANGSMITH_LICENSE_KEY }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+
+    - name: Start containers
+      run: docker-compose up -e LANGSMITH_LICENSE_KEY=$LANGSMITH_LICENSE_KEY -e API_KEY_SALT="foo"
