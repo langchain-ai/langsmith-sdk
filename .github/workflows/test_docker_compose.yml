@@ -24,5 +24,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v1
 
+    - uses: KengoTODA/actions-setup-docker-compose@v1
+
     - name: Start containers
       run: docker-compose up -e LANGSMITH_LICENSE_KEY=$LANGSMITH_LICENSE_KEY -e API_KEY_SALT="foo"
