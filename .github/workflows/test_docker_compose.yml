@@ -19,6 +19,7 @@ jobs:
 
     env:
       LANGSMITH_LICENSE_KEY: ${{ secrets.LANGSMITH_LICENSE_KEY }}
+      API_KEY_SALT: test
 
     steps:
     - name: Checkout
@@ -29,4 +30,4 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Start containers
-      run: docker compose run -e LANGSMITH_LICENSE_KEY=$LANGSMITH_LICENSE_KEY -e API_KEY_SALT="foo"
+      run: docker compose up
