@@ -4,14 +4,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable, Dict, Optional
 
+import numpy as np
 from pydantic import BaseModel, Field
 from pydantic.v1 import BaseModel as BaseModelV1
 from pydantic.v1 import Field as FieldV1
-import numpy as np
 
 
 def _default():
-
     return {
         "some_val": "😈",
         "uuid_val": uuid.uuid4(),
@@ -63,3 +62,26 @@ def create_nested_instance(
         if i < depth - 1:
             current_level = next_level
     return top_level
+
+
+if __name__ == "__main__":
+    import time
+
+    import uvloop
+
+    from langsmith.client import _dumps_json
+
+    class MyClass:
+        def __init__(self):
+            self.vals = {}
+
+    def run():
+        res = create_nested_instance(200, 150, leaf_constructor=MyClass)
+        start_time = time.time()
+        res = _dumps_json({"input": res})
+        end_time = time.time()
+        print(f"Size: {len(res) / 1024:.2f} KB")
+        print(f"Time taken: {end_time - start_time:.2f} seconds")
+
+    uvloop.install()
+    run()
