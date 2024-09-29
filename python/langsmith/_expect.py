@@ -46,7 +46,6 @@ Example usage:
 from __future__ import annotations
 
 import atexit
-import concurrent.futures
 import inspect
 from typing import (
     TYPE_CHECKING,
@@ -60,6 +59,7 @@ from typing import (
 
 from langsmith import client as ls_client
 from langsmith import run_helpers as rh
+from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 
 if TYPE_CHECKING:
@@ -91,22 +91,20 @@ class _Matcher:
         client: Optional[ls_client.Client],
         key: str,
         value: Any,
-        _executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
+        _executor: Optional[ls_utils.ContextThreadPoolExecutor] = None,
         run_id: Optional[str] = None,
     ):
         self._client = client
         self.key = key
         self.value = value
-        self._executor = _executor or concurrent.futures.ThreadPoolExecutor(
-            max_workers=3
-        )
+        self._executor = _executor or ls_utils.ContextThreadPoolExecutor(max_workers=3)
         rt = rh.get_current_run_tree()
         self._run_id = rt.trace_id if rt else run_id
 
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
             if not self._client:
-                self._client = ls_client.Client()
+                self._client = rt.get_cached_client()
             self._executor.submit(
                 self._client.create_feedback,
                 run_id=self._run_id,
@@ -255,7 +253,7 @@ class _Expect:
 
     def __init__(self, *, client: Optional[ls_client.Client] = None):
         self._client = client
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        self.executor = ls_utils.ContextThreadPoolExecutor(max_workers=3)
         atexit.register(self.executor.shutdown, wait=True)
 
     def embedding_distance(
@@ -434,7 +432,7 @@ class _Expect:
         run_id = current_run.trace_id if current_run else None
         if not ls_utils.test_tracking_is_disabled():
             if not self._client:
-                self._client = ls_client.Client()
+                self._client = rt.get_cached_client()
             self.executor.submit(
                 self._client.create_feedback, run_id=run_id, key=key, **results
             )

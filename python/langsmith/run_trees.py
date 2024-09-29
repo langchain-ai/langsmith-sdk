@@ -9,12 +9,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 from uuid import UUID, uuid4
 
 try:
-    from pydantic.v1 import Field, root_validator, validator  # type: ignore[import]
+    from pydantic.v1 import Field, root_validator  # type: ignore[import]
 except ImportError:
     from pydantic import (  # type: ignore[assignment, no-redef]
         Field,
         root_validator,
-        validator,
     )
 
 import threading
@@ -32,12 +31,15 @@ _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()
 
 
-def _get_client() -> Client:
+# Note, this is called directly by langchain. Do not remove.
+
+
+def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
         with _LOCK:
             if _CLIENT is None:
-                _CLIENT = Client()
+                _CLIENT = Client(**init_kwargs)
     return _CLIENT
 
 
@@ -59,7 +61,11 @@ class RunTree(ls_schemas.RunBase):
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
     extra: Dict = Field(default_factory=dict)
-    client: Client = Field(default_factory=_get_client, exclude=True)
+    tags: Optional[List[str]] = Field(default_factory=list)
+    events: List[Dict] = Field(default_factory=list)
+    """List of events associated with the run, like
+    start and end events."""
+    ls_client: Optional[Any] = Field(default=None, exclude=True)
     dotted_order: str = Field(
         default="", description="The order of the run in the tree."
     )
@@ -70,20 +76,24 @@ class RunTree(ls_schemas.RunBase):
 
         arbitrary_types_allowed = True
         allow_population_by_field_name = True
-        extra = "allow"
-
-    @validator("client", pre=True)
-    def validate_client(cls, v: Optional[Client]) -> Client:
-        """Ensure the client is specified."""
-        if v is None:
-            return _get_client()
-        return v
+        extra = "ignore"
 
     @root_validator(pre=True)
     def infer_defaults(cls, values: dict) -> dict:
         """Assign name to the run."""
-        if "serialized" not in values:
-            values["serialized"] = {"name": values["name"]}
+        if values.get("name") is None and values.get("serialized") is not None:
+            if "name" in values["serialized"]:
+                values["name"] = values["serialized"]["name"]
+            elif "id" in values["serialized"]:
+                values["name"] = values["serialized"]["id"][-1]
+        if values.get("name") is None:
+            values["name"] = "Unnamed"
+        if "client" in values:  # Handle user-constructed clients
+            values["ls_client"] = values.pop("client")
+        elif "_client" in values:
+            values["ls_client"] = values.pop("_client")
+        if not values.get("ls_client"):
+            values["ls_client"] = None
         if values.get("parent_run") is not None:
             values["parent_run_id"] = values["parent_run"].id
         if "id" not in values:
@@ -98,6 +108,8 @@ class RunTree(ls_schemas.RunBase):
             values["events"] = []
         if values.get("tags") is None:
             values["tags"] = []
+        if values.get("outputs") is None:
+            values["outputs"] = {}
         return values
 
     @root_validator(pre=False)
@@ -116,6 +128,28 @@ class RunTree(ls_schemas.RunBase):
         else:
             values["dotted_order"] = current_dotted_order
         return values
+
+    @property
+    def client(self) -> Client:
+        """Return the client."""
+        # Lazily load the client
+        # If you never use this for API calls, it will never be loaded
+        if self.ls_client is None:
+            self.ls_client = get_cached_client()
+        return self.ls_client
+
+    @property
+    def _client(self) -> Optional[Client]:
+        # For backwards compat
+        return self.ls_client
+
+    def __setattr__(self, name, value):
+        """Set the _client specially."""
+        # For backwards compat
+        if name == "_client":
+            self.ls_client = value
+        else:
+            return super().__setattr__(name, value)
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
@@ -161,8 +195,7 @@ class RunTree(ls_schemas.RunBase):
             events (Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent],
                     Sequence[dict], dict, str]):
                 The event(s) to be added. It can be a single event, a sequence
-                    of events,
-                a sequence of dictionaries, a dictionary, or a string.
+                of events, a sequence of dictionaries, a dictionary, or a string.
 
         Returns:
             None
@@ -234,7 +267,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
-            client=self.client,
+            ls_client=self.ls_client,
             tags=tags,
         )
         self.child_runs.append(run)
@@ -266,6 +299,7 @@ class RunTree(ls_schemas.RunBase):
         if not self.end_time:
             self.end()
         self.client.update_run(
+            name=self.name,
             run_id=self.id,
             outputs=self.outputs.copy() if self.outputs else None,
             error=self.error,
@@ -329,9 +363,13 @@ class RunTree(ls_schemas.RunBase):
                 "RunTree.from_runnable_config requires langchain-core to be installed. "
                 "You can install it with `pip install langchain-core`."
             ) from e
-        config_ = ensure_config(
-            cast(RunnableConfig, config) if isinstance(config, dict) else None
-        )
+        if config is None:
+            config_ = ensure_config(
+                cast(RunnableConfig, config) if isinstance(config, dict) else None
+            )
+        else:
+            config_ = cast(RunnableConfig, config)
+
         if (
             (cb := config_.get("callbacks"))
             and isinstance(cb, (CallbackManager, AsyncCallbackManager))
@@ -350,6 +388,11 @@ class RunTree(ls_schemas.RunBase):
                 kwargs["outputs"] = run.outputs
                 kwargs["start_time"] = run.start_time
                 kwargs["end_time"] = run.end_time
+                kwargs["tags"] = sorted(set(run.tags or [] + kwargs.get("tags", [])))
+                kwargs["name"] = run.name
+                extra_ = kwargs.setdefault("extra", {})
+                metadata_ = extra_.setdefault("metadata", {})
+                metadata_.update(run.metadata)
             elif hasattr(tracer, "order_map") and cb.parent_run_id in tracer.order_map:
                 dotted_order = tracer.order_map[cb.parent_run_id][1]
             else:
@@ -404,6 +447,8 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
+            if baggage.project_name:
+                init_args["project_name"] = baggage.project_name
 
         return RunTree(**init_args)
 
@@ -415,6 +460,7 @@ class RunTree(ls_schemas.RunBase):
         baggage = _Baggage(
             metadata=self.extra.get("metadata", {}),
             tags=self.tags,
+            project_name=self.session_name,
         )
         headers["baggage"] = baggage.to_header()
         return headers
@@ -427,10 +473,12 @@ class _Baggage:
         self,
         metadata: Optional[Dict[str, str]] = None,
         tags: Optional[List[str]] = None,
+        project_name: Optional[str] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
+        self.project_name = project_name
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -439,6 +487,7 @@ class _Baggage:
             return cls()
         metadata = {}
         tags = []
+        project_name = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -446,10 +495,12 @@ class _Baggage:
                     metadata = json.loads(urllib.parse.unquote(value))
                 elif key == f"{LANGSMITH_PREFIX}tags":
                     tags = urllib.parse.unquote(value).split(",")
+                elif key == f"{LANGSMITH_PREFIX}project":
+                    project_name = urllib.parse.unquote(value)
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
-        return cls(metadata=metadata, tags=tags)
+        return cls(metadata=metadata, tags=tags, project_name=project_name)
 
     def to_header(self) -> str:
         """Return the Baggage object as a header value."""
@@ -463,6 +514,10 @@ class _Baggage:
             serialized_tags = ",".join(self.tags)
             items.append(
                 f"{LANGSMITH_PREFIX}tags={urllib.parse.quote(serialized_tags)}"
+            )
+        if self.project_name:
+            items.append(
+                f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         return ",".join(items)
 

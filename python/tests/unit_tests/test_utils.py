@@ -1,6 +1,7 @@
 # mypy: disable-error-code="annotation-unchecked"
 import copy
 import dataclasses
+import functools
 import itertools
 import threading
 import unittest
@@ -31,6 +32,7 @@ class LangSmithProjectNameTest(unittest.TestCase):
             self.return_default_value = return_default_value
 
     def test_correct_get_tracer_project(self):
+        ls_utils.get_env_var.cache_clear()
         cases = [
             self.GetTracerProjectTestCase(
                 test_name="default to 'default' when no project provided",
@@ -75,6 +77,8 @@ class LangSmithProjectNameTest(unittest.TestCase):
         ]
 
         for case in cases:
+            ls_utils.get_env_var.cache_clear()
+            ls_utils.get_tracer_project.cache_clear()
             with self.subTest(msg=case.test_name):
                 with pytest.MonkeyPatch.context() as mp:
                     for k, v in case.envvars.items():
@@ -89,6 +93,7 @@ class LangSmithProjectNameTest(unittest.TestCase):
 
 
 def test_tracing_enabled():
+    ls_utils.get_env_var.cache_clear()
     with patch.dict(
         "os.environ", {"LANGCHAIN_TRACING_V2": "false", "LANGSMITH_TRACING": "false"}
     ):
@@ -123,6 +128,7 @@ def test_tracing_enabled():
             assert not ls_utils.tracing_is_enabled()
             return untraced_child_function()
 
+    ls_utils.get_env_var.cache_clear()
     with patch.dict(
         "os.environ", {"LANGCHAIN_TRACING_V2": "true", "LANGSMITH_TRACING": "true"}
     ):
@@ -131,6 +137,7 @@ def test_tracing_enabled():
 
 
 def test_tracing_disabled():
+    ls_utils.get_env_var.cache_clear()
     with patch.dict(
         "os.environ", {"LANGCHAIN_TRACING_V2": "true", "LANGSMITH_TRACING": "true"}
     ):
@@ -264,3 +271,130 @@ def test_deepish_copy():
         "fake_json": ClassWithFakeJson(),
     }
     assert ls_utils.deepish_copy(my_dict) == my_dict
+
+
+def test_is_version_greater_or_equal():
+    # Test versions equal to 0.5.23
+    assert ls_utils.is_version_greater_or_equal("0.5.23", "0.5.23")
+
+    # Test versions greater than 0.5.23
+    assert ls_utils.is_version_greater_or_equal("0.5.24", "0.5.23")
+    assert ls_utils.is_version_greater_or_equal("0.6.0", "0.5.23")
+    assert ls_utils.is_version_greater_or_equal("1.0.0", "0.5.23")
+
+    # Test versions less than 0.5.23
+    assert not ls_utils.is_version_greater_or_equal("0.5.22", "0.5.23")
+    assert not ls_utils.is_version_greater_or_equal("0.5.0", "0.5.23")
+    assert not ls_utils.is_version_greater_or_equal("0.4.99", "0.5.23")
+
+
+def test_parse_prompt_identifier():
+    # Valid cases
+    assert ls_utils.parse_prompt_identifier("name") == ("-", "name", "latest")
+    assert ls_utils.parse_prompt_identifier("owner/name") == ("owner", "name", "latest")
+    assert ls_utils.parse_prompt_identifier("owner/name:commit") == (
+        "owner",
+        "name",
+        "commit",
+    )
+    assert ls_utils.parse_prompt_identifier("name:commit") == ("-", "name", "commit")
+
+    # Invalid cases
+    invalid_identifiers = [
+        "",
+        "/",
+        ":",
+        "owner/",
+        "/name",
+        "owner//name",
+        "owner/name/",
+        "owner/name/extra",
+        ":commit",
+    ]
+
+    for invalid_id in invalid_identifiers:
+        try:
+            ls_utils.parse_prompt_identifier(invalid_id)
+            assert False, f"Expected ValueError for identifier: {invalid_id}"
+        except ValueError:
+            pass  # This is the expected behavior
+
+
+def test_get_api_key() -> None:
+    ls_utils.get_env_var.cache_clear()
+    assert ls_utils.get_api_key("provided_api_key") == "provided_api_key"
+    assert ls_utils.get_api_key("'provided_api_key'") == "provided_api_key"
+    assert ls_utils.get_api_key('"_provided_api_key"') == "_provided_api_key"
+
+    with patch.dict("os.environ", {"LANGCHAIN_API_KEY": "env_api_key"}, clear=True):
+        api_key_ = ls_utils.get_api_key(None)
+        assert api_key_ == "env_api_key"
+
+    ls_utils.get_env_var.cache_clear()
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_key(None) is None
+    ls_utils.get_env_var.cache_clear()
+    assert ls_utils.get_api_key("") is None
+    assert ls_utils.get_api_key(" ") is None
+
+
+def test_get_api_url() -> None:
+    ls_utils.get_env_var.cache_clear()
+    assert ls_utils.get_api_url("http://provided.url") == "http://provided.url"
+
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert ls_utils.get_api_url(None) == "http://env.url"
+
+    ls_utils.get_env_var.cache_clear()
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_url(None) == "https://api.smith.langchain.com"
+    ls_utils.get_env_var.cache_clear()
+    with patch.dict("os.environ", {}, clear=True):
+        assert ls_utils.get_api_url(None) == "https://api.smith.langchain.com"
+    ls_utils.get_env_var.cache_clear()
+    with patch.dict("os.environ", {"LANGCHAIN_ENDPOINT": "http://env.url"}):
+        assert ls_utils.get_api_url(None) == "http://env.url"
+    ls_utils.get_env_var.cache_clear()
+    with pytest.raises(ls_utils.LangSmithUserError):
+        ls_utils.get_api_url(" ")
+
+
+def test_get_func_name():
+    class Foo:
+        def __call__(self, foo: int):
+            return "bar"
+
+    assert ls_utils._get_function_name(Foo()) == "Foo"
+    assert ls_utils._get_function_name(functools.partial(Foo(), foo=3)) == "Foo"
+
+    class AFoo:
+        async def __call__(self, foo: int):
+            return "bar"
+
+    assert ls_utils._get_function_name(AFoo()) == "AFoo"
+    assert ls_utils._get_function_name(functools.partial(AFoo(), foo=3)) == "AFoo"
+
+    def foo(bar: int) -> None:
+        return bar
+
+    assert ls_utils._get_function_name(foo) == "foo"
+    assert ls_utils._get_function_name(functools.partial(foo, bar=3)) == "foo"
+
+    async def afoo(bar: int) -> None:
+        return bar
+
+    assert ls_utils._get_function_name(afoo) == "afoo"
+    assert ls_utils._get_function_name(functools.partial(afoo, bar=3)) == "afoo"
+
+    lambda_func = lambda x: x + 1  # noqa
+    assert ls_utils._get_function_name(lambda_func) == "<lambda>"
+
+    class BarClass:
+        pass
+
+    assert ls_utils._get_function_name(BarClass) == "BarClass"
+
+    assert ls_utils._get_function_name(print) == "print"
+
+    assert ls_utils._get_function_name("not_a_function") == "not_a_function"

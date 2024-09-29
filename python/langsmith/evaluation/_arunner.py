@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures as cf
 import datetime
 import logging
 import pathlib
@@ -25,9 +26,9 @@ from typing import (
 import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
+from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
-from langsmith.beta import warn_beta
 from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
@@ -36,6 +37,7 @@ from langsmith.evaluation._runner import (
     ExperimentResultRow,
     _ExperimentManagerMixin,
     _ForwardResults,
+    _load_examples_map,
     _load_experiment,
     _load_tqdm,
     _load_traces,
@@ -51,7 +53,6 @@ logger = logging.getLogger(__name__)
 ATARGET_T = Callable[[dict], Awaitable[dict]]
 
 
-@warn_beta
 async def aevaluate(
     target: Union[ATARGET_T, AsyncIterable[dict]],
     /,
@@ -65,6 +66,7 @@ async def aevaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
     r"""Evaluate an async target system or function on a given dataset.
 
@@ -90,6 +92,9 @@ async def aevaluate(
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
+        experiment (Optional[schemas.TracerSession]): An existing experiment to
+            extend. If provided, experiment_prefix is ignored. For advanced
+            usage only.
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
@@ -102,11 +107,10 @@ async def aevaluate(
 
     Examples:
         >>> from typing import Sequence
-        >>> from langsmith import Client
-        >>> from langsmith.evaluation import evaluate
+        >>> from langsmith import Client, aevaluate
         >>> from langsmith.schemas import Example, Run
         >>> client = Client()
-        >>> client.clone_public_dataset(
+        >>> dataset = client.clone_public_dataset(
         ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
         ... )
         >>> dataset_name = "Evaluate Examples"
@@ -206,7 +210,7 @@ async def aevaluate(
 
         >>> async def helpfulness(run: Run, example: Example):
         ...     # Row-level evaluator for helpfulness.
-        ...     await asyncio.sleep(0.1)  # Replace with your LLM API call
+        ...     await asyncio.sleep(5)  # Replace with your LLM API call
         ...     return {"score": run.outputs["output"] == "Yes"}
 
         >>> results = asyncio.run(
@@ -221,6 +225,12 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if experiment and experiment_prefix:
+        raise ValueError(
+            "Expected at most one of 'experiment' or 'experiment_prefix',"
+            " but both were provided. "
+            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+        )
     return await _aevaluate(
         target,
         data=data,
@@ -233,12 +243,12 @@ async def aevaluate(
         num_repetitions=num_repetitions,
         client=client,
         blocking=blocking,
+        experiment=experiment,
     )
 
 
-@warn_beta
 async def aevaluate_existing(
-    experiment: Union[str, uuid.UUID],
+    experiment: Union[str, uuid.UUID, schemas.TracerSession],
     /,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
@@ -287,7 +297,7 @@ async def aevaluate_existing(
 
         Load the experiment and run the evaluation.
 
-        >>> from langsmith.evaluation import aevaluate, aevaluate_existing
+        >>> from langsmith import aevaluate, aevaluate_existing
         >>> dataset_name = "Evaluate Examples"
         >>> async def apredict(inputs: dict) -> dict:
         ...     # This can be any async function or just an API call to your app.
@@ -315,18 +325,17 @@ async def aevaluate_existing(
 
 
     """  # noqa: E501
-    client = client or langsmith.Client()
-    project = _load_experiment(experiment, client)
-    runs = _load_traces(experiment, client, load_nested=load_nested)
-    data = [
-        example
-        for example in client.list_examples(
-            dataset_id=project.reference_dataset_id,
-            as_of=project.metadata.get("dataset_version"),
-        )
-    ]
-    runs = sorted(runs, key=lambda r: str(r.reference_example_id))
-    data = sorted(data, key=lambda d: str(d.id))
+    client = client or run_trees.get_cached_client()
+    project = (
+        experiment
+        if isinstance(experiment, schemas.TracerSession)
+        else (await aitertools.aio_to_thread(_load_experiment, experiment, client))
+    )
+    runs = await aitertools.aio_to_thread(
+        _load_traces, experiment, client, load_nested=load_nested
+    )
+    data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
+    data = [data_map[run.reference_example_id] for run in runs]
     return await _aevaluate(
         runs,
         data=data,
@@ -336,6 +345,7 @@ async def aevaluate_existing(
         max_concurrency=max_concurrency,
         client=client,
         blocking=blocking,
+        experiment=project,
     )
 
 
@@ -352,14 +362,15 @@ async def _aevaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[schemas.TracerSession] = None,
+    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
     is_async_target = asyncio.iscoroutinefunction(target) or (
         hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())
     )
-    client = client or langsmith.Client()
+    client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
-    experiment_, runs = _resolve_experiment(
+    experiment_, runs = await aitertools.aio_to_thread(
+        _resolve_experiment,
         experiment,
         runs,
         client,
@@ -596,7 +607,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 )
 
         async for result in aitertools.aiter_with_concurrency(
-            max_concurrency, predict_all()
+            max_concurrency, predict_all(), _eager_consumption_timeout=0.001
         ):
             yield result
 
@@ -607,20 +618,25 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
     ) -> AsyncIterator[ExperimentResultRow]:
-        async def score_all():
-            async for current_results in self.aget_results():
-                # Yield the coroutine to be awaited later in aiter_with_concurrency
-                yield self._arun_evaluators(evaluators, current_results)
+        with cf.ThreadPoolExecutor(max_workers=4) as executor:
 
-        async for result in aitertools.aiter_with_concurrency(
-            max_concurrency, score_all()
-        ):
-            yield result
+            async def score_all():
+                async for current_results in self.aget_results():
+                    # Yield the coroutine to be awaited later in aiter_with_concurrency
+                    yield self._arun_evaluators(
+                        evaluators, current_results, executor=executor
+                    )
+
+            async for result in aitertools.aiter_with_concurrency(
+                max_concurrency, score_all(), _eager_consumption_timeout=0.001
+            ):
+                yield result
 
     async def _arun_evaluators(
         self,
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
+        executor: cf.ThreadPoolExecutor,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
@@ -628,7 +644,13 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             **{"experiment": self.experiment_name},
         }
         with rh.tracing_context(
-            **{**current_context, "project_name": "evaluators", "metadata": metadata}
+            **{
+                **current_context,
+                "project_name": "evaluators",
+                "metadata": metadata,
+                "enabled": True,
+                "client": self.client,
+            }
         ):
             run = current_results["run"]
             example = current_results["example"]
@@ -641,8 +663,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     )
                     eval_results["results"].extend(
                         self.client._log_evaluation_feedback(
-                            evaluator_response,
-                            run=run,
+                            evaluator_response, run=run, _executor=executor
                         )
                     )
                 except Exception as e:
@@ -682,11 +703,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
+                "enabled": True,
+                "client": self.client,
             }
         ):
             for evaluator in summary_evaluators:
                 try:
-                    # TODO: Support async evaluators
                     summary_eval_result = evaluator(runs, examples)
                     flattened_results = self.client._select_eval_results(
                         summary_eval_result,
@@ -696,7 +718,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     for result in flattened_results:
                         feedback = result.dict(exclude={"target_run_id"})
                         evaluator_info = feedback.pop("evaluator_info", None)
-                        self.client.create_feedback(
+                        await aitertools.aio_to_thread(
+                            self.client.create_feedback,
                             **feedback,
                             run_id=None,
                             project_id=project_id,
@@ -769,6 +792,10 @@ class AsyncExperimentResults:
         return self
 
     async def __anext__(self) -> ExperimentResultRow:
+        async def _wait_until_index(index: int) -> None:
+            while self._processed_count < index:
+                await asyncio.sleep(0.05)
+
         while True:
             async with self._lock:
                 if self._processed_count < len(self._results):
@@ -777,8 +804,9 @@ class AsyncExperimentResults:
                     return result
                 elif self._task.done():
                     raise StopAsyncIteration
+
             await asyncio.shield(
-                asyncio.wait([self._task], return_when=asyncio.FIRST_COMPLETED)
+                asyncio.wait_for(_wait_until_index(len(self._results)), timeout=None)
             )
 
     async def _process_data(self, manager: _AsyncExperimentManager) -> None:
@@ -813,30 +841,31 @@ async def _aforward(
         nonlocal run
         run = r
 
-    try:
-        await fn(
-            example.inputs,
-            langsmith_extra=rh.LangSmithExtra(
-                reference_example_id=example.id,
-                on_end=_get_run,
-                project_name=experiment_name,
-                metadata={
-                    **metadata,
-                    "example_version": (
-                        example.modified_at.isoformat()
-                        if example.modified_at
-                        else example.created_at.isoformat()
-                    ),
-                },
-                client=client,
-            ),
+    with rh.tracing_context(enabled=True):
+        try:
+            await fn(
+                example.inputs,
+                langsmith_extra=rh.LangSmithExtra(
+                    reference_example_id=example.id,
+                    on_end=_get_run,
+                    project_name=experiment_name,
+                    metadata={
+                        **metadata,
+                        "example_version": (
+                            example.modified_at.isoformat()
+                            if example.modified_at
+                            else example.created_at.isoformat()
+                        ),
+                    },
+                    client=client,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error running target function: {e}")
+        return _ForwardResults(
+            run=cast(schemas.Run, run),
+            example=example,
         )
-    except Exception as e:
-        logger.error(f"Error running target function: {e}")
-    return _ForwardResults(
-        run=cast(schemas.Run, run),
-        example=example,
-    )
 
 
 def _ensure_async_traceable(

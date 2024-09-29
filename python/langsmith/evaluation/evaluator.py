@@ -20,13 +20,26 @@ from typing import (
 from typing_extensions import TypedDict
 
 try:
-    from pydantic.v1 import BaseModel, Field, ValidationError  # type: ignore[import]
+    from pydantic.v1 import (  # type: ignore[import]
+        BaseModel,
+        Field,
+        ValidationError,
+        validator,
+    )
 except ImportError:
-    from pydantic import BaseModel, Field, ValidationError  # type: ignore[assignment]
+    from pydantic import (  # type: ignore[assignment]
+        BaseModel,
+        Field,
+        ValidationError,
+        validator,
+    )
 
+import logging
 from functools import wraps
 
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
+
+logger = logging.getLogger(__name__)
 
 
 class Category(TypedDict):
@@ -82,6 +95,20 @@ class EvaluationResult(BaseModel):
         """Pydantic model configuration."""
 
         allow_extra = False
+
+    @validator("value", pre=True)
+    def check_value_non_numeric(cls, v, values):
+        """Check that the value is not numeric."""
+        # If a score isn't provided and the value is numeric
+        # it's more likely the user intended use the score field
+        if "score" not in values or values["score"] is None:
+            if isinstance(v, (int, float)):
+                logger.warning(
+                    "Numeric values should be provided in"
+                    " the 'score' field, not 'value'."
+                    f" Got: {v}"
+                )
+        return v
 
 
 class EvaluationResults(TypedDict, total=False):
@@ -169,7 +196,9 @@ class DynamicRunEvaluator(RunEvaluator):
         from langsmith import run_helpers  # type: ignore
 
         if afunc is not None:
-            self.afunc = run_helpers.ensure_traceable(afunc)
+            self.afunc = run_helpers.ensure_traceable(
+                afunc, process_inputs=_serialize_inputs
+            )
             self._name = getattr(afunc, "__name__", "DynamicRunEvaluator")
         if inspect.iscoroutinefunction(func):
             if afunc is not None:
@@ -178,11 +207,14 @@ class DynamicRunEvaluator(RunEvaluator):
                     "also provided. If providing both, func should be a regular "
                     "function to avoid ambiguity."
                 )
-            self.afunc = run_helpers.ensure_traceable(func)
+            self.afunc = run_helpers.ensure_traceable(
+                func, process_inputs=_serialize_inputs
+            )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
             self.func = run_helpers.ensure_traceable(
-                cast(Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT], func)
+                cast(Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT], func),
+                process_inputs=_serialize_inputs,
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
@@ -197,9 +229,19 @@ class DynamicRunEvaluator(RunEvaluator):
                 result.source_run_id = source_run_id
             return result
         try:
+            if not result:
+                raise ValueError(
+                    "Expected an EvaluationResult object, or dict with a metric"
+                    f" 'key' and optional 'score'; got empty result: {result}"
+                )
             if "key" not in result:
                 if allow_no_key:
                     result["key"] = self._name
+            if all(k not in result for k in ("score", "value", "comment")):
+                raise ValueError(
+                    "Expected an EvaluationResult object, or dict with a metric"
+                    f" 'key' and optional 'score' or categorical 'value'; got {result}"
+                )
             return EvaluationResult(**{"source_run_id": source_run_id, **result})
         except ValidationError as e:
             raise ValueError(
@@ -233,10 +275,17 @@ class DynamicRunEvaluator(RunEvaluator):
             if not result.source_run_id:
                 result.source_run_id = source_run_id
             return result
+        if not result:
+            raise ValueError(
+                "Expected an EvaluationResult or EvaluationResults object, or a"
+                " dict with key and one of score or value, EvaluationResults,"
+                f" got {result}"
+            )
         if not isinstance(result, dict):
             raise ValueError(
                 f"Expected a dict, EvaluationResult, or EvaluationResults, got {result}"
             )
+
         return self._coerce_evaluation_results(result, source_run_id)
 
     @property
@@ -328,7 +377,7 @@ class DynamicRunEvaluator(RunEvaluator):
 
     def __repr__(self) -> str:
         """Represent the DynamicRunEvaluator object."""
-        return f"<DynamicRunEvaluator {getattr(self.func, '__name__')}>"
+        return f"<DynamicRunEvaluator {self._name}>"
 
 
 def run_evaluator(
@@ -341,6 +390,22 @@ def run_evaluator(
     Decorator that transforms a function into a `RunEvaluator`.
     """
     return DynamicRunEvaluator(func)
+
+
+_MAXSIZE = 10_000
+
+
+def _maxsize_repr(obj: Any):
+    s = repr(obj)
+    if len(s) > _MAXSIZE:
+        s = s[: _MAXSIZE - 4] + "...)"
+    return s
+
+
+def _serialize_inputs(inputs: dict) -> dict:
+    run_truncated = _maxsize_repr(inputs.get("run"))
+    example_truncated = _maxsize_repr(inputs.get("example"))
+    return {"run": run_truncated, "example": example_truncated}
 
 
 class DynamicComparisonRunEvaluator:
@@ -370,7 +435,9 @@ class DynamicComparisonRunEvaluator:
         from langsmith import run_helpers  # type: ignore
 
         if afunc is not None:
-            self.afunc = run_helpers.ensure_traceable(afunc)
+            self.afunc = run_helpers.ensure_traceable(
+                afunc, process_inputs=_serialize_inputs
+            )
             self._name = getattr(afunc, "__name__", "DynamicRunEvaluator")
         if inspect.iscoroutinefunction(func):
             if afunc is not None:
@@ -379,7 +446,9 @@ class DynamicComparisonRunEvaluator:
                     "also provided. If providing both, func should be a regular "
                     "function to avoid ambiguity."
                 )
-            self.afunc = run_helpers.ensure_traceable(func)
+            self.afunc = run_helpers.ensure_traceable(
+                func, process_inputs=_serialize_inputs
+            )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
         else:
             self.func = run_helpers.ensure_traceable(
@@ -389,7 +458,8 @@ class DynamicComparisonRunEvaluator:
                         _COMPARISON_OUTPUT,
                     ],
                     func,
-                )
+                ),
+                process_inputs=_serialize_inputs,
             )
             self._name = getattr(func, "__name__", "DynamicRunEvaluator")
 
@@ -480,7 +550,7 @@ class DynamicComparisonRunEvaluator:
 
     def __repr__(self) -> str:
         """Represent the DynamicRunEvaluator object."""
-        return f"<DynamicComparisonRunEvaluator {getattr(self.func, '__name__')}>"
+        return f"<DynamicComparisonRunEvaluator {self._name}>"
 
     @staticmethod
     def _get_tags(runs: Sequence[Run]) -> List[str]:

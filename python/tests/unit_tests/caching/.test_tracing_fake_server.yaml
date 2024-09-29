@@ -1,0 +1,38 @@
+interactions:
+- request:
+    body: '{"val": 8, "should_err": 0}'
+    headers: {}
+    method: POST
+    uri: http://localhost:8257/fake-route
+  response:
+    body:
+      string: '{"STATUS":"SUCCESS"}'
+    headers:
+      content-length:
+      - '20'
+      content-type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"val": 8, "should_err": 0}'
+    headers: {}
+    method: POST
+    uri: http://localhost:8257/fake-route
+  response:
+    body:
+      string: '{"STATUS":"SUCCESS"}'
+    headers:
+      Content-Length:
+      - '20'
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 23 May 2024 05:39:12 GMT
+      Server:
+      - uvicorn
+    status:
+      code: 200
+      message: OK
+version: 1

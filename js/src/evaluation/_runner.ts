@@ -1,5 +1,4 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
-import { getLangchainCallbacks } from "../langchain.js";
 import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
@@ -15,6 +14,7 @@ import {
   RunEvaluator,
   runEvaluator,
 } from "./evaluator.js";
+import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,7 +140,7 @@ interface ExperimentResultRow {
  * Supports lazily running predictions and evaluations in parallel to facilitate
  * result streaming and early debugging.
  */
-class _ExperimentManager {
+export class _ExperimentManager {
   _data?: DataT;
 
   _runs?: AsyncGenerator<Run>;
@@ -312,30 +312,43 @@ class _ExperimentManager {
     return projectMetadata;
   }
 
-  async _getProject(firstExample: Example): Promise<TracerSession> {
+  async _createProject(firstExample: Example, projectMetadata: KVMap) {
+    // Create the project, updating the experimentName until we find a unique one.
     let project: TracerSession;
-    if (!this._experiment) {
+    const originalExperimentName = this._experimentName;
+    for (let i = 0; i < 10; i++) {
       try {
-        const projectMetadata = await this._getExperimentMetadata();
         project = await this.client.createProject({
-          projectName: this.experimentName,
+          projectName: this._experimentName,
           referenceDatasetId: firstExample.dataset_id,
           metadata: projectMetadata,
           description: this._description,
         });
-        this._experiment = project;
+        return project;
       } catch (e) {
-        if (String(e).includes("already exists")) {
+        // Naming collision
+        if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
+          const ent = uuidv4().slice(0, 6);
+          this._experimentName = `${originalExperimentName}-${ent}`;
+        } else {
           throw e;
         }
-        throw new Error(
-          `Experiment ${this._experimentName} already exists. Please use a different name.`
-        );
       }
-    } else {
-      project = this._experiment;
     }
-    return project;
+    throw new Error(
+      "Could not generate a unique experiment name within 10 attempts." +
+        " Please try again with a different name."
+    );
+  }
+
+  async _getProject(firstExample: Example): Promise<TracerSession> {
+    let project: TracerSession;
+    if (!this._experiment) {
+      const projectMetadata = await this._getExperimentMetadata();
+      project = await this._createProject(firstExample, projectMetadata);
+      this._experiment = project;
+    }
+    return this._experiment;
   }
 
   protected async _printExperimentStart(): Promise<void> {
@@ -553,6 +566,7 @@ class _ExperimentManager {
               : new Date(example.created_at).toISOString(),
           },
           client: fields.client,
+          tracingEnabled: true,
         };
         const evaluatorResponse = await evaluator.evaluateRun(
           run,
@@ -648,11 +662,12 @@ class _ExperimentManager {
             this.client._selectEvalResults(summaryEvalResult);
           aggregateFeedback.push(...flattenedResults);
           for (const result of flattenedResults) {
-            const { targetRunId, ...feedback } = result;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { targetRunId, key, ...feedback } = result;
             const evaluatorInfo = feedback.evaluatorInfo;
             delete feedback.evaluatorInfo;
 
-            await this.client.createFeedback(null, "key", {
+            await this.client.createFeedback(null, key, {
               ...feedback,
               projectId: projectId,
               sourceInfo: evaluatorInfo,
@@ -867,8 +882,20 @@ async function _forward(
   const wrappedFn =
     "invoke" in fn
       ? traceable(async (inputs) => {
-          const callbacks = await getLangchainCallbacks();
-          return fn.invoke(inputs, { callbacks });
+          let langChainCallbacks;
+          try {
+            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+            const { getLangchainCallbacks } = await import("../langchain.js");
+            langChainCallbacks = await getLangchainCallbacks();
+          } catch {
+            // no-op
+          }
+          // Issue with retrieving LangChain callbacks, rely on interop
+          if (langChainCallbacks === undefined) {
+            return await fn.invoke(inputs);
+          } else {
+            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          }
         }, options)
       : traceable(fn, options);
 
@@ -882,7 +909,7 @@ async function _forward(
   if (!run) {
     throw new Error(`Run not created by target function.
 This is most likely due to tracing not being enabled.\n
-Try setting "LANGCHAIN_TRACING_V2=true" in your environment.`);
+Try setting "LANGSMITH_TRACING=true" in your environment.`);
   }
 
   return {

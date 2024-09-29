@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith._testing import test, unit
+    from langsmith.async_client import AsyncClient
     from langsmith.client import Client
     from langsmith.evaluation import aevaluate, evaluate
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
@@ -16,6 +17,9 @@ if TYPE_CHECKING:
         tracing_context,
     )
     from langsmith.run_trees import RunTree
+    from langsmith.utils import (
+        ContextThreadPoolExecutor,
+    )
 
 
 def __getattr__(name: str) -> Any:
@@ -30,6 +34,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.client import Client
 
         return Client
+    elif name == "AsyncClient":
+        from langsmith.async_client import AsyncClient
+
+        return AsyncClient
     elif name == "RunTree":
         from langsmith.run_trees import RunTree
 
@@ -64,10 +72,19 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation import evaluate
 
         return evaluate
+
+    elif name == "evaluate_existing":
+        from langsmith.evaluation import evaluate_existing
+
+        return evaluate_existing
     elif name == "aevaluate":
         from langsmith.evaluation import aevaluate
 
         return aevaluate
+    elif name == "aevaluate_existing":
+        from langsmith.evaluation import aevaluate_existing
+
+        return aevaluate_existing
     elif name == "tracing_context":
         from langsmith.run_helpers import tracing_context
 
@@ -87,6 +104,12 @@ def __getattr__(name: str) -> Any:
         from langsmith._testing import unit
 
         return unit
+    elif name == "ContextThreadPoolExecutor":
+        from langsmith.utils import (
+            ContextThreadPoolExecutor,
+        )
+
+        return ContextThreadPoolExecutor
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -108,4 +131,6 @@ __all__ = [
     "tracing_context",
     "get_tracing_context",
     "get_current_run_tree",
+    "ContextThreadPoolExecutor",
+    "AsyncClient",
 ]

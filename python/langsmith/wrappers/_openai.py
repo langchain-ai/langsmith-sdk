@@ -114,13 +114,11 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                             "arguments": "",
                         }
                     if chunk.function.name:
-                        message["tool_calls"][index]["function"][
-                            "name"
-                        ] += chunk.function.name
+                        fn_ = message["tool_calls"][index]["function"]
+                        fn_["name"] += chunk.function.name
                     if chunk.function.arguments:
-                        message["tool_calls"][index]["function"][
-                            "arguments"
-                        ] += chunk.function.arguments
+                        fn_ = message["tool_calls"][index]["function"]
+                        fn_["arguments"] += chunk.function.arguments
     return {
         "index": choices[0].index,
         "finish_reason": next(
@@ -195,11 +193,6 @@ def _get_wrapper(
             _invocation_params_fn=invocation_params_fn,
             **textra,
         )
-        if stream:
-            # TODO: This slightly alters the output to be a generator instead of the
-            # stream object. We can probably fix this with a bit of simple changes
-            res = decorator(original_create)(*args, stream=stream, **kwargs)
-            return res
         return await decorator(original_create)(*args, stream=stream, **kwargs)
 
     return acreate if run_helpers.is_async(original_create) else create
@@ -245,6 +238,6 @@ def wrap_openai(
         completions_name,
         _reduce_completions,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "text"),
+        invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
     )
     return client

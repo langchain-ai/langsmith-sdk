@@ -80,16 +80,19 @@ export interface RunnableConfigLike {
 interface CallbackManagerLike {
   handlers: TracerLike[];
   getParentRunId?: () => string | undefined;
+  copy?: () => CallbackManagerLike;
 }
 
 interface TracerLike {
   name: string;
 }
+
 interface LangChainTracerLike extends TracerLike {
   name: "langchain_tracer";
   projectName: string;
   getRun?: (id: string) => RunTree | undefined;
   client: Client;
+  updateFromRunTree?: (runTree: RunTree) => void;
 }
 
 interface HeadersLike {
@@ -143,6 +146,8 @@ class Baggage {
 }
 
 export class RunTree implements BaseRun {
+  private static sharedClient: Client | null = null;
+
   id: string;
   name: RunTreeConfig["name"];
   run_type: string;
@@ -170,7 +175,7 @@ export class RunTree implements BaseRun {
   constructor(originalConfig: RunTreeConfig) {
     const defaultConfig = RunTree.getDefaultConfig();
     const { metadata, ...config } = originalConfig;
-    const client = config.client ?? new Client();
+    const client = config.client ?? RunTree.getSharedClient();
     const dedupedMetadata = {
       ...metadata,
       ...config?.extra?.metadata,
@@ -223,6 +228,13 @@ export class RunTree implements BaseRun {
     };
   }
 
+  private static getSharedClient(): Client {
+    if (!RunTree.sharedClient) {
+      RunTree.sharedClient = new Client();
+    }
+    return RunTree.sharedClient;
+  }
+
   public createChild(config: RunTreeConfig): RunTree {
     const child_execution_order = this.child_execution_order + 1;
 
@@ -235,6 +247,36 @@ export class RunTree implements BaseRun {
       execution_order: child_execution_order,
       child_execution_order: child_execution_order,
     });
+
+    type ExtraWithSymbol = Record<string | symbol, unknown>;
+    const LC_CHILD = Symbol.for("lc:child_config");
+
+    const presentConfig =
+      (config.extra as ExtraWithSymbol | undefined)?.[LC_CHILD] ??
+      (this.extra as ExtraWithSymbol)[LC_CHILD];
+
+    // tracing for LangChain is defined by the _parentRunId and runMap of the tracer
+    if (isRunnableConfigLike(presentConfig)) {
+      const newConfig: RunnableConfigLike = { ...presentConfig };
+      const callbacks: CallbackManagerLike | unknown[] | undefined =
+        isCallbackManagerLike(newConfig.callbacks)
+          ? newConfig.callbacks.copy?.()
+          : undefined;
+
+      if (callbacks) {
+        // update the parent run id
+        Object.assign(callbacks, { _parentRunId: child.id });
+
+        // only populate if we're in a newer LC.JS version
+        callbacks.handlers
+          ?.find(isLangChainTracerLike)
+          ?.updateFromRunTree?.(child);
+
+        newConfig.callbacks = callbacks;
+      }
+
+      (child.extra as ExtraWithSymbol)[LC_CHILD] = newConfig;
+    }
 
     // propagate child_execution_order upwards
     const visited = new Set<string>();
@@ -314,36 +356,44 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
-    const runtimeEnv = await getRuntimeEnvironment();
-    const runCreate = await this._convertToCreate(this, runtimeEnv, true);
-    await this.client.createRun(runCreate);
+    try {
+      const runtimeEnv = await getRuntimeEnvironment();
+      const runCreate = await this._convertToCreate(this, runtimeEnv, true);
+      await this.client.createRun(runCreate);
 
-    if (!excludeChildRuns) {
-      warnOnce(
-        "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
-      );
-      for (const childRun of this.child_runs) {
-        await childRun.postRun(false);
+      if (!excludeChildRuns) {
+        warnOnce(
+          "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
+        );
+        for (const childRun of this.child_runs) {
+          await childRun.postRun(false);
+        }
       }
+    } catch (error) {
+      console.error(`Error in postRun for run ${this.id}:`, error);
     }
   }
 
   async patchRun(): Promise<void> {
-    const runUpdate: RunUpdate = {
-      end_time: this.end_time,
-      error: this.error,
-      inputs: this.inputs,
-      outputs: this.outputs,
-      parent_run_id: this.parent_run?.id,
-      reference_example_id: this.reference_example_id,
-      extra: this.extra,
-      events: this.events,
-      dotted_order: this.dotted_order,
-      trace_id: this.trace_id,
-      tags: this.tags,
-    };
+    try {
+      const runUpdate: RunUpdate = {
+        end_time: this.end_time,
+        error: this.error,
+        inputs: this.inputs,
+        outputs: this.outputs,
+        parent_run_id: this.parent_run?.id,
+        reference_example_id: this.reference_example_id,
+        extra: this.extra,
+        events: this.events,
+        dotted_order: this.dotted_order,
+        trace_id: this.trace_id,
+        tags: this.tags,
+      };
 
-    await this.client.updateRun(this.id, runUpdate);
+      await this.client.updateRun(this.id, runUpdate);
+    } catch (error) {
+      console.error(`Error in patchRun for run ${this.id}`, error);
+    }
   }
 
   toJSON() {
@@ -388,6 +438,8 @@ export class RunTree implements BaseRun {
     const parentRunTree = new RunTree({
       name: parentRun.name,
       id: parentRun.id,
+      trace_id: parentRun.trace_id,
+      dotted_order: parentRun.dotted_order,
       client,
       tracingEnabled,
       project_name: projectName,
@@ -475,15 +527,26 @@ export function isRunTree(x?: unknown): x is RunTree {
   );
 }
 
-function containsLangChainTracerLike(x?: unknown): x is LangChainTracerLike[] {
+function isLangChainTracerLike(x: unknown): x is LangChainTracerLike {
   return (
-    Array.isArray(x) &&
-    x.some((callback: unknown) => {
-      return (
-        typeof (callback as LangChainTracerLike).name === "string" &&
-        (callback as LangChainTracerLike).name === "langchain_tracer"
-      );
-    })
+    typeof x === "object" &&
+    x != null &&
+    typeof (x as LangChainTracerLike).name === "string" &&
+    (x as LangChainTracerLike).name === "langchain_tracer"
+  );
+}
+
+function containsLangChainTracerLike(x: unknown): x is LangChainTracerLike[] {
+  return (
+    Array.isArray(x) && x.some((callback) => isLangChainTracerLike(callback))
+  );
+}
+
+function isCallbackManagerLike(x: unknown): x is CallbackManagerLike {
+  return (
+    typeof x === "object" &&
+    x != null &&
+    Array.isArray((x as CallbackManagerLike).handlers)
   );
 }
 
