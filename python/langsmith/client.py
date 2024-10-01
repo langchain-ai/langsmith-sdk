@@ -435,6 +435,32 @@ class TracingQueueItem:
     item: Any = field(compare=False)
 
 
+class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
+    __attrs__ = [
+        "max_retries",
+        "config",
+        "_pool_connections",
+        "_pool_maxsize",
+        "_pool_block",
+        "_blocksize",
+    ]
+
+    def __init__(
+        self,
+        pool_connections: int = requests_adapters.DEFAULT_POOLSIZE,
+        pool_maxsize: int = requests_adapters.DEFAULT_POOLSIZE,
+        max_retries: Union[Retry, int, None] = requests_adapters.DEFAULT_RETRIES,
+        pool_block: bool = requests_adapters.DEFAULT_POOLBLOCK,
+        blocksize: int = 16384,  # default from urllib3.BaseHTTPSConnection
+    ) -> None:
+        self._blocksize = blocksize
+        super().__init__(pool_connections, pool_maxsize, max_retries, pool_block)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        pool_kwargs["blocksize"] = self._blocksize
+        return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -578,12 +604,16 @@ class Client:
             self.tracing_queue = None
 
         # Mount the HTTPAdapter with the retry configuration.
-        adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
-        # Don't overwrite if session already has an adapter
-        if not self.session.get_adapter("http://"):
-            self.session.mount("http://", adapter)
-        if not self.session.get_adapter("https://"):
-            self.session.mount("https://", adapter)
+        adapter = _LangSmithHttpAdapter(
+            max_retries=self.retry_config,
+            blocksize=_BLOCKSIZE_BYTES,
+            # We need to set the pool_maxsize to a value greater than the
+            # number of threads used for batch tracing, plus 1 for other
+            # requests.
+            pool_maxsize=_AUTO_SCALE_UP_NTHREADS_LIMIT + 1,
+        )
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
@@ -5684,7 +5714,7 @@ def convert_prompt_to_openai_format(
         ls_utils.LangSmithError: If there is an error during the conversion process.
     """
     try:
-        from langchain_openai import ChatOpenAI
+        from langchain_openai import ChatOpenAI  # type: ignore
     except ImportError:
         raise ImportError(
             "The convert_prompt_to_openai_format function requires the langchain_openai"
@@ -5720,7 +5750,7 @@ def convert_prompt_to_anthropic_format(
         dict: The prompt in Anthropic format.
     """
     try:
-        from langchain_anthropic import ChatAnthropic
+        from langchain_anthropic import ChatAnthropic  # type: ignore
     except ImportError:
         raise ImportError(
             "The convert_prompt_to_anthropic_format function requires the "
