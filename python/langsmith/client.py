@@ -39,6 +39,7 @@ import uuid
 import warnings
 import weakref
 from dataclasses import dataclass, field
+from inspect import signature
 from queue import Empty, PriorityQueue, Queue
 from typing import (
     TYPE_CHECKING,
@@ -65,6 +66,7 @@ import requests
 from requests import adapters as requests_adapters
 from requests_toolbelt.multipart import MultipartEncoder  # type: ignore[import-untyped]
 from typing_extensions import TypeGuard
+from urllib3.poolmanager import PoolKey
 from urllib3.util import Retry
 
 import langsmith
@@ -95,6 +97,7 @@ WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
 BOUNDARY = uuid.uuid4().hex
 MultipartParts = List[Tuple[str, Tuple[None, bytes, str]]]
+URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
 def _parse_token_or_url(
@@ -462,7 +465,9 @@ class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
         super().__init__(pool_connections, pool_maxsize, max_retries, pool_block)
 
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
-        pool_kwargs["blocksize"] = self._blocksize
+        if URLLIB3_SUPPORTS_BLOCKSIZE:
+            # urllib3 before 2.0 doesn't support blocksize
+            pool_kwargs["blocksize"] = self._blocksize
         return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
 
 
