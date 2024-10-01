@@ -14,7 +14,7 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Dict, NamedTuple, Optional, Type, Union
+from typing import Dict, List, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -22,8 +22,10 @@ import dataclasses_json
 import orjson
 import pytest
 import requests
+from multipart import MultipartParser, MultipartPart, parse_options_header
 from pydantic import BaseModel
 from requests import HTTPError
+from requests_toolbelt.multipart import MultipartEncoder
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
@@ -63,7 +65,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client.api_url == "https://api.smith.langsmith-endpoint.com"
 
     # Scenario 2: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT
@@ -72,7 +74,11 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
-    client = Client(api_url="https://api.smith.langchain.com", api_key="123")
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="123",
+        auto_batch_tracing=False,
+    )
     assert client.api_url == "https://api.smith.langchain.com"
 
     # Scenario 3: LANGCHAIN_ENDPOINT is set, but LANGSMITH_ENDPOINT is not
@@ -80,7 +86,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
 
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client.api_url == "https://api.smith.langchain-endpoint.com"
 
     # Scenario 4: LANGCHAIN_ENDPOINT is not set, but LANGSMITH_ENDPOINT is set
@@ -88,7 +94,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client.api_url == "https://api.smith.langsmith-endpoint.com"
 
 
@@ -152,12 +158,13 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
     monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client._write_api_urls == data
     assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
     assert client.api_key == "123"
 
 
+@mock.patch("langsmith.client.requests.Session")
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env_cache()
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
@@ -276,7 +283,8 @@ def test_create_run_unicode() -> None:
     client.update_run(id_, status="completed")
 
 
-def test_create_run_mutate() -> None:
+@pytest.mark.parametrize("use_multipart_endpoint", (True, False))
+def test_create_run_mutate(use_multipart_endpoint: bool) -> None:
     inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
@@ -286,6 +294,7 @@ def test_create_run_mutate() -> None:
         session=session,
         info=ls_schemas.LangSmithInfo(
             batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=use_multipart_endpoint,
                 size_limit_bytes=None,  # Note this field is not used here
                 size_limit=100,
                 scale_up_nthreads_limit=16,
@@ -315,33 +324,91 @@ def test_create_run_mutate() -> None:
         trace_id=id_,
         dotted_order=run_dict["dotted_order"],
     )
-    for _ in range(10):
-        time.sleep(0.1)  # Give the background thread time to stop
-        payloads = [
-            json.loads(call[2]["data"])
-            for call in session.request.mock_calls
-            if call.args and call.args[1].endswith("runs/batch")
+    if use_multipart_endpoint:
+        for _ in range(10):
+            time.sleep(0.1)  # Give the background thread time to stop
+            payloads = [
+                (call[2]["headers"], call[2]["data"])
+                for call in session.request.mock_calls
+                if call.args and call.args[1].endswith("runs/multipart")
+            ]
+            if payloads:
+                break
+        else:
+            assert False, "No payloads found"
+
+        parts: List[MultipartPart] = []
+        for payload in payloads:
+            headers, data = payload
+            assert headers["Content-Type"].startswith("multipart/form-data")
+            # this is a current implementation detail, if we change implementation
+            # we update this assertion
+            assert isinstance(data, MultipartEncoder)
+            boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+            parser = MultipartParser(data, boundary)
+            parts.extend(parser.parts())
+
+        assert len(parts) == 3
+        assert [p.name for p in parts] == [
+            f"post.{id_}",
+            f"post.{id_}.inputs",
+            f"post.{id_}.outputs",
         ]
-        if payloads:
-            break
-    posts = [pr for payload in payloads for pr in payload.get("post", [])]
-    patches = [pr for payload in payloads for pr in payload.get("patch", [])]
-    inputs = next(
-        (pr["inputs"] for pr in itertools.chain(posts, patches) if pr.get("inputs")),
-        {},
-    )
-    outputs = next(
-        (pr["outputs"] for pr in itertools.chain(posts, patches) if pr.get("outputs")),
-        {},
-    )
-    # Check that the mutated value wasn't posted
-    assert "messages" in inputs
-    assert inputs["messages"] == ["hi"]
-    assert "mygen" in inputs
-    assert inputs["mygen"].startswith(  # type: ignore
-        "<generator object test_create_run_mutate.<locals>."
-    )
-    assert outputs == {"messages": ["hi", "there"]}
+        assert [p.headers.get("content-type") for p in parts] == [
+            "application/json",
+            "application/json",
+            "application/json",
+        ]
+        outputs_parsed = json.loads(parts[2].value)
+        assert outputs_parsed == outputs
+        inputs_parsed = json.loads(parts[1].value)
+        assert inputs_parsed["messages"] == ["hi"]
+        assert inputs_parsed["mygen"].startswith(  # type: ignore
+            "<generator object test_create_run_mutate.<locals>."
+        )
+        run_parsed = json.loads(parts[0].value)
+        assert "inputs" not in run_parsed
+        assert "outputs" not in run_parsed
+        assert run_parsed["trace_id"] == str(id_)
+        assert run_parsed["dotted_order"] == run_dict["dotted_order"]
+    else:
+        for _ in range(10):
+            time.sleep(0.1)  # Give the background thread time to stop
+            payloads = [
+                json.loads(call[2]["data"])
+                for call in session.request.mock_calls
+                if call.args and call.args[1].endswith("runs/batch")
+            ]
+            if payloads:
+                break
+        else:
+            assert False, "No payloads found"
+        posts = [pr for payload in payloads for pr in payload.get("post", [])]
+        patches = [pr for payload in payloads for pr in payload.get("patch", [])]
+        inputs = next(
+            (
+                pr["inputs"]
+                for pr in itertools.chain(posts, patches)
+                if pr.get("inputs")
+            ),
+            {},
+        )
+        outputs = next(
+            (
+                pr["outputs"]
+                for pr in itertools.chain(posts, patches)
+                if pr.get("outputs")
+            ),
+            {},
+        )
+        # Check that the mutated value wasn't posted
+        assert "messages" in inputs
+        assert inputs["messages"] == ["hi"]
+        assert "mygen" in inputs
+        assert inputs["mygen"].startswith(  # type: ignore
+            "<generator object test_create_run_mutate.<locals>."
+        )
+        assert outputs == {"messages": ["hi", "there"]}
 
 
 class CallTracker:
@@ -951,7 +1018,10 @@ MB = 1024 * 1024
 
 
 @pytest.mark.parametrize("payload_size", [MB, 5 * MB, 9 * MB, 21 * MB])
-def test_batch_ingest_run_splits_large_batches(payload_size: int):
+@pytest.mark.parametrize("use_multipart_endpoint", (True, False))
+def test_batch_ingest_run_splits_large_batches(
+    payload_size: int, use_multipart_endpoint: bool
+):
     mock_session = MagicMock()
     client = Client(api_key="test", session=mock_session)
     mock_response = MagicMock()
@@ -981,36 +1051,76 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
         }
         for run_id in patch_ids
     ]
-    client.batch_ingest_runs(create=posts, update=patches)
-    # we can support up to 20MB per batch, so we need to find the number of batches
-    # we should be sending
-    max_in_batch = max(1, (20 * MB) // (payload_size + 20))
+    if use_multipart_endpoint:
+        client.multipart_ingest_runs(create=posts, update=patches)
+        # we can support up to 20MB per batch, so we need to find the number of batches
+        # we should be sending
+        max_in_batch = max(1, (20 * MB) // (payload_size + 20))
 
-    expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
-    # count the number of POST requests
-    assert (
-        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "POST"])
-        == expected_num_requests
-    )
-    request_bodies = [
-        op
-        for call in mock_session.request.call_args_list
-        for reqs in (
-            orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+        expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
+        # count the number of POST requests
+        assert sum(
+            [1 for call in mock_session.request.call_args_list if call[0][0] == "POST"]
+        ) in (expected_num_requests, expected_num_requests + 1)
+        request_bodies = [
+            op
+            for call in mock_session.request.call_args_list
+            for op in (
+                MultipartParser(
+                    call[1]["data"],
+                    parse_options_header(call[1]["headers"]["Content-Type"])[1][
+                        "boundary"
+                    ],
+                )
+                if call[0][0] == "POST"
+                else []
+            )
+        ]
+        all_run_ids = run_ids + patch_ids
+
+        # Check that all the run_ids are present in the request bodies
+        for run_id in all_run_ids:
+            assert any(
+                [body.name.split(".")[1] == run_id for body in request_bodies]
+            ), run_id
+    else:
+        client.batch_ingest_runs(create=posts, update=patches)
+        # we can support up to 20MB per batch, so we need to find the number of batches
+        # we should be sending
+        max_in_batch = max(1, (20 * MB) // (payload_size + 20))
+
+        expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
+        # count the number of POST requests
+        assert (
+            sum(
+                [
+                    1
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                ]
+            )
+            == expected_num_requests
         )
-        for op in reqs
-    ]
-    all_run_ids = run_ids + patch_ids
+        request_bodies = [
+            op
+            for call in mock_session.request.call_args_list
+            for reqs in (
+                orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+            )
+            for op in reqs
+        ]
+        all_run_ids = run_ids + patch_ids
 
-    # Check that all the run_ids are present in the request bodies
-    for run_id in all_run_ids:
-        assert any([body["id"] == str(run_id) for body in request_bodies])
+        # Check that all the run_ids are present in the request bodies
+        for run_id in all_run_ids:
+            assert any([body["id"] == str(run_id) for body in request_bodies])
 
-    # Check that no duplicate run_ids are present in the request bodies
-    assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
+        # Check that no duplicate run_ids are present in the request bodies
+        assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
 
 
-def test_select_eval_results():
+@mock.patch("langsmith.client.requests.Session")
+def test_select_eval_results(mock_session_cls: mock.Mock):
     expected = EvaluationResult(
         key="foo",
         value="bar",
@@ -1050,6 +1160,7 @@ def test_select_eval_results():
 
 
 @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@mock.patch("langsmith.client.requests.Session")
 def test_validate_api_key_if_hosted(
     monkeypatch: pytest.MonkeyPatch, client_cls: Union[Type[Client], Type[AsyncClient]]
 ) -> None:

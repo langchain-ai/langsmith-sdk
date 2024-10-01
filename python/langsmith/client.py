@@ -1587,6 +1587,23 @@ class Client:
             self._run_transform(run, update=True, attachments_collector=all_attachments)
             for run in update or EMPTY_SEQ
         ]
+        # require trace_id and dotted_order
+        if create_dicts:
+            for run in create_dicts:
+                if not run.get("trace_id") or not run.get("dotted_order"):
+                    raise ls_utils.LangSmithUserError(
+                        "Batch ingest requires trace_id and dotted_order to be set."
+                    )
+            else:
+                del run
+        if update_dicts:
+            for run in update_dicts:
+                if not run.get("trace_id") or not run.get("dotted_order"):
+                    raise ls_utils.LangSmithUserError(
+                        "Batch ingest requires trace_id and dotted_order to be set."
+                    )
+            else:
+                del run
         # combine post and patch dicts where possible
         if update_dicts and create_dicts:
             create_by_id = {run["id"]: run for run in create_dicts}
@@ -1598,17 +1615,9 @@ class Client:
                             create_by_id[run["id"]][k] = v
                 else:
                     standalone_updates.append(run)
+            else:
+                del run
             update_dicts = standalone_updates
-        for run in create_dicts:
-            if not run.get("trace_id") or not run.get("dotted_order"):
-                raise ls_utils.LangSmithUserError(
-                    "Batch ingest requires trace_id and dotted_order to be set."
-                )
-        for run in update_dicts:
-            if not run.get("trace_id") or not run.get("dotted_order"):
-                raise ls_utils.LangSmithUserError(
-                    "Batch ingest requires trace_id and dotted_order to be set."
-                )
         # filter out runs that are not sampled
         if not pre_sampled:
             create_dicts = self._filter_for_sampling(create_dicts)
@@ -1631,10 +1640,10 @@ class Client:
                 parts: MultipartParts = []
                 # collect fields to be sent as separate parts
                 fields = [
-                    ("inputs", run.pop("inputs", None)),
-                    ("outputs", run.pop("outputs", None)),
-                    ("serialized", run.pop("serialized", None)),
-                    ("events", run.pop("events", None)),
+                    ("inputs", payload.pop("inputs", None)),
+                    ("outputs", payload.pop("outputs", None)),
+                    ("serialized", payload.pop("serialized", None)),
+                    ("events", payload.pop("events", None)),
                 ]
                 # encode the main run payload
                 parts.append(
@@ -1649,7 +1658,7 @@ class Client:
                         continue
                     parts.append(
                         (
-                            f"{event}.{run['id']}.{key}",
+                            f"{event}.{payload['id']}.{key}",
                             (None, _dumps_json(value), "application/json"),
                         ),
                     )
@@ -1666,11 +1675,13 @@ class Client:
                 # if next size would exceed limit, send the current parts
                 if acc_size + size > size_limit_bytes:
                     self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
-                else:
-                    # otherwise, accumulate the parts
-                    acc_size += size
-                    acc_parts.extend(parts)
-                    acc_context.append(context)
+                    acc_parts.clear()
+                    acc_context.clear()
+                    acc_size = 0
+                # accumulate the parts
+                acc_size += size
+                acc_parts.extend(parts)
+                acc_context.append(context)
         # send the remaining parts
         if acc_parts:
             self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
