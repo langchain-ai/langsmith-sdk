@@ -33,6 +33,7 @@ pydantic = [
 requests = "^2"
 orjson = "^3.9.14"
 httpx = ">=0.23.0,<1"
+requests-toolbelt = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
