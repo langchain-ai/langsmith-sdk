@@ -284,7 +284,12 @@ def test_create_run_unicode() -> None:
 
 
 @pytest.mark.parametrize("use_multipart_endpoint", (True, False))
-def test_create_run_mutate(use_multipart_endpoint: bool) -> None:
+def test_create_run_mutate(
+    use_multipart_endpoint: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if use_multipart_endpoint:
+        monkeypatch.setenv("LANGSMITH_FF_MULTIPART", "true")
+        # TODO remove this when removing FF
     inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
