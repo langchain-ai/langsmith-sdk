@@ -60,6 +60,7 @@ pytest-rerunfailures = "^14.0"
 pytest-socket = "^0.7.0"
 pyperf = "^2.7.0"
 py-spy = "^0.3.14"
+multipart = "^1.0.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"

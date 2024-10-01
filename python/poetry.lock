@@ -686,6 +686,20 @@ files = [
 typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
 [[package]]
+name = "multipart"
+version = "1.0.0"
+description = "Parser for multipart/form-data"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "multipart-1.0.0-py3-none-any.whl", hash = "sha256:85824b3d48b63fe0b6f438feb2b39f9753512e889426fb339e96b6095d4239c8"},
+    {file = "multipart-1.0.0.tar.gz", hash = "sha256:6ac937fe07cd4e11cf4ca199f3d8f668e6a37e0f477c5ee032673d45be7f7957"},
+]
+
+[package.extras]
+dev = ["build", "pytest", "pytest-cov", "twine"]
+
+[[package]]
 name = "mypy"
 version = "1.11.2"
 description = "Optional static typing for Python"
@@ -1903,4 +1917,4 @@ vcr = []
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0"
-content-hash = "244ff8da405f7ae894fcee75f851ef3b51eb556e5ac56a84fc3eb4930851e75c"
+content-hash = "a20ea8a3bba074fc87b54139dfe7c4c4ffea37d5d5f4b874fb759baad4d443d0"
