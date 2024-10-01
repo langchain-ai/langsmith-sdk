@@ -5820,7 +5820,10 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
-    use_multipart: bool = batch_ingest_config.get("use_multipart_endpoint", False)
+    use_multipart: bool = os.getenv(
+        "LANGSMITH_FF_MULTIPART",
+        batch_ingest_config.get("use_multipart_endpoint", False),
+    )
 
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
