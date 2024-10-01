@@ -63,7 +63,7 @@ from urllib import parse as urllib_parse
 import orjson
 import requests
 from requests import adapters as requests_adapters
-from requests_toolbelt.multipart import MultipartEncoder
+from requests_toolbelt.multipart import MultipartEncoder  # type: ignore[import-untyped]
 from typing_extensions import TypeGuard
 from urllib3.util import Retry
 
