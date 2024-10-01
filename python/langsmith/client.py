@@ -90,6 +90,8 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
+WARNED_ATTACHMENTS = False
+EMPTY_SEQ: tuple[Dict, ...] = ()
 
 
 def _parse_token_or_url(
@@ -811,7 +813,7 @@ class Client:
             ls_utils.FilterPoolFullWarning(host=str(self._host)),
         ]
         retry_on_: Tuple[Type[BaseException], ...] = (
-            *(retry_on or []),
+            *(retry_on or ()),
             *(
                 ls_utils.LangSmithConnectionError,
                 ls_utils.LangSmithAPIError,
@@ -1188,17 +1190,23 @@ class Client:
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
         copy: bool = False,
+        attachments_collector: Optional[Dict[str, ls_schemas.Attachments]] = None,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
         Args:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
-            update (bool, optional): Whether to update the run. Defaults to False.
-            copy (bool, optional): Whether to copy the run. Defaults to False.
+            update (bool, optional): Whether the payload is for an "update" event.
+            copy (bool, optional): Whether to deepcopy run inputs/outputs.
+            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
+                A dictionary to collect attachments. If not passed, attachments
+                will be dropped.
 
         Returns:
             dict: The transformed run object as a dictionary.
         """
+        global WARNED_ATTACHMENTS
+
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create: dict = run.dict()  # type: ignore
         else:
@@ -1225,13 +1233,22 @@ class Client:
                 "prompt",
             ):
                 # Drop completely
-                run_create = {k: v for k, v in run_create.items() if k != "serialized"}
+                run_create.pop("serialized", None)
             else:
                 # Drop graph
-                serialized = {
-                    k: v for k, v in run_create["serialized"].items() if k != "graph"
-                }
-                run_create = {**run_create, "serialized": serialized}
+                run_create["serialized"].pop("graph", None)
+
+        # Collect or drop attachments
+        if attachments := run_create.get("attachments", None):
+            if attachments_collector is not None:
+                attachments_collector[run_create["id"]] = attachments
+            elif not WARNED_ATTACHMENTS:
+                WARNED_ATTACHMENTS = True
+                logger.warning(
+                    "You're trying to submit a run with attachments, but your current"
+                    " LangSmith integration doesn't support it. Please contact the "
+                    " LangChain team for assitance on how to upgrade."
+                )
 
         return run_create
 
@@ -1410,8 +1427,10 @@ class Client:
         if not create and not update:
             return
         # transform and convert to dicts
-        create_dicts = [self._run_transform(run) for run in create or []]
-        update_dicts = [self._run_transform(run, update=True) for run in update or []]
+        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
+        update_dicts = [
+            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
+        ]
         # combine post and patch dicts where possible
         if update_dicts and create_dicts:
             create_by_id = {run["id"]: run for run in create_dicts}
@@ -1453,8 +1472,7 @@ class Client:
 
         size_limit_bytes = (info.batch_ingest_config or {}).get(
             "size_limit_bytes"
-            # 20 MB max by default
-        ) or 20_971_520
+        ) or _SIZE_LIMIT_BYTES
         # Get orjson fragments to avoid going over the max request size
         partial_body = {
             "post": [_dumps_json(run) for run in raw_body["post"]],
@@ -5570,6 +5588,7 @@ def _tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
     batch: List[TracingQueueItem],
+    use_multipart: bool,
 ) -> None:
     create = [it.item for it in batch if it.action == "create"]
     update = [it.item for it in batch if it.action == "update"]
@@ -5585,15 +5604,18 @@ def _tracing_thread_handle_batch(
             tracing_queue.task_done()
 
 
+_SIZE_LIMIT_BYTES = 20_971_520  # 20MB by default
 _AUTO_SCALE_UP_QSIZE_TRIGGER = 1000
 _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
+_BLOCKSIZE_BYTES = 1024 * 1024  # 1MB
 
 
 def _ensure_ingest_config(
     info: ls_schemas.LangSmithInfo,
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
+        use_multipart_endpoint=False,
         size_limit_bytes=None,  # Note this field is not used here
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -5620,6 +5642,7 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
+    use_multipart: bool = batch_ingest_config["use_multipart_endpoint"]
 
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
@@ -5641,21 +5664,24 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func,
-                args=(weakref.ref(client),),
+                args=(weakref.ref(client), use_multipart),
             )
             sub_threads.append(new_thread)
             new_thread.start()
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
     # drain the queue on exit
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
 
 
 def _tracing_sub_thread_func(
     client_ref: weakref.ref[Client],
+    use_multipart: bool,
 ) -> None:
     client = client_ref()
     if client is None:
@@ -5682,7 +5708,9 @@ def _tracing_sub_thread_func(
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
-            _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
         else:
             seen_successive_empty_queues += 1
 
@@ -5690,7 +5718,7 @@ def _tracing_sub_thread_func(
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
 
 
 def convert_prompt_to_openai_format(

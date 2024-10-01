@@ -12,6 +12,7 @@ from typing import (
     List,
     Optional,
     Protocol,
+    Tuple,
     Union,
     runtime_checkable,
 )
@@ -42,6 +43,9 @@ from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]
+
+Attachments = Dict[str, Tuple[str, bytes]]
+"""Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
 
 
 class ExampleBase(BaseModel):
@@ -318,6 +322,9 @@ class Run(RunBase):
     """  # noqa: E501
     in_dataset: Optional[bool] = None
     """Whether this run is in a dataset."""
+    attachments: Attachments = Field(default_factory=dict)
+    """Attachments associated with the run.
+    Each entry is a tuple of (mime_type, bytes)."""
     _host_url: Optional[str] = PrivateAttr(default=None)
 
     def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
@@ -376,6 +383,7 @@ class RunLikeDict(TypedDict, total=False):
     output_attachments: Optional[dict]
     trace_id: UUID
     dotted_order: str
+    attachments: Attachments
 
 
 class RunWithAnnotationQueueInfo(RunBase):
@@ -637,6 +645,8 @@ class AnnotationQueue(BaseModel):
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 
+    use_multipart_endpoint: bool
+    """Whether to use the multipart endpoint for batch ingestion."""
     scale_up_qsize_trigger: int
     """The queue size threshold that triggers scaling up."""
     scale_up_nthreads_limit: int
