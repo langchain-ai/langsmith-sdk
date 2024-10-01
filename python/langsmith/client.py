@@ -63,6 +63,7 @@ from urllib import parse as urllib_parse
 import orjson
 import requests
 from requests import adapters as requests_adapters
+from requests_toolbelt.multipart import MultipartEncoder
 from typing_extensions import TypeGuard
 from urllib3.util import Retry
 
@@ -92,6 +93,8 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 X_API_KEY = "x-api-key"
 WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
+BOUNDARY = uuid.uuid4().hex
+MultipartParts = List[Tuple[str, Tuple[None, bytes, str]]]
 
 
 def _parse_token_or_url(
@@ -1537,6 +1540,167 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {exc_desc}")
                 except Exception:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
+
+    def multipart_ingest_runs(
+        self,
+        create: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        update: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        *,
+        pre_sampled: bool = False,
+    ):
+        """Batch ingest/upsert multiple runs in the Langsmith system.
+
+        Args:
+            create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs to be created / posted.
+            update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs that have already been created and should be updated / patched.
+            pre_sampled (bool, optional): Whether the runs have already been subject
+                to sampling, and therefore should not be sampled again.
+                Defaults to False.
+
+        Returns:
+            None: If both `create` and `update` are None.
+
+        Raises:
+            LangsmithAPIError: If there is an error in the API request.
+
+        Note:
+            - The run objects MUST contain the dotted_order and trace_id fields
+                to be accepted by the API.
+        """
+        if not create and not update:
+            return
+        # transform and convert to dicts
+        all_attachments: Dict[str, ls_schemas.Attachments] = {}
+        create_dicts = [
+            self._run_transform(run, attachments_collector=all_attachments)
+            for run in create or EMPTY_SEQ
+        ]
+        update_dicts = [
+            self._run_transform(run, update=True, attachments_collector=all_attachments)
+            for run in update or EMPTY_SEQ
+        ]
+        # combine post and patch dicts where possible
+        if update_dicts and create_dicts:
+            create_by_id = {run["id"]: run for run in create_dicts}
+            standalone_updates: list[dict] = []
+            for run in update_dicts:
+                if run["id"] in create_by_id:
+                    for k, v in run.items():
+                        if v is not None:
+                            create_by_id[run["id"]][k] = v
+                else:
+                    standalone_updates.append(run)
+            update_dicts = standalone_updates
+        for run in create_dicts:
+            if not run.get("trace_id") or not run.get("dotted_order"):
+                raise ls_utils.LangSmithUserError(
+                    "Batch ingest requires trace_id and dotted_order to be set."
+                )
+        for run in update_dicts:
+            if not run.get("trace_id") or not run.get("dotted_order"):
+                raise ls_utils.LangSmithUserError(
+                    "Batch ingest requires trace_id and dotted_order to be set."
+                )
+        # filter out runs that are not sampled
+        if not pre_sampled:
+            create_dicts = self._filter_for_sampling(create_dicts)
+            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
+        if not create_dicts and not update_dicts:
+            return
+        # insert runtime environment
+        self._insert_runtime_env(create_dicts)
+        self._insert_runtime_env(update_dicts)
+        # check size limit
+        size_limit_bytes = (self.info.batch_ingest_config or {}).get(
+            "size_limit_bytes"
+        ) or _SIZE_LIMIT_BYTES
+        # send the runs in multipart requests
+        acc_size = 0
+        acc_context: List[str] = []
+        acc_parts: MultipartParts = []
+        for event, payloads in (("post", create_dicts), ("patch", update_dicts)):
+            for payload in payloads:
+                parts: MultipartParts = []
+                # collect fields to be sent as separate parts
+                fields = [
+                    ("inputs", run.pop("inputs", None)),
+                    ("outputs", run.pop("outputs", None)),
+                    ("serialized", run.pop("serialized", None)),
+                    ("events", run.pop("events", None)),
+                ]
+                # encode the main run payload
+                parts.append(
+                    (
+                        f"{event}.{payload['id']}",
+                        (None, _dumps_json(payload), "application/json"),
+                    )
+                )
+                # encode the fields we collected
+                for key, value in fields:
+                    if value is None:
+                        continue
+                    parts.append(
+                        (
+                            f"{event}.{run['id']}.{key}",
+                            (None, _dumps_json(value), "application/json"),
+                        ),
+                    )
+                # encode the attachments
+                if attachments := all_attachments.pop(payload["id"], None):
+                    for n, (ct, ba) in attachments.items():
+                        parts.append(
+                            (f"attachment.{payload['id']}.{n}", (None, ba, ct))
+                        )
+                # calculate the size of the parts
+                size = sum(len(p[1][1]) for p in parts)
+                # compute context
+                context = f"trace={payload.get('trace_id')},id={payload.get('id')}"
+                # if next size would exceed limit, send the current parts
+                if acc_size + size > size_limit_bytes:
+                    self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+                else:
+                    # otherwise, accumulate the parts
+                    acc_size += size
+                    acc_parts.extend(parts)
+                    acc_context.append(context)
+        # send the remaining parts
+        if acc_parts:
+            self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+
+    def _send_multipart_req(self, parts: MultipartParts, *, _context: str):
+        for api_url, api_key in self._write_api_urls.items():
+            try:
+                encoder = MultipartEncoder(parts, boundary=BOUNDARY)
+                self.request_with_retries(
+                    "POST",
+                    f"{api_url}/runs/multipart",
+                    request_kwargs={
+                        "data": encoder,
+                        "headers": {
+                            **self._headers,
+                            X_API_KEY: api_key,
+                            "Content-Type": encoder.content_type,
+                        },
+                    },
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                    stop_after_attempt=3,
+                    _context=_context,
+                )
+            except Exception as e:
+                try:
+                    exc_desc_lines = traceback.format_exception_only(type(e), e)
+                    exc_desc = "".join(exc_desc_lines).rstrip()
+                    logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
+                except Exception:
+                    logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
 
     def update_run(
         self,
@@ -5593,7 +5757,10 @@ def _tracing_thread_handle_batch(
     create = [it.item for it in batch if it.action == "create"]
     update = [it.item for it in batch if it.action == "update"]
     try:
-        client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+        if use_multipart:
+            client.multipart_ingest_runs(create=create, update=update, pre_sampled=True)
+        else:
+            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the
