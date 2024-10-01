@@ -66,7 +66,7 @@ import requests
 from requests import adapters as requests_adapters
 from requests_toolbelt.multipart import MultipartEncoder  # type: ignore[import-untyped]
 from typing_extensions import TypeGuard
-from urllib3.poolmanager import PoolKey
+from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined]
 from urllib3.util import Retry
 
 import langsmith
