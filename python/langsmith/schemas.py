@@ -264,7 +264,7 @@ class RunBase(BaseModel):
     @property
     def metadata(self) -> dict[str, Any]:
         """Retrieve the metadata (if any)."""
-        return self.extra["metadata"]
+        return self.extra.setdefault("metadata", {})
 
     @property
     def revision_id(self) -> Optional[UUID]:
