@@ -1650,7 +1650,6 @@ class Client:
                 fields = [
                     ("inputs", payload.pop("inputs", None)),
                     ("outputs", payload.pop("outputs", None)),
-                    ("serialized", payload.pop("serialized", None)),
                     ("events", payload.pop("events", None)),
                 ]
                 # encode the main run payload
