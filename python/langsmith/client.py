@@ -1255,7 +1255,8 @@ class Client:
                 logger.warning(
                     "You're trying to submit a run with attachments, but your current"
                     " LangSmith integration doesn't support it. Please contact the "
-                    " LangChain team for assitance on how to upgrade."
+                    " LangChain team at support at langchain"
+                    " dot dev for assistance on how to upgrade."
                 )
 
         return run_create
@@ -1597,7 +1598,8 @@ class Client:
             for run in create_dicts:
                 if not run.get("trace_id") or not run.get("dotted_order"):
                     raise ls_utils.LangSmithUserError(
-                        "Batch ingest requires trace_id and dotted_order to be set."
+                        "Multipart ingest requires trace_id and dotted_order"
+                        " to be set in create dicts."
                     )
             else:
                 del run
@@ -1605,7 +1607,8 @@ class Client:
             for run in update_dicts:
                 if not run.get("trace_id") or not run.get("dotted_order"):
                     raise ls_utils.LangSmithUserError(
-                        "Batch ingest requires trace_id and dotted_order to be set."
+                        "Multipart ingest requires trace_id and dotted_order"
+                        " to be set in update dicts."
                     )
             else:
                 del run
