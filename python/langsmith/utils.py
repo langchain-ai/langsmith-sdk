@@ -146,9 +146,6 @@ def raise_for_status_with_text(
     except requests.HTTPError as e:
         raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
 
-    except httpx.HTTPError as e:
-        raise httpx.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
-
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
     """Get the value of a string enum."""

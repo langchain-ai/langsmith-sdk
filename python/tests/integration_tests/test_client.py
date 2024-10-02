@@ -615,7 +615,10 @@ def test_create_chat_example(
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_batch_ingest_runs(langchain_client: Client) -> None:
+@pytest.mark.parametrize("use_multipart_endpoint", [True, False])
+def test_batch_ingest_runs(
+    langchain_client: Client, use_multipart_endpoint: bool
+) -> None:
     _session = "__test_batch_ingest_runs"
     trace_id = uuid4()
     trace_id_2 = uuid4()
@@ -669,7 +672,12 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             "outputs": {"output1": 4, "output2": 5},
         },
     ]
-    langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
+    if use_multipart_endpoint:
+        langchain_client.multipart_ingest_runs(
+            create=runs_to_create, update=runs_to_update
+        )
+    else:
+        langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
     runs = []
     wait = 4
     for _ in range(15):
