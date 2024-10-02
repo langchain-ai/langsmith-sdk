@@ -39,6 +39,7 @@ import uuid
 import warnings
 import weakref
 from dataclasses import dataclass, field
+from inspect import signature
 from queue import Empty, PriorityQueue, Queue
 from typing import (
     TYPE_CHECKING,
@@ -63,7 +64,9 @@ from urllib import parse as urllib_parse
 import orjson
 import requests
 from requests import adapters as requests_adapters
+from requests_toolbelt.multipart import MultipartEncoder  # type: ignore[import-untyped]
 from typing_extensions import TypeGuard
+from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined]
 from urllib3.util import Retry
 
 import langsmith
@@ -90,6 +93,11 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
+WARNED_ATTACHMENTS = False
+EMPTY_SEQ: tuple[Dict, ...] = ()
+BOUNDARY = uuid.uuid4().hex
+MultipartParts = List[Tuple[str, Tuple[None, bytes, str]]]
+URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
 def _parse_token_or_url(
@@ -435,6 +443,34 @@ class TracingQueueItem:
     item: Any = field(compare=False)
 
 
+class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
+    __attrs__ = [
+        "max_retries",
+        "config",
+        "_pool_connections",
+        "_pool_maxsize",
+        "_pool_block",
+        "_blocksize",
+    ]
+
+    def __init__(
+        self,
+        pool_connections: int = requests_adapters.DEFAULT_POOLSIZE,
+        pool_maxsize: int = requests_adapters.DEFAULT_POOLSIZE,
+        max_retries: Union[Retry, int, None] = requests_adapters.DEFAULT_RETRIES,
+        pool_block: bool = requests_adapters.DEFAULT_POOLBLOCK,
+        blocksize: int = 16384,  # default from urllib3.BaseHTTPSConnection
+    ) -> None:
+        self._blocksize = blocksize
+        super().__init__(pool_connections, pool_maxsize, max_retries, pool_block)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        if URLLIB3_SUPPORTS_BLOCKSIZE:
+            # urllib3 before 2.0 doesn't support blocksize
+            pool_kwargs["blocksize"] = self._blocksize
+        return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+
+
 class Client:
     """Client for interacting with the LangSmith API."""
 
@@ -578,12 +614,16 @@ class Client:
             self.tracing_queue = None
 
         # Mount the HTTPAdapter with the retry configuration.
-        adapter = requests_adapters.HTTPAdapter(max_retries=self.retry_config)
-        # Don't overwrite if session already has an adapter
-        if not self.session.get_adapter("http://"):
-            self.session.mount("http://", adapter)
-        if not self.session.get_adapter("https://"):
-            self.session.mount("https://", adapter)
+        adapter = _LangSmithHttpAdapter(
+            max_retries=self.retry_config,
+            blocksize=_BLOCKSIZE_BYTES,
+            # We need to set the pool_maxsize to a value greater than the
+            # number of threads used for batch tracing, plus 1 for other
+            # requests.
+            pool_maxsize=_AUTO_SCALE_UP_NTHREADS_LIMIT + 1,
+        )
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
         self._get_data_type_cached = functools.lru_cache(maxsize=10)(
             self._get_data_type
         )
@@ -781,7 +821,7 @@ class Client:
             ls_utils.FilterPoolFullWarning(host=str(self._host)),
         ]
         retry_on_: Tuple[Type[BaseException], ...] = (
-            *(retry_on or []),
+            *(retry_on or ()),
             *(
                 ls_utils.LangSmithConnectionError,
                 ls_utils.LangSmithAPIError,
@@ -1158,17 +1198,23 @@ class Client:
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
         copy: bool = False,
+        attachments_collector: Optional[Dict[str, ls_schemas.Attachments]] = None,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
         Args:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
-            update (bool, optional): Whether to update the run. Defaults to False.
-            copy (bool, optional): Whether to copy the run. Defaults to False.
+            update (bool, optional): Whether the payload is for an "update" event.
+            copy (bool, optional): Whether to deepcopy run inputs/outputs.
+            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
+                A dictionary to collect attachments. If not passed, attachments
+                will be dropped.
 
         Returns:
             dict: The transformed run object as a dictionary.
         """
+        global WARNED_ATTACHMENTS
+
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create: dict = run.dict()  # type: ignore
         else:
@@ -1195,13 +1241,23 @@ class Client:
                 "prompt",
             ):
                 # Drop completely
-                run_create = {k: v for k, v in run_create.items() if k != "serialized"}
+                run_create.pop("serialized", None)
             else:
                 # Drop graph
-                serialized = {
-                    k: v for k, v in run_create["serialized"].items() if k != "graph"
-                }
-                run_create = {**run_create, "serialized": serialized}
+                run_create["serialized"].pop("graph", None)
+
+        # Collect or drop attachments
+        if attachments := run_create.get("attachments", None):
+            if attachments_collector is not None:
+                attachments_collector[run_create["id"]] = attachments
+            elif not WARNED_ATTACHMENTS:
+                WARNED_ATTACHMENTS = True
+                logger.warning(
+                    "You're trying to submit a run with attachments, but your current"
+                    " LangSmith integration doesn't support it. Please contact the "
+                    " LangChain team at support at langchain"
+                    " dot dev for assistance on how to upgrade."
+                )
 
         return run_create
 
@@ -1353,7 +1409,7 @@ class Client:
         ] = None,
         *,
         pre_sampled: bool = False,
-    ):
+    ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
         Args:
@@ -1368,7 +1424,7 @@ class Client:
                 Defaults to False.
 
         Returns:
-            None: If both `create` and `update` are None.
+            None
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
@@ -1380,8 +1436,10 @@ class Client:
         if not create and not update:
             return
         # transform and convert to dicts
-        create_dicts = [self._run_transform(run) for run in create or []]
-        update_dicts = [self._run_transform(run, update=True) for run in update or []]
+        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
+        update_dicts = [
+            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
+        ]
         # combine post and patch dicts where possible
         if update_dicts and create_dicts:
             create_by_id = {run["id"]: run for run in create_dicts}
@@ -1423,8 +1481,7 @@ class Client:
 
         size_limit_bytes = (info.batch_ingest_config or {}).get(
             "size_limit_bytes"
-            # 20 MB max by default
-        ) or 20_971_520
+        ) or _SIZE_LIMIT_BYTES
         # Get orjson fragments to avoid going over the max request size
         partial_body = {
             "post": [_dumps_json(run) for run in raw_body["post"]],
@@ -1489,6 +1546,180 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {exc_desc}")
                 except Exception:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
+
+    def multipart_ingest_runs(
+        self,
+        create: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        update: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        *,
+        pre_sampled: bool = False,
+    ) -> None:
+        """Batch ingest/upsert multiple runs in the Langsmith system.
+
+        Args:
+            create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs to be created / posted.
+            update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs that have already been created and should be updated / patched.
+            pre_sampled (bool, optional): Whether the runs have already been subject
+                to sampling, and therefore should not be sampled again.
+                Defaults to False.
+
+        Returns:
+            None
+
+        Raises:
+            LangsmithAPIError: If there is an error in the API request.
+
+        Note:
+            - The run objects MUST contain the dotted_order and trace_id fields
+                to be accepted by the API.
+        """
+        if not create and not update:
+            return
+        # transform and convert to dicts
+        all_attachments: Dict[str, ls_schemas.Attachments] = {}
+        create_dicts = [
+            self._run_transform(run, attachments_collector=all_attachments)
+            for run in create or EMPTY_SEQ
+        ]
+        update_dicts = [
+            self._run_transform(run, update=True, attachments_collector=all_attachments)
+            for run in update or EMPTY_SEQ
+        ]
+        # require trace_id and dotted_order
+        if create_dicts:
+            for run in create_dicts:
+                if not run.get("trace_id") or not run.get("dotted_order"):
+                    raise ls_utils.LangSmithUserError(
+                        "Multipart ingest requires trace_id and dotted_order"
+                        " to be set in create dicts."
+                    )
+            else:
+                del run
+        if update_dicts:
+            for run in update_dicts:
+                if not run.get("trace_id") or not run.get("dotted_order"):
+                    raise ls_utils.LangSmithUserError(
+                        "Multipart ingest requires trace_id and dotted_order"
+                        " to be set in update dicts."
+                    )
+            else:
+                del run
+        # combine post and patch dicts where possible
+        if update_dicts and create_dicts:
+            create_by_id = {run["id"]: run for run in create_dicts}
+            standalone_updates: list[dict] = []
+            for run in update_dicts:
+                if run["id"] in create_by_id:
+                    for k, v in run.items():
+                        if v is not None:
+                            create_by_id[run["id"]][k] = v
+                else:
+                    standalone_updates.append(run)
+            else:
+                del run
+            update_dicts = standalone_updates
+        # filter out runs that are not sampled
+        if not pre_sampled:
+            create_dicts = self._filter_for_sampling(create_dicts)
+            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
+        if not create_dicts and not update_dicts:
+            return
+        # insert runtime environment
+        self._insert_runtime_env(create_dicts)
+        self._insert_runtime_env(update_dicts)
+        # check size limit
+        size_limit_bytes = (self.info.batch_ingest_config or {}).get(
+            "size_limit_bytes"
+        ) or _SIZE_LIMIT_BYTES
+        # send the runs in multipart requests
+        acc_size = 0
+        acc_context: List[str] = []
+        acc_parts: MultipartParts = []
+        for event, payloads in (("post", create_dicts), ("patch", update_dicts)):
+            for payload in payloads:
+                parts: MultipartParts = []
+                # collect fields to be sent as separate parts
+                fields = [
+                    ("inputs", payload.pop("inputs", None)),
+                    ("outputs", payload.pop("outputs", None)),
+                    ("serialized", payload.pop("serialized", None)),
+                    ("events", payload.pop("events", None)),
+                ]
+                # encode the main run payload
+                parts.append(
+                    (
+                        f"{event}.{payload['id']}",
+                        (None, _dumps_json(payload), "application/json"),
+                    )
+                )
+                # encode the fields we collected
+                for key, value in fields:
+                    if value is None:
+                        continue
+                    parts.append(
+                        (
+                            f"{event}.{payload['id']}.{key}",
+                            (None, _dumps_json(value), "application/json"),
+                        ),
+                    )
+                # encode the attachments
+                if attachments := all_attachments.pop(payload["id"], None):
+                    for n, (ct, ba) in attachments.items():
+                        parts.append(
+                            (f"attachment.{payload['id']}.{n}", (None, ba, ct))
+                        )
+                # calculate the size of the parts
+                size = sum(len(p[1][1]) for p in parts)
+                # compute context
+                context = f"trace={payload.get('trace_id')},id={payload.get('id')}"
+                # if next size would exceed limit, send the current parts
+                if acc_size + size > size_limit_bytes:
+                    self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+                    acc_parts.clear()
+                    acc_context.clear()
+                    acc_size = 0
+                # accumulate the parts
+                acc_size += size
+                acc_parts.extend(parts)
+                acc_context.append(context)
+        # send the remaining parts
+        if acc_parts:
+            self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+
+    def _send_multipart_req(self, parts: MultipartParts, *, _context: str):
+        for api_url, api_key in self._write_api_urls.items():
+            try:
+                encoder = MultipartEncoder(parts, boundary=BOUNDARY)
+                self.request_with_retries(
+                    "POST",
+                    f"{api_url}/runs/multipart",
+                    request_kwargs={
+                        "data": encoder,
+                        "headers": {
+                            **self._headers,
+                            X_API_KEY: api_key,
+                            "Content-Type": encoder.content_type,
+                        },
+                    },
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                    stop_after_attempt=3,
+                    _context=_context,
+                )
+            except Exception as e:
+                try:
+                    exc_desc_lines = traceback.format_exception_only(type(e), e)
+                    exc_desc = "".join(exc_desc_lines).rstrip()
+                    logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
+                except Exception:
+                    logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
 
     def update_run(
         self,
@@ -5540,11 +5771,15 @@ def _tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
     batch: List[TracingQueueItem],
+    use_multipart: bool,
 ) -> None:
     create = [it.item for it in batch if it.action == "create"]
     update = [it.item for it in batch if it.action == "update"]
     try:
-        client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+        if use_multipart:
+            client.multipart_ingest_runs(create=create, update=update, pre_sampled=True)
+        else:
+            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the
@@ -5555,15 +5790,18 @@ def _tracing_thread_handle_batch(
             tracing_queue.task_done()
 
 
+_SIZE_LIMIT_BYTES = 20_971_520  # 20MB by default
 _AUTO_SCALE_UP_QSIZE_TRIGGER = 1000
 _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
+_BLOCKSIZE_BYTES = 1024 * 1024  # 1MB
 
 
 def _ensure_ingest_config(
     info: ls_schemas.LangSmithInfo,
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
+        use_multipart_endpoint=False,
         size_limit_bytes=None,  # Note this field is not used here
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -5590,6 +5828,9 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
+    use_multipart = os.getenv("LANGSMITH_FF_MULTIPART") in ["1", "true"]
+    # use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
+    # TODO replace FF with reading from batch_ingest_config
 
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
@@ -5611,21 +5852,24 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func,
-                args=(weakref.ref(client),),
+                args=(weakref.ref(client), use_multipart),
             )
             sub_threads.append(new_thread)
             new_thread.start()
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
     # drain the queue on exit
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
 
 
 def _tracing_sub_thread_func(
     client_ref: weakref.ref[Client],
+    use_multipart: bool,
 ) -> None:
     client = client_ref()
     if client is None:
@@ -5652,7 +5896,9 @@ def _tracing_sub_thread_func(
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
-            _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
         else:
             seen_successive_empty_queues += 1
 
@@ -5660,7 +5906,7 @@ def _tracing_sub_thread_func(
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch)
+        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
 
 
 def convert_prompt_to_openai_format(
@@ -5684,7 +5930,7 @@ def convert_prompt_to_openai_format(
         ls_utils.LangSmithError: If there is an error during the conversion process.
     """
     try:
-        from langchain_openai import ChatOpenAI
+        from langchain_openai import ChatOpenAI  # type: ignore
     except ImportError:
         raise ImportError(
             "The convert_prompt_to_openai_format function requires the langchain_openai"
@@ -5720,7 +5966,7 @@ def convert_prompt_to_anthropic_format(
         dict: The prompt in Anthropic format.
     """
     try:
-        from langchain_anthropic import ChatAnthropic
+        from langchain_anthropic import ChatAnthropic  # type: ignore
     except ImportError:
         raise ImportError(
             "The convert_prompt_to_anthropic_format function requires the "
