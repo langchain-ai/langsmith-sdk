@@ -1409,7 +1409,7 @@ class Client:
         ] = None,
         *,
         pre_sampled: bool = False,
-    ):
+    ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
         Args:
@@ -1424,7 +1424,7 @@ class Client:
                 Defaults to False.
 
         Returns:
-            None: If both `create` and `update` are None.
+            None
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
@@ -1557,7 +1557,7 @@ class Client:
         ] = None,
         *,
         pre_sampled: bool = False,
-    ):
+    ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
         Args:
@@ -1572,7 +1572,7 @@ class Client:
                 Defaults to False.
 
         Returns:
-            None: If both `create` and `update` are None.
+            None
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
@@ -5795,6 +5795,7 @@ _AUTO_SCALE_UP_QSIZE_TRIGGER = 1000
 _AUTO_SCALE_UP_NTHREADS_LIMIT = 16
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 _BLOCKSIZE_BYTES = 1024 * 1024  # 1MB
+_USE_MULTIPART = os.getenv("LANGSMITH_FF_MULTIPART") in ["1", "true"]
 
 
 def _ensure_ingest_config(
@@ -5828,7 +5829,7 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
-    use_multipart = os.getenv("LANGSMITH_FF_MULTIPART") in ["1", "true"]
+    use_multipart = _USE_MULTIPART
     # use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
     # TODO replace FF with reading from batch_ingest_config
 

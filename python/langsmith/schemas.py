@@ -254,6 +254,10 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
+    attachments: Attachments = Field(default_factory=dict)
+    """Attachments associated with the run.
+    Each entry is a tuple of (mime_type, bytes)."""
+
     _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
 
     @property
@@ -322,9 +326,6 @@ class Run(RunBase):
     """  # noqa: E501
     in_dataset: Optional[bool] = None
     """Whether this run is in a dataset."""
-    attachments: Attachments = Field(default_factory=dict)
-    """Attachments associated with the run.
-    Each entry is a tuple of (mime_type, bytes)."""
     _host_url: Optional[str] = PrivateAttr(default=None)
 
     def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
