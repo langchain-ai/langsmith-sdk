@@ -1,6 +1,9 @@
+import os
 from unittest.mock import patch
 
 from langsmith import RunTree
+
+os.environ["LANGSMITH_API_KEY"] = "fake"
 
 
 def create_run_trees(N: int):
