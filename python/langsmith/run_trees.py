@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = f"{LANGSMITH_PREFIX}trace"
 _CLIENT: Optional[Client] = None
-_LOCK = threading.Lock()
+_LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
 
 # Note, this is called directly by langchain. Do not remove.
@@ -37,9 +37,8 @@ _LOCK = threading.Lock()
 def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
-        with _LOCK:
-            if _CLIENT is None:
-                _CLIENT = Client(**init_kwargs)
+        if _CLIENT is None:
+            _CLIENT = Client(**init_kwargs)
     return _CLIENT
 
 
@@ -163,7 +162,7 @@ class RunTree(ls_schemas.RunBase):
         """Add metadata to the run."""
         if self.extra is None:
             self.extra = {}
-        metadata_: dict = self.extra.setdefault("metadata", {})
+        metadata_: dict = cast(dict, self.extra).setdefault("metadata", {})
         metadata_.update(metadata)
 
     def add_outputs(self, outputs: Dict[str, Any]) -> None:

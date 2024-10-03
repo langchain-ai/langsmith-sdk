@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -201,6 +200,10 @@ class DatasetVersion(BaseModel):
     as_of: datetime
 
 
+def _default_extra():
+    return {"metadata": {}}
+
+
 class RunBase(BaseModel):
     """Base Run schema.
 
@@ -226,7 +229,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     """End time of the run, if applicable."""
 
-    extra: Optional[dict] = None
+    extra: Optional[dict] = Field(default_factory=_default_extra)
     """Additional metadata or settings related to the run."""
 
     error: Optional[str] = None
@@ -258,16 +261,12 @@ class RunBase(BaseModel):
     """Attachments associated with the run.
     Each entry is a tuple of (mime_type, bytes)."""
 
-    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
-
     @property
     def metadata(self) -> dict[str, Any]:
         """Retrieve the metadata (if any)."""
-        with self._lock:
-            if self.extra is None:
-                self.extra = {}
-            metadata = self.extra.setdefault("metadata", {})
-        return metadata
+        if self.extra is None:
+            self.extra = {}
+        return self.extra.setdefault("metadata", {})
 
     @property
     def revision_id(self) -> Optional[UUID]:
