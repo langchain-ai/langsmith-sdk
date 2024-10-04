@@ -828,8 +828,10 @@ def test_serialize_json() -> None:
         "fake_json": ClassWithFakeDict(),
         "some_set": set("a"),
         "set_with_class": set([MyClass(1)]),
+        "my_mock": MagicMock(text="Hello, world"),
     }
     res = orjson.loads(_dumps_json(to_serialize))
+
     expected = {
         "uid": str(uid),
         "time": current_time.isoformat(),
@@ -848,6 +850,7 @@ def test_serialize_json() -> None:
         "fake_json": {"foo": "bar"},
         "some_set": ["a"],
         "set_with_class": ["I fell back"],
+        "my_mock": lambda x: "Mock" in x,
     }
     assert set(expected) == set(res)
     for k, v in expected.items():

@@ -200,7 +200,7 @@ class DatasetVersion(BaseModel):
     as_of: datetime
 
 
-def _mk_extra() -> dict:
+def _default_extra():
     return {"metadata": {}}
 
 
@@ -229,7 +229,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     """End time of the run, if applicable."""
 
-    extra: dict = Field(default_factory=_mk_extra)
+    extra: Optional[dict] = Field(default_factory=_default_extra)
     """Additional metadata or settings related to the run."""
 
     error: Optional[str] = None
@@ -264,6 +264,8 @@ class RunBase(BaseModel):
     @property
     def metadata(self) -> dict[str, Any]:
         """Retrieve the metadata (if any)."""
+        if self.extra is None:
+            self.extra = {}
         return self.extra.setdefault("metadata", {})
 
     @property

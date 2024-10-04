@@ -227,10 +227,10 @@ def _simple_default(obj):
             return obj.pattern
         elif isinstance(obj, (bytes, bytearray)):
             return base64.b64encode(obj).decode()
-        return repr(obj)
+        return str(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-    return repr(obj)
+    return str(obj)
 
 
 def _serialize_json(obj: Any) -> Any:
@@ -250,9 +250,12 @@ def _serialize_json(obj: Any) -> Any:
             if hasattr(obj, attr) and callable(getattr(obj, attr)):
                 try:
                     method = getattr(obj, attr)
-                    return (
+                    response = (
                         method(exclude_none=exclude_none) if exclude_none else method()
                     )
+                    if not isinstance(response, dict):
+                        return str(response)
+                    return response
                 except Exception as e:
                     logger.error(
                         f"Failed to use {attr} to serialize {type(obj)} to"
@@ -262,7 +265,7 @@ def _serialize_json(obj: Any) -> Any:
         return _simple_default(obj)
     except BaseException as e:
         logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-        return repr(obj)
+        return str(obj)
 
 
 def _dumps_json_single(
@@ -1637,7 +1640,6 @@ class Client:
                 fields = [
                     ("inputs", payload.pop("inputs", None)),
                     ("outputs", payload.pop("outputs", None)),
-                    ("serialized", payload.pop("serialized", None)),
                     ("events", payload.pop("events", None)),
                 ]
                 # encode the main run payload
