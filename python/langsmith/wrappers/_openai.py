@@ -160,6 +160,35 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
     return d
 
 
+_DICT: Dict[str, Any] = {}
+
+
+def _flatten_metadata(metadata: Optional[dict]):
+    if not isinstance(metadata, dict):
+        return {}
+    metadata["input_tokens"] = metadata.pop("prompt_tokens", None)
+    metadata["output_tokens"] = metadata.pop("completion_tokens", None)
+    metadata["input_token_details"] = {
+        k.rstrip("_tokens"): v
+        for k, v in (metadata.get("prompt_tokens_details") or _DICT).items()
+    }
+    metadata["output_tokens_details"] = {
+        k.rstrip("_tokens"): v
+        for k, v in (metadata.get("completion_tokens_details") or _DICT).items()
+    }
+    return metadata
+
+
+def _count_beans(outputs: Any):
+    try:
+        rdict = outputs.model_dump()
+        rdict["usage_metadata"] = _flatten_metadata(rdict.pop("usage", None))
+        return rdict
+    except BaseException as e:
+        logger.debug(f"Error getting metadata: {repr(e)}")
+        return {"output": outputs}
+
+
 def _get_wrapper(
     original_create: Callable,
     name: str,
@@ -177,6 +206,7 @@ def _get_wrapper(
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
+            process_outputs=_count_beans if not stream else None,
             **textra,
         )
 
@@ -191,6 +221,7 @@ def _get_wrapper(
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
+            process_outputs=_count_beans if not stream else None,
             **textra,
         )
         return await decorator(original_create)(*args, stream=stream, **kwargs)
