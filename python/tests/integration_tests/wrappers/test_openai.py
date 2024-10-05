@@ -1,11 +1,54 @@
 # mypy: disable-error-code="attr-defined, union-attr, arg-type, call-overload"
 import time
+from typing import Optional
 from unittest import mock
 
 import pytest
+from pydantic import BaseModel, Field
 
 import langsmith
+from langsmith.run_trees import RunTree
 from langsmith.wrappers import wrap_openai
+
+
+class InputTokenDetails(BaseModel):
+    audio: Optional[int] = None
+    cache_read: Optional[int] = None
+    cache_creation: Optional[int] = None
+
+    class Config:
+        extra = "allow"
+
+
+class OutputTokenDetails(BaseModel):
+    audio: Optional[int] = None
+    reasoning: Optional[int] = None
+
+    class Config:
+        extra = "allow"
+
+
+class UsageMetadata(BaseModel):
+    input_tokens: int = Field(..., description="sum of all input tokens")
+    output_tokens: int = Field(..., description="sum of all output tokens")
+    total_tokens: int = Field(..., description="sum of all input and output tokens")
+    input_tokens_details: Optional[InputTokenDetails] = None
+    output_tokens_details: Optional[OutputTokenDetails] = None
+
+
+class Collect:
+    def __init__(self):
+        self.run: Optional[RunTree] = None
+
+    def __call__(self, run):
+        self.run = run
+
+    def validate(self):
+        assert self.run is not None
+        try:
+            UsageMetadata.model_validate(self.run.outputs["usage_metadata"])
+        except:
+            raise
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -24,12 +67,14 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
         seed=42,
         model="gpt-3.5-turbo",
     )
+    collect = Collect()
     patched = patched_client.chat.completions.create(
         messages=messages,  # noqa: [arg-type]
         stream=stream,
         temperature=0,
         seed=42,
         model="gpt-3.5-turbo",
+        langsmith_extra={"on_end": collect},
     )
     if stream:
         # We currently return a generator, so
@@ -41,6 +86,8 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
     else:
         assert type(original) == type(patched)
         assert original.choices == patched.choices
+        collect.validate()
+
     # Give the thread a chance.
     time.sleep(0.01)
     for call in mock_session.return_value.request.call_args_list[1:]:
@@ -59,8 +106,14 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
     original = await original_client.chat.completions.create(
         messages=messages, stream=stream, temperature=0, seed=42, model="gpt-3.5-turbo"
     )
+    collect = Collect()
     patched = await patched_client.chat.completions.create(
-        messages=messages, stream=stream, temperature=0, seed=42, model="gpt-3.5-turbo"
+        messages=messages,
+        stream=stream,
+        temperature=0,
+        seed=42,
+        model="gpt-3.5-turbo",
+        langsmith_extra={"on_end": collect},
     )
     if stream:
         # We currently return a generator, so
@@ -76,6 +129,7 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
     else:
         assert type(original) == type(patched)
         assert original.choices == patched.choices
+        collect.validate()
     # Give the thread a chance.
     time.sleep(0.1)
     for call in mock_session.return_value.request.call_args_list[1:]:
@@ -99,6 +153,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         seed=42,
         stream=stream,
     )
+    collect = Collect()
     patched = patched_client.completions.create(
         model="gpt-3.5-turbo-instruct",
         prompt=prompt,
@@ -106,6 +161,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         temperature=0,
         seed=42,
         stream=stream,
+        langsmith_extra={"on_end": collect},
     )
     if stream:
         # We currently return a generator, so
@@ -119,6 +175,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
     else:
         assert type(original) == type(patched)
         assert original.choices == patched.choices
+        collect.validate()
     # Give the thread a chance.
     time.sleep(0.1)
     for call in mock_session.return_value.request.call_args_list[1:]:
@@ -148,6 +205,7 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
         seed=42,
         stream=stream,
     )
+    collect = Collect()
     patched = await patched_client.completions.create(
         model="gpt-3.5-turbo-instruct",
         prompt=prompt,
@@ -155,6 +213,7 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
         temperature=0,
         seed=42,
         stream=stream,
+        langsmith_extra={"on_end": collect},
     )
     if stream:
         # We currently return a generator, so
@@ -172,6 +231,7 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
     else:
         assert type(original) == type(patched)
         assert original.choices == patched.choices
+        collect.validate()
     # Give the thread a chance.
     for _ in range(10):
         time.sleep(0.1)
