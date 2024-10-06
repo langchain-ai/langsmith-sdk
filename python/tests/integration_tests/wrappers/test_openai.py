@@ -39,7 +39,7 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert len(original_chunks) == len(patched_chunks)
         assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
     else:
-        assert type(original) == type(patched)
+        assert type(original) is type(patched)
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.01)
@@ -74,7 +74,7 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
         assert len(original_chunks) == len(patched_chunks)
         assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
     else:
-        assert type(original) == type(patched)
+        assert type(original) is type(patched)
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
@@ -117,7 +117,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.response
         assert patched.response
     else:
-        assert type(original) == type(patched)
+        assert type(original) is type(patched)
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
@@ -170,7 +170,7 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
         assert original.response
         assert patched.response
     else:
-        assert type(original) == type(patched)
+        assert type(original) is type(patched)
         assert original.choices == patched.choices
     # Give the thread a chance.
     for _ in range(10):

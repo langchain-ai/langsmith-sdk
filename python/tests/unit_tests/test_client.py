@@ -1061,11 +1061,8 @@ def test_batch_ingest_run_splits_large_batches(
     ]
     if use_multipart_endpoint:
         client.multipart_ingest_runs(create=posts, update=patches)
-        # we can support up to 20MB per batch, so we need to find the number of batches
-        # we should be sending
-        max_in_batch = max(1, (20 * MB) // (payload_size + 20))
-
-        expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
+        # multipart endpoint should only send one request
+        expected_num_requests = 1
         # count the number of POST requests
         assert sum(
             [1 for call in mock_session.request.call_args_list if call[0][0] == "POST"]
