@@ -1,6 +1,7 @@
 # mypy: disable-error-code="annotation-unchecked"
 import copy
 import dataclasses
+import functools
 import itertools
 import threading
 import unittest
@@ -357,3 +358,43 @@ def test_get_api_url() -> None:
     ls_utils.get_env_var.cache_clear()
     with pytest.raises(ls_utils.LangSmithUserError):
         ls_utils.get_api_url(" ")
+
+
+def test_get_func_name():
+    class Foo:
+        def __call__(self, foo: int):
+            return "bar"
+
+    assert ls_utils._get_function_name(Foo()) == "Foo"
+    assert ls_utils._get_function_name(functools.partial(Foo(), foo=3)) == "Foo"
+
+    class AFoo:
+        async def __call__(self, foo: int):
+            return "bar"
+
+    assert ls_utils._get_function_name(AFoo()) == "AFoo"
+    assert ls_utils._get_function_name(functools.partial(AFoo(), foo=3)) == "AFoo"
+
+    def foo(bar: int) -> None:
+        return bar
+
+    assert ls_utils._get_function_name(foo) == "foo"
+    assert ls_utils._get_function_name(functools.partial(foo, bar=3)) == "foo"
+
+    async def afoo(bar: int) -> None:
+        return bar
+
+    assert ls_utils._get_function_name(afoo) == "afoo"
+    assert ls_utils._get_function_name(functools.partial(afoo, bar=3)) == "afoo"
+
+    lambda_func = lambda x: x + 1  # noqa
+    assert ls_utils._get_function_name(lambda_func) == "<lambda>"
+
+    class BarClass:
+        pass
+
+    assert ls_utils._get_function_name(BarClass) == "BarClass"
+
+    assert ls_utils._get_function_name(print) == "print"
+
+    assert ls_utils._get_function_name("not_a_function") == "not_a_function"

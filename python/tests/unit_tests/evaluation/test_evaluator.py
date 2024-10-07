@@ -1,12 +1,16 @@
 import asyncio
 import logging
+import uuid
 from typing import Any, Optional
+from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
 
 from langsmith import schemas
 from langsmith.evaluation.evaluator import (
+    ComparisonEvaluationResult,
+    DynamicComparisonRunEvaluator,
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
@@ -14,6 +18,7 @@ from langsmith.evaluation.evaluator import (
     Run,
     run_evaluator,
 )
+from langsmith.evaluation.integrations._langchain import LangChainStringEvaluator
 from langsmith.run_helpers import tracing_context
 
 
@@ -44,6 +49,24 @@ def test_run_evaluator_decorator(run_1: Run, example_1: Example):
     assert isinstance(result, EvaluationResult)
     assert result.key == "test"
     assert result.score == 1.0
+
+
+async def test_dynamie_comparison_run_evaluator():
+    def foo(runs: list, example):
+        return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
+
+    async def afoo(runs: list, example):
+        return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
+
+    evaluators = [
+        DynamicComparisonRunEvaluator(foo),
+        DynamicComparisonRunEvaluator(afoo),
+        DynamicComparisonRunEvaluator(foo, afoo),
+    ]
+    for e in evaluators:
+        res = await e.acompare_runs([], None)
+        assert res.key == "bar"
+        repr(e)
 
 
 def test_run_evaluator_decorator_dict(run_1: Run, example_1: Example):
@@ -360,3 +383,16 @@ def test_check_value_non_numeric(caplog):
         "Numeric values should be provided in the 'score' field, not 'value'."
         not in caplog.text
     )
+
+
+def test_langchain_run_evaluator_native_async():
+    try:
+        from langchain.evaluation import load_evaluator  # noqa
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+
+    with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "fake_api_key"}):
+        res = LangChainStringEvaluator(evaluator="qa")
+    run_evaluator = res.as_run_evaluator()
+    assert hasattr(run_evaluator, "afunc")
+    assert hasattr(run_evaluator, "func")

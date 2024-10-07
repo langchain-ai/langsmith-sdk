@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -12,6 +11,7 @@ from typing import (
     List,
     Optional,
     Protocol,
+    Tuple,
     Union,
     runtime_checkable,
 )
@@ -43,12 +43,15 @@ from typing_extensions import Literal
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]
 
+Attachments = Dict[str, Tuple[str, bytes]]
+"""Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
+
 
 class ExampleBase(BaseModel):
     """Example base model."""
 
     dataset_id: UUID
-    inputs: Dict[str, Any]
+    inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
 
@@ -70,7 +73,10 @@ class Example(ExampleBase):
     """Example model."""
 
     id: UUID
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.fromtimestamp(0, tz=timezone.utc)
+    )
+    dataset_id: UUID = Field(default=UUID("00000000-0000-0000-0000-000000000000"))
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
@@ -194,6 +200,10 @@ class DatasetVersion(BaseModel):
     as_of: datetime
 
 
+def _default_extra():
+    return {"metadata": {}}
+
+
 class RunBase(BaseModel):
     """Base Run schema.
 
@@ -219,7 +229,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     """End time of the run, if applicable."""
 
-    extra: Optional[dict] = None
+    extra: Optional[dict] = Field(default_factory=_default_extra)
     """Additional metadata or settings related to the run."""
 
     error: Optional[str] = None
@@ -247,16 +257,16 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
+    attachments: Attachments = Field(default_factory=dict)
+    """Attachments associated with the run.
+    Each entry is a tuple of (mime_type, bytes)."""
 
     @property
     def metadata(self) -> dict[str, Any]:
         """Retrieve the metadata (if any)."""
-        with self._lock:
-            if self.extra is None:
-                self.extra = {}
-            metadata = self.extra.setdefault("metadata", {})
-        return metadata
+        if self.extra is None:
+            self.extra = {}
+        return self.extra.setdefault("metadata", {})
 
     @property
     def revision_id(self) -> Optional[UUID]:
@@ -373,6 +383,7 @@ class RunLikeDict(TypedDict, total=False):
     output_attachments: Optional[dict]
     trace_id: UUID
     dotted_order: str
+    attachments: Attachments
 
 
 class RunWithAnnotationQueueInfo(RunBase):
@@ -634,6 +645,8 @@ class AnnotationQueue(BaseModel):
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 
+    use_multipart_endpoint: bool
+    """Whether to use the multipart endpoint for batch ingestion."""
     scale_up_qsize_trigger: int
     """The queue size threshold that triggers scaling up."""
     scale_up_nthreads_limit: int
@@ -764,6 +777,49 @@ class PromptCommit(BaseModel):
     """The manifest of the prompt."""
     examples: List[dict]
     """The list of examples."""
+
+
+class ListedPromptCommit(BaseModel):
+    """Represents a listed prompt commit with associated metadata."""
+
+    id: UUID
+    """The unique identifier for the prompt commit."""
+
+    owner: str
+    """The owner of the prompt commit."""
+
+    repo: str
+    """The repository name of the prompt commit."""
+
+    manifest_id: Optional[UUID] = None
+    """The optional identifier for the manifest associated with this commit."""
+
+    repo_id: Optional[UUID] = None
+    """The optional identifier for the repository."""
+
+    parent_id: Optional[UUID] = None
+    """The optional identifier for the parent commit."""
+
+    commit_hash: Optional[str] = None
+    """The optional hash of the commit."""
+
+    created_at: Optional[datetime] = None
+    """The optional timestamp when the commit was created."""
+
+    updated_at: Optional[datetime] = None
+    """The optional timestamp when the commit was last updated."""
+
+    example_run_ids: Optional[List[UUID]] = Field(default_factory=list)
+    """A list of example run identifiers associated with this commit."""
+
+    num_downloads: Optional[int] = 0
+    """The number of times this commit has been downloaded."""
+
+    num_views: Optional[int] = 0
+    """The number of times this commit has been viewed."""
+
+    parent_commit_hash: Optional[str] = None
+    """The optional hash of the parent commit."""
 
 
 class Prompt(BaseModel):

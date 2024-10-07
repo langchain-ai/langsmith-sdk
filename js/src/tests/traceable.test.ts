@@ -1,8 +1,9 @@
+import { jest } from "@jest/globals";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
-import { CIRCULAR_VALUE_REPLACEMENT_STRING } from "../utils/serde.js";
+import { Client, overrideFetchImplementation } from "../index.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -25,6 +26,37 @@ test("basic traceable implementation", async () => {
     nodes: ["llm:0"],
     edges: [],
   });
+});
+
+test("404s should only log, not throw an error", async () => {
+  const overriddenFetch = jest.fn(() =>
+    Promise.resolve({
+      ok: false,
+      status: 404,
+      statusText: "Expected test error",
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve("Expected test error."),
+    })
+  );
+  overrideFetchImplementation(overriddenFetch);
+  const client = new Client({
+    apiUrl: "https://foobar.notreal",
+  });
+  const llm = traceable(
+    async function* llm(input: string) {
+      const response = input.repeat(2).split("");
+      for (const char of response) {
+        yield char;
+      }
+    },
+    { client, tracingEnabled: true }
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of llm("Hello world")) {
+    // pass
+  }
+  expect(overriddenFetch).toHaveBeenCalled();
 });
 
 test("nested traceable implementation", async () => {
@@ -78,13 +110,20 @@ test("trace circular input and output objects", async () => {
   a.b = b;
   b.a = a;
   const llm = traceable(
-    async function foo(_: any) {
+    async function foo(_: Record<string, any>) {
       return a;
     },
     { client, tracingEnabled: true }
   );
 
-  await llm(a);
+  const input = {
+    a,
+    a2: a,
+    normalParam: {
+      test: true,
+    },
+  };
+  await llm(input);
 
   expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: ["foo:0"],
@@ -92,14 +131,30 @@ test("trace circular input and output objects", async () => {
     data: {
       "foo:0": {
         inputs: {
-          b: {
-            a: {
-              result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+          a: {
+            b: {
+              a: {
+                result: "[Circular]",
+              },
             },
+          },
+          a2: {
+            b: {
+              a: {
+                result: "[Circular]",
+              },
+            },
+          },
+          normalParam: {
+            test: true,
           },
         },
         outputs: {
-          result: CIRCULAR_VALUE_REPLACEMENT_STRING,
+          b: {
+            a: {
+              result: "[Circular]",
+            },
+          },
         },
       },
     },
@@ -975,4 +1030,26 @@ test("argsConfigPath", async () => {
       },
     },
   });
+});
+
+test("traceable continues execution when client throws error", async () => {
+  const errorClient = {
+    createRun: jest.fn().mockRejectedValue(new Error("Client error") as never),
+    updateRun: jest.fn().mockRejectedValue(new Error("Client error") as never),
+  };
+
+  const tracedFunction = traceable(
+    async (value: number): Promise<number> => value * 2,
+    {
+      client: errorClient as unknown as Client,
+      name: "errorTest",
+      tracingEnabled: true,
+    }
+  );
+
+  const result = await tracedFunction(5);
+
+  expect(result).toBe(10);
+  expect(errorClient.createRun).toHaveBeenCalled();
+  expect(errorClient.updateRun).toHaveBeenCalled();
 });

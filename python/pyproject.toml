@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.131"
+version = "0.1.132"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -33,12 +33,13 @@ pydantic = [
 requests = "^2"
 orjson = "^3.9.14"
 httpx = ">=0.23.0,<1"
+requests-toolbelt = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
 black = ">=23.3,<25.0"
 mypy = "^1.9.0"
-ruff = "^0.3.4"
+ruff = "^0.6.9"
 types-requests = "^2.31.0.1"
 pandas-stubs = "^2.0.1.230501"
 types-pyyaml = "^6.0.12.10"
@@ -57,6 +58,9 @@ fastapi = "^0.110.1"
 uvicorn = "^0.29.0"
 pytest-rerunfailures = "^14.0"
 pytest-socket = "^0.7.0"
+pyperf = "^2.7.0"
+py-spy = "^0.3.14"
+multipart = "^1.0.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
@@ -103,6 +107,7 @@ convention = "google"
 "langsmith/schemas.py" = ["E501"]
 "tests/evaluation/__init__.py" = ["E501"]
 "tests/*" = ["D", "UP"]
+"bench/*" = ["D", "UP", "T"]
 "docs/*" = ["T", "D"]
 
 [tool.ruff.format]

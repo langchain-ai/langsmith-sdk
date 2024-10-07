@@ -409,7 +409,7 @@ export type RetrieverOutput = Array<{
 export interface InvocationParamsSchema {
   ls_provider?: string;
   ls_model_name?: string;
-  ls_model_type: "chat" | "text";
+  ls_model_type: "chat" | "llm";
   ls_temperature?: number;
   ls_max_tokens?: number;
   ls_stop?: string[];
@@ -473,4 +473,32 @@ export interface LangSmithSettings {
   display_name: string;
   created_at: string;
   tenant_handle?: string;
+}
+
+export interface AnnotationQueue {
+  /** The unique identifier of the annotation queue. */
+  id: string;
+
+  /** The name of the annotation queue. */
+  name: string;
+
+  /** An optional description of the annotation queue. */
+  description?: string;
+
+  /** The timestamp when the annotation queue was created. */
+  created_at: string;
+
+  /** The timestamp when the annotation queue was last updated. */
+  updated_at: string;
+
+  /** The ID of the tenant associated with the annotation queue. */
+  tenant_id: string;
+}
+
+export interface RunWithAnnotationQueueInfo extends BaseRun {
+  /** The last time this run was reviewed. */
+  last_reviewed_time?: string;
+
+  /** The time this run was added to the queue. */
+  added_at?: string;
 }
