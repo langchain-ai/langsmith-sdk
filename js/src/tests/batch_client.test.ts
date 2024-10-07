@@ -279,11 +279,11 @@ describe("Batch client tracing", () => {
     });
   });
 
-  it("should not trigger a batch on root run end and instead batch call with previous batch if blockOnRootRunUpdates is false", async () => {
+  it("should not trigger a batch on root run end and instead batch call with previous batch if serverlessEnvironment is false", async () => {
     const client = new Client({
       apiKey: "test-api-key",
       autoBatchTracing: true,
-      blockOnRootRunUpdates: false,
+      serverlessEnvironment: false,
     });
     const callSpy = jest
       .spyOn((client as any).batchIngestCaller, "call")
@@ -341,7 +341,7 @@ describe("Batch client tracing", () => {
       dotted_order: dottedOrder2,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await client.awaitPendingTracingBatches();
 
     expect(callSpy.mock.calls.length).toEqual(2);
     const calledRequestParam: any = callSpy.mock.calls[0][2];

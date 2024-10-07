@@ -73,7 +73,7 @@ export interface ClientConfig {
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
-  blockOnRootRunUpdates?: boolean;
+  serverlessEnvironment?: boolean;
   fetchOptions?: RequestInit;
 }
 
@@ -358,18 +358,21 @@ const handle429 = async (response?: Response) => {
 };
 
 export class Queue<T> {
-  items: [T, () => void][] = [];
+  items: [T, () => void, Promise<void>][] = [];
 
   get size() {
     return this.items.length;
   }
 
   push(item: T): Promise<void> {
+    let itemPromiseResolve;
+    const itemPromise = new Promise<void>((resolve) => {
+      itemPromiseResolve = resolve;
+    });
     // this.items.push is synchronous with promise creation:
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
-    return new Promise<void>((resolve) => {
-      this.items.push([item, resolve]);
-    });
+    this.items.push([item, itemPromiseResolve!, itemPromise]);
+    return itemPromise;
   }
 
   pop(upToN: number): [T[], () => void] {
@@ -435,7 +438,7 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
-  private blockOnRootRunUpdates = true;
+  private serverlessEnvironment = true;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
@@ -463,8 +466,8 @@ export class Client {
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
-    this.blockOnRootRunUpdates =
-      config.blockOnRootRunUpdates ?? this.blockOnRootRunUpdates;
+    this.serverlessEnvironment =
+      config.serverlessEnvironment ?? this.serverlessEnvironment;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
     this.fetchOptions = config.fetchOptions || {};
@@ -974,7 +977,7 @@ export class Client {
       if (
         run.end_time !== undefined &&
         data.parent_run_id === undefined &&
-        this.blockOnRootRunUpdates
+        this.serverlessEnvironment
       ) {
         // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
         // in serverless environments.
@@ -3893,5 +3896,11 @@ export class Client {
     } catch (error) {
       throw new Error(`Invalid public ${kind} URL or token: ${urlOrToken}`);
     }
+  }
+
+  public awaitPendingTracingBatches() {
+    return Promise.all(
+      this.autoBatchQueue.items.map(([, , promise]) => promise)
+    );
   }
 }
