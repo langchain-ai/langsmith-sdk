@@ -73,7 +73,7 @@ export interface ClientConfig {
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
-  serverlessEnvironment?: boolean;
+  blockOnRootRunFinalization?: boolean;
   fetchOptions?: RequestInit;
 }
 
@@ -438,7 +438,7 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
-  private serverlessEnvironment = true;
+  private blockOnRootRunFinalization = true;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
@@ -466,8 +466,8 @@ export class Client {
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
-    this.serverlessEnvironment =
-      config.serverlessEnvironment ?? this.serverlessEnvironment;
+    this.blockOnRootRunFinalization =
+      config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
     this.fetchOptions = config.fetchOptions || {};
@@ -977,7 +977,7 @@ export class Client {
       if (
         run.end_time !== undefined &&
         data.parent_run_id === undefined &&
-        this.serverlessEnvironment
+        this.blockOnRootRunFinalization
       ) {
         // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
         // in serverless environments.
@@ -3898,6 +3898,27 @@ export class Client {
     }
   }
 
+  /**
+   * Awaits all pending trace batches. Useful for environments where
+   * you need to be sure that all tracing requests finish before execution ends,
+   * such as serverless environments.
+   *
+   * @example
+   * ```
+   * import { Client } from "langsmith";
+   *
+   * const client = new Client();
+   *
+   * try {
+   *   // Tracing happens here
+   *   ...
+   * } finally {
+   *   await client.awaitPendingTraceBatches();
+   * }
+   * ```
+   *
+   * @returns A promise that resolves once all currently pending traces have sent.
+   */
   public awaitPendingTraceBatches() {
     return Promise.all(
       this.autoBatchQueue.items.map(([, , promise]) => promise)

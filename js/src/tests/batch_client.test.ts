@@ -279,11 +279,11 @@ describe("Batch client tracing", () => {
     });
   });
 
-  it("should not trigger a batch on root run end and instead batch call with previous batch if serverlessEnvironment is false", async () => {
+  it("should not trigger a batch on root run end and instead batch call with previous batch if blockOnRootRunFinalization is false", async () => {
     const client = new Client({
       apiKey: "test-api-key",
       autoBatchTracing: true,
-      serverlessEnvironment: false,
+      blockOnRootRunFinalization: false,
     });
     const callSpy = jest
       .spyOn((client as any).batchIngestCaller, "call")
