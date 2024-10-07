@@ -371,6 +371,7 @@ export class Queue<T> {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     this.items.push([item, itemPromiseResolve!, itemPromise]);
     return itemPromise;
   }
