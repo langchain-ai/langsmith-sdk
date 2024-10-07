@@ -367,10 +367,10 @@ export class Queue<T> {
   push(item: T): Promise<void> {
     let itemPromiseResolve;
     const itemPromise = new Promise<void>((resolve) => {
+      // Setting itemPromiseResolve is synchronous with promise creation:
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    // this.items.push is synchronous with promise creation:
-    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
     this.items.push([item, itemPromiseResolve!, itemPromise]);
     return itemPromise;
   }
