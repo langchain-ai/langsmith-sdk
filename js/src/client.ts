@@ -73,6 +73,7 @@ export interface ClientConfig {
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
+  blockOnRootRunUpdates?: boolean;
   fetchOptions?: RequestInit;
 }
 
@@ -434,6 +435,8 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
+  private blockOnRootRunUpdates = true;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -460,6 +463,8 @@ export class Client {
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
+    this.blockOnRootRunUpdates =
+      config.blockOnRootRunUpdates ?? this.blockOnRootRunUpdates;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
     this.fetchOptions = config.fetchOptions || {};
@@ -966,7 +971,11 @@ export class Client {
       data.trace_id !== undefined &&
       data.dotted_order !== undefined
     ) {
-      if (run.end_time !== undefined && data.parent_run_id === undefined) {
+      if (
+        run.end_time !== undefined &&
+        data.parent_run_id === undefined &&
+        this.blockOnRootRunUpdates
+      ) {
         // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
         // in serverless environments.
         await this.processRunOperation({ action: "update", item: data }, true);

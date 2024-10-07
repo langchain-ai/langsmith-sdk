@@ -279,6 +279,114 @@ describe("Batch client tracing", () => {
     });
   });
 
+  it("should not trigger a batch on root run end and instead batch call with previous batch if blockOnRootRunUpdates is false", async () => {
+    const client = new Client({
+      apiKey: "test-api-key",
+      autoBatchTracing: true,
+      blockOnRootRunUpdates: false,
+    });
+    const callSpy = jest
+      .spyOn((client as any).batchIngestCaller, "call")
+      .mockResolvedValue({
+        ok: true,
+        text: () => "",
+      });
+    jest
+      .spyOn(client as any, "batchEndpointIsSupported")
+      .mockResolvedValue(true);
+    const projectName = "__test_batch";
+
+    const runId = uuidv4();
+    const dottedOrder = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId
+    );
+    await client.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+      trace_id: runId,
+      dotted_order: dottedOrder,
+    });
+
+    // Wait for first batch to send
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const endTime = Math.floor(new Date().getTime() / 1000);
+
+    // A root run finishing triggers the second batch
+    await client.updateRun(runId, {
+      outputs: { output: ["Hi"] },
+      dotted_order: dottedOrder,
+      trace_id: runId,
+      end_time: endTime,
+    });
+
+    const runId2 = uuidv4();
+    const dottedOrder2 = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId2
+    );
+
+    // Will send in a third batch, even though it's triggered around the same time as the update
+    await client.createRun({
+      id: runId2,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world 2" },
+      trace_id: runId2,
+      dotted_order: dottedOrder2,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(callSpy.mock.calls.length).toEqual(2);
+    const calledRequestParam: any = callSpy.mock.calls[0][2];
+    const calledRequestParam2: any = callSpy.mock.calls[1][2];
+    expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runId,
+          run_type: "llm",
+          inputs: {
+            text: "hello world",
+          },
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        }),
+      ],
+      patch: [],
+    });
+
+    expect(JSON.parse(calledRequestParam2?.body)).toEqual({
+      post: [
+        expect.objectContaining({
+          id: runId2,
+          run_type: "llm",
+          inputs: {
+            text: "hello world 2",
+          },
+          trace_id: runId2,
+          dotted_order: dottedOrder2,
+        }),
+      ],
+      patch: [
+        expect.objectContaining({
+          id: runId,
+          dotted_order: dottedOrder,
+          trace_id: runId,
+          end_time: endTime,
+          outputs: {
+            output: ["Hi"],
+          },
+        }),
+      ],
+    });
+  });
+
   it("should send traces above the batch size and see even batches", async () => {
     const client = new Client({
       apiKey: "test-api-key",
