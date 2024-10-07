@@ -341,7 +341,7 @@ describe("Batch client tracing", () => {
       dotted_order: dottedOrder2,
     });
 
-    await client.awaitPendingTracingBatches();
+    await client.awaitPendingTraceBatches();
 
     expect(callSpy.mock.calls.length).toEqual(2);
     const calledRequestParam: any = callSpy.mock.calls[0][2];

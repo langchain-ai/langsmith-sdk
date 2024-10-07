@@ -3898,7 +3898,7 @@ export class Client {
     }
   }
 
-  public awaitPendingTracingBatches() {
+  public awaitPendingTraceBatches() {
     return Promise.all(
       this.autoBatchQueue.items.map(([, , promise]) => promise)
     );
