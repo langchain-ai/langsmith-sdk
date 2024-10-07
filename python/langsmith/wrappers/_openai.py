@@ -21,6 +21,7 @@ from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
+from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
@@ -141,6 +142,12 @@ def _reduce_chat(all_chunks: List[ChatCompletionChunk]) -> dict:
         ]
     else:
         d = {"choices": [{"message": {"role": "assistant", "content": ""}}]}
+    # streamed outputs don't go through `process_outputs`
+    # so we need to flatten metadata here
+    oai_token_usage = d.pop("usage")
+    d["usage_metadata"] = (
+        _create_usage_metadata(oai_token_usage) if oai_token_usage else None
+    )
     return d
 
 
@@ -160,12 +167,62 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
     return d
 
 
+def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
+    input_tokens = oai_token_usage.get("prompt_tokens", 0)
+    output_tokens = oai_token_usage.get("completion_tokens", 0)
+    total_tokens = oai_token_usage.get("total_tokens", input_tokens + output_tokens)
+    input_token_details: dict = {
+        "audio": (oai_token_usage.get("prompt_tokens_details") or {}).get(
+            "audio_tokens"
+        ),
+        "cache_read": (oai_token_usage.get("prompt_tokens_details") or {}).get(
+            "cached_tokens"
+        ),
+    }
+    output_token_details: dict = {
+        "audio": (oai_token_usage.get("completion_tokens_details") or {}).get(
+            "audio_tokens"
+        ),
+        "reasoning": (oai_token_usage.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        ),
+    }
+    return UsageMetadata(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        input_token_details=InputTokenDetails(
+            **{k: v for k, v in input_token_details.items() if v is not None}
+        ),
+        output_token_details=OutputTokenDetails(
+            **{k: v for k, v in output_token_details.items() if v is not None}
+        ),
+    )
+
+
+def _process_chat_completion(outputs: Any):
+    """Process the outputs of the chat completion endpoint. Turn the OpenAI objects
+    into a dictionary and insert the usage_metadata.
+    """
+    try:
+        rdict = outputs.model_dump()
+        oai_token_usage = rdict.pop("usage")
+        rdict["usage_metadata"] = (
+            _create_usage_metadata(oai_token_usage) if oai_token_usage else None
+        )
+        return rdict
+    except BaseException as e:
+        logger.debug(f"Error processing chat completion: {e}")
+        return {"output": outputs}
+
+
 def _get_wrapper(
     original_create: Callable,
     name: str,
     reduce_fn: Callable,
     tracing_extra: Optional[TracingExtra] = None,
     invocation_params_fn: Optional[Callable] = None,
+    process_outputs: Optional[Callable] = None,
 ) -> Callable:
     textra = tracing_extra or {}
 
@@ -177,6 +234,7 @@ def _get_wrapper(
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
+            process_outputs=process_outputs,
             **textra,
         )
 
@@ -191,6 +249,7 @@ def _get_wrapper(
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
+            process_outputs=process_outputs,
             **textra,
         )
         return await decorator(original_create)(*args, stream=stream, **kwargs)
@@ -232,6 +291,7 @@ def wrap_openai(
         _reduce_chat,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+        process_outputs=_process_chat_completion,
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
