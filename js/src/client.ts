@@ -73,6 +73,7 @@ export interface ClientConfig {
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   pendingAutoBatchedRunLimit?: number;
+  blockOnRootRunFinalization?: boolean;
   fetchOptions?: RequestInit;
 }
 
@@ -357,18 +358,22 @@ const handle429 = async (response?: Response) => {
 };
 
 export class Queue<T> {
-  items: [T, () => void][] = [];
+  items: [T, () => void, Promise<void>][] = [];
 
   get size() {
     return this.items.length;
   }
 
   push(item: T): Promise<void> {
-    // this.items.push is synchronous with promise creation:
-    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
-    return new Promise<void>((resolve) => {
-      this.items.push([item, resolve]);
+    let itemPromiseResolve;
+    const itemPromise = new Promise<void>((resolve) => {
+      // Setting itemPromiseResolve is synchronous with promise creation:
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
+      itemPromiseResolve = resolve;
     });
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    this.items.push([item, itemPromiseResolve!, itemPromise]);
+    return itemPromise;
   }
 
   pop(upToN: number): [T[], () => void] {
@@ -434,6 +439,8 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
+  private blockOnRootRunFinalization = true;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -460,6 +467,8 @@ export class Client {
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
+    this.blockOnRootRunFinalization =
+      config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.pendingAutoBatchedRunLimit =
       config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
     this.fetchOptions = config.fetchOptions || {};
@@ -966,7 +975,11 @@ export class Client {
       data.trace_id !== undefined &&
       data.dotted_order !== undefined
     ) {
-      if (run.end_time !== undefined && data.parent_run_id === undefined) {
+      if (
+        run.end_time !== undefined &&
+        data.parent_run_id === undefined &&
+        this.blockOnRootRunFinalization
+      ) {
         // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
         // in serverless environments.
         await this.processRunOperation({ action: "update", item: data }, true);
@@ -3884,5 +3897,32 @@ export class Client {
     } catch (error) {
       throw new Error(`Invalid public ${kind} URL or token: ${urlOrToken}`);
     }
+  }
+
+  /**
+   * Awaits all pending trace batches. Useful for environments where
+   * you need to be sure that all tracing requests finish before execution ends,
+   * such as serverless environments.
+   *
+   * @example
+   * ```
+   * import { Client } from "langsmith";
+   *
+   * const client = new Client();
+   *
+   * try {
+   *   // Tracing happens here
+   *   ...
+   * } finally {
+   *   await client.awaitPendingTraceBatches();
+   * }
+   * ```
+   *
+   * @returns A promise that resolves once all currently pending traces have sent.
+   */
+  public awaitPendingTraceBatches() {
+    return Promise.all(
+      this.autoBatchQueue.items.map(([, , promise]) => promise)
+    );
   }
 }
