@@ -96,7 +96,7 @@ X_API_KEY = "x-api-key"
 WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
 BOUNDARY = uuid.uuid4().hex
-MultipartParts = List[Tuple[str, Tuple[None, bytes, str]]]
+MultipartParts = List[Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]]
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
@@ -1638,17 +1638,11 @@ class Client:
         # insert runtime environment
         self._insert_runtime_env(create_dicts)
         self._insert_runtime_env(update_dicts)
-        # check size limit
-        size_limit_bytes = (self.info.batch_ingest_config or {}).get(
-            "size_limit_bytes"
-        ) or _SIZE_LIMIT_BYTES
         # send the runs in multipart requests
-        acc_size = 0
         acc_context: List[str] = []
         acc_parts: MultipartParts = []
         for event, payloads in (("post", create_dicts), ("patch", update_dicts)):
             for payload in payloads:
-                parts: MultipartParts = []
                 # collect fields to be sent as separate parts
                 fields = [
                     ("inputs", payload.pop("inputs", None)),
@@ -1656,45 +1650,49 @@ class Client:
                     ("events", payload.pop("events", None)),
                 ]
                 # encode the main run payload
-                parts.append(
+                payloadb = _dumps_json(payload)
+                acc_parts.append(
                     (
                         f"{event}.{payload['id']}",
-                        (None, _dumps_json(payload), "application/json"),
+                        (
+                            None,
+                            payloadb,
+                            "application/json",
+                            {"Content-Length": str(len(payloadb))},
+                        ),
                     )
                 )
                 # encode the fields we collected
                 for key, value in fields:
                     if value is None:
                         continue
-                    parts.append(
+                    valb = _dumps_json(value)
+                    acc_parts.append(
                         (
                             f"{event}.{payload['id']}.{key}",
-                            (None, _dumps_json(value), "application/json"),
+                            (
+                                None,
+                                valb,
+                                "application/json",
+                                {"Content-Length": str(len(valb))},
+                            ),
                         ),
                     )
                 # encode the attachments
                 if attachments := all_attachments.pop(payload["id"], None):
                     for n, (ct, ba) in attachments.items():
-                        parts.append(
-                            (f"attachment.{payload['id']}.{n}", (None, ba, ct))
+                        acc_parts.append(
+                            (
+                                f"attachment.{payload['id']}.{n}",
+                                (None, ba, ct, {"Content-Length": str(len(ba))}),
+                            )
                         )
-                # calculate the size of the parts
-                size = sum(len(p[1][1]) for p in parts)
                 # compute context
-                context = f"trace={payload.get('trace_id')},id={payload.get('id')}"
-                # if next size would exceed limit, send the current parts
-                if acc_size + size > size_limit_bytes:
-                    self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
-                    acc_parts.clear()
-                    acc_context.clear()
-                    acc_size = 0
-                # accumulate the parts
-                acc_size += size
-                acc_parts.extend(parts)
-                acc_context.append(context)
-        # send the remaining parts
-        if acc_parts:
-            self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+                acc_context.append(
+                    f"trace={payload.get('trace_id')},id={payload.get('id')}"
+                )
+        # send the request
+        self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
 
     def _send_multipart_req(self, parts: MultipartParts, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
