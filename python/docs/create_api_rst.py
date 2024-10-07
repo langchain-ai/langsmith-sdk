@@ -105,7 +105,9 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 else (
                     "enum"
                     if issubclass(type_, Enum)
-                    else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
+                    else "Pydantic"
+                    if issubclass(type_, BaseModel)
+                    else "Regular"
                 )
             )
             if hasattr(type_, "__slots__"):
