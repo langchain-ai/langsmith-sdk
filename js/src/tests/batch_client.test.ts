@@ -311,12 +311,14 @@ describe("Batch client tracing", () => {
       dotted_order: dottedOrder,
     });
 
+    expect((client as any).autoBatchQueue.size).toBe(1);
     // Wait for first batch to send
     await new Promise((resolve) => setTimeout(resolve, 300));
+    expect((client as any).autoBatchQueue.size).toBe(0);
 
     const endTime = Math.floor(new Date().getTime() / 1000);
 
-    // A root run finishing triggers the second batch
+    // Start the the second batch
     await client.updateRun(runId, {
       outputs: { output: ["Hi"] },
       dotted_order: dottedOrder,
@@ -330,7 +332,7 @@ describe("Batch client tracing", () => {
       runId2
     );
 
-    // Will send in a third batch, even though it's triggered around the same time as the update
+    // Should aggregate on the second batch
     await client.createRun({
       id: runId2,
       project_name: projectName,
@@ -341,7 +343,10 @@ describe("Batch client tracing", () => {
       dotted_order: dottedOrder2,
     });
 
+    // 2 runs in the queue
+    expect((client as any).autoBatchQueue.size).toBe(2);
     await client.awaitPendingTraceBatches();
+    expect((client as any).autoBatchQueue.size).toBe(0);
 
     expect(callSpy.mock.calls.length).toEqual(2);
     const calledRequestParam: any = callSpy.mock.calls[0][2];
