@@ -752,7 +752,7 @@ class Client:
             ]
             if should_debug_crash_dump and request is not None:
                 with open("content_size_limit_crash_dump.jsonl", "a") as f:
-                    json.dump(request, f)
+                    # json.dump(request, f)
                     f.write("\n")
             return (
                 f"The content length of {content_length} bytes exceeds the "
