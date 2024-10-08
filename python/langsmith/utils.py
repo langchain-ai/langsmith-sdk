@@ -793,7 +793,7 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
     return str(fn)
 
 
-def write_to_crash_dump(
+def _write_to_crash_dump(
     request: requests.Request | requests.PreparedRequest, file_name: str
 ):
     with open(file_name, "a") as f:
