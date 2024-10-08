@@ -7,7 +7,6 @@ import contextvars
 import copy
 import enum
 import functools
-import json
 import logging
 import os
 import pathlib
@@ -792,10 +791,3 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
 
     return str(fn)
 
-
-def _write_to_crash_dump(
-    request: requests.Request | requests.PreparedRequest, file_name: str
-):
-    with open(file_name, "a") as f:
-        json.dump(request, f)
-        f.write("\n")
