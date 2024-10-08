@@ -144,7 +144,7 @@ def _reduce_chat(all_chunks: List[ChatCompletionChunk]) -> dict:
         d = {"choices": [{"message": {"role": "assistant", "content": ""}}]}
     # streamed outputs don't go through `process_outputs`
     # so we need to flatten metadata here
-    oai_token_usage = d.pop("usage")
+    oai_token_usage = d.pop("usage", None)
     d["usage_metadata"] = (
         _create_usage_metadata(oai_token_usage) if oai_token_usage else None
     )
@@ -168,9 +168,9 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
 
 
 def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
-    input_tokens = oai_token_usage.get("prompt_tokens", 0)
-    output_tokens = oai_token_usage.get("completion_tokens", 0)
-    total_tokens = oai_token_usage.get("total_tokens", input_tokens + output_tokens)
+    input_tokens = oai_token_usage.get("prompt_tokens") or 0
+    output_tokens = oai_token_usage.get("completion_tokens") or 0
+    total_tokens = oai_token_usage.get("total_tokens") or input_tokens + output_tokens
     input_token_details: dict = {
         "audio": (oai_token_usage.get("prompt_tokens_details") or {}).get(
             "audio_tokens"
@@ -203,7 +203,7 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
 def _process_chat_completion(outputs: Any):
     try:
         rdict = outputs.model_dump()
-        oai_token_usage = rdict.pop("usage")
+        oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
             _create_usage_metadata(oai_token_usage) if oai_token_usage else None
         )
