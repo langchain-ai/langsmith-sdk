@@ -52,6 +52,10 @@ class LangSmithAPIError(LangSmithError):
     """Internal server error while communicating with LangSmith."""
 
 
+class LangSmithRequestTimeout(LangSmithError):
+    """Client took too long to send request body."""
+
+
 class LangSmithUserError(LangSmithError):
     """User error caused an exception when communicating with LangSmith."""
 
