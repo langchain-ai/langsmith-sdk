@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = f"{LANGSMITH_PREFIX}trace"
 _CLIENT: Optional[Client] = None
+_CONTEXT_CLIENT = contextvars.ContextVar[Optional[Client]]("_CLIENT", default=None)
 _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
 
@@ -35,6 +37,8 @@ _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
 
 def get_cached_client(**init_kwargs: Any) -> Client:
+    if _CONTEXT_CLIENT:
+        return _CONTEXT_CLIENT
     global _CLIENT
     if _CLIENT is None:
         if _CLIENT is None:
