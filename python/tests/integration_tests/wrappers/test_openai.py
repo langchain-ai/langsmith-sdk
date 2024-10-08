@@ -1,6 +1,7 @@
 # mypy: disable-error-code="attr-defined, union-attr, arg-type, call-overload"
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -199,19 +200,29 @@ class Collect:
 
 
 def _collect_requests(mock_session: mock.MagicMock, filename: str):
-    dir_path = Path(__file__).resolve().parent.parent / "test_data"
-    file_path = dir_path / f"{filename}.json"
-    all_requests = []
-    for call in mock_session.return_value.request.call_args_list:
-        json_bytes = call.kwargs.get("data")
-        if json_bytes:
-            json_str = json_bytes.decode("utf-8")
-            data_dict = json.loads(json_str)
-            all_requests.append(data_dict)
+    mock_requests = mock_session.return_value.request.call_args_list
+    collected_requests = {}
+    for _ in range(10):
+        time.sleep(0.1)
+        for call in mock_requests:
+            if json_bytes := call.kwargs.get("data"):
+                json_str = json_bytes.decode("utf-8")
+                collected_requests.update(json.loads(json_str))
+        all_events = [
+            *collected_requests.get("post", []),
+            *collected_requests.get("patch", []),
+        ]
+        # if end_time has been set, we can stop collecting as the background
+        # thread has finished processing the run
+        if any(event.get("end_time") for event in all_events):
+            break
+        mock_session.return_value.request.call_args_list.clear()
 
-    with open(file_path, "w") as f:
-        json.dump(all_requests, f, indent=2)
-    mock_session.return_value.request.call_args_list.clear()
+    if os.environ["WRITE_TOKEN_COUNTING_TEST_DATA"] == "1":
+        dir_path = Path(__file__).resolve().parent.parent / "test_data"
+        file_path = dir_path / f"{filename}.json"
+        with open(file_path, "w") as f:
+            json.dump(collected_requests, f, indent=2)
 
 
 test_cases = [
