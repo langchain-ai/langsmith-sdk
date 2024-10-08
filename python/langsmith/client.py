@@ -731,7 +731,11 @@ class Client:
 
         return self._settings
 
-    def _content_above_size(self, content_length: Optional[int], request: Optional[requests.Request | requests.PreparedRequest] ) -> Optional[str]:
+    def _content_above_size(
+        self,
+        content_length: Optional[int],
+        request: Optional[requests.Request | requests.PreparedRequest],
+    ) -> Optional[str]:
         if content_length is None or self._info is None:
             return None
         info = cast(ls_schemas.LangSmithInfo, self._info)
@@ -742,7 +746,10 @@ class Client:
         if size_limit is None:
             return None
         if content_length > size_limit:
-            should_debug_crash_dump = os.getenv("LANGSMITH_DEBUG_CRASH_DUMP") in ["1", "true"]
+            should_debug_crash_dump = os.getenv("LANGSMITH_DEBUG_CRASH_DUMP") in [
+                "1",
+                "true",
+            ]
             if should_debug_crash_dump and request is not None:
                 with open("content_size_limit_crash_dump.jsonl", "a") as f:
                     json.dump(request, f)
