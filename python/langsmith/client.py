@@ -752,7 +752,7 @@ class Client:
             ]
             if should_debug_crash_dump and request is not None:
                 threading.Thread(
-                    target=ls_utils.write_to_crash_dump,
+                    target=ls_utils._write_to_crash_dump,
                     args=(request, "content_size_limit_crash_dump.jsonl"),
                 ).start()
             return (
