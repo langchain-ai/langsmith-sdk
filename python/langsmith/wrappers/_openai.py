@@ -201,9 +201,6 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
 
 
 def _process_chat_completion(outputs: Any):
-    """Process the outputs of the chat completion endpoint. Turn the OpenAI objects
-    into a dictionary and insert the usage_metadata.
-    """
     try:
         rdict = outputs.model_dump()
         oai_token_usage = rdict.pop("usage")
