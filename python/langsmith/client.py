@@ -743,9 +743,9 @@ class Client:
             return None
         if content_length > size_limit:
             should_debug_crash_dump = os.getenv("LANGSMITH_DEBUG_CRASH_DUMP") in ["1", "true"]
-            if should_debug_crash_dump:
+            if should_debug_crash_dump and request is not None:
                 with open("content_size_limit_crash_dump.jsonl", "a") as f:
-                    json.dump(request.body, f)
+                    json.dump(request, f)
                     f.write("\n")
             return (
                 f"The content length of {content_length} bytes exceeds the "
