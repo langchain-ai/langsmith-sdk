@@ -1,0 +1,60 @@
+[
+  {
+    "post": [
+      {
+        "id": "905a75e2-9025-4b63-b9f2-207d592c9d47",
+        "start_time": "2024-10-08T05:02:26.626520+00:00",
+        "extra": {
+          "metadata": {
+            "ls_method": "traceable",
+            "ls_provider": "openai",
+            "ls_model_type": "chat",
+            "ls_model_name": "gpt-4o-mini",
+            "revision_id": "v0.1.82-377-g07cb5b9-dirty"
+          },
+          "runtime": {
+            "sdk": "langsmith-py",
+            "sdk_version": "0.1.131",
+            "library": "langsmith",
+            "platform": "macOS-13.2-arm64-arm-64bit",
+            "runtime": "python",
+            "py_implementation": "CPython",
+            "runtime_version": "3.11.7",
+            "langchain_version": "0.2.9",
+            "langchain_core_version": "0.2.21"
+          }
+        },
+        "serialized": {
+          "name": "ChatOpenAI",
+          "signature": "(*, messages: 'Iterable[ChatCompletionMessageParam]', model: 'Union[str, ChatModel]', frequency_penalty: 'Optional[float] | NotGiven' = NOT_GIVEN, function_call: 'completion_create_params.FunctionCall | NotGiven' = NOT_GIVEN, functions: 'Iterable[completion_create_params.Function] | NotGiven' = NOT_GIVEN, logit_bias: 'Optional[Dict[str, int]] | NotGiven' = NOT_GIVEN, logprobs: 'Optional[bool] | NotGiven' = NOT_GIVEN, max_completion_tokens: 'Optional[int] | NotGiven' = NOT_GIVEN, max_tokens: 'Optional[int] | NotGiven' = NOT_GIVEN, n: 'Optional[int] | NotGiven' = NOT_GIVEN, parallel_tool_calls: 'bool | NotGiven' = NOT_GIVEN, presence_penalty: 'Optional[float] | NotGiven' = NOT_GIVEN, response_format: 'completion_create_params.ResponseFormat | NotGiven' = NOT_GIVEN, seed: 'Optional[int] | NotGiven' = NOT_GIVEN, service_tier: \"Optional[Literal['auto', 'default']] | NotGiven\" = NOT_GIVEN, stop: 'Union[Optional[str], List[str]] | NotGiven' = NOT_GIVEN, stream: 'Optional[Literal[False]] | Literal[True] | NotGiven' = NOT_GIVEN, stream_options: 'Optional[ChatCompletionStreamOptionsParam] | NotGiven' = NOT_GIVEN, temperature: 'Optional[float] | NotGiven' = NOT_GIVEN, tool_choice: 'ChatCompletionToolChoiceOptionParam | NotGiven' = NOT_GIVEN, tools: 'Iterable[ChatCompletionToolParam] | NotGiven' = NOT_GIVEN, top_logprobs: 'Optional[int] | NotGiven' = NOT_GIVEN, top_p: 'Optional[float] | NotGiven' = NOT_GIVEN, user: 'str | NotGiven' = NOT_GIVEN, extra_headers: 'Headers | None' = None, extra_query: 'Query | None' = None, extra_body: 'Body | None' = None, timeout: 'float | httpx.Timeout | None | NotGiven' = NOT_GIVEN) -> 'ChatCompletion | AsyncStream[ChatCompletionChunk]'",
+          "doc": null
+        },
+        "events": [],
+        "tags": [],
+        "attachments": {},
+        "dotted_order": "20241008T050226626520Z905a75e2-9025-4b63-b9f2-207d592c9d47",
+        "trace_id": "905a75e2-9025-4b63-b9f2-207d592c9d47",
+        "outputs": {},
+        "session_name": "default",
+        "name": "ChatOpenAI",
+        "inputs": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "howdy"
+            }
+          ],
+          "model": "gpt-4o-mini",
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "extra_headers": null,
+          "extra_query": null,
+          "extra_body": null
+        },
+        "run_type": "llm"
+      }
+    ]
+  }
+]

@@ -234,7 +234,8 @@ def test_wrap_openai_chat(mock_session: mock.MagicMock, test_case):
         )
 
     time.sleep(0.1)
-    _collect_requests(mock_session, "wrap_openai_chat")
+    filename = f"wrap_openai_chat_{test_case['description'].replace(' ', '_')}"
+    _collect_requests(mock_session, filename)
 
 
 @pytest.mark.asyncio
@@ -284,4 +285,5 @@ async def test_wrap_openai_chat_async(mock_session: mock.MagicMock, test_case):
         )
 
     await asyncio.sleep(0.1)
-    _collect_requests(mock_session, "wrap_openai_chat_async")
+    filename = f"wrap_openai_chat_async_{test_case['description'].replace(' ', '_')}"
+    _collect_requests(mock_session, filename)

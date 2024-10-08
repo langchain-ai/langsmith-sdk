@@ -1,0 +1,342 @@
+[
+  {
+    "post": [
+      {
+        "id": "271f9411-2bd9-4e71-a6e9-025a3dd303ce",
+        "start_time": "2024-10-08T05:02:27.434355+00:00",
+        "extra": {
+          "metadata": {
+            "ls_method": "traceable",
+            "ls_provider": "openai",
+            "ls_model_type": "chat",
+            "ls_model_name": "gpt-4o-mini",
+            "revision_id": "v0.1.82-377-g07cb5b9-dirty"
+          },
+          "runtime": {
+            "sdk": "langsmith-py",
+            "sdk_version": "0.1.131",
+            "library": "langsmith",
+            "platform": "macOS-13.2-arm64-arm-64bit",
+            "runtime": "python",
+            "py_implementation": "CPython",
+            "runtime_version": "3.11.7",
+            "langchain_version": "0.2.9",
+            "langchain_core_version": "0.2.21"
+          }
+        },
+        "serialized": {
+          "name": "ChatOpenAI",
+          "signature": "(*, messages: 'Iterable[ChatCompletionMessageParam]', model: 'Union[str, ChatModel]', frequency_penalty: 'Optional[float] | NotGiven' = NOT_GIVEN, function_call: 'completion_create_params.FunctionCall | NotGiven' = NOT_GIVEN, functions: 'Iterable[completion_create_params.Function] | NotGiven' = NOT_GIVEN, logit_bias: 'Optional[Dict[str, int]] | NotGiven' = NOT_GIVEN, logprobs: 'Optional[bool] | NotGiven' = NOT_GIVEN, max_completion_tokens: 'Optional[int] | NotGiven' = NOT_GIVEN, max_tokens: 'Optional[int] | NotGiven' = NOT_GIVEN, n: 'Optional[int] | NotGiven' = NOT_GIVEN, parallel_tool_calls: 'bool | NotGiven' = NOT_GIVEN, presence_penalty: 'Optional[float] | NotGiven' = NOT_GIVEN, response_format: 'completion_create_params.ResponseFormat | NotGiven' = NOT_GIVEN, seed: 'Optional[int] | NotGiven' = NOT_GIVEN, service_tier: \"Optional[Literal['auto', 'default']] | NotGiven\" = NOT_GIVEN, stop: 'Union[Optional[str], List[str]] | NotGiven' = NOT_GIVEN, stream: 'Optional[Literal[False]] | Literal[True] | NotGiven' = NOT_GIVEN, stream_options: 'Optional[ChatCompletionStreamOptionsParam] | NotGiven' = NOT_GIVEN, temperature: 'Optional[float] | NotGiven' = NOT_GIVEN, tool_choice: 'ChatCompletionToolChoiceOptionParam | NotGiven' = NOT_GIVEN, tools: 'Iterable[ChatCompletionToolParam] | NotGiven' = NOT_GIVEN, top_logprobs: 'Optional[int] | NotGiven' = NOT_GIVEN, top_p: 'Optional[float] | NotGiven' = NOT_GIVEN, user: 'str | NotGiven' = NOT_GIVEN, extra_headers: 'Headers | None' = None, extra_query: 'Query | None' = None, extra_body: 'Body | None' = None, timeout: 'float | httpx.Timeout | None | NotGiven' = NOT_GIVEN) -> 'ChatCompletion | AsyncStream[ChatCompletionChunk]'",
+          "doc": null
+        },
+        "events": [],
+        "tags": [],
+        "attachments": {},
+        "dotted_order": "20241008T050227434355Z271f9411-2bd9-4e71-a6e9-025a3dd303ce",
+        "trace_id": "271f9411-2bd9-4e71-a6e9-025a3dd303ce",
+        "outputs": {},
+        "session_name": "default",
+        "name": "ChatOpenAI",
+        "inputs": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "howdy"
+            }
+          ],
+          "model": "gpt-4o-mini",
+          "stream": true,
+          "extra_headers": null,
+          "extra_query": null,
+          "extra_body": null
+        },
+        "run_type": "llm"
+      }
+    ]
+  },
+  {
+    "patch": [
+      {
+        "id": "271f9411-2bd9-4e71-a6e9-025a3dd303ce",
+        "name": "ChatOpenAI",
+        "trace_id": "271f9411-2bd9-4e71-a6e9-025a3dd303ce",
+        "parent_run_id": null,
+        "dotted_order": "20241008T050227434355Z271f9411-2bd9-4e71-a6e9-025a3dd303ce",
+        "tags": [],
+        "extra": {
+          "metadata": {
+            "ls_method": "traceable",
+            "ls_provider": "openai",
+            "ls_model_type": "chat",
+            "ls_model_name": "gpt-4o-mini",
+            "revision_id": "v0.1.82-377-g07cb5b9-dirty"
+          },
+          "runtime": {
+            "sdk": "langsmith-py",
+            "sdk_version": "0.1.131",
+            "library": "langsmith",
+            "platform": "macOS-13.2-arm64-arm-64bit",
+            "runtime": "python",
+            "py_implementation": "CPython",
+            "runtime_version": "3.11.7",
+            "langchain_version": "0.2.9",
+            "langchain_core_version": "0.2.21"
+          }
+        },
+        "end_time": "2024-10-08T05:02:27.897312+00:00",
+        "outputs": {
+          "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+          "choices": [
+            {
+              "index": 0,
+              "finish_reason": "stop",
+              "message": {
+                "role": "assistant",
+                "content": "Howdy! How can I assist you today?"
+              }
+            }
+          ],
+          "created": 1728363747,
+          "model": "gpt-4o-mini-2024-07-18",
+          "object": "chat.completion.chunk",
+          "service_tier": null,
+          "system_fingerprint": "fp_74ba47b4ac",
+          "usage_metadata": null
+        },
+        "events": [
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.816245+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": "",
+                      "role": "assistant"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.816439+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": "Howdy"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.825717+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": "!"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.825865+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": " How"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.844761+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": " can"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.844908+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": " I"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.890230+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": " assist"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.890393+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": " you"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.893547+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": " today"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.893685+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {
+                      "content": "?"
+                    },
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          },
+          {
+            "name": "new_token",
+            "time": "2024-10-08T05:02:27.896735+00:00",
+            "kwargs": {
+              "token": {
+                "id": "chatcmpl-AFweZMp1T3tj8BqJFf8GdoonfnVSj",
+                "choices": [
+                  {
+                    "delta": {},
+                    "finish_reason": "stop",
+                    "index": 0
+                  }
+                ],
+                "created": 1728363747,
+                "model": "gpt-4o-mini-2024-07-18",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "fp_74ba47b4ac"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
