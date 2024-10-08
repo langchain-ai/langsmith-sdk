@@ -265,7 +265,7 @@ test_cases = [
 
 @pytest.mark.parametrize("test_case", test_cases)
 @mock.patch("langsmith.client.requests.Session")
-def test_wrap_openai_chat(mock_session: mock.MagicMock, test_case):
+def test_wrap_openai_chat_tokens(mock_session: mock.MagicMock, test_case):
     import openai
     from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
@@ -315,7 +315,7 @@ def test_wrap_openai_chat(mock_session: mock.MagicMock, test_case):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("test_case", test_cases)
 @mock.patch("langsmith.client.requests.Session")
-async def test_wrap_openai_chat_async(mock_session: mock.MagicMock, test_case):
+async def test_wrap_openai_chat_async_tokens(mock_session: mock.MagicMock, test_case):
     import openai
     from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
