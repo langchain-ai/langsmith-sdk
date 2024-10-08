@@ -731,7 +731,7 @@ class Client:
 
         return self._settings
 
-    def _content_above_size(self, content_length: Optional[int]) -> Optional[str]:
+    def _content_above_size(self, content_length: Optional[int], request: Optional[requests.Request | requests.PreparedRequest] ) -> Optional[str]:
         if content_length is None or self._info is None:
             return None
         info = cast(ls_schemas.LangSmithInfo, self._info)
@@ -742,6 +742,11 @@ class Client:
         if size_limit is None:
             return None
         if content_length > size_limit:
+            should_debug_crash_dump = os.getenv("LANGSMITH_DEBUG_CRASH_DUMP") in ["1", "true"]
+            if should_debug_crash_dump:
+                with open("content_size_limit_crash_dump.jsonl", "a") as f:
+                    json.dump(request.body, f)
+                    f.write("\n")
             return (
                 f"The content length of {content_length} bytes exceeds the "
                 f"maximum size limit of {size_limit} bytes."
@@ -918,7 +923,7 @@ class Client:
                             if e.request
                             else ""
                         )
-                        size_rec = self._content_above_size(content_length)
+                        size_rec = self._content_above_size(content_length, e.request)
                         if size_rec:
                             recommendation = size_rec
                     except ValueError:
