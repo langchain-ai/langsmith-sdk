@@ -7,6 +7,7 @@ import contextvars
 import copy
 import enum
 import functools
+import json
 import logging
 import os
 import pathlib
@@ -15,7 +16,6 @@ import subprocess
 import sys
 import threading
 import traceback
-import json
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Any,
