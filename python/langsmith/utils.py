@@ -790,4 +790,3 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
         return _get_function_name(fn.__call__, depth + 1)
 
     return str(fn)
-
