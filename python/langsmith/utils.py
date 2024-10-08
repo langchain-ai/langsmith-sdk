@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import traceback
+import json
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Any,
@@ -790,3 +791,11 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
         return _get_function_name(fn.__call__, depth + 1)
 
     return str(fn)
+
+
+def write_to_crash_dump(
+    request: requests.Request | requests.PreparedRequest, file_name: str
+):
+    with open(file_name, "a") as f:
+        json.dump(request, f)
+        f.write("\n")

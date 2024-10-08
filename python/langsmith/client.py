@@ -751,9 +751,10 @@ class Client:
                 "true",
             ]
             if should_debug_crash_dump and request is not None:
-                with open("content_size_limit_crash_dump.jsonl", "a") as f:
-                    json.dump(request, f)
-                    f.write("\n")
+                threading.Thread(
+                    target=ls_utils.write_to_crash_dump,
+                    args=(request, "content_size_limit_crash_dump.jsonl"),
+                ).start()
             return (
                 f"The content length of {content_length} bytes exceeds the "
                 f"maximum size limit of {size_limit} bytes."
