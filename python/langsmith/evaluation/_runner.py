@@ -13,6 +13,8 @@ import queue
 import random
 import threading
 import uuid
+import inspect
+import re
 from contextvars import copy_context
 from typing import (
     Awaitable,
@@ -82,6 +84,27 @@ AEVALUATOR_T = Union[
     ],
 ]
 
+def extract_code_evaluator_feedback_keys(python_code: str) -> list[str]:
+    # Find the return statement
+    return_match = re.search(r'return\s*({[^}]+})', python_code)
+    if not return_match:
+        return []
+
+    # Extract the dictionary from the return statement
+    dict_str = return_match.group(1)
+
+    # Find all keys in the dictionary
+    key_matches = re.findall(r'"([^"]+)":', dict_str)
+
+    # Filter out 'key' and 'score'
+    feedback_keys = [key for key in key_matches if key not in ['key', 'score']]
+
+    # If 'key' is present in the dictionary, add its value to the feedback_keys
+    key_value_match = re.search(r'"key"\s*:\s*"([^"]+)"', dict_str)
+    if key_value_match:
+        feedback_keys.append(key_value_match.group(1))
+
+    return feedback_keys
 
 def evaluate(
     target: TARGET_T,
@@ -1353,6 +1376,15 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         )
                     )
                 except Exception as e:
+                    feedback_keys = extract_code_evaluator_feedback_keys(inspect.getsource(evaluator.func))
+                    error_response = EvaluationResults(results=[EvaluationResult(key=key,source_run_id=run.id,
+                                        comment=repr(e),extra={"error":True}) for key in feedback_keys])
+                    eval_results["results"].extend(
+                        # TODO: This is a hack
+                        self.client._log_evaluation_feedback(
+                            error_response, run=run, _executor=executor
+                        )
+                    )
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
                         f" run {run.id}: {repr(e)}",
