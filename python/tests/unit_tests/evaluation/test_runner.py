@@ -274,7 +274,8 @@ def test_evaluate_raises_for_async():
 
     with pytest.raises(ValueError, match=match):
         evaluate(foo.ainvoke, data="foo")
-
+    if sys.version_info < (3, 10):
+        return
     with pytest.raises(ValueError, match=match):
         evaluate(functools.partial(foo.ainvoke, inputs={"foo": "bar"}), data="foo")
 

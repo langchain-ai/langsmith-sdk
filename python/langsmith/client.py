@@ -827,6 +827,7 @@ class Client:
             *(retry_on or ()),
             *(
                 ls_utils.LangSmithConnectionError,
+                ls_utils.LangSmithRequestTimeout,
                 ls_utils.LangSmithAPIError,
             ),
         )
@@ -869,6 +870,11 @@ class Client:
                                 f" {pathname} in"
                                 f" LangSmith API. {repr(e)}"
                                 f"{_context}"
+                            )
+                        elif response.status_code == 408:
+                            raise ls_utils.LangSmithRequestTimeout(
+                                f"Client took too long to send request to {method}"
+                                f"{pathname} {_context}"
                             )
                         elif response.status_code == 429:
                             raise ls_utils.LangSmithRateLimitError(
