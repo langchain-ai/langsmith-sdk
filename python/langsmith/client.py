@@ -936,12 +936,12 @@ class Client:
                     debug_crash_dump_file = ls_utils.get_env_var(
                         "LANGSMITH_DEBUG_CRASH_DUMP"
                     )
-                    if debug_crash_dump_file is not None:
-                        request_data: (
-                            requests.Request | requests.PreparedRequest | dict
-                        ) = (copy.deepcopy(e.request) if e.request else {})
-                        if "x-api-key" in request_data.get("headers", {}):
-                            request_data["headers"]["x-api-key"] = masked_api_key
+                    if debug_crash_dump_file is not None and e.request is not None:
+                        request_data: requests.Request | requests.PreparedRequest = (
+                            copy.deepcopy(e.request)
+                        )
+                        if "x-api-key" in request_data.headers:
+                            request_data.headers["x-api-key"] = masked_api_key
                         with gzip.open(debug_crash_dump_file, "ab") as f:
                             json_data = json.dumps(request_data).encode("utf-8")
                             f.write(json_data + b"\n")
