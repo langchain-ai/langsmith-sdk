@@ -938,9 +938,9 @@ class Client:
                     )
                     if debug_crash_dump_file is not None and e.request is not None:
                         try:
-                            request_data: requests.Request | requests.PreparedRequest = (
-                                copy.deepcopy(e.request)
-                            )
+                            request_data: (
+                                requests.Request | requests.PreparedRequest
+                            ) = copy.deepcopy(e.request)
                             if "x-api-key" in request_data.headers:
                                 request_data.headers["x-api-key"] = masked_api_key
                             with gzip.open(debug_crash_dump_file, "ab") as f:
