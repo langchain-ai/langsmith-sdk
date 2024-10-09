@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 import warnings
-from typing import Any, AsyncGenerator, Generator, Optional, Set, cast
+from typing import Any, AsyncGenerator, Generator, List, Optional, Set, Tuple, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -50,7 +50,7 @@ def _get_calls(
     return calls
 
 
-def _get_datas(mock_calls: list[Any]) -> list[tuple[str, dict]]:
+def _get_datas(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
     datas = []
     for call_ in mock_calls:
         data = json.loads(call_.kwargs["data"])
@@ -1509,7 +1509,7 @@ async def test_traceable_gen_exception(auto_batch_tracing: bool):
 
     with tracing_context(enabled=True):
         with pytest.raises(ValueError, match="foo"):
-            async for _ in my_function(1, langsmith_extra={"client": mock_client}):
+            for _ in my_function(1, langsmith_extra={"client": mock_client}):
                 pass
 
     # Get ALL the call args for the mock_client
