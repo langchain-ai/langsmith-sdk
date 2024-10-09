@@ -6,6 +6,8 @@ import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { z } from "zod";
 
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
@@ -533,4 +535,42 @@ test("chat.concurrent extra name", async () => {
       },
     },
   });
+});
+
+test.concurrent("beta.chat.completions.parse", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  await openai.beta.chat.completions.parse({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "user",
+        content: "I am Jacob",
+      },
+    ],
+    response_format: zodResponseFormat(
+      z.object({
+        name: z.string(),
+      }),
+      "name"
+    ),
+  });
+
+  for (const call of callSpy.mock.calls) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
+      ls_model_name: "gpt-4o-mini",
+      ls_model_type: "chat",
+      ls_provider: "openai",
+      ls_temperature: 0,
+    });
+  }
+  callSpy.mockClear();
 });
