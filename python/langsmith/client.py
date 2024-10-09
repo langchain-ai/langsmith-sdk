@@ -937,7 +937,9 @@ class Client:
                         "LANGSMITH_DEBUG_CRASH_DUMP"
                     )
                     if debug_crash_dump_file is not None:
-                        request_data = copy.deepcopy(e.request) if e.request else {}
+                        request_data: (
+                            requests.Request | requests.PreparedRequest | dict
+                        ) = (copy.deepcopy(e.request) if e.request else {})
                         if "x-api-key" in request_data.get("headers", {}):
                             request_data["headers"]["x-api-key"] = masked_api_key
                         with gzip.open(debug_crash_dump_file, "ab") as f:
