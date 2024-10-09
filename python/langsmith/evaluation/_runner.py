@@ -14,7 +14,8 @@ import random
 import threading
 import uuid
 import inspect
-import re
+import ast
+import textwrap
 from contextvars import copy_context
 from typing import (
     Awaitable,
@@ -84,27 +85,76 @@ AEVALUATOR_T = Union[
     ],
 ]
 
+
+
 def extract_code_evaluator_feedback_keys(python_code: str) -> list[str]:
-    # Find the return statement
-    return_match = re.search(r'return\s*({[^}]+})', python_code)
-    if not return_match:
+    def extract_dict_keys(node):
+        if isinstance(node, ast.Dict):
+            keys = []
+            key_value = None
+            for key, value in zip(node.keys, node.values):
+                if isinstance(key, (ast.Str, ast.Constant)):
+                    key_str = key.s if isinstance(key, ast.Str) else key.value
+                    if key_str == 'key' and isinstance(value, (ast.Str, ast.Constant)):
+                        key_value = value.s if isinstance(value, ast.Str) else value.value
+                    elif key_str not in ['key', 'score']:
+                        keys.append(key_str)
+            return [key_value] if key_value else keys
         return []
 
-    # Extract the dictionary from the return statement
-    dict_str = return_match.group(1)
+    def extract_evaluation_result_key(node):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'EvaluationResult':
+            for keyword in node.keywords:
+                if keyword.arg == 'key' and isinstance(keyword.value, (ast.Str, ast.Constant)):
+                    return [keyword.value.s if isinstance(keyword.value, ast.Str) else keyword.value.value]
+        return []
 
-    # Find all keys in the dictionary
-    key_matches = re.findall(r'"([^"]+)":', dict_str)
+    def extract_evaluation_results_keys(node, variables):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'EvaluationResults':
+            for keyword in node.keywords:
+                if keyword.arg == 'results':
+                    if isinstance(keyword.value, ast.Name):
+                        return variables.get(keyword.value.id, [])
+                    elif isinstance(keyword.value, ast.List):
+                        keys = []
+                        for elt in keyword.value.elts:
+                            keys.extend(extract_evaluation_result_key(elt))
+                        return keys
+        return []
 
-    # Filter out 'key' and 'score'
-    feedback_keys = [key for key in key_matches if key not in ['key', 'score']]
+    python_code = textwrap.dedent(python_code)
 
-    # If 'key' is present in the dictionary, add its value to the feedback_keys
-    key_value_match = re.search(r'"key"\s*:\s*"([^"]+)"', dict_str)
-    if key_value_match:
-        feedback_keys.append(key_value_match.group(1))
+    try:
+        tree = ast.parse(python_code)
+        function_def = tree.body[0]
+        if not isinstance(function_def, ast.FunctionDef):
+            return []
+        
+        variables = {}
+        keys = []
 
-    return feedback_keys
+        for node in ast.walk(function_def):
+            if isinstance(node, ast.Assign):
+                if isinstance(node.value, ast.List):
+                    list_keys = []
+                    for elt in node.value.elts:
+                        list_keys.extend(extract_evaluation_result_key(elt))
+                    if isinstance(node.targets[0], ast.Name):
+                        variables[node.targets[0].id] = list_keys
+            elif isinstance(node, ast.Return) and node.value is not None:
+                dict_keys = extract_dict_keys(node.value)
+                eval_result_key = extract_evaluation_result_key(node.value)
+                eval_results_keys = extract_evaluation_results_keys(node.value, variables)
+                
+                keys.extend(dict_keys)
+                keys.extend(eval_result_key)
+                keys.extend(eval_results_keys)
+        
+        # If no keys found, return the function name
+        return keys if keys else [function_def.name]
+
+    except SyntaxError:
+        return []
 
 def evaluate(
     target: TARGET_T,
@@ -1376,15 +1426,18 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         )
                     )
                 except Exception as e:
-                    feedback_keys = extract_code_evaluator_feedback_keys(inspect.getsource(evaluator.func))
-                    error_response = EvaluationResults(results=[EvaluationResult(key=key,source_run_id=run.id,
-                                        comment=repr(e),extra={"error":True}) for key in feedback_keys])
-                    eval_results["results"].extend(
-                        # TODO: This is a hack
-                        self.client._log_evaluation_feedback(
-                            error_response, run=run, _executor=executor
+                    try:
+                        feedback_keys = extract_code_evaluator_feedback_keys(inspect.getsource(evaluator.func))
+                        error_response = EvaluationResults(results=[EvaluationResult(key=key,source_run_id=run.id,
+                                            comment=repr(e),extra={"error":True}) for key in feedback_keys])
+                        eval_results["results"].extend(
+                            # TODO: This is a hack
+                            self.client._log_evaluation_feedback(
+                                error_response, run=run, _executor=executor
+                            )
                         )
-                    )
+                    except:
+                        pass
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
                         f" run {run.id}: {repr(e)}",

@@ -3,6 +3,11 @@ import time
 from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
+import sys
+import os
+
+# Add the current directory (which contains 'langsmith') to the Python path
+sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
 from langsmith import Client, aevaluate, evaluate, expect, test
 from langsmith.schemas import Example, Run
@@ -30,6 +35,85 @@ def wait_for(
     if last_e is not None:
         raise last_e
     raise ValueError(f"Callable did not return within {total_time}")
+
+
+def test_error_handling_evaluators():
+    client = Client()
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    # Case 1: Normal dictionary return
+    def error_dict_evaluator(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in dict evaluator")
+        return {"key": "dict_key", "score": 1}
+
+    # Case 2: EvaluationResult return
+    def error_evaluation_result(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in EvaluationResult evaluator")
+        return EvaluationResult(key="eval_result_key", score=1)
+
+    # Case 3: EvaluationResults return
+    def error_evaluation_results(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in EvaluationResults evaluator")
+        return EvaluationResults(
+            results=[
+                EvaluationResult(key="eval_results_key1", score=1),
+                EvaluationResult(key="eval_results_key2", score=2)
+            ]
+        )
+
+    # Case 4: Dictionary without 'key' field
+    def error_dict_no_key(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in dict without key evaluator")
+        return {"score":1}
+
+    def predict(inputs: dict) -> dict:
+        return {"output": "Yes"}
+
+    results = evaluate(
+        predict,
+        data=dataset_name,
+        evaluators=[
+            error_dict_evaluator,
+            error_evaluation_result,
+            error_evaluation_results,
+            error_dict_no_key,
+        ],
+        max_concurrency=1,  # To ensure deterministic order
+    )
+
+    assert len(results) == 10  # Assuming 10 examples in the dataset
+
+    for result in results:
+        eval_results = result["evaluation_results"]["results"]
+        assert len(eval_results) == 5 
+
+        # Check error handling for each evaluator
+        assert eval_results[0].key == "dict_key"
+        assert "Error in dict evaluator" in eval_results[0].comment
+        assert eval_results[0].extra.get("error") is True
+
+        assert eval_results[1].key == "eval_result_key"
+        assert "Error in EvaluationResult evaluator" in eval_results[1].comment
+        assert eval_results[1].extra.get("error") is True
+
+        assert eval_results[2].key == "eval_results_key1"
+        assert "Error in EvaluationResults evaluator" in eval_results[2].comment
+        assert eval_results[2].extra.get("error") is True
+
+        assert eval_results[3].key == "eval_results_key2"
+        assert "Error in EvaluationResults evaluator" in eval_results[3].comment
+        assert eval_results[3].extra.get("error") is True
+
+        assert eval_results[4].key == "error_dict_no_key"
+        assert "Error in dict without key evaluator" in eval_results[4].comment
+        assert eval_results[4].extra.get("error") is True
 
 
 def test_evaluate():
