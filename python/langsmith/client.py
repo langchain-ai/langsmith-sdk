@@ -17,9 +17,11 @@ import base64
 import collections
 import concurrent.futures as cf
 import contextlib
+import copy
 import datetime
 import decimal
 import functools
+import gzip
 import importlib
 import importlib.metadata
 import io
@@ -731,11 +733,7 @@ class Client:
 
         return self._settings
 
-    def _content_above_size(
-        self,
-        content_length: Optional[int],
-        request: Optional[requests.Request | requests.PreparedRequest],
-    ) -> Optional[str]:
+    def _content_above_size(self, content_length: Optional[int]) -> Optional[str]:
         if content_length is None or self._info is None:
             return None
         info = cast(ls_schemas.LangSmithInfo, self._info)
@@ -746,14 +744,6 @@ class Client:
         if size_limit is None:
             return None
         if content_length > size_limit:
-            should_debug_crash_dump = os.getenv("LANGSMITH_DEBUG_CRASH_DUMP") in [
-                "1",
-                "true",
-            ]
-            if should_debug_crash_dump and request is not None:
-                with open("content_size_limit_crash_dump.jsonl", "a") as f:
-                    json.dump(request, f)
-                    f.write("\n")
             return (
                 f"The content length of {content_length} bytes exceeds the "
                 f"maximum size limit of {size_limit} bytes."
@@ -930,7 +920,7 @@ class Client:
                             if e.request
                             else ""
                         )
-                        size_rec = self._content_above_size(content_length, e.request)
+                        size_rec = self._content_above_size(content_length)
                         if size_rec:
                             recommendation = size_rec
                     except ValueError:
@@ -942,6 +932,17 @@ class Client:
                     prefix, suffix = api_key[:5], api_key[-2:]
                     filler = "*" * (max(0, len(api_key) - 7))
                     masked_api_key = f"{prefix}{filler}{suffix}"
+
+                    debug_crash_dump_file = ls_utils.get_env_var(
+                        "LANGSMITH_DEBUG_CRASH_DUMP"
+                    )
+                    if debug_crash_dump_file is not None:
+                        request_data = copy.deepcopy(e.request) if e.request else {}
+                        if "x-api-key" in request_data.get("headers", {}):
+                            request_data["headers"]["x-api-key"] = masked_api_key
+                        with gzip.open(debug_crash_dump_file, "ab") as f:
+                            json_data = json.dumps(request_data).encode("utf-8")
+                            f.write(json_data + b"\n")
 
                     raise ls_utils.LangSmithConnectionError(
                         f"Connection error caused failure to {method} {pathname}"
