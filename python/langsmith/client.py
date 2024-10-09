@@ -937,14 +937,19 @@ class Client:
                         "LANGSMITH_DEBUG_CRASH_DUMP"
                     )
                     if debug_crash_dump_file is not None and e.request is not None:
-                        request_data: requests.Request | requests.PreparedRequest = (
-                            copy.deepcopy(e.request)
-                        )
-                        if "x-api-key" in request_data.headers:
-                            request_data.headers["x-api-key"] = masked_api_key
-                        with gzip.open(debug_crash_dump_file, "ab") as f:
-                            json_data = json.dumps(request_data).encode("utf-8")
-                            f.write(json_data + b"\n")
+                        try:
+                            request_data: requests.Request | requests.PreparedRequest = (
+                                copy.deepcopy(e.request)
+                            )
+                            if "x-api-key" in request_data.headers:
+                                request_data.headers["x-api-key"] = masked_api_key
+                            with gzip.open(debug_crash_dump_file, "ab") as f:
+                                json_data = json.dumps(request_data).encode("utf-8")
+                                f.write(json_data + b"\n")
+                                recommendation += f" More info can be found in: {debug_crash_dump_file}."
+                        except Exception as write_error:
+                            recommendation += f" Encountered this error while trying to write to {debug_crash_dump_file}: {repr(write_error)}"
+                            continue
 
                     raise ls_utils.LangSmithConnectionError(
                         f"Connection error caused failure to {method} {pathname}"
