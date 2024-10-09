@@ -4214,12 +4214,13 @@ class Client:
         _executor: Optional[cf.ThreadPoolExecutor] = None,
     ) -> List[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
+
         def _submit_feedback(**kwargs):
             if _executor:
                 _executor.submit(self.create_feedback, **kwargs)
             else:
                 self.create_feedback(**kwargs)
-                
+
         for res in results:
             source_info_ = source_info or {}
             if res.evaluator_info:
