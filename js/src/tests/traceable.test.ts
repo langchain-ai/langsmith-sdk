@@ -589,8 +589,7 @@ describe("async generators", () => {
     );
 
     const numbers: number[] = [];
-    // @ts-ignore Type issues with readable stream
-    for await (const num of await stream()) {
+    for await (const num of (await stream()) as unknown as AsyncGenerator<number>) {
       numbers.push(num);
     }
 
@@ -720,8 +719,7 @@ describe("deferred input", () => {
     const { client, callSpy } = mockClient();
     const parrotStream = traceable(
       async function* parrotStream(input: ReadableStream<string>) {
-        // @ts-ignore Type issues with readable stream
-        for await (const token of input) {
+        for await (const token of input as unknown as AsyncGenerator<string>) {
           yield token;
         }
       },
