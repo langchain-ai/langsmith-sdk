@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 from uuid import UUID, uuid4
 
 try:
@@ -26,7 +27,11 @@ from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_u
 logger = logging.getLogger(__name__)
 
 LANGSMITH_PREFIX = "langsmith-"
-LANGSMITH_DOTTED_ORDER = f"{LANGSMITH_PREFIX}trace"
+LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
+LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
+LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
+LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
+LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
 _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
@@ -332,9 +337,9 @@ class RunTree(ls_schemas.RunBase):
             RunTree: The new span.
         """
         headers = {
-            f"{LANGSMITH_DOTTED_ORDER}": dotted_order,
+            LANGSMITH_DOTTED_ORDER: dotted_order,
         }
-        return cast(RunTree, cls.from_headers(headers, **kwargs))
+        return cast(RunTree, cls.from_headers(headers, **kwargs))  # type: ignore[arg-type]
 
     @classmethod
     def from_runnable_config(
@@ -402,7 +407,9 @@ class RunTree(ls_schemas.RunBase):
         return None
 
     @classmethod
-    def from_headers(cls, headers: Dict[str, str], **kwargs: Any) -> Optional[RunTree]:
+    def from_headers(
+        cls, headers: Mapping[Union[str, bytes], Union[str, bytes]], **kwargs: Any
+    ) -> Optional[RunTree]:
         """Create a new 'parent' span from the provided headers.
 
         Extracts parent span information from the headers and creates a new span.
@@ -415,9 +422,14 @@ class RunTree(ls_schemas.RunBase):
         """
         init_args = kwargs.copy()
 
-        langsmith_trace = headers.get(f"{LANGSMITH_DOTTED_ORDER}")
+        langsmith_trace = cast(Optional[str], headers.get(LANGSMITH_DOTTED_ORDER))
         if not langsmith_trace:
-            return  # type: ignore[return-value]
+            langsmith_trace_bytes = cast(
+                Optional[bytes], headers.get(LANGSMITH_DOTTED_ORDER_BYTES)
+            )
+            if not langsmith_trace_bytes:
+                return  # type: ignore[return-value]
+            langsmith_trace = langsmith_trace_bytes.decode("utf-8")
 
         parent_dotted_order = langsmith_trace.strip()
         parsed_dotted_order = _parse_dotted_order(parent_dotted_order)
@@ -436,7 +448,7 @@ class RunTree(ls_schemas.RunBase):
         init_args["run_type"] = init_args.get("run_type") or "chain"
         init_args["name"] = init_args.get("name") or "parent"
 
-        baggage = _Baggage.from_header(headers.get("baggage"))
+        baggage = _Baggage.from_headers(headers)
         if baggage.metadata or baggage.tags:
             init_args["extra"] = init_args.setdefault("extra", {})
             init_args["extra"]["metadata"] = init_args["extra"].setdefault(
@@ -490,16 +502,25 @@ class _Baggage:
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
-                if key == f"{LANGSMITH_PREFIX}metadata":
+                if key == LANGSMITH_METADATA:
                     metadata = json.loads(urllib.parse.unquote(value))
-                elif key == f"{LANGSMITH_PREFIX}tags":
+                elif key == LANGSMITH_TAGS:
                     tags = urllib.parse.unquote(value).split(",")
-                elif key == f"{LANGSMITH_PREFIX}project":
+                elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
         return cls(metadata=metadata, tags=tags, project_name=project_name)
+
+    @classmethod
+    def from_headers(cls, headers: Mapping[Union[str, bytes], Any]) -> _Baggage:
+        if "baggage" in headers:
+            return cls.from_header(headers["baggage"])
+        elif b"baggage" in headers:
+            return cls.from_header(cast(bytes, headers[b"baggage"]).decode("utf-8"))
+        else:
+            return cls.from_header(None)
 
     def to_header(self) -> str:
         """Return the Baggage object as a header value."""
