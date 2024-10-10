@@ -20,6 +20,7 @@ import contextlib
 import datetime
 import decimal
 import functools
+import gzip
 import importlib
 import importlib.metadata
 import io
@@ -930,6 +931,43 @@ class Client:
                     prefix, suffix = api_key[:5], api_key[-2:]
                     filler = "*" * (max(0, len(api_key) - 7))
                     masked_api_key = f"{prefix}{filler}{suffix}"
+
+                    debug_crash_dump_file = ls_utils.get_env_var(
+                        "LANGSMITH_DEBUG_CRASH_DUMP"
+                    )
+                    if debug_crash_dump_file is not None and e.request is not None:
+                        try:
+                            headers = e.request.headers.copy()
+                            headers.pop("x-api-key", None)
+                            request_to_log = {
+                                "method": e.request.method,
+                                "url": e.request.url,
+                                "headers": headers,
+                                "body": (
+                                    e.request.body
+                                    if isinstance(e.request, requests.PreparedRequest)
+                                    else None
+                                ),
+                                "data": (
+                                    e.request.data
+                                    if isinstance(e.request, requests.Request)
+                                    else None
+                                ),
+                                "json": (
+                                    e.request.json
+                                    if isinstance(e.request, requests.Request)
+                                    else None
+                                ),
+                            }
+                            with gzip.open(
+                                debug_crash_dump_file, "at", encoding="utf-8"
+                            ) as f:
+                                json_data = json.dumps(request_to_log)
+                                f.write(json_data + "\n")
+                                recommendation += f" More info can be found in: {debug_crash_dump_file}."
+                        except Exception as write_error:
+                            recommendation += f" Encountered this error while trying to write to {debug_crash_dump_file}: {repr(write_error)}"
+                            continue
 
                     raise ls_utils.LangSmithConnectionError(
                         f"Connection error caused failure to {method} {pathname}"
