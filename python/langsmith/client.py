@@ -17,7 +17,6 @@ import base64
 import collections
 import concurrent.futures as cf
 import contextlib
-import copy
 import datetime
 import decimal
 import functools
