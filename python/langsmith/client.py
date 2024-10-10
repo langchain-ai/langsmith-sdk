@@ -943,7 +943,7 @@ class Client:
                             ) = copy.deepcopy(e.request)
                             if "x-api-key" in request_data.headers:
                                 request_data.headers["x-api-key"] = masked_api_key
-                            with gzip.open(debug_crash_dump_file, "ab") as f:
+                            with gzip.open(debug_crash_dump_file, "ab", encoding="utf-8") as f:
                                 json_data = json.dumps(request_data).encode("utf-8")
                                 f.write(json_data + b"\n")
                                 recommendation += f" More info can be found in: {debug_crash_dump_file}."
