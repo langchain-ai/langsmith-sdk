@@ -460,6 +460,8 @@ class FeedbackBase(BaseModel):
     """For preference scoring, this group ID is shared across feedbacks for each
 
     run in the group that was being compared."""
+    extra: Optional[Dict] = None
+    """The metadata of the feedback."""
 
     class Config:
         """Configuration class for the schema."""
