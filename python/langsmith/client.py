@@ -938,14 +938,33 @@ class Client:
                     )
                     if debug_crash_dump_file is not None and e.request is not None:
                         try:
-                            request_data: (
-                                requests.Request | requests.PreparedRequest
-                            ) = copy.deepcopy(e.request)
-                            if "x-api-key" in request_data.headers:
-                                request_data.headers["x-api-key"] = masked_api_key
-                            with gzip.open(debug_crash_dump_file, "ab", encoding="utf-8") as f:
-                                json_data = json.dumps(request_data).encode("utf-8")
-                                f.write(json_data + b"\n")
+                            headers = e.request.headers.copy()
+                            headers.pop("x-api-key", None)
+                            request_to_log = {
+                                "method": e.request.method,
+                                "url": e.request.url,
+                                "headers": headers,
+                                "body": (
+                                    e.request.body
+                                    if isinstance(e.request, requests.PreparedRequest)
+                                    else None
+                                ),
+                                "data": (
+                                    e.request.data
+                                    if isinstance(e.request, requests.Request)
+                                    else None
+                                ),
+                                "json": (
+                                    e.request.json
+                                    if isinstance(e.request, requests.Request)
+                                    else None
+                                ),
+                            }
+                            with gzip.open(
+                                debug_crash_dump_file, "at", encoding="utf-8"
+                            ) as f:
+                                json_data = json.dumps(request_to_log)
+                                f.write(json_data + "\n")
                                 recommendation += f" More info can be found in: {debug_crash_dump_file}."
                         except Exception as write_error:
                             recommendation += f" Encountered this error while trying to write to {debug_crash_dump_file}: {repr(write_error)}"
