@@ -4247,6 +4247,7 @@ class Client:
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id,
+                extra=res.extra,
             )
         return results
 
@@ -4317,6 +4318,7 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
+        extra: Optional[Dict] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -4362,6 +4364,8 @@ class Client:
         feedback_group_id : str or UUID
             When logging preferences, ranking runs, or other comparative feedback,
             this is used to group feedback together.
+        extra : dict
+            Metadata for the feedback.
         """
         if run_id is None and project_id is None:
             raise ValueError("One of run_id and project_id must be provided")
@@ -4421,6 +4425,7 @@ class Client:
                 comparative_experiment_id, accept_null=True
             ),
             feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
+            extra=extra,
         )
         feedback_block = _dumps_json(feedback.dict(exclude_none=True))
         self.request_with_retries(
