@@ -253,6 +253,18 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if callable(target) and rh.is_async(target):
+        raise ValueError(
+            "Async functions are not supported by `evaluate`. "
+            "Please use `aevaluate` instead:\n\n"
+            "from langsmith import aevaluate\n\n"
+            "await aevaluate(\n"
+            "    async_target_function,\n"
+            "    data=data,\n"
+            "    evaluators=evaluators,\n"
+            "    # ... other parameters\n"
+            ")"
+        )
     if experiment and experiment_prefix:
         raise ValueError(
             "Expected at most one of 'experiment' or 'experiment_prefix',"

@@ -570,22 +570,18 @@ def traceable(
                     yield item
             except BaseException as e:
                 await asyncio.shield(
-                    aitertools.aio_to_thread(_on_run_end, run_container, error=e)
+                    aitertools.aio_to_thread(
+                        _on_run_end,
+                        run_container,
+                        error=e,
+                        outputs=_get_function_result(results, reduce_fn),
+                    )
                 )
                 raise e
-            if results:
-                if reduce_fn:
-                    try:
-                        function_result = reduce_fn(results)
-                    except BaseException as e:
-                        LOGGER.error(e)
-                        function_result = results
-                else:
-                    function_result = results
-            else:
-                function_result = None
             await aitertools.aio_to_thread(
-                _on_run_end, run_container, outputs=function_result
+                _on_run_end,
+                run_container,
+                outputs=_get_function_result(results, reduce_fn),
             )
 
         @functools.wraps(func)
@@ -652,21 +648,13 @@ def traceable(
                     results.append(function_return)
 
             except BaseException as e:
-                _on_run_end(run_container, error=e)
+                _on_run_end(
+                    run_container,
+                    error=e,
+                    outputs=_get_function_result(results, reduce_fn),
+                )
                 raise e
-
-            if results:
-                if reduce_fn:
-                    try:
-                        function_result = reduce_fn(results)
-                    except BaseException as e:
-                        LOGGER.error(e)
-                        function_result = results
-                else:
-                    function_result = results
-            else:
-                function_result = None
-            _on_run_end(run_container, outputs=function_result)
+            _on_run_end(run_container, outputs=_get_function_result(results, reduce_fn))
             return function_return
 
         # "Stream" functions (used in methods like OpenAI/Anthropic's SDKs)
@@ -1709,3 +1697,15 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             return await self.__ls_stream__.__aexit__(exc_type, exc_val, exc_tb)
         finally:
             await self._aend_trace()
+
+
+def _get_function_result(results: list, reduce_fn: Callable) -> Any:
+    if results:
+        if reduce_fn is not None:
+            try:
+                return reduce_fn(results)
+            except BaseException as e:
+                LOGGER.error(e)
+                return results
+        else:
+            return results
