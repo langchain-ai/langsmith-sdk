@@ -219,7 +219,7 @@ test.concurrent(
   "Test end() write to metadata",
   async () => {
     const runId = uuid.v4();
-    const projectName = `__test_end_metadata_run_tree_js`;
+    const projectName = `__test_end_metadata_run_tree_js ${runId}`;
     const langchainClient = new Client({ timeout_ms: 30_000 });
     const parentRunConfig: RunTreeConfig = {
       name: "parent_run",
