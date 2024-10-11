@@ -298,11 +298,20 @@ export class RunTree implements BaseRun {
   async end(
     outputs?: KVMap,
     error?: string,
-    endTime = Date.now()
+    endTime = Date.now(),
+    metadata?: KVMap
   ): Promise<void> {
     this.outputs = this.outputs ?? outputs;
     this.error = this.error ?? error;
     this.end_time = this.end_time ?? endTime;
+    this.extra = this.extra ? {
+      ...this.extra,
+      metadata: {
+        ...metadata
+      }
+    } : {
+      metadata: metadata
+    }
   }
 
   private _convertToCreate(
