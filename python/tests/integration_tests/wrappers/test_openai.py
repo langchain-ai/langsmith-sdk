@@ -1,5 +1,4 @@
 # mypy: disable-error-code="attr-defined, union-attr, arg-type, call-overload"
-import asyncio
 import json
 import os
 import time
