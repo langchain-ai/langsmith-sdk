@@ -56,9 +56,6 @@ export interface RunTreeConfig {
 
   trace_id?: string;
   dotted_order?: string;
-
-  /** @internal */
-  __shallowClone?: boolean;
 }
 
 export interface RunnableConfigLike {
@@ -177,10 +174,10 @@ export class RunTree implements BaseRun {
   execution_order: number;
   child_execution_order: number;
 
-  constructor(originalConfig: RunTreeConfig) {
-    if (originalConfig.__shallowClone) {
-      delete originalConfig.__shallowClone;
-      Object.assign(this, originalConfig);
+  constructor(originalConfig: RunTreeConfig | RunTree) {
+    // If you pass in a run tree directly, return a shallow clone
+    if (isRunTree(originalConfig)) {
+      Object.assign(this, { ...originalConfig });
       return;
     }
     const defaultConfig = RunTree.getDefaultConfig();
