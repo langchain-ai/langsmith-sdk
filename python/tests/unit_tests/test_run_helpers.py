@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 import warnings
-from typing import Any, AsyncGenerator, Generator, Optional, Set, cast
+from typing import Any, AsyncGenerator, Generator, List, Optional, Set, Tuple, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -48,6 +48,17 @@ def _get_calls(
             break
         time.sleep(0.1)
     return calls
+
+
+def _get_datas(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
+    datas = []
+    for call_ in mock_calls:
+        data = json.loads(call_.kwargs["data"])
+        for verb in ("post", "patch"):
+            for payload in data.get(verb) or []:
+                datas.append((verb, payload))
+
+    return datas
 
 
 def test__get_inputs_with_no_args() -> None:
@@ -1466,7 +1477,53 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
     mock_calls = _get_calls(
         mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
     )
+
     assert len(mock_calls) == num_calls
+    if auto_batch_tracing:
+        datas = _get_datas(mock_calls)
+        outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
+        assert len(outputs) == 1
+        assert outputs[0]["output"] == list(range(5))
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+async def test_traceable_gen_exception(auto_batch_tracing: bool):
+    mock_client = _get_mock_client(
+        auto_batch_tracing=auto_batch_tracing,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+    @traceable
+    def my_function(a: int) -> Generator[int, None, None]:
+        for i in range(5):
+            yield i
+        raise ValueError("foo")
+
+    with tracing_context(enabled=True):
+        with pytest.raises(ValueError, match="foo"):
+            for _ in my_function(1, langsmith_extra={"client": mock_client}):
+                pass
+
+    # Get ALL the call args for the mock_client
+    num_calls = 1 if auto_batch_tracing else 2
+    mock_calls = _get_calls(
+        mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
+    )
+
+    assert len(mock_calls) == num_calls
+    if auto_batch_tracing:
+        datas = _get_datas(mock_calls)
+        outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
+        assert len(outputs) == 1
+        assert outputs[0]["output"] == list(range(5))
 
 
 @pytest.mark.parametrize("env_var", [True, False])
