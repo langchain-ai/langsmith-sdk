@@ -226,6 +226,7 @@ class RunTree(ls_schemas.RunBase):
         error: Optional[str] = None,
         end_time: Optional[datetime] = None,
         events: Optional[Sequence[ls_schemas.RunEvent]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
         self.end_time = end_time or datetime.now(timezone.utc)
@@ -238,6 +239,8 @@ class RunTree(ls_schemas.RunBase):
             self.error = error
         if events is not None:
             self.add_event(events)
+        if metadata is not None:
+            self.add_metadata(metadata)
 
     def create_child(
         self,
