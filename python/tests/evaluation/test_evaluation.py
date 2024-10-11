@@ -31,6 +31,7 @@ def wait_for(
         raise last_e
     raise ValueError(f"Callable did not return within {total_time}")
 
+
 @pytest.mark.skip(reason="Skipping this test for now. Should remove in the future.")
 def test_evaluate():
     client = Client()
@@ -101,6 +102,7 @@ def test_evaluate():
         experiment=str(experiment.id),
     )
     assert len(results4) == 10
+
 
 @pytest.mark.skip(reason="Skipping this test for now. Should remove in the future.")
 async def test_aevaluate():
