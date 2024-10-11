@@ -28,6 +28,8 @@ export function convertToDottedOrderFormat(
   );
 }
 
+export const _LC_CONTEXT_VARIABLES_KEY = Symbol.for("lc:context_variables");
+
 export interface RunTreeConfig {
   name: string;
   run_type?: string;
@@ -54,6 +56,9 @@ export interface RunTreeConfig {
 
   trace_id?: string;
   dotted_order?: string;
+
+  /** @internal */
+  __shallowClone?: boolean;
 }
 
 export interface RunnableConfigLike {
@@ -173,6 +178,11 @@ export class RunTree implements BaseRun {
   child_execution_order: number;
 
   constructor(originalConfig: RunTreeConfig) {
+    if (originalConfig.__shallowClone) {
+      delete originalConfig.__shallowClone;
+      Object.assign(this, originalConfig);
+      return;
+    }
     const defaultConfig = RunTree.getDefaultConfig();
     const { metadata, ...config } = originalConfig;
     const client = config.client ?? RunTree.getSharedClient();
@@ -247,6 +257,15 @@ export class RunTree implements BaseRun {
       execution_order: child_execution_order,
       child_execution_order: child_execution_order,
     });
+
+    // If a context var is set by LangChain outside of a traceable,
+    // it will be an object with a single property and we should copy
+    // context vars over into the new run tree.
+    if (_LC_CONTEXT_VARIABLES_KEY in this) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (child as any)[_LC_CONTEXT_VARIABLES_KEY] =
+        this[_LC_CONTEXT_VARIABLES_KEY];
+    }
 
     type ExtraWithSymbol = Record<string | symbol, unknown>;
     const LC_CHILD = Symbol.for("lc:child_config");

@@ -4,6 +4,7 @@ import {
   RunTree,
   RunTreeConfig,
   RunnableConfigLike,
+  _LC_CONTEXT_VARIABLES_KEY,
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
@@ -422,6 +423,17 @@ export function traceable<Func extends (...args: any[]) => any>(
         processedArgs,
         config?.getInvocationParams
       );
+      // If a context var is set by LangChain outside of a traceable,
+      // it will be an object with a single property and we should copy
+      // context vars over into the new run tree.
+      if (
+        prevRunFromStore !== undefined &&
+        _LC_CONTEXT_VARIABLES_KEY in prevRunFromStore
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (currentRunTree as any)[_LC_CONTEXT_VARIABLES_KEY] =
+          prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
+      }
       return [currentRunTree, processedArgs as Inputs];
     })();
 
