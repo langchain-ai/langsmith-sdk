@@ -1774,6 +1774,8 @@ class Client:
             "dotted_order": kwargs.pop("dotted_order", None),
             "tags": tags,
             "extra": extra,
+            "session_id": kwargs.pop("session_id", None),
+            "session_name": kwargs.pop("session_name", None),
         }
         if not self._filter_for_sampling([data], patch=True):
             return
