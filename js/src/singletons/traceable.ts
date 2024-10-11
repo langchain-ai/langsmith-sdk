@@ -1,4 +1,4 @@
-import { RunTree } from "../run_trees.js";
+import { isRunTree, RunTree } from "../run_trees.js";
 import { TraceableFunction } from "./types.js";
 
 interface AsyncLocalStorageInterface {
@@ -47,7 +47,7 @@ export const AsyncLocalStorageProviderSingleton =
  */
 export const getCurrentRunTree = () => {
   const runTree = AsyncLocalStorageProviderSingleton.getInstance().getStore();
-  if (runTree === undefined) {
+  if (!isRunTree(runTree)) {
     throw new Error(
       [
         "Could not get the current run tree.",
