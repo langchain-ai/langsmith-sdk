@@ -304,13 +304,10 @@ export class RunTree implements BaseRun {
     this.outputs = this.outputs ?? outputs;
     this.error = this.error ?? error;
     this.end_time = this.end_time ?? endTime;
-    this.extra = this.extra ? {
-      ...this.extra,
-      metadata: {
-        ...metadata
-      }
-    } : {
-      metadata: metadata
+    if (metadata && Object.keys(metadata).length > 0) {
+      this.extra = this.extra
+        ? { ...this.extra, metadata: { ...this.extra.metadata, ...metadata } }
+        : { metadata };
     }
   }
 
