@@ -8,6 +8,7 @@ import {
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
 import { warnOnce } from "./utils/warn.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -172,7 +173,12 @@ export class RunTree implements BaseRun {
   execution_order: number;
   child_execution_order: number;
 
-  constructor(originalConfig: RunTreeConfig) {
+  constructor(originalConfig: RunTreeConfig | RunTree) {
+    // If you pass in a run tree directly, return a shallow clone
+    if (isRunTree(originalConfig)) {
+      Object.assign(this, { ...originalConfig });
+      return;
+    }
     const defaultConfig = RunTree.getDefaultConfig();
     const { metadata, ...config } = originalConfig;
     const client = config.client ?? RunTree.getSharedClient();
@@ -247,6 +253,13 @@ export class RunTree implements BaseRun {
       execution_order: child_execution_order,
       child_execution_order: child_execution_order,
     });
+
+    // Copy context vars over into the new run tree.
+    if (_LC_CONTEXT_VARIABLES_KEY in this) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (child as any)[_LC_CONTEXT_VARIABLES_KEY] =
+        this[_LC_CONTEXT_VARIABLES_KEY];
+    }
 
     type ExtraWithSymbol = Record<string | symbol, unknown>;
     const LC_CHILD = Symbol.for("lc:child_config");

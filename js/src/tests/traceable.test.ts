@@ -1,9 +1,11 @@
 import { jest } from "@jest/globals";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
 import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 import { Client, overrideFetchImplementation } from "../index.js";
+import { AsyncLocalStorageProviderSingleton } from "../singletons/traceable.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -101,6 +103,80 @@ test("nested traceable implementation", async () => {
       ["chain:0", "str:2"],
     ],
   });
+});
+
+test("nested traceable passes through LangChain context vars", (done) => {
+  const alsInstance = AsyncLocalStorageProviderSingleton.getInstance();
+
+  alsInstance.run(
+    {
+      [_LC_CONTEXT_VARIABLES_KEY]: { foo: "bar" },
+    } as any,
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    async () => {
+      try {
+        expect(
+          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+        ).toEqual("bar");
+        const { client, callSpy } = mockClient();
+
+        const llm = traceable(async function llm(input: string) {
+          expect(
+            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+          ).toEqual("bar");
+          return input.repeat(2);
+        });
+
+        const str = traceable(async function* str(input: string) {
+          const response = input.split("").reverse();
+          for (const char of response) {
+            yield char;
+          }
+          expect(
+            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+          ).toEqual("bar");
+        });
+
+        const chain = traceable(
+          async function chain(input: string) {
+            expect(
+              (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+            ).toEqual("bar");
+            const question = await llm(input);
+
+            let answer = "";
+            for await (const char of str(question)) {
+              answer += char;
+            }
+
+            return { question, answer };
+          },
+          { client, tracingEnabled: true }
+        );
+
+        const result = await chain("Hello world");
+
+        expect(result).toEqual({
+          question: "Hello worldHello world",
+          answer: "dlrow olleHdlrow olleH",
+        });
+
+        expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+          nodes: ["chain:0", "llm:1", "str:2"],
+          edges: [
+            ["chain:0", "llm:1"],
+            ["chain:0", "str:2"],
+          ],
+        });
+        expect(
+          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+        ).toEqual("bar");
+        done();
+      } catch (e) {
+        done(e);
+      }
+    }
+  );
 });
 
 test("trace circular input and output objects", async () => {
