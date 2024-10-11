@@ -479,4 +479,3 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
     assert run.run_type == "chain"
     assert run.metadata["final_metadata"] == run_id.hex
     assert run.outputs == {"result": "success"}
-    langchain_client.delete_project(project_name)
