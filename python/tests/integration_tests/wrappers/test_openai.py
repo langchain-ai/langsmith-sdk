@@ -227,7 +227,7 @@ def _collect_requests(mock_session: mock.MagicMock, filename: str):
 
 test_cases = [
     {
-        "description": "stream usage",
+        "description": "stream",
         "params": {
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": "howdy"}],
@@ -246,7 +246,7 @@ test_cases = [
         "expect_usage_metadata": False,
     },
     {
-        "description": "non-stream usage",
+        "description": "",
         "params": {
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": "howdy"}],
@@ -254,7 +254,7 @@ test_cases = [
         "expect_usage_metadata": True,
     },
     {
-        "description": "complex usage",
+        "description": "reasoning",
         "params": {
             "model": "o1-mini",
             "messages": [
@@ -318,8 +318,7 @@ def test_wrap_openai_chat_tokens(mock_session: mock.MagicMock, test_case):
             "usage_metadata"
         )
 
-    time.sleep(0.1)
-    filename = f"wrap_openai_chat_{test_case['description'].replace(' ', '_')}"
+    filename = f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
     _collect_requests(mock_session, filename)
 
 
@@ -369,6 +368,5 @@ async def test_wrap_openai_chat_async_tokens(mock_session: mock.MagicMock, test_
             "usage_metadata"
         )
 
-    await asyncio.sleep(0.1)
-    filename = f"wrap_openai_chat_async_{test_case['description'].replace(' ', '_')}"
+    filename = f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
     _collect_requests(mock_session, filename)
