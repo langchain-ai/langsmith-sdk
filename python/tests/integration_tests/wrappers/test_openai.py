@@ -218,7 +218,7 @@ def _collect_requests(mock_session: mock.MagicMock, filename: str):
             break
         mock_session.return_value.request.call_args_list.clear()
 
-    if os.environ["WRITE_TOKEN_COUNTING_TEST_DATA"] == "1":
+    if os.environ.get("WRITE_TOKEN_COUNTING_TEST_DATA") == "1":
         dir_path = Path(__file__).resolve().parent.parent / "test_data"
         file_path = dir_path / f"{filename}.json"
         with open(file_path, "w") as f:
