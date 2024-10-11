@@ -406,7 +406,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
       // to allow storing context
       const prevRunFromStore = asyncLocalStorage.getStore();
-      if (prevRunFromStore) {
+      if (isRunTree(prevRunFromStore)) {
         return [
           getTracingRunTree(
             prevRunFromStore.createChild(ensuredConfig),
