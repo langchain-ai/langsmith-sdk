@@ -258,9 +258,7 @@ export class RunTree implements BaseRun {
       child_execution_order: child_execution_order,
     });
 
-    // If a context var is set by LangChain outside of a traceable,
-    // it will be an object with a single property and we should copy
-    // context vars over into the new run tree.
+    // Copy context vars over into the new run tree.
     if (_LC_CONTEXT_VARIABLES_KEY in this) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (child as any)[_LC_CONTEXT_VARIABLES_KEY] =
