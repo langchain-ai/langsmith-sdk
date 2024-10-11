@@ -1,9 +1,6 @@
 import { jest } from "@jest/globals";
-import {
-  _LC_CONTEXT_VARIABLES_KEY,
-  RunTree,
-  RunTreeConfig,
-} from "../run_trees.js";
+import { RunTree, RunTreeConfig } from "../run_trees.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
 import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";

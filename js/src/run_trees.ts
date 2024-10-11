@@ -8,6 +8,7 @@ import {
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
 import { warnOnce } from "./utils/warn.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -27,8 +28,6 @@ export function convertToDottedOrderFormat(
     ) + runId
   );
 }
-
-export const _LC_CONTEXT_VARIABLES_KEY = Symbol.for("lc:context_variables");
 
 export interface RunTreeConfig {
   name: string;

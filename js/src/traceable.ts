@@ -4,7 +4,6 @@ import {
   RunTree,
   RunTreeConfig,
   RunnableConfigLike,
-  _LC_CONTEXT_VARIABLES_KEY,
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
@@ -14,6 +13,7 @@ import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
 } from "./singletons/traceable.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import { TraceableFunction } from "./singletons/types.js";
 import {
   isKVMap,
