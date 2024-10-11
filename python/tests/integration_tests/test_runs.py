@@ -3,7 +3,8 @@ import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from typing import AsyncGenerator, Generator, Optional, Sequence
+from typing import AsyncGenerator, Generator, Optional, Sequence, Tuple
+from uuid import UUID
 
 import pytest  # type: ignore
 
@@ -455,3 +456,25 @@ async def test_async_generator_reduce_fn(langchain_client: Client):
             ]
         )
     }
+
+async def test_end_metadata_with_run_tree(langchain_client: Client):
+    project_name = "__My Tracer Project - test_end_metadata_with_run_tree"
+    run_meta = uuid.uuid4().hex
+
+    run_tree = RunTree(
+        name="my_chain_run",
+        run_type="chain",
+        project_name=project_name,
+    )
+    
+    run_tree.end(metadata={"final_metadata": run_meta}, outputs={"result": "success"})
+    run_tree.post()
+
+    filter_ = f'and(eq(metadata_key, "final_metadata"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(langchain_client, project_name, 1, filter_=filter_)
+
+    runs_ = list(langchain_client.list_runs(project_name=project_name, filter=filter_))
+    run = runs_[0]
+    assert run.run_type == "chain"
+    assert run.metadata["final_metadata"] == run_meta
+    assert run.outputs == {"result": "success"}
