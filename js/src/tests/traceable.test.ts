@@ -108,7 +108,7 @@ test("nested traceable implementation", async () => {
   });
 });
 
-test.only("nested traceable passes through LangChain context vars", (done) => {
+test("nested traceable passes through LangChain context vars", (done) => {
   const alsInstance = AsyncLocalStorageProviderSingleton.getInstance();
 
   alsInstance.run(
