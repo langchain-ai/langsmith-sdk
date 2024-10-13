@@ -9,6 +9,7 @@ import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { UsageMetadata } from "../schemas.js";
+import fs from "fs";
 
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
@@ -623,12 +624,7 @@ const usageMetadataTestCases = [
 
 describe("Usage Metadata Tests", () => {
   usageMetadataTestCases.forEach(
-    ({
-      description,
-      params,
-      expectUsageMetadata,
-      checkReasoningTokens,
-    }) => {
+    ({ description, params, expectUsageMetadata, checkReasoningTokens }) => {
       it(`should handle ${description}`, async () => {
         const { client, callSpy } = mockClient();
         const openai = wrapOpenAI(new OpenAI(), {
@@ -656,8 +652,16 @@ describe("Usage Metadata Tests", () => {
         }
 
         let usageMetadata: UsageMetadata | undefined;
+        const requestBodies: any = {};
         for (const call of callSpy.mock.calls) {
-          const requestBody = JSON.parse((call[2] as any).body);
+          const request = call[2] as any;
+          const requestBody = JSON.parse(request.body);
+          if (request.method === "POST") {
+            requestBodies["post"] = [requestBody];
+          }
+          if (request.method === "PATCH") {
+            requestBodies["patch"] = [requestBody];
+          }
           if (requestBody.outputs && requestBody.outputs.usage_metadata) {
             usageMetadata = requestBody.outputs.usage_metadata;
             break;
@@ -687,6 +691,16 @@ describe("Usage Metadata Tests", () => {
         } else {
           expect(usageMetadata).toBeUndefined();
           expect(oaiUsage).toBeUndefined();
+        }
+
+        if (process.env.WRITE_TOKEN_COUNTING_TEST_DATA === "1") {
+          fs.writeFileSync(
+            `${__dirname}/test_data/langsmith_js_wrap_openai_${description.replace(
+              " ",
+              "_"
+            )}.json`,
+            JSON.stringify(requestBodies, null, 2)
+          );
         }
 
         callSpy.mockClear();

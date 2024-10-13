@@ -1,0 +1,92 @@
+{
+  "post": [
+    {
+      "session_name": "default",
+      "id": "a9a7fdab-0e16-4153-898a-33a0c1d9f759",
+      "name": "ChatOpenAI",
+      "start_time": 1728803136672,
+      "run_type": "llm",
+      "extra": {
+        "metadata": {
+          "ls_provider": "openai",
+          "ls_model_type": "chat",
+          "ls_model_name": "gpt-4o-mini"
+        },
+        "runtime": {
+          "library": "langsmith",
+          "runtime": "node",
+          "sdk": "langsmith-js",
+          "sdk_version": "0.1.65"
+        }
+      },
+      "serialized": {},
+      "inputs": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "user",
+            "content": "howdy"
+          }
+        ],
+        "stream": true
+      },
+      "child_runs": [],
+      "trace_id": "a9a7fdab-0e16-4153-898a-33a0c1d9f759",
+      "dotted_order": "20241013T070536672001Za9a7fdab-0e16-4153-898a-33a0c1d9f759",
+      "tags": []
+    }
+  ],
+  "patch": [
+    {
+      "end_time": 1728803137165,
+      "inputs": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "user",
+            "content": "howdy"
+          }
+        ],
+        "stream": true
+      },
+      "outputs": {
+        "id": "chatcmpl-AHmxU04aGhoVnvv6sBN4AVJ13C0HJ",
+        "object": "chat.completion.chunk",
+        "created": 1728803136,
+        "model": "gpt-4o-mini-2024-07-18",
+        "system_fingerprint": "fp_8552ec53e1",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": {
+              "index": 0,
+              "delta": {},
+              "logprobs": null,
+              "finish_reason": "stop"
+            },
+            "message": {
+              "role": "assistant",
+              "content": "Howdy! How can I assist you today?"
+            }
+          }
+        ]
+      },
+      "extra": {
+        "metadata": {
+          "ls_provider": "openai",
+          "ls_model_type": "chat",
+          "ls_model_name": "gpt-4o-mini"
+        },
+        "runtime": {
+          "library": "langsmith",
+          "runtime": "node",
+          "sdk": "langsmith-js",
+          "sdk_version": "0.1.65"
+        }
+      },
+      "dotted_order": "20241013T070536672001Za9a7fdab-0e16-4153-898a-33a0c1d9f759",
+      "trace_id": "a9a7fdab-0e16-4153-898a-33a0c1d9f759",
+      "tags": []
+    }
+  ]
+}

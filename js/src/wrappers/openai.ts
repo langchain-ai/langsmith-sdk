@@ -222,6 +222,7 @@ function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
       }),
     };
   }
+  delete result.usage;
   return result;
 }
 
