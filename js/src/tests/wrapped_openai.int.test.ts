@@ -8,6 +8,8 @@ import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
+import { UsageMetadata } from "../schemas.js";
+import {overrideFetchImplementation} from "../singletons/fetch.js";
 
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
@@ -573,4 +575,162 @@ test.concurrent("beta.chat.completions.parse", async () => {
     });
   }
   callSpy.mockClear();
+});
+
+const usageMetadataTestCases = [
+  {
+    description: "stream",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      stream: true,
+      stream_options: { include_usage: true },
+    },
+    expect_usage_metadata: true,
+  },
+  {
+    description: "stream no usage",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      stream: true,
+    },
+    expect_usage_metadata: false,
+  },
+  {
+    description: "default",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+    },
+    expect_usage_metadata: true,
+  },
+  {
+    description: "reasoning",
+    params: {
+      model: "o1-mini",
+      messages: [
+        {
+          role: "user",
+          content:
+            "Write a bash script that takes a matrix represented as a string with format '[1,2],[3,4],[5,6]' and prints the transpose in the same format.",
+        },
+      ],
+    },
+    expect_usage_metadata: true,
+    check_reasoning_tokens: true,
+  },
+];
+
+describe("Usage Metadata Tests", () => {
+  usageMetadataTestCases.forEach(
+    ({
+      description,
+      params,
+      expect_usage_metadata,
+      check_reasoning_tokens,
+    }) => {
+      it(`should handle ${description}`, async () => {
+
+        const recordedRequests: { url: RequestInfo | URL; init?: RequestInit }[] = [];
+        async function customFetch(
+            url: RequestInfo | URL,
+            init?: RequestInit
+        ): Promise<Response> {
+          recordedRequests.push({ url, init });
+          let requestUrl: string;
+
+          if (typeof url === 'string') {
+            requestUrl = url;
+          } else if (url instanceof URL) {
+            requestUrl = url.toString();
+          } else {
+            requestUrl = url.url;
+          }
+
+          const parsedUrl = new URL(requestUrl);
+
+          if (parsedUrl.pathname === '/info') {
+            const mockInfo = {
+              name: 'LangSmith API',
+              version: '1.x.x',
+              description: 'Mocked LangSmith API Server Info',
+            };
+            return new Response(JSON.stringify(mockInfo), {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+          } else {
+            recordedRequests.push({ url, init });
+          }
+
+          // return a mock response
+          return new Response(JSON.stringify({}), {
+              status: 202,
+              headers: {
+              'Content-Type': 'application/json',
+              },
+          });
+        }
+
+        overrideFetchImplementation(customFetch);
+
+        const openai = wrapOpenAI(new OpenAI(), {tracingEnabled: true});
+
+        const requestParams = { ...params };
+
+        let oaiUsage: OpenAI.CompletionUsage | undefined;
+        if (requestParams.stream) {
+          const stream = await openai.chat.completions.create(
+            requestParams as OpenAI.ChatCompletionCreateParamsStreaming
+          );
+          for await (const chunk of stream) {
+            if (expect_usage_metadata && chunk.usage) {
+              oaiUsage = chunk.usage;
+            }
+          }
+        } else {
+          const res = await openai.chat.completions.create(
+            requestParams as OpenAI.ChatCompletionCreateParams
+          );
+          oaiUsage = (res as OpenAI.ChatCompletion).usage;
+        }
+
+        let usageMetadata: UsageMetadata | undefined;
+        for (const request of recordedRequests) {
+          const parsedBody = JSON.parse(request.init?.body as string);
+          if (parsedBody.outputs) {
+            usageMetadata = parsedBody.outputs.usage_metadata;
+          }
+        }
+
+        if (expect_usage_metadata) {
+          expect(usageMetadata).not.toBeUndefined();
+          expect(usageMetadata).not.toBeNull();
+          expect(oaiUsage).not.toBeUndefined();
+          expect(oaiUsage).not.toBeNull();
+          expect(usageMetadata!.input_tokens).toEqual(oaiUsage!.prompt_tokens);
+          expect(usageMetadata!.output_tokens).toEqual(
+            oaiUsage!.completion_tokens
+          );
+          expect(usageMetadata!.total_tokens).toEqual(oaiUsage!.total_tokens);
+
+          if (check_reasoning_tokens) {
+            expect(usageMetadata!.output_token_details).not.toBeUndefined();
+            expect(
+              usageMetadata!.output_token_details!.reasoning
+            ).not.toBeUndefined();
+            expect(usageMetadata!.output_token_details!.reasoning).toEqual(
+              oaiUsage!.completion_tokens_details?.reasoning_tokens
+            );
+          }
+        } else {
+          expect(usageMetadata).toBeUndefined();
+          expect(oaiUsage).toBeUndefined();
+        }
+      });
+    }
+  );
 });
