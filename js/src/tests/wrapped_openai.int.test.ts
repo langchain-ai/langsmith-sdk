@@ -9,7 +9,6 @@ import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { UsageMetadata } from "../schemas.js";
-import {overrideFetchImplementation} from "../singletons/fetch.js";
 
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
@@ -586,7 +585,7 @@ const usageMetadataTestCases = [
       stream: true,
       stream_options: { include_usage: true },
     },
-    expect_usage_metadata: true,
+    expectUsageMetadata: true,
   },
   {
     description: "stream no usage",
@@ -595,7 +594,7 @@ const usageMetadataTestCases = [
       messages: [{ role: "user", content: "howdy" }],
       stream: true,
     },
-    expect_usage_metadata: false,
+    expectUsageMetadata: false,
   },
   {
     description: "default",
@@ -603,7 +602,7 @@ const usageMetadataTestCases = [
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "howdy" }],
     },
-    expect_usage_metadata: true,
+    expectUsageMetadata: true,
   },
   {
     description: "reasoning",
@@ -617,8 +616,8 @@ const usageMetadataTestCases = [
         },
       ],
     },
-    expect_usage_metadata: true,
-    check_reasoning_tokens: true,
+    expectUsageMetadata: true,
+    checkReasoningTokens: true,
   },
 ];
 
@@ -627,57 +626,15 @@ describe("Usage Metadata Tests", () => {
     ({
       description,
       params,
-      expect_usage_metadata,
-      check_reasoning_tokens,
+      expectUsageMetadata,
+      checkReasoningTokens,
     }) => {
       it(`should handle ${description}`, async () => {
-
-        const recordedRequests: { url: RequestInfo | URL; init?: RequestInit }[] = [];
-        async function customFetch(
-            url: RequestInfo | URL,
-            init?: RequestInit
-        ): Promise<Response> {
-          recordedRequests.push({ url, init });
-          let requestUrl: string;
-
-          if (typeof url === 'string') {
-            requestUrl = url;
-          } else if (url instanceof URL) {
-            requestUrl = url.toString();
-          } else {
-            requestUrl = url.url;
-          }
-
-          const parsedUrl = new URL(requestUrl);
-
-          if (parsedUrl.pathname === '/info') {
-            const mockInfo = {
-              name: 'LangSmith API',
-              version: '1.x.x',
-              description: 'Mocked LangSmith API Server Info',
-            };
-            return new Response(JSON.stringify(mockInfo), {
-              status: 200,
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            });
-          } else {
-            recordedRequests.push({ url, init });
-          }
-
-          // return a mock response
-          return new Response(JSON.stringify({}), {
-              status: 202,
-              headers: {
-              'Content-Type': 'application/json',
-              },
-          });
-        }
-
-        overrideFetchImplementation(customFetch);
-
-        const openai = wrapOpenAI(new OpenAI(), {tracingEnabled: true});
+        const { client, callSpy } = mockClient();
+        const openai = wrapOpenAI(new OpenAI(), {
+          tracingEnabled: true,
+          client,
+        });
 
         const requestParams = { ...params };
 
@@ -687,7 +644,7 @@ describe("Usage Metadata Tests", () => {
             requestParams as OpenAI.ChatCompletionCreateParamsStreaming
           );
           for await (const chunk of stream) {
-            if (expect_usage_metadata && chunk.usage) {
+            if (expectUsageMetadata && chunk.usage) {
               oaiUsage = chunk.usage;
             }
           }
@@ -699,14 +656,15 @@ describe("Usage Metadata Tests", () => {
         }
 
         let usageMetadata: UsageMetadata | undefined;
-        for (const request of recordedRequests) {
-          const parsedBody = JSON.parse(request.init?.body as string);
-          if (parsedBody.outputs) {
-            usageMetadata = parsedBody.outputs.usage_metadata;
+        for (const call of callSpy.mock.calls) {
+          const requestBody = JSON.parse((call[2] as any).body);
+          if (requestBody.outputs && requestBody.outputs.usage_metadata) {
+            usageMetadata = requestBody.outputs.usage_metadata;
+            break;
           }
         }
 
-        if (expect_usage_metadata) {
+        if (expectUsageMetadata) {
           expect(usageMetadata).not.toBeUndefined();
           expect(usageMetadata).not.toBeNull();
           expect(oaiUsage).not.toBeUndefined();
@@ -717,7 +675,7 @@ describe("Usage Metadata Tests", () => {
           );
           expect(usageMetadata!.total_tokens).toEqual(oaiUsage!.total_tokens);
 
-          if (check_reasoning_tokens) {
+          if (checkReasoningTokens) {
             expect(usageMetadata!.output_token_details).not.toBeUndefined();
             expect(
               usageMetadata!.output_token_details!.reasoning
@@ -730,6 +688,8 @@ describe("Usage Metadata Tests", () => {
           expect(usageMetadata).toBeUndefined();
           expect(oaiUsage).toBeUndefined();
         }
+
+        callSpy.mockClear();
       });
     }
   );
