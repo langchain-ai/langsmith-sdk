@@ -2,6 +2,7 @@ import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
 import type { RunTreeConfig } from "../index.js";
 import { isTraceableFunction, traceable } from "../traceable.js";
+import { KVMap } from "../schemas.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -187,6 +188,44 @@ const textAggregator = (
   return aggregatedOutput;
 };
 
+function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
+  const chatCompletion = outputs as OpenAI.ChatCompletion;
+  // copy the original object, minus usage
+  const result = { ...chatCompletion } as KVMap;
+  const usage = chatCompletion.usage;
+  if (usage) {
+    const inputTokenDetails = {
+      ...(usage.prompt_tokens_details?.audio_tokens !== null && {
+        audio: usage.prompt_tokens_details?.audio_tokens,
+      }),
+      ...(usage.prompt_tokens_details?.cached_tokens !== null && {
+        cache_read: usage.prompt_tokens_details?.cached_tokens,
+      }),
+    };
+    const outputTokenDetails = {
+      ...(usage.completion_tokens_details?.audio_tokens !== null && {
+        audio: usage.completion_tokens_details?.audio_tokens,
+      }),
+      ...(usage.completion_tokens_details?.reasoning_tokens !== null && {
+        reasoning: usage.completion_tokens_details?.reasoning_tokens,
+      }),
+    };
+    result.usage_metadata = {
+      input_tokens: usage.prompt_tokens ?? 0,
+      output_tokens: usage.completion_tokens ?? 0,
+      total_tokens: usage.total_tokens ?? 0,
+      ...(Object.keys(inputTokenDetails).length > 0 && {
+        input_token_details: inputTokenDetails,
+      }),
+      ...(Object.keys(outputTokenDetails).length > 0 && {
+        output_token_details: outputTokenDetails,
+      }),
+    };
+  }
+  delete result.usage;
+  return result;
+}
+
 /**
  * Wraps an OpenAI client's completion methods, enabling automatic LangSmith
  * tracing. Method signatures are unchanged, with the exception that you can pass
@@ -307,6 +346,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
               ls_stop,
             };
           },
+          processOutputs: processChatCompletion,
           ...options,
         }
       ),
