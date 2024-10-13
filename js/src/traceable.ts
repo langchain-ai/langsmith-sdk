@@ -49,7 +49,10 @@ const handleRunInputs = (
   try {
     return processInputs(inputs);
   } catch (e) {
-    console.error("Error occurred during processInputs:", e);
+    console.error(
+      "Error occurred during processInputs. Sending raw inputs:",
+      e
+    );
     return inputs;
   }
 };
@@ -69,7 +72,10 @@ const handleRunOutputs = (
   try {
     return processOutputs(outputs);
   } catch (e) {
-    console.error("Error occurred during processOutputs:", e);
+    console.error(
+      "Error occurred during processOutputs. Sending raw outputs:",
+      e
+    );
     return outputs;
   }
 };
@@ -317,13 +323,19 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     /**
      * Apply transformations to the inputs before logging.
-     * @param inputs Key-value map of the function inputs
+     * This function should NOT mutate the inputs.
+     * `processInputs` is not inherited by nested traceable functions.
+     *
+     * @param inputs Key-value map of the function inputs.
      * @returns Transformed key-value map
      */
     processInputs?: (inputs: Readonly<KVMap>) => KVMap;
 
     /**
      * Apply transformations to the outputs before logging.
+     * This function should NOT mutate the outputs.
+     * `processOutputs` is not inherited by nested traceable functions.
+     *
      * @param outputs Key-value map of the function outputs
      * @returns Transformed key-value map
      */
