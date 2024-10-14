@@ -5799,8 +5799,8 @@ def _tracing_thread_handle_batch(
 
 
 _SIZE_LIMIT_BYTES = 20_971_520  # 20MB by default
-_AUTO_SCALE_UP_QSIZE_TRIGGER = 1000
-_AUTO_SCALE_UP_NTHREADS_LIMIT = 16
+_AUTO_SCALE_UP_QSIZE_TRIGGER = 200
+_AUTO_SCALE_UP_NTHREADS_LIMIT = 32
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 _BLOCKSIZE_BYTES = 1024 * 1024  # 1MB
 
@@ -5836,9 +5836,7 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
-    use_multipart = os.getenv("LANGSMITH_FF_MULTIPART") in ["1", "true"]
-    # use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
-    # TODO replace FF with reading from batch_ingest_config
+    use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
