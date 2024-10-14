@@ -1,0 +1,120 @@
+{
+  "post": [
+    {
+      "id": "d0d84d31-923d-4cb5-94a8-40a0a0087578",
+      "start_time": "2024-10-11T20:58:23.298773+00:00",
+      "extra": {
+        "metadata": {
+          "ls_method": "traceable",
+          "ls_provider": "openai",
+          "ls_model_type": "chat",
+          "ls_model_name": "gpt-4o-mini",
+          "revision_id": "v0.1.82-381-g03d9e1a-dirty"
+        },
+        "runtime": {
+          "sdk": "langsmith-py",
+          "sdk_version": "0.1.131",
+          "library": "langsmith",
+          "platform": "macOS-13.2-arm64-arm-64bit",
+          "runtime": "python",
+          "py_implementation": "CPython",
+          "runtime_version": "3.11.7",
+          "langchain_version": "0.2.9",
+          "langchain_core_version": "0.2.21"
+        }
+      },
+      "serialized": {
+        "name": "ChatOpenAI",
+        "signature": "(*, messages: 'Iterable[ChatCompletionMessageParam]', model: 'Union[str, ChatModel]', frequency_penalty: 'Optional[float] | NotGiven' = NOT_GIVEN, function_call: 'completion_create_params.FunctionCall | NotGiven' = NOT_GIVEN, functions: 'Iterable[completion_create_params.Function] | NotGiven' = NOT_GIVEN, logit_bias: 'Optional[Dict[str, int]] | NotGiven' = NOT_GIVEN, logprobs: 'Optional[bool] | NotGiven' = NOT_GIVEN, max_completion_tokens: 'Optional[int] | NotGiven' = NOT_GIVEN, max_tokens: 'Optional[int] | NotGiven' = NOT_GIVEN, n: 'Optional[int] | NotGiven' = NOT_GIVEN, parallel_tool_calls: 'bool | NotGiven' = NOT_GIVEN, presence_penalty: 'Optional[float] | NotGiven' = NOT_GIVEN, response_format: 'completion_create_params.ResponseFormat | NotGiven' = NOT_GIVEN, seed: 'Optional[int] | NotGiven' = NOT_GIVEN, service_tier: \"Optional[Literal['auto', 'default']] | NotGiven\" = NOT_GIVEN, stop: 'Union[Optional[str], List[str]] | NotGiven' = NOT_GIVEN, stream: 'Optional[Literal[False]] | Literal[True] | NotGiven' = NOT_GIVEN, stream_options: 'Optional[ChatCompletionStreamOptionsParam] | NotGiven' = NOT_GIVEN, temperature: 'Optional[float] | NotGiven' = NOT_GIVEN, tool_choice: 'ChatCompletionToolChoiceOptionParam | NotGiven' = NOT_GIVEN, tools: 'Iterable[ChatCompletionToolParam] | NotGiven' = NOT_GIVEN, top_logprobs: 'Optional[int] | NotGiven' = NOT_GIVEN, top_p: 'Optional[float] | NotGiven' = NOT_GIVEN, user: 'str | NotGiven' = NOT_GIVEN, extra_headers: 'Headers | None' = None, extra_query: 'Query | None' = None, extra_body: 'Body | None' = None, timeout: 'float | httpx.Timeout | None | NotGiven' = NOT_GIVEN) -> 'ChatCompletion | AsyncStream[ChatCompletionChunk]'",
+        "doc": null
+      },
+      "events": [],
+      "tags": [],
+      "attachments": {},
+      "dotted_order": "20241011T205823298773Zd0d84d31-923d-4cb5-94a8-40a0a0087578",
+      "trace_id": "d0d84d31-923d-4cb5-94a8-40a0a0087578",
+      "outputs": {},
+      "session_name": "default",
+      "name": "ChatOpenAI",
+      "inputs": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "howdy"
+          }
+        ],
+        "model": "gpt-4o-mini",
+        "stream": false,
+        "extra_headers": null,
+        "extra_query": null,
+        "extra_body": null
+      },
+      "run_type": "llm"
+    }
+  ],
+  "patch": [
+    {
+      "id": "d0d84d31-923d-4cb5-94a8-40a0a0087578",
+      "name": "ChatOpenAI",
+      "trace_id": "d0d84d31-923d-4cb5-94a8-40a0a0087578",
+      "parent_run_id": null,
+      "dotted_order": "20241011T205823298773Zd0d84d31-923d-4cb5-94a8-40a0a0087578",
+      "tags": [],
+      "extra": {
+        "metadata": {
+          "ls_method": "traceable",
+          "ls_provider": "openai",
+          "ls_model_type": "chat",
+          "ls_model_name": "gpt-4o-mini",
+          "revision_id": "v0.1.82-381-g03d9e1a-dirty"
+        },
+        "runtime": {
+          "sdk": "langsmith-py",
+          "sdk_version": "0.1.131",
+          "library": "langsmith",
+          "platform": "macOS-13.2-arm64-arm-64bit",
+          "runtime": "python",
+          "py_implementation": "CPython",
+          "runtime_version": "3.11.7",
+          "langchain_version": "0.2.9",
+          "langchain_core_version": "0.2.21"
+        }
+      },
+      "end_time": "2024-10-11T20:58:24.417106+00:00",
+      "outputs": {
+        "id": "chatcmpl-AHH0KBvLG7Wq3wfSEGQuxh0xE07Fl",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "Howdy! How can I assist you today?",
+              "refusal": null,
+              "role": "assistant",
+              "function_call": null,
+              "tool_calls": null
+            }
+          }
+        ],
+        "created": 1728680304,
+        "model": "gpt-4o-mini-2024-07-18",
+        "object": "chat.completion",
+        "service_tier": null,
+        "system_fingerprint": "fp_e2bde53e6e",
+        "usage_metadata": {
+          "input_tokens": 9,
+          "output_tokens": 9,
+          "total_tokens": 18,
+          "input_token_details": {
+            "cache_read": 0
+          },
+          "output_token_details": {
+            "reasoning": 0
+          }
+        }
+      },
+      "events": []
+    }
+  ]
+}

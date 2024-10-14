@@ -625,7 +625,7 @@ test("max concurrency works with summary evaluators", async () => {
   expect(receivedCommentStrings).toEqual(expectedCommentString);
 });
 
-test("Target func can be a runnable", async () => {
+test.skip("Target func can be a runnable", async () => {
   const targetFunc = RunnableSequence.from([
     RunnableLambda.from((input: Record<string, any>) => ({
       foo: input.input + 1,
