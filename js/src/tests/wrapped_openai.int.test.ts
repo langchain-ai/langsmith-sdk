@@ -8,6 +8,8 @@ import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
+import { UsageMetadata } from "../schemas.js";
+import fs from "fs";
 
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
@@ -573,4 +575,136 @@ test.concurrent("beta.chat.completions.parse", async () => {
     });
   }
   callSpy.mockClear();
+});
+
+const usageMetadataTestCases = [
+  {
+    description: "stream",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      stream: true,
+      stream_options: { include_usage: true },
+    },
+    expectUsageMetadata: true,
+  },
+  {
+    description: "stream no usage",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      stream: true,
+    },
+    expectUsageMetadata: false,
+  },
+  {
+    description: "default",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+    },
+    expectUsageMetadata: true,
+  },
+  {
+    description: "reasoning",
+    params: {
+      model: "o1-mini",
+      messages: [
+        {
+          role: "user",
+          content:
+            "Write a bash script that takes a matrix represented as a string with format '[1,2],[3,4],[5,6]' and prints the transpose in the same format.",
+        },
+      ],
+    },
+    expectUsageMetadata: true,
+    checkReasoningTokens: true,
+  },
+];
+
+describe("Usage Metadata Tests", () => {
+  usageMetadataTestCases.forEach(
+    ({ description, params, expectUsageMetadata, checkReasoningTokens }) => {
+      it(`should handle ${description}`, async () => {
+        const { client, callSpy } = mockClient();
+        const openai = wrapOpenAI(new OpenAI(), {
+          tracingEnabled: true,
+          client,
+        });
+
+        const requestParams = { ...params };
+
+        let oaiUsage: OpenAI.CompletionUsage | undefined;
+        if (requestParams.stream) {
+          const stream = await openai.chat.completions.create(
+            requestParams as OpenAI.ChatCompletionCreateParamsStreaming
+          );
+          for await (const chunk of stream) {
+            if (expectUsageMetadata && chunk.usage) {
+              oaiUsage = chunk.usage;
+            }
+          }
+        } else {
+          const res = await openai.chat.completions.create(
+            requestParams as OpenAI.ChatCompletionCreateParams
+          );
+          oaiUsage = (res as OpenAI.ChatCompletion).usage;
+        }
+
+        let usageMetadata: UsageMetadata | undefined;
+        const requestBodies: any = {};
+        for (const call of callSpy.mock.calls) {
+          const request = call[2] as any;
+          const requestBody = JSON.parse(request.body);
+          if (request.method === "POST") {
+            requestBodies["post"] = [requestBody];
+          }
+          if (request.method === "PATCH") {
+            requestBodies["patch"] = [requestBody];
+          }
+          if (requestBody.outputs && requestBody.outputs.usage_metadata) {
+            usageMetadata = requestBody.outputs.usage_metadata;
+            break;
+          }
+        }
+
+        if (expectUsageMetadata) {
+          expect(usageMetadata).not.toBeUndefined();
+          expect(usageMetadata).not.toBeNull();
+          expect(oaiUsage).not.toBeUndefined();
+          expect(oaiUsage).not.toBeNull();
+          expect(usageMetadata!.input_tokens).toEqual(oaiUsage!.prompt_tokens);
+          expect(usageMetadata!.output_tokens).toEqual(
+            oaiUsage!.completion_tokens
+          );
+          expect(usageMetadata!.total_tokens).toEqual(oaiUsage!.total_tokens);
+
+          if (checkReasoningTokens) {
+            expect(usageMetadata!.output_token_details).not.toBeUndefined();
+            expect(
+              usageMetadata!.output_token_details!.reasoning
+            ).not.toBeUndefined();
+            expect(usageMetadata!.output_token_details!.reasoning).toEqual(
+              oaiUsage!.completion_tokens_details?.reasoning_tokens
+            );
+          }
+        } else {
+          expect(usageMetadata).toBeUndefined();
+          expect(oaiUsage).toBeUndefined();
+        }
+
+        if (process.env.WRITE_TOKEN_COUNTING_TEST_DATA === "1") {
+          fs.writeFileSync(
+            `${__dirname}/test_data/langsmith_js_wrap_openai_${description.replace(
+              " ",
+              "_"
+            )}.json`,
+            JSON.stringify(requestBodies, null, 2)
+          );
+        }
+
+        callSpy.mockClear();
+      });
+    }
+  );
 });
