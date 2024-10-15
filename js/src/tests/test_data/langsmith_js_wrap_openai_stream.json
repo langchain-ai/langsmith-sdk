@@ -1,0 +1,109 @@
+{
+  "post": [
+    {
+      "session_name": "default",
+      "id": "33c08c32-435c-4788-b973-b5bee4a31f87",
+      "name": "ChatOpenAI",
+      "start_time": 1728803135809,
+      "run_type": "llm",
+      "extra": {
+        "metadata": {
+          "ls_provider": "openai",
+          "ls_model_type": "chat",
+          "ls_model_name": "gpt-4o-mini"
+        },
+        "runtime": {
+          "library": "langsmith",
+          "runtime": "node",
+          "sdk": "langsmith-js",
+          "sdk_version": "0.1.65"
+        }
+      },
+      "serialized": {},
+      "inputs": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "user",
+            "content": "howdy"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "child_runs": [],
+      "trace_id": "33c08c32-435c-4788-b973-b5bee4a31f87",
+      "dotted_order": "20241013T070535809001Z33c08c32-435c-4788-b973-b5bee4a31f87",
+      "tags": []
+    }
+  ],
+  "patch": [
+    {
+      "end_time": 1728803136663,
+      "inputs": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "user",
+            "content": "howdy"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "outputs": {
+        "id": "chatcmpl-AHmxUqVIsivSmVbmtSHGuij1ld5TY",
+        "object": "chat.completion.chunk",
+        "created": 1728803136,
+        "model": "gpt-4o-mini-2024-07-18",
+        "system_fingerprint": "fp_e2bde53e6e",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": {
+              "index": 0,
+              "delta": {},
+              "logprobs": null,
+              "finish_reason": "stop"
+            },
+            "message": {
+              "role": "assistant",
+              "content": "Howdy! How can I assist you today?"
+            }
+          }
+        ],
+        "usage_metadata": {
+          "input_tokens": 9,
+          "output_tokens": 9,
+          "total_tokens": 18,
+          "input_token_details": {
+            "cache_read": 0
+          },
+          "output_token_details": {
+            "reasoning": 0
+          }
+        }
+      },
+      "extra": {
+        "metadata": {
+          "ls_provider": "openai",
+          "ls_model_type": "chat",
+          "ls_model_name": "gpt-4o-mini"
+        },
+        "runtime": {
+          "library": "langsmith",
+          "runtime": "node",
+          "sdk": "langsmith-js",
+          "sdk_version": "0.1.65"
+        }
+      },
+      "dotted_order": "20241013T070535809001Z33c08c32-435c-4788-b973-b5bee4a31f87",
+      "trace_id": "33c08c32-435c-4788-b973-b5bee4a31f87",
+      "tags": []
+    }
+  ]
+}
