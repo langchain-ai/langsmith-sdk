@@ -276,6 +276,11 @@ type AutoBatchQueueItem = {
   item: RunCreate | RunUpdate;
 };
 
+type MultipartPart = {
+  name: string;
+  payload: Blob;
+};
+
 async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
   const runtimeEnv = await getRuntimeEnvironment();
   const envVars = getLangChainEnvVarsMetadata();
@@ -954,6 +959,154 @@ export class Client {
       }
     );
     await raiseForStatus(response, "batch create run", true);
+  }
+
+  /**
+   * Batch ingest/upsert multiple runs in the Langsmith system.
+   * @param runs
+   */
+  public async multipartIngestRuns({
+    runCreates,
+    runUpdates,
+  }: {
+    runCreates?: RunCreate[];
+    runUpdates?: RunUpdate[];
+  }) {
+    if (runCreates === undefined && runUpdates === undefined) {
+      return;
+    }
+    // transform and convert to dicts
+    let preparedCreateParams =
+      runCreates?.map((create) =>
+        this.prepareRunCreateOrUpdateInputs(create)
+      ) ?? [];
+    let preparedUpdateParams =
+      runUpdates?.map((update) =>
+        this.prepareRunCreateOrUpdateInputs(update)
+      ) ?? [];
+
+    // require trace_id and dotted_order
+    const invalidRunCreate = preparedCreateParams.find((runCreate) => {
+      return (
+        runCreate.trace_id === undefined || runCreate.dotted_order === undefined
+      );
+    });
+    if (invalidRunCreate !== undefined) {
+      throw new Error(
+        `Multipart ingest requires "trace_id" and "dotted_order" to be set when creating a run`
+      );
+    }
+    const invalidRunUpdate = preparedUpdateParams.find((runUpdate) => {
+      return (
+        runUpdate.trace_id === undefined || runUpdate.dotted_order === undefined
+      );
+    });
+    if (invalidRunUpdate !== undefined) {
+      throw new Error(
+        `Multipart ingest requires "trace_id" and "dotted_order" to be set when updating a run`
+      );
+    }
+    // combine post and patch dicts where possible
+    if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
+      const createById = preparedCreateParams.reduce(
+        (params: Record<string, RunCreate>, run) => {
+          if (!run.id) {
+            return params;
+          }
+          params[run.id] = run;
+          return params;
+        },
+        {}
+      );
+      const standaloneUpdates = [];
+      for (const updateParam of preparedUpdateParams) {
+        if (updateParam.id !== undefined && createById[updateParam.id]) {
+          createById[updateParam.id] = {
+            ...createById[updateParam.id],
+            ...updateParam,
+          };
+        } else {
+          standaloneUpdates.push(updateParam);
+        }
+      }
+      preparedCreateParams = Object.values(createById);
+      preparedUpdateParams = standaloneUpdates;
+    }
+    if (
+      preparedCreateParams.length === 0 &&
+      preparedUpdateParams.length === 0
+    ) {
+      return;
+    }
+    // send the runs in multipart requests
+    const accumulatedContext: string[] = [];
+    const accumulatedParts: MultipartPart[] = [];
+    for (const [method, payloads] of [
+      ["post", preparedCreateParams] as const,
+      ["patch", preparedUpdateParams] as const,
+    ]) {
+      for (const originalPayload of payloads) {
+        // collect fields to be sent as separate parts
+        const { inputs, outputs, events, ...payload } = originalPayload;
+        const fields = { inputs, outputs, events };
+        // encode the main run payload
+        accumulatedParts.push({
+          name: `${method}.${payload.id}`,
+          payload: new Blob([stringifyForTracing(payload)], {
+            type: "application/json",
+          }),
+        });
+        // encode the fields we collected
+        for (const [key, value] of Object.entries(fields)) {
+          if (value === undefined) {
+            continue;
+          }
+          accumulatedParts.push({
+            name: `${method}.${payload.id}.${key}`,
+            payload: new Blob([stringifyForTracing(value)], {
+              type: "application/json",
+            }),
+          });
+        }
+
+        // compute context
+        accumulatedContext.push(`trace=${payload.trace_id},id=${payload.id}`);
+      }
+    }
+    await this._sendMultipartRequest(
+      accumulatedParts,
+      accumulatedContext.join("; ")
+    );
+  }
+
+  private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
+    try {
+      const formData = new FormData();
+      for (const part of parts) {
+        formData.append(part.name, part.payload);
+      }
+      await this.batchIngestCaller.call(
+        _getFetchImplementation(),
+        `${this.apiUrl}/runs/multipart`,
+        {
+          method: "POST",
+          headers: {
+            ...this.headers,
+          },
+          body: formData,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+    } catch (e) {
+      let errorMessage = "Failed to multipart ingest runs";
+      if (e instanceof Error) {
+        errorMessage += `: ${e.stack || e.message}`;
+      } else {
+        errorMessage += `: ${String(e)}`;
+      }
+      console.warn(`${errorMessage.trim()}\n\nContext: ${context}`);
+    }
   }
 
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
