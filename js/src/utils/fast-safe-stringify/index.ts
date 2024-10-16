@@ -8,7 +8,7 @@ var replacerStack = [];
 
 function defaultOptions() {
   return {
-    depthLimit: Number.MAX_SAFE_INTEGER,
+    depthLimit: 50,
     edgesLimit: Number.MAX_SAFE_INTEGER,
   };
 }
