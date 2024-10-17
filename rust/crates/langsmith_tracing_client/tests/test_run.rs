@@ -98,13 +98,13 @@ fn test_run_update() {
         error: None,
         serialized: serde_json::json!({"key": "value"}),
         inputs: serde_json::json!({"input": "value"}),
-        events: serde_json::json!([]),  // Assuming Vec<Event> will be implemented later
+        events: serde_json::json!([]), // Assuming Vec<Event> will be implemented later
         tags: serde_json::json!({"tag": "value"}),
     };
 
     let run_update = RunUpdate {
         common: run_common,
-        end_time: TimeValue::String("2024-10-16T14:00:00Z".to_string()),  // String format
+        end_time: TimeValue::String("2024-10-16T14:00:00Z".to_string()), // String format
         outputs: Some(serde_json::json!({"output_key": "output_value"})),
     };
 
@@ -113,4 +113,3 @@ fn test_run_update() {
     assert!(serialized.contains("\"dotted_order\":\"1.1\""));
     assert!(serialized.contains("\"end_time\":\"2024-10-16T14:00:00Z\""));
 }
-
