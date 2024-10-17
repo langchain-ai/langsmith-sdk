@@ -1,6 +1,6 @@
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
 import type { ExportResult } from "@opentelemetry/core";
-import type { CoreAssistantMessage, CoreMessage } from "ai";
+import type { CoreAssistantMessage, CoreMessage, ToolCallPart } from "ai";
 import type { AISDKSpan } from "./exporter.types.js";
 import type {
   BaseMessageFields,
@@ -45,7 +45,7 @@ function convertCoreToSmith(
       });
 
       const toolCalls = message.content.filter(
-        (part) => part.type === "tool-call"
+        (part): part is ToolCallPart => part.type === "tool-call"
       );
 
       if (toolCalls.length > 0) {
