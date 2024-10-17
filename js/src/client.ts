@@ -426,8 +426,6 @@ export class Client {
 
   private autoBatchTracing = true;
 
-  private batchEndpointSupported?: boolean;
-
   private autoBatchQueue = new Queue<AutoBatchQueueItem>();
 
   private pendingAutoBatchedRunLimit = 100;
@@ -718,14 +716,26 @@ export class Client {
         return;
       }
       try {
-        await this.batchIngestRuns({
+        if (this.serverInfo === undefined) {
+          try {
+            this.serverInfo = await this._getServerInfo();
+          } catch (e) {
+            this.serverInfo = {};
+          }
+        }
+        const ingestParams = {
           runCreates: batch
             .filter((item) => item.action === "create")
             .map((item) => item.item) as RunCreate[],
           runUpdates: batch
             .filter((item) => item.action === "update")
             .map((item) => item.item) as RunUpdate[],
-        });
+        };
+        if (this.serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+          await this.multipartIngestRuns(ingestParams);
+        } else {
+          await this.batchIngestRuns(ingestParams);
+        }
       } finally {
         done();
       }
@@ -771,15 +781,6 @@ export class Client {
     });
     await raiseForStatus(response, "get server info");
     return response.json();
-  }
-
-  protected async batchEndpointIsSupported() {
-    try {
-      this.serverInfo = await this._getServerInfo();
-    } catch (e) {
-      return false;
-    }
-    return true;
   }
 
   protected async _getSettings() {
@@ -890,10 +891,10 @@ export class Client {
     preparedCreateParams = await mergeRuntimeEnvIntoRunCreates(
       preparedCreateParams
     );
-    if (this.batchEndpointSupported === undefined) {
-      this.batchEndpointSupported = await this.batchEndpointIsSupported();
+    if (this.serverInfo === undefined) {
+      this.serverInfo = await this._getServerInfo();
     }
-    if (!this.batchEndpointSupported) {
+    if (this.serverInfo?.version === undefined) {
       this.autoBatchTracing = false;
       for (const preparedCreateParam of rawBatch.post) {
         await this.createRun(preparedCreateParam as CreateRunParams);
@@ -1050,10 +1051,11 @@ export class Client {
         const { inputs, outputs, events, ...payload } = originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
+        const stringifiedPayload = stringifyForTracing(payload);
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
-          payload: new Blob([stringifyForTracing(payload)], {
-            type: "application/json",
+          payload: new Blob([stringifiedPayload], {
+            type: `application/json; length=${stringifiedPayload.length}`, // encoding=gzip
           }),
         });
         // encode the fields we collected
@@ -1061,10 +1063,11 @@ export class Client {
           if (value === undefined) {
             continue;
           }
+          const stringifiedValue = stringifyForTracing(value);
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
-            payload: new Blob([stringifyForTracing(value)], {
-              type: "application/json",
+            payload: new Blob([stringifiedValue], {
+              type: `application/json; length=${stringifiedValue.length}`,
             }),
           });
         }
