@@ -55,3 +55,8 @@ pub struct RunUpdateWithAttachments {
     pub run_update: RunUpdate,
     pub attachments: Attachments,
 }
+
+pub enum QueuedRun {
+    Create(RunCreateWithAttachments),
+    Update(RunUpdateWithAttachments),
+}
