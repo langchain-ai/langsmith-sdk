@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 // Map attachment ref to tuple of filename, bytes
 type Attachments = HashMap<String, (String, Vec<u8>)>;
