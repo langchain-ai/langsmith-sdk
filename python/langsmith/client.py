@@ -1256,7 +1256,7 @@ class Client:
                 run_create["serialized"].pop("graph", None)
 
         # Collect or drop attachments
-        if attachments := run_create.get("attachments", None):
+        if attachments := run_create.pop("attachments", None):
             if attachments_collector is not None:
                 attachments_collector[run_create["id"]] = attachments
             elif not WARNED_ATTACHMENTS:
