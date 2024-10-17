@@ -1,3 +1,5 @@
+pub mod client;
+
 use tokio::time::{sleep, Duration};
 
 pub async fn minimal_test() {
