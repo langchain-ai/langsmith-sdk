@@ -59,4 +59,5 @@ pub struct RunUpdateWithAttachments {
 pub enum QueuedRun {
     Create(RunCreateWithAttachments),
     Update(RunUpdateWithAttachments),
+    Shutdown,
 }

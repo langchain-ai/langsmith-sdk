@@ -4,6 +4,7 @@ use crate::client::run::QueuedRun;
 use crate::client::run::{RunCreateWithAttachments, RunUpdateWithAttachments};
 use std::time::Duration;
 use tokio::sync::mpsc::{self, Sender};
+use tokio::task::JoinHandle;
 
 pub struct ClientConfig {
     pub endpoint: String,
@@ -14,6 +15,7 @@ pub struct ClientConfig {
 
 pub struct TracingClient {
     sender: Sender<QueuedRun>,
+    handle: JoinHandle<Result<(), TracingClientError>>,
 }
 
 impl TracingClient {
@@ -21,13 +23,16 @@ impl TracingClient {
         let (sender, receiver) = mpsc::channel(config.queue_capacity);
 
         let processor = RunProcessor::new(receiver, config);
-        tokio::spawn(async move {
-            if let Err(e) = processor.run().await {
+
+        let handle = tokio::spawn(async move {
+            let result = processor.run().await;
+            if let Err(e) = &result {
                 eprintln!("RunProcessor exited with error: {}", e);
             }
+            result
         });
 
-        Ok(Self { sender })
+        Ok(Self { sender, handle })
     }
 
     pub async fn submit_run_create(
@@ -36,7 +41,6 @@ impl TracingClient {
     ) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Create(run);
 
-        // Send the run to the async queue
         self.sender
             .send(queued_run)
             .await
@@ -49,10 +53,18 @@ impl TracingClient {
     ) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Update(run);
 
-        // Send the run to the async queue
         self.sender
             .send(queued_run)
             .await
             .map_err(|_| TracingClientError::QueueFull)
+    }
+
+    pub async fn shutdown(self) -> Result<(), TracingClientError> {
+        self.sender
+            .send(QueuedRun::Shutdown)
+            .await
+            .map_err(|_| TracingClientError::QueueFull)?;
+
+        self.handle.await.unwrap()
     }
 }

@@ -31,27 +31,44 @@ impl RunProcessor {
         loop {
             tokio::select! {
                 Some(queued_run) = self.receiver.recv() => {
-                    buffer.push(queued_run);
-                    if buffer.len() >= self.config.batch_size {
-                        self.send_and_clear_buffer(&mut buffer).await?;
-                        last_send_time = Instant::now();
+                    match queued_run {
+                        QueuedRun::Shutdown => {
+                            println!("shutdown signal received.");
+                            if !buffer.is_empty() {
+                                println!("sending remaining buffer before shutdown.");
+                                self.send_and_clear_buffer(&mut buffer).await?;
+                            }
+                            break;
+                        },
+                        _ => {
+                            println!("received a queued run.");
+                            buffer.push(queued_run);
+                            if buffer.len() >= self.config.batch_size {
+                                println!("batch size limit, sending batch.");
+                                self.send_and_clear_buffer(&mut buffer).await?;
+                                last_send_time = Instant::now();
+                            }
+                        }
                     }
                 }
                 _ = sleep(self.config.batch_timeout) => {
                     if !buffer.is_empty() && last_send_time.elapsed() >= self.config.batch_timeout {
+                        println!("batch timeout, sending batch.");
                         self.send_and_clear_buffer(&mut buffer).await?;
                         last_send_time = Instant::now();
                     }
                 }
                 else => {
-                    // Channel closed
+                    println!("channel closed.");
                     if !buffer.is_empty() {
+                        println!("sending remaining buffer.");
                         self.send_and_clear_buffer(&mut buffer).await?;
                     }
                     break;
                 }
             }
         }
+        println!("exiting loop.");
         Ok(())
     }
 
@@ -79,6 +96,9 @@ impl RunProcessor {
                 QueuedRun::Update(run_update_with_attachments) => {
                     self.add_run_update_to_form(run_update_with_attachments, &mut form)?;
                 }
+                QueuedRun::Shutdown => {
+                    return Err(TracingClientError::UnexpectedShutdown);
+                }
             }
         }
 
@@ -105,7 +125,6 @@ impl RunProcessor {
         let run = &run_with_attachments.run_create;
         let run_id = &run.common.id;
 
-        // Serialize the run
         let mut run_json = serde_json::to_value(run)?;
         let inputs = run_json
             .as_object_mut()
@@ -116,25 +135,21 @@ impl RunProcessor {
             .and_then(|obj| obj.remove("outputs"))
             .unwrap_or(Value::Null);
 
-        // Add the main run data
         *form = std::mem::take(form).part(
             format!("post.{}", run_id),
             Part::text(run_json.to_string()).mime_str("application/json")?,
         );
 
-        // Add inputs
         *form = std::mem::take(form).part(
             format!("post.{}.inputs", run_id),
             Part::text(inputs.to_string()).mime_str("application/json")?,
         );
 
-        // Add outputs
         *form = std::mem::take(form).part(
             format!("post.{}.outputs", run_id),
             Part::text(outputs.to_string()).mime_str("application/json")?,
         );
 
-        // Add attachments
         for (ref_name, (filename, data)) in &run_with_attachments.attachments {
             *form = std::mem::take(form).part(
                 format!("post.{}.attachments.{}", run_id, ref_name),
@@ -155,20 +170,17 @@ impl RunProcessor {
         let run = &run_with_attachments.run_update;
         let run_id = &run.common.id;
 
-        // Serialize the run
         let mut run_json = serde_json::to_value(run)?;
         let outputs = run_json
             .as_object_mut()
             .and_then(|obj| obj.remove("outputs"))
             .unwrap_or(Value::Null);
 
-        // Add the main run data
         *form = std::mem::take(form).part(
             format!("patch.{}", run_id),
             Part::text(run_json.to_string()).mime_str("application/json")?,
         );
 
-        // Add outputs if present
         if !outputs.is_null() {
             *form = std::mem::take(form).part(
                 format!("patch.{}.outputs", run_id),
@@ -176,7 +188,6 @@ impl RunProcessor {
             );
         }
 
-        // Add attachments
         for (ref_name, (filename, data)) in &run_with_attachments.attachments {
             *form = std::mem::take(form).part(
                 format!("patch.{}.attachments.{}", run_id, ref_name),
