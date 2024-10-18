@@ -77,9 +77,8 @@ impl RunProcessor {
         buffer: &mut Vec<QueuedRun>,
     ) -> Result<(), TracingClientError> {
         if let Err(e) = self.send_batch(buffer).await {
-            // Handle error (e.g., log and retry logic)
+            // todo: retry logic?
             eprintln!("Error sending batch: {}", e);
-            // Decide whether to drop the buffer or retry
         }
         buffer.clear();
         Ok(())
