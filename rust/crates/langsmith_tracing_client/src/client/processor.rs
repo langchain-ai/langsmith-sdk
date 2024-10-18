@@ -1,13 +1,13 @@
-use tokio::sync::mpsc::{Receiver};
-use tokio::time::{sleep, Instant};
+use crate::client::errors::TracingClientError;
+use crate::client::run::QueuedRun;
+use crate::client::run::{RunCreateWithAttachments, RunUpdateWithAttachments};
+use crate::client::tracing_client::ClientConfig;
 use reqwest::multipart::{Form, Part};
 use serde_json::Value;
-use crate::client::run::{QueuedRun};
-use crate::client::errors::TracingClientError;
-use crate::client::tracing_client::ClientConfig;
-use crate::client::run::{RunCreateWithAttachments, RunUpdateWithAttachments};
+use tokio::sync::mpsc::Receiver;
+use tokio::time::{sleep, Instant};
 
-pub(crate) struct RunProcessor {
+pub struct RunProcessor {
     receiver: Receiver<QueuedRun>,
     http_client: reqwest::Client,
     config: ClientConfig,
@@ -55,7 +55,10 @@ impl RunProcessor {
         Ok(())
     }
 
-    async fn send_and_clear_buffer(&self, buffer: &mut Vec<QueuedRun>) -> Result<(), TracingClientError> {
+    async fn send_and_clear_buffer(
+        &self,
+        buffer: &mut Vec<QueuedRun>,
+    ) -> Result<(), TracingClientError> {
         if let Err(e) = self.send_batch(buffer).await {
             // Handle error (e.g., log and retry logic)
             eprintln!("Error sending batch: {}", e);
