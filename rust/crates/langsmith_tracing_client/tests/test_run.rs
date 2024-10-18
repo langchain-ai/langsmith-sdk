@@ -72,7 +72,7 @@ fn test_run_create_with_timestamp() {
     let run_create = RunCreate {
         common: run_common,
         name: String::from("Run Name"),
-        start_time: TimeValue::UnsignedInt(1697462400000), // Timestamp format (milliseconds since epoch)
+        start_time: TimeValue::UnsignedInt(1697462400000),
         end_time: Some(TimeValue::UnsignedInt(1697466000000)),
         outputs: serde_json::json!({"output_key": "output_value"}),
         run_type: String::from("test_run_type"),
@@ -98,13 +98,13 @@ fn test_run_update() {
         error: None,
         serialized: serde_json::json!({"key": "value"}),
         inputs: serde_json::json!({"input": "value"}),
-        events: serde_json::json!([]), // Assuming Vec<Event> will be implemented later
+        events: serde_json::json!([]),
         tags: serde_json::json!({"tag": "value"}),
     };
 
     let run_update = RunUpdate {
         common: run_common,
-        end_time: TimeValue::String("2024-10-16T14:00:00Z".to_string()), // String format
+        end_time: TimeValue::String("2024-10-16T14:00:00Z".to_string()),
         outputs: Some(serde_json::json!({"output_key": "output_value"})),
     };
 
