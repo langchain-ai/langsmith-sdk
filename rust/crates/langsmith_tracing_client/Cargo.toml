@@ -11,3 +11,4 @@ serde = { version = "1.0.210", features = ["derive"] }
 chrono = "0.4.38"
 reqwest = { version = "0.12.8", features = ["multipart"] }
 thiserror = "1.0"
+mockito = "1.5.0"

@@ -1,9 +1,9 @@
-use tokio::sync::mpsc::{self, Sender};
-use std::time::Duration;
-use crate::client::run::QueuedRun;
 use crate::client::errors::TracingClientError;
-use crate::client::run::{RunCreateWithAttachments, RunUpdateWithAttachments};
 use crate::client::processor::RunProcessor;
+use crate::client::run::QueuedRun;
+use crate::client::run::{RunCreateWithAttachments, RunUpdateWithAttachments};
+use std::time::Duration;
+use tokio::sync::mpsc::{self, Sender};
 
 pub struct ClientConfig {
     pub endpoint: String,
