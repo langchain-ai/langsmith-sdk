@@ -29,7 +29,7 @@ async fn test_tracing_client_submit_run_create() {
     let config = ClientConfig {
         endpoint: server.url(),
         queue_capacity: 10,
-        batch_size: 1,
+        batch_size: 5,  // batch size is 5 to ensure shutdown flushes the queue
         batch_timeout: Duration::from_secs(1),
     };
 
@@ -71,14 +71,14 @@ async fn test_tracing_client_submit_run_create() {
         attachments,
     };
 
-    let _result = client.submit_run_create(run_create).await;
-    // sleep for a bit to allow the mock server to receive the request
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    let _ = m.assert_async().await;
+    client.submit_run_create(run_create).await.unwrap();
+
+    // shutdown the client to ensure all messages are processed
+    client.shutdown().await.unwrap();
+    m.assert_async().await;
 }
 
 // now test run update
-
 #[tokio::test]
 async fn test_tracing_client_submit_run_update() {
     let mut server = Server::new_async().await;
@@ -101,7 +101,7 @@ async fn test_tracing_client_submit_run_update() {
     let config = ClientConfig {
         endpoint: server.url(),
         queue_capacity: 10,
-        batch_size: 1,
+        batch_size: 1, // batch size is 1 to ensure each message is sent immediately
         batch_timeout: Duration::from_secs(1),
     };
 
@@ -137,9 +137,9 @@ async fn test_tracing_client_submit_run_update() {
         attachments,
     };
 
-    let _result = client.submit_run_update(run_update).await;
-    // sleep for a bit to allow the mock server to receive the request
-    // sleep for a bit to allow the mock server to receive the request
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    let _ = m.assert_async().await;
+    client.submit_run_update(run_update).await.unwrap();
+
+    // shutdown the client to ensure all messages are processed
+    client.shutdown().await.unwrap();
+    m.assert_async().await;
 }

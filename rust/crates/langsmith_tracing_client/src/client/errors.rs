@@ -16,4 +16,7 @@ pub enum TracingClientError {
 
     #[error("Channel send error")]
     ChannelSendError,
+
+    #[error("Unexpected shutdown")]
+    UnexpectedShutdown,
 }
