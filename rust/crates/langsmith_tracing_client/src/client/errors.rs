@@ -19,4 +19,7 @@ pub enum TracingClientError {
 
     #[error("Unexpected shutdown")]
     UnexpectedShutdown,
+
+    #[error("IO error")]
+    IoError(String),
 }

@@ -2,7 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // Map attachment ref to tuple of filename, optional bytes
-type Attachments = HashMap<String, (String, Option<Vec<u8>>)>;
+pub struct Attachment {
+    pub filename: String,
+    pub data: Option<Vec<u8>>,
+    pub content_type: String,
+}
 
 // Must support both string (Py) and unsigned int (JS)
 #[derive(Serialize, Deserialize)]
@@ -48,12 +52,12 @@ pub struct RunUpdate {
 
 pub struct RunCreateWithAttachments {
     pub run_create: RunCreate,
-    pub attachments: Attachments,
+    pub attachments: HashMap<String, Attachment>,
 }
 
 pub struct RunUpdateWithAttachments {
     pub run_update: RunUpdate,
-    pub attachments: Attachments,
+    pub attachments: HashMap<String, Attachment>,
 }
 
 pub enum QueuedRun {
