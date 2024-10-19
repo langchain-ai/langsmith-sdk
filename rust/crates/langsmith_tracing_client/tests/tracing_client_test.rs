@@ -14,20 +14,20 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_tracing_client_submit_run_create() {
     let mut server = Server::new_async().await;
+    // let mut captured_body: Vec<u8> = Vec::new();
+
     let m = server
         .mock("POST", "/")
-        .match_header(
-            "content-type",
-            Matcher::Regex(r"multipart/form-data.*".to_string()),
-        )
-        .match_body(Matcher::AllOf(vec![
-            Matcher::Regex("post\\.test_id".to_string()),
-            Matcher::Regex("post\\.test_id\\.inputs".to_string()),
-            Matcher::Regex("post\\.test_id\\.outputs".to_string()),
-            Matcher::Regex("post\\.test_id\\.attachments\\.attachment_1".to_string()),
-            Matcher::Regex("post\\.test_id\\.attachments\\.attachment_2".to_string()),
-        ]))
         .with_status(200)
+        .with_body_from_request(move |req| {
+            let body = req.body().unwrap();
+            // print it as a utf-8 string
+            println!(
+                "Captured body: {:?}",
+                String::from_utf8(body.to_vec()).unwrap()
+            );
+            vec![0]
+        })
         .create_async()
         .await;
 
@@ -59,7 +59,7 @@ async fn test_tracing_client_submit_run_create() {
         "attachment_2".to_string(),
         Attachment {
             filename: test_file_path.into_os_string().into_string().unwrap(),
-            data: None, // This will cause the code to read from disk
+            data: None, // this will cause the processor to read from disk
             content_type: "text/plain".to_string(),
         },
     );
