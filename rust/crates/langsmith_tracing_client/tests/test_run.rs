@@ -14,6 +14,8 @@ fn test_run_common() {
         inputs: serde_json::json!({"input": "value"}),
         events: serde_json::json!([{ "event": "event_data" }]),
         tags: serde_json::json!({"tag": "value"}),
+        session_id: Some("efghijkl-7654-3210-fedc-ba9876543210".to_string()),
+        session_name: None,
     };
 
     let serialized = serde_json::to_string(&run_common).unwrap();
@@ -34,6 +36,8 @@ fn test_run_create_with_string_time() {
         inputs: serde_json::json!({"input": "value"}),
         events: serde_json::json!([{ "event": "event_data" }]),
         tags: serde_json::json!({"tag": "value"}),
+        session_id: None,
+        session_name: Some("Session Name".to_string()),
     };
 
     let run_create = RunCreate {
@@ -43,8 +47,6 @@ fn test_run_create_with_string_time() {
         end_time: Some(TimeValue::String("2024-10-16T14:00:00Z".to_string())),
         outputs: serde_json::json!({"output_key": "output_value"}),
         run_type: String::from("test_run_type"),
-        session_id: None,
-        session_name: None,
         reference_example_id: None,
     };
 
@@ -67,6 +69,8 @@ fn test_run_create_with_timestamp() {
         inputs: serde_json::json!({"input": "value"}),
         events: serde_json::json!([{ "event": "event_data" }]),
         tags: serde_json::json!({"tag": "value"}),
+        session_id: None,
+        session_name: None,
     };
 
     let run_create = RunCreate {
@@ -76,8 +80,6 @@ fn test_run_create_with_timestamp() {
         end_time: Some(TimeValue::UnsignedInt(1697466000000)),
         outputs: serde_json::json!({"output_key": "output_value"}),
         run_type: String::from("test_run_type"),
-        session_id: None,
-        session_name: None,
         reference_example_id: None,
     };
 
@@ -100,6 +102,8 @@ fn test_run_update() {
         inputs: serde_json::json!({"input": "value"}),
         events: serde_json::json!([]),
         tags: serde_json::json!({"tag": "value"}),
+        session_id: None,
+        session_name: None,
     };
 
     let run_update = RunUpdate {
