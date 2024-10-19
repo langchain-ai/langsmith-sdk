@@ -5,7 +5,6 @@ use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClie
 use mockito::{Matcher, Server};
 use std::collections::HashMap;
 use std::time::Duration;
-use serde::de::Unexpected::Option;
 
 #[tokio::test]
 async fn test_tracing_client_submit_run_create() {
@@ -30,7 +29,7 @@ async fn test_tracing_client_submit_run_create() {
     let config = ClientConfig {
         endpoint: server.url(),
         queue_capacity: 10,
-        batch_size: 5,  // batch size is 5 to ensure shutdown flushes the queue
+        batch_size: 5, // batch size is 5 to ensure shutdown flushes the queue
         batch_timeout: Duration::from_secs(1),
     };
 
@@ -39,11 +38,11 @@ async fn test_tracing_client_submit_run_create() {
     let mut attachments = HashMap::new();
     attachments.insert(
         "attachment_1".to_string(),
-        ("file1.txt".to_string(), vec![1, 2, 3]),
+        ("file1.txt".to_string(), Some(vec![1, 2, 3])),
     );
     attachments.insert(
         "attachment_2".to_string(),
-        ("file2.txt".to_string(), vec![4, 5, 6]),
+        ("file2.txt".to_string(), Some(vec![4, 5, 6])),
     );
 
     let run_create = RunCreateWithAttachments {
@@ -111,11 +110,11 @@ async fn test_tracing_client_submit_run_update() {
     let mut attachments = HashMap::new();
     attachments.insert(
         "attachment_1".to_string(),
-        ("file1.txt".to_string(), vec![1, 2, 3]),
+        ("file1.txt".to_string(), Some(vec![1, 2, 3])),
     );
     attachments.insert(
         "attachment_2".to_string(),
-        ("file2.txt".to_string(), vec![4, 5, 6]),
+        ("file2.txt".to_string(), Some(vec![4, 5, 6])),
     );
 
     let run_update = RunUpdateWithAttachments {

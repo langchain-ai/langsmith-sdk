@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// Map attachment ref to tuple of filename, bytes
-type Attachments = HashMap<String, (String, Vec<u8>)>;
+// Map attachment ref to tuple of filename, optional bytes
+type Attachments = HashMap<String, (String, Option<Vec<u8>>)>;
 
 // Must support both string (Py) and unsigned int (JS)
 #[derive(Serialize, Deserialize)]
