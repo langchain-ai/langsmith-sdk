@@ -6,6 +6,7 @@ use reqwest::multipart::{Form, Part};
 use serde_json::Value;
 use tokio::sync::mpsc::Receiver;
 use tokio::time::{sleep, Instant};
+use tokio_util::io::ReaderStream;
 
 pub struct RunProcessor {
     receiver: Receiver<QueuedRun>,
@@ -90,10 +91,12 @@ impl RunProcessor {
         for queued_run in batch {
             match queued_run {
                 QueuedRun::Create(run_create_with_attachments) => {
-                    self.add_run_create_to_form(run_create_with_attachments, &mut form)?;
+                    self.add_run_create_to_form(run_create_with_attachments, &mut form)
+                        .await?;
                 }
                 QueuedRun::Update(run_update_with_attachments) => {
-                    self.add_run_update_to_form(run_update_with_attachments, &mut form)?;
+                    self.add_run_update_to_form(run_update_with_attachments, &mut form)
+                        .await?;
                 }
                 QueuedRun::Shutdown => {
                     return Err(TracingClientError::UnexpectedShutdown);
@@ -116,7 +119,7 @@ impl RunProcessor {
         }
     }
 
-    fn add_run_create_to_form(
+    async fn add_run_create_to_form(
         &self,
         run_with_attachments: &RunCreateWithAttachments,
         form: &mut Form,
@@ -149,21 +152,45 @@ impl RunProcessor {
             Part::text(outputs.to_string()).mime_str("application/json")?,
         );
 
-        for (ref_name, (filename, data)) in &run_with_attachments.attachments {
+        for (ref_name, attachment) in &run_with_attachments.attachments {
+            let filename = &attachment.filename;
+            let data = &attachment.data;
+            let content_type = &attachment.content_type;
+
+            let part_name = format!("post.{}.attachments.{}", run_id, ref_name);
             if let Some(data) = data {
                 *form = std::mem::take(form).part(
-                    format!("post.{}.attachments.{}", run_id, ref_name),
+                    part_name,
                     Part::bytes(data.clone())
                         .file_name(filename.clone())
-                        .mime_str("application/octet-stream")?,
+                        .mime_str(content_type)?,
                 );
+            } else {
+                // Read the file from disk and stream it
+                let file_path = std::path::Path::new(filename);
+                let metadata = tokio::fs::metadata(file_path).await.map_err(|e| {
+                    TracingClientError::IoError(format!("Failed to read file metadata: {}", e))
+                })?;
+                let file_size = metadata.len();
+                let file = tokio::fs::File::open(file_path).await.map_err(|e| {
+                    TracingClientError::IoError(format!("Failed to open file: {}", e))
+                })?;
+                let stream = ReaderStream::new(file);
+                let body = reqwest::Body::wrap_stream(stream);
+
+                let part = Part::stream_with_length(body, file_size)
+                    // TODO only take the last component of the path as the filename
+                    .file_name(filename.clone())
+                    .mime_str(content_type)?;
+
+                *form = std::mem::take(form).part(part_name, part);
             }
         }
 
         Ok(())
     }
 
-    fn add_run_update_to_form(
+    async fn add_run_update_to_form(
         &self,
         run_with_attachments: &RunUpdateWithAttachments,
         form: &mut Form,
@@ -189,14 +216,37 @@ impl RunProcessor {
             );
         }
 
-        for (ref_name, (filename, data)) in &run_with_attachments.attachments {
+        for (ref_name, attachment) in &run_with_attachments.attachments {
+            let filename = &attachment.filename;
+            let data = &attachment.data;
+            let content_type = &attachment.content_type;
+
+            let part_name = format!("patch.{}.attachments.{}", run_id, ref_name);
             if let Some(data) = data {
                 *form = std::mem::take(form).part(
-                    format!("patch.{}.attachments.{}", run_id, ref_name),
+                    part_name,
                     Part::bytes(data.clone())
                         .file_name(filename.clone())
-                        .mime_str("application/octet-stream")?,
+                        .mime_str(content_type)?,
                 );
+            } else {
+                // Read the file from disk and stream it
+                let file_path = std::path::Path::new(filename);
+                let metadata = tokio::fs::metadata(file_path).await.map_err(|e| {
+                    TracingClientError::IoError(format!("Failed to read file metadata: {}", e))
+                })?;
+                let file_size = metadata.len();
+                let file = tokio::fs::File::open(file_path).await.map_err(|e| {
+                    TracingClientError::IoError(format!("Failed to open file: {}", e))
+                })?;
+                let stream = ReaderStream::new(file);
+                let body = reqwest::Body::wrap_stream(stream);
+
+                let part = Part::stream_with_length(body, file_size)
+                    .file_name(filename.clone())
+                    .mime_str(content_type)?;
+
+                *form = std::mem::take(form).part(part_name, part);
             }
         }
 
