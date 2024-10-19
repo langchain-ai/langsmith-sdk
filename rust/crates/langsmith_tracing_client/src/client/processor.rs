@@ -150,12 +150,14 @@ impl RunProcessor {
         );
 
         for (ref_name, (filename, data)) in &run_with_attachments.attachments {
-            *form = std::mem::take(form).part(
-                format!("post.{}.attachments.{}", run_id, ref_name),
-                Part::bytes(data.clone())
-                    .file_name(filename.clone())
-                    .mime_str("application/octet-stream")?,
-            );
+            if let Some(data) = data {
+                *form = std::mem::take(form).part(
+                    format!("post.{}.attachments.{}", run_id, ref_name),
+                    Part::bytes(data.clone())
+                        .file_name(filename.clone())
+                        .mime_str("application/octet-stream")?,
+                );
+            }
         }
 
         Ok(())
@@ -188,12 +190,14 @@ impl RunProcessor {
         }
 
         for (ref_name, (filename, data)) in &run_with_attachments.attachments {
-            *form = std::mem::take(form).part(
-                format!("patch.{}.attachments.{}", run_id, ref_name),
-                Part::bytes(data.clone())
-                    .file_name(filename.clone())
-                    .mime_str("application/octet-stream")?,
-            );
+            if let Some(data) = data {
+                *form = std::mem::take(form).part(
+                    format!("patch.{}.attachments.{}", run_id, ref_name),
+                    Part::bytes(data.clone())
+                        .file_name(filename.clone())
+                        .mime_str("application/octet-stream")?,
+                );
+            }
         }
 
         Ok(())
