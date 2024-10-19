@@ -5,6 +5,7 @@ use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClie
 use mockito::{Matcher, Server};
 use std::collections::HashMap;
 use std::time::Duration;
+use serde::de::Unexpected::Option;
 
 #[tokio::test]
 async fn test_tracing_client_submit_run_create() {
@@ -58,14 +59,14 @@ async fn test_tracing_client_submit_run_create() {
                 inputs: serde_json::json!({"input": "value"}),
                 events: serde_json::json!([{ "event": "event_data" }]),
                 tags: serde_json::json!({"tag": "value"}),
+                session_id: None,
+                session_name: Some("Session Name".to_string()),
             },
             name: String::from("Run Name"),
             start_time: TimeValue::UnsignedInt(1697462400000),
             end_time: Some(TimeValue::UnsignedInt(1697466000000)),
             outputs: serde_json::json!({"output_key": "output_value"}),
             run_type: String::from("test_run_type"),
-            session_id: None,
-            session_name: None,
             reference_example_id: None,
         },
         attachments,
@@ -130,6 +131,8 @@ async fn test_tracing_client_submit_run_update() {
                 inputs: serde_json::json!({"input": "value"}),
                 events: serde_json::json!([{ "event": "event_data" }]),
                 tags: serde_json::json!({"tag": "value"}),
+                session_name: Some("Session Name".to_string()),
+                session_id: None,
             },
             end_time: TimeValue::UnsignedInt(1697462400000),
             outputs: Some(serde_json::json!({"output_key": "output_value"})),

@@ -24,6 +24,8 @@ pub struct RunCommon {
     pub inputs: serde_json::Value,
     pub events: serde_json::Value,
     pub tags: serde_json::Value,
+    pub session_id: Option<String>,
+    pub session_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -34,8 +36,6 @@ pub struct RunCreate {
     pub end_time: Option<TimeValue>,
     pub outputs: serde_json::Value,
     pub run_type: String,
-    pub session_id: Option<String>,
-    pub session_name: Option<String>,
     pub reference_example_id: Option<String>,
 }
 
