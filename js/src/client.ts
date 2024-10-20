@@ -1013,14 +1013,22 @@ export class Client {
       return;
     }
     // transform and convert to dicts
-    let preparedCreateParams =
-      runCreates?.map((create) =>
-        this.prepareRunCreateOrUpdateInputs(create)
-      ) ?? [];
-    let preparedUpdateParams =
-      runUpdates?.map((update) =>
-        this.prepareRunCreateOrUpdateInputs(update)
-      ) ?? [];
+    const allAttachments: Record<
+      string,
+      Record<string, [string, Uint8Array]>
+    > = {};
+    let preparedCreateParams = [];
+    for (const create of runCreates ?? []) {
+      preparedCreateParams.push(this.prepareRunCreateOrUpdateInputs(create));
+      if (create.id !== undefined && create.attachments !== undefined) {
+        allAttachments[create.id] = create.attachments;
+      }
+      delete create.attachments;
+    }
+    let preparedUpdateParams = [];
+    for (const update of runUpdates ?? []) {
+      preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
+    }
 
     // require trace_id and dotted_order
     const invalidRunCreate = preparedCreateParams.find((runCreate) => {
@@ -1107,7 +1115,23 @@ export class Client {
             }),
           });
         }
-
+        // encode the attachments
+        if (payload.id !== undefined) {
+          const attachments = allAttachments[payload.id];
+          if (attachments) {
+            delete allAttachments[payload.id];
+            for (const [name, [contentType, content]] of Object.entries(
+              attachments
+            )) {
+              accumulatedParts.push({
+                name: `attachment.${payload.id}.${name}`,
+                payload: new Blob([content], {
+                  type: `${contentType}; length=${content.length}`,
+                }),
+              });
+            }
+          }
+        }
         // compute context
         accumulatedContext.push(`trace=${payload.trace_id},id=${payload.id}`);
       }
@@ -1139,6 +1163,7 @@ export class Client {
       );
     } catch (e) {
       let errorMessage = "Failed to multipart ingest runs";
+      // eslint-disable-next-line no-instanceof/no-instanceof
       if (e instanceof Error) {
         errorMessage += `: ${e.stack || e.message}`;
       } else {
