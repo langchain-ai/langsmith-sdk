@@ -363,10 +363,17 @@ const handle429 = async (response?: Response) => {
 };
 
 export class Queue<T> {
-  items: [T, () => void, Promise<void>][] = [];
+  items: {
+    payload: T;
+    itemPromiseResolve: () => void;
+    itemPromise: Promise<void>;
+    size: number;
+  }[] = [];
 
-  get size() {
-    return this.items.length;
+  sizeBytes = 0;
+
+  peek() {
+    return this.items[0];
   }
 
   push(item: T): Promise<void> {
@@ -376,25 +383,48 @@ export class Queue<T> {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    this.items.push([item, itemPromiseResolve!, itemPromise]);
+    const size = stringifyForTracing(item).length;
+    this.items.push({
+      payload: item,
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      itemPromiseResolve: itemPromiseResolve!,
+      itemPromise,
+      size,
+    });
+    this.sizeBytes += size;
     return itemPromise;
   }
 
-  pop(upToN: number): [T[], () => void] {
-    if (upToN < 1) {
-      throw new Error("Number of items to pop off may not be less than 1.");
+  pop(upToSizeBytes: number): [T[], () => void] {
+    if (upToSizeBytes < 1) {
+      throw new Error("Number of bytes to pop off may not be less than 1.");
     }
     const popped: typeof this.items = [];
-    while (popped.length < upToN && this.items.length) {
+    let poppedSizeBytes = 0;
+    // Pop items until we reach or exceed the size limit
+    while (
+      poppedSizeBytes + (this.peek()?.size ?? 0) < upToSizeBytes &&
+      this.items.length > 0
+    ) {
       const item = this.items.shift();
       if (item) {
         popped.push(item);
-      } else {
-        break;
+        poppedSizeBytes += item.size;
+        this.sizeBytes -= item.size;
       }
     }
-    return [popped.map((it) => it[0]), () => popped.forEach((it) => it[1]())];
+    // If there is an item on the queue we were unable to pop,
+    // just return it as a single batch.
+    if (popped.length === 0 && this.items.length > 0) {
+      const item = this.items.shift()!;
+      popped.push(item);
+      poppedSizeBytes += item.size;
+      this.sizeBytes -= item.size;
+    }
+    return [
+      popped.map((it) => it.payload),
+      () => popped.forEach((it) => it.itemPromiseResolve()),
+    ];
   }
 }
 
@@ -633,6 +663,7 @@ export class Client {
       offset += items.length;
     }
   }
+
   private async *_getCursorPaginatedList<T>(
     path: string,
     body: RecordStringAny | null = null,
@@ -706,23 +737,30 @@ export class Client {
     }
   }
 
+  private async _getBatchSizeLimitBytes() {
+    if (this.serverInfo === undefined) {
+      try {
+        this.serverInfo = await this._getServerInfo();
+      } catch (e) {
+        this.serverInfo = {};
+      }
+    }
+    return (
+      this.serverInfo?.batch_ingest_config?.size_limit_bytes ??
+      DEFAULT_BATCH_SIZE_LIMIT_BYTES
+    );
+  }
+
   private async drainAutoBatchQueue() {
-    while (this.autoBatchQueue.size >= 0) {
+    while (this.autoBatchQueue.items.length >= 0) {
       const [batch, done] = this.autoBatchQueue.pop(
-        this.pendingAutoBatchedRunLimit
+        await this._getBatchSizeLimitBytes()
       );
       if (!batch.length) {
         done();
         return;
       }
       try {
-        if (this.serverInfo === undefined) {
-          try {
-            this.serverInfo = await this._getServerInfo();
-          } catch (e) {
-            this.serverInfo = {};
-          }
-        }
         const ingestParams = {
           runCreates: batch
             .filter((item) => item.action === "create")
@@ -752,11 +790,11 @@ export class Client {
     const itemPromise = this.autoBatchQueue.push(item);
     if (
       immediatelyTriggerBatch ||
-      this.autoBatchQueue.size > this.pendingAutoBatchedRunLimit
+      this.autoBatchQueue.items.length > this.pendingAutoBatchedRunLimit
     ) {
       await this.drainAutoBatchQueue().catch(console.error);
     }
-    if (this.autoBatchQueue.size > 0) {
+    if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(
         () => {
           this.autoBatchTimeout = undefined;
@@ -909,9 +947,7 @@ export class Client {
       }
       return;
     }
-    const sizeLimitBytes =
-      this.serverInfo?.batch_ingest_config?.size_limit_bytes ??
-      DEFAULT_BATCH_SIZE_LIMIT_BYTES;
+    const sizeLimitBytes = await this._getBatchSizeLimitBytes();
     const batchChunks = {
       post: [] as (typeof rawBatch)["post"],
       patch: [] as (typeof rawBatch)["patch"],
@@ -4078,7 +4114,7 @@ export class Client {
    */
   public awaitPendingTraceBatches() {
     return Promise.all(
-      this.autoBatchQueue.items.map(([, , promise]) => promise)
+      this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise)
     );
   }
 }

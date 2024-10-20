@@ -5,7 +5,44 @@ import { Client } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
-describe.each([["batch"], ["multipart"]])(
+const parseMockRequestBody = async (body: string | FormData) => {
+  if (typeof body === "string") {
+    return JSON.parse(body);
+  }
+  // Typing is missing
+  const entries: any[] = Array.from((body as any).entries());
+  const reconstructedBody: any = {
+    post: [],
+    patch: [],
+  };
+  for (const [key, value] of entries) {
+    const [method, id, type] = key.split(".");
+    const parsedValue = JSON.parse(await value.text());
+    if (!(method in reconstructedBody)) {
+      throw new Error(`${method} must be "post" or "patch"`);
+    }
+    if (!type) {
+      reconstructedBody[method as keyof typeof reconstructedBody].push(
+        parsedValue
+      );
+    } else {
+      for (const item of reconstructedBody[method]) {
+        if (item.id === id) {
+          item[type] = parsedValue;
+        }
+      }
+    }
+  }
+  return reconstructedBody;
+};
+
+// prettier-ignore
+const ENDPOINT_TYPES = [
+  "batch",
+  "multipart",
+];
+
+describe.each(ENDPOINT_TYPES)(
   "Batch client tracing with %s endpoint",
   (endpointType) => {
     const extraBatchIngestConfig =
@@ -14,6 +51,10 @@ describe.each([["batch"], ["multipart"]])(
         : {
             use_multipart_endpoint: true,
           };
+    const expectedTraceURL =
+      endpointType === "batch"
+        ? "https://api.smith.langchain.com/runs/batch"
+        : "https://api.smith.langchain.com/runs/multipart";
     it("should create a batched run with the given input", async () => {
       const client = new Client({
         apiKey: "test-api-key",
@@ -51,7 +92,7 @@ describe.each([["batch"], ["multipart"]])(
       await new Promise((resolve) => setTimeout(resolve, 300));
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
-      expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runId,
@@ -68,8 +109,10 @@ describe.each([["batch"], ["multipart"]])(
 
       expect(callSpy).toHaveBeenCalledWith(
         _getFetchImplementation(),
-        "https://api.smith.langchain.com/runs/batch",
-        expect.objectContaining({ body: expect.any(String) })
+        expectedTraceURL,
+        expect.objectContaining({
+          body: expect.any(endpointType === "batch" ? String : FormData),
+        })
       );
     });
 
@@ -159,7 +202,7 @@ describe.each([["batch"], ["multipart"]])(
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
-      expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runId,
@@ -180,8 +223,10 @@ describe.each([["batch"], ["multipart"]])(
 
       expect(callSpy).toHaveBeenCalledWith(
         _getFetchImplementation(),
-        "https://api.smith.langchain.com/runs/batch",
-        expect.objectContaining({ body: expect.any(String) })
+        expectedTraceURL,
+        expect.objectContaining({
+          body: expect.any(endpointType === "batch" ? String : FormData),
+        })
       );
     });
 
@@ -254,7 +299,7 @@ describe.each([["batch"], ["multipart"]])(
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       const calledRequestParam2: any = callSpy.mock.calls[1][2];
       const calledRequestParam3: any = callSpy.mock.calls[2][2];
-      expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runId,
@@ -269,7 +314,7 @@ describe.each([["batch"], ["multipart"]])(
         patch: [],
       });
 
-      expect(JSON.parse(calledRequestParam2?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
         post: [],
         patch: [
           expect.objectContaining({
@@ -283,7 +328,7 @@ describe.each([["batch"], ["multipart"]])(
           }),
         ],
       });
-      expect(JSON.parse(calledRequestParam3?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam3?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runId2,
@@ -334,10 +379,10 @@ describe.each([["batch"], ["multipart"]])(
         dotted_order: dottedOrder,
       });
 
-      expect((client as any).autoBatchQueue.size).toBe(1);
+      expect((client as any).autoBatchQueue.items.length).toBe(1);
       // Wait for first batch to send
       await new Promise((resolve) => setTimeout(resolve, 300));
-      expect((client as any).autoBatchQueue.size).toBe(0);
+      expect((client as any).autoBatchQueue.items.length).toBe(0);
 
       const endTime = Math.floor(new Date().getTime() / 1000);
 
@@ -367,14 +412,14 @@ describe.each([["batch"], ["multipart"]])(
       });
 
       // 2 runs in the queue
-      expect((client as any).autoBatchQueue.size).toBe(2);
+      expect((client as any).autoBatchQueue.items.length).toBe(2);
       await client.awaitPendingTraceBatches();
-      expect((client as any).autoBatchQueue.size).toBe(0);
+      expect((client as any).autoBatchQueue.items.length).toBe(0);
 
       expect(callSpy.mock.calls.length).toEqual(2);
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       const calledRequestParam2: any = callSpy.mock.calls[1][2];
-      expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runId,
@@ -389,7 +434,7 @@ describe.each([["batch"], ["multipart"]])(
         patch: [],
       });
 
-      expect(JSON.parse(calledRequestParam2?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runId2,
@@ -462,7 +507,7 @@ describe.each([["batch"], ["multipart"]])(
 
       // Queue should drain as soon as size limit is reached,
       // sending both batches
-      expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: runIds.slice(0, 10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -476,7 +521,7 @@ describe.each([["batch"], ["multipart"]])(
         patch: [],
       });
 
-      expect(JSON.parse(calledRequestParam2?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
         post: runIds.slice(10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -545,7 +590,7 @@ describe.each([["batch"], ["multipart"]])(
 
       // Queue should drain as soon as byte size limit of 1 is reached,
       // sending each call individually
-      expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runIds[0],
@@ -559,7 +604,7 @@ describe.each([["batch"], ["multipart"]])(
         patch: [],
       });
 
-      expect(JSON.parse(calledRequestParam2?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runIds[1],
@@ -573,7 +618,7 @@ describe.each([["batch"], ["multipart"]])(
         patch: [],
       });
 
-      expect(JSON.parse(calledRequestParam3?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam3?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runIds[2],
@@ -587,7 +632,7 @@ describe.each([["batch"], ["multipart"]])(
         patch: [],
       });
 
-      expect(JSON.parse(calledRequestParam4?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam4?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runIds[3],
@@ -636,7 +681,9 @@ describe.each([["batch"], ["multipart"]])(
       await new Promise((resolve) => setTimeout(resolve, 300));
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
-      expect(JSON.parse(calledRequestParam?.body)).toMatchObject({
+      expect(
+        await parseMockRequestBody(calledRequestParam?.body)
+      ).toMatchObject({
         id: runId,
         session_name: projectName,
         extra: expect.anything(),
@@ -651,7 +698,9 @@ describe.each([["batch"], ["multipart"]])(
       expect(callSpy).toHaveBeenCalledWith(
         _getFetchImplementation(),
         "https://api.smith.langchain.com/runs",
-        expect.objectContaining({ body: expect.any(String) })
+        expect.objectContaining({
+          body: expect.any(String),
+        })
       );
     });
 
@@ -705,7 +754,7 @@ describe.each([["batch"], ["multipart"]])(
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
-      expect(JSON.parse(calledRequestParam?.body)).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
             id: runId,
@@ -718,9 +767,17 @@ describe.each([["batch"], ["multipart"]])(
               },
             },
             outputs: {
-              a: {
-                result: "[Circular]",
-              },
+              a:
+                // Stringification happens at a different level
+                endpointType === "batch"
+                  ? {
+                      result: "[Circular]",
+                    }
+                  : {
+                      b: {
+                        result: "[Circular]",
+                      },
+                    },
             },
             end_time: endTime,
             trace_id: runId,
@@ -732,8 +789,10 @@ describe.each([["batch"], ["multipart"]])(
 
       expect(callSpy).toHaveBeenCalledWith(
         _getFetchImplementation(),
-        "https://api.smith.langchain.com/runs/batch",
-        expect.objectContaining({ body: expect.any(String) })
+        expectedTraceURL,
+        expect.objectContaining({
+          body: expect.any(endpointType === "batch" ? String : FormData),
+        })
       );
     });
   }
