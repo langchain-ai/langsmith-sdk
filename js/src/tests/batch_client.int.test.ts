@@ -58,7 +58,7 @@ test.concurrent(
     const langchainClient = new Client({
       autoBatchTracing: true,
       callerOptions: { maxRetries: 2 },
-      pendingAutoBatchedRunLimit: 2,
+      batchSizeBytesLimit: 1,
       timeout_ms: 30_000,
     });
     const projectName =
