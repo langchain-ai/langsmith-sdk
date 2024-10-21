@@ -1,4 +1,4 @@
-use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunUpdate, TimeValue};
+use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunUpdate, TimeValue, RunIO};
 use serde_json;
 
 #[test]
@@ -8,14 +8,17 @@ fn test_run_common() {
         trace_id: String::from("fedcba98-7654-3210-fedc-ba9876543210"),
         dotted_order: String::from("1.1"),
         parent_run_id: None,
-        extra: serde_json::json!({"extra_data": "value"}),
+        extra: Some(serde_json::json!({"extra_data": "value"})),
         error: Some(String::from("error message")),
-        serialized: serde_json::json!({"key": "value"}),
-        inputs: serde_json::json!({"input": "value"}),
+        serialized: Some(serde_json::json!({"key": "value"})),
         events: serde_json::json!([{ "event": "event_data" }]),
         tags: serde_json::json!({"tag": "value"}),
         session_id: Some("efghijkl-7654-3210-fedc-ba9876543210".to_string()),
         session_name: None,
+        io: RunIO {
+            inputs: serde_json::json!({"input": "value"}),
+            outputs: Some(serde_json::json!({"output": "value"})),
+        },
     };
 
     let serialized = serde_json::to_string(&run_common).unwrap();
@@ -30,14 +33,17 @@ fn test_run_create_with_string_time() {
         trace_id: String::from("fedcba98-7654-3210-fedc-ba9876543210"),
         dotted_order: String::from("1.1"),
         parent_run_id: None,
-        extra: serde_json::json!({"extra_data": "value"}),
+        extra: None,
         error: None,
-        serialized: serde_json::json!({"key": "value"}),
-        inputs: serde_json::json!({"input": "value"}),
+        serialized: None,
         events: serde_json::json!([{ "event": "event_data" }]),
         tags: serde_json::json!({"tag": "value"}),
         session_id: None,
         session_name: Some("Session Name".to_string()),
+        io: RunIO {
+            inputs: serde_json::json!({"input": "value"}),
+            outputs: Some(serde_json::json!({"output": "value"})),
+        }
     };
 
     let run_create = RunCreate {
@@ -45,7 +51,6 @@ fn test_run_create_with_string_time() {
         name: String::from("Run Name"),
         start_time: TimeValue::String("2024-10-16T12:00:00Z".to_string()),
         end_time: Some(TimeValue::String("2024-10-16T14:00:00Z".to_string())),
-        outputs: serde_json::json!({"output_key": "output_value"}),
         run_type: String::from("test_run_type"),
         reference_example_id: None,
     };
@@ -63,14 +68,17 @@ fn test_run_create_with_timestamp() {
         trace_id: String::from("fedcba98-7654-3210-fedc-ba9876543210"),
         dotted_order: String::from("1.1"),
         parent_run_id: None,
-        extra: serde_json::json!({"extra_data": "value"}),
+        extra: Some(serde_json::json!({"extra_data": "value"})),
         error: None,
-        serialized: serde_json::json!({"key": "value"}),
-        inputs: serde_json::json!({"input": "value"}),
+        serialized: Some(serde_json::json!({"key": "value"})),
         events: serde_json::json!([{ "event": "event_data" }]),
         tags: serde_json::json!({"tag": "value"}),
         session_id: None,
         session_name: None,
+        io: RunIO {
+            inputs: serde_json::json!({"input": "value"}),
+            outputs: None,
+        }
     };
 
     let run_create = RunCreate {
@@ -78,7 +86,6 @@ fn test_run_create_with_timestamp() {
         name: String::from("Run Name"),
         start_time: TimeValue::UnsignedInt(1697462400000),
         end_time: Some(TimeValue::UnsignedInt(1697466000000)),
-        outputs: serde_json::json!({"output_key": "output_value"}),
         run_type: String::from("test_run_type"),
         reference_example_id: None,
     };
@@ -96,14 +103,17 @@ fn test_run_update() {
         trace_id: String::from("fedcba98-7654-3210-fedc-ba9876543210"),
         dotted_order: String::from("1.1"),
         parent_run_id: None,
-        extra: serde_json::json!({"extra_data": "value"}),
+        extra: None,
         error: None,
-        serialized: serde_json::json!({"key": "value"}),
-        inputs: serde_json::json!({"input": "value"}),
+        serialized: None,
         events: serde_json::json!([]),
         tags: serde_json::json!({"tag": "value"}),
         session_id: None,
         session_name: None,
+        io: RunIO {
+            inputs: serde_json::json!({"input": "value"}),
+            outputs: None,
+        }
     };
 
     let run_update = RunUpdate {
