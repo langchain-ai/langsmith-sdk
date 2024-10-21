@@ -77,7 +77,7 @@ impl RunProcessor {
         &self,
         buffer: &mut Vec<QueuedRun>,
     ) -> Result<(), TracingClientError> {
-        if let Err(e) = self.send_batch(buffer).await {
+        if let Err(e) = self.send_batch(std::mem::take(buffer)).await {
             // todo: retry logic?
             eprintln!("Error sending batch: {}", e);
         }
@@ -85,7 +85,7 @@ impl RunProcessor {
         Ok(())
     }
 
-    async fn send_batch(&self, batch: &[QueuedRun]) -> Result<(), TracingClientError> {
+    async fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
         let mut form = Form::new();
 
         for queued_run in batch {
@@ -94,8 +94,8 @@ impl RunProcessor {
                     self.add_run_create_to_form(run_create_extended, &mut form)
                         .await?;
                 }
-                QueuedRun::Update(run_update_with_attachments) => {
-                    self.add_run_update_to_form(run_update_with_attachments, &mut form)
+                QueuedRun::Update(run_update_extended) => {
+                    self.add_run_update_to_form(run_update_extended, &mut form)
                         .await?;
                 }
                 QueuedRun::Shutdown => {
@@ -121,22 +121,17 @@ impl RunProcessor {
 
     async fn add_run_create_to_form(
         &self,
-        run_create_extended: &RunCreateExtended,
+        run_create_extended: RunCreateExtended,
         form: &mut Form,
     ) -> Result<(), TracingClientError> {
-        let run = &run_create_extended.run_create;
+        let run = run_create_extended.run_create;
         let run_id = &run.common.id;
-        let (inputs, outputs) = (
-            &run_create_extended.io.inputs,
-            &run_create_extended.io.outputs,
-        );
+        let inputs = run_create_extended.io.inputs;
+        let outputs = run_create_extended.io.outputs;
 
-        let (mut inputs_bytes, mut outputs_bytes, mut run_bytes) =
-            (Vec::new(), Vec::new(), Vec::new());
-
-        serde_json::to_writer(&mut inputs_bytes, inputs)?;
-        serde_json::to_writer(&mut outputs_bytes, outputs)?;
-        serde_json::to_writer(&mut run_bytes, run)?;
+        let inputs_bytes = serde_json::to_vec(&inputs)?;
+        let outputs_bytes = serde_json::to_vec(&outputs)?;
+        let run_bytes = serde_json::to_vec(&run)?;
 
         *form = std::mem::take(form).part(
             format!("post.{}", run_id),
@@ -153,23 +148,23 @@ impl RunProcessor {
             Part::bytes(outputs_bytes).mime_str("application/json")?,
         );
 
-        for attachment in &run_create_extended.attachments {
-            let ref_name = &attachment.ref_name;
-            let filename = &attachment.filename;
-            let data = &attachment.data;
-            let content_type = &attachment.content_type;
+        for attachment in run_create_extended.attachments {
+            let ref_name = attachment.ref_name;
+            let filename = attachment.filename;
+            let data = attachment.data;
+            let content_type = attachment.content_type;
 
             let part_name = format!("post.{}.attachments.{}", run_id, ref_name);
             if let Some(data) = data {
                 *form = std::mem::take(form).part(
                     part_name,
-                    Part::bytes(data.clone())
-                        .file_name(filename.clone())
-                        .mime_str(content_type)?,
+                    Part::bytes(data)
+                        .file_name(filename)
+                        .mime_str(&content_type)?,
                 );
             } else {
-                // Read the file from disk and stream it
-                let file_path = std::path::Path::new(filename);
+                // read the file from disk and stream it to avoid loading the entire file into memory
+                let file_path = std::path::Path::new(&filename);
                 let metadata = tokio::fs::metadata(file_path).await.map_err(|e| {
                     TracingClientError::IoError(format!("Failed to read file metadata: {}", e))
                 })?;
@@ -192,7 +187,7 @@ impl RunProcessor {
 
                 let part = Part::stream_with_length(body, file_size)
                     .file_name(file_name.into_owned())
-                    .mime_str(content_type)?;
+                    .mime_str(&content_type)?;
 
                 *form = std::mem::take(form).part(part_name, part);
             }
@@ -203,7 +198,7 @@ impl RunProcessor {
 
     async fn add_run_update_to_form(
         &self,
-        run_with_attachments: &RunUpdateExtended,
+        run_with_attachments: RunUpdateExtended,
         form: &mut Form,
     ) -> Result<(), TracingClientError> {
         let run = &run_with_attachments.run_update;
