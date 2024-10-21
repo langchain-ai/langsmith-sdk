@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable prefer-const */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client } from "../client.js";
@@ -16,8 +17,26 @@ const parseMockRequestBody = async (body: string | FormData) => {
     patch: [],
   };
   for (const [key, value] of entries) {
-    const [method, id, type] = key.split(".");
-    const parsedValue = JSON.parse(await value.text());
+    let [method, id, type] = key.split(".");
+    const text = await value.text();
+    let parsedValue;
+    try {
+      parsedValue = JSON.parse(text);
+    } catch (e) {
+      parsedValue = text;
+    }
+    // if (method === "attachment") {
+    //   for (const item of reconstructedBody.post) {
+    //     if (item.id === id) {
+    //       if (item.attachments === undefined) {
+    //         item.attachments = [];
+    //       }
+
+    //       item[type] = parsedValue;
+    //     }
+    //   }
+    //   return;
+    // }
     if (!(method in reconstructedBody)) {
       throw new Error(`${method} must be "post" or "patch"`);
     }
@@ -463,7 +482,7 @@ describe.each(ENDPOINT_TYPES)(
     it("should send traces above the batch size and see even batches", async () => {
       const client = new Client({
         apiKey: "test-api-key",
-        pendingAutoBatchedRunLimit: 10,
+        batchSizeBytesLimit: 10000,
         autoBatchTracing: true,
       });
       const callSpy = jest
@@ -487,7 +506,7 @@ describe.each(ENDPOINT_TYPES)(
             new Date().getTime() / 1000,
             runId
           );
-          await client.createRun({
+          const params = {
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
@@ -495,7 +514,12 @@ describe.each(ENDPOINT_TYPES)(
             inputs: { text: "hello world " + i },
             trace_id: runId,
             dotted_order: dottedOrder,
-          });
+          };
+          // Allow some extra space for other request properties
+          const mockRunSize = 850;
+          const padCount = mockRunSize - JSON.stringify(params).length;
+          params.inputs.text = params.inputs.text + "x".repeat(padCount);
+          await client.createRun(params);
           return runId;
         })
       );
@@ -513,7 +537,7 @@ describe.each(ENDPOINT_TYPES)(
             id: runId,
             run_type: "llm",
             inputs: {
-              text: "hello world " + i,
+              text: expect.stringContaining("hello world " + i),
             },
             trace_id: runId,
           })
@@ -527,7 +551,7 @@ describe.each(ENDPOINT_TYPES)(
             id: runId,
             run_type: "llm",
             inputs: {
-              text: "hello world " + (i + 10),
+              text: expect.stringContaining("hello world " + (i + 10)),
             },
             trace_id: runId,
           })
@@ -536,10 +560,10 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
-    it("should send traces above the batch size limit in bytes and see even batches", async () => {
+    it("a very low batch size limit should be equivalent to single calls", async () => {
       const client = new Client({
         apiKey: "test-api-key",
-        pendingAutoBatchedRunLimit: 10,
+        batchSizeBytesLimit: 1,
         autoBatchTracing: true,
       });
       const callSpy = jest
@@ -553,7 +577,6 @@ describe.each(ENDPOINT_TYPES)(
           version: "foo",
           batch_ingest_config: {
             ...extraBatchIngestConfig,
-            size_limit_bytes: 1,
           },
         };
       });

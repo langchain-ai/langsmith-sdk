@@ -72,7 +72,7 @@ export interface ClientConfig {
   hideInputs?: boolean | ((inputs: KVMap) => KVMap);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
-  pendingAutoBatchedRunLimit?: number;
+  batchSizeBytesLimit?: number;
   blockOnRootRunFinalization?: boolean;
   fetchOptions?: RequestInit;
 }
@@ -238,6 +238,7 @@ interface CreateRunParams {
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
+  attachments?: Record<string, [string, Uint8Array]>;
 }
 
 interface UpdateRunParams extends RunUpdate {
@@ -281,28 +282,26 @@ type MultipartPart = {
   payload: Blob;
 };
 
-async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
-  const runtimeEnv = await getRuntimeEnvironment();
+function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
+  const runtimeEnv = getRuntimeEnvironment();
   const envVars = getLangChainEnvVarsMetadata();
-  return runs.map((run) => {
-    const extra = run.extra ?? {};
-    const metadata = extra.metadata;
-    run.extra = {
-      ...extra,
-      runtime: {
-        ...runtimeEnv,
-        ...extra?.runtime,
-      },
-      metadata: {
-        ...envVars,
-        ...(envVars.revision_id || run.revision_id
-          ? { revision_id: run.revision_id ?? envVars.revision_id }
-          : {}),
-        ...metadata,
-      },
-    };
-    return run;
-  });
+  const extra = run.extra ?? {};
+  const metadata = extra.metadata;
+  run.extra = {
+    ...extra,
+    runtime: {
+      ...runtimeEnv,
+      ...extra?.runtime,
+    },
+    metadata: {
+      ...envVars,
+      ...(envVars.revision_id || run.revision_id
+        ? { revision_id: run.revision_id ?? envVars.revision_id }
+        : {}),
+      ...metadata,
+    },
+  };
+  return run;
 }
 
 const getTracingSamplingRate = () => {
@@ -362,9 +361,10 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
-export class Queue<T> {
+export class Queue {
   items: {
-    payload: T;
+    action: "create" | "update";
+    payload: RunCreate | RunUpdate;
     itemPromiseResolve: () => void;
     itemPromise: Promise<void>;
     size: number;
@@ -376,16 +376,17 @@ export class Queue<T> {
     return this.items[0];
   }
 
-  push(item: T): Promise<void> {
+  push(item: AutoBatchQueueItem): Promise<void> {
     let itemPromiseResolve;
     const itemPromise = new Promise<void>((resolve) => {
       // Setting itemPromiseResolve is synchronous with promise creation:
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = stringifyForTracing(item).length;
+    const size = stringifyForTracing(item.item).length;
     this.items.push({
-      payload: item,
+      action: item.action,
+      payload: item.item,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -395,7 +396,7 @@ export class Queue<T> {
     return itemPromise;
   }
 
-  pop(upToSizeBytes: number): [T[], () => void] {
+  pop(upToSizeBytes: number): [AutoBatchQueueItem[], () => void] {
     if (upToSizeBytes < 1) {
       throw new Error("Number of bytes to pop off may not be less than 1.");
     }
@@ -422,7 +423,7 @@ export class Queue<T> {
       this.sizeBytes -= item.size;
     }
     return [
-      popped.map((it) => it.payload),
+      popped.map((it) => ({ action: it.action, item: it.payload })),
       () => popped.forEach((it) => it.itemPromiseResolve()),
     ];
   }
@@ -456,9 +457,7 @@ export class Client {
 
   private autoBatchTracing = true;
 
-  private autoBatchQueue = new Queue<AutoBatchQueueItem>();
-
-  private pendingAutoBatchedRunLimit = 100;
+  private autoBatchQueue = new Queue();
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -466,13 +465,18 @@ export class Client {
 
   private autoBatchAggregationDelayMs = 50;
 
-  private serverInfo: RecordStringAny | undefined;
+  private batchSizeBytesLimit?: number;
 
   private fetchOptions: RequestInit;
 
   private settings: Promise<LangSmithSettings> | null;
 
   private blockOnRootRunFinalization = true;
+
+  private _serverInfo: RecordStringAny | undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private getServerInfoPromise: Promise<Record<string, any>>;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
@@ -502,8 +506,7 @@ export class Client {
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.blockOnRootRunFinalization =
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
-    this.pendingAutoBatchedRunLimit =
-      config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
+    this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
   }
 
@@ -629,6 +632,7 @@ export class Client {
     const response = await this._getResponse(path, queryParams);
     return response.json() as T;
   }
+
   private async *_getPaginated<T, TResponse = unknown>(
     path: string,
     queryParams: URLSearchParams = new URLSearchParams(),
@@ -738,15 +742,10 @@ export class Client {
   }
 
   private async _getBatchSizeLimitBytes() {
-    if (this.serverInfo === undefined) {
-      try {
-        this.serverInfo = await this._getServerInfo();
-      } catch (e) {
-        this.serverInfo = {};
-      }
-    }
+    const serverInfo = await this._ensureServerInfo();
     return (
-      this.serverInfo?.batch_ingest_config?.size_limit_bytes ??
+      this.batchSizeBytesLimit ??
+      serverInfo.batch_ingest_config?.size_limit_bytes ??
       DEFAULT_BATCH_SIZE_LIMIT_BYTES
     );
   }
@@ -769,7 +768,8 @@ export class Client {
             .filter((item) => item.action === "update")
             .map((item) => item.item) as RunUpdate[],
         };
-        if (this.serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        const serverInfo = await this._ensureServerInfo();
+        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
           await this.multipartIngestRuns(ingestParams);
         } else {
           await this.batchIngestRuns(ingestParams);
@@ -787,10 +787,14 @@ export class Client {
     const oldTimeout = this.autoBatchTimeout;
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
+    if (item.action === "create") {
+      item.item = mergeRuntimeEnvIntoRunCreate(item.item as RunCreate);
+    }
     const itemPromise = this.autoBatchQueue.push(item);
+    const sizeLimitBytes = await this._getBatchSizeLimitBytes();
     if (
       immediatelyTriggerBatch ||
-      this.autoBatchQueue.items.length > this.pendingAutoBatchedRunLimit
+      this.autoBatchQueue.sizeBytes > sizeLimitBytes
     ) {
       await this.drainAutoBatchQueue().catch(console.error);
     }
@@ -819,6 +823,22 @@ export class Client {
     });
     await raiseForStatus(response, "get server info");
     return response.json();
+  }
+
+  protected async _ensureServerInfo() {
+    if (this.getServerInfoPromise === undefined) {
+      this.getServerInfoPromise = (async () => {
+        if (this._serverInfo === undefined) {
+          try {
+            this._serverInfo = await this._getServerInfo();
+          } catch (e) {
+            this._serverInfo = {};
+          }
+        }
+        return this._serverInfo ?? {};
+      })();
+    }
+    return this.getServerInfoPromise;
   }
 
   protected async _getSettings() {
@@ -853,9 +873,7 @@ export class Client {
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParams = await mergeRuntimeEnvIntoRunCreates([
-      runCreate,
-    ]);
+    const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
 
     const response = await this.caller.call(
       _getFetchImplementation(),
@@ -863,7 +881,7 @@ export class Client {
       {
         method: "POST",
         headers,
-        body: stringifyForTracing(mergedRunCreateParams[0]),
+        body: stringifyForTracing(mergedRunCreateParam),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -926,13 +944,8 @@ export class Client {
     if (!rawBatch.post.length && !rawBatch.patch.length) {
       return;
     }
-    preparedCreateParams = await mergeRuntimeEnvIntoRunCreates(
-      preparedCreateParams
-    );
-    if (this.serverInfo === undefined) {
-      this.serverInfo = await this._getServerInfo();
-    }
-    if (this.serverInfo?.version === undefined) {
+    const serverInfo = await this._ensureServerInfo();
+    if (serverInfo.version === undefined) {
       this.autoBatchTracing = false;
       for (const preparedCreateParam of rawBatch.post) {
         await this.createRun(preparedCreateParam as CreateRunParams);
@@ -947,28 +960,15 @@ export class Client {
       }
       return;
     }
-    const sizeLimitBytes = await this._getBatchSizeLimitBytes();
     const batchChunks = {
       post: [] as (typeof rawBatch)["post"],
       patch: [] as (typeof rawBatch)["patch"],
     };
-    let currentBatchSizeBytes = 0;
     for (const k of ["post", "patch"]) {
       const key = k as keyof typeof rawBatch;
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        const stringifiedBatchItem = stringifyForTracing(batchItem);
-        if (
-          currentBatchSizeBytes > 0 &&
-          currentBatchSizeBytes + stringifiedBatchItem.length > sizeLimitBytes
-        ) {
-          await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
-          currentBatchSizeBytes = 0;
-          batchChunks.post = [];
-          batchChunks.patch = [];
-        }
-        currentBatchSizeBytes += stringifiedBatchItem.length;
         batchChunks[key].push(batchItem);
         batchItem = batchItems.pop();
       }
@@ -1025,6 +1025,7 @@ export class Client {
       }
       delete create.attachments;
     }
+
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
       preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
