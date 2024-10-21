@@ -432,6 +432,8 @@ export class Queue {
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
+const SERVER_INFO_REQUEST_TIMEOUT = 1000;
+
 export class Client {
   private apiKey?: string;
 
@@ -818,7 +820,7 @@ export class Client {
     const response = await _getFetchImplementation()(`${this.apiUrl}/info`, {
       method: "GET",
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(this.timeout_ms),
+      signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
       ...this.fetchOptions,
     });
     await raiseForStatus(response, "get server info");
