@@ -2,11 +2,7 @@ import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
 import type { ExportResult } from "@opentelemetry/core";
 import type { CoreAssistantMessage, CoreMessage, ToolCallPart } from "ai";
 import type { AISDKSpan } from "./exporter.types.js";
-import type {
-  BaseMessageFields,
-  MessageContentText,
-} from "@langchain/core/messages";
-import { Client, ClientConfig, RunTree, RunTreeConfig } from "../../index.js";
+import { Client, RunTree, RunTreeConfig } from "../../index.js";
 import { KVMap } from "../../schemas.js";
 import { AsyncLocalStorageProviderSingleton } from "../../singletons/traceable.js";
 
@@ -14,14 +10,54 @@ function assertNever(x: never): never {
   throw new Error("Unreachable state: " + x);
 }
 
-// TODO: remove dependency on @langchain/core
-type $SmithMessage = { type: string; data: BaseMessageFields } | CoreMessage;
+// eslint-disable-next-line @typescript-eslint/ban-types
+type AnyString = string & {};
 
+type LangChainMessageFields = {
+  content:
+    | string
+    | Array<
+        | { type: "text"; text: string }
+        | {
+            type: "image_url";
+            image_url:
+              | string
+              | {
+                  url: string;
+                  detail?: "auto" | "low" | "high" | AnyString;
+                };
+          }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        | (Record<string, any> & { type?: "text" | "image_url" | string })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        | (Record<string, any> & { type?: never })
+      >;
+  name?: string;
+  id?: string;
+  additional_kwargs?: {
+    tool_calls?: {
+      id: string;
+      function: { arguments: string; name: string };
+      type: "function";
+      index?: number;
+    }[];
+    [key: string]: unknown;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  response_metadata?: Record<string, any>;
+};
+type LangChainLikeMessage = { type: string; data: LangChainMessageFields };
+
+// Attempt to convert CoreMessage to a LangChain-compatible format
+// which allows us to render messages more nicely in LangSmith
 function convertCoreToSmith(
   message: CoreMessage
-): $SmithMessage | $SmithMessage[] {
+):
+  | LangChainLikeMessage
+  | CoreMessage
+  | Array<LangChainLikeMessage | CoreMessage> {
   if (message.role === "assistant") {
-    const data: BaseMessageFields = { content: message.content };
+    const data: LangChainMessageFields = { content: message.content };
 
     if (Array.isArray(message.content)) {
       data.content = message.content.map((part) => {
@@ -29,7 +65,8 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-          } satisfies MessageContentText;
+            ...part.experimental_providerMetadata,
+          };
         }
 
         if (part.type === "tool-call") {
@@ -38,6 +75,7 @@ function convertCoreToSmith(
             name: part.toolName,
             id: part.toolCallId,
             input: part.args,
+            ...part.experimental_providerMetadata,
           };
         }
 
@@ -68,8 +106,31 @@ function convertCoreToSmith(
   }
 
   if (message.role === "user") {
-    // TODO: verify user content
-    return { type: "human", data: { content: message.content } };
+    const data: LangChainMessageFields = { content: message.content };
+
+    if (Array.isArray(message.content)) {
+      data.content = message.content.map((part) => {
+        if (part.type === "text") {
+          return {
+            type: "text",
+            text: part.text,
+            ...part.experimental_providerMetadata,
+          };
+        }
+
+        if (part.type === "image") {
+          return {
+            type: "image_url",
+            image_url: part.image,
+            ...part.experimental_providerMetadata,
+          };
+        }
+
+        return part;
+      });
+    }
+
+    return { type: "human", data };
   }
 
   if (message.role === "system") {
@@ -91,7 +152,7 @@ function convertCoreToSmith(
     return res;
   }
 
-  return message as any;
+  return message;
 }
 
 const tryJson = (
