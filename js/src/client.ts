@@ -282,7 +282,7 @@ type MultipartPart = {
   payload: Blob;
 };
 
-function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
+export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
   const runtimeEnv = getRuntimeEnvironment();
   const envVars = getLangChainEnvVarsMetadata();
   const extra = run.extra ?? {};

@@ -2,9 +2,10 @@
 /* eslint-disable prefer-const */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
-import { Client } from "../client.js";
+import { Client, mergeRuntimeEnvIntoRunCreate } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
+import { RunCreate } from "../schemas.js";
 
 const parseMockRequestBody = async (body: string | FormData) => {
   if (typeof body === "string") {
@@ -506,7 +507,7 @@ describe.each(ENDPOINT_TYPES)(
             new Date().getTime() / 1000,
             runId
           );
-          const params = {
+          const params = mergeRuntimeEnvIntoRunCreate({
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
@@ -514,9 +515,9 @@ describe.each(ENDPOINT_TYPES)(
             inputs: { text: "hello world " + i },
             trace_id: runId,
             dotted_order: dottedOrder,
-          };
+          } as RunCreate);
           // Allow some extra space for other request properties
-          const mockRunSize = 850;
+          const mockRunSize = 950;
           const padCount = mockRunSize - JSON.stringify(params).length;
           params.inputs.text = params.inputs.text + "x".repeat(padCount);
           await client.createRun(params);
