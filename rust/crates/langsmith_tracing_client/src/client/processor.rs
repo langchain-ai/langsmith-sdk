@@ -81,7 +81,6 @@ impl RunProcessor {
             // todo: retry logic?
             eprintln!("Error sending batch: {}", e);
         }
-        buffer.clear();
         Ok(())
     }
 
@@ -259,9 +258,6 @@ impl RunProcessor {
                     })?
                     .to_string_lossy()
                     .to_string();
-
-                println!("file_name: {:?}", file_name);
-
                 let part = Part::stream_with_length(body, file_size)
                     .file_name(file_name)
                     .mime_str(content_type)?;
