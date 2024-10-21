@@ -121,10 +121,10 @@ const sortByHrTime = (a: ReadableSpan, b: ReadableSpan) => {
 };
 
 export class LangSmithAISDKExporter implements SpanExporter {
-  private client: Client;
+  private client: Client | undefined;
 
-  constructor(config?: ClientConfig) {
-    this.client = new Client(config);
+  constructor(args?: { client?: Client }) {
+    this.client = args?.client;
   }
 
   export(
@@ -184,7 +184,11 @@ export class LangSmithAISDKExporter implements SpanExporter {
           ),
           client: this.client,
         };
-        return parentRunTree?.createChild(config) ?? new RunTree(config);
+        const runTree =
+          parentRunTree?.createChild(config) ?? new RunTree(config);
+        this.client ??= runTree.client;
+
+        return runTree;
       };
 
       switch (span.name) {
@@ -406,9 +410,9 @@ export class LangSmithAISDKExporter implements SpanExporter {
   }
 
   async shutdown(): Promise<void> {
-    // pass
+    await this.client?.awaitPendingTraceBatches();
   }
   async forceFlush?(): Promise<void> {
-    // pass
+    await this.client?.awaitPendingTraceBatches();
   }
 }
