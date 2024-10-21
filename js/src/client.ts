@@ -476,7 +476,7 @@ export class Client {
   private _serverInfo: RecordStringAny | undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private getServerInfoPromise: Promise<Record<string, any>>;
+  private _getServerInfoPromise?: Promise<Record<string, any>>;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
@@ -826,19 +826,26 @@ export class Client {
   }
 
   protected async _ensureServerInfo() {
-    if (this.getServerInfoPromise === undefined) {
-      this.getServerInfoPromise = (async () => {
+    if (this._getServerInfoPromise === undefined) {
+      this._getServerInfoPromise = (async () => {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
           } catch (e) {
-            this._serverInfo = {};
+            console.warn(
+              `[WARNING]: LangSmith failed to fetch info on supported operations. Falling back to single calls and default limits.`
+            );
           }
         }
         return this._serverInfo ?? {};
       })();
     }
-    return this.getServerInfoPromise;
+    return this._getServerInfoPromise.then((serverInfo) => {
+      if (this._serverInfo === undefined) {
+        this._getServerInfoPromise = undefined;
+      }
+      return serverInfo;
+    });
   }
 
   protected async _getSettings() {
