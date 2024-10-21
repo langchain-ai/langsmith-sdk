@@ -1,4 +1,4 @@
-use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunUpdate, TimeValue, RunIO};
+use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunIO, RunUpdate, TimeValue};
 use serde_json;
 
 #[test]
@@ -15,10 +15,6 @@ fn test_run_common() {
         tags: serde_json::json!({"tag": "value"}),
         session_id: Some("efghijkl-7654-3210-fedc-ba9876543210".to_string()),
         session_name: None,
-        io: RunIO {
-            inputs: serde_json::json!({"input": "value"}),
-            outputs: Some(serde_json::json!({"output": "value"})),
-        },
     };
 
     let serialized = serde_json::to_string(&run_common).unwrap();
@@ -40,10 +36,6 @@ fn test_run_create_with_string_time() {
         tags: serde_json::json!({"tag": "value"}),
         session_id: None,
         session_name: Some("Session Name".to_string()),
-        io: RunIO {
-            inputs: serde_json::json!({"input": "value"}),
-            outputs: Some(serde_json::json!({"output": "value"})),
-        }
     };
 
     let run_create = RunCreate {
@@ -75,10 +67,6 @@ fn test_run_create_with_timestamp() {
         tags: serde_json::json!({"tag": "value"}),
         session_id: None,
         session_name: None,
-        io: RunIO {
-            inputs: serde_json::json!({"input": "value"}),
-            outputs: None,
-        }
     };
 
     let run_create = RunCreate {
@@ -110,16 +98,11 @@ fn test_run_update() {
         tags: serde_json::json!({"tag": "value"}),
         session_id: None,
         session_name: None,
-        io: RunIO {
-            inputs: serde_json::json!({"input": "value"}),
-            outputs: None,
-        }
     };
 
     let run_update = RunUpdate {
         common: run_common,
         end_time: TimeValue::String("2024-10-16T14:00:00Z".to_string()),
-        outputs: Some(serde_json::json!({"output_key": "output_value"})),
     };
 
     let serialized = serde_json::to_string(&run_update).unwrap();

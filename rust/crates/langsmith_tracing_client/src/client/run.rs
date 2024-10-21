@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // Map attachment ref to tuple of filename, optional bytes
 pub struct Attachment {
+    pub ref_name: String,
     pub filename: String,
     pub data: Option<Vec<u8>>,
     pub content_type: String,
@@ -16,7 +16,7 @@ pub enum TimeValue {
     UnsignedInt(u64),
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
 pub struct RunIO {
     pub inputs: serde_json::Value,
     pub outputs: Option<serde_json::Value>,
@@ -35,11 +35,11 @@ pub struct RunCommon {
     pub tags: serde_json::Value,
     pub session_id: Option<String>,
     pub session_name: Option<String>,
-    pub io: RunIO,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RunCreate {
+    #[serde(flatten)]
     pub common: RunCommon,
     pub name: String,
     pub start_time: TimeValue,
@@ -50,23 +50,25 @@ pub struct RunCreate {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RunUpdate {
+    #[serde(flatten)]
     pub common: RunCommon,
     pub end_time: TimeValue,
-    pub outputs: Option<serde_json::Value>,
 }
 
-pub struct RunCreateWithAttachments {
+pub struct RunCreateExtended {
     pub run_create: RunCreate,
-    pub attachments: HashMap<String, Attachment>,
+    pub io: RunIO,
+    pub attachments: Vec<Attachment>,
 }
 
-pub struct RunUpdateWithAttachments {
+pub struct RunUpdateExtended {
     pub run_update: RunUpdate,
-    pub attachments: HashMap<String, Attachment>,
+    pub io: RunIO,
+    pub attachments: Vec<Attachment>,
 }
 
-pub enum QueuedRun<'a> {
-    Create(&'a RunCreateWithAttachments),
-    Update(&'a RunUpdateWithAttachments),
+pub enum QueuedRun {
+    Create(RunCreateExtended),
+    Update(RunUpdateExtended),
     Shutdown,
 }

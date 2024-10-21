@@ -1,7 +1,7 @@
 use crate::client::errors::TracingClientError;
 use crate::client::processor::RunProcessor;
 use crate::client::run::QueuedRun;
-use crate::client::run::{RunCreateWithAttachments, RunUpdateWithAttachments};
+use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use std::time::Duration;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
@@ -37,7 +37,7 @@ impl TracingClient {
 
     pub async fn submit_run_create(
         &self,
-        run: RunCreateWithAttachments,
+        run: RunCreateExtended,
     ) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Create(run);
 
@@ -49,7 +49,7 @@ impl TracingClient {
 
     pub async fn submit_run_update(
         &self,
-        run: RunUpdateWithAttachments,
+        run: RunUpdateExtended,
     ) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Update(run);
 
