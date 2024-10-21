@@ -250,6 +250,87 @@ describe.each(ENDPOINT_TYPES)(
       );
     });
 
+    it("server info fetch should retry even if initial call fails", async () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        autoBatchTracing: true,
+      });
+      const callSpy = jest
+        .spyOn((client as any).batchIngestCaller, "call")
+        .mockResolvedValue({
+          ok: true,
+          text: () => "",
+        });
+      let serverInfoFailedOnce = false;
+      jest.spyOn(client as any, "_getServerInfo").mockImplementationOnce(() => {
+        serverInfoFailedOnce = true;
+        throw new Error("[MOCK] Connection error.");
+      });
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+        };
+      });
+      const projectName = "__test_batch";
+
+      const runId = uuidv4();
+      const dottedOrder = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      const endTime = Math.floor(new Date().getTime() / 1000);
+
+      await client.updateRun(runId, {
+        outputs: { output: ["Hi"] },
+        dotted_order: dottedOrder,
+        trace_id: runId,
+        end_time: endTime,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(serverInfoFailedOnce).toBe(true);
+
+      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+        post: [
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: {
+              text: "hello world",
+            },
+            outputs: {
+              output: ["Hi"],
+            },
+            end_time: endTime,
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          }),
+        ],
+        patch: [],
+      });
+
+      expect(callSpy).toHaveBeenCalledWith(
+        _getFetchImplementation(),
+        expectedTraceURL,
+        expect.objectContaining({
+          body: expect.any(endpointType === "batch" ? String : FormData),
+        })
+      );
+    });
+
     it("should immediately trigger a batch on root run end", async () => {
       const client = new Client({
         apiKey: "test-api-key",
