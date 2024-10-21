@@ -8,8 +8,101 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
 // use tokio::io::AsyncWriteExt;
-use std::io::{self, Write};
+use multipart::server::Multipart;
+use std::io::{self, Read, Write};
 use tempfile::TempDir;
+
+#[derive(Debug)]
+struct MultipartField {
+    name: String,
+    content_type: Option<String>,
+    filename: Option<String>,
+    data: String,
+}
+
+fn handle_request(req: &mockito::Request) -> Vec<MultipartField> {
+    let body = req.body().unwrap();
+
+    let content_type_headers = req.header("content-type");
+    let content_type_str: String = content_type_headers
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .collect::<Vec<&str>>()
+        .join(", ");
+
+    assert!(content_type_str.starts_with("multipart/form-data"));
+
+    let boundary = content_type_str.split("boundary=").nth(1).unwrap();
+    let mut mp = Multipart::with_body(body.as_slice(), boundary);
+
+    let mut fields = Vec::new();
+
+    while let Some(mut field) = mp.read_entry().unwrap() {
+        let field_name = field.headers.name.to_string();
+        let field_content_type = field.headers.content_type.map(|ct| ct.to_string());
+        let field_filename = field.headers.filename.map(String::from);
+
+        let mut content = String::new();
+        field.data.read_to_string(&mut content).unwrap();
+
+        let multipart_field = MultipartField {
+            name: field_name,
+            content_type: field_content_type,
+            filename: field_filename,
+            data: content,
+        };
+
+        fields.push(multipart_field);
+    }
+
+    fields
+}
+
+fn create_run_create_with_attachments() -> RunCreateWithAttachments {
+    let mut attachments = HashMap::new();
+    attachments.insert(
+        "attachment_1".to_string(),
+        Attachment {
+            filename: "file1.txt".to_string(),
+            data: Some(vec![1, 2, 3]),
+            content_type: "application/octet-stream".to_string(),
+        },
+    );
+    attachments.insert(
+        "attachment_2".to_string(),
+        Attachment {
+            filename: "test_file_create.txt".to_string(),
+            data: None, // this will cause the processor to read from disk
+            content_type: "text/plain".to_string(),
+        },
+    );
+
+    RunCreateWithAttachments {
+        run_create: RunCreate {
+            common: RunCommon {
+                id: String::from("test_id"),
+                trace_id: String::from("trace_id"),
+                dotted_order: String::from("1.1"),
+                parent_run_id: None,
+                extra: serde_json::json!({"extra_data": "value"}),
+                error: None,
+                serialized: serde_json::json!({"key": "value"}),
+                inputs: serde_json::json!({"input": "value"}),
+                events: serde_json::json!([{ "event": "event_data" }]),
+                tags: serde_json::json!({"tag": "value"}),
+                session_id: None,
+                session_name: Some("Session Name".to_string()),
+            },
+            name: String::from("Run Name"),
+            start_time: TimeValue::UnsignedInt(1697462400000),
+            end_time: Some(TimeValue::UnsignedInt(1697466000000)),
+            outputs: serde_json::json!({"output_key": "output_value"}),
+            run_type: String::from("test_run_type"),
+            reference_example_id: None,
+        },
+        attachments,
+    }
+}
 
 #[tokio::test]
 async fn test_tracing_client_submit_run_create() {
@@ -20,12 +113,19 @@ async fn test_tracing_client_submit_run_create() {
         .mock("POST", "/")
         .with_status(200)
         .with_body_from_request(move |req| {
-            let body = req.body().unwrap();
-            // print it as a utf-8 string
-            println!(
-                "Captured body: {:?}",
-                String::from_utf8(body.to_vec()).unwrap()
-            );
+            let fields = handle_request(req);
+
+            assert_eq!(fields.len(), 4);
+            assert_eq!(fields[0].name, "post.test_id");
+            assert_eq!(fields[0].content_type, Some("application/json".to_string()));
+            assert_eq!(fields[0].filename, None);
+            // HELP ME WRITE ASSERTIONS FOR THE DATA
+
+            let received_run: RunCreate = serde_json::from_str(&fields[0].data).unwrap();
+            let expected_run = create_run_create_with_attachments();
+            let expected_run_create = expected_run.run_create;
+            assert_eq!(received_run, expected_run_create);
+
             vec![0]
         })
         .create_async()
@@ -64,31 +164,7 @@ async fn test_tracing_client_submit_run_create() {
         },
     );
 
-    let run_create = RunCreateWithAttachments {
-        run_create: RunCreate {
-            common: RunCommon {
-                id: String::from("test_id"),
-                trace_id: String::from("trace_id"),
-                dotted_order: String::from("1.1"),
-                parent_run_id: None,
-                extra: serde_json::json!({"extra_data": "value"}),
-                error: None,
-                serialized: serde_json::json!({"key": "value"}),
-                inputs: serde_json::json!({"input": "value"}),
-                events: serde_json::json!([{ "event": "event_data" }]),
-                tags: serde_json::json!({"tag": "value"}),
-                session_id: None,
-                session_name: Some("Session Name".to_string()),
-            },
-            name: String::from("Run Name"),
-            start_time: TimeValue::UnsignedInt(1697462400000),
-            end_time: Some(TimeValue::UnsignedInt(1697466000000)),
-            outputs: serde_json::json!({"output_key": "output_value"}),
-            run_type: String::from("test_run_type"),
-            reference_example_id: None,
-        },
-        attachments,
-    };
+    let run_create = create_run_create_with_attachments();
 
     client.submit_run_create(run_create).await.unwrap();
 

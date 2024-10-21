@@ -14,3 +14,6 @@ thiserror = "1.0"
 mockito = "1.5.0"
 tokio-util = "0.7.12"
 tempfile = "3.13.0"
+
+[dev-dependencies]
+multipart = "0.18.0"
