@@ -9,14 +9,14 @@ pub struct Attachment {
 }
 
 // Must support both string (Py) and unsigned int (JS)
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(untagged)]
 pub enum TimeValue {
     String(String),
     UnsignedInt(u64),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RunCommon {
     pub id: String,
     pub trace_id: String,
@@ -32,7 +32,7 @@ pub struct RunCommon {
     pub session_name: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RunCreate {
     pub common: RunCommon,
     pub name: String,
@@ -43,7 +43,7 @@ pub struct RunCreate {
     pub reference_example_id: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RunUpdate {
     pub common: RunCommon,
     pub end_time: TimeValue,
