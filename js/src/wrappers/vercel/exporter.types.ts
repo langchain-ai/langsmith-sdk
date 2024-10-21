@@ -176,7 +176,6 @@ export type EmbedSpan = TypedReadableSpan<
     "operation.name": "ai.embed";
     "ai.operationId": "ai.embed";
 
-    // TODO: is this correct?
     "ai.value": string;
     "ai.embedding": string;
   }

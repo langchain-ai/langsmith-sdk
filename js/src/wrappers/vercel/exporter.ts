@@ -383,7 +383,7 @@ export class LangSmithAISDKExporter implements SpanExporter {
             }
 
             if ("ai.prompt" in span.attributes) {
-              return { input: span.attributes["ai.prompt"] };
+              return { input: tryJson(span.attributes["ai.prompt"]) };
             }
 
             return undefined;
@@ -440,8 +440,8 @@ export class LangSmithAISDKExporter implements SpanExporter {
           runTreeMap[spanId] = toRunTree({
             run_type: "chain",
             name: span.attributes["ai.model.provider"],
-            inputs: { value: span.attributes["ai.value"] },
-            outputs: { embedding: span.attributes["ai.embedding"] },
+            inputs: { value: tryJson(span.attributes["ai.value"]) },
+            outputs: { embedding: tryJson(span.attributes["ai.embedding"]) },
           });
           break;
         }
@@ -451,8 +451,10 @@ export class LangSmithAISDKExporter implements SpanExporter {
           runTreeMap[spanId] = toRunTree({
             run_type: "chain",
             name: span.attributes["ai.model.provider"],
-            inputs: { values: span.attributes["ai.values"] },
-            outputs: { embeddings: span.attributes["ai.embeddings"] },
+            inputs: { values: span.attributes["ai.values"].map(tryJson) },
+            outputs: {
+              embeddings: span.attributes["ai.embeddings"].map(tryJson),
+            },
           });
           break;
         }
