@@ -11,6 +11,7 @@ use std::time::Duration;
 use multipart::server::Multipart;
 use std::io::{self, Read, Write};
 use tempfile::TempDir;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 struct MultipartField {
@@ -20,16 +21,7 @@ struct MultipartField {
     data: String,
 }
 
-fn handle_request(req: &mockito::Request) -> Vec<MultipartField> {
-    let body = req.body().unwrap();
-
-    let content_type_headers = req.header("content-type");
-    let content_type_str: String = content_type_headers
-        .iter()
-        .filter_map(|h| h.to_str().ok())
-        .collect::<Vec<&str>>()
-        .join(", ");
-
+fn handle_request(body: Vec<u8>, content_type_str: String) -> Vec<MultipartField> {
     assert!(content_type_str.starts_with("multipart/form-data"));
 
     let boundary = content_type_str.split("boundary=").nth(1).unwrap();
@@ -107,26 +99,24 @@ fn create_run_create_with_attachments() -> RunCreateWithAttachments {
 #[tokio::test]
 async fn test_tracing_client_submit_run_create() {
     let mut server = Server::new_async().await;
-    // let mut captured_body: Vec<u8> = Vec::new();
+    let captured_request: Arc<Mutex<(Vec<u8>, String)>> = Arc::new(Mutex::new((Vec::new(), String::new())));
+    let captured_request_clone = Arc::clone(&captured_request);
 
     let m = server
         .mock("POST", "/")
+        .expect(1)
         .with_status(200)
         .with_body_from_request(move |req| {
-            let fields = handle_request(req);
-
-            assert_eq!(fields.len(), 4);
-            assert_eq!(fields[0].name, "post.test_id");
-            assert_eq!(fields[0].content_type, Some("application/json".to_string()));
-            assert_eq!(fields[0].filename, None);
-            // HELP ME WRITE ASSERTIONS FOR THE DATA
-
-            let received_run: RunCreate = serde_json::from_str(&fields[0].data).unwrap();
-            let expected_run = create_run_create_with_attachments();
-            let expected_run_create = expected_run.run_create;
-            assert_eq!(received_run, expected_run_create);
-
-            vec![0]
+            let mut request = captured_request_clone.lock().unwrap();
+            request.0 = req.body().unwrap().to_vec();
+            let content_type_headers = req.header("content-type");
+            let content_type_str: String = content_type_headers
+                .iter()
+                .filter_map(|h| h.to_str().ok())
+                .collect::<Vec<&str>>()
+                .join(", ");
+            request.1 = content_type_str;
+            vec![] // return empty response body
         })
         .create_async()
         .await;
@@ -164,13 +154,51 @@ async fn test_tracing_client_submit_run_create() {
         },
     );
 
-    let run_create = create_run_create_with_attachments();
+    let run_create = RunCreateWithAttachments {
+        run_create: RunCreate {
+            common: RunCommon {
+                id: String::from("test_id"),
+                trace_id: String::from("trace_id"),
+                dotted_order: String::from("1.1"),
+                parent_run_id: None,
+                extra: serde_json::json!({"extra_data": "value"}),
+                error: None,
+                serialized: serde_json::json!({"key": "value"}),
+                inputs: serde_json::json!({"input": "value"}),
+                events: serde_json::json!([{ "event": "event_data" }]),
+                tags: serde_json::json!({"tag": "value"}),
+                session_id: None,
+                session_name: Some("Session Name".to_string()),
+            },
+            name: String::from("Run Name"),
+            start_time: TimeValue::UnsignedInt(1697462400000),
+            end_time: Some(TimeValue::UnsignedInt(1697466000000)),
+            outputs: serde_json::json!({"output_key": "output_value"}),
+            run_type: String::from("test_run_type"),
+            reference_example_id: None,
+        },
+        attachments,
+    };
 
     client.submit_run_create(run_create).await.unwrap();
 
     // shutdown the client to ensure all messages are processed
     client.shutdown().await.unwrap();
     m.assert_async().await;
+
+    let req = captured_request.lock().unwrap().clone();
+    let fields = handle_request(req.0, req.1);
+
+    assert_eq!(fields.len(), 5);
+    assert_eq!(fields[0].name, "post.test_id");
+    assert_eq!(fields[0].content_type, Some("application/json".to_string()));
+    assert_eq!(fields[0].filename, None);
+
+    let received_run: RunCreate = serde_json::from_str(&fields[0].data).unwrap();
+    let expected_run = create_run_create_with_attachments();
+    let expected_run_create = expected_run.run_create;
+    assert_eq!(received_run, expected_run_create);
+
 }
 
 // #[tokio::test]
