@@ -17,19 +17,25 @@ pub enum TimeValue {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub struct RunIO {
+    pub inputs: serde_json::Value,
+    pub outputs: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RunCommon {
     pub id: String,
     pub trace_id: String,
     pub dotted_order: String,
     pub parent_run_id: Option<String>,
-    pub extra: serde_json::Value,
+    pub extra: Option<serde_json::Value>,
     pub error: Option<String>,
-    pub serialized: serde_json::Value,
-    pub inputs: serde_json::Value,
+    pub serialized: Option<serde_json::Value>,
     pub events: serde_json::Value,
     pub tags: serde_json::Value,
     pub session_id: Option<String>,
     pub session_name: Option<String>,
+    pub io: RunIO,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -38,7 +44,6 @@ pub struct RunCreate {
     pub name: String,
     pub start_time: TimeValue,
     pub end_time: Option<TimeValue>,
-    pub outputs: serde_json::Value,
     pub run_type: String,
     pub reference_example_id: Option<String>,
 }
@@ -60,8 +65,8 @@ pub struct RunUpdateWithAttachments {
     pub attachments: HashMap<String, Attachment>,
 }
 
-pub enum QueuedRun {
-    Create(RunCreateWithAttachments),
-    Update(RunUpdateWithAttachments),
+pub enum QueuedRun<'a> {
+    Create(&'a RunCreateWithAttachments),
+    Update(&'a RunUpdateWithAttachments),
     Shutdown,
 }

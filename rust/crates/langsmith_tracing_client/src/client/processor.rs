@@ -126,30 +126,45 @@ impl RunProcessor {
     ) -> Result<(), TracingClientError> {
         let run = &run_with_attachments.run_create;
         let run_id = &run.common.id;
+        let run_io = &run.common.io;
+        let inputs = &run_io.inputs;
+        let outputs = &run_io.outputs;
 
-        let mut run_json = serde_json::to_value(run)?;
-        let inputs = run_json
-            .as_object_mut()
-            .and_then(|obj| obj.remove("inputs"))
-            .unwrap_or(Value::Null);
-        let outputs = run_json
-            .as_object_mut()
-            .and_then(|obj| obj.remove("outputs"))
-            .unwrap_or(Value::Null);
+        let mut inputs_bytes: Vec<u8> = Vec::new();
+        let mut outputs_bytes: Vec<u8> = Vec::new();
+        let mut run_bytes: Vec<u8> = Vec::new();
+
+        serde_json::to_writer(&mut inputs_bytes, inputs)?;
+        serde_json::to_writer(&mut outputs_bytes, outputs)?;
+        serde_json::to_writer(&mut run_bytes, run)?;
+
+
+        //let mut run_json = serde_json::to_value(run)?;
+        // let inputs = run_json
+        //     .as_object_mut()
+        //     .and_then(|obj| obj.remove("inputs"))
+        //     .unwrap_or(Value::Null);
+        // let outputs = run_json
+        //     .as_object_mut()
+        //     .and_then(|obj| obj.remove("outputs"))
+        //     .unwrap_or(Value::Null);
 
         *form = std::mem::take(form).part(
             format!("post.{}", run_id),
-            Part::text(run_json.to_string()).mime_str("application/json")?,
+            Part::bytes(run_bytes)
+                .mime_str("application/json")?,
         );
 
         *form = std::mem::take(form).part(
             format!("post.{}.inputs", run_id),
-            Part::text(inputs.to_string()).mime_str("application/json")?,
+            Part::bytes(inputs_bytes)
+                .mime_str("application/json")?,
         );
 
         *form = std::mem::take(form).part(
             format!("post.{}.outputs", run_id),
-            Part::text(outputs.to_string()).mime_str("application/json")?,
+            Part::bytes(outputs_bytes)
+                .mime_str("application/json")?,
         );
 
         for (ref_name, attachment) in &run_with_attachments.attachments {
