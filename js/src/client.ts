@@ -1019,11 +1019,15 @@ export class Client {
     > = {};
     let preparedCreateParams = [];
     for (const create of runCreates ?? []) {
-      preparedCreateParams.push(this.prepareRunCreateOrUpdateInputs(create));
-      if (create.id !== undefined && create.attachments !== undefined) {
-        allAttachments[create.id] = create.attachments;
+      const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
+      if (
+        preparedCreate.id !== undefined &&
+        preparedCreate.attachments !== undefined
+      ) {
+        allAttachments[preparedCreate.id] = preparedCreate.attachments;
       }
-      delete create.attachments;
+      delete preparedCreate.attachments;
+      preparedCreateParams.push(preparedCreate);
     }
 
     let preparedUpdateParams = [];
