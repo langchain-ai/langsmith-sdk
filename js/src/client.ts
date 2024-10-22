@@ -361,6 +361,42 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
+const _compressPayload = async (
+  payload: string | Uint8Array,
+  contentType = "application/json"
+) => {
+  const compressedPayloadStream = new Blob([payload])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  const reader = compressedPayloadStream.getReader();
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  return new Blob(chunks, {
+    type: `${contentType}; length=${payload.length}; encoding=gzip`,
+  });
+};
+
+const _preparePayload = async (
+  payload: any,
+  contentType = "application/json"
+) => {
+  let finalPayload = payload;
+  // eslint-disable-next-line no-instanceof/no-instanceof
+  if (!(payload instanceof Uint8Array)) {
+    finalPayload = stringifyForTracing(payload);
+  }
+  if (finalPayload.length < MAX_UNCOMPRESSED_PAYLOAD_LIMIT) {
+    return new Blob([finalPayload], {
+      type: `${contentType}; length=${finalPayload.length}`,
+    });
+  }
+  return _compressPayload(payload);
+};
+
 export class Queue {
   items: {
     action: "create" | "update";
@@ -431,6 +467,8 @@ export class Queue {
 
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
+
+const MAX_UNCOMPRESSED_PAYLOAD_LIMIT = 10 * 1024;
 
 const SERVER_INFO_REQUEST_TIMEOUT = 1000;
 
@@ -1109,24 +1147,18 @@ export class Client {
         const { inputs, outputs, events, ...payload } = originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
-        const stringifiedPayload = stringifyForTracing(payload);
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
-          payload: new Blob([stringifiedPayload], {
-            type: `application/json; length=${stringifiedPayload.length}`, // encoding=gzip
-          }),
+          payload: await _preparePayload(payload),
         });
         // encode the fields we collected
         for (const [key, value] of Object.entries(fields)) {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = stringifyForTracing(value);
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
-            payload: new Blob([stringifiedValue], {
-              type: `application/json; length=${stringifiedValue.length}`,
-            }),
+            payload: await _preparePayload(value),
           });
         }
         // encode the attachments
@@ -1139,9 +1171,7 @@ export class Client {
             )) {
               accumulatedParts.push({
                 name: `attachment.${payload.id}.${name}`,
-                payload: new Blob([content], {
-                  type: `${contentType}; length=${content.length}`,
-                }),
+                payload: await _preparePayload(content, contentType),
               });
             }
           }
