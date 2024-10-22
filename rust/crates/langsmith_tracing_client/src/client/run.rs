@@ -18,7 +18,7 @@ pub enum TimeValue {
 
 #[derive(PartialEq, Debug)]
 pub struct RunIO {
-    pub inputs: serde_json::Value,
+    pub inputs: Option<serde_json::Value>,
     pub outputs: Option<serde_json::Value>,
 }
 
