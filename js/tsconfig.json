@@ -17,6 +17,7 @@
     "noUnusedParameters": true,
     "useDefineForClassFields": true,
     "strictPropertyInitialization": false,
+    "stripInternal": true,
     "allowJs": true,
     "strict": true,
     "outDir": "dist"

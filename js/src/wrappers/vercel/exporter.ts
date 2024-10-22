@@ -228,6 +228,7 @@ export class LangSmithAISDKExporter implements SpanExporter {
     this.client = args?.client ?? new Client();
   }
 
+  /** @internal */
   protected getRunCreate(span: AISDKSpan): RunCreate | undefined {
     const runId = uuid5(span.spanContext().spanId, RUN_ID_NAMESPACE);
     const parentRunId = span.parentSpanId
