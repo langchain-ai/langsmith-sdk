@@ -1,5 +1,4 @@
-import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
-import type { ExportResult } from "@opentelemetry/core";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { CoreAssistantMessage, CoreMessage, ToolCallPart } from "ai";
 import type { AISDKSpan } from "./exporter.types.js";
 import { Client } from "../../index.js";
@@ -212,7 +211,7 @@ interface RunTask {
   executionOrder: number;
 }
 
-export class LangSmithAISDKExporter implements SpanExporter {
+export class LangSmithAISDKExporter {
   private client: Client;
   private traceByMap: Record<
     string,
@@ -475,10 +474,11 @@ export class LangSmithAISDKExporter implements SpanExporter {
   }
 
   export(
-    spans: ReadableSpan[],
-    resultCallback: (result: ExportResult) => void
+    spans: unknown[],
+    resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
-    for (const span of spans) {
+    const typedSpans = spans as ReadableSpan[];
+    for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
       const parentId = span.parentSpanId ?? undefined;
       this.traceByMap[traceId] ??= {
