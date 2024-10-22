@@ -18,7 +18,6 @@ fn test_run_common() {
     };
 
     let serialized = serde_json::to_string(&run_common).unwrap();
-    println!("Serialized RunCommon: {}", serialized);
     assert!(serialized.contains("\"dotted_order\":\"1.1\""));
 }
 
@@ -48,7 +47,6 @@ fn test_run_create_with_string_time() {
     };
 
     let serialized = serde_json::to_string(&run_create).unwrap();
-    println!("Serialized RunCreate (String Time): {}", serialized);
     assert!(serialized.contains("\"name\":\"Run Name\""));
     assert!(serialized.contains("\"start_time\":\"2024-10-16T12:00:00Z\""));
 }
@@ -79,7 +77,6 @@ fn test_run_create_with_timestamp() {
     };
 
     let serialized = serde_json::to_string(&run_create).unwrap();
-    println!("Serialized RunCreate (Timestamp): {}", serialized);
     assert!(serialized.contains("\"name\":\"Run Name\""));
     assert!(serialized.contains("\"start_time\":1697462400000"));
 }
@@ -106,7 +103,6 @@ fn test_run_update() {
     };
 
     let serialized = serde_json::to_string(&run_update).unwrap();
-    println!("Serialized RunUpdate: {}", serialized);
     assert!(serialized.contains("\"dotted_order\":\"1.1\""));
     assert!(serialized.contains("\"end_time\":\"2024-10-16T14:00:00Z\""));
 }
