@@ -1,5 +1,5 @@
 use crate::client::errors::TracingClientError;
-use crate::client::run::QueuedRun;
+use crate::client::run::{Attachment, QueuedRun};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use crate::client::tracing_client::ClientConfig;
 use reqwest::multipart::{Form, Part};
@@ -90,11 +90,11 @@ impl RunProcessor {
         for queued_run in batch {
             match queued_run {
                 QueuedRun::Create(run_create_extended) => {
-                    self.add_run_create_to_form(run_create_extended, &mut form)
+                    self.consume_run_create(run_create_extended, &mut form)
                         .await?;
                 }
                 QueuedRun::Update(run_update_extended) => {
-                    self.add_run_update_to_form(run_update_extended, &mut form)
+                    self.consume_run_update(run_update_extended, &mut form)
                         .await?;
                 }
                 QueuedRun::Shutdown => {
@@ -118,154 +118,110 @@ impl RunProcessor {
         }
     }
 
-    async fn add_run_create_to_form(
+    async fn consume_run_create(
         &self,
         run_create_extended: RunCreateExtended,
         form: &mut Form,
     ) -> Result<(), TracingClientError> {
-        let run = run_create_extended.run_create;
-        let run_id = &run.common.id;
-        let inputs = run_create_extended.io.inputs;
-        let outputs = run_create_extended.io.outputs;
+        let RunCreateExtended {
+            run_create,
+            io,
+            attachments,
+        } = run_create_extended;
+        let run_id = &run_create.common.id;
 
-        let inputs_bytes = serde_json::to_vec(&inputs)?;
-        let outputs_bytes = serde_json::to_vec(&outputs)?;
-        let run_bytes = serde_json::to_vec(&run)?;
+        self.add_json_part_to_form(form, format!("post.{}", run_id), &run_create)?;
+        self.add_json_part_to_form(form, format!("post.{}.inputs", run_id), &io.inputs)?;
+        self.add_json_part_to_form(form, format!("post.{}.outputs", run_id), &io.outputs)?;
 
-        *form = std::mem::take(form).part(
-            format!("post.{}", run_id),
-            Part::bytes(run_bytes).mime_str("application/json")?,
-        );
-
-        *form = std::mem::take(form).part(
-            format!("post.{}.inputs", run_id),
-            Part::bytes(inputs_bytes).mime_str("application/json")?,
-        );
-
-        *form = std::mem::take(form).part(
-            format!("post.{}.outputs", run_id),
-            Part::bytes(outputs_bytes).mime_str("application/json")?,
-        );
-
-        for attachment in run_create_extended.attachments {
-            let ref_name = attachment.ref_name;
-            let filename = attachment.filename;
-            let data = attachment.data;
-            let content_type = attachment.content_type;
-
-            let part_name = format!("post.{}.attachments.{}", run_id, ref_name);
-            if let Some(data) = data {
-                *form = std::mem::take(form).part(
-                    part_name,
-                    Part::bytes(data)
-                        .file_name(filename)
-                        .mime_str(&content_type)?,
-                );
-            } else {
-                // read the file from disk and stream it to avoid loading the entire file into memory
-                let file_path = std::path::Path::new(&filename);
-                let metadata = tokio::fs::metadata(file_path).await.map_err(|e| {
-                    TracingClientError::IoError(format!("Failed to read file metadata: {}", e))
-                })?;
-                let file_size = metadata.len();
-                let file = tokio::fs::File::open(file_path).await.map_err(|e| {
-                    TracingClientError::IoError(format!("Failed to open file: {}", e))
-                })?;
-                let stream = ReaderStream::new(file);
-                let body = reqwest::Body::wrap_stream(stream);
-
-                // Extract just the last component of the file path
-                let file_name = file_path
-                    .file_name()
-                    .ok_or_else(|| {
-                        TracingClientError::IoError(
-                            "Failed to extract filename from path".to_string(),
-                        )
-                    })?
-                    .to_string_lossy();
-
-                let part = Part::stream_with_length(body, file_size)
-                    .file_name(file_name.into_owned())
-                    .mime_str(&content_type)?;
-
-                *form = std::mem::take(form).part(part_name, part);
-            }
+        for attachment in attachments {
+            self.add_attachment_to_form(form, "post", run_id, attachment)
+                .await?;
         }
 
         Ok(())
     }
 
-    async fn add_run_update_to_form(
+    async fn consume_run_update(
         &self,
-        run_with_attachments: RunUpdateExtended,
+        run_update_extended: RunUpdateExtended,
         form: &mut Form,
     ) -> Result<(), TracingClientError> {
-        let run = &run_with_attachments.run_update;
-        let run_id = &run.common.id;
+        let RunUpdateExtended {
+            run_update,
+            io,
+            attachments,
+        } = run_update_extended;
+        let run_id = &run_update.common.id;
 
-        let mut run_json = serde_json::to_value(run)?;
-        let outputs = run_json
-            .as_object_mut()
-            .and_then(|obj| obj.remove("outputs"))
-            .unwrap_or(Value::Null);
+        self.add_json_part_to_form(form, format!("post.{}", run_id), &run_update)?;
+        self.add_json_part_to_form(form, format!("post.{}.outputs", run_id), &io.outputs)?;
 
+        for attachment in attachments {
+            self.add_attachment_to_form(form, "post", run_id, attachment)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    fn add_json_part_to_form(
+        &self,
+        form: &mut Form,
+        part_name: String,
+        data: &impl serde::Serialize,
+    ) -> Result<(), TracingClientError> {
+        let data_bytes = serde_json::to_vec(data)?;
         *form = std::mem::take(form).part(
-            format!("patch.{}", run_id),
-            Part::text(run_json.to_string()).mime_str("application/json")?,
+            part_name,
+            Part::bytes(data_bytes).mime_str("application/json")?,
         );
+        Ok(())
+    }
 
-        if !outputs.is_null() {
+    async fn add_attachment_to_form(
+        &self,
+        form: &mut Form,
+        prefix: &str,
+        run_id: &str,
+        attachment: Attachment,
+    ) -> Result<(), TracingClientError> {
+        let part_name = format!("{}.{}.attachments.{}", prefix, run_id, attachment.ref_name);
+        if let Some(data) = attachment.data {
             *form = std::mem::take(form).part(
-                format!("patch.{}.outputs", run_id),
-                Part::text(outputs.to_string()).mime_str("application/json")?,
+                part_name,
+                Part::bytes(data)
+                    .file_name(attachment.filename)
+                    .mime_str(&attachment.content_type)?,
             );
+        } else {
+            // stream the file from disk to avoid loading the entire file into memory
+            let file_path = std::path::Path::new(&attachment.filename);
+            let metadata = tokio::fs::metadata(file_path).await.map_err(|e| {
+                TracingClientError::IoError(format!("Failed to read file metadata: {}", e))
+            })?;
+            let file_size = metadata.len();
+            let file = tokio::fs::File::open(file_path)
+                .await
+                .map_err(|e| TracingClientError::IoError(format!("Failed to open file: {}", e)))?;
+            let stream = ReaderStream::new(file);
+            let body = reqwest::Body::wrap_stream(stream);
+
+            // extract filename from path
+            let file_name = file_path
+                .file_name()
+                .ok_or_else(|| {
+                    TracingClientError::IoError("Failed to extract filename from path".to_string())
+                })?
+                .to_string_lossy()
+                .into_owned();
+
+            let part = Part::stream_with_length(body, file_size)
+                .file_name(file_name)
+                .mime_str(&attachment.content_type)?;
+
+            *form = std::mem::take(form).part(part_name, part);
         }
-
-        for attachment in &run_with_attachments.attachments {
-            let ref_name = &attachment.ref_name;
-            let filename = &attachment.filename;
-            let data = &attachment.data;
-            let content_type = &attachment.content_type;
-
-            let part_name = format!("patch.{}.attachments.{}", run_id, ref_name);
-            if let Some(data) = data {
-                *form = std::mem::take(form).part(
-                    part_name,
-                    Part::bytes(data.clone())
-                        .file_name(filename.clone())
-                        .mime_str(content_type)?,
-                );
-            } else {
-                // read the file from disk and stream it to avoid loading the entire file into memory
-                let file_path = std::path::Path::new(filename);
-                let metadata = tokio::fs::metadata(file_path).await.map_err(|e| {
-                    TracingClientError::IoError(format!("Failed to read file metadata: {}", e))
-                })?;
-                let file_size = metadata.len();
-                let file = tokio::fs::File::open(file_path).await.map_err(|e| {
-                    TracingClientError::IoError(format!("Failed to open file: {}", e))
-                })?;
-                let stream = ReaderStream::new(file);
-                let body = reqwest::Body::wrap_stream(stream);
-
-                // extract just the last component of the file path
-                let file_name = file_path
-                    .file_name()
-                    .ok_or_else(|| {
-                        TracingClientError::IoError(
-                            "Failed to extract filename from path".to_string(),
-                        )
-                    })?
-                    .to_string_lossy()
-                    .to_string();
-                let part = Part::stream_with_length(body, file_size)
-                    .file_name(file_name)
-                    .mime_str(content_type)?;
-
-                *form = std::mem::take(form).part(part_name, part);
-            }
-        }
-
         Ok(())
     }
 }
