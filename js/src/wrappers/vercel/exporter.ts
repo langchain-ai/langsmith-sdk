@@ -6,10 +6,6 @@ import { Client } from "../../index.js";
 import { KVMap, RunCreate } from "../../schemas.js";
 import { v5 as uuid5 } from "uuid";
 
-function assertNever(x: never): never {
-  throw new Error("Unreachable state: " + x);
-}
-
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
 
@@ -205,7 +201,7 @@ function convertToTimestamp([seconds, nanoseconds]: [
   return Number(String(seconds) + ms);
 }
 
-const RUN_ID_NS = "5c718b20-9078-11ef-9a3d-325096b39f47";
+const RUN_ID_NAMESPACE = "5c718b20-9078-11ef-9a3d-325096b39f47";
 
 interface RunTask {
   id: string;
@@ -232,10 +228,10 @@ export class LangSmithAISDKExporter implements SpanExporter {
     this.client = args?.client ?? new Client();
   }
 
-  protected getRunCreate(span: AISDKSpan): RunCreate {
-    const runId = uuid5(span.spanContext().spanId, RUN_ID_NS);
+  protected getRunCreate(span: AISDKSpan): RunCreate | undefined {
+    const runId = uuid5(span.spanContext().spanId, RUN_ID_NAMESPACE);
     const parentRunId = span.parentSpanId
-      ? uuid5(span.parentSpanId, RUN_ID_NS)
+      ? uuid5(span.parentSpanId, RUN_ID_NAMESPACE)
       : undefined;
 
     const asRunCreate = (rawConfig: RunCreate) => {
@@ -473,6 +469,7 @@ export class LangSmithAISDKExporter implements SpanExporter {
       case "ai.embedMany.doEmbed":
       default:
         console.warn(`Span "${span.name}" is currently unsupported.`);
+        return undefined;
     }
   }
 
@@ -489,21 +486,25 @@ export class LangSmithAISDKExporter implements SpanExporter {
         relativeExecutionOrder: {},
       };
 
-      const runId = uuid5(spanId, RUN_ID_NS);
-      const parentRunId = parentId ? uuid5(parentId, RUN_ID_NS) : undefined;
+      const runId = uuid5(spanId, RUN_ID_NAMESPACE);
+      const parentRunId = parentId
+        ? uuid5(parentId, RUN_ID_NAMESPACE)
+        : undefined;
 
       const traceMap = this.traceByMap[traceId];
 
+      const aiSpan = span as AISDKSpan;
+      const run = this.getRunCreate(aiSpan);
+      if (!run) continue;
+
       traceMap.relativeExecutionOrder[parentRunId ?? "$"] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? "$"] += 1;
-
-      const aiSpan = span as AISDKSpan;
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
         parentId: parentRunId,
         startTime: span.startTime,
-        run: this.getRunCreate(aiSpan),
+        run,
         sent: false,
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? "$"],
       };
