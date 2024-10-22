@@ -224,6 +224,7 @@ export class LangSmithAISDKExporter implements SpanExporter {
       childMap: Record<string, RunTask[]>;
       nodeMap: Record<string, RunTask>;
       relativeExecutionOrder: Record<string, number>;
+      userTraceId?: string;
     }
   > = {};
 
@@ -239,7 +240,11 @@ export class LangSmithAISDKExporter implements SpanExporter {
 
     const asRunCreate = (rawConfig: RunCreate) => {
       const aiMetadata = Object.keys(span.attributes)
-        .filter((key) => key.startsWith("ai.telemetry.metadata."))
+        .filter(
+          (key) =>
+            key.startsWith("ai.telemetry.metadata.") &&
+            key !== "ai.telemetry.metadata.langsmithRunId"
+        )
         .reduce((acc, key) => {
           acc[key.slice("ai.telemetry.metadata.".length)] =
             span.attributes[key as keyof typeof span.attributes];
@@ -509,17 +514,29 @@ export class LangSmithAISDKExporter implements SpanExporter {
       traceMap.relativeExecutionOrder[parentRunId ?? "$"] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? "$"] += 1;
 
+      const aiSpan = span as AISDKSpan;
+
       traceMap.nodeMap[runId] ??= {
         id: runId,
         parentId: parentRunId,
         startTime: span.startTime,
-        run: this.getRunCreate(span as AISDKSpan),
+        run: this.getRunCreate(aiSpan),
         sent: false,
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? "$"],
       };
 
       traceMap.childMap[parentRunId ?? "$"] ??= [];
       traceMap.childMap[parentRunId ?? "$"].push(traceMap.nodeMap[runId]);
+
+      if (
+        "ai.telemetry.metadata.langsmithRunId" in aiSpan.attributes &&
+        typeof aiSpan.attributes["ai.telemetry.metadata.langsmithRunId"] ===
+          "string" &&
+        aiSpan.attributes["ai.telemetry.metadata.langsmithRunId"]
+      ) {
+        traceMap.userTraceId =
+          aiSpan.attributes["ai.telemetry.metadata.langsmithRunId"];
+      }
     }
 
     // collect all subgraphs
@@ -535,9 +552,10 @@ export class LangSmithAISDKExporter implements SpanExporter {
 
     for (const traceId of Object.keys(this.traceByMap)) {
       type QueueItem = { item: RunTask; dottedOrder: string; traceId: string };
+      const traceMap = this.traceByMap[traceId];
 
       const queue: QueueItem[] =
-        this.traceByMap[traceId].childMap["$"]?.map((item) => ({
+        traceMap.childMap["$"]?.map((item) => ({
           item,
           dottedOrder: convertToDottedOrderFormat(
             item.startTime,
@@ -554,19 +572,33 @@ export class LangSmithAISDKExporter implements SpanExporter {
         if (seen.has(task.item.id)) continue;
 
         if (!task.item.sent) {
-          sampled.push([
-            {
-              id: task.item.id,
-              parent_run_id: task.item.parentId,
-              dotted_order: task.dottedOrder,
-              trace_id: task.traceId,
-            },
-            task.item.run,
-          ]);
+          let ident = {
+            id: task.item.id,
+            parent_run_id: task.item.parentId,
+            dotted_order: task.dottedOrder,
+            trace_id: task.traceId,
+          };
+
+          if (traceMap.userTraceId) {
+            ident = {
+              id: ident.id === ident.trace_id ? traceMap.userTraceId : ident.id,
+              parent_run_id:
+                ident.parent_run_id === ident.trace_id
+                  ? traceMap.userTraceId
+                  : ident.parent_run_id,
+              dotted_order: ident.dotted_order.replace(
+                ident.trace_id,
+                traceMap.userTraceId
+              ),
+              trace_id: traceMap.userTraceId,
+            };
+          }
+
+          sampled.push([ident, task.item.run]);
           task.item.sent = true;
         }
 
-        const children = this.traceByMap[traceId].childMap[task.item.id] ?? [];
+        const children = traceMap.childMap[task.item.id] ?? [];
         queue.push(
           ...children.map((child) => ({
             item: child,
