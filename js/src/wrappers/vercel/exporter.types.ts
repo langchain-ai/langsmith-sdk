@@ -35,7 +35,7 @@ interface BaseEmbedSpanAttributes {
   "resource.name"?: string;
 }
 
-export type ToolCallSpan = TypedReadableSpan<
+type ToolCallSpan = TypedReadableSpan<
   "ai.toolCall",
   {
     "operation.name": "ai.toolCall";
@@ -47,7 +47,7 @@ export type ToolCallSpan = TypedReadableSpan<
   }
 >;
 
-export type GenerateTextSpan = TypedReadableSpan<
+type GenerateTextSpan = TypedReadableSpan<
   "ai.generateText",
   BaseLLMSpanAttributes & {
     "operation.name": "ai.generateText";
@@ -60,7 +60,7 @@ export type GenerateTextSpan = TypedReadableSpan<
   }
 >;
 
-export type DoGenerateTextSpan = TypedReadableSpan<
+type DoGenerateTextSpan = TypedReadableSpan<
   "ai.generateText.doGenerate",
   CallLLMSpanAttributes & {
     "operation.name": "ai.generateText.doGenerate";
@@ -73,7 +73,7 @@ export type DoGenerateTextSpan = TypedReadableSpan<
   }
 >;
 
-export type StreamTextSpan = TypedReadableSpan<
+type StreamTextSpan = TypedReadableSpan<
   "ai.streamText",
   BaseLLMSpanAttributes & {
     "operation.name": "ai.streamText";
@@ -86,7 +86,7 @@ export type StreamTextSpan = TypedReadableSpan<
   }
 >;
 
-export type DoStreamTextSpan = TypedReadableSpan<
+type DoStreamTextSpan = TypedReadableSpan<
   "ai.streamText.doStream",
   CallLLMSpanAttributes & {
     "operation.name": "ai.streamText.doStream";
@@ -102,7 +102,7 @@ export type DoStreamTextSpan = TypedReadableSpan<
   }
 >;
 
-export type GenerateObjectSpan = TypedReadableSpan<
+type GenerateObjectSpan = TypedReadableSpan<
   "ai.generateObject",
   BaseLLMSpanAttributes & {
     "operation.name": "ai.generateObject";
@@ -119,7 +119,7 @@ export type GenerateObjectSpan = TypedReadableSpan<
     "ai.settings.output": "object" | "no-schema" | AnyString;
   }
 >;
-export type DoGenerateObjectSpan = TypedReadableSpan<
+type DoGenerateObjectSpan = TypedReadableSpan<
   "ai.generateObject.doGenerate",
   CallLLMSpanAttributes & {
     "operation.name": "ai.generateObject.doGenerate";
@@ -136,7 +136,7 @@ export type DoGenerateObjectSpan = TypedReadableSpan<
   }
 >;
 
-export type StreamObjectSpan = TypedReadableSpan<
+type StreamObjectSpan = TypedReadableSpan<
   "ai.streamObject",
   BaseLLMSpanAttributes & {
     "operation.name": "ai.streamObject";
@@ -153,7 +153,7 @@ export type StreamObjectSpan = TypedReadableSpan<
     "ai.settings.output": "object" | "no-schema" | AnyString;
   }
 >;
-export type DoStreamObjectSpan = TypedReadableSpan<
+type DoStreamObjectSpan = TypedReadableSpan<
   "ai.streamObject.doStream",
   CallLLMSpanAttributes & {
     "operation.name": "ai.streamObject.doStream";
@@ -170,7 +170,7 @@ export type DoStreamObjectSpan = TypedReadableSpan<
   }
 >;
 
-export type EmbedSpan = TypedReadableSpan<
+type EmbedSpan = TypedReadableSpan<
   "ai.embed",
   BaseEmbedSpanAttributes & {
     "operation.name": "ai.embed";
@@ -181,7 +181,7 @@ export type EmbedSpan = TypedReadableSpan<
   }
 >;
 
-export type DoEmbedSpan = TypedReadableSpan<
+type DoEmbedSpan = TypedReadableSpan<
   "ai.embed.doEmbed",
   BaseEmbedSpanAttributes & {
     "operation.name": "ai.embed.doEmbed";
@@ -192,7 +192,7 @@ export type DoEmbedSpan = TypedReadableSpan<
   }
 >;
 
-export type EmbedManySpan = TypedReadableSpan<
+type EmbedManySpan = TypedReadableSpan<
   "ai.embedMany",
   BaseEmbedSpanAttributes & {
     "operation.name": "ai.embedMany";
@@ -203,7 +203,7 @@ export type EmbedManySpan = TypedReadableSpan<
   }
 >;
 
-export type DoEmbedManySpan = TypedReadableSpan<
+type DoEmbedManySpan = TypedReadableSpan<
   "ai.embedMany.doEmbed",
   BaseEmbedSpanAttributes & {
     "operation.name": "ai.embedMany.doEmbed";
@@ -214,6 +214,7 @@ export type DoEmbedManySpan = TypedReadableSpan<
   }
 >;
 
+/** @internal */
 export type AISDKSpan =
   | ToolCallSpan
   | GenerateTextSpan
