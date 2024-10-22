@@ -2,9 +2,9 @@ import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
 import type { ExportResult } from "@opentelemetry/core";
 import type { CoreAssistantMessage, CoreMessage, ToolCallPart } from "ai";
 import type { AISDKSpan } from "./exporter.types.js";
-import { Client, RunTree, RunTreeConfig } from "../../index.js";
-import { KVMap } from "../../schemas.js";
-import { AsyncLocalStorageProviderSingleton } from "../../singletons/traceable.js";
+import { Client } from "../../index.js";
+import { KVMap, RunCreate } from "../../schemas.js";
+import { v5 as uuid5 } from "uuid";
 
 function assertNever(x: never): never {
   throw new Error("Unreachable state: " + x);
@@ -174,298 +174,421 @@ const tryJson = (
   }
 };
 
-const sortByHrTime = (a: ReadableSpan, b: ReadableSpan) => {
+function stripNonAlphanumeric(input: string) {
+  return input.replace(/[-:.]/g, "");
+}
+
+function convertToDottedOrderFormat(
+  [seconds, nanoseconds]: [seconds: number, nanoseconds: number],
+  runId: string,
+  executionOrder: number
+) {
+  // Date only has millisecond precision, so we use the microseconds to break
+  // possible ties, avoiding incorrect run order
+  const ms = Number(String(nanoseconds).slice(0, 3));
+  const ns = String(Number(String(nanoseconds).slice(3, 6)) + executionOrder)
+    .padStart(3, "0")
+    .slice(0, 3);
+
   return (
-    Math.sign(a.startTime[0] - b.startTime[0]) ||
-    Math.sign(a.startTime[1] - b.startTime[1])
+    stripNonAlphanumeric(
+      `${new Date(seconds * 1000 + ms).toISOString().slice(0, -1)}${ns}Z`
+    ) + runId
   );
-};
+}
+
+function convertToTimestamp([seconds, nanoseconds]: [
+  seconds: number,
+  nanoseconds: number
+]) {
+  const ms = String(nanoseconds).slice(0, 3);
+  return Number(String(seconds) + ms);
+}
+
+const RUN_ID_NS = "5c718b20-9078-11ef-9a3d-325096b39f47";
+
+interface RunTask {
+  id: string;
+  parentId: string | undefined;
+  startTime: [seconds: number, nanoseconds: number];
+  run: RunCreate;
+  sent: boolean;
+  executionOrder: number;
+}
 
 export class LangSmithAISDKExporter implements SpanExporter {
-  private client: Client | undefined;
+  private client: Client;
+  private traceByMap: Record<
+    string,
+    {
+      childMap: Record<string, RunTask[]>;
+      nodeMap: Record<string, RunTask>;
+      relativeExecutionOrder: Record<string, number>;
+    }
+  > = {};
 
   constructor(args?: { client?: Client }) {
-    this.client = args?.client;
+    this.client = args?.client ?? new Client();
+  }
+
+  protected getRunCreate(span: AISDKSpan): RunCreate {
+    const runId = uuid5(span.spanContext().spanId, RUN_ID_NS);
+    const parentRunId = span.parentSpanId
+      ? uuid5(span.parentSpanId, RUN_ID_NS)
+      : undefined;
+
+    const asRunCreate = (rawConfig: RunCreate) => {
+      const aiMetadata = Object.keys(span.attributes)
+        .filter((key) => key.startsWith("ai.telemetry.metadata."))
+        .reduce((acc, key) => {
+          acc[key.slice("ai.telemetry.metadata.".length)] =
+            span.attributes[key as keyof typeof span.attributes];
+
+          return acc;
+        }, {} as Record<string, unknown>);
+
+      if (
+        ("ai.telemetry.functionId" in span.attributes &&
+          span.attributes["ai.telemetry.functionId"]) ||
+        ("resource.name" in span.attributes && span.attributes["resource.name"])
+      ) {
+        aiMetadata["functionId"] =
+          span.attributes["ai.telemetry.functionId"] ||
+          span.attributes["resource.name"];
+      }
+
+      const config: RunCreate = {
+        ...rawConfig,
+        id: runId,
+        parent_run_id: parentRunId,
+        extra: {
+          ...rawConfig.extra,
+          metadata: {
+            ...rawConfig.extra?.metadata,
+            ...aiMetadata,
+            "ai.operationId": span.attributes["ai.operationId"],
+          },
+        },
+        start_time: convertToTimestamp(span.startTime),
+        end_time: convertToTimestamp(span.endTime),
+      };
+
+      return config;
+    };
+
+    switch (span.name) {
+      case "ai.generateText.doGenerate":
+      case "ai.generateText":
+      case "ai.streamText.doStream":
+      case "ai.streamText": {
+        const inputs = ((): KVMap => {
+          if ("ai.prompt.messages" in span.attributes) {
+            return {
+              messages: tryJson(span.attributes["ai.prompt.messages"]).flatMap(
+                (i: CoreMessage) => convertCoreToSmith(i)
+              ),
+            };
+          }
+
+          if ("ai.prompt" in span.attributes) {
+            const input = tryJson(span.attributes["ai.prompt"]);
+
+            if (
+              typeof input === "object" &&
+              input != null &&
+              "messages" in input &&
+              Array.isArray(input.messages)
+            ) {
+              return {
+                messages: input.messages.flatMap((i: CoreMessage) =>
+                  convertCoreToSmith(i)
+                ),
+              };
+            }
+
+            return { input };
+          }
+
+          return {};
+        })();
+
+        const outputs = ((): KVMap | undefined => {
+          let result: KVMap | undefined = undefined;
+          if (span.attributes["ai.response.toolCalls"]) {
+            result = {
+              llm_output: convertCoreToSmith({
+                role: "assistant",
+                content: tryJson(span.attributes["ai.response.toolCalls"]),
+              } satisfies CoreAssistantMessage),
+            };
+          } else if (span.attributes["ai.response.text"]) {
+            result = {
+              llm_output: convertCoreToSmith({
+                role: "assistant",
+                content: span.attributes["ai.response.text"],
+              }),
+            };
+          }
+
+          if (span.attributes["ai.usage.completionTokens"]) {
+            result ??= {};
+            result.llm_output ??= {};
+            result.llm_output.token_usage ??= {};
+            result.llm_output.token_usage["completion_tokens"] =
+              span.attributes["ai.usage.completionTokens"];
+          }
+
+          if (span.attributes["ai.usage.promptTokens"]) {
+            result ??= {};
+            result.llm_output ??= {};
+            result.llm_output.token_usage ??= {};
+            result.llm_output.token_usage["prompt_tokens"] =
+              span.attributes["ai.usage.promptTokens"];
+          }
+
+          return result;
+        })();
+
+        // TODO: add first_token_time
+        return asRunCreate({
+          run_type: "llm",
+          name: span.attributes["ai.model.provider"],
+          inputs,
+          outputs,
+          extra: {
+            batch_size: 1,
+            metadata: {
+              ls_provider: span.attributes["ai.model.provider"]
+                .split(".")
+                .at(0),
+              ls_model_type: span.attributes["ai.model.provider"]
+                .split(".")
+                .at(1),
+              ls_model_name: span.attributes["ai.model.id"],
+            },
+          },
+        });
+        break;
+      }
+
+      case "ai.toolCall": {
+        const args = tryJson(span.attributes["ai.toolCall.args"]);
+        let inputs: KVMap = { args };
+
+        if (typeof args === "object" && args != null) {
+          inputs = args;
+        }
+
+        const output = tryJson(span.attributes["ai.toolCall.result"]);
+        let outputs: KVMap = { output };
+
+        if (typeof output === "object" && output != null) {
+          outputs = output;
+        }
+
+        return asRunCreate({
+          run_type: "tool",
+          name: span.attributes["ai.toolCall.name"],
+          inputs,
+          outputs,
+        });
+      }
+
+      case "ai.streamObject":
+      case "ai.streamObject.doStream":
+      case "ai.generateObject":
+      case "ai.generateObject.doGenerate": {
+        const inputs = ((): KVMap => {
+          if ("ai.prompt.messages" in span.attributes) {
+            return {
+              messages: tryJson(span.attributes["ai.prompt.messages"]).flatMap(
+                (i: CoreMessage) => convertCoreToSmith(i)
+              ),
+            };
+          }
+
+          if ("ai.prompt" in span.attributes) {
+            return { input: tryJson(span.attributes["ai.prompt"]) };
+          }
+
+          return {};
+        })();
+
+        const outputs = ((): KVMap | undefined => {
+          let result: KVMap | undefined = undefined;
+
+          if (span.attributes["ai.response.object"]) {
+            result = {
+              output: tryJson(span.attributes["ai.response.object"]),
+            };
+          }
+
+          if (span.attributes["ai.usage.completionTokens"]) {
+            result ??= {};
+            result.llm_output ??= {};
+            result.llm_output.token_usage ??= {};
+            result.llm_output.token_usage["completion_tokens"] =
+              span.attributes["ai.usage.completionTokens"];
+          }
+
+          if (span.attributes["ai.usage.promptTokens"]) {
+            result ??= {};
+            result.llm_output ??= {};
+            result.llm_output.token_usage ??= {};
+            result.llm_output.token_usage["prompt_tokens"] =
+              +span.attributes["ai.usage.promptTokens"];
+          }
+
+          return result;
+        })();
+
+        return asRunCreate({
+          run_type: "llm",
+          name: span.attributes["ai.model.provider"],
+          inputs,
+          outputs,
+          extra: {
+            batch_size: 1,
+            metadata: {
+              ls_provider: span.attributes["ai.model.provider"]
+                .split(".")
+                .at(0),
+              ls_model_type: span.attributes["ai.model.provider"]
+                .split(".")
+                .at(1),
+              ls_model_name: span.attributes["ai.model.id"],
+            },
+          },
+        });
+      }
+
+      case "ai.embed": {
+        return asRunCreate({
+          run_type: "chain",
+          name: span.attributes["ai.model.provider"],
+          inputs: { value: tryJson(span.attributes["ai.value"]) },
+          outputs: { embedding: tryJson(span.attributes["ai.embedding"]) },
+        });
+      }
+      case "ai.embed.doEmbed":
+      case "ai.embedMany":
+      case "ai.embedMany.doEmbed": {
+        return asRunCreate({
+          run_type: "chain",
+          name: span.attributes["ai.model.provider"],
+          inputs: { values: span.attributes["ai.values"].map(tryJson) },
+          outputs: {
+            embeddings: span.attributes["ai.embeddings"].map(tryJson),
+          },
+        });
+      }
+
+      default:
+        assertNever(span);
+    }
   }
 
   export(
     spans: ReadableSpan[],
     resultCallback: (result: ExportResult) => void
   ): void {
-    const runTreeMap: Record<string, RunTree> = {};
-    const sortedSpans = [...spans].sort(sortByHrTime) as AISDKSpan[];
-
-    for (const span of sortedSpans) {
-      const spanId = span.spanContext().spanId;
-      const parentSpanId = span.parentSpanId;
-      let parentRunTree = parentSpanId ? runTreeMap[parentSpanId] : null;
-
-      if (parentRunTree == null) {
-        try {
-          parentRunTree =
-            AsyncLocalStorageProviderSingleton.getInstance().getStore() ?? null;
-        } catch {
-          // pass
-        }
-      }
-
-      const toRunTree = (rawConfig: RunTreeConfig) => {
-        const aiMetadata = Object.keys(span.attributes)
-          .filter((key) => key.startsWith("ai.telemetry.metadata."))
-          .reduce((acc, key) => {
-            acc[key.slice("ai.telemetry.metadata.".length)] =
-              span.attributes[key as keyof typeof span.attributes];
-
-            return acc;
-          }, {} as Record<string, unknown>);
-
-        if (
-          ("ai.telemetry.functionId" in span.attributes &&
-            span.attributes["ai.telemetry.functionId"]) ||
-          ("resource.name" in span.attributes &&
-            span.attributes["resource.name"])
-        ) {
-          aiMetadata["functionId"] =
-            span.attributes["ai.telemetry.functionId"] ||
-            span.attributes["resource.name"];
-        }
-
-        const config: RunTreeConfig = {
-          ...rawConfig,
-          metadata: {
-            ...rawConfig.metadata,
-            ...aiMetadata,
-            "ai.operationId": span.attributes["ai.operationId"],
-          },
-          start_time: +(
-            String(span.startTime[0]) + String(span.startTime[1]).slice(0, 3)
-          ),
-          end_time: +(
-            String(span.endTime[0]) + String(span.endTime[1]).slice(0, 3)
-          ),
-          client: this.client,
-        };
-        const runTree =
-          parentRunTree?.createChild(config) ?? new RunTree(config);
-        this.client ??= runTree.client;
-
-        return runTree;
+    for (const span of spans) {
+      const { traceId, spanId } = span.spanContext();
+      const parentId = span.parentSpanId ?? undefined;
+      this.traceByMap[traceId] ??= {
+        childMap: {},
+        nodeMap: {},
+        relativeExecutionOrder: {},
       };
 
-      switch (span.name) {
-        case "ai.generateText.doGenerate":
-        case "ai.generateText":
-        case "ai.streamText.doStream":
-        case "ai.streamText": {
-          const inputs = ((): KVMap | undefined => {
-            if ("ai.prompt.messages" in span.attributes) {
-              return {
-                messages: tryJson(
-                  span.attributes["ai.prompt.messages"]
-                ).flatMap((i: CoreMessage) => convertCoreToSmith(i)),
-              };
-            }
+      const runId = uuid5(spanId, RUN_ID_NS);
+      const parentRunId = parentId ? uuid5(parentId, RUN_ID_NS) : undefined;
 
-            if ("ai.prompt" in span.attributes) {
-              const input = tryJson(span.attributes["ai.prompt"]);
+      const traceMap = this.traceByMap[traceId];
 
-              if (
-                typeof input === "object" &&
-                input != null &&
-                "messages" in input &&
-                Array.isArray(input.messages)
-              ) {
-                return {
-                  messages: input.messages.flatMap((i: CoreMessage) =>
-                    convertCoreToSmith(i)
-                  ),
-                };
-              }
+      traceMap.relativeExecutionOrder[parentRunId ?? "$"] ??= -1;
+      traceMap.relativeExecutionOrder[parentRunId ?? "$"] += 1;
 
-              return { input };
-            }
+      traceMap.nodeMap[runId] ??= {
+        id: runId,
+        parentId: parentRunId,
+        startTime: span.startTime,
+        run: this.getRunCreate(span as AISDKSpan),
+        sent: false,
+        executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? "$"],
+      };
 
-            return undefined;
-          })();
+      traceMap.childMap[parentRunId ?? "$"] ??= [];
+      traceMap.childMap[parentRunId ?? "$"].push(traceMap.nodeMap[runId]);
+    }
 
-          const outputs = ((): KVMap | undefined => {
-            let result: KVMap | undefined = undefined;
-            if (span.attributes["ai.response.toolCalls"]) {
-              result = {
-                llm_output: convertCoreToSmith({
-                  role: "assistant",
-                  content: tryJson(span.attributes["ai.response.toolCalls"]),
-                } satisfies CoreAssistantMessage),
-              };
-            } else if (span.attributes["ai.response.text"]) {
-              result = {
-                llm_output: convertCoreToSmith({
-                  role: "assistant",
-                  content: span.attributes["ai.response.text"],
-                }),
-              };
-            }
+    // collect all subgraphs
+    const sampled: [
+      {
+        dotted_order: string;
+        id: string;
+        trace_id: string;
+        parent_run_id: string | undefined;
+      },
+      RunCreate
+    ][] = [];
 
-            if (span.attributes["ai.usage.completionTokens"]) {
-              result ??= {};
-              result.llm_output ??= {};
-              result.llm_output.token_usage ??= {};
-              result.llm_output.token_usage["completion_tokens"] =
-                span.attributes["ai.usage.completionTokens"];
-            }
+    for (const traceId of Object.keys(this.traceByMap)) {
+      type QueueItem = { item: RunTask; dottedOrder: string; traceId: string };
 
-            if (span.attributes["ai.usage.promptTokens"]) {
-              result ??= {};
-              result.llm_output ??= {};
-              result.llm_output.token_usage ??= {};
-              result.llm_output.token_usage["prompt_tokens"] =
-                span.attributes["ai.usage.promptTokens"];
-            }
+      const queue: QueueItem[] =
+        this.traceByMap[traceId].childMap["$"]?.map((item) => ({
+          item,
+          dottedOrder: convertToDottedOrderFormat(
+            item.startTime,
+            item.id,
+            item.executionOrder
+          ),
+          traceId: item.id,
+        })) ?? [];
 
-            return result;
-          })();
+      const seen = new Set<string>();
+      while (queue.length) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const task = queue.shift()!;
+        if (seen.has(task.item.id)) continue;
 
-          // TODO: add first_token_time
-          runTreeMap[spanId] = toRunTree({
-            run_type: "llm",
-            name: span.attributes["ai.model.provider"],
-            inputs,
-            outputs,
-            metadata: {
-              ls_provider: span.attributes["ai.model.provider"]
-                .split(".")
-                .at(0),
-              ls_model_type: span.attributes["ai.model.provider"]
-                .split(".")
-                .at(1),
-              ls_model_name: span.attributes["ai.model.id"],
+        if (!task.item.sent) {
+          sampled.push([
+            {
+              id: task.item.id,
+              parent_run_id: task.item.parentId,
+              dotted_order: task.dottedOrder,
+              trace_id: task.traceId,
             },
-            extra: { batch_size: 1 },
-          });
-          break;
+            task.item.run,
+          ]);
+          task.item.sent = true;
         }
 
-        case "ai.toolCall": {
-          const args = tryJson(span.attributes["ai.toolCall.args"]);
-          let inputs: KVMap | undefined = { args };
-
-          if (typeof args === "object" && args != null) {
-            inputs = args;
-          }
-
-          const output = tryJson(span.attributes["ai.toolCall.result"]);
-          let outputs: KVMap | undefined = { output };
-
-          if (typeof output === "object" && output != null) {
-            outputs = output;
-          }
-
-          runTreeMap[spanId] = toRunTree({
-            run_type: "tool",
-            name: span.attributes["ai.toolCall.name"],
-            inputs,
-            outputs,
-          });
-          break;
-        }
-
-        case "ai.streamObject":
-        case "ai.streamObject.doStream":
-        case "ai.generateObject":
-        case "ai.generateObject.doGenerate": {
-          const inputs = ((): KVMap | undefined => {
-            if ("ai.prompt.messages" in span.attributes) {
-              return {
-                messages: tryJson(
-                  span.attributes["ai.prompt.messages"]
-                ).flatMap((i: CoreMessage) => convertCoreToSmith(i)),
-              };
-            }
-
-            if ("ai.prompt" in span.attributes) {
-              return { input: tryJson(span.attributes["ai.prompt"]) };
-            }
-
-            return undefined;
-          })();
-
-          const outputs = ((): KVMap | undefined => {
-            let result: KVMap | undefined = undefined;
-
-            if (span.attributes["ai.response.object"]) {
-              result = {
-                output: tryJson(span.attributes["ai.response.object"]),
-              };
-            }
-
-            if (span.attributes["ai.usage.completionTokens"]) {
-              result ??= {};
-              result.llm_output ??= {};
-              result.llm_output.token_usage ??= {};
-              result.llm_output.token_usage["completion_tokens"] =
-                span.attributes["ai.usage.completionTokens"];
-            }
-
-            if (span.attributes["ai.usage.promptTokens"]) {
-              result ??= {};
-              result.llm_output ??= {};
-              result.llm_output.token_usage ??= {};
-              result.llm_output.token_usage["prompt_tokens"] =
-                +span.attributes["ai.usage.promptTokens"];
-            }
-
-            return result;
-          })();
-
-          runTreeMap[spanId] = toRunTree({
-            run_type: "llm",
-            name: span.attributes["ai.model.provider"],
-            inputs,
-            outputs,
-            metadata: {
-              ls_provider: span.attributes["ai.model.provider"]
-                .split(".")
-                .at(0),
-              ls_model_type: span.attributes["ai.model.provider"]
-                .split(".")
-                .at(1),
-              ls_model_name: span.attributes["ai.model.id"],
-            },
-            extra: { batch_size: 1 },
-          });
-          break;
-        }
-
-        case "ai.embed": {
-          runTreeMap[spanId] = toRunTree({
-            run_type: "chain",
-            name: span.attributes["ai.model.provider"],
-            inputs: { value: tryJson(span.attributes["ai.value"]) },
-            outputs: { embedding: tryJson(span.attributes["ai.embedding"]) },
-          });
-          break;
-        }
-        case "ai.embed.doEmbed":
-        case "ai.embedMany":
-        case "ai.embedMany.doEmbed": {
-          runTreeMap[spanId] = toRunTree({
-            run_type: "chain",
-            name: span.attributes["ai.model.provider"],
-            inputs: { values: span.attributes["ai.values"].map(tryJson) },
-            outputs: {
-              embeddings: span.attributes["ai.embeddings"].map(tryJson),
-            },
-          });
-          break;
-        }
-
-        default:
-          assertNever(span);
+        const children = this.traceByMap[traceId].childMap[task.item.id] ?? [];
+        queue.push(
+          ...children.map((child) => ({
+            item: child,
+            dottedOrder: [
+              task.dottedOrder,
+              convertToDottedOrderFormat(
+                child.startTime,
+                child.id,
+                child.executionOrder
+              ),
+            ].join("."),
+            traceId: task.traceId,
+          }))
+        );
       }
     }
 
     Promise.all(
-      Object.values(runTreeMap).map((runTree) => runTree.postRun())
+      sampled.map(([required, value]) => {
+        const payload = { ...value, ...required };
+        return this.client.createRun(payload);
+      })
     ).then(
       () => resultCallback({ code: 0 }),
       (error) => resultCallback({ code: 1, error })
@@ -473,6 +596,17 @@ export class LangSmithAISDKExporter implements SpanExporter {
   }
 
   async shutdown(): Promise<void> {
+    // find nodes which are incomplete
+    const incompleteNodes = Object.values(this.traceByMap).flatMap((trace) =>
+      Object.values(trace.nodeMap).filter((i) => !i.sent)
+    );
+
+    if (incompleteNodes.length > 0) {
+      console.warn(
+        "Some incomplete nodes were found before shutdown and not sent to LangSmith."
+      );
+    }
+
     await this.client?.awaitPendingTraceBatches();
   }
   async forceFlush?(): Promise<void> {
