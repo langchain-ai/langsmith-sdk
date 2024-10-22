@@ -3711,8 +3711,10 @@ langchain@^0.3.3:
     zod "^3.22.4"
     zod-to-json-schema "^3.22.3"
 
-langsmith@^0.1.56, langsmith@^0.1.65, "langsmith@file:./":
-  version "0.1.67-rc.3"
+langsmith@^0.1.56, langsmith@^0.1.65:
+  version "0.1.66"
+  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.1.66.tgz#f5a4424c65b8d028b42e90a2e375c862748b78c7"
+  integrity sha512-ZhZ9g8t/qjj0oUWpvKLtUe3qxDL/N0wG0m+Ctkxf0keopYJkcMJg4/71jl6ZYyiSU8xlC27aixXOT0uvLhqcFA==
   dependencies:
     "@types/uuid" "^10.0.0"
     commander "^10.0.1"
