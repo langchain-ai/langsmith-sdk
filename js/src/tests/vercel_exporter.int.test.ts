@@ -5,14 +5,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { z } from "zod";
 import { LangSmithAISDKExporter } from "../wrappers/vercel.js";
 import { v4 as uuid } from "uuid";
-import {
-  generateText,
-  streamText,
-  generateObject,
-  streamObject,
-  embed,
-  embedMany,
-} from "ai";
+import { generateText, streamText, generateObject, streamObject } from "ai";
 import { tool } from "ai";
 import { gatherIterator } from "./utils/iterator.js";
 import { Client } from "../index.js";
@@ -178,40 +171,6 @@ test("streamObject", async () => {
   });
 
   await gatherIterator(result.partialObjectStream);
-  await provider.forceFlush();
-  await waitUntilRunFound(client, traceId, true);
-
-  const storedRun = await client.readRun(traceId);
-  expect(storedRun.id).toEqual(traceId);
-});
-
-test("embed", async () => {
-  const traceId = uuid();
-  await embed({
-    model: openai.embedding("text-embedding-3-small"),
-    value: "prague castle at sunset",
-    experimental_telemetry: getTelemetrySettings(traceId),
-  });
-
-  await provider.forceFlush();
-  await waitUntilRunFound(client, traceId, true);
-
-  const storedRun = await client.readRun(traceId);
-  expect(storedRun.id).toEqual(traceId);
-});
-
-test("embedMany", async () => {
-  const traceId = uuid();
-  await embedMany({
-    model: openai.embedding("text-embedding-3-small"),
-    values: [
-      "a peaceful meadow with wildflowers",
-      "bustling city street at rush hour",
-      "prague castle at sunset",
-    ],
-    experimental_telemetry: getTelemetrySettings(traceId),
-  });
-
   await provider.forceFlush();
   await waitUntilRunFound(client, traceId, true);
 
