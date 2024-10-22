@@ -1,4 +1,4 @@
-use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunIO, RunUpdate, TimeValue};
+use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunUpdate, TimeValue};
 use serde_json;
 
 #[test]

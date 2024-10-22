@@ -3,7 +3,6 @@ use crate::client::run::{Attachment, QueuedRun};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use crate::client::tracing_client::ClientConfig;
 use reqwest::multipart::{Form, Part};
-use serde_json::Value;
 use tokio::sync::mpsc::Receiver;
 use tokio::time::{sleep, Instant};
 use tokio_util::io::ReaderStream;
@@ -154,11 +153,11 @@ impl RunProcessor {
         } = run_update_extended;
         let run_id = &run_update.common.id;
 
-        self.add_json_part_to_form(form, format!("post.{}", run_id), &run_update)?;
-        self.add_json_part_to_form(form, format!("post.{}.outputs", run_id), &io.outputs)?;
+        self.add_json_part_to_form(form, format!("patch.{}", run_id), &run_update)?;
+        self.add_json_part_to_form(form, format!("patch.{}.outputs", run_id), &io.outputs)?;
 
         for attachment in attachments {
-            self.add_attachment_to_form(form, "post", run_id, attachment)
+            self.add_attachment_to_form(form, "patch", run_id, attachment)
                 .await?;
         }
 
@@ -172,9 +171,10 @@ impl RunProcessor {
         data: &impl serde::Serialize,
     ) -> Result<(), TracingClientError> {
         let data_bytes = serde_json::to_vec(data)?;
+        let part_size = data_bytes.len() as u64;
         *form = std::mem::take(form).part(
             part_name,
-            Part::bytes(data_bytes).mime_str("application/json")?,
+            Part::bytes(data_bytes).mime_str(&format!("application/json; length={}", part_size))?,
         );
         Ok(())
     }
@@ -188,11 +188,12 @@ impl RunProcessor {
     ) -> Result<(), TracingClientError> {
         let part_name = format!("{}.{}.attachments.{}", prefix, run_id, attachment.ref_name);
         if let Some(data) = attachment.data {
+            let part_size = data.len() as u64;
             *form = std::mem::take(form).part(
                 part_name,
                 Part::bytes(data)
                     .file_name(attachment.filename)
-                    .mime_str(&attachment.content_type)?,
+                    .mime_str(&format!("{}; length={}", &attachment.content_type, part_size))?,
             );
         } else {
             // stream the file from disk to avoid loading the entire file into memory
@@ -218,7 +219,7 @@ impl RunProcessor {
 
             let part = Part::stream_with_length(body, file_size)
                 .file_name(file_name)
-                .mime_str(&attachment.content_type)?;
+                .mime_str(&format!("{}; length={}", &attachment.content_type, file_size))?;
 
             *form = std::mem::take(form).part(part_name, part);
         }
