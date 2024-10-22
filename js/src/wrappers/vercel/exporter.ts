@@ -467,29 +467,12 @@ export class LangSmithAISDKExporter implements SpanExporter {
         });
       }
 
-      case "ai.embed": {
-        return asRunCreate({
-          run_type: "chain",
-          name: span.attributes["ai.model.provider"],
-          inputs: { value: tryJson(span.attributes["ai.value"]) },
-          outputs: { embedding: tryJson(span.attributes["ai.embedding"]) },
-        });
-      }
+      case "ai.embed":
       case "ai.embed.doEmbed":
       case "ai.embedMany":
-      case "ai.embedMany.doEmbed": {
-        return asRunCreate({
-          run_type: "chain",
-          name: span.attributes["ai.model.provider"],
-          inputs: { values: span.attributes["ai.values"].map(tryJson) },
-          outputs: {
-            embeddings: span.attributes["ai.embeddings"].map(tryJson),
-          },
-        });
-      }
-
+      case "ai.embedMany.doEmbed":
       default:
-        assertNever(span);
+        console.warn(`Span "${span.name}" is currently unsupported.`);
     }
   }
 
