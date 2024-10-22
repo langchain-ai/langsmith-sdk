@@ -146,7 +146,10 @@ async fn test_tracing_client_submit_run_create() {
 
     // assert run fields
     assert_eq!(fields[0].name, "post.test_id");
-    assert_eq!(fields[0].content_type, Some("application/json; length=375".to_string()));
+    assert_eq!(
+        fields[0].content_type,
+        Some("application/json; length=375".to_string())
+    );
     assert_eq!(fields[0].filename, None);
     let received_run: serde_json::Value = serde_json::from_str(&fields[0].data).unwrap();
     assert_eq!(received_run["id"], "test_id");
@@ -180,14 +183,20 @@ async fn test_tracing_client_submit_run_create() {
 
     // assert inputs fields
     assert_eq!(fields[1].name, "post.test_id.inputs");
-    assert_eq!(fields[1].content_type, Some("application/json; length=17".to_string()));
+    assert_eq!(
+        fields[1].content_type,
+        Some("application/json; length=17".to_string())
+    );
     assert_eq!(fields[1].filename, None);
     let received_inputs: serde_json::Value = serde_json::from_str(&fields[1].data).unwrap();
     assert_eq!(received_inputs, serde_json::json!({"input": "value"}));
 
     // assert outputs fields
     assert_eq!(fields[2].name, "post.test_id.outputs");
-    assert_eq!(fields[2].content_type, Some("application/json; length=18".to_string()));
+    assert_eq!(
+        fields[2].content_type,
+        Some("application/json; length=18".to_string())
+    );
     assert_eq!(fields[2].filename, None);
     let received_outputs: serde_json::Value = serde_json::from_str(&fields[2].data).unwrap();
     assert_eq!(received_outputs, serde_json::json!({"output": "value"}));
@@ -203,7 +212,10 @@ async fn test_tracing_client_submit_run_create() {
 
     // assert attachment_2 fields
     assert_eq!(fields[4].name, "post.test_id.attachments.attachment_2");
-    assert_eq!(fields[4].content_type, Some("text/plain; length=29".to_string()));
+    assert_eq!(
+        fields[4].content_type,
+        Some("text/plain; length=29".to_string())
+    );
     assert_eq!(fields[4].filename, Some("test_file_create.txt".to_string()));
     assert_eq!(fields[4].data, "Test file content for create\n");
 }
@@ -302,7 +314,10 @@ async fn test_tracing_client_submit_run_update() {
 
     // assert run fields
     assert_eq!(fields[0].name, "patch.test_id");
-    assert_eq!(fields[0].content_type, Some("application/json; length=292".to_string()));
+    assert_eq!(
+        fields[0].content_type,
+        Some("application/json; length=292".to_string())
+    );
     assert_eq!(fields[0].filename, None);
     let received_run: serde_json::Value = serde_json::from_str(&fields[0].data).unwrap();
     assert_eq!(received_run["id"], "test_id");
@@ -326,7 +341,10 @@ async fn test_tracing_client_submit_run_update() {
 
     // assert outputs fields
     assert_eq!(fields[1].name, "patch.test_id.outputs");
-    assert_eq!(fields[1].content_type, Some("application/json; length=26".to_string()));
+    assert_eq!(
+        fields[1].content_type,
+        Some("application/json; length=26".to_string())
+    );
     assert_eq!(fields[1].filename, None);
     let received_outputs: serde_json::Value = serde_json::from_str(&fields[1].data).unwrap();
     assert_eq!(
@@ -345,7 +363,10 @@ async fn test_tracing_client_submit_run_update() {
 
     // assert attachment_2 fields
     assert_eq!(fields[3].name, "patch.test_id.attachments.attachment_2");
-    assert_eq!(fields[3].content_type, Some("text/plain; length=29".to_string()));
+    assert_eq!(
+        fields[3].content_type,
+        Some("text/plain; length=29".to_string())
+    );
     assert_eq!(fields[3].filename, Some("test_file_update.txt".to_string()));
     assert_eq!(fields[3].data, "Test file content for update\n");
 }

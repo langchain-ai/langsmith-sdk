@@ -193,7 +193,10 @@ impl RunProcessor {
                 part_name,
                 Part::bytes(data)
                     .file_name(attachment.filename)
-                    .mime_str(&format!("{}; length={}", &attachment.content_type, part_size))?,
+                    .mime_str(&format!(
+                        "{}; length={}",
+                        &attachment.content_type, part_size
+                    ))?,
             );
         } else {
             // stream the file from disk to avoid loading the entire file into memory
@@ -219,7 +222,10 @@ impl RunProcessor {
 
             let part = Part::stream_with_length(body, file_size)
                 .file_name(file_name)
-                .mime_str(&format!("{}; length={}", &attachment.content_type, file_size))?;
+                .mime_str(&format!(
+                    "{}; length={}",
+                    &attachment.content_type, file_size
+                ))?;
 
             *form = std::mem::take(form).part(part_name, part);
         }
