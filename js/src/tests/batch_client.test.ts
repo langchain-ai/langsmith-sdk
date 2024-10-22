@@ -608,12 +608,24 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
+      expect(callSpy.mock.calls.length).toEqual(2);
+
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       const calledRequestParam2: any = callSpy.mock.calls[1][2];
 
+      const requestBody1 = await parseMockRequestBody(calledRequestParam?.body);
+      const requestBody2 = await parseMockRequestBody(
+        calledRequestParam2?.body
+      );
+
+      const largerBatch =
+        requestBody1.post.length === 10 ? requestBody1 : requestBody2;
+      const smallerBatch =
+        requestBody1.post.length === 10 ? requestBody2 : requestBody1;
+
       // Queue should drain as soon as size limit is reached,
       // sending both batches
-      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+      expect(largerBatch).toEqual({
         post: runIds.slice(0, 10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -627,7 +639,7 @@ describe.each(ENDPOINT_TYPES)(
         patch: [],
       });
 
-      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
+      expect(smallerBatch).toEqual({
         post: runIds.slice(10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
