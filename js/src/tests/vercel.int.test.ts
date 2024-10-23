@@ -1,42 +1,33 @@
-import { openai } from "@ai-sdk/openai";
-
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { z } from "zod";
-import { LangSmithAISDKExporter } from "../wrappers/vercel.js";
+
+import {
+  generateText,
+  streamText,
+  generateObject,
+  streamObject,
+  tool,
+} from "ai";
+import { openai } from "@ai-sdk/openai";
+
 import { v4 as uuid } from "uuid";
-import { generateText, streamText, generateObject, streamObject } from "ai";
-import { tool } from "ai";
-import { gatherIterator } from "./utils/iterator.js";
+import { z } from "zod";
+import { AISDKExporter } from "../vercel.js";
 import { Client } from "../index.js";
-import { waitUntilRunFound } from "./utils.js";
-import { getCurrentRunTree, traceable } from "../traceable.js";
-
-const getTelemetrySettings = (runId?: string) => {
-  const metadata: Record<string, string> = {
-    userId: "123",
-    language: "english",
-  };
-
-  if (runId) metadata["langsmith:runId"] = runId;
-  return {
-    isEnabled: true,
-    functionId: "functionId",
-    metadata,
-  };
-};
+import { traceable } from "../traceable.js";
+import { waitUntilRunFound, toArray } from "./utils.js";
 
 const client = new Client();
 // Not using @opentelemetry/sdk-node because we need to force flush
 // the spans to ensure they are sent to LangSmith between tests
 const provider = new NodeTracerProvider();
 provider.addSpanProcessor(
-  new BatchSpanProcessor(new LangSmithAISDKExporter({ client }))
+  new BatchSpanProcessor(new AISDKExporter({ client }))
 );
 provider.register();
 
 test("generateText", async () => {
-  const traceId = uuid();
+  const runId = uuid();
 
   await generateText({
     model: openai("gpt-4o-mini"),
@@ -60,19 +51,23 @@ test("generateText", async () => {
           `Here is the tracking information for ${orderId}`,
       }),
     },
-    experimental_telemetry: getTelemetrySettings(traceId),
+    experimental_telemetry: AISDKExporter.getSettings({
+      runId,
+      functionId: "functionId",
+      metadata: { userId: "123", language: "english" },
+    }),
     maxSteps: 10,
   });
 
   await provider.forceFlush();
-  await waitUntilRunFound(client, traceId, true);
+  await waitUntilRunFound(client, runId, true);
 
-  const storedRun = await client.readRun(traceId);
-  expect(storedRun.id).toEqual(traceId);
+  const storedRun = await client.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
 });
 
 test("generateText with image", async () => {
-  const traceId = uuid();
+  const runId = uuid();
   await generateText({
     model: openai("gpt-4o-mini"),
     messages: [
@@ -90,18 +85,22 @@ test("generateText with image", async () => {
         ],
       },
     ],
-    experimental_telemetry: getTelemetrySettings(traceId),
+    experimental_telemetry: AISDKExporter.getSettings({
+      runId,
+      functionId: "functionId",
+      metadata: { userId: "123", language: "english" },
+    }),
   });
 
   await provider.forceFlush();
-  await waitUntilRunFound(client, traceId, true);
+  await waitUntilRunFound(client, runId, true);
 
-  const storedRun = await client.readRun(traceId);
-  expect(storedRun.id).toEqual(traceId);
+  const storedRun = await client.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
 });
 
 test("streamText", async () => {
-  const traceId = uuid();
+  const runId = uuid();
   const result = await streamText({
     model: openai("gpt-4o-mini"),
     messages: [
@@ -124,20 +123,24 @@ test("streamText", async () => {
           `Here is the tracking information for ${orderId}`,
       }),
     },
-    experimental_telemetry: getTelemetrySettings(traceId),
+    experimental_telemetry: AISDKExporter.getSettings({
+      runId,
+      functionId: "functionId",
+      metadata: { userId: "123", language: "english" },
+    }),
     maxSteps: 10,
   });
 
-  await gatherIterator(result.fullStream);
+  await toArray(result.fullStream);
   await provider.forceFlush();
-  await waitUntilRunFound(client, traceId, true);
+  await waitUntilRunFound(client, runId, true);
 
-  const storedRun = await client.readRun(traceId);
-  expect(storedRun.id).toEqual(traceId);
+  const storedRun = await client.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
 });
 
 test("generateObject", async () => {
-  const traceId = uuid();
+  const runId = uuid();
   await generateObject({
     model: openai("gpt-4o-mini", { structuredOutputs: true }),
     schema: z.object({
@@ -147,18 +150,22 @@ test("generateObject", async () => {
       }),
     }),
     prompt: "What's the weather in Prague?",
-    experimental_telemetry: getTelemetrySettings(traceId),
+    experimental_telemetry: AISDKExporter.getSettings({
+      runId,
+      functionId: "functionId",
+      metadata: { userId: "123", language: "english" },
+    }),
   });
 
   await provider.forceFlush();
-  await waitUntilRunFound(client, traceId, true);
+  await waitUntilRunFound(client, runId, true);
 
-  const storedRun = await client.readRun(traceId);
-  expect(storedRun.id).toEqual(traceId);
+  const storedRun = await client.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
 });
 
 test("streamObject", async () => {
-  const traceId = uuid();
+  const runId = uuid();
   const result = await streamObject({
     model: openai("gpt-4o-mini", { structuredOutputs: true }),
     schema: z.object({
@@ -168,15 +175,19 @@ test("streamObject", async () => {
       }),
     }),
     prompt: "What's the weather in Prague?",
-    experimental_telemetry: getTelemetrySettings(traceId),
+    experimental_telemetry: AISDKExporter.getSettings({
+      runId,
+      functionId: "functionId",
+      metadata: { userId: "123", language: "english" },
+    }),
   });
 
-  await gatherIterator(result.partialObjectStream);
+  await toArray(result.partialObjectStream);
   await provider.forceFlush();
-  await waitUntilRunFound(client, traceId, true);
+  await waitUntilRunFound(client, runId, true);
 
-  const storedRun = await client.readRun(traceId);
-  expect(storedRun.id).toEqual(traceId);
+  const storedRun = await client.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
 });
 
 test("traceable", async () => {
@@ -184,11 +195,6 @@ test("traceable", async () => {
 
   const wrappedText = traceable(
     async (content: string) => {
-      const runTree = getCurrentRunTree();
-      const headers = runTree.toHeaders();
-
-      const telemetry = getTelemetrySettings();
-
       const { text } = await generateText({
         model: openai("gpt-4o-mini"),
         messages: [{ role: "user", content }],
@@ -206,14 +212,10 @@ test("traceable", async () => {
               `Here is the tracking information for ${orderId}`,
           }),
         },
-        experimental_telemetry: {
-          ...telemetry,
-          metadata: {
-            ...telemetry.metadata,
-            "langsmith:trace": headers["langsmith-trace"],
-            "langsmith:baggage": headers["baggage"],
-          },
-        },
+        experimental_telemetry: AISDKExporter.getSettings({
+          functionId: "functionId",
+          metadata: { userId: "123", language: "english" },
+        }),
         maxSteps: 10,
       });
 

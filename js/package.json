@@ -33,6 +33,10 @@
     "langchain.js",
     "langchain.d.ts",
     "langchain.d.cts",
+    "vercel.cjs",
+    "vercel.js",
+    "vercel.d.ts",
+    "vercel.d.cts",
     "wrappers.cjs",
     "wrappers.js",
     "wrappers.d.ts",
@@ -222,6 +226,15 @@
       },
       "import": "./langchain.js",
       "require": "./langchain.cjs"
+    },
+    "./vercel": {
+      "types": {
+        "import": "./vercel.d.ts",
+        "require": "./vercel.d.cts",
+        "default": "./vercel.d.ts"
+      },
+      "import": "./vercel.js",
+      "require": "./vercel.cjs"
     },
     "./wrappers": {
       "types": {
