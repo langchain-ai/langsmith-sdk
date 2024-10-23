@@ -1,11 +1,27 @@
-import type { CoreAssistantMessage, CoreMessage, ToolCallPart } from "ai";
-import type { AISDKSpan } from "./exporter.types.js";
-import { Client, RunTree } from "../../index.js";
-import { KVMap, RunCreate } from "../../schemas.js";
+import type {
+  CoreAssistantMessage,
+  CoreMessage,
+  ToolCallPart,
+  generateText,
+} from "ai";
+import type { AISDKSpan } from "./vercel.types.js";
+import { Client, RunTree } from "./index.js";
+import { KVMap, RunCreate } from "./schemas.js";
 import { v5 as uuid5 } from "uuid";
+import { getCurrentRunTree } from "./singletons/traceable.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
+
+type AITelemetrySettings = Exclude<
+  Parameters<typeof generateText>[0]["experimental_telemetry"],
+  undefined
+>;
+
+interface TelemetrySettings extends AITelemetrySettings {
+  /** ID of the run sent to LangSmith */
+  runId?: string;
+}
 
 type LangChainMessageFields = {
   content:
@@ -201,14 +217,25 @@ function convertToTimestamp([seconds, nanoseconds]: [
 
 const RUN_ID_NAMESPACE = "5c718b20-9078-11ef-9a3d-325096b39f47";
 
-const RUN_ID_METADATA_KEY = "ai.telemetry.metadata.langsmith:runId";
-const TRACE_METADATA_KEY = "ai.telemetry.metadata.langsmith:trace";
-const BAGGAGE_METADATA_KEY = "ai.telemetry.metadata.langsmith:baggage";
+const RUN_ID_METADATA_KEY = {
+  input: "langsmith:runId",
+  output: "ai.telemetry.metadata.langsmith:runId",
+};
+
+const TRACE_METADATA_KEY = {
+  input: "langsmith:trace",
+  output: "ai.telemetry.metadata.langsmith:trace",
+};
+
+const BAGGAGE_METADATA_KEY = {
+  input: "langsmith:baggage",
+  output: "ai.telemetry.metadata.langsmith:baggage",
+};
 
 const RESERVED_METADATA_KEYS = [
-  RUN_ID_METADATA_KEY,
-  TRACE_METADATA_KEY,
-  BAGGAGE_METADATA_KEY,
+  RUN_ID_METADATA_KEY.output,
+  TRACE_METADATA_KEY.output,
+  BAGGAGE_METADATA_KEY.output,
 ];
 
 interface RunTask {
@@ -225,7 +252,7 @@ type InteropType =
   | { type: "manual"; userTraceId: string }
   | undefined;
 
-export class LangSmithAISDKExporter {
+export class AISDKExporter {
   private client: Client;
   private traceByMap: Record<
     string,
@@ -241,38 +268,62 @@ export class LangSmithAISDKExporter {
     this.client = args?.client ?? new Client();
   }
 
-  /** @internal */
-  protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
-    let userTraceId: string | undefined = undefined;
+  static getSettings(settings: TelemetrySettings) {
+    const { runId, ...rest } = settings;
+    const metadata = { ...rest?.metadata };
+    if (runId != null) metadata[RUN_ID_METADATA_KEY.input] = runId;
 
-    if (
-      RUN_ID_METADATA_KEY in span.attributes &&
-      typeof span.attributes[RUN_ID_METADATA_KEY] === "string" &&
-      span.attributes[RUN_ID_METADATA_KEY]
-    ) {
-      userTraceId = span.attributes[RUN_ID_METADATA_KEY];
+    // attempt to obtain the run tree if used within a traceable function
+    let defaultEnabled = true;
+    try {
+      const runTree = getCurrentRunTree();
+      const headers = runTree.toHeaders();
+      metadata[TRACE_METADATA_KEY.input] = headers["langsmith-trace"];
+      metadata[BAGGAGE_METADATA_KEY.input] = headers["baggage"];
+
+      // honor the tracingEnabled flag if coming from traceable
+      if (runTree.tracingEnabled != null) {
+        defaultEnabled = runTree.tracingEnabled;
+      }
+    } catch {
+      // pass
     }
 
     if (
-      TRACE_METADATA_KEY in span.attributes &&
-      typeof span.attributes[TRACE_METADATA_KEY] === "string" &&
-      span.attributes[TRACE_METADATA_KEY]
+      metadata[RUN_ID_METADATA_KEY.input] &&
+      metadata[TRACE_METADATA_KEY.input]
     ) {
-      if (userTraceId) {
-        throw new Error(
-          "Cannot provide both `langsmith:runId` and `langsmith:trace` metadata keys."
-        );
-      }
+      throw new Error(
+        "Cannot provide `runId` when used within traceable function."
+      );
+    }
 
-      const baggage =
-        BAGGAGE_METADATA_KEY in span.attributes &&
-        typeof span.attributes[BAGGAGE_METADATA_KEY] === "string"
-          ? span.attributes[BAGGAGE_METADATA_KEY]
-          : "";
+    return { ...rest, isEnabled: rest.isEnabled ?? defaultEnabled, metadata };
+  }
 
+  /** @internal */
+  protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
+    const getKey = (key: string): string | undefined => {
+      const attributes = span.attributes as Record<string, unknown>;
+
+      return key in attributes && typeof attributes[key] === "string"
+        ? (attributes[key] as string)
+        : undefined;
+    };
+
+    const userTraceId = getKey(RUN_ID_METADATA_KEY.output) || undefined;
+    const parentTrace = getKey(TRACE_METADATA_KEY.output) || undefined;
+
+    if (parentTrace && userTraceId) {
+      throw new Error(
+        `Cannot provide both "${RUN_ID_METADATA_KEY.input}" and "${TRACE_METADATA_KEY.input}" metadata keys.`
+      );
+    }
+
+    if (parentTrace) {
       const parentRunTree = RunTree.fromHeaders({
-        "langsmith-trace": span.attributes[TRACE_METADATA_KEY],
-        baggage,
+        "langsmith-trace": parentTrace,
+        baggage: getKey(BAGGAGE_METADATA_KEY.output) || "",
       });
 
       if (!parentRunTree)

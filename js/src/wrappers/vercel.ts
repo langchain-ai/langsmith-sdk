@@ -107,5 +107,3 @@ export const wrapAISDKModel = <T extends object>(
     },
   });
 };
-
-export { LangSmithAISDKExporter } from "./vercel/exporter.js";
