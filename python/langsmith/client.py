@@ -1721,15 +1721,16 @@ class Client:
                         stop_after_attempt=1,
                         _context=_context,
                     )
+                    break
                 except ls_utils.LangSmithConflictError:
                     break
                 except (
                     ls_utils.LangSmithConnectionError,
                     ls_utils.LangSmithRequestTimeout,
                     ls_utils.LangSmithAPIError,
-                ):
+                ) as exc:
                     if idx == attempts:
-                        raise
+                        logger.warning(f"Failed to multipart ingest runs: {exc}")
                     else:
                         continue
                 except Exception as e:
