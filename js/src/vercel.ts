@@ -415,11 +415,22 @@ export class AISDKExporter {
 
         const outputs = ((): KVMap | undefined => {
           let result: KVMap | undefined = undefined;
+
           if (span.attributes["ai.response.toolCalls"]) {
+            let content = tryJson(span.attributes["ai.response.toolCalls"]);
+
+            if (Array.isArray(content)) {
+              content = content.map((i) => ({
+                type: "tool-call",
+                ...i,
+                args: tryJson(i.args),
+              }));
+            }
+
             result = {
               llm_output: convertCoreToSmith({
                 role: "assistant",
-                content: tryJson(span.attributes["ai.response.toolCalls"]),
+                content,
               } satisfies CoreAssistantMessage),
             };
           } else if (span.attributes["ai.response.text"]) {
