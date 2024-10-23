@@ -1,12 +1,10 @@
 import statistics
 import time
-from contextlib import contextmanager
 from typing import Dict
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-import pytest_socket
-from unittest.mock import patch, Mock
 
 from langsmith.client import Client
 
@@ -48,16 +46,6 @@ def create_run_data(run_id: str, json_size: int) -> Dict:
         "tags": ["tag1", "tag2"],
         "session_name": "Session Name",
     }
-
-
-@contextmanager
-def timer():
-    """Simple context manager to measure execution time."""
-    start = time.perf_counter()
-    yield
-    end = time.perf_counter()
-    print(end - start)
-    return end - start
 
 
 def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 10) -> Dict:
