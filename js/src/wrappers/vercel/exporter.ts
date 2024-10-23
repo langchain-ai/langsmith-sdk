@@ -1,7 +1,6 @@
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { CoreAssistantMessage, CoreMessage, ToolCallPart } from "ai";
 import type { AISDKSpan } from "./exporter.types.js";
-import { Client } from "../../index.js";
+import { Client, RunTree } from "../../index.js";
 import { KVMap, RunCreate } from "../../schemas.js";
 import { v5 as uuid5 } from "uuid";
 
@@ -202,6 +201,16 @@ function convertToTimestamp([seconds, nanoseconds]: [
 
 const RUN_ID_NAMESPACE = "5c718b20-9078-11ef-9a3d-325096b39f47";
 
+const RUN_ID_METADATA_KEY = "ai.telemetry.metadata.langsmith:runId";
+const TRACE_METADATA_KEY = "ai.telemetry.metadata.langsmith:trace";
+const BAGGAGE_METADATA_KEY = "ai.telemetry.metadata.langsmith:baggage";
+
+const RESERVED_METADATA_KEYS = [
+  RUN_ID_METADATA_KEY,
+  TRACE_METADATA_KEY,
+  BAGGAGE_METADATA_KEY,
+];
+
 interface RunTask {
   id: string;
   parentId: string | undefined;
@@ -211,6 +220,11 @@ interface RunTask {
   executionOrder: number;
 }
 
+type InteropType =
+  | { type: "traceable"; parentRunTree: RunTree }
+  | { type: "manual"; userTraceId: string }
+  | undefined;
+
 export class LangSmithAISDKExporter {
   private client: Client;
   private traceByMap: Record<
@@ -219,12 +233,55 @@ export class LangSmithAISDKExporter {
       childMap: Record<string, RunTask[]>;
       nodeMap: Record<string, RunTask>;
       relativeExecutionOrder: Record<string, number>;
-      userTraceId?: string;
+      interop?: InteropType;
     }
   > = {};
 
   constructor(args?: { client?: Client }) {
     this.client = args?.client ?? new Client();
+  }
+
+  /** @internal */
+  protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
+    let userTraceId: string | undefined = undefined;
+
+    if (
+      RUN_ID_METADATA_KEY in span.attributes &&
+      typeof span.attributes[RUN_ID_METADATA_KEY] === "string" &&
+      span.attributes[RUN_ID_METADATA_KEY]
+    ) {
+      userTraceId = span.attributes[RUN_ID_METADATA_KEY];
+    }
+
+    if (
+      TRACE_METADATA_KEY in span.attributes &&
+      typeof span.attributes[TRACE_METADATA_KEY] === "string" &&
+      span.attributes[TRACE_METADATA_KEY]
+    ) {
+      if (userTraceId) {
+        throw new Error(
+          "Cannot provide both `langsmith:runId` and `langsmith:trace` metadata keys."
+        );
+      }
+
+      const baggage =
+        BAGGAGE_METADATA_KEY in span.attributes &&
+        typeof span.attributes[BAGGAGE_METADATA_KEY] === "string"
+          ? span.attributes[BAGGAGE_METADATA_KEY]
+          : "";
+
+      const parentRunTree = RunTree.fromHeaders({
+        "langsmith-trace": span.attributes[TRACE_METADATA_KEY],
+        baggage,
+      });
+
+      if (!parentRunTree)
+        throw new Error("Unreachable code: empty parent run tree");
+      return { type: "traceable", parentRunTree };
+    }
+
+    if (userTraceId) return { type: "manual", userTraceId };
+    return undefined;
   }
 
   /** @internal */
@@ -239,7 +296,7 @@ export class LangSmithAISDKExporter {
         .filter(
           (key) =>
             key.startsWith("ai.telemetry.metadata.") &&
-            key !== "ai.telemetry.metadata.langsmithRunId"
+            !RESERVED_METADATA_KEYS.includes(key)
         )
         .reduce((acc, key) => {
           acc[key.slice("ai.telemetry.metadata.".length)] =
@@ -477,7 +534,7 @@ export class LangSmithAISDKExporter {
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
-    const typedSpans = spans as ReadableSpan[];
+    const typedSpans = spans as AISDKSpan[];
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
       const parentId = span.parentSpanId ?? undefined;
@@ -494,8 +551,7 @@ export class LangSmithAISDKExporter {
 
       const traceMap = this.traceByMap[traceId];
 
-      const aiSpan = span as AISDKSpan;
-      const run = this.getRunCreate(aiSpan);
+      const run = this.getRunCreate(span);
       if (!run) continue;
 
       traceMap.relativeExecutionOrder[parentRunId ?? "$"] ??= -1;
@@ -512,16 +568,7 @@ export class LangSmithAISDKExporter {
 
       traceMap.childMap[parentRunId ?? "$"] ??= [];
       traceMap.childMap[parentRunId ?? "$"].push(traceMap.nodeMap[runId]);
-
-      if (
-        "ai.telemetry.metadata.langsmithRunId" in aiSpan.attributes &&
-        typeof aiSpan.attributes["ai.telemetry.metadata.langsmithRunId"] ===
-          "string" &&
-        aiSpan.attributes["ai.telemetry.metadata.langsmithRunId"]
-      ) {
-        traceMap.userTraceId =
-          aiSpan.attributes["ai.telemetry.metadata.langsmithRunId"];
-      }
+      traceMap.interop = this.parseInteropFromMetadata(span);
     }
 
     // collect all subgraphs
@@ -564,19 +611,37 @@ export class LangSmithAISDKExporter {
             trace_id: task.traceId,
           };
 
-          if (traceMap.userTraceId) {
-            ident = {
-              id: ident.id === ident.trace_id ? traceMap.userTraceId : ident.id,
-              parent_run_id:
-                ident.parent_run_id === ident.trace_id
-                  ? traceMap.userTraceId
-                  : ident.parent_run_id,
-              dotted_order: ident.dotted_order.replace(
-                ident.trace_id,
-                traceMap.userTraceId
-              ),
-              trace_id: traceMap.userTraceId,
-            };
+          if (traceMap.interop) {
+            if (traceMap.interop.type === "traceable") {
+              ident = {
+                id: ident.id,
+                parent_run_id:
+                  ident.parent_run_id ?? traceMap.interop.parentRunTree.id,
+                dotted_order: [
+                  traceMap.interop.parentRunTree.dotted_order,
+                  ident.dotted_order,
+                ]
+                  .filter(Boolean)
+                  .join("."),
+                trace_id: traceMap.interop.parentRunTree.trace_id,
+              };
+            } else if (traceMap.interop.type === "manual") {
+              ident = {
+                id:
+                  ident.id === ident.trace_id
+                    ? traceMap.interop.userTraceId
+                    : ident.id,
+                parent_run_id:
+                  ident.parent_run_id === ident.trace_id
+                    ? traceMap.interop.userTraceId
+                    : ident.parent_run_id,
+                dotted_order: ident.dotted_order.replace(
+                  ident.trace_id,
+                  traceMap.interop.userTraceId
+                ),
+                trace_id: traceMap.interop.userTraceId,
+              };
+            }
           }
 
           sampled.push([ident, task.item.run]);
