@@ -11,8 +11,8 @@ fn test_run_common() {
         extra: Some(serde_json::json!({"extra_data": "value"})),
         error: Some(String::from("error message")),
         serialized: Some(serde_json::json!({"key": "value"})),
-        events: serde_json::json!([{ "event": "event_data" }]),
-        tags: serde_json::json!({"tag": "value"}),
+        events: Some(serde_json::json!([{ "event": "event_data" }])),
+        tags: None,
         session_id: Some("efghijkl-7654-3210-fedc-ba9876543210".to_string()),
         session_name: None,
     };
@@ -31,8 +31,8 @@ fn test_run_create_with_string_time() {
         extra: None,
         error: None,
         serialized: None,
-        events: serde_json::json!([{ "event": "event_data" }]),
-        tags: serde_json::json!({"tag": "value"}),
+        events: Some(serde_json::json!([{ "event": "event_data" }])),
+        tags: Some(serde_json::json!({"tag": "value"})),
         session_id: None,
         session_name: Some("Session Name".to_string()),
     };
@@ -61,8 +61,8 @@ fn test_run_create_with_timestamp() {
         extra: Some(serde_json::json!({"extra_data": "value"})),
         error: None,
         serialized: Some(serde_json::json!({"key": "value"})),
-        events: serde_json::json!([{ "event": "event_data" }]),
-        tags: serde_json::json!({"tag": "value"}),
+        events: Some(serde_json::json!([{ "event": "event_data" }])),
+        tags: Some(serde_json::json!({"tag": "value"})),
         session_id: None,
         session_name: None,
     };
@@ -91,8 +91,8 @@ fn test_run_update() {
         extra: None,
         error: None,
         serialized: None,
-        events: serde_json::json!([]),
-        tags: serde_json::json!({"tag": "value"}),
+        events: None,
+        tags: Some(serde_json::json!({"tag": "value"})),
         session_id: None,
         session_name: None,
     };

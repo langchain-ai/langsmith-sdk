@@ -105,8 +105,9 @@ impl RunProcessor {
         // Send the multipart POST request
         let response = self
             .http_client
-            .post(&self.config.endpoint)
+            .post(format!("{}/runs/multipart", self.config.endpoint))
             .multipart(form)
+            .headers(self.config.headers.clone().unwrap_or_default())
             .send()
             .await?;
 
@@ -129,13 +130,22 @@ impl RunProcessor {
         } = run_create_extended;
         let run_id = &run_create.common.id;
 
+        // conditionally add the run_create and io parts to the form
         self.add_json_part_to_form(form, format!("post.{}", run_id), &run_create)?;
-        self.add_json_part_to_form(form, format!("post.{}.inputs", run_id), &io.inputs)?;
-        self.add_json_part_to_form(form, format!("post.{}.outputs", run_id), &io.outputs)?;
 
-        for attachment in attachments {
-            self.add_attachment_to_form(form, "post", run_id, attachment)
-                .await?;
+        if let Some(inputs) = io.inputs {
+            self.add_json_part_to_form(form, format!("post.{}.inputs", run_id), &inputs)?;
+        }
+
+        if let Some(outputs) = io.outputs {
+            self.add_json_part_to_form(form, format!("post.{}.outputs", run_id), &outputs)?;
+        }
+
+        if let Some(attachments) = attachments {
+            for attachment in attachments {
+                self.add_attachment_to_form(form, run_id, attachment)
+                    .await?;
+            }
         }
 
         Ok(())
@@ -154,11 +164,16 @@ impl RunProcessor {
         let run_id = &run_update.common.id;
 
         self.add_json_part_to_form(form, format!("patch.{}", run_id), &run_update)?;
-        self.add_json_part_to_form(form, format!("patch.{}.outputs", run_id), &io.outputs)?;
 
-        for attachment in attachments {
-            self.add_attachment_to_form(form, "patch", run_id, attachment)
-                .await?;
+        if let Some(outputs) = io.outputs {
+            self.add_json_part_to_form(form, format!("patch.{}.outputs", run_id), &outputs)?;
+        }
+
+        if let Some(attachments) = attachments {
+            for attachment in attachments {
+                self.add_attachment_to_form(form, run_id, attachment)
+                    .await?;
+            }
         }
 
         Ok(())
@@ -182,11 +197,10 @@ impl RunProcessor {
     async fn add_attachment_to_form(
         &self,
         form: &mut Form,
-        prefix: &str,
         run_id: &str,
         attachment: Attachment,
     ) -> Result<(), TracingClientError> {
-        let part_name = format!("{}.{}.attachments.{}", prefix, run_id, attachment.ref_name);
+        let part_name = format!("attachment.{}.{}", run_id, attachment.ref_name);
         if let Some(data) = attachment.data {
             let part_size = data.len() as u64;
             *form = std::mem::take(form).part(

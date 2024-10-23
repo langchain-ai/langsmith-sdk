@@ -31,8 +31,8 @@ pub struct RunCommon {
     pub extra: Option<serde_json::Value>,
     pub error: Option<String>,
     pub serialized: Option<serde_json::Value>,
-    pub events: serde_json::Value,
-    pub tags: serde_json::Value,
+    pub events: Option<serde_json::Value>,
+    pub tags: Option<serde_json::Value>,
     pub session_id: Option<String>,
     pub session_name: Option<String>,
 }
@@ -58,13 +58,13 @@ pub struct RunUpdate {
 pub struct RunCreateExtended {
     pub run_create: RunCreate,
     pub io: RunIO,
-    pub attachments: Vec<Attachment>,
+    pub attachments: Option<Vec<Attachment>>,
 }
 
 pub struct RunUpdateExtended {
     pub run_update: RunUpdate,
     pub io: RunIO,
-    pub attachments: Vec<Attachment>,
+    pub attachments: Option<Vec<Attachment>>,
 }
 
 pub enum QueuedRun {
