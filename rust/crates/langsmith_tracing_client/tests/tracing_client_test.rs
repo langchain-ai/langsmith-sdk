@@ -5,6 +5,7 @@ use langsmith_tracing_client::client::run::{
 use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClient};
 use mockito::Server;
 use multipart::server::Multipart;
+use reqwest::header::{HeaderMap, HeaderValue};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -58,7 +59,7 @@ async fn test_tracing_client_submit_run_create() {
     let captured_request_clone = Arc::clone(&captured_request);
 
     let m = server
-        .mock("POST", "/")
+        .mock("POST", "/runs/multipart")
         .expect(1)
         .with_status(200)
         .with_body_from_request(move |req| {
@@ -81,6 +82,7 @@ async fn test_tracing_client_submit_run_create() {
         queue_capacity: 10,
         batch_size: 5, // batch size is 5 to ensure shutdown flushes the queue
         batch_timeout: Duration::from_secs(1),
+        headers: None,
     };
 
     let client = TracingClient::new(config).unwrap();
@@ -115,8 +117,8 @@ async fn test_tracing_client_submit_run_create() {
                 extra: Some(serde_json::json!({"extra_data": "value"})),
                 error: None,
                 serialized: Some(serde_json::json!({"key": "value"})),
-                events: serde_json::json!([{ "event": "event_data" }]),
-                tags: serde_json::json!(["tag1", "tag2"]),
+                events: Some(serde_json::json!([{ "event": "event_data" }])),
+                tags: Some(serde_json::json!(["tag1", "tag2"])),
                 session_id: None,
                 session_name: Some("Session Name".to_string()),
             },
@@ -126,7 +128,7 @@ async fn test_tracing_client_submit_run_create() {
             run_type: String::from("chain"),
             reference_example_id: None,
         },
-        attachments,
+        attachments: Some(attachments),
         io: RunIO {
             inputs: Some(serde_json::json!({"input": "value"})),
             outputs: Some(serde_json::json!({"output": "value"})),
@@ -202,7 +204,7 @@ async fn test_tracing_client_submit_run_create() {
     assert_eq!(received_outputs, serde_json::json!({"output": "value"}));
 
     // assert attachment_1 fields
-    assert_eq!(fields[3].name, "post.test_id.attachments.attachment_1");
+    assert_eq!(fields[3].name, "attachment.test_id.attachment_1");
     assert_eq!(
         fields[3].content_type,
         Some("application/octet-stream; length=3".to_string())
@@ -211,7 +213,7 @@ async fn test_tracing_client_submit_run_create() {
     assert_eq!(fields[3].data, "\u{1}\u{2}\u{3}");
 
     // assert attachment_2 fields
-    assert_eq!(fields[4].name, "post.test_id.attachments.attachment_2");
+    assert_eq!(fields[4].name, "attachment.test_id.attachment_2");
     assert_eq!(
         fields[4].content_type,
         Some("text/plain; length=29".to_string())
@@ -230,7 +232,7 @@ async fn test_tracing_client_submit_run_update() {
     let captured_request_clone = Arc::clone(&captured_request);
 
     let m = server
-        .mock("POST", "/")
+        .mock("POST", "/runs/multipart")
         .expect(1)
         .with_status(200)
         .with_body_from_request(move |req| {
@@ -243,16 +245,24 @@ async fn test_tracing_client_submit_run_update() {
                 .collect::<Vec<&str>>()
                 .join(", ");
             request.1 = content_type_str;
+
+            let auth_headers = req.header("X-API-KEY");
+            assert!(auth_headers
+                .iter()
+                .any(|h| h.to_str().unwrap() == "test_key"));
             vec![] // return empty response body
         })
         .create_async()
         .await;
 
+    let mut headers = HeaderMap::new();
+    headers.insert("X-API-KEY", HeaderValue::from_static("test_key"));
     let config = ClientConfig {
         endpoint: server.url(),
         queue_capacity: 10,
         batch_size: 5, // batch size is 5 to ensure shutdown flushes the queue
         batch_timeout: Duration::from_secs(1),
+        headers: Some(headers),
     };
 
     let client = TracingClient::new(config).unwrap();
@@ -287,14 +297,14 @@ async fn test_tracing_client_submit_run_update() {
                 extra: Some(serde_json::json!({"extra_data": "value"})),
                 error: None,
                 serialized: Some(serde_json::json!({"key": "value"})),
-                events: serde_json::json!([{ "event": "event_data" }]),
-                tags: serde_json::json!(["tag1", "tag2"]),
+                events: Some(serde_json::json!([{ "event": "event_data" }])),
+                tags: Some(serde_json::json!(["tag1", "tag2"])),
                 session_id: None,
                 session_name: Some("Session Name".to_string()),
             },
             end_time: TimeValue::String("2024-10-16T12:00:00Z".to_string()),
         },
-        attachments,
+        attachments: Some(attachments),
         io: RunIO {
             inputs: None,
             outputs: Some(serde_json::json!({"updated_output": "value"})),
@@ -353,7 +363,7 @@ async fn test_tracing_client_submit_run_update() {
     );
 
     // assert attachment_1 fields
-    assert_eq!(fields[2].name, "patch.test_id.attachments.attachment_1");
+    assert_eq!(fields[2].name, "attachment.test_id.attachment_1");
     assert_eq!(
         fields[2].content_type,
         Some("application/octet-stream; length=3".to_string())
@@ -362,7 +372,7 @@ async fn test_tracing_client_submit_run_update() {
     assert_eq!(fields[2].data, "\u{4}\u{5}\u{6}");
 
     // assert attachment_2 fields
-    assert_eq!(fields[3].name, "patch.test_id.attachments.attachment_2");
+    assert_eq!(fields[3].name, "attachment.test_id.attachment_2");
     assert_eq!(
         fields[3].content_type,
         Some("text/plain; length=29".to_string())

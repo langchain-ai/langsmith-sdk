@@ -2,6 +2,7 @@ use crate::client::errors::TracingClientError;
 use crate::client::processor::RunProcessor;
 use crate::client::run::QueuedRun;
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
+use reqwest::header::HeaderMap;
 use std::time::Duration;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
@@ -11,6 +12,7 @@ pub struct ClientConfig {
     pub queue_capacity: usize,
     pub batch_size: usize,
     pub batch_timeout: Duration,
+    pub headers: Option<HeaderMap>,
 }
 
 pub struct TracingClient {
