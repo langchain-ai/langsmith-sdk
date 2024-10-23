@@ -355,6 +355,9 @@ export class AISDKExporter {
           span.attributes["resource.name"];
       }
 
+      const parsedStart = convertToTimestamp(span.startTime);
+      const parsedEnd = convertToTimestamp(span.endTime);
+
       const config: RunCreate = {
         ...rawConfig,
         id: runId,
@@ -367,8 +370,8 @@ export class AISDKExporter {
             "ai.operationId": span.attributes["ai.operationId"],
           },
         },
-        start_time: convertToTimestamp(span.startTime),
-        end_time: convertToTimestamp(span.endTime),
+        start_time: Math.min(parsedStart, parsedEnd),
+        end_time: Math.max(parsedStart, parsedEnd),
       };
 
       return config;
@@ -448,10 +451,13 @@ export class AISDKExporter {
         })();
 
         const events: KVMap[] = [];
-        if ("ai.response.msToFirstChunk" in span.attributes) {
+        const firstChunkEvent = span.events.find(
+          (i) => i.name === "ai.stream.firstChunk"
+        );
+        if (firstChunkEvent) {
           events.push({
-            type: "first_chunk",
-            time: span.attributes["ai.response.msToFirstChunk"],
+            name: "new_token",
+            time: convertToTimestamp(firstChunkEvent.time),
           });
         }
 
@@ -549,10 +555,13 @@ export class AISDKExporter {
         })();
 
         const events: KVMap[] = [];
-        if ("ai.response.msToFirstChunk" in span.attributes) {
+        const firstChunkEvent = span.events.find(
+          (i) => i.name === "ai.stream.firstChunk"
+        );
+        if (firstChunkEvent) {
           events.push({
-            type: "first_chunk",
-            time: span.attributes["ai.response.msToFirstChunk"],
+            name: "new_token",
+            time: convertToTimestamp(firstChunkEvent.time),
           });
         }
 
