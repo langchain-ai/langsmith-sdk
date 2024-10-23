@@ -447,12 +447,21 @@ export class AISDKExporter {
           return result;
         })();
 
+        const events: KVMap[] = [];
+        if ("ai.response.msToFirstChunk" in span.attributes) {
+          events.push({
+            type: "first_chunk",
+            time: span.attributes["ai.response.msToFirstChunk"],
+          });
+        }
+
         // TODO: add first_token_time
         return asRunCreate({
           run_type: "llm",
           name: span.attributes["ai.model.provider"],
           inputs,
           outputs,
+          events,
           extra: {
             batch_size: 1,
             metadata: {
@@ -466,7 +475,6 @@ export class AISDKExporter {
             },
           },
         });
-        break;
       }
 
       case "ai.toolCall": {
@@ -540,11 +548,20 @@ export class AISDKExporter {
           return result;
         })();
 
+        const events: KVMap[] = [];
+        if ("ai.response.msToFirstChunk" in span.attributes) {
+          events.push({
+            type: "first_chunk",
+            time: span.attributes["ai.response.msToFirstChunk"],
+          });
+        }
+
         return asRunCreate({
           run_type: "llm",
           name: span.attributes["ai.model.provider"],
           inputs,
           outputs,
+          events,
           extra: {
             batch_size: 1,
             metadata: {
