@@ -242,7 +242,7 @@ test.concurrent(
   180_000
 );
 
-test.only("Test persist run with attachments and compression", async () => {
+test("Test persist run with all items compressed", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
     callerOptions: { maxRetries: 2 },
