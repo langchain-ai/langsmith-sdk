@@ -27,20 +27,8 @@ type LangChainMessageFields = {
   content:
     | string
     | Array<
-        | { type: "text"; text: string }
-        | {
-            type: "image_url";
-            image_url:
-              | string
-              | {
-                  url: string;
-                  detail?: "auto" | "low" | "high" | AnyString;
-                };
-          }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        | (Record<string, any> & { type?: "text" | "image_url" | string })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        | (Record<string, any> & { type?: never })
+        Record<string, any> & { type?: "text" | "image_url" | AnyString }
       >;
   name?: string;
   id?: string;
@@ -215,6 +203,7 @@ function convertToTimestamp([seconds, nanoseconds]: [
   return Number(String(seconds) + ms);
 }
 
+const ROOT = "$";
 const RUN_ID_NAMESPACE = "5c718b20-9078-11ef-9a3d-325096b39f47";
 
 const RUN_ID_METADATA_KEY = {
@@ -605,8 +594,8 @@ export class AISDKExporter {
       const run = this.getRunCreate(span);
       if (!run) continue;
 
-      traceMap.relativeExecutionOrder[parentRunId ?? "$"] ??= -1;
-      traceMap.relativeExecutionOrder[parentRunId ?? "$"] += 1;
+      traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
+      traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
@@ -614,11 +603,11 @@ export class AISDKExporter {
         startTime: span.startTime,
         run,
         sent: false,
-        executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? "$"],
+        executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
 
-      traceMap.childMap[parentRunId ?? "$"] ??= [];
-      traceMap.childMap[parentRunId ?? "$"].push(traceMap.nodeMap[runId]);
+      traceMap.childMap[parentRunId ?? ROOT] ??= [];
+      traceMap.childMap[parentRunId ?? ROOT].push(traceMap.nodeMap[runId]);
       traceMap.interop = this.parseInteropFromMetadata(span);
     }
 
@@ -638,7 +627,7 @@ export class AISDKExporter {
       const traceMap = this.traceByMap[traceId];
 
       const queue: QueueItem[] =
-        traceMap.childMap["$"]?.map((item) => ({
+        traceMap.childMap[ROOT]?.map((item) => ({
           item,
           dottedOrder: convertToDottedOrderFormat(
             item.startTime,
