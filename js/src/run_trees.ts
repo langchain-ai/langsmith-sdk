@@ -376,7 +376,7 @@ export class RunTree implements BaseRun {
 
   async postRun(excludeChildRuns = true): Promise<void> {
     try {
-      const runtimeEnv = await getRuntimeEnvironment();
+      const runtimeEnv = getRuntimeEnvironment();
       const runCreate = await this._convertToCreate(this, runtimeEnv, true);
       await this.client.createRun(runCreate);
 
