@@ -10,14 +10,15 @@ import { tool } from "ai";
 import { gatherIterator } from "./utils/iterator.js";
 import { Client } from "../index.js";
 import { waitUntilRunFound } from "./utils.js";
+import { getCurrentRunTree, traceable } from "../traceable.js";
 
-const getTelemetrySettings = (langsmithRunId?: string) => {
+const getTelemetrySettings = (runId?: string) => {
   const metadata: Record<string, string> = {
     userId: "123",
     language: "english",
   };
 
-  if (langsmithRunId) metadata.langsmithRunId = langsmithRunId;
+  if (runId) metadata["langsmith:runId"] = runId;
   return {
     isEnabled: true,
     functionId: "functionId",
@@ -176,6 +177,57 @@ test("streamObject", async () => {
 
   const storedRun = await client.readRun(traceId);
   expect(storedRun.id).toEqual(traceId);
+});
+
+test("traceable", async () => {
+  const runId = uuid();
+
+  const wrappedText = traceable(
+    async (content: string) => {
+      const runTree = getCurrentRunTree();
+      const headers = runTree.toHeaders();
+
+      const telemetry = getTelemetrySettings();
+
+      const { text } = await generateText({
+        model: openai("gpt-4o-mini"),
+        messages: [{ role: "user", content }],
+        tools: {
+          listOrders: tool({
+            description: "list all orders",
+            parameters: z.object({ userId: z.string() }),
+            execute: async ({ userId }) =>
+              `User ${userId} has the following orders: 1`,
+          }),
+          viewTrackingInformation: tool({
+            description: "view tracking information for a specific order",
+            parameters: z.object({ orderId: z.string() }),
+            execute: async ({ orderId }) =>
+              `Here is the tracking information for ${orderId}`,
+          }),
+        },
+        experimental_telemetry: {
+          ...telemetry,
+          metadata: {
+            ...telemetry.metadata,
+            "langsmith:trace": headers["langsmith-trace"],
+            "langsmith:baggage": headers["baggage"],
+          },
+        },
+        maxSteps: 10,
+      });
+
+      return { text };
+    },
+    { name: "wrappedText", id: runId }
+  );
+
+  const result = await wrappedText(
+    "What are my orders and where are they? My user ID is 123"
+  );
+  await waitUntilRunFound(client, runId, true);
+  const storedRun = await client.readRun(runId);
+  expect(storedRun.outputs).toEqual(result);
 });
 
 afterAll(async () => {
