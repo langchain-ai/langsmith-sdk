@@ -33,18 +33,18 @@ impl RunProcessor {
                 Some(queued_run) = self.receiver.recv() => {
                     match queued_run {
                         QueuedRun::Shutdown => {
-                            println!("shutdown signal received.");
+                            // println!("shutdown signal received.");
                             if !buffer.is_empty() {
-                                println!("sending remaining buffer before shutdown.");
+                                // println!("sending remaining buffer before shutdown.");
                                 self.send_and_clear_buffer(&mut buffer).await?;
                             }
                             break;
                         },
                         _ => {
-                            println!("received a queued run.");
+                            // println!("received a queued run.");
                             buffer.push(queued_run);
                             if buffer.len() >= self.config.batch_size {
-                                println!("batch size limit, sending batch.");
+                                // println!("batch size limit, sending batch.");
                                 self.send_and_clear_buffer(&mut buffer).await?;
                                 last_send_time = Instant::now();
                             }
@@ -53,22 +53,22 @@ impl RunProcessor {
                 }
                 _ = sleep(self.config.batch_timeout) => {
                     if !buffer.is_empty() && last_send_time.elapsed() >= self.config.batch_timeout {
-                        println!("batch timeout, sending batch.");
+                        // println!("batch timeout, sending batch.");
                         self.send_and_clear_buffer(&mut buffer).await?;
                         last_send_time = Instant::now();
                     }
                 }
                 else => {
-                    println!("channel closed.");
+                    // println!("channel closed.");
                     if !buffer.is_empty() {
-                        println!("sending remaining buffer.");
+                        // println!("sending remaining buffer.");
                         self.send_and_clear_buffer(&mut buffer).await?;
                     }
                     break;
                 }
             }
         }
-        println!("exiting loop.");
+        // println!("exiting loop.");
         Ok(())
     }
 
