@@ -203,6 +203,14 @@ function convertToTimestamp([seconds, nanoseconds]: [
   return Number(String(seconds) + ms);
 }
 
+function sortByHr(
+  a: [seconds: number, nanoseconds: number],
+  b: [seconds: number, nanoseconds: number]
+): number {
+  if (a[0] !== b[0]) return Math.sign(a[0] - b[0]);
+  return Math.sign(a[1] - b[1]);
+}
+
 const ROOT = "$";
 const RUN_ID_NAMESPACE = "5c718b20-9078-11ef-9a3d-325096b39f47";
 
@@ -611,7 +619,10 @@ export class AISDKExporter {
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
-    const typedSpans = spans as AISDKSpan[];
+    const typedSpans = (spans as AISDKSpan[])
+      .slice()
+      .sort((a, b) => sortByHr(a.startTime, b.startTime));
+
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
       const parentId = span.parentSpanId ?? undefined;
