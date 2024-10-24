@@ -871,7 +871,7 @@ def test_multipart_ingest_runs_create_wrong_type(
         langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
 
         # this should 422
-        assert len(caplog.records)
+        assert len(caplog.records) == 1, "Should get 1 warning for 422, not retried"
         assert all("422" in record.message for record in caplog.records)
 
 
