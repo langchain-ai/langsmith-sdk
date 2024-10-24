@@ -74,7 +74,7 @@ export interface ClientConfig {
   autoBatchTracing?: boolean;
   batchSizeBytesLimit?: number;
   blockOnRootRunFinalization?: boolean;
-  batchConcurrency?: number;
+  traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
 }
 
@@ -476,7 +476,7 @@ export class Client {
 
   private blockOnRootRunFinalization = true;
 
-  private batchConcurrency = 1;
+  private traceBatchConcurrency = 5;
 
   private _serverInfo: RecordStringAny | undefined;
 
@@ -498,13 +498,14 @@ export class Client {
     }
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
-    this.batchConcurrency = config.batchConcurrency ?? this.batchConcurrency;
-    if (this.batchConcurrency < 1) {
-      throw new Error("Batch concurrency must be positive.");
+    this.traceBatchConcurrency =
+      config.traceBatchConcurrency ?? this.traceBatchConcurrency;
+    if (this.traceBatchConcurrency < 1) {
+      throw new Error("Trace batch concurrency must be positive.");
     }
     this.batchIngestCaller = new AsyncCaller({
       maxRetries: 2,
-      maxConcurrency: this.batchConcurrency,
+      maxConcurrency: this.traceBatchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
@@ -764,7 +765,7 @@ export class Client {
   private async drainAutoBatchQueue() {
     const batchSizeLimit = await this._getBatchSizeLimitBytes();
     while (this.autoBatchQueue.items.length > 0) {
-      for (let i = 0; i < this.batchConcurrency; i++) {
+      for (let i = 0; i < this.traceBatchConcurrency; i++) {
         const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
         if (!batch.length) {
           done();
