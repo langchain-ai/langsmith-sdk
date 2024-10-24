@@ -1,0 +1,26 @@
+[package]
+name = "langsmith_tracing_client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.11.0", features = ["v4"] }
+serde_json = "1.0.128"
+serde = { version = "1.0.210", features = ["derive"] }
+chrono = "0.4.38"
+reqwest = { version = "0.12.8", features = ["multipart", "stream"] }
+thiserror = "1.0"
+tokio-util = "0.7.12"
+tempfile = "3.13.0"
+pyo3-asyncio = { version = "0.20.0", features = ["testing", "attributes", "async-std-runtime", "tokio-runtime"] }
+pyo3 = "0.20.3"
+
+[dev-dependencies]
+multipart = "0.18.0"
+mockito = "1.5.0"
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+
+[[bench]]
+name = "tracing_client_benchmark"
+harness = false
