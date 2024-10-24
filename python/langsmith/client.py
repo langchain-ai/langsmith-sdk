@@ -1740,6 +1740,8 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
+                    # do not retry by default
+                    return
 
     def update_run(
         self,
