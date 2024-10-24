@@ -260,7 +260,6 @@ impl RunProcessor {
         let futures = batch.into_iter().map(|queued_run| {
             let semaphore = semaphore.clone();
             async move {
-                // Acquire a permit before proceeding
                 let _permit = semaphore.acquire().await;
 
                 let parts = match queued_run {
