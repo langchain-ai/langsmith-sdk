@@ -74,6 +74,7 @@ export interface ClientConfig {
   autoBatchTracing?: boolean;
   batchSizeBytesLimit?: number;
   blockOnRootRunFinalization?: boolean;
+  batchConcurrency?: number;
   fetchOptions?: RequestInit;
 }
 
@@ -475,6 +476,8 @@ export class Client {
 
   private blockOnRootRunFinalization = true;
 
+  private batchConcurrency = 1;
+
   private _serverInfo: RecordStringAny | undefined;
 
   private _autoBatchQueueIsDraining = false;
@@ -512,6 +515,10 @@ export class Client {
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
+    this.batchConcurrency = config.batchConcurrency ?? this.batchConcurrency;
+    if (this.batchConcurrency < 1) {
+      throw new Error("Batch concurrency must be positive.");
+    }
   }
 
   public static getDefaultClientConfig(): {
@@ -761,35 +768,46 @@ export class Client {
     }
     this._autoBatchQueueIsDraining = true;
     try {
-      while (this.autoBatchQueue.items.length >= 0) {
-        const [batch, done] = this.autoBatchQueue.pop(
-          await this._getBatchSizeLimitBytes()
-        );
-        if (!batch.length) {
-          done();
-          return;
-        }
-        try {
-          const ingestParams = {
-            runCreates: batch
-              .filter((item) => item.action === "create")
-              .map((item) => item.item) as RunCreate[],
-            runUpdates: batch
-              .filter((item) => item.action === "update")
-              .map((item) => item.item) as RunUpdate[],
-          };
-          const serverInfo = await this._ensureServerInfo();
-          if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-            await this.multipartIngestRuns(ingestParams);
-          } else {
-            await this.batchIngestRuns(ingestParams);
+      const batchSizeLimit = await this._getBatchSizeLimitBytes();
+      while (this.autoBatchQueue.items.length > 0) {
+        const promises = [];
+        for (let i = 0; i < this.batchConcurrency; i++) {
+          const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+          if (!batch.length) {
+            done();
+            break;
           }
-        } finally {
-          done();
+          promises.push(this.processBatch(batch, done));
         }
+        await Promise.all(promises);
       }
     } finally {
       this._autoBatchQueueIsDraining = false;
+    }
+  }
+
+  private async processBatch(batch: AutoBatchQueueItem[], done: () => void) {
+    if (!batch.length) {
+      done();
+      return;
+    }
+    try {
+      const ingestParams = {
+        runCreates: batch
+          .filter((item) => item.action === "create")
+          .map((item) => item.item) as RunCreate[],
+        runUpdates: batch
+          .filter((item) => item.action === "update")
+          .map((item) => item.item) as RunUpdate[],
+      };
+      const serverInfo = await this._ensureServerInfo();
+      if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        await this.multipartIngestRuns(ingestParams);
+      } else {
+        await this.batchIngestRuns(ingestParams);
+      }
+    } finally {
+      done();
     }
   }
 
