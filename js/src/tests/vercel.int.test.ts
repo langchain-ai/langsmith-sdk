@@ -144,7 +144,7 @@ test("generateObject", async () => {
   await generateObject({
     model: openai("gpt-4o-mini", { structuredOutputs: true }),
     schema: z.object({
-      recipe: z.object({
+      weather: z.object({
         city: z.string(),
         unit: z.union([z.literal("celsius"), z.literal("fahrenheit")]),
       }),
@@ -169,7 +169,7 @@ test("streamObject", async () => {
   const result = await streamObject({
     model: openai("gpt-4o-mini", { structuredOutputs: true }),
     schema: z.object({
-      recipe: z.object({
+      weather: z.object({
         city: z.string(),
         unit: z.union([z.literal("celsius"), z.literal("fahrenheit")]),
       }),
