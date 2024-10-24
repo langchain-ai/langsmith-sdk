@@ -2,6 +2,7 @@
 
 import datetime
 import io
+import logging
 import os
 import random
 import string
@@ -744,21 +745,26 @@ Error cases:
 """
 
 
-def test_multipart_ingest_runs_empty(langchain_client: Client) -> None:
+def test_multipart_ingest_runs_empty(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
 
     runs_to_create: list[dict] = []
     runs_to_update: list[dict] = []
 
     # make sure no warnings logged
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
 
         langchain_client.multipart_ingest_runs(
             create=runs_to_create, update=runs_to_update
         )
 
+        assert not caplog.records
 
-def test_multipart_ingest_runs_create_then_update(langchain_client: Client) -> None:
+
+def test_multipart_ingest_runs_create_then_update(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
     _session = "__test_multipart_ingest_runs_create_then_update"
 
     trace_a_id = uuid4()
@@ -779,10 +785,11 @@ def test_multipart_ingest_runs_create_then_update(langchain_client: Client) -> N
     ]
 
     # make sure no warnings logged
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
 
         langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+
+        assert not caplog.records
 
     runs_to_update: list[dict] = [
         {
@@ -792,13 +799,16 @@ def test_multipart_ingest_runs_create_then_update(langchain_client: Client) -> N
             "outputs": {"output1": 3, "output2": 4},
         }
     ]
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
 
         langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
 
+        assert not caplog.records
 
-def test_multipart_ingest_runs_update_then_create(langchain_client: Client) -> None:
+
+def test_multipart_ingest_runs_update_then_create(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
     _session = "__test_multipart_ingest_runs_update_then_create"
 
     trace_a_id = uuid4()
@@ -816,10 +826,11 @@ def test_multipart_ingest_runs_update_then_create(langchain_client: Client) -> N
     ]
 
     # make sure no warnings logged
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
 
         langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
+
+        assert not caplog.records
 
     runs_to_create: list[dict] = [
         {
@@ -833,13 +844,16 @@ def test_multipart_ingest_runs_update_then_create(langchain_client: Client) -> N
         }
     ]
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
 
         langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
 
+        assert not caplog.records
 
-def test_multipart_ingest_runs_create_wrong_type(langchain_client: Client) -> None:
+
+def test_multipart_ingest_runs_create_wrong_type(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
     _session = "__test_multipart_ingest_runs_create_then_update"
 
     trace_a_id = uuid4()
@@ -860,10 +874,12 @@ def test_multipart_ingest_runs_create_wrong_type(langchain_client: Client) -> No
     ]
 
     # make sure no warnings logged
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
         langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+
+        # this should 422
+        assert len(caplog.records)
+        assert all("422" in record.message for record in caplog.records)
 
 
 @freeze_time("2023-01-01")
