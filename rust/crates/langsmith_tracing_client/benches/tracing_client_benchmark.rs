@@ -158,7 +158,6 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
                             let mut elapsed_time = Duration::default();
                             let server_url = server_url.clone();
                             async move {
-                                //let start = std::time::Instant::now();
                                 println!("Iterations: {}", iters);
                                 for _ in 0..iters {
                                     let runs: Vec<RunCreateExtended> = (0..num_runs)
@@ -200,7 +199,7 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = bench_run_create_iter_custom
+    targets = bench_run_create_iter_custom, bench_run_create
 }
 
 criterion_main!(benches);
