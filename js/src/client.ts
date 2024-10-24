@@ -474,7 +474,7 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
-  private blockOnRootRunFinalization = true;
+  private blockOnRootRunFinalization = false;
 
   private traceBatchConcurrency = 5;
 
@@ -1232,11 +1232,7 @@ export class Client {
       ) {
         // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
         // in serverless environments.
-        // TODO: Make this opt-in only in next minor bump
-        await Promise.race([
-          this.processRunOperation({ action: "update", item: data }, true),
-          new Promise((resolve) => setTimeout(resolve, 500)),
-        ]);
+        await this.processRunOperation({ action: "update", item: data }, true);
         return;
       } else {
         void this.processRunOperation({ action: "update", item: data }).catch(
