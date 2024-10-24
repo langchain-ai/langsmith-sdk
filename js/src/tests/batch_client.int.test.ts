@@ -261,7 +261,7 @@ test.skip("very large runs", async () => {
   const projectName = "__test_large_runs" + uuidv4().substring(0, 4);
   await deleteProject(langchainClient, projectName);
 
-  console.time("foo");
+  console.time("largeRunTimer");
 
   const promises = [];
   for (let i = 0; i < 10; i++) {
@@ -281,7 +281,11 @@ test.skip("very large runs", async () => {
 
   await Promise.all(promises);
 
-  console.timeLog("foo");
+  console.timeLog("largeRunTimer");
+
+  await langchainClient.awaitPendingTraceBatches();
+
+  console.timeLog("largeRunTimer");
 
   await Promise.all([waitUntilProjectFound(langchainClient, projectName)]);
 

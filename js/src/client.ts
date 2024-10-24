@@ -480,8 +480,6 @@ export class Client {
 
   private _serverInfo: RecordStringAny | undefined;
 
-  private _autoBatchQueueIsDraining = false;
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
@@ -500,7 +498,13 @@ export class Client {
     }
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.batchConcurrency = config.batchConcurrency ?? this.batchConcurrency;
+    if (this.batchConcurrency < 1) {
+      throw new Error("Batch concurrency must be positive.");
+    }
     this.batchIngestCaller = new AsyncCaller({
+      maxRetries: 2,
+      maxConcurrency: this.batchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
@@ -515,10 +519,6 @@ export class Client {
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
-    this.batchConcurrency = config.batchConcurrency ?? this.batchConcurrency;
-    if (this.batchConcurrency < 1) {
-      throw new Error("Batch concurrency must be positive.");
-    }
   }
 
   public static getDefaultClientConfig(): {
@@ -762,27 +762,16 @@ export class Client {
   }
 
   private async drainAutoBatchQueue() {
-    if (this._autoBatchQueueIsDraining) {
-      // Exit if already draining
-      return;
-    }
-    this._autoBatchQueueIsDraining = true;
-    try {
-      const batchSizeLimit = await this._getBatchSizeLimitBytes();
-      while (this.autoBatchQueue.items.length > 0) {
-        const promises = [];
-        for (let i = 0; i < this.batchConcurrency; i++) {
-          const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
-          if (!batch.length) {
-            done();
-            break;
-          }
-          promises.push(this.processBatch(batch, done));
+    const batchSizeLimit = await this._getBatchSizeLimitBytes();
+    while (this.autoBatchQueue.items.length > 0) {
+      for (let i = 0; i < this.batchConcurrency; i++) {
+        const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+        if (!batch.length) {
+          done();
+          break;
         }
-        await Promise.all(promises);
+        await this.processBatch(batch, done);
       }
-    } finally {
-      this._autoBatchQueueIsDraining = false;
     }
   }
 
@@ -4185,8 +4174,9 @@ export class Client {
    * @returns A promise that resolves once all currently pending traces have sent.
    */
   public awaitPendingTraceBatches() {
-    return Promise.all(
-      this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise)
-    );
+    return Promise.all([
+      ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
+      this.batchIngestCaller.queue.onIdle(),
+    ]);
   }
 }
