@@ -85,6 +85,7 @@ impl RunProcessor {
 
     async fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
         let mut form = Form::new();
+        // println!("Sending batch of {} runs", batch.len());
 
         for queued_run in batch {
             match queued_run {
