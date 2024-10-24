@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use langsmith_tracing_client::client::run::{
     Attachment, RunCommon, RunCreate, RunCreateExtended, RunIO, TimeValue,
 };
@@ -116,7 +116,7 @@ fn bench_run_create(c: &mut Criterion) {
                             },
                             |(client, runs)| async {
                                 for run in runs {
-                                    client.submit_run_create(run).await.unwrap();
+                                    client.submit_run_create(black_box(run)).await.unwrap();
                                 }
                                 // shutdown the client to flush the queue
                                 client.shutdown().await.unwrap();
@@ -131,10 +131,76 @@ fn bench_run_create(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_run_create_iter_custom(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let server = rt.block_on(async {
+        let mut server = Server::new_async().await;
+        server
+            .mock("POST", "/runs/multipart")
+            .with_status(202)
+            .create_async()
+            .await;
+        server
+    });
+
+    let mut group = c.benchmark_group("run_create_custom_iter");
+    let server_url = server.url();
+    for batch_size in vec![50] {
+        for json_len in vec![1_000, 5_000] {
+            for num_runs in vec![500, 1_000] {
+                group.bench_function(
+                    BenchmarkId::new(
+                        "run_create",
+                        format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
+                    ),
+                    |b| {
+                        b.to_async(&rt).iter_custom(|iters| {
+                            let mut elapsed_time = Duration::default();
+                            let server_url = server_url.clone();
+                            async move {
+                                //let start = std::time::Instant::now();
+                                println!("Iterations: {}", iters);
+                                for _ in 0..iters {
+                                    let runs: Vec<RunCreateExtended> = (0..num_runs)
+                                        .map(|i| {
+                                            let mut run = create_run_create(
+                                                None,
+                                                Some(create_large_json(json_len)),
+                                                Some(create_large_json(json_len)),
+                                            );
+                                            run.run_create.common.id = format!("test_id_{}", i);
+                                            run
+                                        })
+                                        .collect();
+                                    let client_config =
+                                        create_mock_client_config(&server_url, batch_size);
+                                    let client = TracingClient::new(client_config).unwrap();
+
+                                    let start = std::time::Instant::now();
+                                    for run in runs {
+                                        client.submit_run_create(black_box(run)).await.unwrap();
+                                    }
+                                    // shutdown the client to flush the queue
+                                    client.shutdown().await.unwrap();
+                                    println!("Elapsed time inner loop: {:?}", start.elapsed());
+                                    elapsed_time += start.elapsed();
+                                }
+                                println!("Elapsed time: {:?}", elapsed_time);
+                                elapsed_time
+                            }
+                        })
+                    },
+                );
+            }
+        }
+    }
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = bench_run_create
+    targets = bench_run_create_iter_custom
 }
 
 criterion_main!(benches);
