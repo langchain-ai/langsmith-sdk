@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::client::errors::TracingClientError;
 use crate::client::run::{Attachment, QueuedRun};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
@@ -7,6 +8,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::time::{sleep, Instant};
 use tokio_util::io::ReaderStream;
 use futures::stream::{FuturesUnordered, StreamExt};
+use tokio::sync::Semaphore;
 use tokio::task;
 
 pub struct RunProcessor {
@@ -252,26 +254,32 @@ impl RunProcessor {
     async fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
         let mut form = Form::new();
 
-        // Use FuturesUnordered to process the batch concurrently
-        let futures = batch.into_iter().map(|queued_run| async {
-            let parts = match queued_run {
-                QueuedRun::Create(run_create_extended) => {
-                    self.process_run_create(run_create_extended).await?
-                }
-                QueuedRun::Update(run_update_extended) => {
-                    self.process_run_update(run_update_extended).await?
-                }
-                QueuedRun::Shutdown => return Err(TracingClientError::UnexpectedShutdown),
-            };
-            Ok::<_, TracingClientError>(parts)
+        let max_concurrency = 4;
+        let semaphore = Arc::new(Semaphore::new(max_concurrency));
+
+        let futures = batch.into_iter().map(|queued_run| {
+            let semaphore = semaphore.clone();
+            async move {
+                // Acquire a permit before proceeding
+                let _permit = semaphore.acquire().await;
+
+                let parts = match queued_run {
+                    QueuedRun::Create(run_create_extended) => {
+                        self.process_run_create(run_create_extended).await?
+                    }
+                    QueuedRun::Update(run_update_extended) => {
+                        self.process_run_update(run_update_extended).await?
+                    }
+                    QueuedRun::Shutdown => return Err(TracingClientError::UnexpectedShutdown),
+                };
+                Ok::<_, TracingClientError>(parts)
+            }
         });
 
-        // Collect all parts from concurrent processing
         let results = FuturesUnordered::from_iter(futures)
             .collect::<Vec<Result<Vec<(String, Part)>, TracingClientError>>>()
             .await;
 
-        // Assemble the form with all collected parts
         for result in results {
             match result {
                 Ok(parts) => {
@@ -286,7 +294,6 @@ impl RunProcessor {
             }
         }
 
-        // Send the multipart POST request
         let response = self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
@@ -315,33 +322,26 @@ impl RunProcessor {
 
         let mut parts = Vec::new();
 
-        // Process run_create
         parts.push(
-            self.create_json_part(format!("post.{}", run_id), &run_create)
-                .await?,
+            self.create_json_part(format!("post.{}", run_id), &run_create)?
         );
 
-        // Process inputs and outputs if available
         if let Some(inputs) = io.inputs {
             parts.push(
-                self.create_json_part(format!("post.{}.inputs", run_id), &inputs)
-                    .await?,
+                self.create_json_part(format!("post.{}.inputs", run_id), &inputs)?
             );
         }
 
         if let Some(outputs) = io.outputs {
             parts.push(
-                self.create_json_part(format!("post.{}.outputs", run_id), &outputs)
-                    .await?,
+                self.create_json_part(format!("post.{}.outputs", run_id), &outputs)?
             );
         }
 
-        // Process attachments if any
         if let Some(attachments) = attachments {
             for attachment in attachments {
                 parts.push(
-                    self.create_attachment_part(run_id, attachment)
-                        .await?,
+                    self.create_attachment_part(run_id, attachment).await?
                 );
             }
         }
@@ -362,26 +362,20 @@ impl RunProcessor {
 
         let mut parts = Vec::new();
 
-        // Process run_update
         parts.push(
-            self.create_json_part(format!("patch.{}", run_id), &run_update)
-                .await?,
+            self.create_json_part(format!("patch.{}", run_id), &run_update)?
         );
 
-        // Process outputs if available
         if let Some(outputs) = io.outputs {
             parts.push(
-                self.create_json_part(format!("patch.{}.outputs", run_id), &outputs)
-                    .await?,
+                self.create_json_part(format!("patch.{}.outputs", run_id), &outputs)?
             );
         }
 
-        // Process attachments if any
         if let Some(attachments) = attachments {
             for attachment in attachments {
                 parts.push(
-                    self.create_attachment_part(&run_id, attachment)
-                        .await?,
+                    self.create_attachment_part(&run_id, attachment).await?
                 );
             }
         }
@@ -389,7 +383,7 @@ impl RunProcessor {
         Ok(parts)
     }
 
-    async fn create_json_part(
+    fn create_json_part(
         &self,
         part_name: String,
         data: &impl serde::Serialize,
