@@ -839,6 +839,33 @@ def test_multipart_ingest_runs_update_then_create(langchain_client: Client) -> N
         langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
 
 
+def test_multipart_ingest_runs_create_wrong_type(langchain_client: Client) -> None:
+    _session = "__test_multipart_ingest_runs_create_then_update"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "agent",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+
+        langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+
+
 @freeze_time("2023-01-01")
 def test_get_info() -> None:
     langchain_client = Client(api_key="not-a-real-key")
