@@ -5841,6 +5841,7 @@ def _ensure_ingest_config(
 
 
 def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
+    logger.debug("Starting tracing control thread")
     client = client_ref()
     if client is None:
         return
@@ -5900,6 +5901,7 @@ def _tracing_sub_thread_func(
     except BaseException as e:
         logger.debug("Error in tracing control thread: %s", e)
         return
+    logger.debug("Starting tracing sub thread")
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
     batch_ingest_config = _ensure_ingest_config(client.info)
