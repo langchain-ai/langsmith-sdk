@@ -1,3 +1,5 @@
+import { jest } from "@jest/globals";
+
 import { v4 as uuidv4 } from "uuid";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -10,6 +12,7 @@ import {
   waitUntilProjectFound,
   waitUntilRunFound,
 } from "./utils.js";
+import { traceable } from "../traceable.js";
 
 test.concurrent(
   "Test persist update run",
@@ -241,3 +244,47 @@ test.concurrent(
   },
   180_000
 );
+
+test.skip("very large runs", async () => {
+  const langchainClient = new Client({
+    autoBatchTracing: true,
+    timeout_ms: 120_000,
+  });
+
+  // jest
+  //   .spyOn(langchainClient as any, "_getServerInfo")
+  //   .mockImplementation(() => {
+  //     return {
+  //       version: "foo",
+  //       batch_ingest_config: {},
+  //     };
+  //   });
+  const projectName = "__test_large_runs" + uuidv4().substring(0, 4);
+  await deleteProject(langchainClient, projectName);
+
+  console.time("foo");
+
+  const promises = [];
+  for (let i = 0; i < 10; i++) {
+    promises.push(
+      traceable(
+        async () => {
+          return "x".repeat(9000000);
+        },
+        {
+          project_name: projectName,
+          client: langchainClient,
+          tracingEnabled: true,
+        }
+      )()
+    );
+  }
+
+  await Promise.all(promises);
+
+  console.timeLog("foo");
+
+  await Promise.all([waitUntilProjectFound(langchainClient, projectName)]);
+
+  // await langchainClient.deleteProject({ projectName });
+}, 180_000);

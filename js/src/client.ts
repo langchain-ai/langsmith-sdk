@@ -477,6 +477,8 @@ export class Client {
 
   private _serverInfo: RecordStringAny | undefined;
 
+  private _autoBatchQueueIsDraining = false;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
@@ -493,7 +495,7 @@ export class Client {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
-    this.timeout_ms = config.timeout_ms ?? 12_000;
+    this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
     this.batchIngestCaller = new AsyncCaller({
       ...(config.callerOptions ?? {}),
@@ -753,32 +755,41 @@ export class Client {
   }
 
   private async drainAutoBatchQueue() {
-    while (this.autoBatchQueue.items.length >= 0) {
-      const [batch, done] = this.autoBatchQueue.pop(
-        await this._getBatchSizeLimitBytes()
-      );
-      if (!batch.length) {
-        done();
-        return;
-      }
-      try {
-        const ingestParams = {
-          runCreates: batch
-            .filter((item) => item.action === "create")
-            .map((item) => item.item) as RunCreate[],
-          runUpdates: batch
-            .filter((item) => item.action === "update")
-            .map((item) => item.item) as RunUpdate[],
-        };
-        const serverInfo = await this._ensureServerInfo();
-        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-          await this.multipartIngestRuns(ingestParams);
-        } else {
-          await this.batchIngestRuns(ingestParams);
+    if (this._autoBatchQueueIsDraining) {
+      // Exit if already draining
+      return;
+    }
+    this._autoBatchQueueIsDraining = true;
+    try {
+      while (this.autoBatchQueue.items.length >= 0) {
+        const [batch, done] = this.autoBatchQueue.pop(
+          await this._getBatchSizeLimitBytes()
+        );
+        if (!batch.length) {
+          done();
+          return;
         }
-      } finally {
-        done();
+        try {
+          const ingestParams = {
+            runCreates: batch
+              .filter((item) => item.action === "create")
+              .map((item) => item.item) as RunCreate[],
+            runUpdates: batch
+              .filter((item) => item.action === "update")
+              .map((item) => item.item) as RunUpdate[],
+          };
+          const serverInfo = await this._ensureServerInfo();
+          if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+            await this.multipartIngestRuns(ingestParams);
+          } else {
+            await this.batchIngestRuns(ingestParams);
+          }
+        } finally {
+          done();
+        }
       }
+    } finally {
+      this._autoBatchQueueIsDraining = false;
     }
   }
 
@@ -1213,7 +1224,11 @@ export class Client {
       ) {
         // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
         // in serverless environments.
-        await this.processRunOperation({ action: "update", item: data }, true);
+        // TODO: Make this opt-in only in next minor bump
+        await Promise.race([
+          this.processRunOperation({ action: "update", item: data }, true),
+          new Promise((resolve) => setTimeout(resolve, 500)),
+        ]);
         return;
       } else {
         void this.processRunOperation({ action: "update", item: data }).catch(
