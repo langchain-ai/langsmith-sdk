@@ -249,6 +249,7 @@ test.skip("very large runs", async () => {
     timeout_ms: 120_000,
   });
 
+  // Use old batch endpoint
   // jest
   //   .spyOn(langchainClient as any, "_getServerInfo")
   //   .mockImplementation(() => {
@@ -284,5 +285,5 @@ test.skip("very large runs", async () => {
 
   await Promise.all([waitUntilProjectFound(langchainClient, projectName)]);
 
-  // await langchainClient.deleteProject({ projectName });
+  await langchainClient.deleteProject({ projectName });
 }, 180_000);
