@@ -827,8 +827,8 @@ class Client:
             *(retry_on or ()),
             *(
                 ls_utils.LangSmithConnectionError,
-                ls_utils.LangSmithRequestTimeout,
-                ls_utils.LangSmithAPIError,
+                ls_utils.LangSmithRequestTimeout,  # 408
+                ls_utils.LangSmithAPIError,  # 500
             ),
         )
         to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)

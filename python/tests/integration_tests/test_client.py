@@ -8,7 +8,6 @@ import random
 import string
 import sys
 import time
-import warnings
 from datetime import timedelta
 from typing import Any, Callable, Dict
 from uuid import uuid4
@@ -748,13 +747,11 @@ Error cases:
 def test_multipart_ingest_runs_empty(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
-
     runs_to_create: list[dict] = []
     runs_to_update: list[dict] = []
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-
         langchain_client.multipart_ingest_runs(
             create=runs_to_create, update=runs_to_update
         )
@@ -786,7 +783,6 @@ def test_multipart_ingest_runs_create_then_update(
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-
         langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
 
         assert not caplog.records
@@ -800,7 +796,6 @@ def test_multipart_ingest_runs_create_then_update(
         }
     ]
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-
         langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
 
         assert not caplog.records
@@ -827,7 +822,6 @@ def test_multipart_ingest_runs_update_then_create(
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-
         langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
 
         assert not caplog.records
@@ -845,7 +839,6 @@ def test_multipart_ingest_runs_update_then_create(
     ]
 
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-
         langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
 
         assert not caplog.records
