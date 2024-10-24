@@ -158,7 +158,6 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
                             let mut elapsed_time = Duration::default();
                             let server_url = server_url.clone();
                             async move {
-                                println!("Iterations: {}", iters);
                                 for _ in 0..iters {
                                     let runs: Vec<RunCreateExtended> = (0..num_runs)
                                         .map(|i| {
@@ -181,10 +180,8 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
                                     }
                                     // shutdown the client to flush the queue
                                     client.shutdown().await.unwrap();
-                                    println!("Elapsed time inner loop: {:?}", start.elapsed());
                                     elapsed_time += start.elapsed();
                                 }
-                                println!("Elapsed time: {:?}", elapsed_time);
                                 elapsed_time
                             }
                         })
@@ -199,7 +196,7 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = bench_run_create_iter_custom, bench_run_create
+    targets = bench_run_create
 }
 
 criterion_main!(benches);
