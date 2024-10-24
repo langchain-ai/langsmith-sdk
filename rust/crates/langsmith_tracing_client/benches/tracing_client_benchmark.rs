@@ -146,7 +146,7 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
     let mut group = c.benchmark_group("run_create_custom_iter");
     let server_url = server.url();
     for batch_size in vec![50] {
-        for json_len in vec![1_000, 5_000] {
+        for json_len in vec![5_000] {
             for num_runs in vec![500, 1_000] {
                 group.bench_function(
                     BenchmarkId::new(
