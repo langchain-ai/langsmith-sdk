@@ -440,6 +440,8 @@ class FeedbackBase(BaseModel):
     """The time the feedback was last modified."""
     run_id: Optional[UUID]
     """The associated run ID this feedback is logged for."""
+    trace_id: Optional[UUID]
+    """The associated trace ID this feedback is logged for."""
     key: str
     """The metric name, tag, or aspect to provide feedback on."""
     score: SCORE_TYPE = None
