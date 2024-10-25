@@ -87,6 +87,7 @@ test("generateText with image", async () => {
     ],
     experimental_telemetry: AISDKExporter.getSettings({
       runId,
+      runName: "vercelImageTest",
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
     }),
@@ -178,7 +179,10 @@ test("streamObject", async () => {
     experimental_telemetry: AISDKExporter.getSettings({
       runId,
       functionId: "functionId",
-      metadata: { userId: "123", language: "english" },
+      metadata: {
+        userId: "123",
+        language: "english",
+      },
     }),
   });
 
@@ -190,7 +194,7 @@ test("streamObject", async () => {
   expect(storedRun.id).toEqual(runId);
 });
 
-test("traceable", async () => {
+test.only("traceable", async () => {
   const runId = uuid();
 
   const wrappedText = traceable(
@@ -214,18 +218,30 @@ test("traceable", async () => {
         },
         experimental_telemetry: AISDKExporter.getSettings({
           functionId: "functionId",
+          // runName: "nestedVercelTrace",
           metadata: { userId: "123", language: "english" },
         }),
         maxSteps: 10,
       });
 
+      const foo = traceable(
+        async () => {
+          return "bar";
+        },
+        {
+          name: "foo",
+        }
+      );
+
+      await foo();
+
       return { text };
     },
-    { name: "wrappedText", id: runId }
+    { name: "parentTraceable", id: runId }
   );
 
   const result = await wrappedText(
-    "What are my orders and where are they? My user ID is 123"
+    "What are my orders and where are they? My user ID is 123. Use available tools."
   );
   await waitUntilRunFound(client, runId, true);
   const storedRun = await client.readRun(runId);
