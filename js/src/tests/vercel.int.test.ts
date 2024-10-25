@@ -218,7 +218,7 @@ test.only("traceable", async () => {
         },
         experimental_telemetry: AISDKExporter.getSettings({
           functionId: "functionId",
-          // runName: "nestedVercelTrace",
+          runName: "nestedVercelTrace",
           metadata: { userId: "123", language: "english" },
         }),
         maxSteps: 10,
