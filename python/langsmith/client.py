@@ -1536,21 +1536,12 @@ class Client:
         ):
             for payload in payloads:
                 # collect fields to be sent as separate parts
-                fields = []
-                if create_dicts or update_dicts:
-                    fields.extend(
-                        [
-                            ("inputs", payload.pop("inputs", None)),
-                            ("outputs", payload.pop("outputs", None)),
-                            ("events", payload.pop("events", None)),
-                        ]
-                    )
-                if feedback:
-                    fields.extend(
-                        [
-                            ("feedback", payload.pop("feedback", None)),
-                        ]
-                    )
+                fields = [
+                    ("inputs", payload.pop("inputs", None)),
+                    ("outputs", payload.pop("outputs", None)),
+                    ("events", payload.pop("events", None)),
+                    ("feedback", payload.pop("feedback", None)),
+                ]
                 # encode the main run payload
                 payloadb = _dumps_json(payload)
                 acc_parts.append(
