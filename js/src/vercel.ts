@@ -687,6 +687,21 @@ export class AISDKExporter {
     }
   }
 
+  /** @internal */
+  protected isRootRun(span: AISDKSpan): boolean {
+    switch (span.name) {
+      case "ai.generateText":
+      case "ai.streamText":
+      case "ai.generateObject":
+      case "ai.streamObject":
+      case "ai.embed":
+      case "ai.embedMany":
+        return true;
+      default:
+        return false;
+    }
+  }
+
   export(
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
@@ -705,10 +720,13 @@ export class AISDKExporter {
       };
 
       const runId = uuid5(spanId, RUN_ID_NAMESPACE);
-      const parentRunId = parentId
+      let parentRunId = parentId
         ? uuid5(parentId, RUN_ID_NAMESPACE)
         : undefined;
 
+      // in LangSmith we currently only support certain spans
+      // which may be deeply nested within other traces
+      if (this.isRootRun(span)) parentRunId = undefined;
       const traceMap = this.traceByMap[traceId];
 
       const run = this.getRunCreate(span);
