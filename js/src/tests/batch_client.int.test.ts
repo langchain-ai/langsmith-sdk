@@ -249,15 +249,6 @@ test.skip("very large runs", async () => {
     timeout_ms: 120_000,
   });
 
-  // Use old batch endpoint
-  // jest
-  //   .spyOn(langchainClient as any, "_getServerInfo")
-  //   .mockImplementation(() => {
-  //     return {
-  //       version: "foo",
-  //       batch_ingest_config: {},
-  //     };
-  //   });
   const projectName = "__test_large_runs" + uuidv4().substring(0, 4);
   await deleteProject(langchainClient, projectName);
 
