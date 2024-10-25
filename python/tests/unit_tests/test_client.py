@@ -1060,7 +1060,7 @@ def test_batch_ingest_run_splits_large_batches(
         for run_id in patch_ids
     ]
     if use_multipart_endpoint:
-        client.multipart_ingest_runs(create=posts, update=patches)
+        client.multipart_ingest(create=posts, update=patches)
         # multipart endpoint should only send one request
         expected_num_requests = 1
         # count the number of POST requests
