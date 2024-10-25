@@ -476,7 +476,7 @@ export class Client {
   private settings: Promise<LangSmithSettings> | null;
 
   private blockOnRootRunFinalization =
-    getEnvironmentVariable("LANGSMITH_CALLBACKS_BACKGROUND") === "false";
+    getEnvironmentVariable("LANGSMITH_TRACING_BACKGROUND") === "false";
 
   private traceBatchConcurrency = 5;
 
