@@ -13,24 +13,18 @@ For detailed API documentation, visit: https://docs.smith.langchain.com/.
 from __future__ import annotations
 
 import atexit
-import base64
 import collections
 import concurrent.futures as cf
 import contextlib
 import datetime
-import decimal
 import functools
 import importlib
 import importlib.metadata
 import io
-import ipaddress
 import json
 import logging
 import os
-import pathlib
 import random
-import re
-import sys
 import threading
 import time
 import traceback
@@ -38,9 +32,8 @@ import typing
 import uuid
 import warnings
 import weakref
-from dataclasses import dataclass, field
 from inspect import signature
-from queue import Empty, PriorityQueue, Queue
+from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -73,7 +66,19 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._background_thread import (
+    TracingQueueItem,
+)
+from langsmith._internal._background_thread import (
+    tracing_control_thread_func as _tracing_control_thread_func,
+)
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._constants import (
+    _AUTO_SCALE_UP_NTHREADS_LIMIT,
+    _BLOCKSIZE_BYTES,
+    _SIZE_LIMIT_BYTES,
+)
+from langsmith._internal._serde import dumps_json as _dumps_json
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -181,144 +186,6 @@ def _default_retry_config() -> Retry:
         retry_params["allowed_methods"] = None
 
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
-
-
-def _simple_default(obj):
-    try:
-        # Only need to handle types that orjson doesn't serialize by default
-        # https://github.com/ijl/orjson#serialize
-        if isinstance(obj, datetime.datetime):
-            return obj.isoformat()
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-        if hasattr(obj, "model_dump") and callable(obj.model_dump):
-            return obj.model_dump()
-        elif hasattr(obj, "dict") and callable(obj.dict):
-            return obj.dict()
-        elif hasattr(obj, "_asdict") and callable(obj._asdict):
-            return obj._asdict()
-        elif isinstance(obj, BaseException):
-            return {"error": type(obj).__name__, "message": str(obj)}
-        elif isinstance(obj, (set, frozenset, collections.deque)):
-            return list(obj)
-        elif isinstance(obj, (datetime.timezone, ZoneInfo)):
-            return obj.tzname(None)
-        elif isinstance(obj, datetime.timedelta):
-            return obj.total_seconds()
-        elif isinstance(obj, decimal.Decimal):
-            if obj.as_tuple().exponent >= 0:
-                return int(obj)
-            else:
-                return float(obj)
-        elif isinstance(
-            obj,
-            (
-                ipaddress.IPv4Address,
-                ipaddress.IPv4Interface,
-                ipaddress.IPv4Network,
-                ipaddress.IPv6Address,
-                ipaddress.IPv6Interface,
-                ipaddress.IPv6Network,
-                pathlib.Path,
-            ),
-        ):
-            return str(obj)
-        elif isinstance(obj, re.Pattern):
-            return obj.pattern
-        elif isinstance(obj, (bytes, bytearray)):
-            return base64.b64encode(obj).decode()
-        return str(obj)
-    except BaseException as e:
-        logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-    return str(obj)
-
-
-def _serialize_json(obj: Any) -> Any:
-    try:
-        if isinstance(obj, (set, tuple)):
-            if hasattr(obj, "_asdict") and callable(obj._asdict):
-                # NamedTuple
-                return obj._asdict()
-            return list(obj)
-
-        serialization_methods = [
-            ("model_dump", True),  # Pydantic V2 with non-serializable fields
-            ("dict", False),  # Pydantic V1 with non-serializable field
-            ("to_dict", False),  # dataclasses-json
-        ]
-        for attr, exclude_none in serialization_methods:
-            if hasattr(obj, attr) and callable(getattr(obj, attr)):
-                try:
-                    method = getattr(obj, attr)
-                    response = (
-                        method(exclude_none=exclude_none) if exclude_none else method()
-                    )
-                    if not isinstance(response, dict):
-                        return str(response)
-                    return response
-                except Exception as e:
-                    logger.error(
-                        f"Failed to use {attr} to serialize {type(obj)} to"
-                        f" JSON: {repr(e)}"
-                    )
-                    pass
-        return _simple_default(obj)
-    except BaseException as e:
-        logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-        return str(obj)
-
-
-def _elide_surrogates(s: bytes) -> bytes:
-    pattern = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
-    result = pattern.sub(b"", s)
-    return result
-
-
-def _dumps_json_single(
-    obj: Any, default: Optional[Callable[[Any], Any]] = None
-) -> bytes:
-    try:
-        return orjson.dumps(
-            obj,
-            default=default or _simple_default,
-            option=orjson.OPT_SERIALIZE_NUMPY
-            | orjson.OPT_SERIALIZE_DATACLASS
-            | orjson.OPT_SERIALIZE_UUID
-            | orjson.OPT_NON_STR_KEYS,
-        )
-    except TypeError as e:
-        # Usually caused by UTF surrogate characters
-        logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
-        result = json.dumps(
-            obj,
-            default=_simple_default,
-            ensure_ascii=True,
-        ).encode("utf-8")
-        try:
-            result = orjson.dumps(
-                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
-            )
-        except orjson.JSONDecodeError:
-            result = _elide_surrogates(result)
-        return result
-
-
-def _dumps_json(obj: Any, depth: int = 0) -> bytes:
-    """Serialize an object to a JSON formatted string.
-
-    Parameters
-    ----------
-    obj : Any
-        The object to serialize.
-    default : Callable[[Any], Any] or None, default=None
-        The default function to use for serialization.
-
-    Returns:
-    -------
-    str
-        The JSON formatted string.
-    """
-    return _dumps_json_single(obj, _serialize_json)
 
 
 def close_session(session: requests.Session) -> None:
@@ -429,21 +296,6 @@ def _parse_url(url):
     parsed_url = urllib_parse.urlparse(url)
     host = parsed_url.netloc.split(":")[0]
     return host
-
-
-@dataclass(order=True)
-class TracingQueueItem:
-    """An item in the tracing queue.
-
-    Attributes:
-        priority (str): The priority of the item.
-        action (str): The action associated with the item.
-        item (Any): The item itself.
-    """
-
-    priority: str
-    action: str
-    item: Any = field(compare=False)
 
 
 class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
@@ -5132,7 +4984,9 @@ class Client:
             DeprecationWarning,
         )
         try:
-            from langchain.smith import run_on_dataset as _run_on_dataset
+            from langchain.smith import (
+                run_on_dataset as _run_on_dataset,  # type: ignore
+            )
         except ImportError:
             raise ImportError(
                 "The client.run_on_dataset function requires the langchain"
@@ -5766,167 +5620,6 @@ class Client:
             parent_commit_hash=parent_commit_hash,
         )
         return url
-
-
-def _tracing_thread_drain_queue(
-    tracing_queue: Queue, limit: int = 100, block: bool = True
-) -> List[TracingQueueItem]:
-    next_batch: List[TracingQueueItem] = []
-    try:
-        # wait 250ms for the first item, then
-        # - drain the queue with a 50ms block timeout
-        # - stop draining if we hit the limit
-        # shorter drain timeout is used instead of non-blocking calls to
-        # avoid creating too many small batches
-        if item := tracing_queue.get(block=block, timeout=0.25):
-            next_batch.append(item)
-        while item := tracing_queue.get(block=block, timeout=0.05):
-            next_batch.append(item)
-            if limit and len(next_batch) >= limit:
-                break
-    except Empty:
-        pass
-    return next_batch
-
-
-def _tracing_thread_handle_batch(
-    client: Client,
-    tracing_queue: Queue,
-    batch: List[TracingQueueItem],
-    use_multipart: bool,
-) -> None:
-    create = [it.item for it in batch if it.action == "create"]
-    update = [it.item for it in batch if it.action == "update"]
-    try:
-        if use_multipart:
-            client.multipart_ingest_runs(create=create, update=update, pre_sampled=True)
-        else:
-            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
-    except Exception:
-        logger.error("Error in tracing queue", exc_info=True)
-        # exceptions are logged elsewhere, but we need to make sure the
-        # background thread continues to run
-        pass
-    finally:
-        for _ in batch:
-            tracing_queue.task_done()
-
-
-_SIZE_LIMIT_BYTES = 20_971_520  # 20MB by default
-_AUTO_SCALE_UP_QSIZE_TRIGGER = 200
-_AUTO_SCALE_UP_NTHREADS_LIMIT = 32
-_AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
-_BLOCKSIZE_BYTES = 1024 * 1024  # 1MB
-
-
-def _ensure_ingest_config(
-    info: ls_schemas.LangSmithInfo,
-) -> ls_schemas.BatchIngestConfig:
-    default_config = ls_schemas.BatchIngestConfig(
-        use_multipart_endpoint=False,
-        size_limit_bytes=None,  # Note this field is not used here
-        size_limit=100,
-        scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
-        scale_up_qsize_trigger=_AUTO_SCALE_UP_QSIZE_TRIGGER,
-        scale_down_nempty_trigger=_AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
-    )
-    if not info:
-        return default_config
-    try:
-        if not info.batch_ingest_config:
-            return default_config
-        return info.batch_ingest_config
-    except BaseException:
-        return default_config
-
-
-def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
-    client = client_ref()
-    if client is None:
-        return
-    tracing_queue = client.tracing_queue
-    assert tracing_queue is not None
-    batch_ingest_config = _ensure_ingest_config(client.info)
-    size_limit: int = batch_ingest_config["size_limit"]
-    scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
-    scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
-    use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
-
-    sub_threads: List[threading.Thread] = []
-    # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
-    num_known_refs = 3
-
-    # loop until
-    while (
-        # the main thread dies
-        threading.main_thread().is_alive()
-        # or we're the only remaining reference to the client
-        and sys.getrefcount(client) > num_known_refs + len(sub_threads)
-    ):
-        for thread in sub_threads:
-            if not thread.is_alive():
-                sub_threads.remove(thread)
-        if (
-            len(sub_threads) < scale_up_nthreads_limit
-            and tracing_queue.qsize() > scale_up_qsize_trigger
-        ):
-            new_thread = threading.Thread(
-                target=_tracing_sub_thread_func,
-                args=(weakref.ref(client), use_multipart),
-            )
-            sub_threads.append(new_thread)
-            new_thread.start()
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            _tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
-    # drain the queue on exit
-    while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
-    ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
-
-
-def _tracing_sub_thread_func(
-    client_ref: weakref.ref[Client],
-    use_multipart: bool,
-) -> None:
-    client = client_ref()
-    if client is None:
-        return
-    try:
-        if not client.info:
-            return
-    except BaseException as e:
-        logger.debug("Error in tracing control thread: %s", e)
-        return
-    tracing_queue = client.tracing_queue
-    assert tracing_queue is not None
-    batch_ingest_config = _ensure_ingest_config(client.info)
-    size_limit = batch_ingest_config.get("size_limit", 100)
-    seen_successive_empty_queues = 0
-
-    # loop until
-    while (
-        # the main thread dies
-        threading.main_thread().is_alive()
-        # or we've seen the queue empty 4 times in a row
-        and seen_successive_empty_queues
-        <= batch_ingest_config["scale_down_nempty_trigger"]
-    ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            seen_successive_empty_queues = 0
-            _tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
-        else:
-            seen_successive_empty_queues += 1
-
-    # drain the queue on exit
-    while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
-    ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
 
 
 def convert_prompt_to_openai_format(
