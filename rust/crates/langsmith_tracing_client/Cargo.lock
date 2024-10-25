@@ -1161,6 +1161,7 @@ dependencies = [
  "multipart",
  "pyo3",
  "pyo3-asyncio",
+ "rayon",
  "reqwest",
  "serde",
  "serde_json",
