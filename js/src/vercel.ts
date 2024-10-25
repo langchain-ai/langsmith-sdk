@@ -9,10 +9,7 @@ import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
 import { v5 as uuid5 } from "uuid";
 import { getCurrentRunTree } from "./singletons/traceable.js";
-import {
-  getEnvironmentVariable,
-  getLangSmithEnvironmentVariable,
-} from "./utils/env.js";
+import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
