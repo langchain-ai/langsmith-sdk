@@ -194,7 +194,7 @@ test("streamObject", async () => {
   expect(storedRun.id).toEqual(runId);
 });
 
-test.only("traceable", async () => {
+test("traceable", async () => {
   const runId = uuid();
 
   const wrappedText = traceable(
