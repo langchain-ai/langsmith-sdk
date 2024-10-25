@@ -727,7 +727,6 @@ export class AISDKExporter {
         if (seen.has(task.item.id)) continue;
 
         if (!task.item.sent) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let override: OverrideRunCreate = {
             id: task.item.id,
             parent_run_id: task.item.parentId,
