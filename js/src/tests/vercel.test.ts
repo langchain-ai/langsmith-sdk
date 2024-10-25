@@ -134,6 +134,7 @@ test("generateText", async () => {
       }),
     },
     experimental_telemetry: AISDKExporter.getSettings({
+      runName: "generateText",
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
     }),
@@ -143,18 +144,19 @@ test("generateText", async () => {
   await provider.forceFlush();
   expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
     nodes: [
-      "mock-provider:0",
+      "generateText:0",
       "mock-provider:1",
       "listOrders:2",
       "mock-provider:3",
     ],
     edges: [
-      ["mock-provider:0", "mock-provider:1"],
-      ["mock-provider:0", "listOrders:2"],
-      ["mock-provider:0", "mock-provider:3"],
+      ["generateText:0", "mock-provider:1"],
+      ["generateText:0", "listOrders:2"],
+      ["generateText:0", "mock-provider:3"],
     ],
     data: {
-      "mock-provider:0": {
+      "generateText:0": {
+        name: "generateText",
         inputs: {
           messages: [
             {
@@ -725,6 +727,7 @@ test("traceable", async () => {
           }),
         },
         experimental_telemetry: AISDKExporter.getSettings({
+          runName: "generateText",
           functionId: "functionId",
           metadata: { userId: "123", language: "english" },
         }),
@@ -743,16 +746,16 @@ test("traceable", async () => {
   expect(actual).toMatchObject({
     nodes: [
       "wrappedText:0",
-      "mock-provider:1",
+      "generateText:1",
       "mock-provider:2",
       "listOrders:3",
       "mock-provider:4",
     ],
     edges: [
-      ["wrappedText:0", "mock-provider:1"],
-      ["mock-provider:1", "mock-provider:2"],
-      ["mock-provider:1", "listOrders:3"],
-      ["mock-provider:1", "mock-provider:4"],
+      ["wrappedText:0", "generateText:1"],
+      ["generateText:1", "mock-provider:2"],
+      ["generateText:1", "listOrders:3"],
+      ["generateText:1", "mock-provider:4"],
     ],
     data: {
       "wrappedText:0": {
@@ -764,7 +767,8 @@ test("traceable", async () => {
         },
         dotted_order: new ExecutionOrderSame(1, "001"),
       },
-      "mock-provider:1": {
+      "generateText:1": {
+        name: "generateText",
         inputs: {
           messages: [
             {

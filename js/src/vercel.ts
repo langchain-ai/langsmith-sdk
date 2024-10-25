@@ -254,12 +254,12 @@ interface RunTask {
 }
 
 type InteropType =
-  | { type: "traceable"; parentRunTree: RunTree; userRunName?: string }
-  | { type: "manual"; userTraceId?: string; userRunName?: string }
+  | { type: "traceable"; parentRunTree: RunTree }
+  | { type: "user"; userTraceId?: string }
   | undefined;
 
 /**
- *
+ * OpenTelemetry trace exporter for Vercel AI SDK
  */
 export class AISDKExporter {
   private client: Client;
@@ -312,18 +312,27 @@ export class AISDKExporter {
   }
 
   /** @internal */
+  protected getSpanAttributeKey = (
+    span: AISDKSpan,
+    key: string
+  ): string | undefined => {
+    const attributes = span.attributes as Record<string, unknown>;
+
+    return key in attributes && typeof attributes[key] === "string"
+      ? (attributes[key] as string)
+      : undefined;
+  };
+
+  /** @internal */
   protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
-    const getKey = (key: string): string | undefined => {
-      const attributes = span.attributes as Record<string, unknown>;
-
-      return key in attributes && typeof attributes[key] === "string"
-        ? (attributes[key] as string)
-        : undefined;
-    };
-
-    const userTraceId = getKey(RUN_ID_METADATA_KEY.output);
-    const userRunName = getKey(RUN_NAME_METADATA_KEY.output);
-    const parentTrace = getKey(TRACE_METADATA_KEY.output);
+    const userTraceId = this.getSpanAttributeKey(
+      span,
+      RUN_ID_METADATA_KEY.output
+    );
+    const parentTrace = this.getSpanAttributeKey(
+      span,
+      TRACE_METADATA_KEY.output
+    );
 
     if (parentTrace && userTraceId) {
       throw new Error(
@@ -334,16 +343,16 @@ export class AISDKExporter {
     if (parentTrace) {
       const parentRunTree = RunTree.fromHeaders({
         "langsmith-trace": parentTrace,
-        baggage: getKey(BAGGAGE_METADATA_KEY.output) || "",
+        baggage:
+          this.getSpanAttributeKey(span, BAGGAGE_METADATA_KEY.output) || "",
       });
 
       if (!parentRunTree)
         throw new Error("Unreachable code: empty parent run tree");
-      return { type: "traceable", parentRunTree, userRunName };
+      return { type: "traceable", parentRunTree };
     }
 
-    if (userTraceId || userRunName)
-      return { type: "manual", userTraceId, userRunName };
+    if (userTraceId) return { type: "user", userTraceId };
     return undefined;
   }
 
@@ -381,8 +390,17 @@ export class AISDKExporter {
       const parsedStart = convertToTimestamp(span.startTime);
       const parsedEnd = convertToTimestamp(span.endTime);
 
+      let name = rawConfig.name;
+
+      // if user provided a custom name, only use it if it's the root
+      if (span.parentSpanId == null) {
+        name =
+          this.getSpanAttributeKey(span, RUN_NAME_METADATA_KEY.output) || name;
+      }
+
       const config: RunCreate = {
         ...rawConfig,
+        name,
         id: runId,
         parent_run_id: parentRunId,
         extra: {
@@ -677,16 +695,15 @@ export class AISDKExporter {
       traceMap.interop = this.parseInteropFromMetadata(span);
     }
 
-    type TraceMapData = {
-      dotted_order: string;
+    type OverrideRunCreate = {
       id: string;
       trace_id: string;
+      dotted_order: string;
       parent_run_id: string | undefined;
-      name?: string;
     };
 
-    // collect all subgraphs
-    const sampled: [TraceMapData, RunCreate][] = [];
+    // We separate `id`,
+    const sampled: [OverrideRunCreate, RunCreate][] = [];
 
     for (const traceId of Object.keys(this.traceByMap)) {
       type QueueItem = { item: RunTask; dottedOrder: string; traceId: string };
@@ -711,7 +728,7 @@ export class AISDKExporter {
 
         if (!task.item.sent) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let ident: TraceMapData = {
+          let override: OverrideRunCreate = {
             id: task.item.id,
             parent_run_id: task.item.parentId,
             dotted_order: task.dottedOrder,
@@ -719,49 +736,48 @@ export class AISDKExporter {
           };
 
           if (traceMap.interop) {
+            // attach the run to a parent run tree
+            // - id: preserve
+            // - parent_run_id: use existing parent run id or hook to the provided run tree
+            // - dotted_order: append to the dotted_order of the parent run tree
+            // - trace_id: use from the existing run tree
             if (traceMap.interop.type === "traceable") {
-              ident = {
-                id: ident.id,
+              override = {
+                id: override.id,
                 parent_run_id:
-                  ident.parent_run_id ?? traceMap.interop.parentRunTree.id,
+                  override.parent_run_id ?? traceMap.interop.parentRunTree.id,
                 dotted_order: [
                   traceMap.interop.parentRunTree.dotted_order,
-                  ident.dotted_order,
+                  override.dotted_order,
                 ]
                   .filter(Boolean)
                   .join("."),
                 trace_id: traceMap.interop.parentRunTree.trace_id,
               };
-              if (
-                traceMap.interop.userRunName &&
-                ident.parent_run_id === ident.trace_id
-              ) {
-                ident.name = traceMap.interop.userRunName;
-              }
-            } else if (traceMap.interop.type === "manual") {
+            } else if (traceMap.interop.type === "user") {
+              // Allow user to specify custom trace ID = run ID of the root run
+              // - id: use user provided run ID if root run, otherwise preserve
+              // - parent_run_id: use user provided run ID if root run, otherwise preserve
+              // - dotted_order: replace the trace_id with the user provided run ID
+              // - trace_id: use user provided run ID
               const userTraceId = traceMap.interop.userTraceId ?? uuid4();
-              ident = {
-                id: ident.id === ident.trace_id ? userTraceId : ident.id,
+              override = {
+                id:
+                  override.id === override.trace_id ? userTraceId : override.id,
                 parent_run_id:
-                  ident.parent_run_id === ident.trace_id
+                  override.parent_run_id === override.trace_id
                     ? userTraceId
-                    : ident.parent_run_id,
-                dotted_order: ident.dotted_order.replace(
-                  ident.trace_id,
+                    : override.parent_run_id,
+                dotted_order: override.dotted_order.replace(
+                  override.trace_id,
                   userTraceId
                 ),
                 trace_id: userTraceId,
               };
-              if (
-                traceMap.interop.userRunName &&
-                ident.parent_run_id !== ident.trace_id
-              ) {
-                ident.name = traceMap.interop.userRunName;
-              }
             }
           }
 
-          sampled.push([ident, task.item.run]);
+          sampled.push([override, task.item.run]);
           task.item.sent = true;
         }
 
@@ -786,10 +802,9 @@ export class AISDKExporter {
     }
 
     Promise.all(
-      sampled.map(([required, value]) => {
-        const payload = { ...value, ...required };
-        return this.client.createRun(payload);
-      })
+      sampled.map(([override, value]) =>
+        this.client.createRun({ ...value, ...override })
+      )
     ).then(
       () => resultCallback({ code: 0 }),
       (error) => resultCallback({ code: 1, error })
