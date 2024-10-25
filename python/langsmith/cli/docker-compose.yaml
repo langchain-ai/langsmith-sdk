@@ -2,12 +2,17 @@ version: "4"
 services:
   langchain-playground:
     image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.7.45}
+    environment:
+      - PORT=3001
+      - LANGCHAIN_ENV=local_docker
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
       - 3001:3001
   langchain-frontend:
     image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.7.45}
     environment:
       - VITE_BACKEND_AUTH_TYPE=${AUTH_TYPE:-none}
+      - VITE_BASIC_AUTH_ENABLED=${BASIC_AUTH_ENABLED:-false}
       - VITE_OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
       - VITE_OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
     ports:
