@@ -44,6 +44,7 @@ test("404s should only log, not throw an error", async () => {
   overrideFetchImplementation(overriddenFetch);
   const client = new Client({
     apiUrl: "https://foobar.notreal",
+    autoBatchTracing: false,
   });
   const llm = traceable(
     async function* llm(input: string) {
@@ -1111,8 +1112,12 @@ test("argsConfigPath", async () => {
 
 test("traceable continues execution when client throws error", async () => {
   const errorClient = {
-    createRun: jest.fn().mockRejectedValue(new Error("Client error") as never),
-    updateRun: jest.fn().mockRejectedValue(new Error("Client error") as never),
+    createRun: jest
+      .fn()
+      .mockRejectedValue(new Error("Expected test client error") as never),
+    updateRun: jest
+      .fn()
+      .mockRejectedValue(new Error("Expected test client error") as never),
   };
 
   const tracedFunction = traceable(
@@ -1214,7 +1219,7 @@ test("traceable with processInputs throwing error does not affect invocation", a
   const { client, callSpy } = mockClient();
 
   const processInputs = jest.fn((_inputs: Readonly<KVMap>) => {
-    throw new Error("processInputs error");
+    throw new Error("totally expected test processInputs error");
   });
 
   const func = traceable(
@@ -1250,7 +1255,7 @@ test("traceable with processOutputs throwing error does not affect invocation", 
   const { client, callSpy } = mockClient();
 
   const processOutputs = jest.fn((_outputs: Readonly<KVMap>) => {
-    throw new Error("processOutputs error");
+    throw new Error("totally expected test processInputs error");
   });
 
   const func = traceable(
