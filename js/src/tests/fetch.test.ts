@@ -1,3 +1,4 @@
+/* eslint-disable no-process-env */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
