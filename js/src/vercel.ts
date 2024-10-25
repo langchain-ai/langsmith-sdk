@@ -686,7 +686,6 @@ export class AISDKExporter {
       case "ai.embedMany":
       case "ai.embedMany.doEmbed":
       default:
-        console.warn(`Span "${span.name}" is currently unsupported.`);
         return undefined;
     }
   }
