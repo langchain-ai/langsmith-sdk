@@ -172,6 +172,13 @@ test("generateText", async () => {
             token_usage: { completion_tokens: 20, prompt_tokens: 10 },
           },
         },
+        extra: {
+          metadata: {
+            functionId: "functionId",
+            userId: "123",
+            language: "english",
+          },
+        },
         dotted_order: new ExecutionOrderSame(1, "000"),
       },
       "mock-provider:1": {
@@ -386,6 +393,13 @@ test("streamText", async () => {
             token_usage: { completion_tokens: 20, prompt_tokens: 6 },
           },
         },
+        extra: {
+          metadata: {
+            functionId: "functionId",
+            userId: "123",
+            language: "english",
+          },
+        },
         dotted_order: new ExecutionOrderSame(1, "000"),
       },
       "mock-provider:1": {
@@ -576,6 +590,13 @@ test("generateObject", async () => {
             token_usage: { completion_tokens: 20, prompt_tokens: 10 },
           },
         },
+        extra: {
+          metadata: {
+            functionId: "functionId",
+            userId: "123",
+            language: "english",
+          },
+        },
         dotted_order: new ExecutionOrderSame(2, "000"),
       },
     },
@@ -656,6 +677,13 @@ test("streamObject", async () => {
           output: { weather: { city: "Prague", unit: "celsius" } },
           llm_output: {
             token_usage: { completion_tokens: 10, prompt_tokens: 3 },
+          },
+        },
+        extra: {
+          metadata: {
+            functionId: "functionId",
+            userId: "123",
+            language: "english",
           },
         },
         dotted_order: new ExecutionOrderSame(1, "000"),
@@ -769,6 +797,13 @@ test("traceable", async () => {
       },
       "generateText:1": {
         name: "generateText",
+        extra: {
+          metadata: {
+            functionId: "functionId",
+            userId: "123",
+            language: "english",
+          },
+        },
         inputs: {
           messages: [
             {
