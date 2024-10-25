@@ -14,6 +14,7 @@ const entrypoints = {
   "evaluation/langchain": "evaluation/langchain",
   schemas: "schemas",
   langchain: "langchain",
+  vercel: "vercel",
   wrappers: "wrappers/index",
   anonymizer: "anonymizer/index",
   "wrappers/openai": "wrappers/openai",
