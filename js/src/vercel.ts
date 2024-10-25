@@ -7,21 +7,23 @@ import type {
 import type { AISDKSpan } from "./vercel.types.js";
 import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
-import { v5 as uuid5 } from "uuid";
+import { v5 as uuid5, v4 as uuid4 } from "uuid";
 import { getCurrentRunTree } from "./singletons/traceable.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
 
-type AITelemetrySettings = Exclude<
+export type AITelemetrySettings = Exclude<
   Parameters<typeof generateText>[0]["experimental_telemetry"],
   undefined
 >;
 
-interface TelemetrySettings extends AITelemetrySettings {
+export interface TelemetrySettings extends AITelemetrySettings {
   /** ID of the run sent to LangSmith */
   runId?: string;
+  /** Name of the run sent to LangSmith */
+  runName?: string;
 }
 
 type LangChainMessageFields = {
@@ -220,6 +222,11 @@ const RUN_ID_METADATA_KEY = {
   output: "ai.telemetry.metadata.langsmith:runId",
 };
 
+const RUN_NAME_METADATA_KEY = {
+  input: "langsmith:runName",
+  output: "ai.telemetry.metadata.langsmith:runName",
+};
+
 const TRACE_METADATA_KEY = {
   input: "langsmith:trace",
   output: "ai.telemetry.metadata.langsmith:trace",
@@ -232,6 +239,7 @@ const BAGGAGE_METADATA_KEY = {
 
 const RESERVED_METADATA_KEYS = [
   RUN_ID_METADATA_KEY.output,
+  RUN_NAME_METADATA_KEY.output,
   TRACE_METADATA_KEY.output,
   BAGGAGE_METADATA_KEY.output,
 ];
@@ -246,10 +254,13 @@ interface RunTask {
 }
 
 type InteropType =
-  | { type: "traceable"; parentRunTree: RunTree }
-  | { type: "manual"; userTraceId: string }
+  | { type: "traceable"; parentRunTree: RunTree; userRunName?: string }
+  | { type: "manual"; userTraceId?: string; userRunName?: string }
   | undefined;
 
+/**
+ *
+ */
 export class AISDKExporter {
   private client: Client;
   private traceByMap: Record<
@@ -267,9 +278,10 @@ export class AISDKExporter {
   }
 
   static getSettings(settings: TelemetrySettings) {
-    const { runId, ...rest } = settings;
+    const { runId, runName, ...rest } = settings;
     const metadata = { ...rest?.metadata };
     if (runId != null) metadata[RUN_ID_METADATA_KEY.input] = runId;
+    if (runName != null) metadata[RUN_NAME_METADATA_KEY.input] = runName;
 
     // attempt to obtain the run tree if used within a traceable function
     let defaultEnabled = true;
@@ -309,8 +321,9 @@ export class AISDKExporter {
         : undefined;
     };
 
-    const userTraceId = getKey(RUN_ID_METADATA_KEY.output) || undefined;
-    const parentTrace = getKey(TRACE_METADATA_KEY.output) || undefined;
+    const userTraceId = getKey(RUN_ID_METADATA_KEY.output);
+    const userRunName = getKey(RUN_NAME_METADATA_KEY.output);
+    const parentTrace = getKey(TRACE_METADATA_KEY.output);
 
     if (parentTrace && userTraceId) {
       throw new Error(
@@ -326,10 +339,11 @@ export class AISDKExporter {
 
       if (!parentRunTree)
         throw new Error("Unreachable code: empty parent run tree");
-      return { type: "traceable", parentRunTree };
+      return { type: "traceable", parentRunTree, userRunName };
     }
 
-    if (userTraceId) return { type: "manual", userTraceId };
+    if (userTraceId || userRunName)
+      return { type: "manual", userTraceId, userRunName };
     return undefined;
   }
 
@@ -663,16 +677,16 @@ export class AISDKExporter {
       traceMap.interop = this.parseInteropFromMetadata(span);
     }
 
+    type TraceMapData = {
+      dotted_order: string;
+      id: string;
+      trace_id: string;
+      parent_run_id: string | undefined;
+      name?: string;
+    };
+
     // collect all subgraphs
-    const sampled: [
-      {
-        dotted_order: string;
-        id: string;
-        trace_id: string;
-        parent_run_id: string | undefined;
-      },
-      RunCreate
-    ][] = [];
+    const sampled: [TraceMapData, RunCreate][] = [];
 
     for (const traceId of Object.keys(this.traceByMap)) {
       type QueueItem = { item: RunTask; dottedOrder: string; traceId: string };
@@ -696,7 +710,8 @@ export class AISDKExporter {
         if (seen.has(task.item.id)) continue;
 
         if (!task.item.sent) {
-          let ident = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let ident: TraceMapData = {
             id: task.item.id,
             parent_run_id: task.item.parentId,
             dotted_order: task.dottedOrder,
@@ -717,22 +732,32 @@ export class AISDKExporter {
                   .join("."),
                 trace_id: traceMap.interop.parentRunTree.trace_id,
               };
+              if (
+                traceMap.interop.userRunName &&
+                ident.parent_run_id === ident.trace_id
+              ) {
+                ident.name = traceMap.interop.userRunName;
+              }
             } else if (traceMap.interop.type === "manual") {
+              const userTraceId = traceMap.interop.userTraceId ?? uuid4();
               ident = {
-                id:
-                  ident.id === ident.trace_id
-                    ? traceMap.interop.userTraceId
-                    : ident.id,
+                id: ident.id === ident.trace_id ? userTraceId : ident.id,
                 parent_run_id:
                   ident.parent_run_id === ident.trace_id
-                    ? traceMap.interop.userTraceId
+                    ? userTraceId
                     : ident.parent_run_id,
                 dotted_order: ident.dotted_order.replace(
                   ident.trace_id,
-                  traceMap.interop.userTraceId
+                  userTraceId
                 ),
-                trace_id: traceMap.interop.userTraceId,
+                trace_id: userTraceId,
               };
+              if (
+                traceMap.interop.userRunName &&
+                ident.parent_run_id !== ident.trace_id
+              ) {
+                ident.name = traceMap.interop.userRunName;
+              }
             }
           }
 
@@ -742,18 +767,20 @@ export class AISDKExporter {
 
         const children = traceMap.childMap[task.item.id] ?? [];
         queue.push(
-          ...children.map((child) => ({
-            item: child,
-            dottedOrder: [
-              task.dottedOrder,
-              convertToDottedOrderFormat(
-                child.startTime,
-                child.id,
-                child.executionOrder
-              ),
-            ].join("."),
-            traceId: task.traceId,
-          }))
+          ...children.map((child) => {
+            return {
+              item: child,
+              dottedOrder: [
+                task.dottedOrder,
+                convertToDottedOrderFormat(
+                  child.startTime,
+                  child.id,
+                  child.executionOrder
+                ),
+              ].join("."),
+              traceId: task.traceId,
+            };
+          })
         );
       }
     }
