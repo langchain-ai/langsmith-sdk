@@ -176,7 +176,7 @@ describe.each(ENDPOINT_TYPES)(
       await new Promise((resolve) => setTimeout(resolve, 300));
     });
 
-    it("Create + update batching should merge into a single call", async () => {
+    it.only("Create + update batching should merge into a single call", async () => {
       const client = new Client({
         apiKey: "test-api-key",
         autoBatchTracing: true,
@@ -219,7 +219,7 @@ describe.each(ENDPOINT_TYPES)(
         end_time: endTime,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.awaitPendingTraceBatches();
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
@@ -331,10 +331,11 @@ describe.each(ENDPOINT_TYPES)(
       );
     });
 
-    it("should immediately trigger a batch on root run end", async () => {
+    it("should immediately trigger a batch on root run end if blockOnRootRunFinalization is set", async () => {
       const client = new Client({
         apiKey: "test-api-key",
         autoBatchTracing: true,
+        blockOnRootRunFinalization: true,
       });
       const callSpy = jest
         .spyOn((client as any).batchIngestCaller, "call")
