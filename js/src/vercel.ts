@@ -259,7 +259,44 @@ type InteropType =
   | undefined;
 
 /**
- * OpenTelemetry trace exporter for Vercel AI SDK
+ * OpenTelemetry trace exporter for Vercel AI SDK.
+ *
+ * @example
+ * ```ts
+ * import { AISDKExporter } from "langsmith/vercel";
+ * import { Client } from "langsmith";
+ *
+ * import { generateText } from "ai";
+ * import { openai } from "@ai-sdk/openai";
+ *
+ * import { NodeSDK } from "@opentelemetry/sdk-node";
+ * import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+ *
+ * const client = new Client();
+ *
+ * const sdk = new NodeSDK({
+ *   traceExporter: new AISDKExporter({ client }),
+ *   instrumentations: [getNodeAutoInstrumentations()],
+ * });
+ *
+ * sdk.start();
+ *
+ * const res = await generateText({
+ *   model: openai("gpt-4o-mini"),
+ *   messages: [
+ *     {
+ *       role: "user",
+ *       content: "What color is the sky?",
+ *     },
+ *   ],
+ *   experimental_telemetry: AISDKExporter.getSettings({
+ *     runName: "langsmith_traced_call",
+ *     metadata: { userId: "123", language: "english" },
+ *   }),
+ * });
+ *
+ * await sdk.shutdown();
+ * ```
  */
 export class AISDKExporter {
   private client: Client;
@@ -277,6 +314,9 @@ export class AISDKExporter {
     this.client = args?.client ?? new Client();
   }
 
+  /**
+   * Helper method for initializing OTEL settings.
+   */
   static getSettings(settings: TelemetrySettings) {
     const { runId, runName, ...rest } = settings;
     const metadata = { ...rest?.metadata };
