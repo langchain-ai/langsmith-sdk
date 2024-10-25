@@ -9,6 +9,7 @@ import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
 import { v5 as uuid5 } from "uuid";
 import { getCurrentRunTree } from "./singletons/traceable.js";
+import { getEnvironmentVariable } from "./utils/env.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -378,6 +379,9 @@ export class AISDKExporter {
             "ai.operationId": span.attributes["ai.operationId"],
           },
         },
+        session_name:
+          getEnvironmentVariable("LANGCHAIN_PROJECT") ??
+          getEnvironmentVariable("LANGCHAIN_SESSION"),
         start_time: Math.min(parsedStart, parsedEnd),
         end_time: Math.max(parsedStart, parsedEnd),
       };
