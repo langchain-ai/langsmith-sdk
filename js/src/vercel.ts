@@ -314,11 +314,8 @@ export class AISDKExporter {
     this.client = args?.client ?? new Client();
   }
 
-  /**
-   * Helper method for initializing OTEL settings.
-   */
-  static getSettings(settings: TelemetrySettings) {
-    const { runId, runName, ...rest } = settings;
+  static getSettings(settings?: TelemetrySettings) {
+    const { runId, runName, ...rest } = settings ?? {};
     const metadata = { ...rest?.metadata };
     if (runId != null) metadata[RUN_ID_METADATA_KEY.input] = runId;
     if (runName != null) metadata[RUN_NAME_METADATA_KEY.input] = runName;
