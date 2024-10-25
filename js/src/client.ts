@@ -40,6 +40,7 @@ import {
   isLangChainMessage,
 } from "./utils/messages.js";
 import {
+  getEnvironmentVariable,
   getLangChainEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
@@ -74,6 +75,7 @@ export interface ClientConfig {
   autoBatchTracing?: boolean;
   batchSizeBytesLimit?: number;
   blockOnRootRunFinalization?: boolean;
+  traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
 }
 
@@ -473,7 +475,10 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
-  private blockOnRootRunFinalization = true;
+  private blockOnRootRunFinalization =
+    getEnvironmentVariable("LANGSMITH_TRACING_BACKGROUND") === "false";
+
+  private traceBatchConcurrency = 5;
 
   private _serverInfo: RecordStringAny | undefined;
 
@@ -493,9 +498,16 @@ export class Client {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
-    this.timeout_ms = config.timeout_ms ?? 12_000;
+    this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.traceBatchConcurrency =
+      config.traceBatchConcurrency ?? this.traceBatchConcurrency;
+    if (this.traceBatchConcurrency < 1) {
+      throw new Error("Trace batch concurrency must be positive.");
+    }
     this.batchIngestCaller = new AsyncCaller({
+      maxRetries: 2,
+      maxConcurrency: this.traceBatchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
@@ -753,32 +765,41 @@ export class Client {
   }
 
   private async drainAutoBatchQueue() {
-    while (this.autoBatchQueue.items.length >= 0) {
-      const [batch, done] = this.autoBatchQueue.pop(
-        await this._getBatchSizeLimitBytes()
-      );
-      if (!batch.length) {
-        done();
-        return;
-      }
-      try {
-        const ingestParams = {
-          runCreates: batch
-            .filter((item) => item.action === "create")
-            .map((item) => item.item) as RunCreate[],
-          runUpdates: batch
-            .filter((item) => item.action === "update")
-            .map((item) => item.item) as RunUpdate[],
-        };
-        const serverInfo = await this._ensureServerInfo();
-        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-          await this.multipartIngestRuns(ingestParams);
-        } else {
-          await this.batchIngestRuns(ingestParams);
+    const batchSizeLimit = await this._getBatchSizeLimitBytes();
+    while (this.autoBatchQueue.items.length > 0) {
+      for (let i = 0; i < this.traceBatchConcurrency; i++) {
+        const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+        if (!batch.length) {
+          done();
+          break;
         }
-      } finally {
-        done();
+        await this.processBatch(batch, done);
       }
+    }
+  }
+
+  private async processBatch(batch: AutoBatchQueueItem[], done: () => void) {
+    if (!batch.length) {
+      done();
+      return;
+    }
+    try {
+      const ingestParams = {
+        runCreates: batch
+          .filter((item) => item.action === "create")
+          .map((item) => item.item) as RunCreate[],
+        runUpdates: batch
+          .filter((item) => item.action === "update")
+          .map((item) => item.item) as RunUpdate[],
+      };
+      const serverInfo = await this._ensureServerInfo();
+      if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        await this.multipartIngestRuns(ingestParams);
+      } else {
+        await this.batchIngestRuns(ingestParams);
+      }
+    } finally {
+      done();
     }
   }
 
@@ -4152,8 +4173,9 @@ export class Client {
    * @returns A promise that resolves once all currently pending traces have sent.
    */
   public awaitPendingTraceBatches() {
-    return Promise.all(
-      this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise)
-    );
+    return Promise.all([
+      ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
+      this.batchIngestCaller.queue.onIdle(),
+    ]);
   }
 }
