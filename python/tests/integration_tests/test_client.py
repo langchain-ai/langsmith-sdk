@@ -2,6 +2,7 @@
 
 import datetime
 import io
+import logging
 import os
 import random
 import string
@@ -629,6 +630,16 @@ def test_batch_ingest_runs(
     later_time = (
         datetime.datetime.now(datetime.timezone.utc) + timedelta(seconds=1)
     ).strftime("%Y%m%dT%H%M%S%fZ")
+
+    """
+    Here we create:
+    - run 1: a top level trace with inputs and outputs
+    - run 3: a top level trace with an error with inputs and outputs
+    - run 2: a child of run 1 with inputs, no outputs
+    and we update:
+    - run 2 (the child): to add outputs
+    """
+
     runs_to_create = [
         {
             "id": str(trace_id),
@@ -714,6 +725,154 @@ def test_batch_ingest_runs(
     run3 = next(run for run in runs if run.id == trace_id_2)
     assert run3.inputs == {"input1": 1, "input2": 2}
     assert run3.error == "error"
+
+
+"""
+Multipart partitions:
+- num created: [0], [1], >1
+- num updated: [0], [1], >1
+- num created + num updated: [0], [1], >1
+- individual id: created only, updated only, both
+- [updated is root trace], [updated is run]
+
+Error cases:
+- dual created
+- dual updated
+- created and dual updated [? maybe not an error]
+- dual created and single updated
+- retry doesn't fail
+"""
+
+
+def test_multipart_ingest_runs_empty(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    runs_to_create: list[dict] = []
+    runs_to_update: list[dict] = []
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest_runs(
+            create=runs_to_create, update=runs_to_update
+        )
+
+        assert not caplog.records
+
+
+def test_multipart_ingest_runs_create_then_update(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_runs_create_then_update"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+
+        assert not caplog.records
+
+    runs_to_update: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "outputs": {"output1": 3, "output2": 4},
+        }
+    ]
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
+
+        assert not caplog.records
+
+
+def test_multipart_ingest_runs_update_then_create(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_runs_update_then_create"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_update: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "outputs": {"output1": 3, "output2": 4},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
+
+        assert not caplog.records
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+
+        assert not caplog.records
+
+
+def test_multipart_ingest_runs_create_wrong_type(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_runs_create_then_update"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "agent",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+
+        # this should 422
+        assert len(caplog.records) == 1, "Should get 1 warning for 422, not retried"
+        assert all("422" in record.message for record in caplog.records)
 
 
 @freeze_time("2023-01-01")
