@@ -40,6 +40,7 @@ import {
   isLangChainMessage,
 } from "./utils/messages.js";
 import {
+  getEnvironmentVariable,
   getLangChainEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
@@ -474,7 +475,8 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
-  private blockOnRootRunFinalization = false;
+  private blockOnRootRunFinalization =
+    getEnvironmentVariable("LANGSMITH_CALLBACKS_BACKGROUND") === "false";
 
   private traceBatchConcurrency = 5;
 

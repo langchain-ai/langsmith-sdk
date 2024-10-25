@@ -14,14 +14,24 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
     globalFetchMock = jest.fn(() =>
       Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({}),
+        json: () =>
+          Promise.resolve({
+            batch_ingest_config: {
+              use_multipart_endpoint: true,
+            },
+          }),
         text: () => Promise.resolve(""),
       })
     );
     overriddenFetch = jest.fn(() =>
       Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({}),
+        json: () =>
+          Promise.resolve({
+            batch_ingest_config: {
+              use_multipart_endpoint: true,
+            },
+          }),
         text: () => Promise.resolve(""),
       })
     );
@@ -78,6 +88,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
   });
 
   test("basic traceable implementation", async () => {
+    process.env.LANGSMITH_CALLBACKS_BACKGROUND = "false";
     const llm = traceable(
       async function* llm(input: string) {
         const response = input.repeat(2).split("");
