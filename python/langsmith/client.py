@@ -329,8 +329,9 @@ def close_session(session: requests.Session) -> None:
     session : Session
         The session to close.
     """
-    logger.debug("Closing Client.session")
-    session.close()
+    if session.open:
+        logger.debug("Closing Client.session")
+        session.close()
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
@@ -594,6 +595,7 @@ class Client:
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
+        logger.debug("Creating Client.session")
         session_ = session if session else requests.Session()
         self.session = session_
         self._info = (
@@ -5840,7 +5842,9 @@ def _ensure_ingest_config(
         return default_config
 
 
-def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
+def _tracing_control_thread_func(
+    client_ref: weakref.ref[Client], benchmark_mode: bool = False
+) -> None:
     logger.debug("Starting tracing control thread")
     client = client_ref()
     if client is None:
@@ -5863,6 +5867,8 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         threading.main_thread().is_alive()
         # or we're the only remaining reference to the client
         and sys.getrefcount(client) > num_known_refs + len(sub_threads)
+        or benchmark_mode
+        and not tracing_queue.empty()
     ):
         for thread in sub_threads:
             if not thread.is_alive():
