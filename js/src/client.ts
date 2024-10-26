@@ -765,19 +765,13 @@ export class Client {
   }
 
   private drainAutoBatchQueue(batchSizeLimit: number) {
-    try {
-      while (this.autoBatchQueue.items.length > 0) {
-        for (let i = 0; i < this.traceBatchConcurrency; i++) {
-          const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
-          if (!batch.length) {
-            done();
-            break;
-          }
-          void this._processBatch(batch, done).catch(console.error);
-        }
+    while (this.autoBatchQueue.items.length > 0) {
+      const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+      if (!batch.length) {
+        done();
+        break;
       }
-    } catch (e) {
-      console.error(e);
+      void this._processBatch(batch, done).catch(console.error);
     }
   }
 
