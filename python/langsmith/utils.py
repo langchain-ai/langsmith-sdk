@@ -551,7 +551,7 @@ def _middle_copy(
     if copier is not None:
         try:
             return copier(memo)
-        except TypeError:
+        except (TypeError, AttributeError):
             pass
     if _depth >= max_depth:
         return val
