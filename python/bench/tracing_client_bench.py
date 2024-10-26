@@ -48,7 +48,7 @@ def create_run_data(run_id: str, json_size: int) -> Dict:
     }
 
 
-def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 10) -> Dict:
+def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> Dict:
     """
     Benchmark run creation with specified parameters.
     Returns timing statistics.

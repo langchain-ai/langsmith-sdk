@@ -5867,17 +5867,20 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             len(sub_threads) < scale_up_nthreads_limit
             and tracing_queue.qsize() > scale_up_qsize_trigger
         ):
+            print("Scaling up...")
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func,
                 args=(weakref.ref(client), use_multipart),
             )
             sub_threads.append(new_thread)
             new_thread.start()
+            print("Started new thread, there are now", len(sub_threads), "threads")
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
     # drain the queue on exit
+    print("Draining queue on exit")
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
