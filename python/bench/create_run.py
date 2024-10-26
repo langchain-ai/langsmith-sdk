@@ -1,13 +1,14 @@
-import weakref
 import logging
 import statistics
 import time
+import weakref
 from queue import PriorityQueue
 from typing import Dict
 from unittest.mock import Mock
 from uuid import uuid4
 
-from langsmith.client import Client, _tracing_control_thread_func
+from langsmith._internal._background_thread import tracing_control_thread_func
+from langsmith.client import Client
 
 
 def create_large_json(length: int) -> Dict:
@@ -49,30 +50,31 @@ def create_run_data(run_id: str, json_size: int) -> Dict:
     }
 
 
-def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> Dict:
+def mock_session() -> Mock:
+    """Create a mock session object."""
+    mock_session = Mock()
+    mock_response = Mock()
+    mock_response.status_code = 202
+    mock_response.text = "Accepted"
+    mock_response.json.return_value = {"status": "success"}
+    mock_session.request.return_value = mock_response
+    return mock_session
+
+
+def benchmark_run_creation(
+    *, num_runs: int, json_size: int, samples: int, benchmark_thread: bool
+) -> Dict:
     """
     Benchmark run creation with specified parameters.
     Returns timing statistics.
     """
     timings = []
 
-    benchmark_thread = True
-    real_session = True
-
-    if real_session:
-        mock_session = None
-    else:
-        mock_session = Mock()
-        mock_response = Mock()
-        mock_response.status_code = 202
-        mock_response.text = "Accepted"
-        mock_response.json.return_value = {"status": "success"}
-        mock_session.request.return_value = mock_response
     if benchmark_thread:
-        client = Client(session=mock_session, api_key="xxx", auto_batch_tracing=False)
+        client = Client(session=mock_session(), api_key="xxx", auto_batch_tracing=False)
         client.tracing_queue = PriorityQueue()
     else:
-        client = Client(session=mock_session, api_key="xxx")
+        client = Client(session=mock_session(), api_key="xxx")
 
     for _ in range(samples):
         runs = [create_run_data(str(uuid4()), json_size) for i in range(num_runs)]
@@ -85,8 +87,10 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
         if benchmark_thread:
             # reset the timer
             start = time.perf_counter()
-            _tracing_control_thread_func(weakref.ref(client), benchmark_mode=True)
+            tracing_control_thread_func(weakref.ref(client))
         else:
+            if client.tracing_queue is None:
+                raise ValueError("Tracing queue is None")
             client.tracing_queue.join()
 
         elapsed = time.perf_counter() - start
@@ -104,11 +108,18 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
     }
 
 
-def test_benchmark_runs(json_size: int, num_runs: int):
+def test_benchmark_runs(
+    *, json_size: int, num_runs: int, samples: int, benchmark_thread: bool
+):
     """
     Run benchmarks with different combinations of parameters and report results.
     """
-    results = benchmark_run_creation(num_runs=num_runs, json_size=json_size)
+    results = benchmark_run_creation(
+        num_runs=num_runs,
+        json_size=json_size,
+        samples=samples,
+        benchmark_thread=benchmark_thread,
+    )
 
     print(f"\nBenchmark Results for {num_runs} runs with JSON size {json_size}:")
     print(f"Mean time: {results['mean']:.4f} seconds")
@@ -121,7 +132,4 @@ def test_benchmark_runs(json_size: int, num_runs: int):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    test_benchmark_runs(1_000, 500)
-    # test_benchmark_runs(1_000, 1_000)
-    # test_benchmark_runs(5_000, 500)
-    # test_benchmark_runs(5_000, 1_000)
+    test_benchmark_runs(json_size=1_000, num_runs=500, samples=1, benchmark_thread=True)
