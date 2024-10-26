@@ -15,33 +15,45 @@ function defaultOptions() {
 
 // Regular stringify
 export function stringify(obj, replacer?, spacer?, options?) {
-  if (typeof options === "undefined") {
-    options = defaultOptions();
-  }
-
-  decirc(obj, "", 0, [], undefined, 0, options);
-  var res;
   try {
-    if (replacerStack.length === 0) {
-      res = JSON.stringify(obj, replacer, spacer);
-    } else {
-      res = JSON.stringify(obj, replaceGetterValues(replacer), spacer);
+    return JSON.stringify(obj, replacer, spacer);
+  } catch (e: any) {
+    // Fall back to more complex stringify if circular reference
+    if (!e.message?.includes("Converting circular structure to JSON")) {
+      console.warn("[WARNING]: LangSmith received unserializable value.");
+      return "[Unserializable]";
     }
-  } catch (_) {
-    return JSON.stringify(
-      "[unable to serialize, circular reference is too complex to analyze]"
+    console.warn(
+      "[WARNING]: LangSmith received circular JSON. This will decrease tracer performance."
     );
-  } finally {
-    while (arr.length !== 0) {
-      var part = arr.pop();
-      if (part.length === 4) {
-        Object.defineProperty(part[0], part[1], part[3]);
+    if (typeof options === "undefined") {
+      options = defaultOptions();
+    }
+
+    decirc(obj, "", 0, [], undefined, 0, options);
+    var res;
+    try {
+      if (replacerStack.length === 0) {
+        res = JSON.stringify(obj, replacer, spacer);
       } else {
-        part[0][part[1]] = part[2];
+        res = JSON.stringify(obj, replaceGetterValues(replacer), spacer);
+      }
+    } catch (_) {
+      return JSON.stringify(
+        "[unable to serialize, circular reference is too complex to analyze]"
+      );
+    } finally {
+      while (arr.length !== 0) {
+        var part = arr.pop();
+        if (part.length === 4) {
+          Object.defineProperty(part[0], part[1], part[3]);
+        } else {
+          part[0][part[1]] = part[2];
+        }
       }
     }
+    return res;
   }
-  return res;
 }
 
 function setReplace(replace, val, k, parent) {
