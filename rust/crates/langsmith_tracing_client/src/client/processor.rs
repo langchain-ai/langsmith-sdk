@@ -9,6 +9,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::Semaphore;
 use tokio::task;
 use tokio::time::{sleep, Instant};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio_util::io::ReaderStream;
 
 pub struct RunProcessor {
@@ -37,9 +38,9 @@ impl RunProcessor {
                 Some(queued_run) = self.receiver.recv() => {
                     match queued_run {
                         QueuedRun::Shutdown => {
-                            // println!("shutdown signal received.");
+                            println!("shutdown signal received.");
                             if !buffer.is_empty() {
-                                // println!("sending remaining buffer before shutdown.");
+                                println!("sending remaining buffer before shutdown.");
                                 self.send_and_clear_buffer(&mut buffer).await?;
                             }
                             break;
@@ -48,7 +49,7 @@ impl RunProcessor {
                             // println!("received a queued run.");
                             buffer.push(queued_run);
                             if buffer.len() >= self.config.batch_size {
-                                // println!("batch size limit, sending batch.");
+                                println!("batch size limit, sending batch.");
                                 self.send_and_clear_buffer(&mut buffer).await?;
                                 last_send_time = Instant::now();
                             }
@@ -252,6 +253,7 @@ impl RunProcessor {
     }
 
     async fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
+        let start_send_batch = Instant::now();
         let mut json_data = Vec::new();
         let mut attachment_futures = Vec::new();
 
@@ -321,20 +323,29 @@ impl RunProcessor {
             }
         }
 
-        // process JSON serialization in a blocking thread
+        // println!("Batch processing took {:?}", start_send_batch.elapsed());
+        // process JSON serialization in a blocking thread with Rayon parallel iterator
+        let start = Instant::now();
         let json_parts = task::spawn_blocking(move || {
-            let mut parts = Vec::new();
-            for (part_name, value) in json_data {
-                let data_bytes = serde_json::to_vec(&value)?;
-                let part_size = data_bytes.len() as u64;
-                let part = Part::bytes(data_bytes)
-                    .mime_str(&format!("application/json; length={}", part_size))?;
-                parts.push((part_name, part));
-            }
-            Ok::<Vec<(String, Part)>, TracingClientError>(parts)
+            println!("Parallel processing a batch of {} runs", json_data.len());
+            let start_time_in_parallel = Instant::now();
+            let meow = json_data
+                .into_par_iter()
+                .map(|(part_name, value)| {
+                    let data_bytes = serde_json::to_vec(&value)?;
+                    let part_size = data_bytes.len() as u64;
+                    let part = Part::bytes(data_bytes)
+                        .mime_str(&format!("application/json; length={}", part_size))?;
+                    Ok::<(String, Part), TracingClientError>((part_name, part))
+                })
+                .collect::<Result<Vec<_>, TracingClientError>>();
+
+            println!("Parallel processing took {:?}", start_time_in_parallel.elapsed());
+            meow
         })
         .await
         .unwrap()?; // TODO: get rid of unwrap
+        println!("JSON processing took {:?}", start.elapsed());
 
         // process attachments asynchronously
         let attachment_parts_results =
@@ -364,6 +375,8 @@ impl RunProcessor {
             form = form.part(part_name, part);
         }
 
+        // println!("Assembling form took {:?}", start.elapsed());
+
         // send the multipart POST request
         let response = self
             .http_client
@@ -373,6 +386,7 @@ impl RunProcessor {
             .send()
             .await?;
 
+        // println!("Sending batch took {:?}", start_send_batch.elapsed());
         if response.status().is_success() {
             Ok(())
         } else {
