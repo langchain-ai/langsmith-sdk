@@ -7,7 +7,10 @@ from typing import Dict
 from unittest.mock import Mock
 from uuid import uuid4
 
-from langsmith._internal._background_thread import tracing_control_thread_func
+from langsmith._internal._background_thread import (
+    _tracing_thread_drain_queue,
+    _tracing_thread_handle_batch,
+)
 from langsmith.client import Client
 
 
@@ -61,6 +64,17 @@ def mock_session() -> Mock:
     return mock_session
 
 
+def process_queue(client: Client) -> None:
+    if client.tracing_queue is None:
+        raise ValueError("Tracing queue is None")
+    while next_batch := _tracing_thread_drain_queue(
+        client.tracing_queue, limit=100, block=False
+    ):
+        _tracing_thread_handle_batch(
+            client, client.tracing_queue, next_batch, use_multipart=True
+        )
+
+
 def benchmark_run_creation(
     *, num_runs: int, json_size: int, samples: int, benchmark_thread: bool
 ) -> Dict:
@@ -76,6 +90,9 @@ def benchmark_run_creation(
     else:
         client = Client(session=mock_session(), api_key="xxx")
 
+    if client.tracing_queue is None:
+        raise ValueError("Tracing queue is None")
+
     for _ in range(samples):
         runs = [create_run_data(str(uuid4()), json_size) for i in range(num_runs)]
 
@@ -87,10 +104,8 @@ def benchmark_run_creation(
         if benchmark_thread:
             # reset the timer
             start = time.perf_counter()
-            tracing_control_thread_func(weakref.ref(client))
+            process_queue(client)
         else:
-            if client.tracing_queue is None:
-                raise ValueError("Tracing queue is None")
             client.tracing_queue.join()
 
         elapsed = time.perf_counter() - start
