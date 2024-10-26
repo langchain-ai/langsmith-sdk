@@ -750,9 +750,7 @@ def test_multipart_ingest_empty(
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        langchain_client.multipart_ingest(
-            create=runs_to_create, update=runs_to_update
-        )
+        langchain_client.multipart_ingest(create=runs_to_create, update=runs_to_update)
 
         assert not caplog.records
 

@@ -72,7 +72,9 @@ def _tracing_thread_handle_batch(
     feedback = [it.item for it in batch if it.action == "feedback"]
     try:
         if use_multipart:
-            client.multipart_ingest(create=create, update=update, feedback=feedback, pre_sampled=True)
+            client.multipart_ingest(
+                create=create, update=update, feedback=feedback, pre_sampled=True
+            )
         else:
             client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     except Exception:
