@@ -66,7 +66,13 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._multipart import (
+    MultipartParts,
+    MultipartPartsAndContext,
+    convert_to_multipart_parts_and_context,
+)
 from langsmith._internal._background_thread import (
+    SerializedRunParts,
     TracingQueueItem,
 )
 from langsmith._internal._background_thread import (
@@ -101,7 +107,6 @@ X_API_KEY = "x-api-key"
 WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
 BOUNDARY = uuid.uuid4().hex
-MultipartParts = List[Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]]
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
@@ -1212,18 +1217,34 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create, copy=True)
-        if revision_id is not None:
-            run_create["extra"]["metadata"]["revision_id"] = revision_id
+
         if (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            return self.tracing_queue.put(
-                TracingQueueItem(run_create["dotted_order"], "create", run_create)
+            attachments_collector: Dict[str, ls_schemas.Attachments] = {}
+            run_create = self._run_transform(
+                run_create,
+                copy=False,
+                attachments_collector=attachments_collector,
             )
+            if revision_id is not None:
+                run_create["extra"]["metadata"]["revision_id"] = revision_id
+            acc = convert_to_multipart_parts_and_context(
+                [run_create], [], all_attachments=attachments_collector
+            )
+            return self.tracing_queue.put(
+                TracingQueueItem(run_create["dotted_order"], "create", acc)
+            )
+        else:
+            run_create = self._run_transform(
+                run_create,
+                copy=True,
+            )
+            if revision_id is not None:
+                run_create["extra"]["metadata"]["revision_id"] = revision_id
         self._insert_runtime_env([run_create])
         self._create_run(run_create)
 
@@ -1497,64 +1518,16 @@ class Client:
         self._insert_runtime_env(create_dicts)
         self._insert_runtime_env(update_dicts)
         # send the runs in multipart requests
-        acc_context: List[str] = []
-        acc_parts: MultipartParts = []
-        for event, payloads in (("post", create_dicts), ("patch", update_dicts)):
-            for payload in payloads:
-                # collect fields to be sent as separate parts
-                fields = [
-                    ("inputs", payload.pop("inputs", None)),
-                    ("outputs", payload.pop("outputs", None)),
-                    ("events", payload.pop("events", None)),
-                ]
-                # encode the main run payload
-                payloadb = _dumps_json(payload)
-                acc_parts.append(
-                    (
-                        f"{event}.{payload['id']}",
-                        (
-                            None,
-                            payloadb,
-                            "application/json",
-                            {"Content-Length": str(len(payloadb))},
-                        ),
-                    )
-                )
-                # encode the fields we collected
-                for key, value in fields:
-                    if value is None:
-                        continue
-                    valb = _dumps_json(value)
-                    acc_parts.append(
-                        (
-                            f"{event}.{payload['id']}.{key}",
-                            (
-                                None,
-                                valb,
-                                "application/json",
-                                {"Content-Length": str(len(valb))},
-                            ),
-                        ),
-                    )
-                # encode the attachments
-                if attachments := all_attachments.pop(payload["id"], None):
-                    for n, (ct, ba) in attachments.items():
-                        acc_parts.append(
-                            (
-                                f"attachment.{payload['id']}.{n}",
-                                (None, ba, ct, {"Content-Length": str(len(ba))}),
-                            )
-                        )
-                # compute context
-                acc_context.append(
-                    f"trace={payload.get('trace_id')},id={payload.get('id')}"
-                )
-        # send the request
-        self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+        acc: MultipartPartsAndContext = convert_to_multipart_parts_and_context(
+            create_dicts, update_dicts, all_attachments=all_attachments
+        )
 
-    def _send_multipart_req(
-        self, parts: MultipartParts, *, _context: str, attempts: int = 3
-    ):
+        # send the request
+        self._send_multipart_req(acc)
+
+    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+        parts = acc.parts
+        _context = acc.context
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:

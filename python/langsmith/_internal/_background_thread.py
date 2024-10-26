@@ -10,6 +10,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     List,
+    Optional,
+    Union,
 )
 
 from langsmith import schemas as ls_schemas
@@ -18,11 +20,31 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
 )
+from langsmith._internal._multipart import join_multipart_parts_and_context
 
 if TYPE_CHECKING:
-    from langsmith.client import Client
+    from langsmith.client import Client, MultipartParts
 
 logger = logging.getLogger("langsmith.client")
+
+
+@dataclass(order=True)
+class SerializedRunParts:
+    """
+    A dataclass to hold the serialized parts of a run for sending to the
+    multipart endpoint
+    """
+
+    trace_id: str
+    id: str
+    inputs: bytes
+    outputs: bytes
+    events: bytes
+    attachments: Optional[List[bytes]]
+
+    # the run without inputs,outputs,events,attachments
+    # note this also includes trace_id and id
+    remaining_run: bytes
 
 
 @dataclass(order=True)
@@ -37,7 +59,7 @@ class TracingQueueItem:
 
     priority: str
     action: str
-    item: Any = field(compare=False)
+    item: Union[Any, MultipartPartsAndContext] = field(compare=False)
 
 
 def _tracing_thread_drain_queue(
@@ -67,12 +89,13 @@ def _tracing_thread_handle_batch(
     batch: List[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
-    create = [it.item for it in batch if it.action == "create"]
-    update = [it.item for it in batch if it.action == "update"]
     try:
         if use_multipart:
-            client.multipart_ingest_runs(create=create, update=update, pre_sampled=True)
+            acc = join_multipart_parts_and_context(i.item for i in batch)
+            client._send_multipart_req(acc)
         else:
+            create = [it.item for it in batch if it.action == "create"]
+            update = [it.item for it in batch if it.action == "update"]
             client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
