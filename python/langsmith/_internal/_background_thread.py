@@ -10,7 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     List,
-    Optional,
     Union,
 )
 
@@ -20,31 +19,15 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
 )
-from langsmith._internal._multipart import join_multipart_parts_and_context
+from langsmith._internal._multipart import (
+    MultipartPartsAndContext,
+    join_multipart_parts_and_context,
+)
 
 if TYPE_CHECKING:
-    from langsmith.client import Client, MultipartParts
+    from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
-
-
-@dataclass(order=True)
-class SerializedRunParts:
-    """
-    A dataclass to hold the serialized parts of a run for sending to the
-    multipart endpoint
-    """
-
-    trace_id: str
-    id: str
-    inputs: bytes
-    outputs: bytes
-    events: bytes
-    attachments: Optional[List[bytes]]
-
-    # the run without inputs,outputs,events,attachments
-    # note this also includes trace_id and id
-    remaining_run: bytes
 
 
 @dataclass(order=True)
