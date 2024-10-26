@@ -165,7 +165,6 @@ def _tracing_sub_thread_func(
     except BaseException as e:
         logger.debug("Error in tracing control thread: %s", e)
         return
-    logger.debug("Starting tracing sub thread")
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
     batch_ingest_config = _ensure_ingest_config(client.info)
