@@ -66,13 +66,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal._multipart import (
-    MultipartParts,
-    MultipartPartsAndContext,
-    convert_to_multipart_parts_and_context,
-)
 from langsmith._internal._background_thread import (
-    SerializedRunParts,
     TracingQueueItem,
 )
 from langsmith._internal._background_thread import (
@@ -83,6 +77,10 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
     _SIZE_LIMIT_BYTES,
+)
+from langsmith._internal._multipart import (
+    MultipartPartsAndContext,
+    convert_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 
