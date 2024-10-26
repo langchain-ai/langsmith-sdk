@@ -196,9 +196,8 @@ def close_session(session: requests.Session) -> None:
     session : Session
         The session to close.
     """
-    if session.open:
-        logger.debug("Closing Client.session")
-        session.close()
+    logger.debug("Closing Client.session")
+    session.close()
 
 
 def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
