@@ -1,6 +1,6 @@
 use rayon::prelude::*;
 use serde_json::Value;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn create_large_json(len: usize) -> Value {
     let large_array: Vec<Value> = (0..len)
@@ -42,9 +42,19 @@ fn benchmark_parallel(data: &[Value]) -> Vec<Vec<u8>> {
         .collect()
 }
 
+// into par iter
+fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
+    let start = std::time::Instant::now();
+    let meow = data.into_par_iter()
+        .map(|json| serde_json::to_vec(&json).expect("Failed to serialize JSON"))
+        .collect();
+    println!("into_par_iter: {:?}", start.elapsed());
+    meow
+}
+
 fn json_benchmark(c: &mut Criterion) {
-    let num_json_objects = 1000;
-    let json_length = 1000;
+    let num_json_objects = 2000;
+    let json_length = 3000;
     let data: Vec<Value> = (0..num_json_objects)
         .map(|_| create_large_json(json_length))
         .collect();
@@ -55,6 +65,10 @@ fn json_benchmark(c: &mut Criterion) {
 
     c.bench_function("parallel serialization", |b| {
         b.iter(|| benchmark_parallel(&data))
+    });
+
+    c.bench_function("into par iter serialization", |b| {
+        b.iter(|| benchmark_into_par_iter(black_box(&data)))
     });
 }
 
