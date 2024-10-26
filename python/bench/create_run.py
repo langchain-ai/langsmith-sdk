@@ -64,6 +64,15 @@ def mock_session() -> Mock:
     return mock_session
 
 
+def create_dummy_data(json_size, num_runs) -> list:
+    return [create_run_data(str(uuid4()), json_size) for i in range(num_runs)]
+
+
+def create_runs(runs: list, client: Client) -> None:
+    for run in runs:
+        client.create_run(**run)
+
+
 def process_queue(client: Client) -> None:
     if client.tracing_queue is None:
         raise ValueError("Tracing queue is None")
@@ -94,11 +103,11 @@ def benchmark_run_creation(
         raise ValueError("Tracing queue is None")
 
     for _ in range(samples):
-        runs = [create_run_data(str(uuid4()), json_size) for i in range(num_runs)]
+        runs = create_dummy_data(json_size, num_runs)
 
         start = time.perf_counter()
-        for run in runs:
-            client.create_run(**run)
+
+        create_runs(runs, client)
 
         # wait for client.tracing_queue to be empty
         if benchmark_thread:
