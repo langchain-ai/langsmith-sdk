@@ -145,8 +145,8 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("run_create_custom_iter");
     let server_url = server.url();
-    for batch_size in vec![50] {
-        for json_len in vec![5_000] {
+    for batch_size in vec![10_000] {
+        for json_len in vec![1_000, 5_000] {
             for num_runs in vec![500, 1_000] {
                 group.bench_function(
                     BenchmarkId::new(
@@ -178,9 +178,15 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
                                     for run in runs {
                                         client.submit_run_create(black_box(run)).await.unwrap();
                                     }
+
                                     // shutdown the client to flush the queue
+                                    let start_shutdown = std::time::Instant::now();
+                                    println!("----------SHUTDOWN----------");
                                     client.shutdown().await.unwrap();
+                                    println!("----------SHUTDOWN END----------");
+                                    println!("Elapsed time for shutdown: {:?}", start_shutdown.elapsed());
                                     elapsed_time += start.elapsed();
+                                    println!("Elapsed time: {:?}", elapsed_time);
                                 }
                                 elapsed_time
                             }
