@@ -446,7 +446,6 @@ class Client:
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
-        logger.debug("Creating Client.session")
         session_ = session if session else requests.Session()
         self.session = session_
         self._info = (
