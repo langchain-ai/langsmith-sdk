@@ -1230,6 +1230,7 @@ class Client:
             )
             if revision_id is not None:
                 run_create["extra"]["metadata"]["revision_id"] = revision_id
+            self._insert_runtime_env([run_create])
             acc = convert_to_multipart_parts_and_context(
                 [run_create], [], all_attachments=attachments_collector
             )
