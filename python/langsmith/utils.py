@@ -461,7 +461,7 @@ def filter_logs(
             for filter in filters:
                 try:
                     logger.removeFilter(filter)
-                except BaseException:
+                except ValueError:
                     _LOGGER.warning("Failed to remove filter")
 
 
@@ -551,7 +551,7 @@ def _middle_copy(
     if copier is not None:
         try:
             return copier(memo)
-        except BaseException:
+        except TypeError:
             pass
     if _depth >= max_depth:
         return val
@@ -584,7 +584,7 @@ def deepish_copy(val: T) -> T:
     memo: Dict[int, Any] = {}
     try:
         return copy.deepcopy(val, memo)
-    except BaseException as e:
+    except TypeError as e:
         # Generators, locks, etc. cannot be copied
         # and raise a TypeError (mentioning pickling, since the dunder methods)
         # are re-used for copying. We'll try to do a compromise and copy
