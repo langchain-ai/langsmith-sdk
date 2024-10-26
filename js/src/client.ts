@@ -363,7 +363,7 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
-export class Queue {
+export class AutoBatchQueue {
   items: {
     action: "create" | "update";
     payload: RunCreate | RunUpdate;
@@ -461,7 +461,7 @@ export class Client {
 
   private autoBatchTracing = true;
 
-  private autoBatchQueue = new Queue();
+  private autoBatchQueue = new AutoBatchQueue();
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -755,7 +755,7 @@ export class Client {
     }
   }
 
-  private async _getBatchSizeLimitBytes() {
+  private async _getBatchSizeLimitBytes(): Promise<number> {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeBytesLimit ??
@@ -764,21 +764,24 @@ export class Client {
     );
   }
 
-  private async drainAutoBatchQueue() {
-    const batchSizeLimit = await this._getBatchSizeLimitBytes();
-    while (this.autoBatchQueue.items.length > 0) {
-      for (let i = 0; i < this.traceBatchConcurrency; i++) {
-        const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
-        if (!batch.length) {
-          done();
-          break;
+  private drainAutoBatchQueue(batchSizeLimit: number) {
+    try {
+      while (this.autoBatchQueue.items.length > 0) {
+        for (let i = 0; i < this.traceBatchConcurrency; i++) {
+          const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+          if (!batch.length) {
+            done();
+            break;
+          }
+          void this._processBatch(batch, done).catch(console.error);
         }
-        await this.processBatch(batch, done);
       }
+    } catch (e) {
+      console.error(e);
     }
   }
 
-  private async processBatch(batch: AutoBatchQueueItem[], done: () => void) {
+  private async _processBatch(batch: AutoBatchQueueItem[], done: () => void) {
     if (!batch.length) {
       done();
       return;
@@ -819,15 +822,13 @@ export class Client {
       immediatelyTriggerBatch ||
       this.autoBatchQueue.sizeBytes > sizeLimitBytes
     ) {
-      await this.drainAutoBatchQueue().catch(console.error);
+      this.drainAutoBatchQueue(sizeLimitBytes);
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(
         () => {
           this.autoBatchTimeout = undefined;
-          // This error would happen in the background and is uncatchable
-          // from the outside. So just log instead.
-          void this.drainAutoBatchQueue().catch(console.error);
+          this.drainAutoBatchQueue(sizeLimitBytes);
         },
         oldTimeout
           ? this.autoBatchAggregationDelayMs
@@ -1232,7 +1233,7 @@ export class Client {
         data.parent_run_id === undefined &&
         this.blockOnRootRunFinalization
       ) {
-        // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
+        // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
         await this.processRunOperation({ action: "update", item: data }, true);
         return;
