@@ -20,8 +20,12 @@ export function stringify(obj, replacer?, spacer?, options?) {
   } catch (e: any) {
     // Fall back to more complex stringify if circular reference
     if (!e.message?.includes("Converting circular structure to JSON")) {
+      console.warn("[WARNING]: LangSmith received unserializable value.");
       return "[Unserializable]";
     }
+    console.warn(
+      "[WARNING]: LangSmith received circular JSON. This will decrease tracer performance."
+    );
     if (typeof options === "undefined") {
       options = defaultOptions();
     }
