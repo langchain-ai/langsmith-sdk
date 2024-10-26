@@ -800,10 +800,7 @@ export class Client {
     }
   }
 
-  private async processRunOperation(
-    item: AutoBatchQueueItem,
-    immediatelyTriggerBatch?: boolean
-  ) {
+  private async processRunOperation(item: AutoBatchQueueItem) {
     const oldTimeout = this.autoBatchTimeout;
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
@@ -812,10 +809,7 @@ export class Client {
     }
     const itemPromise = this.autoBatchQueue.push(item);
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
-    if (
-      immediatelyTriggerBatch ||
-      this.autoBatchQueue.sizeBytes > sizeLimitBytes
-    ) {
+    if (this.autoBatchQueue.sizeBytes > sizeLimitBytes) {
       this.drainAutoBatchQueue(sizeLimitBytes);
     }
     if (this.autoBatchQueue.items.length > 0) {
@@ -1229,7 +1223,9 @@ export class Client {
       ) {
         // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
-        await this.processRunOperation({ action: "update", item: data }, true);
+        await this.processRunOperation({ action: "update", item: data }).catch(
+          console.error
+        );
         return;
       } else {
         void this.processRunOperation({ action: "update", item: data }).catch(
