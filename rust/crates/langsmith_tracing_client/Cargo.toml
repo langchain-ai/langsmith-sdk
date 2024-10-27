@@ -17,6 +17,7 @@ pyo3-asyncio = { version = "0.20.0", features = ["testing", "attributes", "async
 pyo3 = "0.20.3"
 futures = "0.3.31"
 rayon = "1.10.0"
+sonic-rs = "0.3.14"
 
 [dev-dependencies]
 multipart = "0.18.0"

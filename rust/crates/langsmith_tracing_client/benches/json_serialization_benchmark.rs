@@ -1,11 +1,12 @@
 use rayon::prelude::*;
-use serde_json::Value;
+// use serde_json::Value;
+use sonic_rs::Value;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-fn create_large_json(len: usize) -> Value {
+fn create_json_with_large_array(len: usize) -> Value {
     let large_array: Vec<Value> = (0..len)
         .map(|i| {
-            serde_json::json!({
+            sonic_rs::json!({
                 "index": i,
                 "data": format!("This is element number {}", i),
                 "nested": {
@@ -16,7 +17,7 @@ fn create_large_json(len: usize) -> Value {
         })
         .collect();
 
-    serde_json::json!({
+    sonic_rs::json!({
         "name": "Huge JSON",
         "description": "This is a very large JSON object for benchmarking purposes.",
         "array": large_array,
@@ -28,40 +29,76 @@ fn create_large_json(len: usize) -> Value {
     })
 }
 
+fn create_json_with_large_strings(len: usize) -> Value {
+    let large_string = "a".repeat(len);
+    sonic_rs::json!({
+        "name": "Huge JSON",
+        "description": "This is a very large JSON object for benchmarking purposes.",
+        "key1": large_string.clone(),
+        "key2": large_string.clone(),
+        "key3": large_string.clone(),
+        "metadata": {
+            "created_at": "2024-10-22T19:00:00Z",
+            "author": "Rust Program",
+            "version": 1.0
+        }
+    })
+}
+
 // Sequential processing
 fn benchmark_sequential(data: &[Value]) -> Vec<Vec<u8>> {
     data.iter()
-        .map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON"))
+        .map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON"))
         .collect()
 }
 
 // Parallel processing
 fn benchmark_parallel(data: &[Value]) -> Vec<Vec<u8>> {
     data.par_iter()
-        .map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON"))
+        .map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON"))
         .collect()
 }
 
 // into par iter
 fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
     data.into_par_iter()
-        .map(|json| serde_json::to_vec(&json).expect("Failed to serialize JSON"))
+        .map(|json| sonic_rs::to_vec(&json).expect("Failed to serialize JSON"))
         .collect()
 }
 
-fn json_benchmark(c: &mut Criterion) {
-    let num_json_objects = 1000;
-    let json_length = 3000;
+fn json_benchmark_large_array(c: &mut Criterion) {
+    let num_json_objects = 100;
+    let json_length = 5000;
     let data: Vec<Value> = (0..num_json_objects)
-        .map(|_| create_large_json(json_length))
+        .map(|_| create_json_with_large_array(json_length))
         .collect();
 
     c.bench_function("sequential serialization", |b| {
-        b.iter(|| benchmark_sequential(&data))
+        b.iter_with_large_drop(|| benchmark_sequential(&data))
     });
 
     c.bench_function("parallel serialization", |b| {
-        b.iter(|| benchmark_parallel(&data))
+        b.iter_with_large_drop(|| benchmark_parallel(&data))
+    });
+
+    c.bench_function("into par iter serialization", |b| {
+        b.iter(|| benchmark_into_par_iter(black_box(&data)))
+    });
+}
+
+fn json_benchmark_large_strings(c: &mut Criterion) {
+    let num_json_objects = 100;
+    let json_length = 100_000;
+    let data: Vec<Value> = (0..num_json_objects)
+        .map(|_| create_json_with_large_strings(json_length))
+        .collect();
+
+    c.bench_function("sequential serialization", |b| {
+        b.iter_with_large_drop(|| benchmark_sequential(&data))
+    });
+
+    c.bench_function("parallel serialization", |b| {
+        b.iter_with_large_drop(|| benchmark_parallel(&data))
     });
 
     c.bench_function("into par iter serialization", |b| {
@@ -72,6 +109,6 @@ fn json_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = json_benchmark
+    targets = json_benchmark_large_array, json_benchmark_large_strings
 }
 criterion_main!(benches);
