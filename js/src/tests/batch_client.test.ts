@@ -298,7 +298,7 @@ describe.each(ENDPOINT_TYPES)(
         end_time: endTime,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.awaitPendingTraceBatches();
 
       expect(serverInfoFailedOnce).toBe(true);
 
@@ -857,7 +857,7 @@ describe.each(ENDPOINT_TYPES)(
         end_time: endTime,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.awaitPendingTraceBatches();
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
