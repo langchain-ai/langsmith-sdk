@@ -1,5 +1,5 @@
 use crate::client::errors::TracingClientError;
-use crate::client::run::{Attachment, QueuedRun};
+use crate::client::run::{Attachment, EventType, QueuedRun, RunEventBytes};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use crate::client::tracing_client::ClientConfig;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -90,7 +90,7 @@ impl RunProcessor {
 
     // async fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
     //     let mut form = Form::new();
-    //     // git println!("Sending batch of {} runs", batch.len());
+    //     // println!("Sending batch of {} runs", batch.len());
     //
     //     for queued_run in batch {
     //         match queued_run {
@@ -101,6 +101,9 @@ impl RunProcessor {
     //             QueuedRun::Update(run_update_extended) => {
     //                 self.consume_run_update(run_update_extended, &mut form)
     //                     .await?;
+    //             }
+    //             QueuedRun::RunBytes(run_event_bytes) => {
+    //                 self.consume_run_bytes(run_event_bytes, &mut form).await?;
     //             }
     //             QueuedRun::Shutdown => {
     //                 return Err(TracingClientError::UnexpectedShutdown);
@@ -178,6 +181,59 @@ impl RunProcessor {
         if let Some(attachments) = attachments {
             for attachment in attachments {
                 self.add_attachment_to_form(form, run_id, attachment)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn consume_run_bytes(
+        &self,
+        run_event_bytes: RunEventBytes,
+        form: &mut Form,
+    ) -> Result<(), TracingClientError> {
+        let RunEventBytes {
+            run_id,
+            event_type,
+            run_bytes,
+            inputs_bytes,
+            outputs_bytes,
+            attachments,
+        } = run_event_bytes;
+
+        let event_type_str = match event_type {
+            EventType::Create => "post",
+            EventType::Update => "patch",
+        };
+
+        let part_size = run_bytes.len() as u64;
+        *form = std::mem::take(form).part(
+            format!("{}.{}", event_type_str, run_id),
+            Part::bytes(run_bytes).mime_str(&format!("application/json; length={}", part_size))?,
+        );
+
+        if let Some(inputs_bytes) = inputs_bytes {
+            let part_size = inputs_bytes.len() as u64;
+            *form = std::mem::take(form).part(
+                format!("{}.{}.inputs", event_type_str, run_id),
+                Part::bytes(inputs_bytes)
+                    .mime_str(&format!("application/json; length={}", part_size))?,
+            );
+        }
+
+        if let Some(outputs_bytes) = outputs_bytes {
+            let part_size = outputs_bytes.len() as u64;
+            *form = std::mem::take(form).part(
+                format!("{}.{}.outputs", event_type_str, run_id),
+                Part::bytes(outputs_bytes)
+                    .mime_str(&format!("application/json; length={}", part_size))?,
+            );
+        }
+
+        if let Some(attachments) = attachments {
+            for attachment in attachments {
+                self.add_attachment_to_form(form, &run_id, attachment)
                     .await?;
             }
         }
@@ -316,6 +372,10 @@ impl RunProcessor {
                             ));
                         }
                     }
+                }
+                QueuedRun::RunBytes(_) => {
+                    // TODO: fix this
+                    return Err(TracingClientError::UnexpectedShutdown);
                 }
                 QueuedRun::Shutdown => {
                     return Err(TracingClientError::UnexpectedShutdown);
