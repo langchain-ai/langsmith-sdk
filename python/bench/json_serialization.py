@@ -46,7 +46,7 @@ def benchmark_no_return(data):
         orjson.dumps(json_obj)
 
 
-num_json_objects = 2000
+num_json_objects = 100
 json_length = 3000
 data = [create_large_json(json_length) for _ in range(num_json_objects)]
 

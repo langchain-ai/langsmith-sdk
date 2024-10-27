@@ -44,16 +44,13 @@ fn benchmark_parallel(data: &[Value]) -> Vec<Vec<u8>> {
 
 // into par iter
 fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
-    let start = std::time::Instant::now();
-    let meow = data.into_par_iter()
+    data.into_par_iter()
         .map(|json| serde_json::to_vec(&json).expect("Failed to serialize JSON"))
-        .collect();
-    println!("into_par_iter: {:?}", start.elapsed());
-    meow
+        .collect()
 }
 
 fn json_benchmark(c: &mut Criterion) {
-    let num_json_objects = 2000;
+    let num_json_objects = 100;
     let json_length = 3000;
     let data: Vec<Value> = (0..num_json_objects)
         .map(|_| create_large_json(json_length))
