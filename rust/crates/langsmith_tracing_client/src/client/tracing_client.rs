@@ -1,6 +1,6 @@
 use crate::client::errors::TracingClientError;
 use crate::client::processor::RunProcessor;
-use crate::client::run::QueuedRun;
+use crate::client::run::{QueuedRun, RunEventBytes};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use reqwest::header::HeaderMap;
 use std::time::Duration;
@@ -54,6 +54,15 @@ impl TracingClient {
         run: RunUpdateExtended,
     ) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Update(run);
+
+        self.sender
+            .send(queued_run)
+            .await
+            .map_err(|_| TracingClientError::QueueFull)
+    }
+
+    pub async fn submit_run_bytes(&self, run: RunEventBytes) -> Result<(), TracingClientError> {
+        let queued_run = QueuedRun::RunBytes(run);
 
         self.sender
             .send(queued_run)

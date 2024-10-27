@@ -26,3 +26,7 @@ criterion = { version = "0.5.1", features = ["async_tokio"] }
 [[bench]]
 name = "tracing_client_benchmark"
 harness = false
+
+[[bench]]
+name = "json_serialization_benchmark"
+harness = false
