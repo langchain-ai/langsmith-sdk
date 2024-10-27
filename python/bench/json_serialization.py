@@ -5,7 +5,7 @@ import threading
 import orjson
 
 
-def create_large_json(length):
+def create_json_with_large_array(length):
     """Create a large JSON object for benchmarking purposes."""
     large_array = [
         {
@@ -29,6 +29,24 @@ def create_large_json(length):
             "version": 1.0
         }
     }
+
+
+def create_json_with_large_strings(length: int) -> dict:
+    large_string = "a" * length  # Create a large string of repeated 'a' characters
+
+    return {
+        "name": "Huge JSON",
+        "description": "This is a very large JSON object for benchmarking purposes.",
+        "key1": large_string,
+        "key2": large_string,
+        "key3": large_string,
+        "metadata": {
+            "created_at": "2024-10-22T19:00:00Z",
+            "author": "Python Program",
+            "version": 1.0
+        }
+    }
+
 
 
 def serialize_sequential(data):
@@ -61,9 +79,10 @@ def benchmark_serialization(data, func, samples=10):
 
 
 def main():
-    num_json_objects = 1000
-    json_length = 3000
-    data = [create_large_json(json_length) for _ in range(num_json_objects)]
+    num_json_objects = 100
+    json_length = 5000
+    data = [create_json_with_large_array(json_length) for _ in range(num_json_objects)]
+    # data = [create_json_with_large_strings(json_length) for _ in range(num_json_objects)]
 
     # Sequential Benchmark
     results_seq = benchmark_serialization(data, serialize_sequential)
