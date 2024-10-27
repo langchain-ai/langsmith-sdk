@@ -50,7 +50,7 @@ fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
 }
 
 fn json_benchmark(c: &mut Criterion) {
-    let num_json_objects = 100;
+    let num_json_objects = 1000;
     let json_length = 3000;
     let data: Vec<Value> = (0..num_json_objects)
         .map(|_| create_large_json(json_length))
