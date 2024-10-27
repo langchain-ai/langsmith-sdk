@@ -4,13 +4,12 @@ use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use crate::client::tracing_client::ClientConfig;
 use futures::stream::{FuturesUnordered, StreamExt};
 use reqwest::multipart::{Form, Part};
-use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::Semaphore;
 use tokio::task;
 use tokio::time::{sleep, Instant};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio_util::io::ReaderStream;
+use sonic_rs::{to_vec, to_value};
 
 pub struct RunProcessor {
     receiver: Receiver<QueuedRun>,
@@ -247,7 +246,7 @@ impl RunProcessor {
         part_name: String,
         data: &impl serde::Serialize,
     ) -> Result<(), TracingClientError> {
-        let data_bytes = serde_json::to_vec(data)?;
+        let data_bytes = to_vec(data).unwrap();  // TODO: get rid of unwrap
         let part_size = data_bytes.len() as u64;
         *form = std::mem::take(form).part(
             part_name,
@@ -326,7 +325,7 @@ impl RunProcessor {
                     // Collect JSON data
                     json_data.push((
                         format!("post.{}", run_id),
-                        serde_json::to_value(run_create)?,
+                        to_value(&run_create).unwrap(), // TODO: get rid of unwrap
                     ));
 
                     if let Some(inputs) = io.inputs {
@@ -357,7 +356,7 @@ impl RunProcessor {
                     // Collect JSON data
                     json_data.push((
                         format!("patch.{}", run_id),
-                        serde_json::to_value(run_update)?,
+                        to_value(&run_update).unwrap(), // TODO: get rid of unwrap
                     ));
 
                     if let Some(outputs) = io.outputs {
@@ -392,7 +391,7 @@ impl RunProcessor {
             let meow = json_data
                 .into_par_iter()
                 .map(|(part_name, value)| {
-                    let data_bytes = serde_json::to_vec(&value)?;
+                    let data_bytes = to_vec(&value).unwrap(); // TODO: get rid of unwrap
                     let part_size = data_bytes.len() as u64;
                     let part = Part::bytes(data_bytes)
                         .mime_str(&format!("application/json; length={}", part_size))?;

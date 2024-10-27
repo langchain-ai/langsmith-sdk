@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sonic_rs::Value;
 
 // Map attachment ref to tuple of filename, optional bytes
 pub struct Attachment {
@@ -18,8 +19,8 @@ pub enum TimeValue {
 
 #[derive(PartialEq, Debug)]
 pub struct RunIO {
-    pub inputs: Option<serde_json::Value>,
-    pub outputs: Option<serde_json::Value>,
+    pub inputs: Option<Value>,
+    pub outputs: Option<Value>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -28,11 +29,11 @@ pub struct RunCommon {
     pub trace_id: String,
     pub dotted_order: String,
     pub parent_run_id: Option<String>,
-    pub extra: Option<serde_json::Value>,
+    pub extra: Option<Value>,
     pub error: Option<String>,
-    pub serialized: Option<serde_json::Value>,
-    pub events: Option<serde_json::Value>,
-    pub tags: Option<serde_json::Value>,
+    pub serialized: Option<Value>,
+    pub events: Option<Value>,
+    pub tags: Option<Value>,
     pub session_id: Option<String>,
     pub session_name: Option<String>,
 }

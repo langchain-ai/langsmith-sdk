@@ -67,23 +67,22 @@ fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
 }
 
 fn json_benchmark_large_array(c: &mut Criterion) {
-    let num_json_objects = 100;
-    let json_length = 5000;
+    let num_json_objects = 300;
+    let json_length = 3000;
     let data: Vec<Value> = (0..num_json_objects)
         .map(|_| create_json_with_large_array(json_length))
         .collect();
 
-    c.bench_function("sequential serialization", |b| {
+    let mut group = c.benchmark_group("json_benchmark_large_array");
+    group.bench_function("sequential serialization", |b|
         b.iter_with_large_drop(|| benchmark_sequential(&data))
-    });
-
-    c.bench_function("parallel serialization", |b| {
+    );
+    group.bench_function("parallel serialization", |b|
         b.iter_with_large_drop(|| benchmark_parallel(&data))
-    });
-
-    c.bench_function("into par iter serialization", |b| {
-        b.iter(|| benchmark_into_par_iter(black_box(&data)))
-    });
+    );
+    group.bench_function("into par iter serialization", |b|
+        b.iter_with_large_drop(|| benchmark_into_par_iter(&data))
+    );
 }
 
 fn json_benchmark_large_strings(c: &mut Criterion) {
@@ -93,17 +92,16 @@ fn json_benchmark_large_strings(c: &mut Criterion) {
         .map(|_| create_json_with_large_strings(json_length))
         .collect();
 
-    c.bench_function("sequential serialization", |b| {
+    let mut group = c.benchmark_group("json_benchmark_large_strings");
+    group.bench_function("sequential serialization", |b|
         b.iter_with_large_drop(|| benchmark_sequential(&data))
-    });
-
-    c.bench_function("parallel serialization", |b| {
+    );
+    group.bench_function("parallel serialization", |b|
         b.iter_with_large_drop(|| benchmark_parallel(&data))
-    });
-
-    c.bench_function("into par iter serialization", |b| {
-        b.iter(|| benchmark_into_par_iter(black_box(&data)))
-    });
+    );
+    group.bench_function("into par iter serialization", |b|
+        b.iter_with_large_drop(|| benchmark_into_par_iter(&data))
+    );
 }
 
 criterion_group! {

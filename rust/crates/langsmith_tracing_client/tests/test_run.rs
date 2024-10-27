@@ -1,5 +1,5 @@
 use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunUpdate, TimeValue};
-use serde_json;
+use sonic_rs::{Value, json, to_string};
 
 #[test]
 fn test_run_common() {
@@ -8,16 +8,16 @@ fn test_run_common() {
         trace_id: String::from("fedcba98-7654-3210-fedc-ba9876543210"),
         dotted_order: String::from("1.1"),
         parent_run_id: None,
-        extra: Some(serde_json::json!({"extra_data": "value"})),
+        extra: Some(json!({"extra_data": "value"})),
         error: Some(String::from("error message")),
-        serialized: Some(serde_json::json!({"key": "value"})),
-        events: Some(serde_json::json!([{ "event": "event_data" }])),
+        serialized: Some(json!({"key": "value"})),
+        events: Some(Value::from(vec![json!({"event": "event_data"})])),
         tags: None,
         session_id: Some("efghijkl-7654-3210-fedc-ba9876543210".to_string()),
         session_name: None,
     };
 
-    let serialized = serde_json::to_string(&run_common).unwrap();
+    let serialized = to_string(&run_common).unwrap();
     assert!(serialized.contains("\"dotted_order\":\"1.1\""));
 }
 
@@ -31,8 +31,8 @@ fn test_run_create_with_string_time() {
         extra: None,
         error: None,
         serialized: None,
-        events: Some(serde_json::json!([{ "event": "event_data" }])),
-        tags: Some(serde_json::json!({"tag": "value"})),
+        events: Some(Value::from(vec![json!({"event": "event_data"})])),
+        tags: Some(json!({"tag": "value"})),
         session_id: None,
         session_name: Some("Session Name".to_string()),
     };
@@ -46,7 +46,7 @@ fn test_run_create_with_string_time() {
         reference_example_id: None,
     };
 
-    let serialized = serde_json::to_string(&run_create).unwrap();
+    let serialized = to_string(&run_create).unwrap();
     assert!(serialized.contains("\"name\":\"Run Name\""));
     assert!(serialized.contains("\"start_time\":\"2024-10-16T12:00:00Z\""));
 }
@@ -58,11 +58,11 @@ fn test_run_create_with_timestamp() {
         trace_id: String::from("fedcba98-7654-3210-fedc-ba9876543210"),
         dotted_order: String::from("1.1"),
         parent_run_id: None,
-        extra: Some(serde_json::json!({"extra_data": "value"})),
+        extra: Some(json!({"extra_data": "value"})),
         error: None,
-        serialized: Some(serde_json::json!({"key": "value"})),
-        events: Some(serde_json::json!([{ "event": "event_data" }])),
-        tags: Some(serde_json::json!({"tag": "value"})),
+        serialized: Some(json!({"key": "value"})),
+        events: None,
+        tags: Some(json!({"tag": "value"})),
         session_id: None,
         session_name: None,
     };
@@ -76,7 +76,7 @@ fn test_run_create_with_timestamp() {
         reference_example_id: None,
     };
 
-    let serialized = serde_json::to_string(&run_create).unwrap();
+    let serialized = to_string(&run_create).unwrap();
     assert!(serialized.contains("\"name\":\"Run Name\""));
     assert!(serialized.contains("\"start_time\":1697462400000"));
 }
@@ -92,7 +92,7 @@ fn test_run_update() {
         error: None,
         serialized: None,
         events: None,
-        tags: Some(serde_json::json!({"tag": "value"})),
+        tags: Some(json!({"tag": "value"})),
         session_id: None,
         session_name: None,
     };
@@ -102,7 +102,7 @@ fn test_run_update() {
         end_time: TimeValue::String("2024-10-16T14:00:00Z".to_string()),
     };
 
-    let serialized = serde_json::to_string(&run_update).unwrap();
+    let serialized = to_string(&run_update).unwrap();
     assert!(serialized.contains("\"dotted_order\":\"1.1\""));
     assert!(serialized.contains("\"end_time\":\"2024-10-16T14:00:00Z\""));
 }

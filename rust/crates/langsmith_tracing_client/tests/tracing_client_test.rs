@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
+use sonic_rs::{Value, from_str, json, to_string};
 
 #[derive(Debug)]
 struct MultipartField {
@@ -114,11 +115,11 @@ async fn test_tracing_client_submit_run_create() {
                 trace_id: String::from("trace_id"),
                 dotted_order: String::from("1.1"),
                 parent_run_id: None,
-                extra: Some(serde_json::json!({"extra_data": "value"})),
+                extra: Some(json!({"extra_data": "value"})),
                 error: None,
-                serialized: Some(serde_json::json!({"key": "value"})),
-                events: Some(serde_json::json!([{ "event": "event_data" }])),
-                tags: Some(serde_json::json!(["tag1", "tag2"])),
+                serialized: Some(json!({"key": "value"})),
+                events: Some(Value::from(vec![json!({"event": "event_data"})])),
+                tags: Some(Value::from(vec!["tag1", "tag2"])),
                 session_id: None,
                 session_name: Some("Session Name".to_string()),
             },
@@ -130,8 +131,8 @@ async fn test_tracing_client_submit_run_create() {
         },
         attachments: Some(attachments),
         io: RunIO {
-            inputs: Some(serde_json::json!({"input": "value"})),
-            outputs: Some(serde_json::json!({"output": "value"})),
+            inputs: Some(json!({"input": "value"})),
+            outputs: Some(json!({"output": "value"})),
         },
     };
 
@@ -153,34 +154,34 @@ async fn test_tracing_client_submit_run_create() {
         Some("application/json; length=375".to_string())
     );
     assert_eq!(fields[0].filename, None);
-    let received_run: serde_json::Value = serde_json::from_str(&fields[0].data).unwrap();
+    let received_run: Value = from_str(&fields[0].data).unwrap();
     assert_eq!(received_run["id"], "test_id");
     assert_eq!(received_run["trace_id"], "trace_id");
     assert_eq!(received_run["dotted_order"], "1.1");
-    assert_eq!(received_run["parent_run_id"], serde_json::Value::Null);
+    assert_eq!(received_run["parent_run_id"], json!(null));
     assert_eq!(
         received_run["extra"],
-        serde_json::json!({"extra_data": "value"})
+        json!({"extra_data": "value"})
     );
-    assert_eq!(received_run["error"], serde_json::Value::Null);
+    assert_eq!(received_run["error"], json!(null));
     assert_eq!(
         received_run["serialized"],
-        serde_json::json!({"key": "value"})
+        json!({"key": "value"})
     );
     assert_eq!(
         received_run["events"],
-        serde_json::json!([{ "event": "event_data" }])
+        Value::from(vec![json!({"event": "event_data"})])
     );
-    assert_eq!(received_run["tags"], serde_json::json!(["tag1", "tag2"]));
+    assert_eq!(received_run["tags"], Value::from(vec!["tag1", "tag2"]));
     assert_eq!(received_run["session_name"], "Session Name");
-    assert_eq!(received_run["session_id"], serde_json::Value::Null);
+    assert_eq!(received_run["session_id"], json!(null));
     assert_eq!(received_run["name"], "Run Name");
     assert_eq!(received_run["start_time"], 1697462400000i64);
     assert_eq!(received_run["end_time"], 1697466000000i64);
     assert_eq!(received_run["run_type"], "chain");
     assert_eq!(
         received_run["reference_example_id"],
-        serde_json::Value::Null
+        json!(null)
     );
 
     // assert inputs fields
@@ -190,8 +191,8 @@ async fn test_tracing_client_submit_run_create() {
         Some("application/json; length=17".to_string())
     );
     assert_eq!(fields[1].filename, None);
-    let received_inputs: serde_json::Value = serde_json::from_str(&fields[1].data).unwrap();
-    assert_eq!(received_inputs, serde_json::json!({"input": "value"}));
+    let received_inputs: Value = from_str(&fields[1].data).unwrap();
+    assert_eq!(received_inputs, json!({"input": "value"}));
 
     // assert outputs fields
     assert_eq!(fields[2].name, "post.test_id.outputs");
@@ -200,8 +201,8 @@ async fn test_tracing_client_submit_run_create() {
         Some("application/json; length=18".to_string())
     );
     assert_eq!(fields[2].filename, None);
-    let received_outputs: serde_json::Value = serde_json::from_str(&fields[2].data).unwrap();
-    assert_eq!(received_outputs, serde_json::json!({"output": "value"}));
+    let received_outputs: Value = from_str(&fields[2].data).unwrap();
+    assert_eq!(received_outputs, json!({"output": "value"}));
 
     // assert attachment_1 fields
     assert_eq!(fields[3].name, "attachment.test_id.attachment_1");
@@ -294,11 +295,11 @@ async fn test_tracing_client_submit_run_update() {
                 trace_id: String::from("trace_id"),
                 dotted_order: String::from("1.1"),
                 parent_run_id: None,
-                extra: Some(serde_json::json!({"extra_data": "value"})),
+                extra: Some(json!({"extra_data": "value"})),
                 error: None,
-                serialized: Some(serde_json::json!({"key": "value"})),
-                events: Some(serde_json::json!([{ "event": "event_data" }])),
-                tags: Some(serde_json::json!(["tag1", "tag2"])),
+                serialized: Some(json!({"key": "value"})),
+                events: Some(Value::from(vec![json!({"event": "event_data"})])),
+                tags: Some(Value::from(vec!["tag1", "tag2"])),
                 session_id: None,
                 session_name: Some("Session Name".to_string()),
             },
@@ -307,7 +308,7 @@ async fn test_tracing_client_submit_run_update() {
         attachments: Some(attachments),
         io: RunIO {
             inputs: None,
-            outputs: Some(serde_json::json!({"updated_output": "value"})),
+            outputs: Some(json!({"updated_output": "value"})),
         },
     };
 
@@ -329,23 +330,23 @@ async fn test_tracing_client_submit_run_update() {
         Some("application/json; length=292".to_string())
     );
     assert_eq!(fields[0].filename, None);
-    let received_run: serde_json::Value = serde_json::from_str(&fields[0].data).unwrap();
+    let received_run: Value = from_str(&fields[0].data).unwrap();
     assert_eq!(received_run["id"], "test_id");
     assert_eq!(received_run["trace_id"], "trace_id");
     assert_eq!(
         received_run["extra"],
-        serde_json::json!({"extra_data": "value"})
+        json!({"extra_data": "value"})
     );
-    assert_eq!(received_run["error"], serde_json::Value::Null);
+    assert_eq!(received_run["error"], json!(null));
     assert_eq!(
         received_run["serialized"],
-        serde_json::json!({"key": "value"})
+        json!({"key": "value"})
     );
     assert_eq!(
         received_run["events"],
-        serde_json::json!([{ "event": "event_data" }])
+        Value::from(vec![json!({"event": "event_data"})])
     );
-    assert_eq!(received_run["tags"], serde_json::json!(["tag1", "tag2"]));
+    assert_eq!(received_run["tags"], Value::from(vec!["tag1", "tag2"]));
     assert_eq!(received_run["session_name"], "Session Name");
     assert_eq!(received_run["end_time"], "2024-10-16T12:00:00Z");
 
@@ -356,10 +357,10 @@ async fn test_tracing_client_submit_run_update() {
         Some("application/json; length=26".to_string())
     );
     assert_eq!(fields[1].filename, None);
-    let received_outputs: serde_json::Value = serde_json::from_str(&fields[1].data).unwrap();
+    let received_outputs: Value = from_str(&fields[1].data).unwrap();
     assert_eq!(
         received_outputs,
-        serde_json::json!({"updated_output": "value"})
+        json!({"updated_output": "value"})
     );
 
     // assert attachment_1 fields

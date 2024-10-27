@@ -6,6 +6,7 @@ use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClie
 use mockito::Server;
 use std::time::Duration;
 use tokio::runtime::Runtime;
+use sonic_rs::{Value, json, to_vec};
 
 fn create_mock_client_config(server_url: &str, batch_size: usize) -> ClientConfig {
     ClientConfig {
@@ -19,8 +20,8 @@ fn create_mock_client_config(server_url: &str, batch_size: usize) -> ClientConfi
 
 fn create_run_create(
     attachments: Option<Vec<Attachment>>,
-    inputs: Option<serde_json::Value>,
-    outputs: Option<serde_json::Value>,
+    inputs: Option<Value>,
+    outputs: Option<Value>,
 ) -> RunCreateExtended {
     RunCreateExtended {
         run_create: RunCreate {
@@ -29,11 +30,11 @@ fn create_run_create(
                 trace_id: String::from("trace_id"),
                 dotted_order: String::from("1.1"),
                 parent_run_id: None,
-                extra: Some(serde_json::json!({"extra_data": "value"})),
+                extra: Some(json!({"extra_data": "value"})),
                 error: None,
-                serialized: Some(serde_json::json!({"key": "value"})),
-                events: Some(serde_json::json!([{ "event": "event_data" }])),
-                tags: Some(serde_json::json!(["tag1", "tag2"])),
+                serialized: Some(json!({"key": "value"})),
+                events: Some(json!([{ "event": "event_data" }])),
+                tags: Some(json!(["tag1", "tag2"])),
                 session_id: None,
                 session_name: Some("Session Name".to_string()),
             },
@@ -50,8 +51,8 @@ fn create_run_create(
 
 fn create_run_bytes(
     attachments: Option<Vec<Attachment>>,
-    inputs: Option<serde_json::Value>,
-    outputs: Option<serde_json::Value>,
+    inputs: Option<Value>,
+    outputs: Option<Value>,
 ) -> RunEventBytes {
     let run_create = create_run_create(attachments, inputs, outputs);
     let run_bytes = serde_json::to_vec(&run_create.run_create).unwrap();
@@ -74,10 +75,10 @@ fn create_run_bytes(
     }
 }
 
-fn create_large_json(len: usize) -> serde_json::Value {
-    let large_array: Vec<serde_json::Value> = (0..len)
+fn create_large_json(len: usize) -> Value {
+    let large_array: Vec<Value> = (0..len)
         .map(|i| {
-            serde_json::json!({
+            json!({
                 "index": i,
                 "data": format!("This is element number {}", i),
                 "nested": {
@@ -88,7 +89,7 @@ fn create_large_json(len: usize) -> serde_json::Value {
         })
         .collect();
 
-    serde_json::json!({
+    json!({
         "name": "Huge JSON",
         "description": "This is a very large JSON object for benchmarking purposes.",
         "array": large_array,
