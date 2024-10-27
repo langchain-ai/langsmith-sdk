@@ -176,7 +176,7 @@ describe.each(ENDPOINT_TYPES)(
       await new Promise((resolve) => setTimeout(resolve, 300));
     });
 
-    it.only("Create + update batching should merge into a single call", async () => {
+    it("Create + update batching should merge into a single call", async () => {
       const client = new Client({
         apiKey: "test-api-key",
         autoBatchTracing: true,
