@@ -290,7 +290,7 @@ fn bench_run_bytes_iter_custom(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = bench_run_bytes_iter_custom
+    targets = bench_run_create_iter_custom
 }
 
 criterion_main!(benches);
