@@ -388,7 +388,7 @@ impl RunProcessor {
         let json_parts = task::spawn_blocking(move || {
             println!("Parallel processing a batch of {} runs", json_data.len());
             let start_time_in_parallel = Instant::now();
-            let meow = json_data
+            let results = json_data
                 .into_par_iter()
                 .map(|(part_name, value)| {
                     let data_bytes = to_vec(&value).unwrap(); // TODO: get rid of unwrap
@@ -398,9 +398,7 @@ impl RunProcessor {
                     Ok::<(String, Part), TracingClientError>((part_name, part))
                 })
                 .collect::<Result<Vec<_>, TracingClientError>>();
-
-            println!("Parallel processing took {:?}", start_time_in_parallel.elapsed());
-            meow
+            results
         })
         .await
         .unwrap()?; // TODO: get rid of unwrap
