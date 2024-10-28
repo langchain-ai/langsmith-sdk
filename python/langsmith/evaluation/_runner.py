@@ -99,7 +99,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     hyper_params: Optional[Dict[str, List[Any]]] = None,
-) -> ExperimentResults:
+) -> ExperimentResults | CombinedExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
     Args:
@@ -376,16 +376,19 @@ def evaluate_existing(
     runs = _load_traces(experiment, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
-    return _evaluate(
-        runs,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        max_concurrency=max_concurrency,
-        client=client,
-        blocking=blocking,
-        experiment=project,
+    return cast(
+        ExperimentResults,
+        _evaluate(
+            runs,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            experiment=project,
+        ),
     )
 
 
