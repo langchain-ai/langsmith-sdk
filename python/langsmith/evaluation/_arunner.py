@@ -392,7 +392,6 @@ async def _aevaluate(
             description=description,
             num_repetitions=num_repetitions,
             runs=runs,
-            hyper_params=params,
         ).astart()
         cache_dir = ls_utils.get_cache_dir(None)
         if cache_dir is not None:
@@ -449,14 +448,13 @@ async def _aevaluate(
                     experiment=current_prefix,
                     description=description,
                     num_repetitions=num_repetitions,
-                    hyper_params={k: v for k, v in params.items()},  # Single param combination
                 ).astart()
 
                 if asyncio.iscoroutinefunction(target) or hasattr(target, "__aiter__"):
                     # Wrap target with current params
                     async def wrapped_target(inputs: dict) -> dict:
                         return await target(inputs, **params)  # type: ignore
-                    
+                    print("PARAMS", params)
                     manager = await manager.awith_predictions(
                         wrapped_target, max_concurrency=max_concurrency
                     )
@@ -541,7 +539,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
-        hyper_params: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -557,7 +554,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
-        self._hyper_params = hyper_params
 
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
@@ -698,9 +694,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self, target: ATARGET_T, /, max_concurrency: Optional[int] = None
     ) -> AsyncIterator[_ForwardResults]:
         fn = _ensure_async_traceable(target)
-
-        if self._hyper_params:
-            fn = functools.partial(fn, **self._hyper_params)
 
         async def predict_all():
             async for example in await self.aget_examples():
