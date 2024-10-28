@@ -79,7 +79,7 @@ def benchmark_serialization(data, func, samples=10):
 
 
 def main():
-    num_json_objects = 100
+    num_json_objects = 300
     json_length = 5000
     data = [create_json_with_large_array(json_length) for _ in range(num_json_objects)]
     # data = [create_json_with_large_strings(json_length) for _ in range(num_json_objects)]
