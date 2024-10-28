@@ -18,6 +18,7 @@ from typing import (
     Callable,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -371,7 +372,7 @@ async def _aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     hyper_params: Optional[Dict[str, List[Any]]] = None,
-) -> AsyncExperimentResults:
+) -> AsyncExperimentResults | CombinedAsyncExperimentResults:
     is_async_target = asyncio.iscoroutinefunction(target) or (
         hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())
     )
@@ -472,7 +473,7 @@ async def _aevaluate(
                 
                 managers.append(manager)
 
-        return CombinedAsyncExperimentResults(managers, blocking=blocking)
+        return CombinedAsyncExperimentResults(managers)
 
 class CombinedAsyncExperimentResults:
     """Container for multiple async experiment results from hyperparameter search."""
@@ -480,13 +481,10 @@ class CombinedAsyncExperimentResults:
     def __init__(
         self,
         managers: List[_AsyncExperimentManager],
-        blocking: bool = True,
     ):
         """Initialize the combined results."""
         self.managers = managers
         self._results = [AsyncExperimentResults(manager) for manager in managers]
-        if blocking:
-            asyncio.get_event_loop().run_until_complete(self.wait())
 
     async def wait(self) -> None:
         """Wait for all experiments to complete."""

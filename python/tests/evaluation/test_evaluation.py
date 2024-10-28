@@ -31,6 +31,105 @@ def wait_for(
         raise last_e
     raise ValueError(f"Callable did not return within {total_time}")
 
+async def test_aevaluate_with_hyper_params():
+    client = Client()
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    def accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        return {"score": expected.lower() == pred.lower()}
+
+    async def apredict(inputs: dict, threshold: float = 0.5, prefix: str = "") -> dict:
+        # Use the hyper-parameters in the prediction
+        await asyncio.sleep(0.1)  # Simulate async work
+        if threshold > 0.7:
+            return {"output": prefix + "Yes"}
+        return {"output": prefix + "No"}
+
+    hyper_params = {
+        "threshold": [0.5, 0.8],
+        "prefix": ["", "TEST_"]
+    }
+
+    results = await aevaluate(
+        apredict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        experiment_prefix="async_hyper_param_test",
+        hyper_params=hyper_params,
+    )
+
+    # Should have 4 different experiments (2 thresholds x 2 prefixes)
+    assert len(results._results) == 4
+
+    # Check that each experiment has the correct metadata and predictions
+    for experiment_results in results._results:
+        params = experiment_results._manager._metadata["hyper_params"]
+        
+        # Get all results for this parameter combination
+        all_results = [result async for result in experiment_results]
+        
+        # Verify predictions match the hyper-parameters
+        for result in all_results:
+            prediction = result["run"].outputs["output"]
+            if params["threshold"] > 0.7:
+                assert prediction.startswith(params["prefix"])
+                assert prediction.endswith("Yes")
+            else:
+                assert prediction.startswith(params["prefix"])
+                assert prediction.endswith("No")
+
+def test_evaluate_with_hyper_params():
+    client = Client()
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    def accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        return {"score": expected.lower() == pred.lower()}
+
+    def predict(inputs: dict, threshold: float = 0.5, prefix: str = "") -> dict:
+        # Use the hyper-parameters in the prediction
+        if threshold > 0.7:
+            return {"output": prefix + "Yes"}
+        return {"output": prefix + "No"}
+
+    hyper_params = {
+        "threshold": [0.5, 0.8],
+        "prefix": ["", "TEST_"]
+    }
+
+    results = evaluate(
+        predict,
+        data=dataset_name,
+        evaluators=[accuracy],
+        experiment_prefix="hyper_param_test",
+        hyper_params=hyper_params,
+    )
+
+    # Should have 4 different experiments (2 thresholds x 2 prefixes)
+    assert len(results._results) == 4
+
+    # Check that each experiment has the correct metadata and predictions
+    for experiment_results in results._results:
+        params = experiment_results._manager._metadata["hyper_params"]
+        
+        # Verify predictions match the hyper-parameters
+        for result in experiment_results:
+            prediction = result["run"].outputs["output"]
+            if params["threshold"] > 0.7:
+                assert prediction.startswith(params["prefix"])
+                assert prediction.endswith("Yes")
+            else:
+                assert prediction.startswith(params["prefix"])
+                assert prediction.endswith("No")
 
 @pytest.mark.skip(reason="Skipping this test for now. Should remove in the future.")
 def test_evaluate():
