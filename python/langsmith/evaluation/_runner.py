@@ -956,7 +956,6 @@ def _evaluate(
                     experiment=current_prefix,
                     description=description,
                     num_repetitions=num_repetitions,
-                    hyper_params=params,  # Single param combination
                 ).start()
 
                 if _is_callable(target):
@@ -1216,7 +1215,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
-        hyper_params: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -1230,7 +1228,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
-        self._hyper_params = hyper_params
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
@@ -1385,9 +1382,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
-
-        if self._hyper_params:
-            fn = functools.partial(fn, **self._hyper_params)
             
         if max_concurrency == 0:
             for example in self.examples:
