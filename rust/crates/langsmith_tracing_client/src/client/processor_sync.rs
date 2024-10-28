@@ -183,27 +183,32 @@ impl RunProcessor {
                 Ok::<(String, Part), TracingClientError>((part_name, part))
             })
             .collect::<Result<Vec<_>, TracingClientError>>()?;
-        //println!("JSON processing took {:?}", start.elapsed());
+        println!("JSON processing took {:?}", start.elapsed());
 
-        let mut form = Form::new();
-        for (part_name, part) in json_parts.into_iter().chain(attachment_parts) {
-            form = form.part(part_name, part);
-        }
+        // let mut form = Form::new();
+        // for (part_name, part) in json_parts.into_iter().chain(attachment_parts) {
+        //     form = form.part(part_name, part);
+        // }
 
         // send the multipart POST request
-        let response = self
-            .http_client
-            .post(format!("{}/runs/multipart", self.config.endpoint))
-            .multipart(form)
-            .headers(self.config.headers.clone().unwrap_or_default())
-            .send()?;
-
+        // let start_send_batch = Instant::now();
+        // let response = self
+        //     .http_client
+        //     .post(format!("{}/runs/multipart", self.config.endpoint))
+        //     .multipart(form)
+        //     .headers(self.config.headers.clone().unwrap_or_default())
+        //     .send()?;
         // println!("Sending batch took {:?}", start_send_batch.elapsed());
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(TracingClientError::HttpError(response.status()))
-        }
+        //
+        // if response.status().is_success() {
+        //     Ok(())
+        // } else {
+        //     Err(TracingClientError::HttpError(response.status()))
+        // }
+
+        // sleep for 5 ms to simulate network latency
+        std::thread::sleep(Duration::from_millis(5));
+        Ok(())
     }
 
     fn create_attachment_part(

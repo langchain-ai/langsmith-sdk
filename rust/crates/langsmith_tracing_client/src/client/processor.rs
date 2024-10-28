@@ -435,6 +435,7 @@ impl RunProcessor {
         // println!("Assembling form took {:?}", start.elapsed());
 
         // send the multipart POST request
+        let start_send_batch = std::time::Instant::now();
         let response = self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
@@ -442,6 +443,7 @@ impl RunProcessor {
             .headers(self.config.headers.clone().unwrap_or_default())
             .send()
             .await?;
+        println!("Sending batch took {:?}", start_send_batch.elapsed());
 
         // println!("Sending batch took {:?}", start_send_batch.elapsed());
         if response.status().is_success() {
