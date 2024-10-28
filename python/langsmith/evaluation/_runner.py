@@ -273,6 +273,9 @@ def evaluate(
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
         )
+    if hyper_params: # Do I need to deal with experiment/experiment_prefix stuff here?
+        if not _is_callable(target):
+            raise ValueError("Hyper parameter search requires a callable target")
     return _evaluate(
         target,
         data=data,
