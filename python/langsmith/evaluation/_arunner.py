@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures as cf
 import datetime
-import functools
 import itertools
 import logging
 import pathlib
@@ -251,7 +250,7 @@ async def aevaluate(
         client=client,
         blocking=blocking,
         experiment=experiment,
-        hyper_params=hyper_params
+        hyper_params=hyper_params,
     )
 
 
@@ -419,8 +418,7 @@ async def _aevaluate(
         param_names = list(hyper_params.keys())
         param_values = list(hyper_params.values())
         param_combinations = [
-            dict(zip(param_names, combo))
-            for combo in itertools.product(*param_values)
+            dict(zip(param_names, combo)) for combo in itertools.product(*param_values)
         ]
 
         managers = []
@@ -429,19 +427,23 @@ async def _aevaluate(
         for params in param_combinations:
             param_str = "-".join(f"{k}={v}" for k, v in sorted(params.items()))
             current_prefix = (
-                f"{experiment_prefix}-{param_str}" if experiment_prefix 
+                f"{experiment_prefix}-{param_str}"
+                if experiment_prefix
                 else f"experiment-{param_str}"
             )
-            
+
             # Create a unique cache path for each parameter combination
             cache_path = (
-                pathlib.Path(cache_dir) / f"{current_prefix}.yaml" 
-                if cache_dir else None
+                pathlib.Path(cache_dir) / f"{current_prefix}.yaml"
+                if cache_dir
+                else None
             )
-            
+
             current_metadata = {**(metadata or {}), "hyper_params": params}
-            
-            with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+
+            with ls_utils.with_optional_cache(
+                cache_path, ignore_hosts=[client.api_url]
+            ):
                 manager = await _AsyncExperimentManager(
                     data,
                     client=client,
@@ -456,6 +458,7 @@ async def _aevaluate(
                     async def make_wrapped_target(fixed_params):
                         async def wrapped_target(inputs: dict) -> dict:
                             return await target(inputs, **fixed_params)
+
                         return wrapped_target
 
                     # And then use it like this:
@@ -470,10 +473,11 @@ async def _aevaluate(
                     )
                 if summary_evaluators:
                     manager = await manager.awith_summary_evaluators(summary_evaluators)
-                
+
                 managers.append(manager)
 
         return CombinedAsyncExperimentResults(managers)
+
 
 class CombinedAsyncExperimentResults:
     """Container for multiple async experiment results from hyperparameter search."""
@@ -505,6 +509,7 @@ class CombinedAsyncExperimentResults:
     def __repr__(self) -> str:
         """Get string representation."""
         return f"<CombinedAsyncExperimentResults with {len(self)} experiments>"
+
 
 class _AsyncExperimentManager(_ExperimentManagerMixin):
     """Manage the execution of experiments asynchronously.

@@ -31,6 +31,7 @@ def wait_for(
         raise last_e
     raise ValueError(f"Callable did not return within {total_time}")
 
+
 async def test_aevaluate_with_hyper_params():
     client = Client()
     _ = client.clone_public_dataset(
@@ -50,10 +51,7 @@ async def test_aevaluate_with_hyper_params():
             return {"output": prefix + "Yes"}
         return {"output": prefix + "No"}
 
-    hyper_params = {
-        "threshold": [0.5, 0.8],
-        "prefix": ["", "TEST_"]
-    }
+    hyper_params = {"threshold": [0.5, 0.8], "prefix": ["", "TEST_"]}
 
     results = await aevaluate(
         apredict,
@@ -69,10 +67,10 @@ async def test_aevaluate_with_hyper_params():
     # Check that each experiment has the correct metadata and predictions
     for experiment_results in results._results:
         params = experiment_results._manager._metadata["hyper_params"]
-        
+
         # Get all results for this parameter combination
         all_results = [result async for result in experiment_results]
-        
+
         # Verify predictions match the hyper-parameters
         for result in all_results:
             prediction = result["run"].outputs["output"]
@@ -82,6 +80,7 @@ async def test_aevaluate_with_hyper_params():
             else:
                 assert prediction.startswith(params["prefix"])
                 assert prediction.endswith("No")
+
 
 def test_evaluate_with_hyper_params():
     client = Client()
@@ -101,10 +100,7 @@ def test_evaluate_with_hyper_params():
             return {"output": prefix + "Yes"}
         return {"output": prefix + "No"}
 
-    hyper_params = {
-        "threshold": [0.5, 0.8],
-        "prefix": ["", "TEST_"]
-    }
+    hyper_params = {"threshold": [0.5, 0.8], "prefix": ["", "TEST_"]}
 
     results = evaluate(
         predict,
@@ -120,7 +116,7 @@ def test_evaluate_with_hyper_params():
     # Check that each experiment has the correct metadata and predictions
     for experiment_results in results._results:
         params = experiment_results._manager._metadata["hyper_params"]
-        
+
         # Verify predictions match the hyper-parameters
         for result in experiment_results:
             prediction = result["run"].outputs["output"]
@@ -130,6 +126,7 @@ def test_evaluate_with_hyper_params():
             else:
                 assert prediction.startswith(params["prefix"])
                 assert prediction.endswith("No")
+
 
 @pytest.mark.skip(reason="Skipping this test for now. Should remove in the future.")
 def test_evaluate():

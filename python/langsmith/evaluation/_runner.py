@@ -275,7 +275,7 @@ def evaluate(
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
         )
-    if hyper_params: # Do I need to deal with experiment/experiment_prefix stuff here?
+    if hyper_params:
         if not _is_callable(target):
             raise ValueError("Hyper parameter search requires a callable target")
     return _evaluate(
@@ -291,7 +291,7 @@ def evaluate(
         client=client,
         blocking=blocking,
         experiment=experiment,
-        hyper_params=hyper_params
+        hyper_params=hyper_params,
     )
 
 
@@ -903,7 +903,9 @@ def _evaluate(
         ).start()
         cache_dir = ls_utils.get_cache_dir(None)
         cache_path = (
-            pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml" if cache_dir else None
+            pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml"
+            if cache_dir
+            else None
         )
         with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
             if _is_callable(target):
@@ -926,29 +928,32 @@ def _evaluate(
         param_names = list(hyper_params.keys())
         param_values = list(hyper_params.values())
         param_combinations = [
-            dict(zip(param_names, combo))
-            for combo in itertools.product(*param_values)
+            dict(zip(param_names, combo)) for combo in itertools.product(*param_values)
         ]
 
         managers = []
         cache_dir = ls_utils.get_cache_dir(None)
-        
+
         for params in param_combinations:
             param_str = "-".join(f"{k}={v}" for k, v in sorted(params.items()))
             current_prefix = (
-                f"{experiment_prefix}-{param_str}" if experiment_prefix 
+                f"{experiment_prefix}-{param_str}"
+                if experiment_prefix
                 else f"experiment-{param_str}"
             )
-            
+
             # Create a unique cache path for each parameter combination
             cache_path = (
-                pathlib.Path(cache_dir) / f"{current_prefix}.yaml" 
-                if cache_dir else None
+                pathlib.Path(cache_dir) / f"{current_prefix}.yaml"
+                if cache_dir
+                else None
             )
-            
+
             current_metadata = {**(metadata or {}), "hyper_params": params}
-            
-            with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+
+            with ls_utils.with_optional_cache(
+                cache_path, ignore_hosts=[client.api_url]
+            ):
                 manager = _ExperimentManager(
                     data,
                     client=client,
@@ -963,8 +968,9 @@ def _evaluate(
                     def make_wrapped_target(fixed_params):
                         def wrapped_target(inputs):
                             return target(inputs, **fixed_params)
+
                         return wrapped_target
-                    
+
                     wrapped_target = make_wrapped_target(params.copy())
                     manager = manager.with_predictions(
                         wrapped_target, max_concurrency=max_concurrency
@@ -975,10 +981,11 @@ def _evaluate(
                     )
                 if summary_evaluators:
                     manager = manager.with_summary_evaluators(summary_evaluators)
-                
+
                 managers.append(manager)
 
         return CombinedExperimentResults(managers, blocking=blocking)
+
 
 class CombinedExperimentResults:
     """Represents results from multiple experiments with different hyperparameters."""
@@ -999,6 +1006,7 @@ class CombinedExperimentResults:
         """Wait for all experiments to complete."""
         for result in self._results:
             result.wait()
+
 
 def _is_uuid(value: str) -> bool:
     try:
@@ -1387,7 +1395,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
-            
+
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
