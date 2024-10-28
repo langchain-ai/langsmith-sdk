@@ -1237,13 +1237,12 @@ class Client:
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", acc)
             )
-        else:
-            run_create = self._run_transform(
-                run_create,
-                copy=True,
-            )
-            if revision_id is not None:
-                run_create["extra"]["metadata"]["revision_id"] = revision_id
+        run_create = self._run_transform(
+            run_create,
+            copy=True,
+        )
+        if revision_id is not None:
+            run_create["extra"]["metadata"]["revision_id"] = revision_id
         self._insert_runtime_env([run_create])
         self._create_run(run_create)
 
