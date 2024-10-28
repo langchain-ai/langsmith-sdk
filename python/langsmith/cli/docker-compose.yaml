@@ -2,10 +2,6 @@ version: "4"
 services:
   langchain-playground:
     image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.7.45}
-    environment:
-      - PORT=3001
-      - LANGCHAIN_ENV=local_docker
-      - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
       - 3001:3001
   langchain-frontend:
@@ -256,4 +252,3 @@ services:
 volumes:
   langchain-db-data:
   langchain-redis-data:
-  langchain-clickhouse-data:
