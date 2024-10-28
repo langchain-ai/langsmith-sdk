@@ -71,7 +71,7 @@ async def aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     hyper_params: Optional[Dict[str, List[Any]]] = None,
-) -> AsyncExperimentResults:
+) -> AsyncExperimentResults | CombinedAsyncExperimentResults:
     r"""Evaluate an async target system or function on a given dataset.
 
     Args:
@@ -343,16 +343,19 @@ async def aevaluate_existing(
     )
     data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
     data = [data_map[run.reference_example_id] for run in runs]
-    return await _aevaluate(
-        runs,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        max_concurrency=max_concurrency,
-        client=client,
-        blocking=blocking,
-        experiment=project,
+    return cast(
+        AsyncExperimentResults,
+        await _aevaluate(
+            runs,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            experiment=project,
+        ),
     )
 
 
@@ -453,7 +456,7 @@ async def _aevaluate(
                     num_repetitions=num_repetitions,
                 ).astart()
 
-                if asyncio.iscoroutinefunction(target) or hasattr(target, "__aiter__"):
+                if asyncio.iscoroutinefunction(target):
                     # Wrap target with current params
                     async def make_wrapped_target(fixed_params):
                         async def wrapped_target(inputs: dict) -> dict:
