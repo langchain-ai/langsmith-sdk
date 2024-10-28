@@ -18,6 +18,17 @@ fn create_mock_client_config(server_url: &str, batch_size: usize) -> ClientConfi
     }
 }
 
+fn create_mock_client_config_sync(server_url: &str, batch_size: usize) -> langsmith_tracing_client::client::tracing_client_sync::ClientConfig {
+    langsmith_tracing_client::client::tracing_client_sync::ClientConfig {
+        endpoint: server_url.to_string(),
+        queue_capacity: 1_000_000,
+        batch_size,
+        batch_timeout: Duration::from_secs(1),
+        headers: Default::default(),
+        num_worker_threads: 10,
+    }
+}
+
 fn create_run_create(
     attachments: Option<Vec<Attachment>>,
     inputs: Option<Value>,
@@ -279,6 +290,72 @@ fn bench_run_bytes_iter_custom(c: &mut Criterion) {
                                 }
                                 elapsed_time
                             }
+                        })
+                    },
+                );
+            }
+        }
+    }
+    group.finish();
+}
+
+fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let server = rt.block_on(async {
+        let mut server = Server::new_async().await;
+        server
+            .mock("POST", "/runs/multipart")
+            .with_status(202)
+            .create_async()
+            .await;
+        server
+    });
+
+    let mut group = c.benchmark_group("run_create_custom_iter");
+    let server_url = server.url();
+    for batch_size in vec![1] {
+        for json_len in vec![3_000] {
+            for num_runs in vec![1_000] {
+                group.bench_function(
+                    BenchmarkId::new(
+                        "run_create",
+                        format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
+                    ),
+                    |b| {
+                        b.iter_custom(|iters| {
+                            let mut elapsed_time = Duration::default();
+                            let server_url = server_url.clone();
+                            for _ in 0..iters {
+                                let runs: Vec<RunCreateExtended> = (0..num_runs)
+                                    .map(|i| {
+                                        let mut run = create_run_create(
+                                            None,
+                                            Some(create_large_json(json_len)),
+                                            Some(create_large_json(json_len)),
+                                        );
+                                        run.run_create.common.id = format!("test_id_{}", i);
+                                        run
+                                    })
+                                    .collect();
+                                let client_config =
+                                    create_mock_client_config_sync(&server_url, batch_size);
+                                let client = langsmith_tracing_client::client::tracing_client_sync::TracingClient::new(client_config).unwrap();
+
+                                let start = std::time::Instant::now();
+                                for run in runs {
+                                    client.submit_run_create(run).unwrap();
+                                }
+
+                                // shutdown the client to flush the queue
+                                let start_shutdown = std::time::Instant::now();
+                                println!("----------SHUTDOWN----------");
+                                client.shutdown().unwrap();
+                                println!("----------SHUTDOWN END----------");
+                                println!("Elapsed time for shutdown: {:?}", start_shutdown.elapsed());
+                                elapsed_time += start.elapsed();
+                                println!("Elapsed time: {:?}", elapsed_time);
+                            }
+                            elapsed_time
                         })
                     },
                 );

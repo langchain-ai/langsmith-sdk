@@ -110,3 +110,6 @@ criterion_group! {
     targets = json_benchmark_large_array, json_benchmark_large_strings
 }
 criterion_main!(benches);
+
+// fn main() {
+// }
