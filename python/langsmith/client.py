@@ -4150,6 +4150,7 @@ class Client:
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id,
+                trace_id=run.trace_id if run else None,
             )
         return results
 
@@ -4220,6 +4221,7 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
+        trace_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -4313,7 +4315,7 @@ class Client:
                 # If run_id is None, this is interpreted as session-level
                 # feedback.
                 run_id=_ensure_uuid(run_id, accept_null=True),
-                trace_id=_ensure_uuid(run_id, accept_null=True),
+                trace_id=_ensure_uuid(trace_id, accept_null=True),
                 key=key,
                 score=score,
                 value=value,
@@ -4335,7 +4337,11 @@ class Client:
                 "use_multipart_endpoint", False
             )
 
-            if use_multipart and self.tracing_queue is not None:
+            if (
+                use_multipart
+                and self.tracing_queue is not None
+                and feedback.trace_id is not None
+            ):
                 self.tracing_queue.put(
                     TracingQueueItem(str(feedback.id), "feedback", feedback)
                 )
