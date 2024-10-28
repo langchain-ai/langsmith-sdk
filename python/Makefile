@@ -36,7 +36,7 @@ doctest:
 	poetry run python -m pytest -n auto --durations=10 --doctest-modules langsmith
 
 evals:
-	poetry run python -m pytest tests/evaluation/test_evaluation.py::test_aevaluate_with_hyper_params
+	poetry run python -m pytest tests/evaluation
 
 lint:
 	poetry run ruff check .
