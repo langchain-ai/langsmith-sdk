@@ -1700,11 +1700,14 @@ class Client:
                     f"trace={payload.get('trace_id')},id={payload.get('id')}"
                 )
         # send the request
-        self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+        # self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
+        # simply time.sleep for now for 5ms
+        time.sleep(0.005)
 
     def _send_multipart_req(self, parts: MultipartParts, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
             try:
+                now = time.perf_counter()
                 encoder = MultipartEncoder(parts, boundary=BOUNDARY)
                 self.request_with_retries(
                     "POST",
@@ -1721,6 +1724,7 @@ class Client:
                     stop_after_attempt=3,
                     _context=_context,
                 )
+                print("SENDING the multipart request took", time.perf_counter() - now)
             except Exception as e:
                 try:
                     exc_desc_lines = traceback.format_exception_only(type(e), e)

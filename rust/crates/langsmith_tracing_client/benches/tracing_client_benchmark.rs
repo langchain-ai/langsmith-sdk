@@ -300,20 +300,18 @@ fn bench_run_bytes_iter_custom(c: &mut Criterion) {
 }
 
 fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let server = rt.block_on(async {
-        let mut server = Server::new_async().await;
+    let server = {
+        let mut server = Server::new();
         server
             .mock("POST", "/runs/multipart")
             .with_status(202)
-            .create_async()
-            .await;
+            .create();
         server
-    });
+    };
 
     let mut group = c.benchmark_group("run_create_custom_iter");
     let server_url = server.url();
-    for batch_size in vec![1] {
+    for batch_size in vec![25] {
         for json_len in vec![3_000] {
             for num_runs in vec![1_000] {
                 group.bench_function(
@@ -348,10 +346,8 @@ fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
 
                                 // shutdown the client to flush the queue
                                 let start_shutdown = std::time::Instant::now();
-                                println!("----------SHUTDOWN----------");
                                 client.shutdown().unwrap();
-                                println!("----------SHUTDOWN END----------");
-                                println!("Elapsed time for shutdown: {:?}", start_shutdown.elapsed());
+                                // println!("Elapsed time for shutdown: {:?}", start_shutdown.elapsed());
                                 elapsed_time += start.elapsed();
                                 println!("Elapsed time: {:?}", elapsed_time);
                             }
@@ -368,7 +364,7 @@ fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = bench_run_create_iter_custom
+    targets = bench_run_create_sync_iter_custom
 }
 
 criterion_main!(benches);
