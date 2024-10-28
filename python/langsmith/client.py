@@ -4231,6 +4231,8 @@ class Client:
         run_id : str or UUID
             The ID of the run to provide feedback for. Either the run_id OR
             the project_id must be provided.
+        trace_id : str or UUID
+            The trace ID of the run to provide feedback for. This is optional.
         key : str
             The name of the metric or 'aspect' this feedback is about.
         score : float or int or bool or None, default=None
