@@ -452,11 +452,10 @@ async def _aevaluate(
 
                 if asyncio.iscoroutinefunction(target) or hasattr(target, "__aiter__"):
                     # Wrap target with current params
+                    fixed_params = params.copy()  # Create a fixed copy outside the wrapped function
                     async def wrapped_target(inputs: dict) -> dict:
-                        # Create a new function that captures the current params
-                        wrapped_fn = functools.partial(target, **params)
-                        return await wrapped_fn(inputs)
-                    print("PARAMS", params)
+                        return await target(inputs, **fixed_params)
+
                     manager = await manager.awith_predictions(
                         wrapped_target, max_concurrency=max_concurrency
                     )
