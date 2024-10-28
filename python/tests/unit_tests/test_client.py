@@ -31,11 +31,11 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
+from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
     _dumps_json,
     _is_langchain_hosted,
-    _serialize_json,
 )
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)

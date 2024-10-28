@@ -655,15 +655,15 @@ def evaluate_comparative(
         ... )  # doctest: +ELLIPSIS
         View the pairwise evaluation results at:...
         >>> eval_results = list(results)
-        >>> assert len(eval_results) >= 10 # doctest: +SKIP
+        >>> assert len(eval_results) >= 10  # doctest: +SKIP
         >>> assert all(
         ...     "feedback.ranked_preference" in r["evaluation_results"]
         ...     for r in eval_results
-        ... ) # doctest: +SKIP
+        ... )  # doctest: +SKIP
         >>> assert all(
         ...     "feedback.length_difference" in r["evaluation_results"]
         ...     for r in eval_results
-        ... ) # doctest: +SKIP
+        ... )  # doctest: +SKIP
     """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
