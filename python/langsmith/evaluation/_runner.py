@@ -127,6 +127,8 @@ def evaluate(
         experiment (Optional[schemas.TracerSession]): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
             usage only.
+        hyper_params (Optional[Dict]): A set of hyper parameters to run your target
+            function over. Will run over all possible combinations.
 
     Returns:
         ExperimentResults: The results of the evaluation.
