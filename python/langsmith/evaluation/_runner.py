@@ -960,7 +960,12 @@ def _evaluate(
 
                 if _is_callable(target):
                     # Wrap target with current params
-                    wrapped_target = functools.partial(cast(TARGET_T, target), **params)
+                    def make_wrapped_target(fixed_params):
+                        def wrapped_target(inputs):
+                            return target(inputs, **fixed_params)
+                        return wrapped_target
+                    
+                    wrapped_target = make_wrapped_target(params.copy())
                     manager = manager.with_predictions(
                         wrapped_target, max_concurrency=max_concurrency
                     )
