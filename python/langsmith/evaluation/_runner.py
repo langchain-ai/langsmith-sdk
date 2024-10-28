@@ -879,7 +879,7 @@ def _evaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     hyper_params: Optional[Dict[str, List[Any]]] = None,
-) -> ExperimentResults:
+) -> ExperimentResults | CombinedExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
     if hyper_params is None:
