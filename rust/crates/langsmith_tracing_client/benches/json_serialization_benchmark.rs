@@ -66,13 +66,6 @@ fn benchmark_parallel(data: &[Value]) -> Vec<Vec<u8>> {
 
 // into par iter
 fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
-    for _ in 0..4 {
-        let start = Instant::now();
-        let _ = data.into_par_iter()
-            .map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON"))
-            .collect::<Vec<_>>();
-        println!("into_par_iter took {:?}", start.elapsed());
-    }
     data.into_par_iter()
         .map(|json| sonic_rs::to_vec(&json).expect("Failed to serialize JSON"))
         .collect()
@@ -80,7 +73,7 @@ fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
 
 fn json_benchmark_large_array(c: &mut Criterion) {
     let num_json_objects = 300;
-    let json_length = 3000;
+    let json_length = 5000;
     let data: Vec<Value> = (0..num_json_objects)
         .map(|_| create_json_with_large_array(json_length))
         .collect();
@@ -218,12 +211,12 @@ fn hitting_mock_server_benchmark(c: &mut Criterion) {
     });
 }
 
-// criterion_group! {
-//     name = benches;
-//     config = Criterion::default().sample_size(10);
-//     targets = hitting_mock_server_benchmark,
-// }
-// criterion_main!(benches);
-
-fn main() {
+criterion_group! {
+    name = benches;
+    config = Criterion::default().sample_size(10);
+    targets = json_benchmark_large_array
 }
+criterion_main!(benches);
+
+// fn main() {
+// }
