@@ -280,7 +280,7 @@ def test_wrap_openai_chat_tokens(test_case):
 
     oai_client = openai.Client()
     mock_session = mock.MagicMock()
-    ls_client = langsmith.Client(session=mock.mock_session)
+    ls_client = langsmith.Client(session=mock_session)
     wrapped_oai_client = wrap_openai(oai_client, tracing_extra={"client": ls_client})
 
     collect = Collect()
