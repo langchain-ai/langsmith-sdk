@@ -956,7 +956,7 @@ def _evaluate(
                     experiment=current_prefix,
                     description=description,
                     num_repetitions=num_repetitions,
-                    hyper_params={k: v for k, v in params.items()},  # Single param combination
+                    hyper_params=params,  # Single param combination
                 ).start()
 
                 if _is_callable(target):
