@@ -47,7 +47,7 @@ def test_chat_sync_api(stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.01)
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -82,7 +82,7 @@ async def test_chat_async_api(stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -125,7 +125,7 @@ def test_completions_sync_api(stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -199,7 +199,7 @@ class Collect:
 
 
 def _collect_requests(mock_session: mock.MagicMock, filename: str):
-    mock_requests = mock_session.return_value.request.call_args_list
+    mock_requests = mock_session.request.call_args_list
     collected_requests = {}
     for _ in range(10):
         time.sleep(0.1)
@@ -215,7 +215,7 @@ def _collect_requests(mock_session: mock.MagicMock, filename: str):
         # thread has finished processing the run
         if any(event.get("end_time") for event in all_events):
             break
-        mock_session.return_value.request.call_args_list.clear()
+        mock_session.request.call_args_list.clear()
 
     if os.environ.get("WRITE_TOKEN_COUNTING_TEST_DATA") == "1":
         dir_path = Path(__file__).resolve().parent.parent / "test_data"
