@@ -252,3 +252,4 @@ services:
 volumes:
   langchain-db-data:
   langchain-redis-data:
+  langchain-clickhouse-data:
