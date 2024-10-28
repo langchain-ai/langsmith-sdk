@@ -179,10 +179,10 @@ async def test_completions_async_api(stream: bool):
     # Give the thread a chance.
     for _ in range(10):
         time.sleep(0.1)
-        if mock_session.return_value.request.call_count >= 1:
+        if mock_session.request.call_count >= 1:
             break
-    assert mock_session.return_value.request.call_count >= 1
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    assert mock_session.request.call_count >= 1
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
