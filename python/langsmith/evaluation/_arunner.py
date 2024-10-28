@@ -392,6 +392,7 @@ async def _aevaluate(
             description=description,
             num_repetitions=num_repetitions,
             runs=runs,
+            hyper_params=params,
         ).astart()
         cache_dir = ls_utils.get_cache_dir(None)
         if cache_dir is not None:
