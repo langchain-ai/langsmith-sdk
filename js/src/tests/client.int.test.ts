@@ -1112,7 +1112,7 @@ test("Test pull prompt include model", async () => {
 test("list shared examples can list shared examples", async () => {
   const client = new Client();
   const multiverseMathPublicDatasetShareToken =
-    "620596ee-570b-4d2b-8c8f-f828adbe5242";
+    "ce9c8a9-761a-4756-b159-58ed2640e274";
   const sharedExamples = await client.listSharedExamples(
     multiverseMathPublicDatasetShareToken
   );
@@ -1123,7 +1123,7 @@ test("clonePublicDataset method can clone a dataset", async () => {
   const client = new Client();
   const datasetName = "multiverse_math_public_testing";
   const multiverseMathPublicDatasetURL =
-    "https://smith.langchain.com/public/620596ee-570b-4d2b-8c8f-f828adbe5242/d";
+    "https://beta.smith.langchain.com/public/cce9c8a9-761a-4756-b159-58ed2640e274/d";
 
   try {
     await client.clonePublicDataset(multiverseMathPublicDatasetURL, {
