@@ -147,7 +147,7 @@ def test_from_model() -> None:
 async def test_evaluate() -> None:
     client = Client()
     client.clone_public_dataset(
-        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+        "https://beta.smith.langchain.com/public/06785303-0f70-4466-b637-f23d38c0f28e/d"
     )
     dataset_name = "Evaluate Examples"
 

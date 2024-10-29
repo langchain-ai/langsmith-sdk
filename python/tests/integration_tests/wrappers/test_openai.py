@@ -12,12 +12,12 @@ import langsmith
 from langsmith.wrappers import wrap_openai
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
+def test_chat_sync_api(stream: bool):
     import openai  # noqa
 
-    client = langsmith.Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
     original_client = openai.Client()
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
     messages = [{"role": "user", "content": "Say 'foo'"}]
@@ -47,16 +47,16 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.01)
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
+async def test_chat_async_api(stream: bool):
     import openai  # noqa
 
-    client = langsmith.Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
     original_client = openai.AsyncClient()
     patched_client = wrap_openai(openai.AsyncClient(), tracing_extra={"client": client})
     messages = [{"role": "user", "content": "Say 'foo'"}]
@@ -82,16 +82,16 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
+def test_completions_sync_api(stream: bool):
     import openai
 
-    client = langsmith.Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
     original_client = openai.Client()
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
     prompt = ("Say 'Foo' then stop.",)
@@ -125,16 +125,16 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert original.choices == patched.choices
     # Give the thread a chance.
     time.sleep(0.1)
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool):
+async def test_completions_async_api(stream: bool):
     import openai
 
-    client = langsmith.Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
 
     original_client = openai.AsyncClient()
     patched_client = wrap_openai(
@@ -179,10 +179,10 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
     # Give the thread a chance.
     for _ in range(10):
         time.sleep(0.1)
-        if mock_session.return_value.request.call_count >= 1:
+        if mock_session.request.call_count >= 1:
             break
-    assert mock_session.return_value.request.call_count >= 1
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    assert mock_session.request.call_count >= 1
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -199,7 +199,7 @@ class Collect:
 
 
 def _collect_requests(mock_session: mock.MagicMock, filename: str):
-    mock_requests = mock_session.return_value.request.call_args_list
+    mock_requests = mock_session.request.call_args_list
     collected_requests = {}
     for _ in range(10):
         time.sleep(0.1)
@@ -215,7 +215,7 @@ def _collect_requests(mock_session: mock.MagicMock, filename: str):
         # thread has finished processing the run
         if any(event.get("end_time") for event in all_events):
             break
-        mock_session.return_value.request.call_args_list.clear()
+        mock_session.request.call_args_list.clear()
 
     if os.environ.get("WRITE_TOKEN_COUNTING_TEST_DATA") == "1":
         dir_path = Path(__file__).resolve().parent.parent / "test_data"
@@ -274,13 +274,13 @@ test_cases = [
 
 
 @pytest.mark.parametrize("test_case", test_cases)
-@mock.patch("langsmith.client.requests.Session")
-def test_wrap_openai_chat_tokens(mock_session: mock.MagicMock, test_case):
+def test_wrap_openai_chat_tokens(test_case):
     import openai
     from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
     oai_client = openai.Client()
-    ls_client = langsmith.Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
     wrapped_oai_client = wrap_openai(oai_client, tracing_extra={"client": ls_client})
 
     collect = Collect()
@@ -323,13 +323,13 @@ def test_wrap_openai_chat_tokens(mock_session: mock.MagicMock, test_case):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("test_case", test_cases)
-@mock.patch("langsmith.client.requests.Session")
-async def test_wrap_openai_chat_async_tokens(mock_session: mock.MagicMock, test_case):
+async def test_wrap_openai_chat_async_tokens(test_case):
     import openai
     from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
     oai_client = openai.AsyncClient()
-    ls_client = langsmith.Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
     wrapped_oai_client = wrap_openai(oai_client, tracing_extra={"client": ls_client})
 
     collect = Collect()

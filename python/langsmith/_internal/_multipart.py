@@ -20,18 +20,26 @@ class MultipartPartsAndContext:
 
 
 def convert_to_multipart_parts_and_context(
-    create_dicts: list[dict], update_dicts: list[dict], *, all_attachments: Dict
+    create_dicts: list[dict],
+    update_dicts: list[dict],
+    feedback_dicts: list[dict],
+    *,
+    all_attachments: Dict,
 ) -> MultipartPartsAndContext:
-    acc_parts: MultipartParts = []
     acc_context: List[str] = []
-
-    for event, payloads in (("post", create_dicts), ("patch", update_dicts)):
+    acc_parts: MultipartParts = []
+    for event, payloads in (
+        ("post", create_dicts),
+        ("patch", update_dicts),
+        ("feedback", feedback_dicts),
+    ):
         for payload in payloads:
             # collect fields to be sent as separate parts
             fields = [
                 ("inputs", payload.pop("inputs", None)),
                 ("outputs", payload.pop("outputs", None)),
                 ("events", payload.pop("events", None)),
+                ("feedback", payload.pop("feedback", None)),
             ]
             # encode the main run payload
             payloadb = _dumps_json(payload)
