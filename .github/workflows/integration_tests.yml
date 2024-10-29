@@ -47,8 +47,8 @@ jobs:
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
-          langchain-endpoint: https://beta.api.smith.langchain.com
-          langchain-api-key: ${{ secrets.LANGSMITH_API_KEY }}
+          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
