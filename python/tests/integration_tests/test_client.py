@@ -682,8 +682,19 @@ def test_batch_ingest_runs(
         },
     ]
     if use_multipart_endpoint:
-        langchain_client.multipart_ingest_runs(
-            create=runs_to_create, update=runs_to_update
+        feedback = [
+            {
+                "run_id": run["id"],
+                "trace_id": run["trace_id"],
+                "key": "test_key",
+                "score": 0.9,
+                "value": "test_value",
+                "comment": "test_comment",
+            }
+            for run in runs_to_create
+        ]
+        langchain_client.multipart_ingest(
+            create=runs_to_create, update=runs_to_update, feedback=feedback
         )
     else:
         langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
@@ -724,6 +735,17 @@ def test_batch_ingest_runs(
     assert run3.inputs == {"input1": 1, "input2": 2}
     assert run3.error == "error"
 
+    if use_multipart_endpoint:
+        feedbacks = list(
+            langchain_client.list_feedback(run_ids=[run.id for run in runs])
+        )
+        assert len(feedbacks) == 3
+        for feedback in feedbacks:
+            assert feedback.key == "test_key"
+            assert feedback.score == 0.9
+            assert feedback.value == "test_value"
+            assert feedback.comment == "test_comment"
+
 
 """
 Multipart partitions:
@@ -742,7 +764,7 @@ Error cases:
 """
 
 
-def test_multipart_ingest_runs_empty(
+def test_multipart_ingest_empty(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
     runs_to_create: list[dict] = []
@@ -750,17 +772,15 @@ def test_multipart_ingest_runs_empty(
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        langchain_client.multipart_ingest_runs(
-            create=runs_to_create, update=runs_to_update
-        )
+        langchain_client.multipart_ingest(create=runs_to_create, update=runs_to_update)
 
         assert not caplog.records
 
 
-def test_multipart_ingest_runs_create_then_update(
+def test_multipart_ingest_create_then_update(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
-    _session = "__test_multipart_ingest_runs_create_then_update"
+    _session = "__test_multipart_ingest_create_then_update"
 
     trace_a_id = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
@@ -781,7 +801,7 @@ def test_multipart_ingest_runs_create_then_update(
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
         assert not caplog.records
 
@@ -794,15 +814,15 @@ def test_multipart_ingest_runs_create_then_update(
         }
     ]
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
+        langchain_client.multipart_ingest(create=[], update=runs_to_update)
 
         assert not caplog.records
 
 
-def test_multipart_ingest_runs_update_then_create(
+def test_multipart_ingest_update_then_create(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
-    _session = "__test_multipart_ingest_runs_update_then_create"
+    _session = "__test_multipart_ingest_update_then_create"
 
     trace_a_id = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
@@ -820,7 +840,7 @@ def test_multipart_ingest_runs_update_then_create(
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        langchain_client.multipart_ingest_runs(create=[], update=runs_to_update)
+        langchain_client.multipart_ingest(create=[], update=runs_to_update)
 
         assert not caplog.records
 
@@ -837,15 +857,15 @@ def test_multipart_ingest_runs_update_then_create(
     ]
 
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
         assert not caplog.records
 
 
-def test_multipart_ingest_runs_create_wrong_type(
+def test_multipart_ingest_create_wrong_type(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
-    _session = "__test_multipart_ingest_runs_create_then_update"
+    _session = "__test_multipart_ingest_create_then_update"
 
     trace_a_id = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
@@ -866,7 +886,7 @@ def test_multipart_ingest_runs_create_wrong_type(
 
     # make sure no warnings logged
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
-        langchain_client.multipart_ingest_runs(create=runs_to_create, update=[])
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
         # this should 422
         assert len(caplog.records) == 1, "Should get 1 warning for 422, not retried"
