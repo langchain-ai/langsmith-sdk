@@ -11,6 +11,8 @@ from typing import Any, AsyncGenerator, Generator, List, Optional, Set, Tuple, c
 from unittest.mock import MagicMock, patch
 
 import pytest
+from requests_toolbelt import MultipartEncoder
+from typing_extensions import Annotated
 
 import langsmith
 from langsmith import Client
@@ -58,6 +60,21 @@ def _get_datas(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
             for payload in data.get(verb) or []:
                 datas.append((verb, payload))
 
+    return datas
+
+
+def _get_multipart_datas(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, bytes]]]:
+    datas = []
+    for call_ in mock_calls:
+        data = call_.kwargs.get("data")
+        if isinstance(data, MultipartEncoder):
+            fields = data.fields
+            for key, value in fields:
+                if isinstance(value, tuple):
+                    _, file_content, content_type, _ = value
+                    datas.append((key, (content_type, file_content)))
+                else:
+                    datas.append((key, value))
     return datas
 
 
@@ -1683,3 +1700,58 @@ def test_traceable_stop_iteration():
 
     wrapped = traceable(my_generator)
     assert list(consume(wrapped)) == list(range(5))
+
+
+def test_traceable_input_attachments():
+    @traceable
+    def my_func(
+        val: int,
+        att1: ls_schemas.Attachment,
+        att2: Annotated[tuple, ls_schemas.Attachment],
+    ):
+        return "foo"
+
+    mock_client = _get_mock_client(
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    with tracing_context(enabled=True):
+        result = my_func(
+            42,
+            ls_schemas.Attachment(mime_type="text/plain", data="content1"),
+            ("application/octet-stream", "content2"),
+            langsmith_extra={"client": mock_client},
+        )
+        assert result == "foo"
+
+    calls = _get_calls(mock_client)
+    datas = _get_multipart_datas(calls)
+
+    # main run, inputs, outputs, events, att1, att2
+    assert len(datas) == 6
+    # First 4 are type application/json (run, inputs, outputs, events)
+    trace_id = datas[0][0].split(".")[1]
+    _, (_, inputs) = next(
+        data for data in datas if data[0] == f"post.{trace_id}.inputs"
+    )
+    assert json.loads(inputs) == {"val": 42}
+    # last two are the mime types provided
+    _, (mime_type1, content1) = next(
+        data for data in datas if data[0] == f"attachment.{trace_id}.att1"
+    )
+    assert mime_type1 == "text/plain"
+    assert content1 == b"content1"
+
+    _, (mime_type2, content2) = next(
+        data for data in datas if data[0] == f"attachment.{trace_id}.att2"
+    )
+    assert mime_type2 == "application/octet-stream"
+    assert content2 == b"content2"

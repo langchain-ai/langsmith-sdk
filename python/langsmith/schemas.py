@@ -9,6 +9,7 @@ from typing import (
     Any,
     Dict,
     List,
+    NamedTuple,
     Optional,
     Protocol,
     Tuple,
@@ -43,7 +44,23 @@ from typing_extensions import Literal
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]
 
-Attachments = Dict[str, Tuple[str, bytes]]
+
+class Attachment(NamedTuple):
+    """Annotated type that will be stored as an attachment if used.
+    
+    Example:
+
+    @traceable
+    def my_function(bar: int, my_val: Attachment):
+        # my_val will be stored as an attachment
+        # bar will be stored as inputs
+        return bar
+    """
+    mime_type: str
+    data: str
+
+
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
 """Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
 
 

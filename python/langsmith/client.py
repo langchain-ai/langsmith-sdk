@@ -1059,7 +1059,9 @@ class Client:
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
         copy: bool = False,
-        attachments_collector: Optional[Dict[str, ls_schemas.Attachments]] = None,
+        attachments_collector: Optional[
+            Union[Literal[False], Dict[str, ls_schemas.Attachments]]
+        ] = None,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
@@ -1108,17 +1110,18 @@ class Client:
                 run_create["serialized"].pop("graph", None)
 
         # Collect or drop attachments
-        if attachments := run_create.pop("attachments", None):
-            if attachments_collector is not None:
-                attachments_collector[run_create["id"]] = attachments
-            elif not WARNED_ATTACHMENTS:
-                WARNED_ATTACHMENTS = True
-                logger.warning(
-                    "You're trying to submit a run with attachments, but your current"
-                    " LangSmith integration doesn't support it. Please contact the "
-                    " LangChain team at support at langchain"
-                    " dot dev for assistance on how to upgrade."
-                )
+        if attachments_collector is not False:
+            if attachments := run_create.pop("attachments", None):
+                if attachments_collector is not None:
+                    attachments_collector[run_create["id"]] = attachments
+                elif not WARNED_ATTACHMENTS:
+                    WARNED_ATTACHMENTS = True
+                    logger.warning(
+                        "You're trying to submit a run with attachments, but your current"
+                        " LangSmith integration doesn't support it. Please contact the "
+                        " LangChain team at support at langchain"
+                        " dot dev for assistance on how to upgrade."
+                    )
 
         return run_create
 
@@ -1212,7 +1215,9 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create, copy=True)
+        run_create = self._run_transform(
+            run_create, copy=True, attachments_collector=False
+        )
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
@@ -1224,6 +1229,7 @@ class Client:
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", run_create)
             )
+        run_create.pop("attachments", None)
         self._insert_runtime_env([run_create])
         self._create_run(run_create)
 

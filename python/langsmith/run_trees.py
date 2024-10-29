@@ -257,6 +257,7 @@ class RunTree(ls_schemas.RunBase):
         end_time: Optional[datetime] = None,
         tags: Optional[List[str]] = None,
         extra: Optional[Dict] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
         serialized_ = serialized or {"name": name}
@@ -276,6 +277,7 @@ class RunTree(ls_schemas.RunBase):
             project_name=self.session_name,
             ls_client=self.ls_client,
             tags=tags,
+            attachments=attachments,
         )
         self.child_runs.append(run)
         return run
