@@ -1646,6 +1646,12 @@ class Client:
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
         }
+        use_multipart = (
+            self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
+            and data["trace_id"] is not None
+            and data["dotted_order"] is not None
+        )
         if not self._filter_for_sampling([data], patch=True):
             return
         if end_time is not None:
@@ -1657,20 +1663,22 @@ class Client:
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
-            outputs = ls_utils.deepish_copy(outputs)
+            if not use_multipart:
+                outputs = ls_utils.deepish_copy(outputs)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
-        if (
-            self.tracing_queue is not None
-            # batch ingest requires trace_id and dotted_order to be set
-            and data["trace_id"] is not None
-            and data["dotted_order"] is not None
-        ):
-            return self.tracing_queue.put(
-                TracingQueueItem(data["dotted_order"], "update", data)
+        if use_multipart and self.tracing_queue is not None:
+            # not collecting attachments currently, use empty dict
+            attachments_collector: dict[None, None] = {}
+            acc = convert_to_multipart_parts_and_context(
+                [], [data], [], all_attachments=attachments_collector
             )
-        return self._update_run(data)
+            self.tracing_queue.put(
+                TracingQueueItem(data["dotted_order"], "update", acc)
+            )
+        else:
+            self._update_run(data)
 
     def _update_run(self, run_update: dict) -> None:
         for api_url, api_key in self._write_api_urls.items():
