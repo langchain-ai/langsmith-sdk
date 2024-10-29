@@ -1471,7 +1471,7 @@ class Client:
             - The run objects MUST contain the dotted_order and trace_id fields
                 to be accepted by the API.
         """
-        if not create and not update and not feedback:
+        if not (create or update or feedback):
             return
         # transform and convert to dicts
         all_attachments: Dict[str, ls_schemas.Attachments] = {}
