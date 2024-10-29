@@ -1125,6 +1125,34 @@ class Client:
 
         return run_create
 
+    def _feedback_transform(
+        self,
+        feedback: Union[ls_schemas.Feedback, dict],
+    ) -> dict:
+        """Transform the given feedback object into a dictionary representation.
+
+        Args:
+            feedback (Union[ls_schemas.Feedback, dict]): The feedback object to transform.
+            update (bool, optional): Whether the payload is for an "update" event.
+            copy (bool, optional): Whether to deepcopy feedback inputs/outputs.
+            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
+                A dictionary to collect attachments. If not passed, attachments
+                will be dropped.
+
+        Returns:
+            dict: The transformed feedback object as a dictionary.
+        """
+        if hasattr(feedback, "dict") and callable(getattr(feedback, "dict")):
+            feedback_create: dict = feedback.dict()  # type: ignore
+        else:
+            feedback_create = cast(dict, feedback)
+        if "id" not in feedback_create:
+            feedback_create["id"] = uuid.uuid4()
+        elif isinstance(feedback_create["id"], str):
+            feedback_create["id"] = uuid.UUID(feedback_create["id"])
+
+        return feedback_create
+
     @staticmethod
     def _insert_runtime_env(runs: Sequence[dict]) -> None:
         runtime_env = ls_env.get_runtime_environment()
@@ -1414,7 +1442,7 @@ class Client:
                 except Exception:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
-    def multipart_ingest_runs(
+    def multipart_ingest(
         self,
         create: Optional[
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
@@ -1422,6 +1450,7 @@ class Client:
         update: Optional[
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
         ] = None,
+        feedback: Optional[Sequence[Union[ls_schemas.Feedback, Dict]]] = None,
         *,
         pre_sampled: bool = False,
     ) -> None:
@@ -1448,7 +1477,7 @@ class Client:
             - The run objects MUST contain the dotted_order and trace_id fields
                 to be accepted by the API.
         """
-        if not create and not update:
+        if not (create or update or feedback):
             return
         # transform and convert to dicts
         all_attachments: Dict[str, ls_schemas.Attachments] = {}
@@ -1460,6 +1489,7 @@ class Client:
             self._run_transform(run, update=True, attachments_collector=all_attachments)
             for run in update or EMPTY_SEQ
         ]
+        feedback_dicts = [self._feedback_transform(f) for f in feedback or EMPTY_SEQ]
         # require trace_id and dotted_order
         if create_dicts:
             for run in create_dicts:
@@ -1497,7 +1527,7 @@ class Client:
         if not pre_sampled:
             create_dicts = self._filter_for_sampling(create_dicts)
             update_dicts = self._filter_for_sampling(update_dicts, patch=True)
-        if not create_dicts and not update_dicts:
+        if not create_dicts and not update_dicts and not feedback_dicts:
             return
         # insert runtime environment
         self._insert_runtime_env(create_dicts)
@@ -1505,13 +1535,18 @@ class Client:
         # send the runs in multipart requests
         acc_context: List[str] = []
         acc_parts: MultipartParts = []
-        for event, payloads in (("post", create_dicts), ("patch", update_dicts)):
+        for event, payloads in (
+            ("post", create_dicts),
+            ("patch", update_dicts),
+            ("feedback", feedback_dicts),
+        ):
             for payload in payloads:
                 # collect fields to be sent as separate parts
                 fields = [
                     ("inputs", payload.pop("inputs", None)),
                     ("outputs", payload.pop("outputs", None)),
                     ("events", payload.pop("events", None)),
+                    ("feedback", payload.pop("feedback", None)),
                 ]
                 # encode the main run payload
                 payloadb = _dumps_json(payload)
@@ -4121,6 +4156,7 @@ class Client:
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id,
+                trace_id=run.trace_id if run else None,
             )
         return results
 
@@ -4191,6 +4227,7 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
+        trace_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -4200,6 +4237,8 @@ class Client:
         run_id : str or UUID
             The ID of the run to provide feedback for. Either the run_id OR
             the project_id must be provided.
+        trace_id : str or UUID
+            The trace ID of the run to provide feedback for. This is optional.
         key : str
             The name of the metric or 'aspect' this feedback is about.
         score : float or int or bool or None, default=None
@@ -4247,66 +4286,87 @@ class Client:
                 f" endpoint: {sorted(kwargs)}",
                 DeprecationWarning,
             )
-        if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
-            feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
-        if feedback_source_type == ls_schemas.FeedbackSourceType.API:
-            feedback_source: ls_schemas.FeedbackSourceBase = (
-                ls_schemas.APIFeedbackSource(metadata=source_info)
-            )
-        elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
-            feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
-        else:
-            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
-        feedback_source.metadata = (
-            feedback_source.metadata if feedback_source.metadata is not None else {}
-        )
-        if source_run_id is not None and "__run" not in feedback_source.metadata:
-            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
-        if feedback_source.metadata and "__run" in feedback_source.metadata:
-            # Validate that the linked run ID is a valid UUID
-            # Run info may be a base model or dict.
-            _run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
-            if hasattr(_run_meta, "dict") and callable(_run_meta):
-                _run_meta = _run_meta.dict()
-            if "run_id" in _run_meta:
-                _run_meta["run_id"] = str(
-                    _as_uuid(
-                        feedback_source.metadata["__run"]["run_id"],
-                        "feedback_source.metadata['__run']['run_id']",
-                    )
+        try:
+            if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
+                feedback_source_type = ls_schemas.FeedbackSourceType(
+                    feedback_source_type
                 )
-            feedback_source.metadata["__run"] = _run_meta
-        feedback = ls_schemas.FeedbackCreate(
-            id=_ensure_uuid(feedback_id),
-            # If run_id is None, this is interpreted as session-level
-            # feedback.
-            run_id=_ensure_uuid(run_id, accept_null=True),
-            key=key,
-            score=score,
-            value=value,
-            correction=correction,
-            comment=comment,
-            feedback_source=feedback_source,
-            created_at=datetime.datetime.now(datetime.timezone.utc),
-            modified_at=datetime.datetime.now(datetime.timezone.utc),
-            feedback_config=feedback_config,
-            session_id=_ensure_uuid(project_id, accept_null=True),
-            comparative_experiment_id=_ensure_uuid(
-                comparative_experiment_id, accept_null=True
-            ),
-            feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
-        )
-        feedback_block = _dumps_json(feedback.dict(exclude_none=True))
-        self.request_with_retries(
-            "POST",
-            "/feedback",
-            request_kwargs={
-                "data": feedback_block,
-            },
-            stop_after_attempt=stop_after_attempt,
-            retry_on=(ls_utils.LangSmithNotFoundError,),
-        )
-        return ls_schemas.Feedback(**feedback.dict())
+            if feedback_source_type == ls_schemas.FeedbackSourceType.API:
+                feedback_source: ls_schemas.FeedbackSourceBase = (
+                    ls_schemas.APIFeedbackSource(metadata=source_info)
+                )
+            elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
+                feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
+            else:
+                raise ValueError(f"Unknown feedback source type {feedback_source_type}")
+            feedback_source.metadata = (
+                feedback_source.metadata if feedback_source.metadata is not None else {}
+            )
+            if source_run_id is not None and "__run" not in feedback_source.metadata:
+                feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
+            if feedback_source.metadata and "__run" in feedback_source.metadata:
+                # Validate that the linked run ID is a valid UUID
+                # Run info may be a base model or dict.
+                _run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
+                if hasattr(_run_meta, "dict") and callable(_run_meta):
+                    _run_meta = _run_meta.dict()
+                if "run_id" in _run_meta:
+                    _run_meta["run_id"] = str(
+                        _as_uuid(
+                            feedback_source.metadata["__run"]["run_id"],
+                            "feedback_source.metadata['__run']['run_id']",
+                        )
+                    )
+                feedback_source.metadata["__run"] = _run_meta
+            feedback = ls_schemas.FeedbackCreate(
+                id=_ensure_uuid(feedback_id),
+                # If run_id is None, this is interpreted as session-level
+                # feedback.
+                run_id=_ensure_uuid(run_id, accept_null=True),
+                trace_id=_ensure_uuid(trace_id, accept_null=True),
+                key=key,
+                score=score,
+                value=value,
+                correction=correction,
+                comment=comment,
+                feedback_source=feedback_source,
+                created_at=datetime.datetime.now(datetime.timezone.utc),
+                modified_at=datetime.datetime.now(datetime.timezone.utc),
+                feedback_config=feedback_config,
+                session_id=_ensure_uuid(project_id, accept_null=True),
+                comparative_experiment_id=_ensure_uuid(
+                    comparative_experiment_id, accept_null=True
+                ),
+                feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
+            )
+
+            feedback_block = _dumps_json(feedback.dict(exclude_none=True))
+            use_multipart = (self.info.batch_ingest_config or {}).get(
+                "use_multipart_endpoint", False
+            )
+
+            if (
+                use_multipart
+                and self.tracing_queue is not None
+                and feedback.trace_id is not None
+            ):
+                self.tracing_queue.put(
+                    TracingQueueItem(str(feedback.id), "feedback", feedback)
+                )
+            else:
+                self.request_with_retries(
+                    "POST",
+                    "/feedback",
+                    request_kwargs={
+                        "data": feedback_block,
+                    },
+                    stop_after_attempt=stop_after_attempt,
+                    retry_on=(ls_utils.LangSmithNotFoundError,),
+                )
+            return ls_schemas.Feedback(**feedback.dict())
+        except Exception as e:
+            logger.error("Error creating feedback", exc_info=True)
+            raise e
 
     def update_feedback(
         self,
