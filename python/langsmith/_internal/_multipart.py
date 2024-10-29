@@ -10,12 +10,12 @@ from typing import (
 
 from langsmith._internal._serde import dumps_json as _dumps_json
 
-MultipartParts = List[Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]]
+MultipartPart = Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]
 
 
 @dataclass(order=True)
 class MultipartPartsAndContext:
-    parts: List[MultipartParts]
+    parts: list[MultipartPart]
     context: str
 
 
@@ -27,7 +27,7 @@ def convert_to_multipart_parts_and_context(
     all_attachments: Dict,
 ) -> MultipartPartsAndContext:
     acc_context: List[str] = []
-    acc_parts: MultipartParts = []
+    acc_parts: list[MultipartPart] = []
     for event, payloads in (
         ("post", create_dicts),
         ("patch", update_dicts),
@@ -90,8 +90,8 @@ def convert_to_multipart_parts_and_context(
 def join_multipart_parts_and_context(
     parts_and_contexts: Iterable[MultipartPartsAndContext],
 ) -> MultipartPartsAndContext:
-    acc_parts = []
-    acc_context = []
+    acc_parts: list[MultipartPart] = []
+    acc_context: list[str] = []
     for parts_and_context in parts_and_contexts:
         acc_parts.extend(parts_and_context.parts)
         acc_context.append(parts_and_context.context)

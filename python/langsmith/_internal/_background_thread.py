@@ -79,7 +79,7 @@ def _tracing_thread_handle_batch(
         else:
             create = [it.item for it in batch if it.action == "create"]
             update = [it.item for it in batch if it.action == "update"]
-            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)  # type: ignore
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the

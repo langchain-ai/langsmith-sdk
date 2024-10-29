@@ -1,7 +1,6 @@
 import logging
 import statistics
 import time
-import weakref
 from queue import PriorityQueue
 from typing import Dict
 from unittest.mock import Mock
