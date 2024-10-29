@@ -1260,7 +1260,7 @@ class Client:
                 run_create["extra"]["metadata"]["revision_id"] = revision_id
             self._insert_runtime_env([run_create])
             acc = convert_to_multipart_parts_and_context(
-                [run_create], [], all_attachments=attachments_collector
+                [run_create], [], [], all_attachments=attachments_collector
             )
             return self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], "create", acc)
