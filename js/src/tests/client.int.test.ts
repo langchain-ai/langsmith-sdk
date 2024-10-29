@@ -1112,7 +1112,7 @@ test("Test pull prompt include model", async () => {
 test("list shared examples can list shared examples", async () => {
   const client = new Client();
   const multiverseMathPublicDatasetShareToken =
-    "ce9c8a9-761a-4756-b159-58ed2640e274";
+    "cce9c8a9-761a-4756-b159-58ed2640e274";
   const sharedExamples = await client.listSharedExamples(
     multiverseMathPublicDatasetShareToken
   );
