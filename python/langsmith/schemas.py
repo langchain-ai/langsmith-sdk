@@ -47,15 +47,18 @@ VALUE_TYPE = Union[Dict, str, None]
 
 class Attachment(NamedTuple):
     """Annotated type that will be stored as an attachment if used.
-    
-    Example:
 
-    @traceable
-    def my_function(bar: int, my_val: Attachment):
-        # my_val will be stored as an attachment
-        # bar will be stored as inputs
-        return bar
+    Examples:
+        --------
+        .. code-block:: python
+
+        @traceable
+        def my_function(bar: int, my_val: Attachment):
+            # my_val will be stored as an attachment
+            # bar will be stored as inputs
+            return bar
     """
+
     mime_type: str
     data: str
 

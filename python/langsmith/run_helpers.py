@@ -840,6 +840,7 @@ class trace:
         run_id: Optional[ls_client.ID_TYPE] = None,
         reference_example_id: Optional[ls_client.ID_TYPE] = None,
         exceptions_to_handle: Optional[Tuple[Type[BaseException], ...]] = None,
+        attachments: Optional[schemas.Attachments] = None,
         **kwargs: Any,
     ):
         """Initialize the trace context manager.
@@ -855,6 +856,7 @@ class trace:
         self.name = name
         self.run_type = run_type
         self.inputs = inputs
+        self.attachments = attachments
         self.extra = extra
         self.project_name = project_name
         self.parent = parent
@@ -914,6 +916,7 @@ class trace:
                 extra=extra_outer,
                 inputs=self.inputs,
                 tags=tags_,
+                attachments=self.attachments,
             )
         else:
             self.new_run = run_trees.RunTree(
@@ -928,6 +931,7 @@ class trace:
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
+                attachments=self.attachments or {},
             )
 
         if enabled:
@@ -1474,7 +1478,7 @@ def _get_inputs_safe(
 
 @functools.lru_cache
 def _attachment_args(signature: inspect.Signature) -> Set[str]:
-    def _is_attachment(param: inspect.Parameter):
+    def _is_attachment(param: inspect.Parameter) -> bool:
         if param.annotation == schemas.Attachment or (
             get_origin(param.annotation) == Annotated
             and any(arg == schemas.Attachment for arg in get_args(param.annotation))
@@ -1523,7 +1527,7 @@ def _process_iterator(
 ) -> Generator[T, None, Any]:
     try:
         while True:
-            item = run_container["context"].run(next, generator)
+            item: T = run_container["context"].run(next, generator)  # type: ignore[arg-type]
             if is_llm_run and run_container["new_run"]:
                 run_container["new_run"].add_event(
                     {
