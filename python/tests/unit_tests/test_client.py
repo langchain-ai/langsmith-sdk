@@ -1059,8 +1059,20 @@ def test_batch_ingest_run_splits_large_batches(
         }
         for run_id in patch_ids
     ]
+
     if use_multipart_endpoint:
-        client.multipart_ingest_runs(create=posts, update=patches)
+        feedback = [
+            {
+                "run_id": run_id,
+                "trace_id": run_id,
+                "key": "test_key",
+                "score": 0.9,
+                "value": "test_value",
+                "comment": "test_comment",
+            }
+            for run_id in run_ids
+        ]
+        client.multipart_ingest(create=posts, update=patches, feedback=feedback)
         # multipart endpoint should only send one request
         expected_num_requests = 1
         # count the number of POST requests
