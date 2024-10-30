@@ -81,7 +81,6 @@ from langsmith._internal._constants import (
 from langsmith._internal._multipart import (
     MultipartPartsAndContext,
     convert_to_multipart_parts_and_context,
-    serialize_feedback_dict,
     serialize_run_dict,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json

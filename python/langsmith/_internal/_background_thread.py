@@ -1,32 +1,37 @@
 from __future__ import annotations
 
+import collections
 import functools
 import logging
 import sys
 import threading
 import weakref
-from collections import defaultdict
 from dataclasses import dataclass
-from itertools import chain
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
+    DefaultDict,
     List,
+    Literal,
     Union,
-    cast,
 )
+
+import orjson
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
+    _SIZE_LIMIT_BYTES,
 )
 from langsmith._internal._multipart import (
     MultipartPartsAndContext,
     SerializedFeedbackOperation,
     SerializedRunOperation,
     join_multipart_parts_and_context,
+    serialized_feedback_operation_to_multipart_parts_and_context,
+    serialized_run_operation_to_multipart_parts_and_context,
 )
 
 if TYPE_CHECKING:
@@ -91,50 +96,95 @@ def _tracing_thread_handle_batch(
     batch: List[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
-    item_by_action = defaultdict(list)
-    for i in batch:
-        item_by_action[i.item[0]].append(i.item[1])
-    if use_multipart:
-        if "create" in item_by_action:
-            # convert create items to create-multipart items
-            # TODO
-            pass
-        if "update" in item_by_action:
-            # convert update items to update-multipart items
-            # TODO
-            pass
-    else:
-        if any(
-            k in item_by_action
-            for k in ("create-multipart", "update-multipart", "feedback-multipart")
-        ):
-            logger.error(
-                "Multipart items found in queue, but use_multipart is False. "
-                "This should not happen."
-            )
-            item_by_action.pop("create-multipart", None)
-            item_by_action.pop("update-multipart", None)
-            item_by_action.pop("feedback-multipart", None)
     try:
-        # sent multipart request
-        acc_multipart = join_multipart_parts_and_context(
-            cast(MultipartPartsAndContext, i)
-            for i in chain(
-                item_by_action["create-multipart"], item_by_action["update-multipart"]
-            )
-        )
-        if acc_multipart:
-            client._send_multipart_req(acc_multipart)
+        if use_multipart:
+            parts: list[MultipartPartsAndContext] = []
+            for item in batch:
+                if isinstance(item.item, SerializedRunOperation):
+                    parts.append(
+                        serialized_run_operation_to_multipart_parts_and_context(
+                            item.item
+                        )
+                    )
+                elif isinstance(item.item, SerializedFeedbackOperation):
+                    parts.append(
+                        serialized_feedback_operation_to_multipart_parts_and_context(
+                            item.item
+                        )
+                    )
+                else:
+                    logger.error("Unknown item type in tracing queue: %s", item)
+            acc_multipart = join_multipart_parts_and_context(parts)
+            if acc_multipart:
+                client._send_multipart_req(acc_multipart)
+        else:
+            ids_and_partial_body: dict[
+                Literal["post", "patch"], list[tuple[str, bytes]]
+            ] = {
+                "post": [],
+                "patch": [],
+            }
 
-        # sent batch request
-        create = item_by_action["create"]
-        update = item_by_action["update"]
-        if create or update:
-            client.batch_ingest_runs(
-                create=cast(List[_RunData], create),
-                update=cast(List[_RunData], update),
-                pre_sampled=True,
-            )
+            # form the partial body and ids
+            for item in batch:
+                op = item.item
+                if isinstance(op, SerializedRunOperation):
+                    curr_dict = orjson.loads(op._none)
+                    if op.inputs:
+                        curr_dict["inputs"] = orjson.Fragment(op.inputs)
+                    if op.outputs:
+                        curr_dict["outputs"] = orjson.Fragment(op.outputs)
+                    if op.events:
+                        curr_dict["events"] = orjson.Fragment(op.events)
+                    if op.attachments:
+                        logger.warning(
+                            "Attachments are not supported in non-multipart mode"
+                        )
+                    ids_and_partial_body[op.operation].append(
+                        (f"trace={op.trace_id},id={op.id}", orjson.dumps(curr_dict))
+                    )
+                elif isinstance(op, SerializedFeedbackOperation):
+                    logger.warning(
+                        "Feedback operations are not supported in non-multipart mode"
+                    )
+                else:
+                    logger.error("Unknown item type in tracing queue: %s", item)
+
+            # send the requests in batches
+            info = client.info
+            size_limit_bytes = (info.batch_ingest_config or {}).get(
+                "size_limit_bytes"
+            ) or _SIZE_LIMIT_BYTES
+
+            body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+            context_ids: DefaultDict[str, list] = collections.defaultdict(list)
+            body_size = 0
+            for key in ["post", "patch"]:
+                body_deque = collections.deque(ids_and_partial_body[key])
+                while body_deque:
+                    if (
+                        body_size > 0
+                        and body_size + len(body_deque[0][1]) > size_limit_bytes
+                    ):
+                        client._post_batch_ingest_runs(
+                            orjson.dumps(body_chunks),
+                            _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                        )
+                        body_size = 0
+                        body_chunks.clear()
+                        context_ids.clear()
+                    curr_id, curr_body = body_deque.popleft()
+                    body_size += len(curr_body)
+                    body_chunks[key].append(orjson.Fragment(curr_body))
+                    context_ids[key].append(curr_id)
+            if body_size:
+                context = "; ".join(
+                    f"{k}: {'; '.join(v)}" for k, v in context_ids.items()
+                )
+                client._post_batch_ingest_runs(
+                    orjson.dumps(body_chunks), _context="\n" + context
+                )
+
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the

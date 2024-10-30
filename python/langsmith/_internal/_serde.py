@@ -12,8 +12,6 @@ import re
 import uuid
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 import orjson
