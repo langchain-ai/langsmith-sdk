@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import functools
 import logging
 import sys
 import threading
 import weakref
-from dataclasses import dataclass, field
+from collections import defaultdict
+from dataclasses import dataclass
+from itertools import chain
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    Any,
     List,
+    Literal,
     Union,
+    cast,
 )
 
 from langsmith import schemas as ls_schemas
@@ -29,8 +33,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
+_RunData = Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]
 
-@dataclass(order=True)
+
+@functools.total_ordering
+@dataclass
 class TracingQueueItem:
     """An item in the tracing queue.
 
@@ -41,8 +48,22 @@ class TracingQueueItem:
     """
 
     priority: str
-    action: str
-    item: Union[Any, MultipartPartsAndContext] = field(compare=False)
+    item: Union[
+        tuple[Literal["create"], _RunData],
+        tuple[Literal["update"], _RunData],
+        tuple[Literal["feedback-multipart"], MultipartPartsAndContext],
+        tuple[Literal["create-multipart"], MultipartPartsAndContext],
+        tuple[Literal["update-multipart"], MultipartPartsAndContext],
+    ]
+
+    def __lt__(self, other: TracingQueueItem) -> bool:
+        return (self.priority, self.item[0]) < (other.priority, other.item[0])
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, TracingQueueItem) and (
+            self.priority,
+            self.item[0],
+        ) == (other.priority, other.item[0])
 
 
 def _tracing_thread_drain_queue(
@@ -72,14 +93,50 @@ def _tracing_thread_handle_batch(
     batch: List[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
+    item_by_action = defaultdict(list)
+    for i in batch:
+        item_by_action[i.item[0]].append(i.item[1])
+    if use_multipart:
+        if "create" in item_by_action:
+            # convert create items to create-multipart items
+            # TODO
+            pass
+        if "update" in item_by_action:
+            # convert update items to update-multipart items
+            # TODO
+            pass
+    else:
+        if any(
+            k in item_by_action
+            for k in ("create-multipart", "update-multipart", "feedback-multipart")
+        ):
+            logger.error(
+                "Multipart items found in queue, but use_multipart is False. "
+                "This should not happen."
+            )
+            item_by_action.pop("create-multipart", None)
+            item_by_action.pop("update-multipart", None)
+            item_by_action.pop("feedback-multipart", None)
     try:
-        if use_multipart:
-            acc = join_multipart_parts_and_context(i.item for i in batch)
-            client._send_multipart_req(acc)
-        else:
-            create = [it.item for it in batch if it.action == "create"]
-            update = [it.item for it in batch if it.action == "update"]
-            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)  # type: ignore
+        # sent multipart request
+        acc_multipart = join_multipart_parts_and_context(
+            cast(MultipartPartsAndContext, i)
+            for i in chain(
+                item_by_action["create-multipart"], item_by_action["update-multipart"]
+            )
+        )
+        if acc_multipart:
+            client._send_multipart_req(acc_multipart)
+
+        # sent batch request
+        create = item_by_action["create"]
+        update = item_by_action["update"]
+        if create or update:
+            client.batch_ingest_runs(
+                create=cast(List[_RunData], create),
+                update=cast(List[_RunData], update),
+                pre_sampled=True,
+            )
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the

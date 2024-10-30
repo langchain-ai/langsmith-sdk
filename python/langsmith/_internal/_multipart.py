@@ -8,6 +8,7 @@ from typing import (
     Tuple,
 )
 
+from langsmith import schemas as ls_schemas
 from langsmith._internal._serde import dumps_json as _dumps_json
 
 MultipartPart = Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]
@@ -17,6 +18,17 @@ MultipartPart = Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]
 class MultipartPartsAndContext:
     parts: list[MultipartPart]
     context: str
+
+
+@dataclass
+class SerializedRun:
+    _none: bytes
+    inputs: bytes
+    outputs: bytes
+    events: bytes
+    feedback: bytes
+    attachments: ls_schemas.Attachments
+    _context: str
 
 
 def convert_to_multipart_parts_and_context(
@@ -72,11 +84,16 @@ def convert_to_multipart_parts_and_context(
                 )
             # encode the attachments
             if attachments := all_attachments.pop(payload["id"], None):
-                for n, (ct, ba) in attachments.items():
+                for n, (content_type, valb) in attachments.items():
                     acc_parts.append(
                         (
                             f"attachment.{payload['id']}.{n}",
-                            (None, ba, ct, {"Content-Length": str(len(ba))}),
+                            (
+                                None,
+                                valb,
+                                content_type,
+                                {"Content-Length": str(len(valb))},
+                            ),
                         )
                     )
             # compute context
