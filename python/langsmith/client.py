@@ -1062,7 +1062,6 @@ class Client:
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
         copy: bool = False,
-        attachments_collector: Optional[Dict[str, ls_schemas.Attachments]] = None,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
@@ -1070,9 +1069,6 @@ class Client:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
             update (bool, optional): Whether the payload is for an "update" event.
             copy (bool, optional): Whether to deepcopy run inputs/outputs.
-            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
-                A dictionary to collect attachments. If not passed, attachments
-                will be dropped.
 
         Returns:
             dict: The transformed run object as a dictionary.
@@ -1110,19 +1106,6 @@ class Client:
                 # Drop graph
                 run_create["serialized"].pop("graph", None)
 
-        # Collect or drop attachments
-        if attachments := run_create.pop("attachments", None):
-            if attachments_collector is not None:
-                attachments_collector[run_create["id"]] = attachments
-            elif not WARNED_ATTACHMENTS:
-                WARNED_ATTACHMENTS = True
-                logger.warning(
-                    "You're trying to submit a run with attachments, but your current"
-                    " LangSmith integration doesn't support it. Please contact the "
-                    " LangChain team at support at langchain"
-                    " dot dev for assistance on how to upgrade."
-                )
-
         return run_create
 
     def _feedback_transform(
@@ -1133,11 +1116,6 @@ class Client:
 
         Args:
             feedback (Union[ls_schemas.Feedback, dict]): The feedback object to transform.
-            update (bool, optional): Whether the payload is for an "update" event.
-            copy (bool, optional): Whether to deepcopy feedback inputs/outputs.
-            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
-                A dictionary to collect attachments. If not passed, attachments
-                will be dropped.
 
         Returns:
             dict: The transformed feedback object as a dictionary.
@@ -1244,12 +1222,9 @@ class Client:
         if not self._filter_for_sampling([run_create]):
             return
 
-        if (
-            self.tracing_queue is not None
-            # batch ingest requires trace_id and dotted_order to be set
-            and run_create.get("trace_id") is not None
-            and run_create.get("dotted_order") is not None
-        ):
+        use_multipart = (self._info or {}).get("use_multipart_endpoint", False)
+
+        if use_multipart:
             attachments_collector: Dict[str, ls_schemas.Attachments] = {}
             run_create = self._run_transform(
                 run_create,
