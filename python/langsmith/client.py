@@ -1260,31 +1260,6 @@ class Client:
             return outputs
         return self._hide_outputs(outputs)
 
-    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
-        for api_url, api_key in self._write_api_urls.items():
-            try:
-                self.request_with_retries(
-                    "POST",
-                    f"{api_url}/runs/batch",
-                    request_kwargs={
-                        "data": body,
-                        "headers": {
-                            **self._headers,
-                            X_API_KEY: api_key,
-                        },
-                    },
-                    to_ignore=(ls_utils.LangSmithConflictError,),
-                    stop_after_attempt=3,
-                    _context=_context,
-                )
-            except Exception as e:
-                try:
-                    exc_desc_lines = traceback.format_exception_only(type(e), e)
-                    exc_desc = "".join(exc_desc_lines).rstrip()
-                    logger.warning(f"Failed to batch ingest runs: {exc_desc}")
-                except Exception:
-                    logger.warning(f"Failed to batch ingest runs: {repr(e)}")
-
     def _batch_ingest_ops(
         self,
         ops: Sequence[SerializedRunOperation],
@@ -1433,48 +1408,30 @@ class Client:
 
         self._batch_ingest_ops(serialized_ops)
 
-    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
-        parts = acc.parts
-        _context = acc.context
+    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
-            for idx in range(1, attempts + 1):
-                try:
-                    encoder = MultipartEncoder(parts, boundary=BOUNDARY)
-                    self.request_with_retries(
-                        "POST",
-                        f"{api_url}/runs/multipart",
-                        request_kwargs={
-                            "data": encoder,
-                            "headers": {
-                                **self._headers,
-                                X_API_KEY: api_key,
-                                "Content-Type": encoder.content_type,
-                            },
+            try:
+                self.request_with_retries(
+                    "POST",
+                    f"{api_url}/runs/batch",
+                    request_kwargs={
+                        "data": body,
+                        "headers": {
+                            **self._headers,
+                            X_API_KEY: api_key,
                         },
-                        stop_after_attempt=1,
-                        _context=_context,
-                    )
-                    break
-                except ls_utils.LangSmithConflictError:
-                    break
-                except (
-                    ls_utils.LangSmithConnectionError,
-                    ls_utils.LangSmithRequestTimeout,
-                    ls_utils.LangSmithAPIError,
-                ) as exc:
-                    if idx == attempts:
-                        logger.warning(f"Failed to multipart ingest runs: {exc}")
-                    else:
-                        continue
-                except Exception as e:
-                    try:
-                        exc_desc_lines = traceback.format_exception_only(type(e), e)
-                        exc_desc = "".join(exc_desc_lines).rstrip()
-                        logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
-                    except Exception:
-                        logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
-                    # do not retry by default
-                    return
+                    },
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                    stop_after_attempt=3,
+                    _context=_context,
+                )
+            except Exception as e:
+                try:
+                    exc_desc_lines = traceback.format_exception_only(type(e), e)
+                    exc_desc = "".join(exc_desc_lines).rstrip()
+                    logger.warning(f"Failed to batch ingest runs: {exc_desc}")
+                except Exception:
+                    logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def _multipart_ingest_ops(
         self, ops: Sequence[Union[SerializedRunOperation, SerializedFeedbackOperation]]
@@ -1586,6 +1543,49 @@ class Client:
 
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
+
+    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+        parts = acc.parts
+        _context = acc.context
+        for api_url, api_key in self._write_api_urls.items():
+            for idx in range(1, attempts + 1):
+                try:
+                    encoder = MultipartEncoder(parts, boundary=BOUNDARY)
+                    self.request_with_retries(
+                        "POST",
+                        f"{api_url}/runs/multipart",
+                        request_kwargs={
+                            "data": encoder,
+                            "headers": {
+                                **self._headers,
+                                X_API_KEY: api_key,
+                                "Content-Type": encoder.content_type,
+                            },
+                        },
+                        stop_after_attempt=1,
+                        _context=_context,
+                    )
+                    break
+                except ls_utils.LangSmithConflictError:
+                    break
+                except (
+                    ls_utils.LangSmithConnectionError,
+                    ls_utils.LangSmithRequestTimeout,
+                    ls_utils.LangSmithAPIError,
+                ) as exc:
+                    if idx == attempts:
+                        logger.warning(f"Failed to multipart ingest runs: {exc}")
+                    else:
+                        continue
+                except Exception as e:
+                    try:
+                        exc_desc_lines = traceback.format_exception_only(type(e), e)
+                        exc_desc = "".join(exc_desc_lines).rstrip()
+                        logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
+                    except Exception:
+                        logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
+                    # do not retry by default
+                    return
 
     def update_run(
         self,
