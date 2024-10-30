@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import collections
 import functools
 import logging
 import sys
@@ -10,21 +9,15 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    DefaultDict,
     List,
-    Literal,
     Union,
-    cast,
 )
-
-import orjson
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
-    _SIZE_LIMIT_BYTES,
 )
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
