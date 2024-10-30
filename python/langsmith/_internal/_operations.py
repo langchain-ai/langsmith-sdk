@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import itertools
 import uuid
 from dataclasses import dataclass
-from typing import Literal, Optional, Union, cast
+from typing import Iterable, Literal, Optional, Union, cast
+
+import orjson
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
@@ -74,6 +77,52 @@ def serialize_run_dict(
     )
 
 
+def combine_serialized_run_operations(
+    ops: Iterable[Union[SerializedRunOperation, SerializedFeedbackOperation]],
+) -> Iterable[Union[SerializedRunOperation, SerializedFeedbackOperation]]:
+    create_ops_by_id = {
+        op.id: op
+        for op in ops
+        if isinstance(op, SerializedRunOperation) and op.operation == "post"
+    }
+    passthrough_ops: list[
+        Union[SerializedRunOperation, SerializedFeedbackOperation]
+    ] = []
+    for op in ops:
+        if isinstance(op, SerializedRunOperation):
+            if op.operation == "post":
+                continue
+
+            # must be patch
+
+            create_op = create_ops_by_id.get(op.id)
+            if create_op is None:
+                passthrough_ops.append(op)
+                continue
+
+            if op._none is not None and op._none != create_op._none:
+                # TODO optimize this more - this would currently be slowest
+                # for large payloads
+                create_op_dict = orjson.loads(create_op._none)
+                op_dict = orjson.loads(op._none)
+                create_op_dict.update(op_dict)
+                create_op._none = orjson.dumps(create_op_dict)
+
+            if op.inputs is not None:
+                create_op.inputs = op.inputs
+            if op.outputs is not None:
+                create_op.outputs = op.outputs
+            if op.events is not None:
+                create_op.events = op.events
+            if op.attachments is not None:
+                if create_op.attachments is None:
+                    create_op.attachments = {}
+                create_op.attachments.update(op.attachments)
+        else:
+            passthrough_ops.append(op)
+    return itertools.chain(create_ops_by_id.values(), passthrough_ops)
+
+
 def serialized_feedback_operation_to_multipart_parts_and_context(
     op: SerializedFeedbackOperation,
 ) -> MultipartPartsAndContext:
@@ -97,6 +146,19 @@ def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
 ) -> MultipartPartsAndContext:
     acc_parts: list[MultipartPart] = []
+
+    # this is main object, minus inputs/outputs/events/attachments
+    acc_parts.append(
+        (
+            f"{op.operation}.{op.id}",
+            (
+                None,
+                op._none,
+                "application/json",
+                {"Content-Length": str(len(op._none))},
+            ),
+        )
+    )
     for key, value in (
         ("inputs", op.inputs),
         ("outputs", op.outputs),

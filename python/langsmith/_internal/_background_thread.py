@@ -9,8 +9,10 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
+    Iterable,
     List,
     Union,
+    cast,
 )
 
 from langsmith import schemas as ls_schemas
@@ -22,6 +24,7 @@ from langsmith._internal._constants import (
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
+    combine_serialized_run_operations,
 )
 
 if TYPE_CHECKING:
@@ -85,22 +88,15 @@ def _tracing_thread_handle_batch(
     use_multipart: bool,
 ) -> None:
     try:
+        ops = combine_serialized_run_operations(item.item for item in batch)
         if use_multipart:
-            client._multipart_ingest_ops([item.item for item in batch])
+            client._multipart_ingest_ops(ops)
         else:
-            if any(
-                isinstance(item.item, SerializedFeedbackOperation) for item in batch
-            ):
+            if any(isinstance(op, SerializedFeedbackOperation) for op in ops):
                 logger.warn(
                     "Feedback operations are not supported in non-multipart mode"
                 )
-            client._batch_ingest_ops(
-                [
-                    item.item
-                    for item in batch
-                    if isinstance(item.item, SerializedRunOperation)
-                ]
-            )
+            client._batch_ingest_ops(cast(Iterable[SerializedRunOperation], ops))
 
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)

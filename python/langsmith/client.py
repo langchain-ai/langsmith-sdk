@@ -21,6 +21,7 @@ import functools
 import importlib
 import importlib.metadata
 import io
+import itertools
 import json
 import logging
 import os
@@ -85,6 +86,7 @@ from langsmith._internal._multipart import (
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
+    combine_serialized_run_operations,
     serialize_feedback_dict,
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
@@ -1262,7 +1264,7 @@ class Client:
 
     def _batch_ingest_ops(
         self,
-        ops: Sequence[SerializedRunOperation],
+        ops: Iterable[SerializedRunOperation],
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -1372,18 +1374,6 @@ class Client:
             self._run_transform(run, update=True, copy=False)
             for run in update or EMPTY_SEQ
         ]
-        # combine post and patch dicts where possible
-        if update_dicts and create_dicts:
-            create_by_id = {run["id"]: run for run in create_dicts}
-            standalone_updates: list[dict] = []
-            for run in update_dicts:
-                if run["id"] in create_by_id:
-                    create_by_id[run["id"]].update(
-                        {k: v for k, v in run.items() if v is not None}
-                    )
-                else:
-                    standalone_updates.append(run)
-            update_dicts = standalone_updates
         for run in create_dicts:
             if not run.get("trace_id") or not run.get("dotted_order"):
                 raise ls_utils.LangSmithUserError(
@@ -1402,9 +1392,15 @@ class Client:
         self._insert_runtime_env(create_dicts + update_dicts)
 
         # convert to serialized ops
-        serialized_ops = [serialize_run_dict("post", run) for run in create_dicts] + [
-            serialize_run_dict("patch", run) for run in update_dicts
-        ]
+        serialized_ops = cast(
+            Iterable[SerializedRunOperation],
+            combine_serialized_run_operations(
+                itertools.chain(
+                    (serialize_run_dict("post", run) for run in create_dicts),
+                    (serialize_run_dict("patch", run) for run in update_dicts),
+                )
+            ),
+        )
 
         self._batch_ingest_ops(serialized_ops)
 
@@ -1434,7 +1430,7 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def _multipart_ingest_ops(
-        self, ops: Sequence[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+        self, ops: Iterable[Union[SerializedRunOperation, SerializedFeedbackOperation]]
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         for op in ops:
@@ -1537,9 +1533,12 @@ class Client:
         self._insert_runtime_env(update_dicts)
 
         # format as serialized operations
-        serialized_ops = [serialize_run_dict("post", run) for run in create_dicts] + [
-            serialize_run_dict("patch", run) for run in update_dicts
-        ]
+        serialized_ops = combine_serialized_run_operations(
+            itertools.chain(
+                (serialize_run_dict("post", run) for run in create_dicts),
+                (serialize_run_dict("patch", run) for run in update_dicts),
+            )
+        )
 
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
