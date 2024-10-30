@@ -287,9 +287,6 @@ def test_create_run_unicode() -> None:
 def test_create_run_mutate(
     use_multipart_endpoint: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if use_multipart_endpoint:
-        monkeypatch.setenv("LANGSMITH_FF_MULTIPART", "true")
-        # TODO remove this when removing FF
     inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
@@ -352,8 +349,9 @@ def test_create_run_mutate(
             boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
             parser = MultipartParser(data, boundary)
             parts.extend(parser.parts())
+        import pdb
 
-        assert len(parts) == 3
+        pdb.set_trace()
         assert [p.name for p in parts] == [
             f"post.{id_}",
             f"post.{id_}.inputs",
