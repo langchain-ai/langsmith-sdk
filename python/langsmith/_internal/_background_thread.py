@@ -26,21 +26,15 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
     _SIZE_LIMIT_BYTES,
 )
-from langsmith._internal._multipart import (
-    MultipartPartsAndContext,
+from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
-    join_multipart_parts_and_context,
-    serialized_feedback_operation_to_multipart_parts_and_context,
-    serialized_run_operation_to_multipart_parts_and_context,
 )
 
 if TYPE_CHECKING:
     from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
-
-_RunData = Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]
 
 
 @functools.total_ordering
@@ -99,92 +93,21 @@ def _tracing_thread_handle_batch(
 ) -> None:
     try:
         if use_multipart:
-            parts: list[MultipartPartsAndContext] = []
-            for item in batch:
-                if isinstance(item.item, SerializedRunOperation):
-                    parts.append(
-                        serialized_run_operation_to_multipart_parts_and_context(
-                            item.item
-                        )
-                    )
-                elif isinstance(item.item, SerializedFeedbackOperation):
-                    parts.append(
-                        serialized_feedback_operation_to_multipart_parts_and_context(
-                            item.item
-                        )
-                    )
-                else:
-                    logger.error("Unknown item type in tracing queue: %s", item)
-            acc_multipart = join_multipart_parts_and_context(parts)
-            if acc_multipart:
-                client._send_multipart_req(acc_multipart)
+            client._multipart_ingest_ops([item.item for item in batch])
         else:
-            ids_and_partial_body: dict[
-                Literal["post", "patch"], list[tuple[str, bytes]]
-            ] = {
-                "post": [],
-                "patch": [],
-            }
-
-            # form the partial body and ids
-            for item in batch:
-                op = item.item
-                if isinstance(op, SerializedRunOperation):
-                    curr_dict = orjson.loads(op._none)
-                    if op.inputs:
-                        curr_dict["inputs"] = orjson.Fragment(op.inputs)
-                    if op.outputs:
-                        curr_dict["outputs"] = orjson.Fragment(op.outputs)
-                    if op.events:
-                        curr_dict["events"] = orjson.Fragment(op.events)
-                    if op.attachments:
-                        logger.warning(
-                            "Attachments are not supported in non-multipart mode"
-                        )
-                    ids_and_partial_body[op.operation].append(
-                        (f"trace={op.trace_id},id={op.id}", orjson.dumps(curr_dict))
-                    )
-                elif isinstance(op, SerializedFeedbackOperation):
-                    logger.warning(
-                        "Feedback operations are not supported in non-multipart mode"
-                    )
-                else:
-                    logger.error("Unknown item type in tracing queue: %s", item)
-
-            # send the requests in batches
-            info = client.info
-            size_limit_bytes = (info.batch_ingest_config or {}).get(
-                "size_limit_bytes"
-            ) or _SIZE_LIMIT_BYTES
-
-            body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
-            context_ids: DefaultDict[str, list] = collections.defaultdict(list)
-            body_size = 0
-            for key in cast(list[Literal["post", "patch"]], ["post", "patch"]):
-                body_deque = collections.deque(ids_and_partial_body[key])
-                while body_deque:
-                    if (
-                        body_size > 0
-                        and body_size + len(body_deque[0][1]) > size_limit_bytes
-                    ):
-                        client._post_batch_ingest_runs(
-                            orjson.dumps(body_chunks),
-                            _context=f"\n{key}: {'; '.join(context_ids[key])}",
-                        )
-                        body_size = 0
-                        body_chunks.clear()
-                        context_ids.clear()
-                    curr_id, curr_body = body_deque.popleft()
-                    body_size += len(curr_body)
-                    body_chunks[key].append(orjson.Fragment(curr_body))
-                    context_ids[key].append(curr_id)
-            if body_size:
-                context = "; ".join(
-                    f"{k}: {'; '.join(v)}" for k, v in context_ids.items()
+            if any(
+                isinstance(item.item, SerializedFeedbackOperation) for item in batch
+            ):
+                logger.warn(
+                    "Feedback operations are not supported in non-multipart mode"
                 )
-                client._post_batch_ingest_runs(
-                    orjson.dumps(body_chunks), _context="\n" + context
-                )
+            client._batch_ingest_ops(
+                [
+                    item.item
+                    for item in batch
+                    if isinstance(item.item, SerializedRunOperation)
+                ]
+            )
 
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
