@@ -5,16 +5,19 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures as cf
 import datetime
+import itertools
 import logging
 import pathlib
 import uuid
 from typing import (
+    Any,
     AsyncIterable,
     AsyncIterator,
     Awaitable,
     Callable,
     Dict,
     Iterable,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -67,7 +70,8 @@ async def aevaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-) -> AsyncExperimentResults:
+    hyper_params: Optional[Dict[str, List[Any]]] = None,
+) -> AsyncExperimentResults | CombinedAsyncExperimentResults:
     r"""Evaluate an async target system or function on a given dataset.
 
     Args:
@@ -95,6 +99,8 @@ async def aevaluate(
         experiment (Optional[schemas.TracerSession]): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
             usage only.
+        hyper_params (Optional[Dict]): A set of hyper parameters to run your target
+            function over. Will run over all possible combinations.
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
@@ -244,6 +250,7 @@ async def aevaluate(
         client=client,
         blocking=blocking,
         experiment=experiment,
+        hyper_params=hyper_params,
     )
 
 
@@ -336,16 +343,19 @@ async def aevaluate_existing(
     )
     data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
     data = [data_map[run.reference_example_id] for run in runs]
-    return await _aevaluate(
-        runs,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        max_concurrency=max_concurrency,
-        client=client,
-        blocking=blocking,
-        experiment=project,
+    return cast(
+        AsyncExperimentResults,
+        await _aevaluate(
+            runs,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            experiment=project,
+        ),
     )
 
 
@@ -363,48 +373,145 @@ async def _aevaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-) -> AsyncExperimentResults:
+    hyper_params: Optional[Dict[str, List[Any]]] = None,
+) -> AsyncExperimentResults | CombinedAsyncExperimentResults:
     is_async_target = asyncio.iscoroutinefunction(target) or (
         hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())
     )
     client = client or rt.get_cached_client()
-    runs = None if is_async_target else cast(Iterable[schemas.Run], target)
-    experiment_, runs = await aitertools.aio_to_thread(
-        _resolve_experiment,
-        experiment,
-        runs,
-        client,
-    )
-    manager = await _AsyncExperimentManager(
-        data,
-        client=client,
-        metadata=metadata,
-        experiment=experiment_ or experiment_prefix,
-        description=description,
-        num_repetitions=num_repetitions,
-        runs=runs,
-    ).astart()
-    cache_dir = ls_utils.get_cache_dir(None)
-    if cache_dir is not None:
-        dsid = await manager.get_dataset_id()
-        cache_path = pathlib.Path(cache_dir) / f"{dsid}.yaml"
+    if hyper_params is None:
+        runs = None if is_async_target else cast(Iterable[schemas.Run], target)
+        experiment_, runs = await aitertools.aio_to_thread(
+            _resolve_experiment,
+            experiment,
+            runs,
+            client,
+        )
+        manager = await _AsyncExperimentManager(
+            data,
+            client=client,
+            metadata=metadata,
+            experiment=experiment_ or experiment_prefix,
+            description=description,
+            num_repetitions=num_repetitions,
+            runs=runs,
+        ).astart()
+        cache_dir = ls_utils.get_cache_dir(None)
+        if cache_dir is not None:
+            dsid = await manager.get_dataset_id()
+            cache_path = pathlib.Path(cache_dir) / f"{dsid}.yaml"
+        else:
+            cache_path = None
+        with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+            if is_async_target:
+                manager = await manager.awith_predictions(
+                    cast(ATARGET_T, target), max_concurrency=max_concurrency
+                )
+            if evaluators:
+                manager = await manager.awith_evaluators(
+                    evaluators, max_concurrency=max_concurrency
+                )
+            if summary_evaluators:
+                manager = await manager.awith_summary_evaluators(summary_evaluators)
+            results = AsyncExperimentResults(manager)
+            if blocking:
+                await results.wait()
+            return results
     else:
-        cache_path = None
-    with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
-        if is_async_target:
-            manager = await manager.awith_predictions(
-                cast(ATARGET_T, target), max_concurrency=max_concurrency
+        param_names = list(hyper_params.keys())
+        param_values = list(hyper_params.values())
+        param_combinations = [
+            dict(zip(param_names, combo)) for combo in itertools.product(*param_values)
+        ]
+
+        managers = []
+        cache_dir = ls_utils.get_cache_dir(None)
+
+        for params in param_combinations:
+            param_str = "-".join(f"{k}={v}" for k, v in sorted(params.items()))
+            current_prefix = (
+                f"{experiment_prefix}-{param_str}"
+                if experiment_prefix
+                else f"experiment-{param_str}"
             )
-        if evaluators:
-            manager = await manager.awith_evaluators(
-                evaluators, max_concurrency=max_concurrency
+
+            # Create a unique cache path for each parameter combination
+            cache_path = (
+                pathlib.Path(cache_dir) / f"{current_prefix}.yaml"
+                if cache_dir
+                else None
             )
-        if summary_evaluators:
-            manager = await manager.awith_summary_evaluators(summary_evaluators)
-        results = AsyncExperimentResults(manager)
-        if blocking:
-            await results.wait()
-        return results
+
+            current_metadata = {**(metadata or {}), "hyper_params": params}
+
+            with ls_utils.with_optional_cache(
+                cache_path, ignore_hosts=[client.api_url]
+            ):
+                manager = await _AsyncExperimentManager(
+                    data,
+                    client=client,
+                    metadata=current_metadata,
+                    experiment=current_prefix,
+                    description=description,
+                    num_repetitions=num_repetitions,
+                ).astart()
+
+                if asyncio.iscoroutinefunction(target):
+                    # Wrap target with current params
+                    async def make_wrapped_target(fixed_params):
+                        async def wrapped_target(inputs: dict) -> dict:
+                            return await target(inputs, **fixed_params)
+
+                        return wrapped_target
+
+                    # And then use it like this:
+                    wrapped_target = await make_wrapped_target(params.copy())
+
+                    manager = await manager.awith_predictions(
+                        wrapped_target, max_concurrency=max_concurrency
+                    )
+                if evaluators:
+                    manager = await manager.awith_evaluators(
+                        evaluators, max_concurrency=max_concurrency
+                    )
+                if summary_evaluators:
+                    manager = await manager.awith_summary_evaluators(summary_evaluators)
+
+                managers.append(manager)
+
+        return CombinedAsyncExperimentResults(managers)
+
+
+class CombinedAsyncExperimentResults:
+    """Container for multiple async experiment results from hyperparameter search."""
+
+    def __init__(
+        self,
+        managers: List[_AsyncExperimentManager],
+    ):
+        """Initialize the combined results."""
+        self.managers = managers
+        self._results = [AsyncExperimentResults(manager) for manager in managers]
+
+    async def wait(self) -> None:
+        """Wait for all experiments to complete."""
+        await asyncio.gather(*(result.wait() for result in self._results))
+
+    def __getitem__(self, idx: int) -> AsyncExperimentResults:
+        """Get results for a specific parameter combination."""
+        return self._results[idx]
+
+    def __len__(self) -> int:
+        """Get the number of parameter combinations."""
+        return len(self._results)
+
+    def __iter__(self) -> Iterator[AsyncExperimentResults]:
+        """Iterate over results for each parameter combination."""
+        return iter(self._results)
+
+    def __repr__(self) -> str:
+        """Get string representation."""
+        return f"<CombinedAsyncExperimentResults with {len(self)} experiments>"
 
 
 class _AsyncExperimentManager(_ExperimentManagerMixin):

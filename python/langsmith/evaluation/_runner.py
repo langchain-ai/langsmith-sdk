@@ -15,6 +15,7 @@ import threading
 import uuid
 from contextvars import copy_context
 from typing import (
+    Any,
     Awaitable,
     Callable,
     DefaultDict,
@@ -97,7 +98,8 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-) -> ExperimentResults:
+    hyper_params: Optional[Dict[str, List[Any]]] = None,
+) -> ExperimentResults | CombinedExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
     Args:
@@ -125,6 +127,8 @@ def evaluate(
         experiment (Optional[schemas.TracerSession]): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
             usage only.
+        hyper_params (Optional[Dict]): A set of hyper parameters to run your target
+            function over. Will run over all possible combinations.
 
     Returns:
         ExperimentResults: The results of the evaluation.
@@ -271,6 +275,9 @@ def evaluate(
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
         )
+    if hyper_params:
+        if not _is_callable(target):
+            raise ValueError("Hyper parameter search requires a callable target")
     return _evaluate(
         target,
         data=data,
@@ -284,6 +291,7 @@ def evaluate(
         client=client,
         blocking=blocking,
         experiment=experiment,
+        hyper_params=hyper_params,
     )
 
 
@@ -368,16 +376,19 @@ def evaluate_existing(
     runs = _load_traces(experiment, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
-    return _evaluate(
-        runs,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        max_concurrency=max_concurrency,
-        client=client,
-        blocking=blocking,
-        experiment=project,
+    return cast(
+        ExperimentResults,
+        _evaluate(
+            runs,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            experiment=project,
+        ),
     )
 
 
@@ -870,48 +881,134 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-) -> ExperimentResults:
+    hyper_params: Optional[Dict[str, List[Any]]] = None,
+) -> ExperimentResults | CombinedExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
-    runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
-    experiment_, runs = _resolve_experiment(
-        experiment,
-        runs,
-        client,
-    )
+    if hyper_params is None:
+        runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
+        experiment_, runs = _resolve_experiment(
+            experiment,
+            runs,
+            client,
+        )
 
-    manager = _ExperimentManager(
-        data,
-        client=client,
-        metadata=metadata,
-        experiment=experiment_ or experiment_prefix,
-        description=description,
-        num_repetitions=num_repetitions,
-        # If provided, we don't need to create a new experiment.
-        runs=runs,
-        # Create or resolve the experiment.
-    ).start()
-    cache_dir = ls_utils.get_cache_dir(None)
-    cache_path = (
-        pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml" if cache_dir else None
-    )
-    with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
-        if _is_callable(target):
-            # Add predictions to the experiment.
-            manager = manager.with_predictions(
-                cast(TARGET_T, target), max_concurrency=max_concurrency
+        manager = _ExperimentManager(
+            data,
+            client=client,
+            metadata=metadata,
+            experiment=experiment_ or experiment_prefix,
+            description=description,
+            num_repetitions=num_repetitions,
+            # If provided, we don't need to create a new experiment.
+            runs=runs,
+            # Create or resolve the experiment.
+        ).start()
+        cache_dir = ls_utils.get_cache_dir(None)
+        cache_path = (
+            pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml"
+            if cache_dir
+            else None
+        )
+        with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+            if _is_callable(target):
+                # Add predictions to the experiment.
+                manager = manager.with_predictions(
+                    cast(TARGET_T, target), max_concurrency=max_concurrency
+                )
+            if evaluators:
+                # Apply evaluators to the predictions.
+                manager = manager.with_evaluators(
+                    evaluators, max_concurrency=max_concurrency
+                )
+            if summary_evaluators:
+                # Apply the experiment-level summary evaluators.
+                manager = manager.with_summary_evaluators(summary_evaluators)
+            # Start consuming the results.
+            results = ExperimentResults(manager, blocking=blocking)
+            return results
+    else:
+        param_names = list(hyper_params.keys())
+        param_values = list(hyper_params.values())
+        param_combinations = [
+            dict(zip(param_names, combo)) for combo in itertools.product(*param_values)
+        ]
+
+        managers = []
+        cache_dir = ls_utils.get_cache_dir(None)
+
+        for params in param_combinations:
+            param_str = "-".join(f"{k}={v}" for k, v in sorted(params.items()))
+            current_prefix = (
+                f"{experiment_prefix}-{param_str}"
+                if experiment_prefix
+                else f"experiment-{param_str}"
             )
-        if evaluators:
-            # Apply evaluators to the predictions.
-            manager = manager.with_evaluators(
-                evaluators, max_concurrency=max_concurrency
+
+            # Create a unique cache path for each parameter combination
+            cache_path = (
+                pathlib.Path(cache_dir) / f"{current_prefix}.yaml"
+                if cache_dir
+                else None
             )
-        if summary_evaluators:
-            # Apply the experiment-level summary evaluators.
-            manager = manager.with_summary_evaluators(summary_evaluators)
-        # Start consuming the results.
-        results = ExperimentResults(manager, blocking=blocking)
-        return results
+
+            current_metadata = {**(metadata or {}), "hyper_params": params}
+
+            with ls_utils.with_optional_cache(
+                cache_path, ignore_hosts=[client.api_url]
+            ):
+                manager = _ExperimentManager(
+                    data,
+                    client=client,
+                    metadata=current_metadata,
+                    experiment=current_prefix,
+                    description=description,
+                    num_repetitions=num_repetitions,
+                ).start()
+
+                if _is_callable(target):
+                    # Wrap target with current params
+                    def make_wrapped_target(fixed_params):
+                        def wrapped_target(inputs):
+                            return target(inputs, **fixed_params)
+
+                        return wrapped_target
+
+                    wrapped_target = make_wrapped_target(params.copy())
+                    manager = manager.with_predictions(
+                        wrapped_target, max_concurrency=max_concurrency
+                    )
+                if evaluators:
+                    manager = manager.with_evaluators(
+                        evaluators, max_concurrency=max_concurrency
+                    )
+                if summary_evaluators:
+                    manager = manager.with_summary_evaluators(summary_evaluators)
+
+                managers.append(manager)
+
+        return CombinedExperimentResults(managers, blocking=blocking)
+
+
+class CombinedExperimentResults:
+    """Represents results from multiple experiments with different hyperparameters."""
+
+    def __init__(self, managers: List[_ExperimentManager], blocking: bool = True):
+        self._managers = managers
+        self._results = [ExperimentResults(m, blocking=blocking) for m in managers]
+
+    def __iter__(self) -> Iterator[ExperimentResultRow]:
+        for result in self._results:
+            yield from result
+
+    @property
+    def experiment_names(self) -> List[str]:
+        return [manager.experiment_name for manager in self._managers]
+
+    def wait(self) -> None:
+        """Wait for all experiments to complete."""
+        for result in self._results:
+            result.wait()
 
 
 def _is_uuid(value: str) -> bool:
@@ -1301,6 +1398,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
+
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
