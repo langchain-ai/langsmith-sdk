@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Literal, Optional, Tuple, Union, cast
+from typing import Dict, Iterable, Literal, Optional, Tuple, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal._serde import dumps_json as _dumps_json
@@ -40,7 +40,7 @@ class SerializedFeedbackOperation:
 
 
 def serialize_feedback_dict(
-    feedback: Union[ls_schemas.Feedback, dict]
+    feedback: Union[ls_schemas.Feedback, dict],
 ) -> SerializedFeedbackOperation:
     if hasattr(feedback, "dict") and callable(getattr(feedback, "dict")):
         feedback_create: dict = feedback.dict()  # type: ignore
@@ -50,10 +50,14 @@ def serialize_feedback_dict(
         feedback_create["id"] = uuid.uuid4()
     elif isinstance(feedback_create["id"], str):
         feedback_create["id"] = uuid.UUID(feedback_create["id"])
+    if "trace_id" not in feedback_create:
+        feedback_create["trace_id"] = uuid.uuid4()
+    elif isinstance(feedback_create["trace_id"], str):
+        feedback_create["trace_id"] = uuid.UUID(feedback_create["trace_id"])
 
     return SerializedFeedbackOperation(
         id=feedback_create["id"],
-        trace_id=feedback_create.get("trace_id"),
+        trace_id=feedback_create["trace_id"],
         feedback=_dumps_json(feedback_create),
     )
 
