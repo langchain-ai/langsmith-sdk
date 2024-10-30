@@ -40,7 +40,7 @@ class SerializedFeedbackOperation:
 
 
 def serialize_feedback_dict(
-    feedback: Union[ls_schemas.Feedback, dict],
+    feedback: Union[ls_schemas.FeedbackCreate, dict],
 ) -> SerializedFeedbackOperation:
     if hasattr(feedback, "dict") and callable(getattr(feedback, "dict")):
         feedback_create: dict = feedback.dict()  # type: ignore

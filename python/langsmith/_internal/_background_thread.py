@@ -14,6 +14,7 @@ from typing import (
     List,
     Literal,
     Union,
+    cast,
 )
 
 import orjson
@@ -159,7 +160,7 @@ def _tracing_thread_handle_batch(
             body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
             context_ids: DefaultDict[str, list] = collections.defaultdict(list)
             body_size = 0
-            for key in ["post", "patch"]:
+            for key in cast(list[Literal["post", "patch"]], ["post", "patch"]):
                 body_deque = collections.deque(ids_and_partial_body[key])
                 while body_deque:
                     if (
