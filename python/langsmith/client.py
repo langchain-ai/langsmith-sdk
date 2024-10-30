@@ -80,8 +80,15 @@ from langsmith._internal._constants import (
 )
 from langsmith._internal._multipart import (
     MultipartPartsAndContext,
+    join_multipart_parts_and_context,
     serialize_feedback_dict,
     serialize_run_dict,
+)
+from langsmith._internal._operations import (
+    SerializedFeedbackOperation,
+    SerializedRunOperation,
+    serialized_feedback_operation_to_multipart_parts_and_context,
+    serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -1253,6 +1260,99 @@ class Client:
             return outputs
         return self._hide_outputs(outputs)
 
+    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
+        for api_url, api_key in self._write_api_urls.items():
+            try:
+                self.request_with_retries(
+                    "POST",
+                    f"{api_url}/runs/batch",
+                    request_kwargs={
+                        "data": body,
+                        "headers": {
+                            **self._headers,
+                            X_API_KEY: api_key,
+                        },
+                    },
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                    stop_after_attempt=3,
+                    _context=_context,
+                )
+            except Exception as e:
+                try:
+                    exc_desc_lines = traceback.format_exception_only(type(e), e)
+                    exc_desc = "".join(exc_desc_lines).rstrip()
+                    logger.warning(f"Failed to batch ingest runs: {exc_desc}")
+                except Exception:
+                    logger.warning(f"Failed to batch ingest runs: {repr(e)}")
+
+    def _batch_ingest_ops(
+        self,
+        ops: Sequence[SerializedRunOperation],
+    ) -> None:
+        ids_and_partial_body: dict[
+            Literal["post", "patch"], list[tuple[str, bytes]]
+        ] = {
+            "post": [],
+            "patch": [],
+        }
+
+        # form the partial body and ids
+        for op in ops:
+            if isinstance(op, SerializedRunOperation):
+                curr_dict = orjson.loads(op._none)
+                if op.inputs:
+                    curr_dict["inputs"] = orjson.Fragment(op.inputs)
+                if op.outputs:
+                    curr_dict["outputs"] = orjson.Fragment(op.outputs)
+                if op.events:
+                    curr_dict["events"] = orjson.Fragment(op.events)
+                if op.attachments:
+                    logger.warning(
+                        "Attachments are not supported in non-multipart mode"
+                    )
+                ids_and_partial_body[op.operation].append(
+                    (f"trace={op.trace_id},id={op.id}", orjson.dumps(curr_dict))
+                )
+            elif isinstance(op, SerializedFeedbackOperation):
+                logger.warning(
+                    "Feedback operations are not supported in non-multipart mode"
+                )
+            else:
+                logger.error("Unknown item type in tracing queue: %s", item)
+
+        # send the requests in batches
+        info = self.info
+        size_limit_bytes = (info.batch_ingest_config or {}).get(
+            "size_limit_bytes"
+        ) or _SIZE_LIMIT_BYTES
+
+        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
+        body_size = 0
+        for key in cast(list[Literal["post", "patch"]], ["post", "patch"]):
+            body_deque = collections.deque(ids_and_partial_body[key])
+            while body_deque:
+                if (
+                    body_size > 0
+                    and body_size + len(body_deque[0][1]) > size_limit_bytes
+                ):
+                    self._post_batch_ingest_runs(
+                        orjson.dumps(body_chunks),
+                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                    )
+                    body_size = 0
+                    body_chunks.clear()
+                    context_ids.clear()
+                curr_id, curr_body = body_deque.popleft()
+                body_size += len(curr_body)
+                body_chunks[key].append(orjson.Fragment(curr_body))
+                context_ids[key].append(curr_id)
+        if body_size:
+            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
+            self._post_batch_ingest_runs(
+                orjson.dumps(body_chunks), _context="\n" + context
+            )
+
     def batch_ingest_runs(
         self,
         create: Optional[
@@ -1290,9 +1390,12 @@ class Client:
         if not create and not update:
             return
         # transform and convert to dicts
-        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
+        create_dicts = [
+            self._run_transform(run, copy=True) for run in create or EMPTY_SEQ
+        ]  # still copy create dicts because manipulated in create_by_id
         update_dicts = [
-            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
+            self._run_transform(run, update=True, copy=False)
+            for run in update or EMPTY_SEQ
         ]
         # combine post and patch dicts where possible
         if update_dicts and create_dicts:
@@ -1317,89 +1420,37 @@ class Client:
                     "Batch ingest requires trace_id and dotted_order to be set."
                 )
         # filter out runs that are not sampled
-        if pre_sampled:
-            raw_body = {
-                "post": create_dicts,
-                "patch": update_dicts,
-            }
-        else:
-            raw_body = {
-                "post": self._filter_for_sampling(create_dicts),
-                "patch": self._filter_for_sampling(update_dicts, patch=True),
-            }
-        if not raw_body["post"] and not raw_body["patch"]:
-            return
+        if not pre_sampled:
+            create_dicts = self._filter_for_sampling(create_dicts)
+            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
 
-        self._insert_runtime_env(raw_body["post"] + raw_body["patch"])
-        info = self.info
+        self._insert_runtime_env(create_dicts + update_dicts)
 
-        size_limit_bytes = (info.batch_ingest_config or {}).get(
-            "size_limit_bytes"
-        ) or _SIZE_LIMIT_BYTES
-        # Get orjson fragments to avoid going over the max request size
-        partial_body = {
-            "post": [_dumps_json(run) for run in raw_body["post"]],
-            "patch": [_dumps_json(run) for run in raw_body["patch"]],
-        }
-        ids = {
-            "post": [
-                f"trace={run.get('trace_id')},id={run.get('id')}"
-                for run in raw_body["post"]
-            ],
-            "patch": [
-                f"trace={run.get('trace_id')},id={run.get('id')}"
-                for run in raw_body["patch"]
-            ],
-        }
+        # convert to serialized ops
+        serialized_ops = [serialize_run_dict("post", run) for run in create_dicts] + [
+            serialize_run_dict("patch", run) for run in update_dicts
+        ]
 
-        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
-        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
-        body_size = 0
-        for key in ["post", "patch"]:
-            body = collections.deque(partial_body[key])
-            ids_ = collections.deque(ids[key])
-            while body:
-                if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
-                    self._post_batch_ingest_runs(
-                        orjson.dumps(body_chunks),
-                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
-                    )
-                    body_size = 0
-                    body_chunks.clear()
-                    context_ids.clear()
-                body_size += len(body[0])
-                body_chunks[key].append(orjson.Fragment(body.popleft()))
-                context_ids[key].append(ids_.popleft())
-        if body_size:
-            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
-            self._post_batch_ingest_runs(
-                orjson.dumps(body_chunks), _context="\n" + context
-            )
+        self._batch_ingest_ops(serialized_ops)
 
-    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
-        for api_url, api_key in self._write_api_urls.items():
-            try:
-                self.request_with_retries(
-                    "POST",
-                    f"{api_url}/runs/batch",
-                    request_kwargs={
-                        "data": body,
-                        "headers": {
-                            **self._headers,
-                            X_API_KEY: api_key,
-                        },
-                    },
-                    to_ignore=(ls_utils.LangSmithConflictError,),
-                    stop_after_attempt=3,
-                    _context=_context,
+    def _multipart_ingest_ops(
+        self, ops: Sequence[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+    ) -> None:
+        parts: list[MultipartPartsAndContext] = []
+        for op in ops:
+            if isinstance(op, SerializedRunOperation):
+                parts.append(
+                    serialized_run_operation_to_multipart_parts_and_context(op)
                 )
-            except Exception as e:
-                try:
-                    exc_desc_lines = traceback.format_exception_only(type(e), e)
-                    exc_desc = "".join(exc_desc_lines).rstrip()
-                    logger.warning(f"Failed to batch ingest runs: {exc_desc}")
-                except Exception:
-                    logger.warning(f"Failed to batch ingest runs: {repr(e)}")
+            elif isinstance(op, SerializedFeedbackOperation):
+                parts.append(
+                    serialized_feedback_operation_to_multipart_parts_and_context(op)
+                )
+            else:
+                logger.error("Unknown operation type in tracing queue: %s", type(op))
+        acc_multipart = join_multipart_parts_and_context(parts)
+        if acc_multipart:
+            self._send_multipart_req(acc_multipart)
 
     # def multipart_ingest(
     #     self,
