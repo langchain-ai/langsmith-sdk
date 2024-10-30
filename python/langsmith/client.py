@@ -81,12 +81,12 @@ from langsmith._internal._constants import (
 from langsmith._internal._multipart import (
     MultipartPartsAndContext,
     join_multipart_parts_and_context,
-    serialize_feedback_dict,
-    serialize_run_dict,
 )
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
+    serialize_feedback_dict,
+    serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
 )
@@ -1318,7 +1318,7 @@ class Client:
                     "Feedback operations are not supported in non-multipart mode"
                 )
             else:
-                logger.error("Unknown item type in tracing queue: %s", item)
+                logger.error("Unknown item type in tracing queue: %s", type(op))
 
         # send the requests in batches
         info = self.info
@@ -1433,119 +1433,6 @@ class Client:
 
         self._batch_ingest_ops(serialized_ops)
 
-    def _multipart_ingest_ops(
-        self, ops: Sequence[Union[SerializedRunOperation, SerializedFeedbackOperation]]
-    ) -> None:
-        parts: list[MultipartPartsAndContext] = []
-        for op in ops:
-            if isinstance(op, SerializedRunOperation):
-                parts.append(
-                    serialized_run_operation_to_multipart_parts_and_context(op)
-                )
-            elif isinstance(op, SerializedFeedbackOperation):
-                parts.append(
-                    serialized_feedback_operation_to_multipart_parts_and_context(op)
-                )
-            else:
-                logger.error("Unknown operation type in tracing queue: %s", type(op))
-        acc_multipart = join_multipart_parts_and_context(parts)
-        if acc_multipart:
-            self._send_multipart_req(acc_multipart)
-
-    # def multipart_ingest(
-    #     self,
-    #     create: Optional[
-    #         Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
-    #     ] = None,
-    #     update: Optional[
-    #         Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
-    #     ] = None,
-    #     feedback: Optional[Sequence[Union[ls_schemas.Feedback, Dict]]] = None,
-    #     *,
-    #     pre_sampled: bool = False,
-    # ) -> None:
-    #     """Batch ingest/upsert multiple runs in the Langsmith system.
-
-    #     Args:
-    #         create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
-    #             A sequence of `Run` objects or equivalent dictionaries representing
-    #             runs to be created / posted.
-    #         update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
-    #             A sequence of `Run` objects or equivalent dictionaries representing
-    #             runs that have already been created and should be updated / patched.
-    #         pre_sampled (bool, optional): Whether the runs have already been subject
-    #             to sampling, and therefore should not be sampled again.
-    #             Defaults to False.
-
-    #     Returns:
-    #         None
-
-    #     Raises:
-    #         LangsmithAPIError: If there is an error in the API request.
-
-    #     Note:
-    #         - The run objects MUST contain the dotted_order and trace_id fields
-    #             to be accepted by the API.
-    #     """
-    #     if not (create or update or feedback):
-    #         return
-    #     # transform and convert to dicts
-    #     all_attachments: Dict[str, ls_schemas.Attachments] = {}
-    #     create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
-    #     update_dicts = [
-    #         self._run_transform(run, update=True) for run in update or EMPTY_SEQ
-    #     ]
-    #     feedback_dicts = [self._feedback_transform(f) for f in feedback or EMPTY_SEQ]
-    #     # require trace_id and dotted_order
-    #     if create_dicts:
-    #         for run in create_dicts:
-    #             if not run.get("trace_id") or not run.get("dotted_order"):
-    #                 raise ls_utils.LangSmithUserError(
-    #                     "Multipart ingest requires trace_id and dotted_order"
-    #                     " to be set in create dicts."
-    #                 )
-    #         else:
-    #             del run
-    #     if update_dicts:
-    #         for run in update_dicts:
-    #             if not run.get("trace_id") or not run.get("dotted_order"):
-    #                 raise ls_utils.LangSmithUserError(
-    #                     "Multipart ingest requires trace_id and dotted_order"
-    #                     " to be set in update dicts."
-    #                 )
-    #         else:
-    #             del run
-    #     # combine post and patch dicts where possible
-    #     if update_dicts and create_dicts:
-    #         create_by_id = {run["id"]: run for run in create_dicts}
-    #         standalone_updates: list[dict] = []
-    #         for run in update_dicts:
-    #             if run["id"] in create_by_id:
-    #                 for k, v in run.items():
-    #                     if v is not None:
-    #                         create_by_id[run["id"]][k] = v
-    #             else:
-    #                 standalone_updates.append(run)
-    #         else:
-    #             del run
-    #         update_dicts = standalone_updates
-    #     # filter out runs that are not sampled
-    #     if not pre_sampled:
-    #         create_dicts = self._filter_for_sampling(create_dicts)
-    #         update_dicts = self._filter_for_sampling(update_dicts, patch=True)
-    #     if not create_dicts and not update_dicts and not feedback_dicts:
-    #         return
-    #     # insert runtime environment
-    #     self._insert_runtime_env(create_dicts)
-    #     self._insert_runtime_env(update_dicts)
-    #     # send the runs in multipart requests
-    #     acc: MultipartPartsAndContext = convert_to_multipart_parts_and_context(
-    #         create_dicts, update_dicts, feedback_dicts, all_attachments=all_attachments
-    #     )
-
-    #     # send the request
-    #     self._send_multipart_req(acc)
-
     def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
         parts = acc.parts
         _context = acc.context
@@ -1588,6 +1475,117 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     # do not retry by default
                     return
+
+    def _multipart_ingest_ops(
+        self, ops: Sequence[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+    ) -> None:
+        parts: list[MultipartPartsAndContext] = []
+        for op in ops:
+            if isinstance(op, SerializedRunOperation):
+                parts.append(
+                    serialized_run_operation_to_multipart_parts_and_context(op)
+                )
+            elif isinstance(op, SerializedFeedbackOperation):
+                parts.append(
+                    serialized_feedback_operation_to_multipart_parts_and_context(op)
+                )
+            else:
+                logger.error("Unknown operation type in tracing queue: %s", type(op))
+        acc_multipart = join_multipart_parts_and_context(parts)
+        if acc_multipart:
+            self._send_multipart_req(acc_multipart)
+
+    def multipart_ingest(
+        self,
+        create: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        update: Optional[
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+        ] = None,
+        *,
+        pre_sampled: bool = False,
+    ) -> None:
+        """Batch ingest/upsert multiple runs in the Langsmith system.
+
+        Args:
+            create (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs to be created / posted.
+            update (Optional[Sequence[Union[ls_schemas.Run, RunLikeDict]]]):
+                A sequence of `Run` objects or equivalent dictionaries representing
+                runs that have already been created and should be updated / patched.
+            pre_sampled (bool, optional): Whether the runs have already been subject
+                to sampling, and therefore should not be sampled again.
+                Defaults to False.
+
+        Returns:
+            None
+
+        Raises:
+            LangsmithAPIError: If there is an error in the API request.
+
+        Note:
+            - The run objects MUST contain the dotted_order and trace_id fields
+                to be accepted by the API.
+        """
+        if not (create or update):
+            return
+        # transform and convert to dicts
+        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
+        update_dicts = [
+            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
+        ]
+        # require trace_id and dotted_order
+        if create_dicts:
+            for run in create_dicts:
+                if not run.get("trace_id") or not run.get("dotted_order"):
+                    raise ls_utils.LangSmithUserError(
+                        "Multipart ingest requires trace_id and dotted_order"
+                        " to be set in create dicts."
+                    )
+            else:
+                del run
+        if update_dicts:
+            for run in update_dicts:
+                if not run.get("trace_id") or not run.get("dotted_order"):
+                    raise ls_utils.LangSmithUserError(
+                        "Multipart ingest requires trace_id and dotted_order"
+                        " to be set in update dicts."
+                    )
+            else:
+                del run
+        # combine post and patch dicts where possible
+        if update_dicts and create_dicts:
+            create_by_id = {run["id"]: run for run in create_dicts}
+            standalone_updates: list[dict] = []
+            for run in update_dicts:
+                if run["id"] in create_by_id:
+                    for k, v in run.items():
+                        if v is not None:
+                            create_by_id[run["id"]][k] = v
+                else:
+                    standalone_updates.append(run)
+            else:
+                del run
+            update_dicts = standalone_updates
+        # filter out runs that are not sampled
+        if not pre_sampled:
+            create_dicts = self._filter_for_sampling(create_dicts)
+            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
+        if not create_dicts and not update_dicts:
+            return
+        # insert runtime environment
+        self._insert_runtime_env(create_dicts)
+        self._insert_runtime_env(update_dicts)
+
+        # format as serialized operations
+        serialized_ops = [serialize_run_dict("post", run) for run in create_dicts] + [
+            serialize_run_dict("patch", run) for run in update_dicts
+        ]
+
+        # sent the runs in multipart requests
+        self._multipart_ingest_ops(serialized_ops)
 
     def update_run(
         self,
@@ -4298,7 +4296,6 @@ class Client:
                 feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
             )
 
-            feedback_block = _dumps_json(feedback.dict(exclude_none=True))
             use_multipart = (self.info.batch_ingest_config or {}).get(
                 "use_multipart_endpoint", False
             )
@@ -4313,6 +4310,7 @@ class Client:
                     TracingQueueItem(str(feedback.id), serialized_op)
                 )
             else:
+                feedback_block = _dumps_json(feedback.dict(exclude_none=True))
                 self.request_with_retries(
                     "POST",
                     "/feedback",
