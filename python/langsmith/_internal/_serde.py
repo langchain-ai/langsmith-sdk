@@ -37,6 +37,8 @@ def _simple_default(obj):
             return obj.isoformat()
         if isinstance(obj, uuid.UUID):
             return str(obj)
+        if isinstance(obj, dict):
+            return {_simple_default(key): value for key, value in obj.items()}
         if hasattr(obj, "model_dump") and callable(obj.model_dump):
             return obj.model_dump()
         elif hasattr(obj, "dict") and callable(obj.dict):
