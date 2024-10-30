@@ -12,7 +12,6 @@ from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
     List,
-    Literal,
     Union,
     cast,
 )
@@ -25,6 +24,8 @@ from langsmith._internal._constants import (
 )
 from langsmith._internal._multipart import (
     MultipartPartsAndContext,
+    SerializedFeedbackOperation,
+    SerializedRunOperation,
     join_multipart_parts_and_context,
 )
 
@@ -48,22 +49,19 @@ class TracingQueueItem:
     """
 
     priority: str
-    item: Union[
-        tuple[Literal["create"], _RunData],
-        tuple[Literal["update"], _RunData],
-        tuple[Literal["feedback-multipart"], MultipartPartsAndContext],
-        tuple[Literal["create-multipart"], MultipartPartsAndContext],
-        tuple[Literal["update-multipart"], MultipartPartsAndContext],
-    ]
+    item: Union[SerializedRunOperation, SerializedFeedbackOperation]
 
     def __lt__(self, other: TracingQueueItem) -> bool:
-        return (self.priority, self.item[0]) < (other.priority, other.item[0])
+        return (self.priority, self.item.__class__) < (
+            other.priority,
+            other.item.__class__,
+        )
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, TracingQueueItem) and (
             self.priority,
-            self.item[0],
-        ) == (other.priority, other.item[0])
+            self.item.__class__,
+        ) == (other.priority, other.item.__class__)
 
 
 def _tracing_thread_drain_queue(

@@ -81,6 +81,8 @@ from langsmith._internal._constants import (
 from langsmith._internal._multipart import (
     MultipartPartsAndContext,
     convert_to_multipart_parts_and_context,
+    serialize_feedback_dict,
+    serialize_run_dict,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -1108,29 +1110,6 @@ class Client:
 
         return run_create
 
-    def _feedback_transform(
-        self,
-        feedback: Union[ls_schemas.Feedback, dict],
-    ) -> dict:
-        """Transform the given feedback object into a dictionary representation.
-
-        Args:
-            feedback (Union[ls_schemas.Feedback, dict]): The feedback object to transform.
-
-        Returns:
-            dict: The transformed feedback object as a dictionary.
-        """
-        if hasattr(feedback, "dict") and callable(getattr(feedback, "dict")):
-            feedback_create: dict = feedback.dict()  # type: ignore
-        else:
-            feedback_create = cast(dict, feedback)
-        if "id" not in feedback_create:
-            feedback_create["id"] = uuid.uuid4()
-        elif isinstance(feedback_create["id"], str):
-            feedback_create["id"] = uuid.UUID(feedback_create["id"])
-
-        return feedback_create
-
     @staticmethod
     def _insert_runtime_env(runs: Sequence[dict]) -> None:
         runtime_env = ls_env.get_runtime_environment()
@@ -1222,32 +1201,25 @@ class Client:
         if not self._filter_for_sampling([run_create]):
             return
 
-        use_multipart = (self._info or {}).get("use_multipart_endpoint", False)
-
-        if use_multipart:
-            attachments_collector: Dict[str, ls_schemas.Attachments] = {}
-            run_create = self._run_transform(
-                run_create,
-                copy=False,
-                attachments_collector=attachments_collector,
-            )
-            if revision_id is not None:
-                run_create["extra"]["metadata"]["revision_id"] = revision_id
-            self._insert_runtime_env([run_create])
-            acc = convert_to_multipart_parts_and_context(
-                [run_create], [], [], all_attachments=attachments_collector
-            )
-            return self.tracing_queue.put(
-                TracingQueueItem(run_create["dotted_order"], "create", acc)
-            )
-        run_create = self._run_transform(
-            run_create,
-            copy=True,
-        )
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
+        run_create = self._run_transform(
+            run_create,
+            copy=False,
+        )
         self._insert_runtime_env([run_create])
-        self._create_run(run_create)
+        if (
+            self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
+            and run_create.get("trace_id") is not None
+            and run_create.get("dotted_order") is not None
+        ):
+            serialized_op = serialize_run_dict("post", run_create)
+            self.tracing_queue.put(
+                TracingQueueItem(run_create["dotted_order"], serialized_op)
+            )
+        else:
+            self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
         for api_url, api_key in self._write_api_urls.items():
@@ -1469,13 +1441,9 @@ class Client:
             return
         # transform and convert to dicts
         all_attachments: Dict[str, ls_schemas.Attachments] = {}
-        create_dicts = [
-            self._run_transform(run, attachments_collector=all_attachments)
-            for run in create or EMPTY_SEQ
-        ]
+        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
         update_dicts = [
-            self._run_transform(run, update=True, attachments_collector=all_attachments)
-            for run in update or EMPTY_SEQ
+            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
         ]
         feedback_dicts = [self._feedback_transform(f) for f in feedback or EMPTY_SEQ]
         # require trace_id and dotted_order
