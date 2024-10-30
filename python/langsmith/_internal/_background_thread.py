@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    Iterable,
     List,
     Union,
     cast,
@@ -96,7 +95,10 @@ def _tracing_thread_handle_batch(
                 logger.warn(
                     "Feedback operations are not supported in non-multipart mode"
                 )
-            client._batch_ingest_ops(cast(Iterable[SerializedRunOperation], ops))
+                ops = [
+                    op for op in ops if not isinstance(op, SerializedFeedbackOperation)
+                ]
+            client._batch_ingest_ops(cast(List[SerializedRunOperation], ops))
 
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)

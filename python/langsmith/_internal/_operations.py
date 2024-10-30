@@ -79,7 +79,7 @@ def serialize_run_dict(
 
 def combine_serialized_run_operations(
     ops: Iterable[Union[SerializedRunOperation, SerializedFeedbackOperation]],
-) -> Iterable[Union[SerializedRunOperation, SerializedFeedbackOperation]]:
+) -> list[Union[SerializedRunOperation, SerializedFeedbackOperation]]:
     create_ops_by_id = {
         op.id: op
         for op in ops
@@ -120,7 +120,7 @@ def combine_serialized_run_operations(
                 create_op.attachments.update(op.attachments)
         else:
             passthrough_ops.append(op)
-    return itertools.chain(create_ops_by_id.values(), passthrough_ops)
+    return list(itertools.chain(create_ops_by_id.values(), passthrough_ops))
 
 
 def serialized_feedback_operation_to_multipart_parts_and_context(

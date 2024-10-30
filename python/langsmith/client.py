@@ -1264,7 +1264,7 @@ class Client:
 
     def _batch_ingest_ops(
         self,
-        ops: Iterable[SerializedRunOperation],
+        ops: List[SerializedRunOperation],
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -1393,7 +1393,7 @@ class Client:
 
         # convert to serialized ops
         serialized_ops = cast(
-            Iterable[SerializedRunOperation],
+            List[SerializedRunOperation],
             combine_serialized_run_operations(
                 itertools.chain(
                     (serialize_run_dict("post", run) for run in create_dicts),
@@ -1430,7 +1430,7 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def _multipart_ingest_ops(
-        self, ops: Iterable[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+        self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         for op in ops:
