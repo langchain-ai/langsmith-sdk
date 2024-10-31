@@ -1393,11 +1393,13 @@ class Client:
 
         # convert to serialized ops
         serialized_ops = cast(
-            List[SerializedRunOperation],
+            list[SerializedRunOperation],
             combine_serialized_run_operations(
-                itertools.chain(
-                    (serialize_run_dict("post", run) for run in create_dicts),
-                    (serialize_run_dict("patch", run) for run in update_dicts),
+                list(
+                    itertools.chain(
+                        (serialize_run_dict("post", run) for run in create_dicts),
+                        (serialize_run_dict("patch", run) for run in update_dicts),
+                    )
                 )
             ),
         )
@@ -1534,9 +1536,11 @@ class Client:
 
         # format as serialized operations
         serialized_ops = combine_serialized_run_operations(
-            itertools.chain(
-                (serialize_run_dict("post", run) for run in create_dicts),
-                (serialize_run_dict("patch", run) for run in update_dicts),
+            list(
+                itertools.chain(
+                    (serialize_run_dict("post", run) for run in create_dicts),
+                    (serialize_run_dict("patch", run) for run in update_dicts),
+                )
             )
         )
 
