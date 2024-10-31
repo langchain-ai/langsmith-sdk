@@ -174,7 +174,7 @@ impl RunProcessor {
 
         let start = Instant::now();
         let json_parts = json_data
-            .into_iter()
+            .into_par_iter()
             .map(|(part_name, value)| {
                 let data_bytes = to_vec(&value).unwrap(); // TODO: get rid of unwrap
                 let part_size = data_bytes.len() as u64;

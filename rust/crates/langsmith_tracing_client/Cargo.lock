@@ -1187,6 +1187,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "criterion",
+ "flate2",
  "futures",
  "mockito",
  "multipart",

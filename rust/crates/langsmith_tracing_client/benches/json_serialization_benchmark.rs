@@ -1,3 +1,4 @@
+use std::io::prelude::*;
 use std::io::Cursor;
 use std::time::Instant;
 use rayon::prelude::*;
@@ -53,40 +54,68 @@ fn create_json_with_large_strings(len: usize) -> Value {
 // Sequential processing
 fn benchmark_sequential(data: &[Value]) -> Vec<Vec<u8>> {
     data.iter()
-        .map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON"))
+        .map(|json| {
+            let data = sonic_rs::to_vec(json).expect("Failed to serialize JSON");
+            // gzip the data using flate2
+            let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(&data).expect("Failed to compress data");
+            encoder.finish().expect("Failed to finish compression")
+        })
         .collect()
 }
 
 // Parallel processing
 fn benchmark_parallel(data: &[Value]) -> Vec<Vec<u8>> {
     data.par_iter()
-        .map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON"))
+        .map(|json| {
+            let data = sonic_rs::to_vec(json).expect("Failed to serialize JSON");
+            // gzip the data using flate2
+            let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(&data).expect("Failed to compress data");
+            encoder.finish().expect("Failed to finish compression")
+        })
+        .collect()
+}
+
+fn benchmark_gzip_only_parallel(data: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+    data.par_iter()
+        .map(|data| {
+            // gzip the data using flate2
+            let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(data).expect("Failed to compress data");
+            encoder.finish().expect("Failed to finish compression")
+        })
         .collect()
 }
 
 // into par iter
-fn benchmark_into_par_iter(data: &[Value]) -> Vec<Vec<u8>> {
-    data.into_par_iter()
-        .map(|json| sonic_rs::to_vec(&json).expect("Failed to serialize JSON"))
+fn benchmark_json_only_parallel(data: &[Value]) -> Vec<Vec<u8>> {
+    data.par_iter()
+        .map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON"))
         .collect()
 }
 
 fn json_benchmark_large_array(c: &mut Criterion) {
-    let num_json_objects = 300;
+    let num_json_objects = 2000;
     let json_length = 5000;
     let data: Vec<Value> = (0..num_json_objects)
         .map(|_| create_json_with_large_array(json_length))
         .collect();
 
+    let serialized_data = benchmark_json_only_parallel(&data);
+
     let mut group = c.benchmark_group("json_benchmark_large_array");
-    group.bench_function("sequential serialization", |b|
+    group.bench_function("sequential serialization with gzip", |b|
         b.iter_with_large_drop(|| benchmark_sequential(&data))
     );
-    group.bench_function("parallel serialization", |b|
+    group.bench_function("parallel serialization with gzip", |b|
         b.iter_with_large_drop(|| benchmark_parallel(&data))
     );
-    group.bench_function("into par iter serialization", |b|
-        b.iter_with_large_drop(|| benchmark_into_par_iter(&data))
+    group.bench_function("parallel serialization only", |b|
+        b.iter_with_large_drop(|| benchmark_json_only_parallel(&data))
+    );
+    group.bench_function("parallel gzip only", |b|
+        b.iter_with_large_drop(|| benchmark_gzip_only_parallel(&serialized_data))
     );
 }
 
@@ -103,9 +132,6 @@ fn json_benchmark_large_strings(c: &mut Criterion) {
     );
     group.bench_function("parallel serialization", |b|
         b.iter_with_large_drop(|| benchmark_parallel(&data))
-    );
-    group.bench_function("into par iter serialization", |b|
-        b.iter_with_large_drop(|| benchmark_into_par_iter(&data))
     );
 }
 
