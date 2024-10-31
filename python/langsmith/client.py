@@ -1580,7 +1580,7 @@ class Client:
                 # encode the attachments
                 if attachments := all_attachments.pop(payload["id"], None):
                     for n, (ct, ba) in attachments.items():
-                        ba = ba if isinstance(ba, bytes) else ba.encode("utf-8")
+                        ba = ba.encode("utf-8") if isinstance(ba, str) else ba
                         acc_parts.append(
                             (
                                 f"attachment.{payload['id']}.{n}",
