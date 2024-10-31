@@ -5,7 +5,6 @@ import logging
 import sys
 import threading
 import weakref
-from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
@@ -33,7 +32,6 @@ logger = logging.getLogger("langsmith.client")
 
 
 @functools.total_ordering
-@dataclass
 class TracingQueueItem:
     """An item in the tracing queue.
 
@@ -45,6 +43,16 @@ class TracingQueueItem:
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+
+    __slots__ = ("priority", "item")
+
+    def __init__(
+        self,
+        priority: str,
+        item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+    ) -> None:
+        self.priority = priority
+        self.item = item
 
     def __lt__(self, other: TracingQueueItem) -> bool:
         return (self.priority, self.item.__class__) < (
