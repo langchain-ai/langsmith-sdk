@@ -19,6 +19,7 @@ futures = "0.3.31"
 rayon = "1.10.0"
 sonic-rs = "0.3.14"
 ureq = "2.10.1"
+flate2 = "1.0.34"
 
 [dev-dependencies]
 multipart = "0.18.0"

@@ -3,6 +3,7 @@ import statistics
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import orjson
+import zlib
 
 
 def create_json_with_large_array(length):
@@ -60,6 +61,36 @@ def serialize_parallel(data):
         return list(executor.map(orjson.dumps, data))
 
 
+def serialize_sequential_gz(data):
+    """Serialize data sequentially and compress using zlib with adjustable compression level."""
+    compressed_data = []
+    for json_obj in data:
+        serialized = orjson.dumps(json_obj)
+        compressed = zlib.compress(serialized, level=1)
+        compressed_data.append(compressed)
+    return compressed_data
+
+def serialize_parallel_gz(data):
+    """Serialize data in parallel using ThreadPoolExecutor and compress using zlib with adjustable compression level."""
+
+    def compress_item(json_obj):
+        serialized = orjson.dumps(json_obj)
+        return zlib.compress(serialized, level=1)
+
+    with ThreadPoolExecutor() as executor:
+        compressed_data = list(executor.map(compress_item, data))
+    return compressed_data
+
+def gzip_parallel(serialized_data):
+    """Compress serialized data in parallel using ThreadPoolExecutor and zlib."""
+    with ThreadPoolExecutor() as executor:
+        return list(executor.map(zlib.compress, serialized_data))
+
+def gzip_sequential(serialized_data):
+    """Compress serialized data sequentially using zlib."""
+    return [zlib.compress(serialized) for serialized in serialized_data]
+
+
 def benchmark_serialization(data, func, samples=10):
     """Benchmark a serialization function with multiple samples."""
     timings = []
@@ -79,28 +110,22 @@ def benchmark_serialization(data, func, samples=10):
 
 
 def main():
-    num_json_objects = 300
+    num_json_objects = 2000
     json_length = 5000
+
     data = [create_json_with_large_array(json_length) for _ in range(num_json_objects)]
-    # data = [create_json_with_large_strings(json_length) for _ in range(num_json_objects)]
+    serialized_data = serialize_sequential(data)
 
-    # Sequential Benchmark
-    results_seq = benchmark_serialization(data, serialize_sequential)
-    print("\nSequential Serialization Results:")
-    print(f"Mean time: {results_seq['mean']:.4f} seconds")
-    print(f"Median time: {results_seq['median']:.4f} seconds")
-    print(f"Std Dev: {results_seq['stdev']:.4f} seconds")
-    print(f"Min time: {results_seq['min']:.4f} seconds")
-    print(f"Max time: {results_seq['max']:.4f} seconds")
+    for func in [serialize_sequential, serialize_parallel, serialize_sequential_gz, serialize_parallel_gz, gzip_sequential, gzip_parallel]:
+        # data = [create_json_with_large_strings(json_length) for _ in range(num_json_objects)]
 
-    # Parallel Benchmark with ThreadPoolExecutor
-    results_par = benchmark_serialization(data, serialize_parallel)
-    print("\nParallel Serialization (ThreadPoolExecutor) Results:")
-    print(f"Mean time: {results_par['mean']:.4f} seconds")
-    print(f"Median time: {results_par['median']:.4f} seconds")
-    print(f"Std Dev: {results_par['stdev']:.4f} seconds")
-    print(f"Min time: {results_par['min']:.4f} seconds")
-    print(f"Max time: {results_par['max']:.4f} seconds")
+        print(f"\nBenchmarking {func.__name__} with {num_json_objects} JSON objects of length {json_length}...")
+        results_seq = benchmark_serialization(data, func) if not func.__name__.startswith("gzip") else benchmark_serialization(serialized_data, func)
+        print(f"Mean time: {results_seq['mean']:.4f} seconds")
+        print(f"Median time: {results_seq['median']:.4f} seconds")
+        print(f"Std Dev: {results_seq['stdev']:.4f} seconds")
+        print(f"Min time: {results_seq['min']:.4f} seconds")
+        print(f"Max time: {results_seq['max']:.4f} seconds")
 
 
 if __name__ == "__main__":
