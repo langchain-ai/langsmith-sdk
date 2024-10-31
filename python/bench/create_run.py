@@ -155,4 +155,4 @@ def test_benchmark_runs(
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    test_benchmark_runs(json_size=1_000, num_runs=500, samples=1, benchmark_thread=True)
+    test_benchmark_runs(json_size=5000, num_runs=1000, samples=1, benchmark_thread=True)

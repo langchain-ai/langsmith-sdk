@@ -77,7 +77,7 @@ def serialize_run_dict(
     )
 
 
-def combine_serialized_run_operations(
+def combine_serialized_queue_operations(
     ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
 ) -> list[Union[SerializedRunOperation, SerializedFeedbackOperation]]:
     create_ops_by_id = {

@@ -86,7 +86,7 @@ from langsmith._internal._multipart import (
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
-    combine_serialized_run_operations,
+    combine_serialized_queue_operations,
     serialize_feedback_dict,
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
@@ -1394,7 +1394,7 @@ class Client:
         # convert to serialized ops
         serialized_ops = cast(
             list[SerializedRunOperation],
-            combine_serialized_run_operations(
+            combine_serialized_queue_operations(
                 list(
                     itertools.chain(
                         (serialize_run_dict("post", run) for run in create_dicts),
@@ -1535,7 +1535,7 @@ class Client:
         self._insert_runtime_env(update_dicts)
 
         # format as serialized operations
-        serialized_ops = combine_serialized_run_operations(
+        serialized_ops = combine_serialized_queue_operations(
             list(
                 itertools.chain(
                     (serialize_run_dict("post", run) for run in create_dicts),

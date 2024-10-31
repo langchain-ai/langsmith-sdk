@@ -23,7 +23,7 @@ from langsmith._internal._constants import (
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
-    combine_serialized_run_operations,
+    combine_serialized_queue_operations,
 )
 
 if TYPE_CHECKING:
@@ -87,7 +87,7 @@ def _tracing_thread_handle_batch(
     use_multipart: bool,
 ) -> None:
     try:
-        ops = combine_serialized_run_operations([item.item for item in batch])
+        ops = combine_serialized_queue_operations([item.item for item in batch])
         if use_multipart:
             client._multipart_ingest_ops(ops)
         else:
