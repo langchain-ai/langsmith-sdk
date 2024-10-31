@@ -1360,7 +1360,7 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create, copy=True)
+        run_create = self._run_transform(run_create, copy=False)
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         if (
@@ -1656,6 +1656,7 @@ class Client:
                     ("events", payload.pop("events", None)),
                 ]
                 # encode the main run payload
+                # print("Dumping payload for run in multipart ingest runs")
                 payloadb = _dumps_json(payload)
                 acc_parts.append(
                     (
@@ -1672,6 +1673,7 @@ class Client:
                 for key, value in fields:
                     if value is None:
                         continue
+                    # print("Dumping payload in multipart ingest runs", event)
                     valb = _dumps_json(value)
                     acc_parts.append(
                         (
@@ -5779,22 +5781,31 @@ def _tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
     batch: List[TracingQueueItem],
-    use_multipart: bool,
+    use_multipart: bool = True,
 ) -> None:
+    print("Handling a batch of size", len(batch))
     create = [it.item for it in batch if it.action == "create"]
     update = [it.item for it in batch if it.action == "update"]
     try:
-        if use_multipart:
+        if True:
+            print("Using multipart endpoint")
+            now = time.perf_counter()
             client.multipart_ingest_runs(create=create, update=update, pre_sampled=True)
+            print("Multipart ingest took", time.perf_counter() - now)
         else:
+            print("Using batch endpoint")
+            now = time.time()
             client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+            print("Batch ingest took", time.time() - now)
     except Exception:
+        print("Error in tracing queue")
         logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         pass
     finally:
         for _ in batch:
+            # print("marking task as done")
             tracing_queue.task_done()
 
 
@@ -5856,17 +5867,20 @@ def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             len(sub_threads) < scale_up_nthreads_limit
             and tracing_queue.qsize() > scale_up_qsize_trigger
         ):
+            print("Scaling up...")
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func,
                 args=(weakref.ref(client), use_multipart),
             )
             sub_threads.append(new_thread)
             new_thread.start()
+            print("Started new thread, there are now", len(sub_threads), "threads")
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
     # drain the queue on exit
+    print("Draining queue on exit")
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
@@ -5909,6 +5923,7 @@ def _tracing_sub_thread_func(
             seen_successive_empty_queues += 1
 
     # drain the queue on exit
+    print("Draining queue on exit")
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):

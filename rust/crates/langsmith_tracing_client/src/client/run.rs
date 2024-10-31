@@ -67,8 +67,23 @@ pub struct RunUpdateExtended {
     pub attachments: Option<Vec<Attachment>>,
 }
 
-pub enum QueuedRun {
+pub struct RunEventBytes {
+    pub run_id: String,
+    pub event_type: EventType,
+    pub run_bytes: Vec<u8>,
+    pub inputs_bytes: Option<Vec<u8>>,
+    pub outputs_bytes: Option<Vec<u8>>,
+    pub attachments: Option<Vec<Attachment>>,
+}
+
+pub enum EventType {
+    Create,
+    Update,
+}
+
+pub(crate) enum QueuedRun {
     Create(RunCreateExtended),
     Update(RunUpdateExtended),
+    RunBytes(RunEventBytes),
     Shutdown,
 }
