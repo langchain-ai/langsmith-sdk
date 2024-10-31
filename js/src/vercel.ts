@@ -430,7 +430,7 @@ export class AISDKExporter {
       let name = rawConfig.name;
 
       // if user provided a custom name, only use it if it's the root
-      if (span.parentSpanId == null) {
+      if (this.isRootRun(span)) {
         name =
           this.getSpanAttributeKey(span, RUN_NAME_METADATA_KEY.output) || name;
       }

@@ -91,7 +91,11 @@ def _serialize_json(obj: Any) -> Any:
             ("to_dict", False),  # dataclasses-json
         ]
         for attr, exclude_none in serialization_methods:
-            if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            if (
+                hasattr(obj, attr)
+                and callable(getattr(obj, attr))
+                and not isinstance(obj, type)
+            ):
                 try:
                     method = getattr(obj, attr)
                     response = (
