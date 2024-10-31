@@ -3,11 +3,11 @@ import orjson
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
-    combine_serialized_run_operations,
+    combine_serialized_queue_operations,
 )
 
 
-def test_combine_serialized_run_operations():
+def test_combine_serialized_queue_operations():
     # Arrange
     serialized_run_operations = [
         SerializedRunOperation(
@@ -78,7 +78,7 @@ def test_combine_serialized_run_operations():
     ]
 
     # Act
-    result = combine_serialized_run_operations(serialized_run_operations)
+    result = combine_serialized_queue_operations(serialized_run_operations)
 
     # Assert
     assert result == [
