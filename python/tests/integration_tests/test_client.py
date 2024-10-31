@@ -682,20 +682,7 @@ def test_batch_ingest_runs(
         },
     ]
     if use_multipart_endpoint:
-        feedback = [
-            {
-                "run_id": run["id"],
-                "trace_id": run["trace_id"],
-                "key": "test_key",
-                "score": 0.9,
-                "value": "test_value",
-                "comment": "test_comment",
-            }
-            for run in runs_to_create
-        ]
-        langchain_client.multipart_ingest(
-            create=runs_to_create, update=runs_to_update, feedback=feedback
-        )
+        langchain_client.multipart_ingest(create=runs_to_create, update=runs_to_update)
     else:
         langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
     runs = []
