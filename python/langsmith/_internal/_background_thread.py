@@ -98,7 +98,7 @@ def _tracing_thread_handle_batch(
                 ops = [
                     op for op in ops if not isinstance(op, SerializedFeedbackOperation)
                 ]
-            client._batch_ingest_ops(cast(List[SerializedRunOperation], ops))
+            client._batch_ingest_run_ops(cast(List[SerializedRunOperation], ops))
 
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)

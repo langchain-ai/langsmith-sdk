@@ -1262,7 +1262,7 @@ class Client:
             return outputs
         return self._hide_outputs(outputs)
 
-    def _batch_ingest_ops(
+    def _batch_ingest_run_ops(
         self,
         ops: List[SerializedRunOperation],
     ) -> None:
@@ -1285,7 +1285,8 @@ class Client:
                     curr_dict["events"] = orjson.Fragment(op.events)
                 if op.attachments:
                     logger.warning(
-                        "Attachments are not supported in non-multipart mode"
+                        "Attachments are not supported when use_multipart_endpoint "
+                        "is False"
                     )
                 ids_and_partial_body[op.operation].append(
                     (f"trace={op.trace_id},id={op.id}", orjson.dumps(curr_dict))
@@ -1368,8 +1369,8 @@ class Client:
             return
         # transform and convert to dicts
         create_dicts = [
-            self._run_transform(run, copy=True) for run in create or EMPTY_SEQ
-        ]  # still copy create dicts because manipulated in create_by_id
+            self._run_transform(run, copy=False) for run in create or EMPTY_SEQ
+        ]
         update_dicts = [
             self._run_transform(run, update=True, copy=False)
             for run in update or EMPTY_SEQ
@@ -1389,6 +1390,9 @@ class Client:
             create_dicts = self._filter_for_sampling(create_dicts)
             update_dicts = self._filter_for_sampling(update_dicts, patch=True)
 
+        if not create_dicts and not update_dicts:
+            return
+
         self._insert_runtime_env(create_dicts + update_dicts)
 
         # convert to serialized ops
@@ -1404,7 +1408,7 @@ class Client:
             ),
         )
 
-        self._batch_ingest_ops(serialized_ops)
+        self._batch_ingest_run_ops(serialized_ops)
 
     def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():

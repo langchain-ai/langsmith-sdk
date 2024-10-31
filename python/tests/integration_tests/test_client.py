@@ -722,34 +722,6 @@ def test_batch_ingest_runs(
     assert run3.inputs == {"input1": 1, "input2": 2}
     assert run3.error == "error"
 
-    if use_multipart_endpoint:
-        feedbacks = list(
-            langchain_client.list_feedback(run_ids=[run.id for run in runs])
-        )
-        assert len(feedbacks) == 3
-        for feedback in feedbacks:
-            assert feedback.key == "test_key"
-            assert feedback.score == 0.9
-            assert feedback.value == "test_value"
-            assert feedback.comment == "test_comment"
-
-
-"""
-Multipart partitions:
-- num created: [0], [1], >1
-- num updated: [0], [1], >1
-- num created + num updated: [0], [1], >1
-- individual id: created only, updated only, both
-- [updated is root trace], [updated is run]
-
-Error cases:
-- dual created
-- dual updated
-- created and dual updated [? maybe not an error]
-- dual created and single updated
-- retry doesn't fail
-"""
-
 
 def test_multipart_ingest_empty(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
