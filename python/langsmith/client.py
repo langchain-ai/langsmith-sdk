@@ -1397,7 +1397,7 @@ class Client:
 
         # convert to serialized ops
         serialized_ops = cast(
-            list[SerializedRunOperation],
+            List[SerializedRunOperation],
             combine_serialized_queue_operations(
                 list(
                     itertools.chain(
