@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import uuid
 from dataclasses import dataclass
-from typing import Iterable, Literal, Optional, Union, cast
+from typing import Literal, Optional, Union, cast
 
 import orjson
 
@@ -78,7 +78,7 @@ def serialize_run_dict(
 
 
 def combine_serialized_run_operations(
-    ops: Iterable[Union[SerializedRunOperation, SerializedFeedbackOperation]],
+    ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
 ) -> list[Union[SerializedRunOperation, SerializedFeedbackOperation]]:
     create_ops_by_id = {
         op.id: op
@@ -104,7 +104,9 @@ def combine_serialized_run_operations(
                 # TODO optimize this more - this would currently be slowest
                 # for large payloads
                 create_op_dict = orjson.loads(create_op._none)
-                op_dict = orjson.loads(op._none)
+                op_dict = {
+                    k: v for k, v in orjson.loads(op._none).items() if v is not None
+                }
                 create_op_dict.update(op_dict)
                 create_op._none = orjson.dumps(create_op_dict)
 

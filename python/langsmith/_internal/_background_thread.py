@@ -87,7 +87,7 @@ def _tracing_thread_handle_batch(
     use_multipart: bool,
 ) -> None:
     try:
-        ops = combine_serialized_run_operations(item.item for item in batch)
+        ops = combine_serialized_run_operations([item.item for item in batch])
         if use_multipart:
             client._multipart_ingest_ops(ops)
         else:
