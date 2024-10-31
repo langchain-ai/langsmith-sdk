@@ -293,6 +293,10 @@ class RunBase(BaseModel):
         """Retrieve the revision ID (if any)."""
         return self.metadata.get("revision_id")
 
+    def __repr__(self):
+        """Return a string representation of the RunBase object."""
+        return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
+
 
 class Run(RunBase):
     """Run schema when loading from the DB."""

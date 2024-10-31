@@ -5,6 +5,7 @@ import dataclasses
 import gc
 import itertools
 import json
+import logging
 import math
 import sys
 import time
@@ -749,7 +750,9 @@ def test_pydantic_serialize() -> None:
     assert res2 == {"output": expected}
 
 
-def test_serialize_json() -> None:
+def test_serialize_json(caplog) -> None:
+    caplog.set_level(logging.ERROR)
+
     class MyClass:
         def __init__(self, x: int) -> None:
             self.x = x
@@ -818,6 +821,7 @@ def test_serialize_json() -> None:
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
         "my_pydantic": MyPydantic(foo="foo", bar=1),
+        "my_pydantic_class": MyPydantic,
         "person": Person(name="foo_person"),
         "a_bool": True,
         "a_none": None,
@@ -831,6 +835,9 @@ def test_serialize_json() -> None:
         "my_mock": MagicMock(text="Hello, world"),
     }
     res = orjson.loads(_dumps_json(to_serialize))
+    assert (
+        "model_dump" not in caplog.text
+    ), f"Unexpected error logs were emitted: {caplog.text}"
 
     expected = {
         "uid": str(uid),
@@ -840,6 +847,7 @@ def test_serialize_json() -> None:
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
         "my_pydantic": {"foo": "foo", "bar": 1},
+        "my_pydantic_class": lambda x: "MyPydantic" in x,
         "person": {"name": "foo_person"},
         "a_bool": True,
         "a_none": None,

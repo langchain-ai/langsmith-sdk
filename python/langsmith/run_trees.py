@@ -483,6 +483,13 @@ class RunTree(ls_schemas.RunBase):
         headers["baggage"] = baggage.to_header()
         return headers
 
+    def __repr__(self):
+        """Return a string representation of the RunTree object."""
+        return (
+            f"RunTree(id={self.id}, name='{self.name}', "
+            f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
+        )
+
 
 class _Baggage:
     """Baggage header information."""
