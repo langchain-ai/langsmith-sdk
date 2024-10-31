@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 import uuid
-from dataclasses import dataclass
 from typing import Literal, Optional, Union, cast
 
 import orjson
@@ -12,7 +11,6 @@ from langsmith._internal._multipart import MultipartPart, MultipartPartsAndConte
 from langsmith._internal._serde import dumps_json as _dumps_json
 
 
-@dataclass
 class SerializedRunOperation:
     operation: Literal["post", "patch"]
     id: uuid.UUID
@@ -27,12 +25,77 @@ class SerializedRunOperation:
     events: Optional[bytes]
     attachments: Optional[ls_schemas.Attachments]
 
+    __slots__ = (
+        "operation",
+        "id",
+        "trace_id",
+        "_none",
+        "inputs",
+        "outputs",
+        "events",
+        "attachments",
+    )
 
-@dataclass
+    def __init__(
+        self,
+        operation: Literal["post", "patch"],
+        id: uuid.UUID,
+        trace_id: uuid.UUID,
+        _none: bytes,
+        inputs: Optional[bytes] = None,
+        outputs: Optional[bytes] = None,
+        events: Optional[bytes] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
+    ) -> None:
+        self.operation = operation
+        self.id = id
+        self.trace_id = trace_id
+        self._none = _none
+        self.inputs = inputs
+        self.outputs = outputs
+        self.events = events
+        self.attachments = attachments
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, SerializedRunOperation) and (
+            self.operation,
+            self.id,
+            self.trace_id,
+            self._none,
+            self.inputs,
+            self.outputs,
+            self.events,
+            self.attachments,
+        ) == (
+            other.operation,
+            other.id,
+            other.trace_id,
+            other._none,
+            other.inputs,
+            other.outputs,
+            other.events,
+            other.attachments,
+        )
+
+
 class SerializedFeedbackOperation:
     id: uuid.UUID
     trace_id: uuid.UUID
     feedback: bytes
+
+    __slots__ = ("id", "trace_id", "feedback")
+
+    def __init__(self, id: uuid.UUID, trace_id: uuid.UUID, feedback: bytes) -> None:
+        self.id = id
+        self.trace_id = trace_id
+        self.feedback = feedback
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, SerializedFeedbackOperation) and (
+            self.id,
+            self.trace_id,
+            self.feedback,
+        ) == (other.id, other.trace_id, other.feedback)
 
 
 def serialize_feedback_dict(
