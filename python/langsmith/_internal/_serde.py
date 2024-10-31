@@ -10,11 +10,7 @@ import logging
 import pathlib
 import re
 import uuid
-from typing import (
-    Any,
-    Callable,
-    Optional,
-)
+from typing import Any
 
 import orjson
 
@@ -90,11 +86,14 @@ def _serialize_json(obj: Any) -> Any:
             return list(obj)
 
         serialization_methods = [
-            ("model_dump", True),  # Pydantic V2 with non-serializable fields
-            ("dict", False),  # Pydantic V1 with non-serializable field
-            ("to_dict", False),  # dataclasses-json
+            (
+                "model_dump",
+                {"exclude_none": True, "mode": "json"},
+            ),  # Pydantic V2 with non-serializable fields
+            ("to_dict", {}),  # dataclasses-json
+            ("dict", {}),  # Pydantic V1 with non-serializable field
         ]
-        for attr, exclude_none in serialization_methods:
+        for attr, kwargs in serialization_methods:
             if (
                 hasattr(obj, attr)
                 and callable(getattr(obj, attr))
@@ -102,9 +101,7 @@ def _serialize_json(obj: Any) -> Any:
             ):
                 try:
                     method = getattr(obj, attr)
-                    response = (
-                        method(exclude_none=exclude_none) if exclude_none else method()
-                    )
+                    response = method(**kwargs)
                     if not isinstance(response, dict):
                         return str(response)
                     return response
@@ -126,13 +123,11 @@ def _elide_surrogates(s: bytes) -> bytes:
     return result
 
 
-def _dumps_json_single(
-    obj: Any, default: Optional[Callable[[Any], Any]] = None
-) -> bytes:
+def _dumps_json_single(obj: Any) -> bytes:
     try:
         return orjson.dumps(
             obj,
-            default=default or _simple_default,
+            default=_serialize_json,
             option=orjson.OPT_SERIALIZE_NUMPY
             | orjson.OPT_SERIALIZE_DATACLASS
             | orjson.OPT_SERIALIZE_UUID
@@ -170,4 +165,4 @@ def dumps_json(obj: Any, depth: int = 0) -> bytes:
     str
         The JSON formatted string.
     """
-    return _dumps_json_single(obj, _serialize_json)
+    return _dumps_json_single(obj)
