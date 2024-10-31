@@ -1307,7 +1307,7 @@ class Client:
         body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
         context_ids: DefaultDict[str, list] = collections.defaultdict(list)
         body_size = 0
-        for key in cast(list[Literal["post", "patch"]], ["post", "patch"]):
+        for key in cast(List[Literal["post", "patch"]], ["post", "patch"]):
             body_deque = collections.deque(ids_and_partial_body[key])
             while body_deque:
                 if (
