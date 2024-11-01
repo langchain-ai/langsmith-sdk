@@ -115,7 +115,21 @@ def _elide_surrogates(s: bytes) -> bytes:
     return result
 
 
-def _dumps_json_single(obj: Any) -> bytes:
+def dumps_json(obj: Any) -> bytes:
+    """Serialize an object to a JSON formatted string.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize.
+    default : Callable[[Any], Any] or None, default=None
+        The default function to use for serialization.
+
+    Returns:
+    -------
+    str
+        The JSON formatted string.
+    """
     try:
         return orjson.dumps(
             obj,
@@ -140,21 +154,3 @@ def _dumps_json_single(obj: Any) -> bytes:
         except orjson.JSONDecodeError:
             result = _elide_surrogates(result)
         return result
-
-
-def dumps_json(obj: Any, depth: int = 0) -> bytes:
-    """Serialize an object to a JSON formatted string.
-
-    Parameters
-    ----------
-    obj : Any
-        The object to serialize.
-    default : Callable[[Any], Any] or None, default=None
-        The default function to use for serialization.
-
-    Returns:
-    -------
-    str
-        The JSON formatted string.
-    """
-    return _dumps_json_single(obj)

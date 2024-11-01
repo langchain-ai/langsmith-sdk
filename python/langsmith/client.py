@@ -21,6 +21,7 @@ import functools
 import importlib
 import importlib.metadata
 import io
+import itertools
 import json
 import logging
 import os
@@ -78,6 +79,19 @@ from langsmith._internal._constants import (
     _BLOCKSIZE_BYTES,
     _SIZE_LIMIT_BYTES,
 )
+from langsmith._internal._multipart import (
+    MultipartPartsAndContext,
+    join_multipart_parts_and_context,
+)
+from langsmith._internal._operations import (
+    SerializedFeedbackOperation,
+    SerializedRunOperation,
+    combine_serialized_queue_operations,
+    serialize_feedback_dict,
+    serialize_run_dict,
+    serialized_feedback_operation_to_multipart_parts_and_context,
+    serialized_run_operation_to_multipart_parts_and_context,
+)
 from langsmith._internal._serde import dumps_json as _dumps_json
 
 try:
@@ -101,7 +115,6 @@ X_API_KEY = "x-api-key"
 WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
 BOUNDARY = uuid.uuid4().hex
-MultipartParts = List[Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]]
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
@@ -1059,7 +1072,6 @@ class Client:
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
         copy: bool = False,
-        attachments_collector: Optional[Dict[str, ls_schemas.Attachments]] = None,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
@@ -1067,9 +1079,6 @@ class Client:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
             update (bool, optional): Whether the payload is for an "update" event.
             copy (bool, optional): Whether to deepcopy run inputs/outputs.
-            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
-                A dictionary to collect attachments. If not passed, attachments
-                will be dropped.
 
         Returns:
             dict: The transformed run object as a dictionary.
@@ -1107,48 +1116,7 @@ class Client:
                 # Drop graph
                 run_create["serialized"].pop("graph", None)
 
-        # Collect or drop attachments
-        if attachments := run_create.pop("attachments", None):
-            if attachments_collector is not None:
-                attachments_collector[run_create["id"]] = attachments
-            elif not WARNED_ATTACHMENTS:
-                WARNED_ATTACHMENTS = True
-                logger.warning(
-                    "You're trying to submit a run with attachments, but your current"
-                    " LangSmith integration doesn't support it. Please contact the "
-                    " LangChain team at support at langchain"
-                    " dot dev for assistance on how to upgrade."
-                )
-
         return run_create
-
-    def _feedback_transform(
-        self,
-        feedback: Union[ls_schemas.Feedback, dict],
-    ) -> dict:
-        """Transform the given feedback object into a dictionary representation.
-
-        Args:
-            feedback (Union[ls_schemas.Feedback, dict]): The feedback object to transform.
-            update (bool, optional): Whether the payload is for an "update" event.
-            copy (bool, optional): Whether to deepcopy feedback inputs/outputs.
-            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
-                A dictionary to collect attachments. If not passed, attachments
-                will be dropped.
-
-        Returns:
-            dict: The transformed feedback object as a dictionary.
-        """
-        if hasattr(feedback, "dict") and callable(getattr(feedback, "dict")):
-            feedback_create: dict = feedback.dict()  # type: ignore
-        else:
-            feedback_create = cast(dict, feedback)
-        if "id" not in feedback_create:
-            feedback_create["id"] = uuid.uuid4()
-        elif isinstance(feedback_create["id"], str):
-            feedback_create["id"] = uuid.UUID(feedback_create["id"])
-
-        return feedback_create
 
     @staticmethod
     def _insert_runtime_env(runs: Sequence[dict]) -> None:
@@ -1240,20 +1208,25 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create, copy=True)
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
+        run_create = self._run_transform(
+            run_create,
+            copy=False,
+        )
+        self._insert_runtime_env([run_create])
         if (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            return self.tracing_queue.put(
-                TracingQueueItem(run_create["dotted_order"], "create", run_create)
+            serialized_op = serialize_run_dict("post", run_create)
+            self.tracing_queue.put(
+                TracingQueueItem(run_create["dotted_order"], serialized_op)
             )
-        self._insert_runtime_env([run_create])
-        self._create_run(run_create)
+        else:
+            self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
         for api_url, api_key in self._write_api_urls.items():
@@ -1287,6 +1260,75 @@ class Client:
         if self._hide_outputs is False:
             return outputs
         return self._hide_outputs(outputs)
+
+    def _batch_ingest_run_ops(
+        self,
+        ops: List[SerializedRunOperation],
+    ) -> None:
+        ids_and_partial_body: dict[
+            Literal["post", "patch"], list[tuple[str, bytes]]
+        ] = {
+            "post": [],
+            "patch": [],
+        }
+
+        # form the partial body and ids
+        for op in ops:
+            if isinstance(op, SerializedRunOperation):
+                curr_dict = orjson.loads(op._none)
+                if op.inputs:
+                    curr_dict["inputs"] = orjson.Fragment(op.inputs)
+                if op.outputs:
+                    curr_dict["outputs"] = orjson.Fragment(op.outputs)
+                if op.events:
+                    curr_dict["events"] = orjson.Fragment(op.events)
+                if op.attachments:
+                    logger.warning(
+                        "Attachments are not supported when use_multipart_endpoint "
+                        "is False"
+                    )
+                ids_and_partial_body[op.operation].append(
+                    (f"trace={op.trace_id},id={op.id}", orjson.dumps(curr_dict))
+                )
+            elif isinstance(op, SerializedFeedbackOperation):
+                logger.warning(
+                    "Feedback operations are not supported in non-multipart mode"
+                )
+            else:
+                logger.error("Unknown item type in tracing queue: %s", type(op))
+
+        # send the requests in batches
+        info = self.info
+        size_limit_bytes = (info.batch_ingest_config or {}).get(
+            "size_limit_bytes"
+        ) or _SIZE_LIMIT_BYTES
+
+        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
+        body_size = 0
+        for key in cast(List[Literal["post", "patch"]], ["post", "patch"]):
+            body_deque = collections.deque(ids_and_partial_body[key])
+            while body_deque:
+                if (
+                    body_size > 0
+                    and body_size + len(body_deque[0][1]) > size_limit_bytes
+                ):
+                    self._post_batch_ingest_runs(
+                        orjson.dumps(body_chunks),
+                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                    )
+                    body_size = 0
+                    body_chunks.clear()
+                    context_ids.clear()
+                curr_id, curr_body = body_deque.popleft()
+                body_size += len(curr_body)
+                body_chunks[key].append(orjson.Fragment(curr_body))
+                context_ids[key].append(curr_id)
+        if body_size:
+            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
+            self._post_batch_ingest_runs(
+                orjson.dumps(body_chunks), _context="\n" + context
+            )
 
     def batch_ingest_runs(
         self,
@@ -1325,22 +1367,13 @@ class Client:
         if not create and not update:
             return
         # transform and convert to dicts
-        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
-        update_dicts = [
-            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
+        create_dicts = [
+            self._run_transform(run, copy=False) for run in create or EMPTY_SEQ
         ]
-        # combine post and patch dicts where possible
-        if update_dicts and create_dicts:
-            create_by_id = {run["id"]: run for run in create_dicts}
-            standalone_updates: list[dict] = []
-            for run in update_dicts:
-                if run["id"] in create_by_id:
-                    create_by_id[run["id"]].update(
-                        {k: v for k, v in run.items() if v is not None}
-                    )
-                else:
-                    standalone_updates.append(run)
-            update_dicts = standalone_updates
+        update_dicts = [
+            self._run_transform(run, update=True, copy=False)
+            for run in update or EMPTY_SEQ
+        ]
         for run in create_dicts:
             if not run.get("trace_id") or not run.get("dotted_order"):
                 raise ls_utils.LangSmithUserError(
@@ -1352,64 +1385,29 @@ class Client:
                     "Batch ingest requires trace_id and dotted_order to be set."
                 )
         # filter out runs that are not sampled
-        if pre_sampled:
-            raw_body = {
-                "post": create_dicts,
-                "patch": update_dicts,
-            }
-        else:
-            raw_body = {
-                "post": self._filter_for_sampling(create_dicts),
-                "patch": self._filter_for_sampling(update_dicts, patch=True),
-            }
-        if not raw_body["post"] and not raw_body["patch"]:
+        if not pre_sampled:
+            create_dicts = self._filter_for_sampling(create_dicts)
+            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
+
+        if not create_dicts and not update_dicts:
             return
 
-        self._insert_runtime_env(raw_body["post"] + raw_body["patch"])
-        info = self.info
+        self._insert_runtime_env(create_dicts + update_dicts)
 
-        size_limit_bytes = (info.batch_ingest_config or {}).get(
-            "size_limit_bytes"
-        ) or _SIZE_LIMIT_BYTES
-        # Get orjson fragments to avoid going over the max request size
-        partial_body = {
-            "post": [_dumps_json(run) for run in raw_body["post"]],
-            "patch": [_dumps_json(run) for run in raw_body["patch"]],
-        }
-        ids = {
-            "post": [
-                f"trace={run.get('trace_id')},id={run.get('id')}"
-                for run in raw_body["post"]
-            ],
-            "patch": [
-                f"trace={run.get('trace_id')},id={run.get('id')}"
-                for run in raw_body["patch"]
-            ],
-        }
-
-        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
-        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
-        body_size = 0
-        for key in ["post", "patch"]:
-            body = collections.deque(partial_body[key])
-            ids_ = collections.deque(ids[key])
-            while body:
-                if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
-                    self._post_batch_ingest_runs(
-                        orjson.dumps(body_chunks),
-                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
+        # convert to serialized ops
+        serialized_ops = cast(
+            List[SerializedRunOperation],
+            combine_serialized_queue_operations(
+                list(
+                    itertools.chain(
+                        (serialize_run_dict("post", run) for run in create_dicts),
+                        (serialize_run_dict("patch", run) for run in update_dicts),
                     )
-                    body_size = 0
-                    body_chunks.clear()
-                    context_ids.clear()
-                body_size += len(body[0])
-                body_chunks[key].append(orjson.Fragment(body.popleft()))
-                context_ids[key].append(ids_.popleft())
-        if body_size:
-            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
-            self._post_batch_ingest_runs(
-                orjson.dumps(body_chunks), _context="\n" + context
-            )
+                )
+            ),
+        )
+
+        self._batch_ingest_run_ops(serialized_ops)
 
     def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
@@ -1436,6 +1434,25 @@ class Client:
                 except Exception:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
+    def _multipart_ingest_ops(
+        self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+    ) -> None:
+        parts: list[MultipartPartsAndContext] = []
+        for op in ops:
+            if isinstance(op, SerializedRunOperation):
+                parts.append(
+                    serialized_run_operation_to_multipart_parts_and_context(op)
+                )
+            elif isinstance(op, SerializedFeedbackOperation):
+                parts.append(
+                    serialized_feedback_operation_to_multipart_parts_and_context(op)
+                )
+            else:
+                logger.error("Unknown operation type in tracing queue: %s", type(op))
+        acc_multipart = join_multipart_parts_and_context(parts)
+        if acc_multipart:
+            self._send_multipart_req(acc_multipart)
+
     def multipart_ingest(
         self,
         create: Optional[
@@ -1444,7 +1461,6 @@ class Client:
         update: Optional[
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
         ] = None,
-        feedback: Optional[Sequence[Union[ls_schemas.Feedback, Dict]]] = None,
         *,
         pre_sampled: bool = False,
     ) -> None:
@@ -1471,19 +1487,13 @@ class Client:
             - The run objects MUST contain the dotted_order and trace_id fields
                 to be accepted by the API.
         """
-        if not (create or update or feedback):
+        if not (create or update):
             return
         # transform and convert to dicts
-        all_attachments: Dict[str, ls_schemas.Attachments] = {}
-        create_dicts = [
-            self._run_transform(run, attachments_collector=all_attachments)
-            for run in create or EMPTY_SEQ
-        ]
+        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
         update_dicts = [
-            self._run_transform(run, update=True, attachments_collector=all_attachments)
-            for run in update or EMPTY_SEQ
+            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
         ]
-        feedback_dicts = [self._feedback_transform(f) for f in feedback or EMPTY_SEQ]
         # require trace_id and dotted_order
         if create_dicts:
             for run in create_dicts:
@@ -1521,75 +1531,28 @@ class Client:
         if not pre_sampled:
             create_dicts = self._filter_for_sampling(create_dicts)
             update_dicts = self._filter_for_sampling(update_dicts, patch=True)
-        if not create_dicts and not update_dicts and not feedback_dicts:
+        if not create_dicts and not update_dicts:
             return
         # insert runtime environment
         self._insert_runtime_env(create_dicts)
         self._insert_runtime_env(update_dicts)
-        # send the runs in multipart requests
-        acc_context: List[str] = []
-        acc_parts: MultipartParts = []
-        for event, payloads in (
-            ("post", create_dicts),
-            ("patch", update_dicts),
-            ("feedback", feedback_dicts),
-        ):
-            for payload in payloads:
-                # collect fields to be sent as separate parts
-                fields = [
-                    ("inputs", payload.pop("inputs", None)),
-                    ("outputs", payload.pop("outputs", None)),
-                    ("events", payload.pop("events", None)),
-                    ("feedback", payload.pop("feedback", None)),
-                ]
-                # encode the main run payload
-                payloadb = _dumps_json(payload)
-                acc_parts.append(
-                    (
-                        f"{event}.{payload['id']}",
-                        (
-                            None,
-                            payloadb,
-                            "application/json",
-                            {"Content-Length": str(len(payloadb))},
-                        ),
-                    )
-                )
-                # encode the fields we collected
-                for key, value in fields:
-                    if value is None:
-                        continue
-                    valb = _dumps_json(value)
-                    acc_parts.append(
-                        (
-                            f"{event}.{payload['id']}.{key}",
-                            (
-                                None,
-                                valb,
-                                "application/json",
-                                {"Content-Length": str(len(valb))},
-                            ),
-                        ),
-                    )
-                # encode the attachments
-                if attachments := all_attachments.pop(payload["id"], None):
-                    for n, (ct, ba) in attachments.items():
-                        acc_parts.append(
-                            (
-                                f"attachment.{payload['id']}.{n}",
-                                (None, ba, ct, {"Content-Length": str(len(ba))}),
-                            )
-                        )
-                # compute context
-                acc_context.append(
-                    f"trace={payload.get('trace_id')},id={payload.get('id')}"
-                )
-        # send the request
-        self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
 
-    def _send_multipart_req(
-        self, parts: MultipartParts, *, _context: str, attempts: int = 3
-    ):
+        # format as serialized operations
+        serialized_ops = combine_serialized_queue_operations(
+            list(
+                itertools.chain(
+                    (serialize_run_dict("post", run) for run in create_dicts),
+                    (serialize_run_dict("patch", run) for run in update_dicts),
+                )
+            )
+        )
+
+        # sent the runs in multipart requests
+        self._multipart_ingest_ops(serialized_ops)
+
+    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+        parts = acc.parts
+        _context = acc.context
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:
@@ -1680,6 +1643,12 @@ class Client:
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
         }
+        use_multipart = (
+            self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
+            and data["trace_id"] is not None
+            and data["dotted_order"] is not None
+        )
         if not self._filter_for_sampling([data], patch=True):
             return
         if end_time is not None:
@@ -1691,20 +1660,21 @@ class Client:
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
-            outputs = ls_utils.deepish_copy(outputs)
+            if not use_multipart:
+                outputs = ls_utils.deepish_copy(outputs)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
-        if (
-            self.tracing_queue is not None
-            # batch ingest requires trace_id and dotted_order to be set
-            and data["trace_id"] is not None
-            and data["dotted_order"] is not None
-        ):
-            return self.tracing_queue.put(
-                TracingQueueItem(data["dotted_order"], "update", data)
+        if data["extra"]:
+            self._insert_runtime_env([data])
+        if use_multipart and self.tracing_queue is not None:
+            # not collecting attachments currently, use empty dict
+            serialized_op = serialize_run_dict(operation="patch", payload=data)
+            self.tracing_queue.put(
+                TracingQueueItem(data["dotted_order"], serialized_op)
             )
-        return self._update_run(data)
+        else:
+            self._update_run(data)
 
     def _update_run(self, run_update: dict) -> None:
         for api_url, api_key in self._write_api_urls.items():
@@ -4334,7 +4304,6 @@ class Client:
                 feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
             )
 
-            feedback_block = _dumps_json(feedback.dict(exclude_none=True))
             use_multipart = (self.info.batch_ingest_config or {}).get(
                 "use_multipart_endpoint", False
             )
@@ -4346,10 +4315,12 @@ class Client:
                 and self.tracing_queue is not None
                 and feedback.trace_id is not None
             ):
+                serialized_op = serialize_feedback_dict(feedback)
                 self.tracing_queue.put(
-                    TracingQueueItem(str(feedback.id), "feedback", feedback)
+                    TracingQueueItem(str(feedback.id), serialized_op)
                 )
             else:
+                feedback_block = _dumps_json(feedback.dict(exclude_none=True))
                 self.request_with_retries(
                     "POST",
                     "/feedback",

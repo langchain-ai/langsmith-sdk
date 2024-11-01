@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import functools
 import logging
 import sys
 import threading
 import weakref
-from dataclasses import dataclass, field
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    Any,
     List,
+    Union,
+    cast,
 )
 
 from langsmith import schemas as ls_schemas
@@ -18,6 +19,11 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
 )
+from langsmith._internal._operations import (
+    SerializedFeedbackOperation,
+    SerializedRunOperation,
+    combine_serialized_queue_operations,
+)
 
 if TYPE_CHECKING:
     from langsmith.client import Client
@@ -25,7 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("langsmith.client")
 
 
-@dataclass(order=True)
+@functools.total_ordering
 class TracingQueueItem:
     """An item in the tracing queue.
 
@@ -36,8 +42,29 @@ class TracingQueueItem:
     """
 
     priority: str
-    action: str
-    item: Any = field(compare=False)
+    item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+
+    __slots__ = ("priority", "item")
+
+    def __init__(
+        self,
+        priority: str,
+        item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+    ) -> None:
+        self.priority = priority
+        self.item = item
+
+    def __lt__(self, other: TracingQueueItem) -> bool:
+        return (self.priority, self.item.__class__) < (
+            other.priority,
+            other.item.__class__,
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, TracingQueueItem) and (
+            self.priority,
+            self.item.__class__,
+        ) == (other.priority, other.item.__class__)
 
 
 def _tracing_thread_drain_queue(
@@ -67,16 +94,20 @@ def _tracing_thread_handle_batch(
     batch: List[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
-    create = [it.item for it in batch if it.action == "create"]
-    update = [it.item for it in batch if it.action == "update"]
-    feedback = [it.item for it in batch if it.action == "feedback"]
     try:
+        ops = combine_serialized_queue_operations([item.item for item in batch])
         if use_multipart:
-            client.multipart_ingest(
-                create=create, update=update, feedback=feedback, pre_sampled=True
-            )
+            client._multipart_ingest_ops(ops)
         else:
-            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
+            if any(isinstance(op, SerializedFeedbackOperation) for op in ops):
+                logger.warn(
+                    "Feedback operations are not supported in non-multipart mode"
+                )
+                ops = [
+                    op for op in ops if not isinstance(op, SerializedFeedbackOperation)
+                ]
+            client._batch_ingest_run_ops(cast(List[SerializedRunOperation], ops))
+
     except Exception:
         logger.error("Error in tracing queue", exc_info=True)
         # exceptions are logged elsewhere, but we need to make sure the
