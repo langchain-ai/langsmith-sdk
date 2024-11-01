@@ -16,6 +16,7 @@ from typing_extensions import Annotated
 
 import langsmith
 from langsmith import Client
+from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
@@ -1703,55 +1704,70 @@ def test_traceable_stop_iteration():
 
 
 def test_traceable_input_attachments():
-    @traceable
-    def my_func(
-        val: int,
-        att1: ls_schemas.Attachment,
-        att2: Annotated[tuple, ls_schemas.Attachment],
-    ):
-        return "foo"
+    with patch.object(ls_client.ls_env, "get_runtime_environment") as mock_get_env:
+        mock_get_env.return_value = {
+            "LANGSMITH_test_traceable_input_attachments": "aval"
+        }
 
-    mock_client = _get_mock_client(
-        info=ls_schemas.LangSmithInfo(
-            batch_ingest_config=ls_schemas.BatchIngestConfig(
-                use_multipart_endpoint=True,
-                size_limit_bytes=None,  # Note this field is not used here
-                size_limit=100,
-                scale_up_nthreads_limit=16,
-                scale_up_qsize_trigger=1000,
-                scale_down_nempty_trigger=4,
-            )
-        ),
-    )
-    with tracing_context(enabled=True):
-        result = my_func(
-            42,
-            ls_schemas.Attachment(mime_type="text/plain", data="content1"),
-            ("application/octet-stream", "content2"),
-            langsmith_extra={"client": mock_client},
+        @traceable
+        def my_func(
+            val: int,
+            att1: ls_schemas.Attachment,
+            att2: Annotated[tuple, ls_schemas.Attachment],
+        ):
+            return "foo"
+
+        mock_client = _get_mock_client(
+            info=ls_schemas.LangSmithInfo(
+                batch_ingest_config=ls_schemas.BatchIngestConfig(
+                    use_multipart_endpoint=True,
+                    size_limit_bytes=None,  # Note this field is not used here
+                    size_limit=100,
+                    scale_up_nthreads_limit=16,
+                    scale_up_qsize_trigger=1000,
+                    scale_down_nempty_trigger=4,
+                )
+            ),
         )
-        assert result == "foo"
+        with tracing_context(enabled=True):
+            result = my_func(
+                42,
+                ls_schemas.Attachment(mime_type="text/plain", data="content1"),
+                ("application/octet-stream", "content2"),
+                langsmith_extra={"client": mock_client},
+            )
+            assert result == "foo"
 
-    calls = _get_calls(mock_client)
-    datas = _get_multipart_data(calls)
+        calls = _get_calls(mock_client)
+        datas = _get_multipart_data(calls)
 
-    # main run, inputs, outputs, events, att1, att2
-    assert len(datas) == 6
-    # First 4 are type application/json (run, inputs, outputs, events)
-    trace_id = datas[0][0].split(".")[1]
-    _, (_, inputs) = next(
-        data for data in datas if data[0] == f"post.{trace_id}.inputs"
-    )
-    assert json.loads(inputs) == {"val": 42}
-    # last two are the mime types provided
-    _, (mime_type1, content1) = next(
-        data for data in datas if data[0] == f"attachment.{trace_id}.att1"
-    )
-    assert mime_type1 == "text/plain"
-    assert content1 == b"content1"
+        # main run, inputs, outputs, events, att1, att2
+        assert len(datas) == 6
+        # First 4 are type application/json (run, inputs, outputs, events)
+        trace_id = datas[0][0].split(".")[1]
+        _, (_, run_stuff) = next(
+            data for data in datas if data[0] == f"post.{trace_id}"
+        )
+        assert (
+            json.loads(run_stuff)["extra"]["runtime"].get(
+                "LANGSMITH_test_traceable_input_attachments"
+            )
+            == "aval"
+        )
 
-    _, (mime_type2, content2) = next(
-        data for data in datas if data[0] == f"attachment.{trace_id}.att2"
-    )
-    assert mime_type2 == "application/octet-stream"
-    assert content2 == b"content2"
+        _, (_, inputs) = next(
+            data for data in datas if data[0] == f"post.{trace_id}.inputs"
+        )
+        assert json.loads(inputs) == {"val": 42}
+        # last two are the mime types provided
+        _, (mime_type1, content1) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.att1"
+        )
+        assert mime_type1 == "text/plain"
+        assert content1 == b"content1"
+
+        _, (mime_type2, content2) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.att2"
+        )
+        assert mime_type2 == "application/octet-stream"
+        assert content2 == b"content2"
