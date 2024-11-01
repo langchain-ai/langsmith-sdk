@@ -1208,7 +1208,6 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
         run_create = self._run_transform(
@@ -1666,6 +1665,8 @@ class Client:
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
+        if data["extra"]:
+            self._insert_runtime_env([data])
         if use_multipart and self.tracing_queue is not None:
             # not collecting attachments currently, use empty dict
             serialized_op = serialize_run_dict(operation="patch", payload=data)
