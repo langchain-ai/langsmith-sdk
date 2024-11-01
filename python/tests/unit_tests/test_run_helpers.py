@@ -52,7 +52,7 @@ def _get_calls(
     return calls
 
 
-def _get_datas(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
+def _get_data(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
     datas = []
     for call_ in mock_calls:
         data = json.loads(call_.kwargs["data"])
@@ -63,7 +63,7 @@ def _get_datas(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
     return datas
 
 
-def _get_multipart_datas(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, bytes]]]:
+def _get_multipart_data(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, bytes]]]:
     datas = []
     for call_ in mock_calls:
         data = call_.kwargs.get("data")
@@ -1497,7 +1497,7 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
 
     assert len(mock_calls) == num_calls
     if auto_batch_tracing:
-        datas = _get_datas(mock_calls)
+        datas = _get_data(mock_calls)
         outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
         assert len(outputs) == 1
         assert outputs[0]["output"] == list(range(5))
@@ -1537,7 +1537,7 @@ async def test_traceable_gen_exception(auto_batch_tracing: bool):
 
     assert len(mock_calls) == num_calls
     if auto_batch_tracing:
-        datas = _get_datas(mock_calls)
+        datas = _get_data(mock_calls)
         outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
         assert len(outputs) == 1
         assert outputs[0]["output"] == list(range(5))
@@ -1733,7 +1733,7 @@ def test_traceable_input_attachments():
         assert result == "foo"
 
     calls = _get_calls(mock_client)
-    datas = _get_multipart_datas(calls)
+    datas = _get_multipart_data(calls)
 
     # main run, inputs, outputs, events, att1, att2
     assert len(datas) == 6

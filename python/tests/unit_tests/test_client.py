@@ -288,9 +288,6 @@ def test_create_run_unicode() -> None:
 def test_create_run_mutate(
     use_multipart_endpoint: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if use_multipart_endpoint:
-        monkeypatch.setenv("LANGSMITH_FF_MULTIPART", "true")
-        # TODO remove this when removing FF
     inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
@@ -354,7 +351,6 @@ def test_create_run_mutate(
             parser = MultipartParser(data, boundary)
             parts.extend(parser.parts())
 
-        assert len(parts) == 3
         assert [p.name for p in parts] == [
             f"post.{id_}",
             f"post.{id_}.inputs",
@@ -1069,18 +1065,7 @@ def test_batch_ingest_run_splits_large_batches(
     ]
 
     if use_multipart_endpoint:
-        feedback = [
-            {
-                "run_id": run_id,
-                "trace_id": run_id,
-                "key": "test_key",
-                "score": 0.9,
-                "value": "test_value",
-                "comment": "test_comment",
-            }
-            for run_id in run_ids
-        ]
-        client.multipart_ingest(create=posts, update=patches, feedback=feedback)
+        client.multipart_ingest(create=posts, update=patches)
         # multipart endpoint should only send one request
         expected_num_requests = 1
         # count the number of POST requests

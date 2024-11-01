@@ -1476,7 +1476,7 @@ def _get_inputs_safe(
         return {"args": args, "kwargs": kwargs}
 
 
-@functools.lru_cache
+@functools.lru_cache(maxsize=1000)
 def _attachment_args(signature: inspect.Signature) -> Set[str]:
     def _is_attachment(param: inspect.Parameter) -> bool:
         if param.annotation == schemas.Attachment or (

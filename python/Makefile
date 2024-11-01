@@ -13,6 +13,15 @@ benchmark-fast:
 	rm -f $(OUTPUT)
 	poetry run python -m bench -o $(OUTPUT) --fast
 
+PROFILE_NAME ?= output
+
+profile-background-thread:
+	mkdir -p profiles
+	poetry run python -m cProfile -o profiles/$(PROFILE_NAME).prof bench/create_run.py
+
+view-profile:
+	poetry run snakeviz profiles/${PROFILE_NAME}.prof
+
 tests:
 	env \
 	 -u LANGCHAIN_PROJECT \
