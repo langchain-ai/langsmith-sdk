@@ -713,7 +713,7 @@ export class AISDKExporter {
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
-    this.logDebug("exporting spans", { spans });
+    this.logDebug("exporting spans", spans);
 
     const typedSpans = (spans as AISDKSpan[])
       .slice()
@@ -740,7 +740,7 @@ export class AISDKExporter {
 
       const run = this.getRunCreate(span);
       if (!run) {
-        this.logDebug("skipping span", { span });
+        this.logDebug("skipping span", span);
         continue;
       }
 
@@ -867,7 +867,7 @@ export class AISDKExporter {
       }
     }
 
-    this.logDebug(`sampled runs to be sent to LangSmith`, { sampled });
+    this.logDebug(`sampled runs to be sent to LangSmith`, sampled);
     Promise.all(
       sampled.map(([override, value]) =>
         this.client.createRun({ ...value, ...override })
