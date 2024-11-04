@@ -13,8 +13,24 @@ benchmark-fast:
 	rm -f $(OUTPUT)
 	poetry run python -m bench -o $(OUTPUT) --fast
 
+PROFILE_NAME ?= output
+
+profile-background-thread:
+	mkdir -p profiles
+	poetry run python -m cProfile -o profiles/$(PROFILE_NAME).prof bench/create_run.py
+
+view-profile:
+	poetry run snakeviz profiles/${PROFILE_NAME}.prof
+
 tests:
-	 PYTHONDEVMODE=1 PYTHONASYNCIODEBUG=1 poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 tests/unit_tests
+	env \
+	 -u LANGCHAIN_PROJECT \
+	 -u LANGCHAIN_API_KEY \
+	 -u LANGCHAIN_TRACING_V2 \
+	 -u LANGSMITH_TRACING \
+	 PYTHONDEVMODE=1 \
+	 PYTHONASYNCIODEBUG=1 \
+	 poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 tests/unit_tests
 
 tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests

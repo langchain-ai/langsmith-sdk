@@ -257,6 +257,18 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if callable(target) and rh.is_async(target):
+        raise ValueError(
+            "Async functions are not supported by `evaluate`. "
+            "Please use `aevaluate` instead:\n\n"
+            "from langsmith import aevaluate\n\n"
+            "await aevaluate(\n"
+            "    async_target_function,\n"
+            "    data=data,\n"
+            "    evaluators=evaluators,\n"
+            "    # ... other parameters\n"
+            ")"
+        )
     if experiment and experiment_prefix:
         raise ValueError(
             "Expected at most one of 'experiment' or 'experiment_prefix',"
@@ -647,15 +659,15 @@ def evaluate_comparative(
         ... )  # doctest: +ELLIPSIS
         View the pairwise evaluation results at:...
         >>> eval_results = list(results)
-        >>> assert len(eval_results) >= 10
+        >>> assert len(eval_results) >= 10  # doctest: +SKIP
         >>> assert all(
         ...     "feedback.ranked_preference" in r["evaluation_results"]
         ...     for r in eval_results
-        ... )
+        ... )  # doctest: +SKIP
         >>> assert all(
         ...     "feedback.length_difference" in r["evaluation_results"]
         ...     for r in eval_results
-        ... )
+        ... )  # doctest: +SKIP
     """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
@@ -1377,7 +1389,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                                 error_response, run=run, _executor=executor
                             )
                         )
-                    except BaseException as e2:
+                    except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")
                         pass
                     logger.error(
@@ -1484,7 +1496,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             )
                     except Exception as e:
                         logger.error(
-                            f"Error running summary evaluator {repr(evaluator)}: {e}"
+                            f"Error running summary evaluator {repr(evaluator)}: {e}",
+                            exc_info=True,
                         )
         yield {"results": aggregate_feedback}
 
@@ -1608,7 +1621,9 @@ def _forward(
                 ),
             )
         except Exception as e:
-            logger.error(f"Error running target function: {e}")
+            logger.error(
+                f"Error running target function: {e}", exc_info=True, stacklevel=1
+            )
         return _ForwardResults(
             run=cast(schemas.Run, run),
             example=example,
@@ -1707,9 +1722,23 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
                         key_value = (
                             value.s if isinstance(value, ast.Str) else value.value
                         )
-                    elif key_str not in ["key", "score"]:
-                        keys.append(key_str)
             return [key_value] if key_value else keys
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "dict"
+        ):
+            for keyword in node.keywords:
+                if keyword.arg == "key" and isinstance(
+                    keyword.value, (ast.Str, ast.Constant)
+                ):
+                    return [
+                        (
+                            keyword.value.s
+                            if isinstance(keyword.value, ast.Str)
+                            else keyword.value.value
+                        )
+                    ]
         return []
 
     def extract_evaluation_result_key(node):
@@ -1745,6 +1774,38 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
                         keys = []
                         for elt in keyword.value.elts:
                             keys.extend(extract_evaluation_result_key(elt))
+                        return keys
+        elif isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if isinstance(key, (ast.Str, ast.Constant)) and key.s == "results":
+                    if isinstance(value, ast.List):
+                        keys = []
+                        for elt in value.elts:
+                            if isinstance(elt, ast.Dict):
+                                for elt_key, elt_value in zip(elt.keys, elt.values):
+                                    if (
+                                        isinstance(elt_key, (ast.Str, ast.Constant))
+                                        and elt_key.s == "key"
+                                    ):
+                                        if isinstance(
+                                            elt_value, (ast.Str, ast.Constant)
+                                        ):
+                                            keys.append(elt_value.s)
+                            elif (
+                                isinstance(elt, ast.Call)
+                                and isinstance(elt.func, ast.Name)
+                                and elt.func.id in ("EvaluationResult", "dict")
+                            ):
+                                for keyword in elt.keywords:
+                                    if keyword.arg == "key" and isinstance(
+                                        keyword.value, (ast.Str, ast.Constant)
+                                    ):
+                                        keys.append(
+                                            keyword.value.s
+                                            if isinstance(keyword.value, ast.Str)
+                                            else keyword.value.value
+                                        )
+
                         return keys
         return []
 

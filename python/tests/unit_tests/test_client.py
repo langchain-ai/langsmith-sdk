@@ -5,6 +5,7 @@ import dataclasses
 import gc
 import itertools
 import json
+import logging
 import math
 import sys
 import time
@@ -31,11 +32,11 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
+from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
     _dumps_json,
     _is_langchain_hosted,
-    _serialize_json,
 )
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
@@ -287,9 +288,6 @@ def test_create_run_unicode() -> None:
 def test_create_run_mutate(
     use_multipart_endpoint: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if use_multipart_endpoint:
-        monkeypatch.setenv("LANGSMITH_FF_MULTIPART", "true")
-        # TODO remove this when removing FF
     inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
@@ -353,7 +351,6 @@ def test_create_run_mutate(
             parser = MultipartParser(data, boundary)
             parts.extend(parser.parts())
 
-        assert len(parts) == 3
         assert [p.name for p in parts] == [
             f"post.{id_}",
             f"post.{id_}.inputs",
@@ -749,7 +746,9 @@ def test_pydantic_serialize() -> None:
     assert res2 == {"output": expected}
 
 
-def test_serialize_json() -> None:
+def test_serialize_json(caplog) -> None:
+    caplog.set_level(logging.ERROR)
+
     class MyClass:
         def __init__(self, x: int) -> None:
             self.x = x
@@ -818,6 +817,7 @@ def test_serialize_json() -> None:
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
         "my_pydantic": MyPydantic(foo="foo", bar=1),
+        "my_pydantic_class": MyPydantic,
         "person": Person(name="foo_person"),
         "a_bool": True,
         "a_none": None,
@@ -831,6 +831,9 @@ def test_serialize_json() -> None:
         "my_mock": MagicMock(text="Hello, world"),
     }
     res = orjson.loads(_dumps_json(to_serialize))
+    assert (
+        "model_dump" not in caplog.text
+    ), f"Unexpected error logs were emitted: {caplog.text}"
 
     expected = {
         "uid": str(uid),
@@ -840,6 +843,7 @@ def test_serialize_json() -> None:
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
         "my_pydantic": {"foo": "foo", "bar": 1},
+        "my_pydantic_class": lambda x: "MyPydantic" in x,
         "person": {"name": "foo_person"},
         "a_bool": True,
         "a_none": None,
@@ -1059,8 +1063,9 @@ def test_batch_ingest_run_splits_large_batches(
         }
         for run_id in patch_ids
     ]
+
     if use_multipart_endpoint:
-        client.multipart_ingest_runs(create=posts, update=patches)
+        client.multipart_ingest(create=posts, update=patches)
         # multipart endpoint should only send one request
         expected_num_requests = 1
         # count the number of POST requests

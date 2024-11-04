@@ -1,6 +1,7 @@
 """Test the eval runner."""
 
 import asyncio
+import functools
 import itertools
 import json
 import random
@@ -246,6 +247,37 @@ def test_evaluate_results(blocking: bool) -> None:
         assert r["evaluation_results"]["results"][0].score == 0.7
         assert r["run"].reference_example_id in dev_xample_ids
     assert not fake_request.should_fail
+
+
+def test_evaluate_raises_for_async():
+    async def my_func(inputs: dict):
+        pass
+
+    match = "Async functions are not supported by"
+    with pytest.raises(ValueError, match=match):
+        evaluate(my_func, data="foo")
+
+    async def my_other_func(inputs: dict, other_val: int):
+        pass
+
+    with pytest.raises(ValueError, match=match):
+        evaluate(functools.partial(my_other_func, other_val=3), data="foo")
+
+    try:
+        from langchain_core.runnables import RunnableLambda
+    except ImportError:
+        pytest.skip("langchain-core not installed.")
+
+    @RunnableLambda
+    def foo(inputs: dict):
+        return "bar"
+
+    with pytest.raises(ValueError, match=match):
+        evaluate(foo.ainvoke, data="foo")
+    if sys.version_info < (3, 10):
+        return
+    with pytest.raises(ValueError, match=match):
+        evaluate(functools.partial(foo.ainvoke, inputs={"foo": "bar"}), data="foo")
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")

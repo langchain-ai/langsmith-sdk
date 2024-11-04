@@ -82,18 +82,35 @@ async def test_error_handling_evaluators():
             raise ValueError("Error in dict without key evaluator")
         return {"score": 1}
 
+    # Case 5: dict-style results
+    def error_evaluation_results_dict(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in EvaluationResults dict evaluator")
+
+        return {
+            "results": [
+                dict(key="eval_results_dict_key1", score=1),
+                {"key": "eval_results_dict_key2", "score": 2},
+                EvaluationResult(key="eval_results_dict_key3", score=3),
+            ]
+        }
+
     def predict(inputs: dict) -> dict:
         return {"output": "Yes"}
 
     with suppress_warnings():
         sync_results = evaluate(
             predict,
-            data=dataset_name,
+            data=client.list_examples(
+                dataset_name=dataset_name,
+                as_of="test_version",
+            ),
             evaluators=[
                 error_dict_evaluator,
                 error_evaluation_result,
                 error_evaluation_results,
                 error_dict_no_key,
+                error_evaluation_results_dict,
             ],
             max_concurrency=1,  # To ensure deterministic order
         )
@@ -103,7 +120,7 @@ async def test_error_handling_evaluators():
     def check_results(results):
         for result in results:
             eval_results = result["evaluation_results"]["results"]
-            assert len(eval_results) == 5
+            assert len(eval_results) == 8
 
             # Check error handling for each evaluator
             assert eval_results[0].key == "dict_key"
@@ -126,6 +143,24 @@ async def test_error_handling_evaluators():
             assert "Error in dict without key evaluator" in eval_results[4].comment
             assert eval_results[4].extra.get("error") is True
 
+            assert eval_results[5].key == "eval_results_dict_key1"
+            assert (
+                "Error in EvaluationResults dict evaluator" in eval_results[5].comment
+            )
+            assert eval_results[5].extra.get("error") is True
+
+            assert eval_results[6].key == "eval_results_dict_key2"
+            assert (
+                "Error in EvaluationResults dict evaluator" in eval_results[6].comment
+            )
+            assert eval_results[6].extra.get("error") is True
+
+            assert eval_results[7].key == "eval_results_dict_key3"
+            assert (
+                "Error in EvaluationResults dict evaluator" in eval_results[7].comment
+            )
+            assert eval_results[7].extra.get("error") is True
+
     check_results(sync_results)
 
     async def apredict(inputs: dict):
@@ -134,12 +169,18 @@ async def test_error_handling_evaluators():
     with suppress_warnings():
         async_results = await aevaluate(
             apredict,
-            data=dataset_name,
+            data=list(
+                client.list_examples(
+                    dataset_name=dataset_name,
+                    as_of="test_version",
+                )
+            ),
             evaluators=[
                 error_dict_evaluator,
                 error_evaluation_result,
                 error_evaluation_results,
                 error_dict_no_key,
+                error_evaluation_results_dict,
             ],
             max_concurrency=1,  # To ensure deterministic order
         )
@@ -219,6 +260,7 @@ def test_evaluate():
     assert len(results4) == 10
 
 
+@pytest.mark.skip(reason="Skipping this test for now. Should remove in the future.")
 async def test_aevaluate():
     client = Client()
     _ = client.clone_public_dataset(

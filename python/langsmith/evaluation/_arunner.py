@@ -36,6 +36,7 @@ from langsmith.evaluation._runner import (
     SUMMARY_EVALUATOR_T,
     ExperimentResultRow,
     _ExperimentManagerMixin,
+    _extract_feedback_keys,
     _ForwardResults,
     _load_examples_map,
     _load_experiment,
@@ -46,7 +47,11 @@ from langsmith.evaluation._runner import (
     _resolve_experiment,
     _wrap_summary_evaluators,
 )
-from langsmith.evaluation.evaluator import EvaluationResults, RunEvaluator
+from langsmith.evaluation.evaluator import (
+    EvaluationResult,
+    EvaluationResults,
+    RunEvaluator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -667,6 +672,34 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                     )
                 except Exception as e:
+                    try:
+                        feedback_keys = _extract_feedback_keys(evaluator)
+
+                        error_response = EvaluationResults(
+                            results=[
+                                EvaluationResult(
+                                    key=key,
+                                    source_run_id=run.id,
+                                    comment=repr(e),
+                                    extra={"error": True},
+                                )
+                                for key in feedback_keys
+                            ]
+                        )
+                        eval_results["results"].extend(
+                            # TODO: This is a hack
+                            self.client._log_evaluation_feedback(
+                                error_response, run=run, _executor=executor
+                            )
+                        )
+                    except Exception as e2:
+                        logger.debug(f"Error parsing feedback keys: {e2}")
+                        pass
+                    logger.error(
+                        f"Error running evaluator {repr(evaluator)} on"
+                        f" run {run.id}: {repr(e)}",
+                        exc_info=True,
+                    )
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
                         f" run {run.id}: {repr(e)}",
@@ -727,7 +760,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                 except Exception as e:
                     logger.error(
-                        f"Error running summary evaluator {repr(evaluator)}: {e}"
+                        f"Error running summary evaluator {repr(evaluator)}: {e}",
+                        exc_info=True,
                     )
         yield {"results": aggregate_feedback}
 
@@ -861,7 +895,9 @@ async def _aforward(
                 ),
             )
         except Exception as e:
-            logger.error(f"Error running target function: {e}")
+            logger.error(
+                f"Error running target function: {e}", exc_info=True, stacklevel=1
+            )
         return _ForwardResults(
             run=cast(schemas.Run, run),
             example=example,
