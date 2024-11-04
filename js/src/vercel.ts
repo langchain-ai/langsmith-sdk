@@ -13,6 +13,7 @@ import {
   getLangSmithEnvironmentVariable,
   getEnvironmentVariable,
 } from "./utils/env.js";
+import { isTracingEnabled } from "./env.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -319,6 +320,8 @@ export class AISDKExporter {
     this.client = args?.client ?? new Client();
     this.debug =
       args?.debug ?? getEnvironmentVariable("OTEL_LOG_LEVEL") === "DEBUG";
+
+    this.logDebug("creating exporter", { tracingEnabled: isTracingEnabled() });
   }
 
   static getSettings(settings?: TelemetrySettings) {
@@ -713,6 +716,12 @@ export class AISDKExporter {
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
+    if (!isTracingEnabled()) {
+      this.logDebug("tracing is disabled, skipping export");
+      resultCallback({ code: 0 });
+      return;
+    }
+
     this.logDebug("exporting spans", spans);
 
     const typedSpans = (spans as AISDKSpan[])
