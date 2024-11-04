@@ -231,6 +231,12 @@ export interface RunUpdate {
    *   - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
    */
   dotted_order?: string;
+
+  /**
+   * Attachments associated with the run.
+   * Each entry is a tuple of [mime_type, bytes]
+   */
+  attachments?: Record<string, [string, Uint8Array]>;
 }
 
 export interface ExampleCreate extends BaseExample {
@@ -587,3 +593,5 @@ export type UsageMetadata = {
    */
   output_token_details?: OutputTokenDetails;
 };
+
+export type Attachments = Record<string, [string, Uint8Array]>;

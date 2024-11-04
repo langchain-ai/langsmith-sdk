@@ -55,6 +55,7 @@ export interface RunTreeConfig {
 
   trace_id?: string;
   dotted_order?: string;
+  attachments?: Record<string, [string, Uint8Array]>;
 }
 
 export interface RunnableConfigLike {
@@ -172,6 +173,11 @@ export class RunTree implements BaseRun {
   tracingEnabled?: boolean;
   execution_order: number;
   child_execution_order: number;
+  /**
+   * Attachments associated with the run.
+   * Each entry is a tuple of [mime_type, bytes]
+   */
+  attachments?: Record<string, [string, Uint8Array]>;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -370,6 +376,7 @@ export class RunTree implements BaseRun {
       trace_id: run.trace_id,
       dotted_order: run.dotted_order,
       tags: run.tags,
+      attachments: run.attachments,
     };
     return persistedRun;
   }
@@ -407,6 +414,7 @@ export class RunTree implements BaseRun {
         dotted_order: this.dotted_order,
         trace_id: this.trace_id,
         tags: this.tags,
+        attachments: this.attachments,
       };
 
       await this.client.updateRun(this.id, runUpdate);

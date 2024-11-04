@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import uuid
 from typing import Literal, Optional, Union, cast
 
@@ -9,6 +10,8 @@ import orjson
 from langsmith import schemas as ls_schemas
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
+
+logger = logging.getLogger(__name__)
 
 
 class SerializedRunOperation:
@@ -245,6 +248,15 @@ def serialized_run_operation_to_multipart_parts_and_context(
         )
     if op.attachments:
         for n, (content_type, valb) in op.attachments.items():
+            if "." in n:
+                logger.warning(
+                    f"Skipping logging of attachment '{n}' "
+                    f"for run {op.id}:"
+                    " Invalid attachment name.  Attachment names must not contain"
+                    " periods ('.'). Please rename the attachment and try again."
+                )
+                continue
+
             acc_parts.append(
                 (
                     f"attachment.{op.id}.{n}",
