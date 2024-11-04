@@ -11,6 +11,10 @@ export type {
 
 export { RunTree, type RunTreeConfig } from "./run_trees.js";
 
+export { evaluate, EvaluationResult } from "./evaluation/index.js";
+
+export { traceable } from "./traceable.js";
+
 export { overrideFetchImplementation } from "./singletons/fetch.js";
 
 // Update using yarn bump-version
