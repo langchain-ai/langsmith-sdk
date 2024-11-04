@@ -4120,6 +4120,7 @@ class Client:
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id,
+                extra=res.extra,
                 trace_id=run.trace_id if run else None,
             )
         return results
@@ -4191,6 +4192,7 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
+        extra: Optional[Dict] = None,
         trace_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
@@ -4239,6 +4241,9 @@ class Client:
         feedback_group_id : str or UUID
             When logging preferences, ranking runs, or other comparative feedback,
             this is used to group feedback together.
+        extra : dict
+            Metadata for the feedback.
+        trace_id: Optional[ID_TYPE] = The trace ID of the run to provide feedback for. Enables batch ingestion.
         """
         if run_id is None and project_id is None:
             raise ValueError("One of run_id and project_id must be provided")
@@ -4302,6 +4307,7 @@ class Client:
                     comparative_experiment_id, accept_null=True
                 ),
                 feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
+                extra=extra,
             )
 
             use_multipart = (self.info.batch_ingest_config or {}).get(

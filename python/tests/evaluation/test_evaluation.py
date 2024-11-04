@@ -1,13 +1,27 @@
 import asyncio
+import logging
 import time
+from contextlib import contextmanager
 from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
 
 from langsmith import Client, aevaluate, evaluate, expect, test
+from langsmith.evaluation import EvaluationResult, EvaluationResults
 from langsmith.schemas import Example, Run
 
 T = TypeVar("T")
+
+
+@contextmanager
+def suppress_warnings():
+    logger = logging.getLogger()
+    current_level = logger.level
+    logger.setLevel(logging.CRITICAL)
+    try:
+        yield
+    finally:
+        logger.setLevel(current_level)
 
 
 def wait_for(
@@ -32,7 +46,149 @@ def wait_for(
     raise ValueError(f"Callable did not return within {total_time}")
 
 
-@pytest.mark.skip(reason="Skipping this test for now. Should remove in the future.")
+async def test_error_handling_evaluators():
+    client = Client()
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    # Case 1: Normal dictionary return
+    def error_dict_evaluator(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in dict evaluator")
+        return {"key": "dict_key", "score": 1}
+
+    # Case 2: EvaluationResult return
+    def error_evaluation_result(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in EvaluationResult evaluator")
+        return EvaluationResult(key="eval_result_key", score=1)
+
+    # Case 3: EvaluationResults return
+    def error_evaluation_results(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in EvaluationResults evaluator")
+        return EvaluationResults(
+            results=[
+                EvaluationResult(key="eval_results_key1", score=1),
+                EvaluationResult(key="eval_results_key2", score=2),
+            ]
+        )
+
+    # Case 4: Dictionary without 'key' field
+    def error_dict_no_key(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in dict without key evaluator")
+        return {"score": 1}
+
+    # Case 5: dict-style results
+    def error_evaluation_results_dict(run: Run, example: Example):
+        if True:  # This condition ensures the error is always raised
+            raise ValueError("Error in EvaluationResults dict evaluator")
+
+        return {
+            "results": [
+                dict(key="eval_results_dict_key1", score=1),
+                {"key": "eval_results_dict_key2", "score": 2},
+                EvaluationResult(key="eval_results_dict_key3", score=3),
+            ]
+        }
+
+    def predict(inputs: dict) -> dict:
+        return {"output": "Yes"}
+
+    with suppress_warnings():
+        sync_results = evaluate(
+            predict,
+            data=client.list_examples(
+                dataset_name=dataset_name,
+                as_of="test_version",
+            ),
+            evaluators=[
+                error_dict_evaluator,
+                error_evaluation_result,
+                error_evaluation_results,
+                error_dict_no_key,
+                error_evaluation_results_dict,
+            ],
+            max_concurrency=1,  # To ensure deterministic order
+        )
+
+    assert len(sync_results) == 10  # Assuming 10 examples in the dataset
+
+    def check_results(results):
+        for result in results:
+            eval_results = result["evaluation_results"]["results"]
+            assert len(eval_results) == 8
+
+            # Check error handling for each evaluator
+            assert eval_results[0].key == "dict_key"
+            assert "Error in dict evaluator" in eval_results[0].comment
+            assert eval_results[0].extra.get("error") is True
+
+            assert eval_results[1].key == "eval_result_key"
+            assert "Error in EvaluationResult evaluator" in eval_results[1].comment
+            assert eval_results[1].extra.get("error") is True
+
+            assert eval_results[2].key == "eval_results_key1"
+            assert "Error in EvaluationResults evaluator" in eval_results[2].comment
+            assert eval_results[2].extra.get("error") is True
+
+            assert eval_results[3].key == "eval_results_key2"
+            assert "Error in EvaluationResults evaluator" in eval_results[3].comment
+            assert eval_results[3].extra.get("error") is True
+
+            assert eval_results[4].key == "error_dict_no_key"
+            assert "Error in dict without key evaluator" in eval_results[4].comment
+            assert eval_results[4].extra.get("error") is True
+
+            assert eval_results[5].key == "eval_results_dict_key1"
+            assert (
+                "Error in EvaluationResults dict evaluator" in eval_results[5].comment
+            )
+            assert eval_results[5].extra.get("error") is True
+
+            assert eval_results[6].key == "eval_results_dict_key2"
+            assert (
+                "Error in EvaluationResults dict evaluator" in eval_results[6].comment
+            )
+            assert eval_results[6].extra.get("error") is True
+
+            assert eval_results[7].key == "eval_results_dict_key3"
+            assert (
+                "Error in EvaluationResults dict evaluator" in eval_results[7].comment
+            )
+            assert eval_results[7].extra.get("error") is True
+
+    check_results(sync_results)
+
+    async def apredict(inputs: dict):
+        return predict(inputs)
+
+    with suppress_warnings():
+        async_results = await aevaluate(
+            apredict,
+            data=list(
+                client.list_examples(
+                    dataset_name=dataset_name,
+                    as_of="test_version",
+                )
+            ),
+            evaluators=[
+                error_dict_evaluator,
+                error_evaluation_result,
+                error_evaluation_results,
+                error_dict_no_key,
+                error_evaluation_results_dict,
+            ],
+            max_concurrency=1,  # To ensure deterministic order
+        )
+
+    assert len(async_results) == 10  # Assuming 10 examples in the dataset
+    check_results([res async for res in async_results])
+
+
 def test_evaluate():
     client = Client()
     _ = client.clone_public_dataset(
