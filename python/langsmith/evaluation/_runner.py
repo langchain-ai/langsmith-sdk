@@ -452,6 +452,36 @@ class ExperimentResults:
     def __len__(self) -> int:
         return len(self._results)
 
+    def _repr_html_(self) -> str:
+        import importlib.util
+
+        if self._results and importlib.util.find_spec("pandas"):
+            import pandas as pd
+
+            head = [
+                {
+                    "inputs": x["example"].inputs,
+                    "outputs": (
+                        x["run"].outputs["output"]
+                        if list(x["run"].outputs) == ["output"]
+                        else x["run"].outputs
+                    ),
+                    **(
+                        {"reference outputs": x["example"].outputs}
+                        if x["example"].outputs is not None
+                        else {}
+                    ),
+                    **{
+                        r.key: r.score if r.score is not None else r.value
+                        for r in x["evaluation_results"]["results"]
+                    },
+                }
+                for x in self._results[:5]
+            ]
+            return pd.DataFrame(head)._repr_html_()  # type: ignore[operator]
+        else:
+            return f"<ExperimentResults {self.experiment_name}>"
+
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
 
