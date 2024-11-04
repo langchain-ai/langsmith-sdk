@@ -134,6 +134,7 @@ test("generateText", async () => {
       }),
     },
     experimental_telemetry: AISDKExporter.getSettings({
+      isEnabled: true,
       runName: "generateText",
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
@@ -354,6 +355,7 @@ test("streamText", async () => {
       }),
     },
     experimental_telemetry: AISDKExporter.getSettings({
+      isEnabled: true,
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
     }),
@@ -547,6 +549,7 @@ test("generateObject", async () => {
     }),
     prompt: "What's the weather in Prague?",
     experimental_telemetry: AISDKExporter.getSettings({
+      isEnabled: true,
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
     }),
@@ -656,6 +659,7 @@ test("streamObject", async () => {
     }),
     prompt: "What's the weather in Prague?",
     experimental_telemetry: AISDKExporter.getSettings({
+      isEnabled: true,
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
     }),
@@ -755,6 +759,7 @@ test("traceable", async () => {
           }),
         },
         experimental_telemetry: AISDKExporter.getSettings({
+          isEnabled: true,
           runName: "generateText",
           functionId: "functionId",
           metadata: { userId: "123", language: "english" },
