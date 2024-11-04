@@ -331,7 +331,7 @@ export class AISDKExporter {
     if (runName != null) metadata[RUN_NAME_METADATA_KEY.input] = runName;
 
     // attempt to obtain the run tree if used within a traceable function
-    let defaultEnabled = true;
+    let defaultEnabled = isTracingEnabled();
     try {
       const runTree = getCurrentRunTree();
       const headers = runTree.toHeaders();
@@ -716,12 +716,6 @@ export class AISDKExporter {
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
-    if (!isTracingEnabled()) {
-      this.logDebug("tracing is disabled, skipping export");
-      resultCallback({ code: 0 });
-      return;
-    }
-
     this.logDebug("exporting spans", spans);
 
     const typedSpans = (spans as AISDKSpan[])
