@@ -331,7 +331,7 @@ export class AISDKExporter {
     if (runName != null) metadata[RUN_NAME_METADATA_KEY.input] = runName;
 
     // attempt to obtain the run tree if used within a traceable function
-    let defaultEnabled = isTracingEnabled();
+    let defaultEnabled = settings?.isEnabled ?? isTracingEnabled();
     try {
       const runTree = getCurrentRunTree();
       const headers = runTree.toHeaders();
