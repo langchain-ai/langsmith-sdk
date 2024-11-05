@@ -9,6 +9,8 @@ import logging
 import pathlib
 import uuid
 from typing import (
+    TYPE_CHECKING,
+    Any,
     AsyncIterable,
     AsyncIterator,
     Awaitable,
@@ -45,6 +47,7 @@ from langsmith.evaluation._runner import (
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
+    _to_pandas,
     _wrap_summary_evaluators,
 )
 from langsmith.evaluation.evaluator import (
@@ -52,6 +55,13 @@ from langsmith.evaluation.evaluator import (
     EvaluationResults,
     RunEvaluator,
 )
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    DataFrame = pd.DataFrame
+else:
+    DataFrame = Any
 
 logger = logging.getLogger(__name__)
 
@@ -852,6 +862,20 @@ class AsyncExperimentResults:
         async with self._lock:
             self._summary_results = summary_scores
 
+    def to_pandas(
+        self, start: Optional[int] = 0, end: Optional[int] = None
+    ) -> DataFrame:
+        return _to_pandas(self._results, start=start, end=end)
+
+    def _repr_html_(self) -> str:
+        import importlib.util
+
+        if self._results and importlib.util.find_spec("pandas"):
+            df = self.to_pandas(0, 5)
+            return df._repr_html_()  # type: ignore[operator]
+        else:
+            return self.__repr__()
+
     def __len__(self) -> int:
         return len(self._results)
 
@@ -908,9 +932,24 @@ def _ensure_async_traceable(
     target: ATARGET_T,
 ) -> rh.SupportsLangsmithExtra[[dict], Awaitable]:
     if not asyncio.iscoroutinefunction(target):
-        raise ValueError(
-            "Target must be an async function. For sync functions, use evaluate."
-        )
+        if callable(target):
+            raise ValueError(
+                "Target must be an async function. For sync functions, use evaluate."
+                " Example usage:\n\n"
+                "async def predict(inputs: dict) -> dict:\n"
+                "    # do work, like chain.invoke(inputs)\n"
+                "    return {...}\n"
+                "await aevaluate(predict, ...)"
+            )
+        else:
+            raise ValueError(
+                "Target must be a callable async function. "
+                "Received a non-callable object. Example usage:\n\n"
+                "async def predict(inputs: dict) -> dict:\n"
+                "    # do work, like chain.invoke(inputs)\n"
+                "    return {...}\n"
+                "await aevaluate(predict, ...)"
+            )
     if rh.is_traceable_function(target):
         return target  # type: ignore
     return rh.traceable(name="AsyncTarget")(target)
