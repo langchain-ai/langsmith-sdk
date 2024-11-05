@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import gc
+import io
 import itertools
 import json
 import logging
@@ -27,7 +28,6 @@ import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
 from pydantic import BaseModel
 from requests import HTTPError
-from requests_toolbelt.multipart import MultipartEncoder
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
@@ -349,9 +349,9 @@ def test_create_run_mutate(
             assert headers["Content-Type"].startswith("multipart/form-data")
             # this is a current implementation detail, if we change implementation
             # we update this assertion
-            assert isinstance(data, MultipartEncoder)
+            assert isinstance(data, bytes)
             boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
-            parser = MultipartParser(data, boundary)
+            parser = MultipartParser(io.BytesIO(data), boundary)
             parts.extend(parser.parts())
 
         assert [p.name for p in parts] == [
@@ -1095,20 +1095,13 @@ def test_batch_ingest_run_splits_large_batches(
             [1 for call in mock_session.request.call_args_list if call[0][0] == "POST"]
         ) in (expected_num_requests, expected_num_requests + 1)
 
-        class _FakeEncoder:
-            def __init__(self, data: bytes):
-                self._buffer = data
-
-            def read(self, size=-1):
-                return self._buffer
-
         request_bodies = [
             op
             for call in mock_session.request.call_args_list
             for op in (
                 MultipartParser(
                     (
-                        _FakeEncoder(call[1]["data"])
+                        io.BytesIO(call[1]["data"])
                         if isinstance(call[1]["data"], bytes)
                         else call[1]["data"]
                     ),
