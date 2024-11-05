@@ -658,98 +658,121 @@ test.concurrent(
   }
 );
 
-test.concurrent("Test upload attachments and process inputs.", async () => {
-  const langsmithClient = new Client({
-    callerOptions: { maxRetries: 0 },
-  });
-  const runId = uuidv4();
-  const projectName = "__test_traceable_wrapper_attachments_and_inputs";
+test.concurrent(
+  "Test upload attachments and process inputs.",
+  async () => {
+    const langsmithClient = new Client({
+      callerOptions: { maxRetries: 0 },
+    });
+    const runId = uuidv4();
+    const projectName = "__test_traceable_wrapper_attachments_and_inputs";
 
-  const testAttachment1 = new Uint8Array([1, 2, 3, 4]);
-  const testAttachment2 = new Uint8Array([5, 6, 7, 8]);
+    const testAttachment1 = new Uint8Array([1, 2, 3, 4]);
+    const testAttachment2 = new Uint8Array([5, 6, 7, 8]);
+    const testAttachment3 = new ArrayBuffer(4);
+    new Uint8Array(testAttachment3).set([13, 14, 15, 16]);
 
-  const traceableWithAttachmentsAndInputs = traceable(
-    (val: number, text: string, extra: string, attachment: Uint8Array) =>
-      `Processed: ${val}, ${text}, ${extra}, ${attachment.length}`,
-    {
-      name: "attachment_and_input_test",
-      project_name: projectName,
-      client: langsmithClient,
-      id: runId,
-      getAttachments: (
+    const traceableWithAttachmentsAndInputs = traceable(
+      (
         val: number,
         text: string,
         extra: string,
-        attachment: Uint8Array
-      ) => [
-        {
-          test1bin: ["application/octet-stream", testAttachment1],
-          test2bin: ["application/octet-stream", testAttachment2],
-          "input.bin": ["application/octet-stream", attachment],
+        attachment: Uint8Array,
+        attachment2: ArrayBuffer
+      ) =>
+        `Processed: ${val}, ${text}, ${extra}, ${attachment.length}, ${attachment2.byteLength}`,
+      {
+        name: "attachment_and_input_test",
+        project_name: projectName,
+        client: langsmithClient,
+        id: runId,
+        getAttachments: (
+          val: number,
+          text: string,
+          extra: string,
+          attachment: Uint8Array,
+          attachment2: ArrayBuffer
+        ) => [
+          {
+            test1bin: ["application/octet-stream", testAttachment1],
+            test2bin: ["application/octet-stream", testAttachment2],
+            "input.bin": ["application/octet-stream", attachment],
+            "input2.bin": [
+              "application/octet-stream",
+              new Uint8Array(attachment2),
+            ],
+          },
+          { val, text, extra },
+        ],
+        processInputs: (inputs) => {
+          expect(inputs).not.toHaveProperty("attachment");
+          expect(inputs).not.toHaveProperty("attachment2");
+          return {
+            ...inputs,
+            processed_val: (inputs.val as number) * 2,
+            processed_text: (inputs.text as string).toUpperCase(),
+          };
         },
-        { val, text, extra },
-      ],
-      processInputs: (inputs) => {
-        expect(inputs).not.toHaveProperty("attachment");
-        return {
-          ...inputs,
-          processed_val: (inputs.val as number) * 2,
-          processed_text: (inputs.text as string).toUpperCase(),
-        };
-      },
-      tracingEnabled: true,
-    }
-  );
+        tracingEnabled: true,
+      }
+    );
 
-  const multipartIngestRunsSpy = jest.spyOn(
-    langsmithClient,
-    "multipartIngestRuns"
-  );
+    const multipartIngestRunsSpy = jest.spyOn(
+      langsmithClient,
+      "multipartIngestRuns"
+    );
 
-  await traceableWithAttachmentsAndInputs(
-    42,
-    "test input",
-    "extra data",
-    new Uint8Array([9, 10, 11, 12])
-  );
+    await traceableWithAttachmentsAndInputs(
+      42,
+      "test input",
+      "extra data",
+      new Uint8Array([9, 10, 11, 12]),
+      testAttachment3
+    );
 
-  await langsmithClient.awaitPendingTraceBatches();
+    await langsmithClient.awaitPendingTraceBatches();
 
-  expect(multipartIngestRunsSpy).toHaveBeenCalled();
-  const callArgs = multipartIngestRunsSpy.mock.calls[0][0];
+    expect(multipartIngestRunsSpy).toHaveBeenCalled();
+    const callArgs = multipartIngestRunsSpy.mock.calls[0][0];
 
-  expect(callArgs.runCreates).toBeDefined();
-  expect(callArgs.runCreates?.length).toBe(1);
+    expect(callArgs.runCreates).toBeDefined();
+    expect(callArgs.runCreates?.length).toBe(1);
 
-  const runCreate = callArgs.runCreates?.[0];
-  expect(runCreate?.id).toBe(runId);
-  expect(runCreate?.attachments).toBeDefined();
-  expect(runCreate?.attachments?.["test1bin"]).toEqual([
-    "application/octet-stream",
-    testAttachment1,
-  ]);
-  expect(runCreate?.attachments?.["test2bin"]).toEqual([
-    "application/octet-stream",
-    testAttachment2,
-  ]);
-  expect(runCreate?.attachments?.["inputbin"]).toEqual([
-    "application/octet-stream",
-    new Uint8Array([9, 10, 11, 12]),
-  ]);
+    const runCreate = callArgs.runCreates?.[0];
+    expect(runCreate?.id).toBe(runId);
+    expect(runCreate?.attachments).toBeDefined();
+    expect(runCreate?.attachments?.["test1bin"]).toEqual([
+      "application/octet-stream",
+      testAttachment1,
+    ]);
+    expect(runCreate?.attachments?.["test2bin"]).toEqual([
+      "application/octet-stream",
+      testAttachment2,
+    ]);
+    expect(runCreate?.attachments?.["inputbin"]).toEqual([
+      "application/octet-stream",
+      new Uint8Array([9, 10, 11, 12]),
+    ]);
+    expect(runCreate?.attachments?.["input2bin"]).toEqual([
+      "application/octet-stream",
+      new Uint8Array([13, 14, 15, 16]),
+    ]);
 
-  await waitUntilRunFound(langsmithClient, runId);
-  const storedRun = await langsmithClient.readRun(runId);
-  expect(storedRun.id).toEqual(runId);
-  expect(storedRun.inputs).toEqual({
-    val: 42,
-    text: "test input",
-    extra: "extra data",
-    processed_val: 84,
-    processed_text: "TEST INPUT",
-  });
-  expect(storedRun.outputs).toEqual({
-    outputs: "Processed: 42, test input, extra data, 4",
-  });
+    await waitUntilRunFound(langsmithClient, runId);
+    const storedRun = await langsmithClient.readRun(runId);
+    expect(storedRun.id).toEqual(runId);
+    expect(storedRun.inputs).toEqual({
+      val: 42,
+      text: "test input",
+      extra: "extra data",
+      processed_val: 84,
+      processed_text: "TEST INPUT",
+    });
+    expect(storedRun.outputs).toEqual({
+      outputs: "Processed: 42, test input, extra data, 4, 4",
+    });
 
-  multipartIngestRunsSpy.mockRestore();
-}, 60000);
+    multipartIngestRunsSpy.mockRestore();
+  },
+  60000
+);

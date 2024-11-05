@@ -85,7 +85,7 @@ const handleRunOutputs = (
 const handleRunAttachments = (
   rawInputs: unknown[],
   getAttachments?: (...args: unknown[]) => [Attachments | undefined, unknown[]]
-): [Record<string, [string, Uint8Array]> | undefined, unknown[]] => {
+): [Attachments | undefined, unknown[]] => {
   if (!getAttachments) {
     return [undefined, rawInputs];
   }

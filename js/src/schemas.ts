@@ -63,6 +63,9 @@ export interface BaseExample {
   source_run_id?: string;
 }
 
+export type AttachmentData = Uint8Array | ArrayBuffer;
+export type Attachments = Record<string, [string, AttachmentData]>;
+
 /**
  * A run can represent either a trace (root run)
  * or a child run (~span).
@@ -131,7 +134,7 @@ export interface BaseRun {
    * Attachments associated with the run.
    * Each entry is a tuple of [mime_type, bytes]
    */
-  attachments?: Record<string, [string, Uint8Array]>;
+  attachments?: Attachments;
 }
 
 type S3URL = {
@@ -236,7 +239,7 @@ export interface RunUpdate {
    * Attachments associated with the run.
    * Each entry is a tuple of [mime_type, bytes]
    */
-  attachments?: Record<string, [string, Uint8Array]>;
+  attachments?: Attachments;
 }
 
 export interface ExampleCreate extends BaseExample {
@@ -593,5 +596,3 @@ export type UsageMetadata = {
    */
   output_token_details?: OutputTokenDetails;
 };
-
-export type Attachments = Record<string, [string, Uint8Array]>;
