@@ -41,6 +41,7 @@ import {
   isLangChainMessage,
 } from "./utils/messages.js";
 import {
+  getEnvironmentVariable,
   getLangChainEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
@@ -73,7 +74,9 @@ export interface ClientConfig {
   hideInputs?: boolean | ((inputs: KVMap) => KVMap);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
-  pendingAutoBatchedRunLimit?: number;
+  batchSizeBytesLimit?: number;
+  blockOnRootRunFinalization?: boolean;
+  traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
 }
 
@@ -238,6 +241,7 @@ interface CreateRunParams {
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
+  attachments?: Record<string, [string, Uint8Array]>;
 }
 
 interface UpdateRunParams extends RunUpdate {
@@ -276,28 +280,31 @@ type AutoBatchQueueItem = {
   item: RunCreate | RunUpdate;
 };
 
-async function mergeRuntimeEnvIntoRunCreates(runs: RunCreate[]) {
-  const runtimeEnv = await getRuntimeEnvironment();
+type MultipartPart = {
+  name: string;
+  payload: Blob;
+};
+
+export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
+  const runtimeEnv = getRuntimeEnvironment();
   const envVars = getLangChainEnvVarsMetadata();
-  return runs.map((run) => {
-    const extra = run.extra ?? {};
-    const metadata = extra.metadata;
-    run.extra = {
-      ...extra,
-      runtime: {
-        ...runtimeEnv,
-        ...extra?.runtime,
-      },
-      metadata: {
-        ...envVars,
-        ...(envVars.revision_id || run.revision_id
-          ? { revision_id: run.revision_id ?? envVars.revision_id }
-          : {}),
-        ...metadata,
-      },
-    };
-    return run;
-  });
+  const extra = run.extra ?? {};
+  const metadata = extra.metadata;
+  run.extra = {
+    ...extra,
+    runtime: {
+      ...runtimeEnv,
+      ...extra?.runtime,
+    },
+    metadata: {
+      ...envVars,
+      ...(envVars.revision_id || run.revision_id
+        ? { revision_id: run.revision_id ?? envVars.revision_id }
+        : {}),
+      ...metadata,
+    },
+  };
+  return run;
 }
 
 const getTracingSamplingRate = () => {
@@ -357,40 +364,78 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
-export class Queue<T> {
-  items: [T, () => void][] = [];
+export class AutoBatchQueue {
+  items: {
+    action: "create" | "update";
+    payload: RunCreate | RunUpdate;
+    itemPromiseResolve: () => void;
+    itemPromise: Promise<void>;
+    size: number;
+  }[] = [];
 
-  get size() {
-    return this.items.length;
+  sizeBytes = 0;
+
+  peek() {
+    return this.items[0];
   }
 
-  push(item: T): Promise<void> {
-    // this.items.push is synchronous with promise creation:
-    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
-    return new Promise<void>((resolve) => {
-      this.items.push([item, resolve]);
+  push(item: AutoBatchQueueItem): Promise<void> {
+    let itemPromiseResolve;
+    const itemPromise = new Promise<void>((resolve) => {
+      // Setting itemPromiseResolve is synchronous with promise creation:
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
+      itemPromiseResolve = resolve;
     });
+    const size = stringifyForTracing(item.item).length;
+    this.items.push({
+      action: item.action,
+      payload: item.item,
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      itemPromiseResolve: itemPromiseResolve!,
+      itemPromise,
+      size,
+    });
+    this.sizeBytes += size;
+    return itemPromise;
   }
 
-  pop(upToN: number): [T[], () => void] {
-    if (upToN < 1) {
-      throw new Error("Number of items to pop off may not be less than 1.");
+  pop(upToSizeBytes: number): [AutoBatchQueueItem[], () => void] {
+    if (upToSizeBytes < 1) {
+      throw new Error("Number of bytes to pop off may not be less than 1.");
     }
     const popped: typeof this.items = [];
-    while (popped.length < upToN && this.items.length) {
+    let poppedSizeBytes = 0;
+    // Pop items until we reach or exceed the size limit
+    while (
+      poppedSizeBytes + (this.peek()?.size ?? 0) < upToSizeBytes &&
+      this.items.length > 0
+    ) {
       const item = this.items.shift();
       if (item) {
         popped.push(item);
-      } else {
-        break;
+        poppedSizeBytes += item.size;
+        this.sizeBytes -= item.size;
       }
     }
-    return [popped.map((it) => it[0]), () => popped.forEach((it) => it[1]())];
+    // If there is an item on the queue we were unable to pop,
+    // just return it as a single batch.
+    if (popped.length === 0 && this.items.length > 0) {
+      const item = this.items.shift()!;
+      popped.push(item);
+      poppedSizeBytes += item.size;
+      this.sizeBytes -= item.size;
+    }
+    return [
+      popped.map((it) => ({ action: it.action, item: it.payload })),
+      () => popped.forEach((it) => it.itemPromiseResolve()),
+    ];
   }
 }
 
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
+
+const SERVER_INFO_REQUEST_TIMEOUT = 1000;
 
 export class Client {
   private apiKey?: string;
@@ -417,11 +462,7 @@ export class Client {
 
   private autoBatchTracing = true;
 
-  private batchEndpointSupported?: boolean;
-
-  private autoBatchQueue = new Queue<AutoBatchQueueItem>();
-
-  private pendingAutoBatchedRunLimit = 100;
+  private autoBatchQueue = new AutoBatchQueue();
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -429,11 +470,21 @@ export class Client {
 
   private autoBatchAggregationDelayMs = 50;
 
-  private serverInfo: RecordStringAny | undefined;
+  private batchSizeBytesLimit?: number;
 
   private fetchOptions: RequestInit;
 
   private settings: Promise<LangSmithSettings> | null;
+
+  private blockOnRootRunFinalization =
+    getEnvironmentVariable("LANGSMITH_TRACING_BACKGROUND") === "false";
+
+  private traceBatchConcurrency = 5;
+
+  private _serverInfo: RecordStringAny | undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _getServerInfoPromise?: Promise<Record<string, any>>;
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
@@ -448,9 +499,16 @@ export class Client {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
-    this.timeout_ms = config.timeout_ms ?? 12_000;
+    this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.traceBatchConcurrency =
+      config.traceBatchConcurrency ?? this.traceBatchConcurrency;
+    if (this.traceBatchConcurrency < 1) {
+      throw new Error("Trace batch concurrency must be positive.");
+    }
     this.batchIngestCaller = new AsyncCaller({
+      maxRetries: 2,
+      maxConcurrency: this.traceBatchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
@@ -461,8 +519,9 @@ export class Client {
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
-    this.pendingAutoBatchedRunLimit =
-      config.pendingAutoBatchedRunLimit ?? this.pendingAutoBatchedRunLimit;
+    this.blockOnRootRunFinalization =
+      config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
+    this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
   }
 
@@ -588,6 +647,7 @@ export class Client {
     const response = await this._getResponse(path, queryParams);
     return response.json() as T;
   }
+
   private async *_getPaginated<T, TResponse = unknown>(
     path: string,
     queryParams: URLSearchParams = new URLSearchParams(),
@@ -622,6 +682,7 @@ export class Client {
       offset += items.length;
     }
   }
+
   private async *_getCursorPaginatedList<T>(
     path: string,
     body: RecordStringAny | null = null,
@@ -695,51 +756,68 @@ export class Client {
     }
   }
 
-  private async drainAutoBatchQueue() {
-    while (this.autoBatchQueue.size >= 0) {
-      const [batch, done] = this.autoBatchQueue.pop(
-        this.pendingAutoBatchedRunLimit
-      );
+  private async _getBatchSizeLimitBytes(): Promise<number> {
+    const serverInfo = await this._ensureServerInfo();
+    return (
+      this.batchSizeBytesLimit ??
+      serverInfo.batch_ingest_config?.size_limit_bytes ??
+      DEFAULT_BATCH_SIZE_LIMIT_BYTES
+    );
+  }
+
+  private drainAutoBatchQueue(batchSizeLimit: number) {
+    while (this.autoBatchQueue.items.length > 0) {
+      const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
       if (!batch.length) {
         done();
-        return;
+        break;
       }
-      try {
-        await this.batchIngestRuns({
-          runCreates: batch
-            .filter((item) => item.action === "create")
-            .map((item) => item.item) as RunCreate[],
-          runUpdates: batch
-            .filter((item) => item.action === "update")
-            .map((item) => item.item) as RunUpdate[],
-        });
-      } finally {
-        done();
-      }
+      void this._processBatch(batch, done).catch(console.error);
     }
   }
 
-  private async processRunOperation(
-    item: AutoBatchQueueItem,
-    immediatelyTriggerBatch?: boolean
-  ) {
+  private async _processBatch(batch: AutoBatchQueueItem[], done: () => void) {
+    if (!batch.length) {
+      done();
+      return;
+    }
+    try {
+      const ingestParams = {
+        runCreates: batch
+          .filter((item) => item.action === "create")
+          .map((item) => item.item) as RunCreate[],
+        runUpdates: batch
+          .filter((item) => item.action === "update")
+          .map((item) => item.item) as RunUpdate[],
+      };
+      const serverInfo = await this._ensureServerInfo();
+      if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        await this.multipartIngestRuns(ingestParams);
+      } else {
+        await this.batchIngestRuns(ingestParams);
+      }
+    } finally {
+      done();
+    }
+  }
+
+  private async processRunOperation(item: AutoBatchQueueItem) {
     const oldTimeout = this.autoBatchTimeout;
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
-    const itemPromise = this.autoBatchQueue.push(item);
-    if (
-      immediatelyTriggerBatch ||
-      this.autoBatchQueue.size > this.pendingAutoBatchedRunLimit
-    ) {
-      await this.drainAutoBatchQueue().catch(console.error);
+    if (item.action === "create") {
+      item.item = mergeRuntimeEnvIntoRunCreate(item.item as RunCreate);
     }
-    if (this.autoBatchQueue.size > 0) {
+    const itemPromise = this.autoBatchQueue.push(item);
+    const sizeLimitBytes = await this._getBatchSizeLimitBytes();
+    if (this.autoBatchQueue.sizeBytes > sizeLimitBytes) {
+      this.drainAutoBatchQueue(sizeLimitBytes);
+    }
+    if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(
         () => {
           this.autoBatchTimeout = undefined;
-          // This error would happen in the background and is uncatchable
-          // from the outside. So just log instead.
-          void this.drainAutoBatchQueue().catch(console.error);
+          this.drainAutoBatchQueue(sizeLimitBytes);
         },
         oldTimeout
           ? this.autoBatchAggregationDelayMs
@@ -753,20 +831,34 @@ export class Client {
     const response = await _getFetchImplementation()(`${this.apiUrl}/info`, {
       method: "GET",
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(this.timeout_ms),
+      signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
       ...this.fetchOptions,
     });
     await raiseForStatus(response, "get server info");
     return response.json();
   }
 
-  protected async batchEndpointIsSupported() {
-    try {
-      this.serverInfo = await this._getServerInfo();
-    } catch (e) {
-      return false;
+  protected async _ensureServerInfo() {
+    if (this._getServerInfoPromise === undefined) {
+      this._getServerInfoPromise = (async () => {
+        if (this._serverInfo === undefined) {
+          try {
+            this._serverInfo = await this._getServerInfo();
+          } catch (e) {
+            console.warn(
+              `[WARNING]: LangSmith failed to fetch info on supported operations. Falling back to single calls and default limits.`
+            );
+          }
+        }
+        return this._serverInfo ?? {};
+      })();
     }
-    return true;
+    return this._getServerInfoPromise.then((serverInfo) => {
+      if (this._serverInfo === undefined) {
+        this._getServerInfoPromise = undefined;
+      }
+      return serverInfo;
+    });
   }
 
   protected async _getSettings() {
@@ -801,9 +893,7 @@ export class Client {
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParams = await mergeRuntimeEnvIntoRunCreates([
-      runCreate,
-    ]);
+    const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
 
     const response = await this.caller.call(
       _getFetchImplementation(),
@@ -811,7 +901,7 @@ export class Client {
       {
         method: "POST",
         headers,
-        body: stringifyForTracing(mergedRunCreateParams[0]),
+        body: stringifyForTracing(mergedRunCreateParam),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -874,13 +964,8 @@ export class Client {
     if (!rawBatch.post.length && !rawBatch.patch.length) {
       return;
     }
-    preparedCreateParams = await mergeRuntimeEnvIntoRunCreates(
-      preparedCreateParams
-    );
-    if (this.batchEndpointSupported === undefined) {
-      this.batchEndpointSupported = await this.batchEndpointIsSupported();
-    }
-    if (!this.batchEndpointSupported) {
+    const serverInfo = await this._ensureServerInfo();
+    if (serverInfo.version === undefined) {
       this.autoBatchTracing = false;
       for (const preparedCreateParam of rawBatch.post) {
         await this.createRun(preparedCreateParam as CreateRunParams);
@@ -895,30 +980,15 @@ export class Client {
       }
       return;
     }
-    const sizeLimitBytes =
-      this.serverInfo?.batch_ingest_config?.size_limit_bytes ??
-      DEFAULT_BATCH_SIZE_LIMIT_BYTES;
     const batchChunks = {
       post: [] as (typeof rawBatch)["post"],
       patch: [] as (typeof rawBatch)["patch"],
     };
-    let currentBatchSizeBytes = 0;
     for (const k of ["post", "patch"]) {
       const key = k as keyof typeof rawBatch;
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        const stringifiedBatchItem = stringifyForTracing(batchItem);
-        if (
-          currentBatchSizeBytes > 0 &&
-          currentBatchSizeBytes + stringifiedBatchItem.length > sizeLimitBytes
-        ) {
-          await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
-          currentBatchSizeBytes = 0;
-          batchChunks.post = [];
-          batchChunks.patch = [];
-        }
-        currentBatchSizeBytes += stringifiedBatchItem.length;
         batchChunks[key].push(batchItem);
         batchItem = batchItems.pop();
       }
@@ -948,6 +1018,186 @@ export class Client {
     await raiseForStatus(response, "batch create run", true);
   }
 
+  /**
+   * Batch ingest/upsert multiple runs in the Langsmith system.
+   * @param runs
+   */
+  public async multipartIngestRuns({
+    runCreates,
+    runUpdates,
+  }: {
+    runCreates?: RunCreate[];
+    runUpdates?: RunUpdate[];
+  }) {
+    if (runCreates === undefined && runUpdates === undefined) {
+      return;
+    }
+    // transform and convert to dicts
+    const allAttachments: Record<
+      string,
+      Record<string, [string, Uint8Array]>
+    > = {};
+    let preparedCreateParams = [];
+    for (const create of runCreates ?? []) {
+      const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
+      if (
+        preparedCreate.id !== undefined &&
+        preparedCreate.attachments !== undefined
+      ) {
+        allAttachments[preparedCreate.id] = preparedCreate.attachments;
+      }
+      delete preparedCreate.attachments;
+      preparedCreateParams.push(preparedCreate);
+    }
+
+    let preparedUpdateParams = [];
+    for (const update of runUpdates ?? []) {
+      preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
+    }
+
+    // require trace_id and dotted_order
+    const invalidRunCreate = preparedCreateParams.find((runCreate) => {
+      return (
+        runCreate.trace_id === undefined || runCreate.dotted_order === undefined
+      );
+    });
+    if (invalidRunCreate !== undefined) {
+      throw new Error(
+        `Multipart ingest requires "trace_id" and "dotted_order" to be set when creating a run`
+      );
+    }
+    const invalidRunUpdate = preparedUpdateParams.find((runUpdate) => {
+      return (
+        runUpdate.trace_id === undefined || runUpdate.dotted_order === undefined
+      );
+    });
+    if (invalidRunUpdate !== undefined) {
+      throw new Error(
+        `Multipart ingest requires "trace_id" and "dotted_order" to be set when updating a run`
+      );
+    }
+    // combine post and patch dicts where possible
+    if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
+      const createById = preparedCreateParams.reduce(
+        (params: Record<string, RunCreate>, run) => {
+          if (!run.id) {
+            return params;
+          }
+          params[run.id] = run;
+          return params;
+        },
+        {}
+      );
+      const standaloneUpdates = [];
+      for (const updateParam of preparedUpdateParams) {
+        if (updateParam.id !== undefined && createById[updateParam.id]) {
+          createById[updateParam.id] = {
+            ...createById[updateParam.id],
+            ...updateParam,
+          };
+        } else {
+          standaloneUpdates.push(updateParam);
+        }
+      }
+      preparedCreateParams = Object.values(createById);
+      preparedUpdateParams = standaloneUpdates;
+    }
+    if (
+      preparedCreateParams.length === 0 &&
+      preparedUpdateParams.length === 0
+    ) {
+      return;
+    }
+    // send the runs in multipart requests
+    const accumulatedContext: string[] = [];
+    const accumulatedParts: MultipartPart[] = [];
+    for (const [method, payloads] of [
+      ["post", preparedCreateParams] as const,
+      ["patch", preparedUpdateParams] as const,
+    ]) {
+      for (const originalPayload of payloads) {
+        // collect fields to be sent as separate parts
+        const { inputs, outputs, events, ...payload } = originalPayload;
+        const fields = { inputs, outputs, events };
+        // encode the main run payload
+        const stringifiedPayload = stringifyForTracing(payload);
+        accumulatedParts.push({
+          name: `${method}.${payload.id}`,
+          payload: new Blob([stringifiedPayload], {
+            type: `application/json; length=${stringifiedPayload.length}`, // encoding=gzip
+          }),
+        });
+        // encode the fields we collected
+        for (const [key, value] of Object.entries(fields)) {
+          if (value === undefined) {
+            continue;
+          }
+          const stringifiedValue = stringifyForTracing(value);
+          accumulatedParts.push({
+            name: `${method}.${payload.id}.${key}`,
+            payload: new Blob([stringifiedValue], {
+              type: `application/json; length=${stringifiedValue.length}`,
+            }),
+          });
+        }
+        // encode the attachments
+        if (payload.id !== undefined) {
+          const attachments = allAttachments[payload.id];
+          if (attachments) {
+            delete allAttachments[payload.id];
+            for (const [name, [contentType, content]] of Object.entries(
+              attachments
+            )) {
+              accumulatedParts.push({
+                name: `attachment.${payload.id}.${name}`,
+                payload: new Blob([content], {
+                  type: `${contentType}; length=${content.length}`,
+                }),
+              });
+            }
+          }
+        }
+        // compute context
+        accumulatedContext.push(`trace=${payload.trace_id},id=${payload.id}`);
+      }
+    }
+    await this._sendMultipartRequest(
+      accumulatedParts,
+      accumulatedContext.join("; ")
+    );
+  }
+
+  private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
+    try {
+      const formData = new FormData();
+      for (const part of parts) {
+        formData.append(part.name, part.payload);
+      }
+      await this.batchIngestCaller.call(
+        _getFetchImplementation(),
+        `${this.apiUrl}/runs/multipart`,
+        {
+          method: "POST",
+          headers: {
+            ...this.headers,
+          },
+          body: formData,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+    } catch (e) {
+      let errorMessage = "Failed to multipart ingest runs";
+      // eslint-disable-next-line no-instanceof/no-instanceof
+      if (e instanceof Error) {
+        errorMessage += `: ${e.stack || e.message}`;
+      } else {
+        errorMessage += `: ${String(e)}`;
+      }
+      console.warn(`${errorMessage.trim()}\n\nContext: ${context}`);
+    }
+  }
+
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
@@ -967,10 +1217,16 @@ export class Client {
       data.trace_id !== undefined &&
       data.dotted_order !== undefined
     ) {
-      if (run.end_time !== undefined && data.parent_run_id === undefined) {
-        // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
+      if (
+        run.end_time !== undefined &&
+        data.parent_run_id === undefined &&
+        this.blockOnRootRunFinalization
+      ) {
+        // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
-        await this.processRunOperation({ action: "update", item: data }, true);
+        await this.processRunOperation({ action: "update", item: data }).catch(
+          console.error
+        );
         return;
       } else {
         void this.processRunOperation({ action: "update", item: data }).catch(
@@ -4006,5 +4262,33 @@ export class Client {
     } catch (error) {
       throw new Error(`Invalid public ${kind} URL or token: ${urlOrToken}`);
     }
+  }
+
+  /**
+   * Awaits all pending trace batches. Useful for environments where
+   * you need to be sure that all tracing requests finish before execution ends,
+   * such as serverless environments.
+   *
+   * @example
+   * ```
+   * import { Client } from "langsmith";
+   *
+   * const client = new Client();
+   *
+   * try {
+   *   // Tracing happens here
+   *   ...
+   * } finally {
+   *   await client.awaitPendingTraceBatches();
+   * }
+   * ```
+   *
+   * @returns A promise that resolves once all currently pending traces have sent.
+   */
+  public awaitPendingTraceBatches() {
+    return Promise.all([
+      ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
+      this.batchIngestCaller.queue.onIdle(),
+    ]);
   }
 }

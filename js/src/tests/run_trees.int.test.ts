@@ -214,3 +214,32 @@ test.concurrent(
   },
   120_000
 );
+
+test.concurrent(
+  "Test end() write to metadata",
+  async () => {
+    const runId = uuid.v4();
+    const projectName = `__test_end_metadata_run_tree_js ${runId}`;
+    const langchainClient = new Client({ timeout_ms: 30_000 });
+    const parentRunConfig: RunTreeConfig = {
+      name: "parent_run",
+      id: runId,
+      run_type: "chain",
+      project_name: projectName,
+      client: langchainClient,
+    };
+
+    const parentRun = new RunTree(parentRunConfig);
+    await parentRun.end({ output: ["Hi"] }, undefined, undefined, {
+      final_metadata: runId,
+    });
+    await parentRun.postRun();
+
+    await pollRunsUntilCount(langchainClient, projectName, 1);
+    const runs = await toArray(langchainClient.listRuns({ id: [runId] }));
+    expect(runs.length).toEqual(1);
+    expect(runs[0].extra);
+    await langchainClient.deleteProject({ projectName });
+  },
+  120_000
+);

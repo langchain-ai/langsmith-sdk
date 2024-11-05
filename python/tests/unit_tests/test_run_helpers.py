@@ -7,13 +7,16 @@ import sys
 import time
 import uuid
 import warnings
-from typing import Any, AsyncGenerator, Generator, Optional, Set, cast
+from typing import Any, AsyncGenerator, Generator, List, Optional, Set, Tuple, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+from requests_toolbelt import MultipartEncoder
+from typing_extensions import Annotated
 
 import langsmith
 from langsmith import Client
+from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
@@ -48,6 +51,32 @@ def _get_calls(
             break
         time.sleep(0.1)
     return calls
+
+
+def _get_data(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
+    datas = []
+    for call_ in mock_calls:
+        data = json.loads(call_.kwargs["data"])
+        for verb in ("post", "patch"):
+            for payload in data.get(verb) or []:
+                datas.append((verb, payload))
+
+    return datas
+
+
+def _get_multipart_data(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, bytes]]]:
+    datas = []
+    for call_ in mock_calls:
+        data = call_.kwargs.get("data")
+        if isinstance(data, MultipartEncoder):
+            fields = data.fields
+            for key, value in fields:
+                if isinstance(value, tuple):
+                    _, file_content, content_type, _ = value
+                    datas.append((key, (content_type, file_content)))
+                else:
+                    datas.append((key, value))
+    return datas
 
 
 def test__get_inputs_with_no_args() -> None:
@@ -1466,7 +1495,53 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
     mock_calls = _get_calls(
         mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
     )
+
     assert len(mock_calls) == num_calls
+    if auto_batch_tracing:
+        datas = _get_data(mock_calls)
+        outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
+        assert len(outputs) == 1
+        assert outputs[0]["output"] == list(range(5))
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+async def test_traceable_gen_exception(auto_batch_tracing: bool):
+    mock_client = _get_mock_client(
+        auto_batch_tracing=auto_batch_tracing,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+    @traceable
+    def my_function(a: int) -> Generator[int, None, None]:
+        for i in range(5):
+            yield i
+        raise ValueError("foo")
+
+    with tracing_context(enabled=True):
+        with pytest.raises(ValueError, match="foo"):
+            for _ in my_function(1, langsmith_extra={"client": mock_client}):
+                pass
+
+    # Get ALL the call args for the mock_client
+    num_calls = 1 if auto_batch_tracing else 2
+    mock_calls = _get_calls(
+        mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
+    )
+
+    assert len(mock_calls) == num_calls
+    if auto_batch_tracing:
+        datas = _get_data(mock_calls)
+        outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
+        assert len(outputs) == 1
+        assert outputs[0]["output"] == list(range(5))
 
 
 @pytest.mark.parametrize("env_var", [True, False])
@@ -1626,3 +1701,73 @@ def test_traceable_stop_iteration():
 
     wrapped = traceable(my_generator)
     assert list(consume(wrapped)) == list(range(5))
+
+
+def test_traceable_input_attachments():
+    with patch.object(ls_client.ls_env, "get_runtime_environment") as mock_get_env:
+        mock_get_env.return_value = {
+            "LANGSMITH_test_traceable_input_attachments": "aval"
+        }
+
+        @traceable
+        def my_func(
+            val: int,
+            att1: ls_schemas.Attachment,
+            att2: Annotated[tuple, ls_schemas.Attachment],
+        ):
+            return "foo"
+
+        mock_client = _get_mock_client(
+            info=ls_schemas.LangSmithInfo(
+                batch_ingest_config=ls_schemas.BatchIngestConfig(
+                    use_multipart_endpoint=True,
+                    size_limit_bytes=None,  # Note this field is not used here
+                    size_limit=100,
+                    scale_up_nthreads_limit=16,
+                    scale_up_qsize_trigger=1000,
+                    scale_down_nempty_trigger=4,
+                )
+            ),
+        )
+        with tracing_context(enabled=True):
+            result = my_func(
+                42,
+                ls_schemas.Attachment(mime_type="text/plain", data="content1"),
+                ("application/octet-stream", "content2"),
+                langsmith_extra={"client": mock_client},
+            )
+            assert result == "foo"
+
+        calls = _get_calls(mock_client)
+        datas = _get_multipart_data(calls)
+
+        # main run, inputs, outputs, events, att1, att2
+        assert len(datas) == 6
+        # First 4 are type application/json (run, inputs, outputs, events)
+        trace_id = datas[0][0].split(".")[1]
+        _, (_, run_stuff) = next(
+            data for data in datas if data[0] == f"post.{trace_id}"
+        )
+        assert (
+            json.loads(run_stuff)["extra"]["runtime"].get(
+                "LANGSMITH_test_traceable_input_attachments"
+            )
+            == "aval"
+        )
+
+        _, (_, inputs) = next(
+            data for data in datas if data[0] == f"post.{trace_id}.inputs"
+        )
+        assert json.loads(inputs) == {"val": 42}
+        # last two are the mime types provided
+        _, (mime_type1, content1) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.att1"
+        )
+        assert mime_type1 == "text/plain"
+        assert content1 == b"content1"
+
+        _, (mime_type2, content2) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.att2"
+        )
+        assert mime_type2 == "application/octet-stream"
+        assert content2 == b"content2"
