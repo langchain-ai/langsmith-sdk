@@ -1729,10 +1729,11 @@ def test_traceable_input_attachments():
                 )
             ),
         )
+        long_content = b"c" * 20_000_000
         with tracing_context(enabled=True):
             result = my_func(
                 42,
-                ls_schemas.Attachment(mime_type="text/plain", data="content1"),
+                ls_schemas.Attachment(mime_type="text/plain", data=long_content),
                 ("application/octet-stream", "content2"),
                 langsmith_extra={"client": mock_client},
             )
@@ -1764,7 +1765,7 @@ def test_traceable_input_attachments():
             data for data in datas if data[0] == f"attachment.{trace_id}.att1"
         )
         assert mime_type1 == "text/plain"
-        assert content1 == b"content1"
+        assert content1 == long_content
 
         _, (mime_type2, content2) = next(
             data for data in datas if data[0] == f"attachment.{trace_id}.att2"

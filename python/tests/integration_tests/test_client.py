@@ -8,13 +8,16 @@ import random
 import string
 import sys
 import time
+import uuid
 from datetime import timedelta
 from typing import Any, Callable, Dict
+from unittest import mock
 from uuid import uuid4
 
 import pytest
 from freezegun import freeze_time
 from pydantic import BaseModel
+from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import DataType
@@ -23,6 +26,8 @@ from langsmith.utils import (
     LangSmithError,
     get_env_var,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def wait_for(
@@ -960,3 +965,56 @@ def test_runs_stats():
     # We always have stuff in the "default" project...
     stats = langchain_client.get_run_stats(project_names=["default"], run_type="llm")
     assert stats
+
+
+def test_slow_run_read_multipart(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+):
+    myobj = {f"key_{i}": f"val_{i}" for i in range(500)}
+    id_ = str(uuid.uuid4())
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+    run_to_create = {
+        "id": id_,
+        "session_name": "default",
+        "name": "trace a root",
+        "run_type": "chain",
+        "dotted_order": f"{current_time}{id_}",
+        "trace_id": id_,
+        "inputs": myobj,
+    }
+
+    class CB:
+        def __init__(self):
+            self.called = 0
+            self.start_time = None
+
+        def __call__(self, monitor: MultipartEncoderMonitor):
+            self.called += 1
+            if not self.start_time:
+                self.start_time = time.time()
+            logger.debug(
+                f"[{self.called}]: {monitor.bytes_read} bytes,"
+                f" {time.time() - self.start_time:.2f} seconds"
+                " elapsed",
+            )
+            if self.called == 1:
+                time.sleep(6)
+
+    def create_encoder(*args, **kwargs):
+        encoder = MultipartEncoder(*args, **kwargs)
+        encoder = MultipartEncoderMonitor(encoder, CB())
+        return encoder
+
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        with mock.patch(
+            "langsmith.client.rqtb_multipart.MultipartEncoder", create_encoder
+        ):
+            langchain_client.create_run(**run_to_create)
+            time.sleep(1)
+            start_time = time.time()
+            while time.time() - start_time < 8:
+                myobj["key_1"]
+
+        assert not caplog.records
