@@ -2439,7 +2439,7 @@ class Client:
                 self._tenant_id = tracer_session.tenant_id
                 return self._tenant_id
         except Exception as e:
-            logger.warning(
+            logger.debug(
                 "Failed to get tenant ID from LangSmith: %s", repr(e), exc_info=True
             )
         return None
