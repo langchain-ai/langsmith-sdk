@@ -967,8 +967,10 @@ def test_runs_stats():
     assert stats
 
 
-def test_big_run_multipart(langchain_client: Client, caplog: pytest.LogCaptureFixture):
-    myobj = {f"key_{i}": f"val_{i}" for i in range(1000)}
+def test_slow_run_read_multipart(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+):
+    myobj = {f"key_{i}": f"val_{i}" for i in range(500)}
     id_ = str(uuid.uuid4())
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S%fZ"
@@ -992,37 +994,16 @@ def test_big_run_multipart(langchain_client: Client, caplog: pytest.LogCaptureFi
             self.called += 1
             if not self.start_time:
                 self.start_time = time.time()
-            elapsed = time.time() - self.start_time
-
             logger.debug(
-                f"[{self.called}]: {monitor.bytes_read} bytes, {elapsed:.2f} seconds"
+                f"[{self.called}]: {monitor.bytes_read} bytes,"
+                f" {time.time() - self.start_time:.2f} seconds"
                 " elapsed",
-                flush=True,
-                file=sys.stderr,
             )
             if self.called == 1:
                 time.sleep(6)
 
-    class DelayedMultipartEncoder(MultipartEncoder):
-        """A wrapper for MultipartEncoder that delays the first read."""
-
-        def __init__(self, *args, first_chunk_size: int | None = None, **kwargs):
-            super().__init__(*args, **kwargs)
-            self._first_chunk_size = first_chunk_size
-            self._first_read = True
-
-        def read(self, size=-1):
-            if self._first_read:
-                self._first_read = False
-                return super().read(
-                    self._first_chunk_size
-                    if self._first_chunk_size is not None
-                    else size
-                )
-            return super().read(size)
-
     def create_encoder(*args, **kwargs):
-        encoder = DelayedMultipartEncoder(*args, first_chunk_size=None, **kwargs)
+        encoder = MultipartEncoder(*args, **kwargs)
         encoder = MultipartEncoderMonitor(encoder, CB())
         return encoder
 
@@ -1035,9 +1016,5 @@ def test_big_run_multipart(langchain_client: Client, caplog: pytest.LogCaptureFi
             start_time = time.time()
             while time.time() - start_time < 8:
                 myobj["key_1"]
-            # start_time = time.sleep(0)
-            # for _ in range(50_000_000):
-            #     assert myobj["key_1"] == "val_1"
-            # langchain_client.tracing_queue.join()
 
         assert not caplog.records

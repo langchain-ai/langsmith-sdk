@@ -1072,12 +1072,24 @@ def test_batch_ingest_run_splits_large_batches(
         assert sum(
             [1 for call in mock_session.request.call_args_list if call[0][0] == "POST"]
         ) in (expected_num_requests, expected_num_requests + 1)
+
+        class _FakeEncoder:
+            def __init__(self, data: bytes):
+                self._buffer = data
+
+            def read(self, size=-1):
+                return self._buffer
+
         request_bodies = [
             op
             for call in mock_session.request.call_args_list
             for op in (
                 MultipartParser(
-                    call[1]["data"],
+                    (
+                        _FakeEncoder(call[1]["data"])
+                        if isinstance(call[1]["data"], bytes)
+                        else call[1]["data"]
+                    ),
                     parse_options_header(call[1]["headers"]["Content-Type"])[1][
                         "boundary"
                     ],

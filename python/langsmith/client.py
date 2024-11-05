@@ -58,8 +58,8 @@ from urllib import parse as urllib_parse
 import orjson
 import requests
 from requests import adapters as requests_adapters
-from requests_toolbelt import (
-    multipart as rqtb_multipart,  # type: ignore[import-untyped]
+from requests_toolbelt import (  # type: ignore[import-untyped]
+    multipart as rqtb_multipart,
 )
 from typing_extensions import TypeGuard
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined]
@@ -1559,11 +1559,15 @@ class Client:
             for idx in range(1, attempts + 1):
                 try:
                     encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
+                    if encoder.len <= 20_000_000:  # ~20 MB
+                        data = encoder.to_string()
+                    else:
+                        data = encoder
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
                         request_kwargs={
-                            "data": encoder,
+                            "data": data,
                             "headers": {
                                 **self._headers,
                                 X_API_KEY: api_key,
