@@ -84,17 +84,17 @@ const handleRunOutputs = (
 };
 const handleRunAttachments = (
   rawInputs: unknown[],
-  getAttachments?: (...args: unknown[]) => [Attachments | undefined, unknown[]]
+  splitAttachments?: (...args: unknown[]) => [Attachments | undefined, unknown[]]
 ): [Attachments | undefined, unknown[]] => {
-  if (!getAttachments) {
+  if (!splitAttachments) {
     return [undefined, rawInputs];
   }
 
   try {
-    const [attachments, remainingArgs] = getAttachments(...rawInputs);
+    const [attachments, remainingArgs] = splitAttachments(...rawInputs);
     return [attachments, remainingArgs];
   } catch (e) {
-    console.error("Error occurred during getAttachments:", e);
+    console.error("Error occurred during splitAttachments:", e);
     return [undefined, rawInputs];
   }
 };
@@ -106,7 +106,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined,
   processInputs: (inputs: Readonly<KVMap>) => KVMap,
-  getAttachments:
+  splitAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
 ): RunTree | undefined => {
@@ -116,7 +116,7 @@ const getTracingRunTree = <Args extends unknown[]>(
 
   const [attached, args] = handleRunAttachments(
     inputs,
-    getAttachments as
+    splitAttachments as
       | ((...args: unknown[]) => [Attachments | undefined, unknown[]])
       | undefined
   );
@@ -339,11 +339,11 @@ export function traceable<Func extends (...args: any[]) => any>(
     __finalTracedIteratorKey?: string;
 
     /**
-     * Specify which inputs should be treated as attachments and return the remaining arguments.
-     * @param args Arguments of the traced function
-     * @returns A tuple containing the Attachments object and the remaining arguments
-     */
-    getAttachments?: (
+   * Extract attachments from args and return remaining args.
+   * @param args Arguments of the traced function
+   * @returns Tuple of [Attachments, remaining args]
+   */
+    splitAttachments?: (
       ...args: Parameters<Func>
     ) => [Attachments | undefined, KVMap];
 
@@ -387,14 +387,14 @@ export function traceable<Func extends (...args: any[]) => any>(
     __finalTracedIteratorKey,
     processInputs,
     processOutputs,
-    getAttachments,
+    splitAttachments,
     ...runTreeConfig
   } = config ?? {};
 
   const processInputsFn = processInputs ?? ((x) => x);
   const processOutputsFn = processOutputs ?? ((x) => x);
-  const getAttachmentsFn =
-    getAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
+  const splitAttachmentsFn =
+    splitAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
 
   const traceableFunc = (
     ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -469,7 +469,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             restArgs as Inputs,
             config?.getInvocationParams,
             processInputsFn,
-            getAttachmentsFn
+            splitAttachmentsFn
           ),
           restArgs as Inputs,
         ];
@@ -495,7 +495,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           restArgs as Inputs,
           config?.getInvocationParams,
           processInputsFn,
-          getAttachmentsFn
+          splitAttachmentsFn
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -511,7 +511,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             processedArgs,
             config?.getInvocationParams,
             processInputsFn,
-            getAttachmentsFn
+            splitAttachmentsFn
           ),
           processedArgs as Inputs,
         ];
@@ -522,7 +522,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         processedArgs,
         config?.getInvocationParams,
         processInputsFn,
-        getAttachmentsFn
+        splitAttachmentsFn
       );
       // If a context var is set by LangChain outside of a traceable,
       // it will be an object with a single property and we should copy
