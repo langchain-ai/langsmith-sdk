@@ -480,7 +480,7 @@ class ExperimentResults:
             ]
             return pd.DataFrame(head)._repr_html_()  # type: ignore[operator]
         else:
-            return f"<ExperimentResults {self.experiment_name}>"
+            return self.__repr__()
 
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
