@@ -686,7 +686,7 @@ test.concurrent(
         project_name: projectName,
         client: langsmithClient,
         id: runId,
-        splitAttachments: (
+        extractAttachments: (
           val: number,
           text: string,
           extra: string,

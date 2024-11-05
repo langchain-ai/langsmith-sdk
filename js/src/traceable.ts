@@ -84,17 +84,17 @@ const handleRunOutputs = (
 };
 const handleRunAttachments = (
   rawInputs: unknown[],
-  splitAttachments?: (...args: unknown[]) => [Attachments | undefined, unknown[]]
+  extractAttachments?: (...args: unknown[]) => [Attachments | undefined, unknown[]]
 ): [Attachments | undefined, unknown[]] => {
-  if (!splitAttachments) {
+  if (!extractAttachments) {
     return [undefined, rawInputs];
   }
 
   try {
-    const [attachments, remainingArgs] = splitAttachments(...rawInputs);
+    const [attachments, remainingArgs] = extractAttachments(...rawInputs);
     return [attachments, remainingArgs];
   } catch (e) {
-    console.error("Error occurred during splitAttachments:", e);
+    console.error("Error occurred during extractAttachments:", e);
     return [undefined, rawInputs];
   }
 };
@@ -106,7 +106,7 @@ const getTracingRunTree = <Args extends unknown[]>(
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined,
   processInputs: (inputs: Readonly<KVMap>) => KVMap,
-  splitAttachments:
+  extractAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
 ): RunTree | undefined => {
@@ -116,7 +116,7 @@ const getTracingRunTree = <Args extends unknown[]>(
 
   const [attached, args] = handleRunAttachments(
     inputs,
-    splitAttachments as
+    extractAttachments as
       | ((...args: unknown[]) => [Attachments | undefined, unknown[]])
       | undefined
   );
@@ -343,7 +343,7 @@ export function traceable<Func extends (...args: any[]) => any>(
    * @param args Arguments of the traced function
    * @returns Tuple of [Attachments, remaining args]
    */
-    splitAttachments?: (
+    extractAttachments?: (
       ...args: Parameters<Func>
     ) => [Attachments | undefined, KVMap];
 
@@ -387,14 +387,14 @@ export function traceable<Func extends (...args: any[]) => any>(
     __finalTracedIteratorKey,
     processInputs,
     processOutputs,
-    splitAttachments,
+    extractAttachments,
     ...runTreeConfig
   } = config ?? {};
 
   const processInputsFn = processInputs ?? ((x) => x);
   const processOutputsFn = processOutputs ?? ((x) => x);
-  const splitAttachmentsFn =
-    splitAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
+  const extractAttachmentsFn =
+    extractAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
 
   const traceableFunc = (
     ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -469,7 +469,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             restArgs as Inputs,
             config?.getInvocationParams,
             processInputsFn,
-            splitAttachmentsFn
+            extractAttachmentsFn
           ),
           restArgs as Inputs,
         ];
@@ -495,7 +495,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           restArgs as Inputs,
           config?.getInvocationParams,
           processInputsFn,
-          splitAttachmentsFn
+          extractAttachmentsFn
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -511,7 +511,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             processedArgs,
             config?.getInvocationParams,
             processInputsFn,
-            splitAttachmentsFn
+            extractAttachmentsFn
           ),
           processedArgs as Inputs,
         ];
@@ -522,7 +522,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         processedArgs,
         config?.getInvocationParams,
         processInputsFn,
-        splitAttachmentsFn
+        extractAttachmentsFn
       );
       // If a context var is set by LangChain outside of a traceable,
       // it will be an object with a single property and we should copy
