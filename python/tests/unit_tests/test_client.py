@@ -858,7 +858,12 @@ def test_serialize_json(caplog) -> None:
         "class_with_tee": "tee_a, tee_b",
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
-        "my_pydantic": {"foo": "foo", "bar": 1},
+        "my_pydantic": {
+            "foo": "foo",
+            "bar": 1,
+            "path_keys": {"foo": {"foo": "foo", "bar": 1, "path_keys": {}}},
+        },
+        "my_pydantic_class": lambda x: "MyPydantic" in x,
         "person": {"name": "foo_person"},
         "a_bool": True,
         "a_none": None,
