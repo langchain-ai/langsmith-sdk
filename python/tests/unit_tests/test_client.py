@@ -7,6 +7,7 @@ import itertools
 import json
 import logging
 import math
+import pathlib
 import sys
 import time
 import uuid
@@ -721,6 +722,7 @@ def test_pydantic_serialize() -> None:
 
     class ChildPydantic(BaseModel):
         uid: uuid.UUID
+        child_path_keys: Dict[pathlib.Path, pathlib.Path]
 
     class MyPydantic(BaseModel):
         foo: str
@@ -728,9 +730,16 @@ def test_pydantic_serialize() -> None:
         tim: datetime
         ex: Optional[str] = None
         child: Optional[ChildPydantic] = None
+        path_keys: Dict[pathlib.Path, pathlib.Path]
 
     obj = MyPydantic(
-        foo="bar", uid=test_uuid, tim=test_time, child=ChildPydantic(uid=test_uuid)
+        foo="bar",
+        uid=test_uuid,
+        tim=test_time,
+        child=ChildPydantic(
+            uid=test_uuid, child_path_keys={pathlib.Path("foo"): pathlib.Path("bar")}
+        ),
+        path_keys={pathlib.Path("foo"): pathlib.Path("bar")},
     )
     res = json.loads(json.dumps(obj, default=_serialize_json))
     expected = {
@@ -739,7 +748,9 @@ def test_pydantic_serialize() -> None:
         "tim": test_time.isoformat(),
         "child": {
             "uid": str(test_uuid),
+            "child_path_keys": {"foo": "bar"},
         },
+        "path_keys": {"foo": "bar"},
     }
     assert res == expected
 
@@ -779,6 +790,7 @@ def test_serialize_json(caplog) -> None:
     class MyPydantic(BaseModel):
         foo: str
         bar: int
+        path_keys: Dict[pathlib.Path, "MyPydantic"]
 
     @dataclasses.dataclass
     class MyDataclass:
@@ -818,7 +830,11 @@ def test_serialize_json(caplog) -> None:
         "class_with_tee": ClassWithTee(),
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
-        "my_pydantic": MyPydantic(foo="foo", bar=1),
+        "my_pydantic": MyPydantic(
+            foo="foo",
+            bar=1,
+            path_keys={pathlib.Path("foo"): MyPydantic(foo="foo", bar=1, path_keys={})},
+        ),
         "my_pydantic_class": MyPydantic,
         "person": Person(name="foo_person"),
         "a_bool": True,
@@ -844,7 +860,11 @@ def test_serialize_json(caplog) -> None:
         "class_with_tee": "tee_a, tee_b",
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
-        "my_pydantic": {"foo": "foo", "bar": 1},
+        "my_pydantic": {
+            "foo": "foo",
+            "bar": 1,
+            "path_keys": {"foo": {"foo": "foo", "bar": 1, "path_keys": {}}},
+        },
         "my_pydantic_class": lambda x: "MyPydantic" in x,
         "person": {"name": "foo_person"},
         "a_bool": True,
