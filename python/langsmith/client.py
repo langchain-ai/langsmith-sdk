@@ -137,8 +137,13 @@ def _parse_token_or_url(
     path_parts = parsed_url.path.split("/")
     if len(path_parts) >= num_parts:
         token_uuid = path_parts[-num_parts]
+        _as_uuid(token_uuid, var="token parts")
     else:
         raise ls_utils.LangSmithUserError(f"Invalid public {kind} URL: {url_or_token}")
+    if parsed_url.netloc == "smith.langchain.com":
+        api_url = "https://api.smith.langchain.com"
+    elif parsed_url.netloc == "beta.smith.langchain.com":
+        api_url = "https://beta.api.smith.langchain.com"
     return api_url, token_uuid
 
 
