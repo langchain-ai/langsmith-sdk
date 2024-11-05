@@ -1646,7 +1646,16 @@ def _ensure_traceable(
 ) -> rh.SupportsLangsmithExtra[[dict], dict]:
     """Ensure the target function is traceable."""
     if not callable(target):
-        raise ValueError("Target must be a callable function.")
+        raise ValueError(
+            "Target must be a callable function. For example:\n\n"
+            "def predict(inputs: dict) -> dict:\n"
+            "    # do work, like chain.invoke(inputs)\n"
+            "    return {...}\n\n"
+            "evaluate(\n"
+            "    predict,\n"
+            "    ...\n"
+            ")"
+        )
     if rh.is_traceable_function(target):
         fn = target
     else:

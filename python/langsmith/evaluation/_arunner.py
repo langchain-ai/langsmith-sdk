@@ -908,9 +908,24 @@ def _ensure_async_traceable(
     target: ATARGET_T,
 ) -> rh.SupportsLangsmithExtra[[dict], Awaitable]:
     if not asyncio.iscoroutinefunction(target):
-        raise ValueError(
-            "Target must be an async function. For sync functions, use evaluate."
-        )
+        if callable(target):
+            raise ValueError(
+                "Target must be an async function. For sync functions, use evaluate."
+                " Example usage:\n\n"
+                "async def predict(inputs: dict) -> dict:\n"
+                "    # do work, like chain.invoke(inputs)\n"
+                "    return {...}\n"
+                "await aevaluate(predict, ...)"
+            )
+        else:
+            raise ValueError(
+                "Target must be a callable async function. "
+                "Received a non-callable object. Example usage:\n\n"
+                "async def predict(inputs: dict) -> dict:\n"
+                "    # do work, like chain.invoke(inputs)\n"
+                "    return {...}\n"
+                "await aevaluate(predict, ...)"
+            )
     if rh.is_traceable_function(target):
         return target  # type: ignore
     return rh.traceable(name="AsyncTarget")(target)
