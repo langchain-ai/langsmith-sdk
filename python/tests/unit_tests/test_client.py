@@ -37,7 +37,9 @@ from langsmith.client import (
     Client,
     _dumps_json,
     _is_langchain_hosted,
+    _parse_token_or_url,
 )
+from langsmith.utils import LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -1182,3 +1184,48 @@ def test_validate_api_key_if_hosted(
         # Check no warning is raised here.
         warnings.simplefilter("error")
         client_cls(api_url="http://localhost:1984")
+
+
+def test_parse_token_or_url():
+    # Test with URL
+    url = "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    api_url = "https://api.smith.langchain.com"
+    assert _parse_token_or_url(url, api_url) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    url = "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    beta_api_url = "https://beta.api.smith.langchain.com"
+    # Should still point to the correct public one
+    assert _parse_token_or_url(url, beta_api_url) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    token = "419dcab2-1d66-4b94-8901-0357ead390df"
+    assert _parse_token_or_url(token, api_url) == (
+        api_url,
+        token,
+    )
+
+    # Test with UUID object
+    token_uuid = uuid.UUID("419dcab2-1d66-4b94-8901-0357ead390df")
+    assert _parse_token_or_url(token_uuid, api_url) == (
+        api_url,
+        str(token_uuid),
+    )
+
+    # Test with custom num_parts
+    url_custom = (
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/p/q"
+    )
+    assert _parse_token_or_url(url_custom, api_url, num_parts=3) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    # Test with invalid URL
+    invalid_url = "https://invalid.com/419dcab2-1d66-4b94-8901-0357ead390df"
+    with pytest.raises(LangSmithUserError):
+        _parse_token_or_url(invalid_url, api_url)
