@@ -9,7 +9,11 @@ import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
 import { v5 as uuid5, v4 as uuid4 } from "uuid";
 import { getCurrentRunTree } from "./singletons/traceable.js";
-import { getLangSmithEnvironmentVariable } from "./utils/env.js";
+import {
+  getLangSmithEnvironmentVariable,
+  getEnvironmentVariable,
+} from "./utils/env.js";
+import { isTracingEnabled } from "./env.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -310,8 +314,14 @@ export class AISDKExporter {
     }
   > = {};
 
-  constructor(args?: { client?: Client }) {
+  private debug: boolean;
+
+  constructor(args?: { client?: Client; debug?: boolean }) {
     this.client = args?.client ?? new Client();
+    this.debug =
+      args?.debug ?? getEnvironmentVariable("OTEL_LOG_LEVEL") === "DEBUG";
+
+    this.logDebug("creating exporter", { tracingEnabled: isTracingEnabled() });
   }
 
   static getSettings(settings?: TelemetrySettings) {
@@ -321,7 +331,7 @@ export class AISDKExporter {
     if (runName != null) metadata[RUN_NAME_METADATA_KEY.input] = runName;
 
     // attempt to obtain the run tree if used within a traceable function
-    let defaultEnabled = true;
+    let defaultEnabled = settings?.isEnabled ?? isTracingEnabled();
     try {
       const runTree = getCurrentRunTree();
       const headers = runTree.toHeaders();
@@ -706,6 +716,8 @@ export class AISDKExporter {
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
+    this.logDebug("exporting spans", spans);
+
     const typedSpans = (spans as AISDKSpan[])
       .slice()
       .sort((a, b) => sortByHr(a.startTime, b.startTime));
@@ -730,7 +742,10 @@ export class AISDKExporter {
       const traceMap = this.traceByMap[traceId];
 
       const run = this.getRunCreate(span);
-      if (!run) continue;
+      if (!run) {
+        this.logDebug("skipping span", span);
+        continue;
+      }
 
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
@@ -744,6 +759,7 @@ export class AISDKExporter {
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
 
+      if (this.debug) console.log(`[${span.name}] ${runId}`, run);
       traceMap.childMap[parentRunId ?? ROOT] ??= [];
       traceMap.childMap[parentRunId ?? ROOT].push(traceMap.nodeMap[runId]);
       traceMap.interop = this.parseInteropFromMetadata(span);
@@ -854,6 +870,7 @@ export class AISDKExporter {
       }
     }
 
+    this.logDebug(`sampled runs to be sent to LangSmith`, sampled);
     Promise.all(
       sampled.map(([override, value]) =>
         this.client.createRun({ ...value, ...override })
@@ -869,6 +886,7 @@ export class AISDKExporter {
     const incompleteNodes = Object.values(this.traceByMap).flatMap((trace) =>
       Object.values(trace.nodeMap).filter((i) => !i.sent)
     );
+    this.logDebug("shutting down", { incompleteNodes: incompleteNodes.length });
 
     if (incompleteNodes.length > 0) {
       console.warn(
@@ -878,7 +896,13 @@ export class AISDKExporter {
 
     await this.client?.awaitPendingTraceBatches();
   }
+
   async forceFlush?(): Promise<void> {
     await this.client?.awaitPendingTraceBatches();
+  }
+
+  protected logDebug(...args: Parameters<typeof console.debug>): void {
+    if (!this.debug) return;
+    console.debug(`[${new Date().toISOString()}] [LangSmith]`, ...args);
   }
 }
