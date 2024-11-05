@@ -658,7 +658,7 @@ test.concurrent(
   }
 );
 
-test.only("Test upload attachments and process inputs.", async () => {
+test.concurrent("Test upload attachments and process inputs.", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
