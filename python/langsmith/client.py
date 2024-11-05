@@ -58,7 +58,9 @@ from urllib import parse as urllib_parse
 import orjson
 import requests
 from requests import adapters as requests_adapters
-from requests_toolbelt.multipart import MultipartEncoder  # type: ignore[import-untyped]
+from requests_toolbelt import (
+    multipart as rqtb_multipart,  # type: ignore[import-untyped]
+)
 from typing_extensions import TypeGuard
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined]
 from urllib3.util import Retry
@@ -1556,7 +1558,7 @@ class Client:
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:
-                    encoder = MultipartEncoder(parts, boundary=BOUNDARY)
+                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
