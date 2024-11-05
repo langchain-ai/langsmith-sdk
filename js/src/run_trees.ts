@@ -1,5 +1,5 @@
 import * as uuid from "uuid";
-import { BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
+import { Attachments, BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
@@ -55,7 +55,7 @@ export interface RunTreeConfig {
 
   trace_id?: string;
   dotted_order?: string;
-  attachments?: Record<string, [string, Uint8Array]>;
+  attachments?: Attachments;
 }
 
 export interface RunnableConfigLike {
@@ -177,7 +177,7 @@ export class RunTree implements BaseRun {
    * Attachments associated with the run.
    * Each entry is a tuple of [mime_type, bytes]
    */
-  attachments?: Record<string, [string, Uint8Array]>;
+  attachments?: Attachments;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
