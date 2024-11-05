@@ -18,6 +18,8 @@ import threading
 import uuid
 from contextvars import copy_context
 from typing import (
+    TYPE_CHECKING,
+    Any,
     Awaitable,
     Callable,
     DefaultDict,
@@ -54,6 +56,12 @@ from langsmith.evaluation.evaluator import (
 )
 from langsmith.evaluation.integrations import LangChainStringEvaluator
 
+if TYPE_CHECKING:
+    import pandas as pd
+
+    DataFrame = pd.DataFrame
+else:
+    DataFrame = Any
 logger = logging.getLogger(__name__)
 
 TARGET_T = Callable[[dict], dict]
@@ -451,6 +459,20 @@ class ExperimentResults:
 
     def __len__(self) -> int:
         return len(self._results)
+
+    def to_pandas(
+        self, start: Optional[int] = 0, end: Optional[int] = None
+    ) -> DataFrame:
+        return _to_pandas(self._results, start=start, end=end)
+
+    def _repr_html_(self) -> str:
+        import importlib.util
+
+        if self._results and importlib.util.find_spec("pandas"):
+            df = self.to_pandas()
+            return df._repr_html_()  # type: ignore[operator]
+        else:
+            return self.__repr__()
 
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
@@ -1853,3 +1875,51 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
 
     except SyntaxError:
         return []
+
+
+def _to_pandas(
+    results: list[ExperimentResultRow],
+    start: Optional[int] = 0,
+    end: Optional[int] = None,
+):
+    try:
+        import pandas as pd
+    except ImportError as e:
+        raise ImportError(
+            "The 'pandas' library is required to use the 'to_pandas' function. "
+            "Please install it using 'pip install pandas' or "
+            "'conda install pandas' before calling this method."
+        ) from e
+
+    return pd.DataFrame(_flatten_experiment_results(results, start=start, end=end))
+
+
+def _flatten_experiment_results(
+    results: list[ExperimentResultRow],
+    start: Optional[int] = 0,
+    end: Optional[int] = None,
+):
+    return [
+        {
+            **{f"inputs.{k}": v for k, v in x["example"].inputs.items()},
+            **{f"outputs.{k}": v for k, v in (x["run"].outputs or {}).items()},
+            "error": x["run"].error,
+            **(
+                {f"reference.{k}": v for k, v in x["example"].outputs.items()}
+                if x["example"].outputs is not None
+                else {}
+            ),
+            **{
+                f"feedback.{r.key}": r.score if r.score is not None else r.value
+                for r in x["evaluation_results"]["results"]
+            },
+            "execution_time": (
+                (x["run"].end_time - x["run"].start_time).total_seconds()
+                if x["run"].end_time
+                else None
+            ),
+            "example_id": x["run"].reference_example_id,
+            "id": x["run"].id,
+        }
+        for x in results[start:end]
+    ]
