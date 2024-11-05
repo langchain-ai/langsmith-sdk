@@ -69,6 +69,16 @@ def _simple_default(obj):
     return str(obj)
 
 
+_serialization_methods = [
+    (
+        "model_dump",
+        {"exclude_none": True, "mode": "json"},
+    ),  # Pydantic V2 with non-serializable fields
+    ("dict", {}),  # Pydantic V1 with non-serializable field
+    ("to_dict", {}),  # dataclasses-json
+]
+
+
 def _serialize_json(obj: Any) -> Any:
     try:
         if isinstance(obj, (set, tuple)):
@@ -77,15 +87,7 @@ def _serialize_json(obj: Any) -> Any:
                 return obj._asdict()
             return list(obj)
 
-        serialization_methods = [
-            (
-                "model_dump",
-                {"exclude_none": True, "mode": "json"},
-            ),  # Pydantic V2 with non-serializable fields
-            ("dict", {}),  # Pydantic V1 with non-serializable field
-            ("to_dict", {}),  # dataclasses-json
-        ]
-        for attr, kwargs in serialization_methods:
+        for attr, kwargs in _serialization_methods:
             if (
                 hasattr(obj, attr)
                 and callable(getattr(obj, attr))
