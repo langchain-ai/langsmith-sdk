@@ -520,9 +520,18 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 yield result
 
     async def astart(self) -> _AsyncExperimentManager:
-        first_example = await aitertools.py_anext(await self.aget_examples())
+        try:
+            first_example = await aitertools.py_anext(await self.aget_examples())
+        except StopAsyncIteration:
+            raise ValueError(
+                "No examples found in the dataset. "
+                "Please ensure the data provided to aevaluate is not empty."
+            )
         if not first_example:
-            raise ValueError("No examples found in the dataset.")
+            raise ValueError(
+                "No examples found in the dataset."
+                "Please ensure the data provided to aevaluate is not empty."
+            )
         project = self._get_project(first_example)
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
