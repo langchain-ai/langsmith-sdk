@@ -366,7 +366,8 @@ def _end_tests(
         },
     )
     test_suite.wait()
-    test_suite.cache_manager.close()
+    if test_suite.cache_manager.context is not None:
+        test_suite.cache_manager.close()
 
 
 VT = TypeVar("VT", bound=Optional[dict])
@@ -375,8 +376,7 @@ VT = TypeVar("VT", bound=Optional[dict])
 def _serde_example_values(values: VT) -> VT:
     if values is None:
         return values
-    # Don't try to magically serialize Python objects, just use their REPRs.
-    bts = ls_client._dumps_json(values, serialize_py=False)
+    bts = ls_client._dumps_json(values)
     return orjson.loads(bts)
 
 
@@ -396,9 +396,7 @@ class _LangSmithTestSuite:
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
         self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
-        cache_path = (
-            Path(cache) / f"{self._dataset.id}.yaml" if cache["cache"] else None
-        )
+        cache_path = Path(cache) / f"{self._dataset.id}.yaml" if cache else None
         self.cache_manager = cache_utils.CacheManager(
             path=cache_path, ignore_hosts=[self.client.api_url]
         )
@@ -423,6 +421,7 @@ class _LangSmithTestSuite:
         client: Optional[ls_client.Client],
         func: Callable,
         test_suite_name: Optional[str] = None,
+        cache: Optional[str] = None,
     ) -> _LangSmithTestSuite:
         client = client or rt.get_cached_client()
         test_suite_name = test_suite_name or _get_test_suite_name(func)
@@ -432,7 +431,9 @@ class _LangSmithTestSuite:
             if test_suite_name not in cls._instances:
                 test_suite = _get_test_suite(client, test_suite_name)
                 experiment = _start_experiment(client, test_suite)
-                cls._instances[test_suite_name] = cls(client, experiment, test_suite)
+                cls._instances[test_suite_name] = cls(
+                    client, experiment, test_suite, cache=cache
+                )
         return cls._instances[test_suite_name]
 
     @property
@@ -546,7 +547,10 @@ def _ensure_example(
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
     test_suite = _LangSmithTestSuite.from_test(
-        client, func, langtest_extra.get("test_suite_name"), langtest_extra.get("cache")
+        client,
+        func,
+        langtest_extra.get("test_suite_name"),
+        cache=langtest_extra.get("cache"),
     )
     example_id, example_name = _get_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id

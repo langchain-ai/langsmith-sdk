@@ -1,13 +1,17 @@
-version: "4"
 services:
   langchain-playground:
-    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.7.7}
+    image: langchain/langsmith-playground:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
     ports:
       - 3001:3001
+    environment:
+      - PORT=3001
+      - LANGCHAIN_ENV=local_docker
+      - LOG_LEVEL=${LOG_LEVEL:-info}
   langchain-frontend:
-    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.7.7}
+    image: langchain/langsmith-frontend:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
     environment:
       - VITE_BACKEND_AUTH_TYPE=${AUTH_TYPE:-none}
+      - VITE_BASIC_AUTH_ENABLED=${BASIC_AUTH_ENABLED:-false}
       - VITE_OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
       - VITE_OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
     ports:
@@ -15,17 +19,36 @@ services:
     depends_on:
       - langchain-backend
       - langchain-playground
+  langchain-ace-backend:
+    image: langchain/langsmith-ace-backend:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
+    ports:
+      - 1987:1987
+    environment:
+      - PORT=1987
+    command:
+      - "deno"
+      - "run"
+      - "--unstable-worker-options"
+      - "--allow-env"
+      - "--allow-net=0.0.0.0:1987"
+      - "--node-modules-dir"
+      - "-R"
+      - "src/main.ts"
+      - "-R"
+      - "src/python_worker.ts"
   langchain-backend:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.7.7}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
     environment:
       - PORT=1984
       - LANGCHAIN_ENV=local_docker
+      - LANGSMITH_URL=${LANGSMITH_URL:-http://langchain-frontend:1980}
       - GO_ENDPOINT=http://langchain-platform-backend:1986
-      - SMITH_BACKEND_ENDPOINT=http://langchain-backend:1984
+      - SMITH_BACKEND_ENDPOINT=${SMITH_BACKEND_ENDPOINT:-http://langchain-backend:1984}
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - AUTH_TYPE=${AUTH_TYPE:-none}
       - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
       - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
       - API_KEY_SALT=${API_KEY_SALT}
       - X_SERVICE_AUTH_JWT_SECRET=${API_KEY_SALT}
@@ -64,15 +87,18 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-platform-backend:
-    image: langchain/langsmith-go-backend:${_LANGSMITH_IMAGE_VERSION:-0.7.7}
+    image: langchain/langsmith-go-backend:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
     environment:
       - PORT=1986
       - LANGCHAIN_ENV=local_docker
+      - LANGSMITH_URL=${LANGSMITH_URL:-http://langchain-frontend:1980}
+      - SMITH_BACKEND_ENDPOINT=${SMITH_BACKEND_ENDPOINT:-http://langchain-backend:1984}
       - LANGSMITH_LICENSE_KEY=${LANGSMITH_LICENSE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-warning}
       - AUTH_TYPE=${AUTH_TYPE:-none}
       - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
       - OAUTH_ISSUER_URL=${OAUTH_ISSUER_URL}
       - API_KEY_SALT=${API_KEY_SALT}
       - X_SERVICE_AUTH_JWT_SECRET=${API_KEY_SALT}
@@ -93,7 +119,7 @@ services:
         condition: service_completed_successfully
     restart: always
   langchain-queue:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.7.7}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
     environment:
       - LANGCHAIN_ENV=local_docker
       - GO_ENDPOINT=http://langchain-platform-backend:1986
@@ -174,7 +200,7 @@ services:
       timeout: 2s
       retries: 30
   langchain-clickhouse:
-    image: clickhouse/clickhouse-server:24.2
+    image: clickhouse/clickhouse-server:24.5
     user: "101:101"
     restart: always
     environment:
@@ -193,7 +219,7 @@ services:
       timeout: 2s
       retries: 30
   clickhouse-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.7.7}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
     depends_on:
       langchain-clickhouse:
         condition: service_healthy
@@ -212,7 +238,7 @@ services:
         "scripts/wait_for_clickhouse_and_migrate.sh"
       ]
   postgres-setup:
-    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.7.7}
+    image: langchain/langsmith-backend:${_LANGSMITH_IMAGE_VERSION:-0.8.12}
     depends_on:
       langchain-db:
         condition: service_healthy

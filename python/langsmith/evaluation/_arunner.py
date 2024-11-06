@@ -9,6 +9,8 @@ import logging
 import pathlib
 import uuid
 from typing import (
+    TYPE_CHECKING,
+    Any,
     AsyncIterable,
     AsyncIterator,
     Awaitable,
@@ -36,6 +38,7 @@ from langsmith.evaluation._runner import (
     SUMMARY_EVALUATOR_T,
     ExperimentResultRow,
     _ExperimentManagerMixin,
+    _extract_feedback_keys,
     _ForwardResults,
     _load_examples_map,
     _load_experiment,
@@ -44,9 +47,21 @@ from langsmith.evaluation._runner import (
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
+    _to_pandas,
     _wrap_summary_evaluators,
 )
-from langsmith.evaluation.evaluator import EvaluationResults, RunEvaluator
+from langsmith.evaluation.evaluator import (
+    EvaluationResult,
+    EvaluationResults,
+    RunEvaluator,
+)
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    DataFrame = pd.DataFrame
+else:
+    DataFrame = Any
 
 logger = logging.getLogger(__name__)
 
@@ -505,9 +520,18 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 yield result
 
     async def astart(self) -> _AsyncExperimentManager:
-        first_example = await aitertools.py_anext(await self.aget_examples())
+        try:
+            first_example = await aitertools.py_anext(await self.aget_examples())
+        except StopAsyncIteration:
+            raise ValueError(
+                "No examples found in the dataset. "
+                "Please ensure the data provided to aevaluate is not empty."
+            )
         if not first_example:
-            raise ValueError("No examples found in the dataset.")
+            raise ValueError(
+                "No examples found in the dataset."
+                "Please ensure the data provided to aevaluate is not empty."
+            )
         project = self._get_project(first_example)
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
@@ -667,6 +691,34 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                     )
                 except Exception as e:
+                    try:
+                        feedback_keys = _extract_feedback_keys(evaluator)
+
+                        error_response = EvaluationResults(
+                            results=[
+                                EvaluationResult(
+                                    key=key,
+                                    source_run_id=run.id,
+                                    comment=repr(e),
+                                    extra={"error": True},
+                                )
+                                for key in feedback_keys
+                            ]
+                        )
+                        eval_results["results"].extend(
+                            # TODO: This is a hack
+                            self.client._log_evaluation_feedback(
+                                error_response, run=run, _executor=executor
+                            )
+                        )
+                    except Exception as e2:
+                        logger.debug(f"Error parsing feedback keys: {e2}")
+                        pass
+                    logger.error(
+                        f"Error running evaluator {repr(evaluator)} on"
+                        f" run {run.id}: {repr(e)}",
+                        exc_info=True,
+                    )
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
                         f" run {run.id}: {repr(e)}",
@@ -727,7 +779,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                 except Exception as e:
                     logger.error(
-                        f"Error running summary evaluator {repr(evaluator)}: {e}"
+                        f"Error running summary evaluator {repr(evaluator)}: {e}",
+                        exc_info=True,
                     )
         yield {"results": aggregate_feedback}
 
@@ -818,6 +871,20 @@ class AsyncExperimentResults:
         async with self._lock:
             self._summary_results = summary_scores
 
+    def to_pandas(
+        self, start: Optional[int] = 0, end: Optional[int] = None
+    ) -> DataFrame:
+        return _to_pandas(self._results, start=start, end=end)
+
+    def _repr_html_(self) -> str:
+        import importlib.util
+
+        if self._results and importlib.util.find_spec("pandas"):
+            df = self.to_pandas(0, 5)
+            return df._repr_html_()  # type: ignore[operator]
+        else:
+            return self.__repr__()
+
     def __len__(self) -> int:
         return len(self._results)
 
@@ -861,7 +928,9 @@ async def _aforward(
                 ),
             )
         except Exception as e:
-            logger.error(f"Error running target function: {e}")
+            logger.error(
+                f"Error running target function: {e}", exc_info=True, stacklevel=1
+            )
         return _ForwardResults(
             run=cast(schemas.Run, run),
             example=example,
@@ -872,9 +941,24 @@ def _ensure_async_traceable(
     target: ATARGET_T,
 ) -> rh.SupportsLangsmithExtra[[dict], Awaitable]:
     if not asyncio.iscoroutinefunction(target):
-        raise ValueError(
-            "Target must be an async function. For sync functions, use evaluate."
-        )
+        if callable(target):
+            raise ValueError(
+                "Target must be an async function. For sync functions, use evaluate."
+                " Example usage:\n\n"
+                "async def predict(inputs: dict) -> dict:\n"
+                "    # do work, like chain.invoke(inputs)\n"
+                "    return {...}\n"
+                "await aevaluate(predict, ...)"
+            )
+        else:
+            raise ValueError(
+                "Target must be a callable async function. "
+                "Received a non-callable object. Example usage:\n\n"
+                "async def predict(inputs: dict) -> dict:\n"
+                "    # do work, like chain.invoke(inputs)\n"
+                "    return {...}\n"
+                "await aevaluate(predict, ...)"
+            )
     if rh.is_traceable_function(target):
         return target  # type: ignore
     return rh.traceable(name="AsyncTarget")(target)
