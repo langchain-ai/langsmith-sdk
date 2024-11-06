@@ -62,8 +62,8 @@ from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
 )
 from typing_extensions import TypeGuard
-from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined]
-from urllib3.util import Retry
+from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
+from urllib3.util import Retry  # type: ignore[import-untyped]
 
 import langsmith
 from langsmith import env as ls_env
