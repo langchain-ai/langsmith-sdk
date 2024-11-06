@@ -42,6 +42,8 @@ from urllib3.util import Retry
 from langsmith import schemas as ls_schemas
 
 _LOGGER = logging.getLogger(__name__)
+vcr_log = logging.getLogger("vcr")
+vcr_log.setLevel(logging.DEBUG)
 
 
 class LangSmithError(Exception):
@@ -483,17 +485,77 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
 _CACHE_HANDLES = {}
 _CACHE_LOCK = threading.RLock()
 
+import contextlib
+from unittest import mock
+
+cpool = None
+conn = None
+
+# Try to save the original types for urllib3
+try:
+    import urllib3.connection as conn
+    import urllib3.connectionpool as cpool
+except ImportError:  # pragma: no cover
+    pass
+else:
+    _VerifiedHTTPSConnection = getattr(conn, "VerifiedHTTPSConnection", None)
+    _connHTTPConnection = conn.HTTPConnection
+    _connHTTPSConnection = conn.HTTPSConnection
+
+
+@contextlib.contextmanager
+def _ensure_orig():
+    if conn is None or cpool is None:
+        # If urllib3 is not imported, just yield without doing anything
+        yield
+        return
+
+    original_connections = {
+        "HTTPConnection": conn.HTTPConnection,
+        "HTTPSConnection": conn.HTTPSConnection,
+    }
+    if _VerifiedHTTPSConnection:
+        original_connections["VerifiedHTTPSConnection"] = conn.VerifiedHTTPSConnection
+
+    original_pool_connections = {}
+    if hasattr(cpool, "HTTPConnectionPool"):
+        original_pool_connections["HTTPConnectionPool"] = (
+            cpool.HTTPConnectionPool.ConnectionCls
+        )
+    if hasattr(cpool, "HTTPSConnectionPool"):
+        original_pool_connections["HTTPSConnectionPool"] = (
+            cpool.HTTPSConnectionPool.ConnectionCls
+        )
+
+    try:
+        # Temporarily replace connection classes
+        conn.HTTPConnection = _connHTTPConnection
+        conn.HTTPSConnection = _connHTTPSConnection
+        if _VerifiedHTTPSConnection:
+            conn.VerifiedHTTPSConnection = _VerifiedHTTPSConnection
+
+        # Temporarily replace connection pool classes if they exist
+        if "HTTPConnectionPool" in original_pool_connections:
+            cpool.HTTPConnectionPool.ConnectionCls = _connHTTPConnection
+        if "HTTPSConnectionPool" in original_pool_connections:
+            cpool.HTTPSConnectionPool.ConnectionCls = _connHTTPSConnection
+
+        yield
+    finally:
+        # Restore original connection classes
+        for attr, original in original_connections.items():
+            setattr(conn, attr, original)
+
+        # Restore original connection pool classes
+        for attr, original in original_pool_connections.items():
+            getattr(cpool, attr).ConnectionCls = original
+
 
 @contextlib.contextmanager
 def with_cache(
     path: Union[str, pathlib.Path], ignore_hosts: Optional[Sequence[str]] = None
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
-    print(
-        f"FOO TRYING FOR CACHE : {path} {ignore_hosts}",
-        flush=True,
-        file=sys.stderr,
-    )
     try:
         import vcr  # type: ignore[import-untyped]
     except ImportError:
@@ -503,9 +565,7 @@ def with_cache(
         )
 
     def _filter_request_headers(request: Any) -> Any:
-        print(f"Request: {repr(request)}: {ignore_hosts}", file=sys.stderr, flush=True)
         if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
-            print(f"Ignoring URL: {request.url}", file=sys.stderr, flush=True)
             return None
         request.headers = {}
         return request
@@ -529,11 +589,9 @@ def with_cache(
 
             cassette = ls_vcr.use_cassette(cache_file)
             _CACHE_HANDLES[path] = (1, cassette)
-            print(f"FOO ENTERING CASSETTE: {path}", file=sys.stderr, flush=True)
             cassette.__enter__()
         else:
             existing, handle = _CACHE_HANDLES[path]
-            print(f"FOO ALREADY MADE: {existing} - {path}", file=sys.stderr, flush=True)
             _CACHE_HANDLES[path] = (existing + 1, handle)
 
     try:
@@ -543,15 +601,9 @@ def with_cache(
             count, handle = _CACHE_HANDLES[path]
             count -= 1
             if count == 0:
-                print(f"FOO EXITING HANDLE: {path}", file=sys.stderr, flush=True)
                 handle.__exit__(None, None, None)
                 del _CACHE_HANDLES[path]
             else:
-                print(
-                    f"FOO DECREMENTING COUNT: {count} - {path}",
-                    file=sys.stderr,
-                    flush=True,
-                )
                 _CACHE_HANDLES[path] = (count, handle)
 
 
