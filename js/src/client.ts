@@ -241,7 +241,7 @@ interface CreateRunParams {
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
-  attachments?: Record<string, [string, Uint8Array]>;
+  attachments?: Attachments;
 }
 
 interface UpdateRunParams extends RunUpdate {
