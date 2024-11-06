@@ -3,11 +3,30 @@
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 from pydantic import BaseModel
-
+from langsmith.run_helpers import traceable
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith.evaluation import EvaluationResult, EvaluationResults, RunEvaluator
 from langsmith.schemas import Example, Run
+from langchain_core.callbacks import CallbackManager
+from langchain_core.callbacks.base import BaseCallbackHandler
+from langchain_core.outputs import RunInfo
+from langchain.schema import RUN_KEY
+from typing import Dict, Any, Optional
+from uuid import UUID
 
+class RunIdCapturingHandler(BaseCallbackHandler):
+    def __init__(self):
+        self.run_id: Optional[UUID] = None
+        
+    def on_chain_start(
+        self, 
+        serialized: Dict[str, Any], 
+        inputs: Dict[str, Any], 
+        run_id: UUID,
+        **kwargs: Any
+    ) -> None:
+        if self.run_id is None:  # Only capture the root run_id
+            self.run_id = run_id
 
 class CategoricalScoreConfig(BaseModel):
     """Configuration for a categorical score."""
@@ -34,6 +53,17 @@ def _create_score_json_schema(
     score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
 ) -> dict:
     properties: Dict[str, Any] = {}
+
+    if score_config.include_explanation:
+        properties["explanation"] = {
+            "type": "string",
+            "description": (
+                "The explanation for the score."
+                if score_config.explanation_description is None
+                else score_config.explanation_description
+            ),
+        }
+
     if isinstance(score_config, CategoricalScoreConfig):
         properties["score"] = {
             "type": "string",
@@ -51,16 +81,6 @@ def _create_score_json_schema(
         }
     else:
         raise ValueError("Invalid score type. Must be 'categorical' or 'continuous'")
-
-    if score_config.include_explanation:
-        properties["explanation"] = {
-            "type": "string",
-            "description": (
-                "The explanation for the score."
-                if score_config.explanation_description is None
-                else score_config.explanation_description
-            ),
-        }
 
     return {
         "title": score_config.key,
@@ -206,8 +226,15 @@ class LLMEvaluator(RunEvaluator):
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate a run."""
+        handler = RunIdCapturingHandler()
+        callback_manager = CallbackManager([handler])
+
         variables = self._prepare_variables(run, example)
-        output: dict = cast(dict, self.runnable.invoke(variables))
+        output: dict = cast(dict, self.runnable.invoke(variables, config={"callbacks": callback_manager}))
+
+        if handler.run_id:
+            output[RUN_KEY] = RunInfo(run_id=handler.run_id)
+
         return self._parse_output(output)
 
     @warn_beta
@@ -215,8 +242,15 @@ class LLMEvaluator(RunEvaluator):
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Asynchronously evaluate a run."""
-        variables = self._prepare_variables(run, example)
-        output: dict = cast(dict, await self.runnable.ainvoke(variables))
+        handler = RunIdCapturingHandler()
+        callback_manager = CallbackManager([handler])
+
+        variables = self._prepare_variables(run, example)   
+        output: dict = cast(dict, await self.runnable.ainvoke(variables, config={"callbacks": callback_manager}))
+
+        if handler.run_id:
+            output[RUN_KEY] = RunInfo(run_id=handler.run_id)
+
         return self._parse_output(output)
 
     def _prepare_variables(self, run: Run, example: Optional[Example]) -> dict:
@@ -275,18 +309,22 @@ class LLMEvaluator(RunEvaluator):
             variables["expected"] = list(example.outputs.values())[0]
 
         return variables
-
+    @traceable
     def _parse_output(self, output: dict) -> Union[EvaluationResult, EvaluationResults]:
         """Parse the model output into an evaluation result."""
+        try:
+            source_run_id = output.get(RUN_KEY).run_id
+        except:
+            source_run_id = None
         if isinstance(self.score_config, CategoricalScoreConfig):
             value = output["score"]
             explanation = output.get("explanation", None)
             return EvaluationResult(
-                key=self.score_config.key, value=value, comment=explanation
+                key=self.score_config.key, value=value, comment=explanation, source_run_id=source_run_id
             )
         elif isinstance(self.score_config, ContinuousScoreConfig):
             score = output["score"]
             explanation = output.get("explanation", None)
             return EvaluationResult(
-                key=self.score_config.key, score=score, comment=explanation
+                key=self.score_config.key, score=score, comment=explanation, source_run_id=source_run_id
             )
