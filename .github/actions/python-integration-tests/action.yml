@@ -37,6 +37,7 @@ runs:
       run: |
         poetry install --with dev
         poetry run pip install -U langchain langchain_anthropic tiktoken rapidfuzz vcrpy numpy
+        poetry run pip install "urllib3>=2"
       shell: bash
       working-directory: python
 

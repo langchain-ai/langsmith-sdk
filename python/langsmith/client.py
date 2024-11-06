@@ -708,7 +708,9 @@ class Client:
         for idx in range(stop_after_attempt):
             try:
                 try:
-                    with ls_utils.filter_logs(_urllib3_logger, logging_filters):
+                    with ls_utils.filter_logs(
+                        _urllib3_logger, logging_filters
+                    ), ls_utils._ensure_orig():
                         response = self.session.request(
                             method,
                             (
@@ -721,6 +723,8 @@ class Client:
                         )
                     ls_utils.raise_for_status_with_text(response)
                     return response
+                # except TypeError:
+                #     continue
                 except requests.exceptions.ReadTimeout as e:
                     logger.debug("Passing on exception %s", e)
                     if idx + 1 == stop_after_attempt:
