@@ -84,7 +84,9 @@ const handleRunOutputs = (
 };
 const handleRunAttachments = (
   rawInputs: unknown[],
-  extractAttachments?: (...args: unknown[]) => [Attachments | undefined, unknown[]]
+  extractAttachments?: (
+    ...args: unknown[]
+  ) => [Attachments | undefined, unknown[]]
 ): [Attachments | undefined, unknown[]] => {
   if (!extractAttachments) {
     return [undefined, rawInputs];
@@ -339,10 +341,10 @@ export function traceable<Func extends (...args: any[]) => any>(
     __finalTracedIteratorKey?: string;
 
     /**
-   * Extract attachments from args and return remaining args.
-   * @param args Arguments of the traced function
-   * @returns Tuple of [Attachments, remaining args]
-   */
+     * Extract attachments from args and return remaining args.
+     * @param args Arguments of the traced function
+     * @returns Tuple of [Attachments, remaining args]
+     */
     extractAttachments?: (
       ...args: Parameters<Func>
     ) => [Attachments | undefined, KVMap];
