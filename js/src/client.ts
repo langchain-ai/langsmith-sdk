@@ -34,6 +34,7 @@ import {
   ValueType,
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
+  Attachments,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -1032,10 +1033,7 @@ export class Client {
       return;
     }
     // transform and convert to dicts
-    const allAttachments: Record<
-      string,
-      Record<string, [string, Uint8Array]>
-    > = {};
+    const allAttachments: Record<string, Attachments> = {};
     let preparedCreateParams = [];
     for (const create of runCreates ?? []) {
       const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
@@ -1158,7 +1156,7 @@ export class Client {
               accumulatedParts.push({
                 name: `attachment.${payload.id}.${name}`,
                 payload: new Blob([content], {
-                  type: `${contentType}; length=${content.length}`,
+                  type: `${contentType}; length=${content.byteLength}`,
                 }),
               });
             }
