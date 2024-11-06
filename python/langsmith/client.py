@@ -826,6 +826,7 @@ class Client:
                     raise ls_utils.LangSmithError(
                         f"Failed to {method} {pathname} in LangSmith API. {emsg}"
                         f"{_context}"
+                        f"{ls_utils._CACHE_HANDLES}"
                     ) from e
             except to_ignore_ as e:
                 if response is not None:

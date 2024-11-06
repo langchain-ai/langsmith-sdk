@@ -677,7 +677,16 @@ async def _arun_test(
     with rh.tracing_context(
         **{**current_context, "metadata": metadata}
     ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_suite.client.api_url]
+        cache_path,
+        ignore_hosts=list(
+            set(
+                (
+                    test_suite.client.api_url,
+                    "https://beta.api.smith.langchain.com",
+                    "https://api.smith.langchain.com",
+                )
+            )
+        ),
     ):
         await _test()
 

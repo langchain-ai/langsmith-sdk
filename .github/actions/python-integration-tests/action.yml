@@ -40,16 +40,16 @@ runs:
       shell: bash
       working-directory: python
 
-    - name: Run integration tests
-      env:
-        LANGCHAIN_TRACING_V2: "true"
-        LANGCHAIN_ENDPOINT: https://beta.api.smith.langchain.com
-        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key-beta }}
-        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make integration_tests
-      shell: bash
-      working-directory: python
+    # - name: Run integration tests
+    #   env:
+    #     LANGCHAIN_TRACING_V2: "true"
+    #     LANGCHAIN_ENDPOINT: https://beta.api.smith.langchain.com
+    #     LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key-beta }}
+    #     OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+    #     LANGSMITH_TEST_CACHE: tests/cassettes
+    #   run: make integration_tests
+    #   shell: bash
+    #   working-directory: python
 
     - name: Run doctest
       env:

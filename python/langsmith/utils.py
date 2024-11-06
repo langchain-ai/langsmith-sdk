@@ -480,7 +480,8 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
     return get_env_var("TEST_CACHE", default=None)
 
 
-_OPEN_CACHES = {}
+_CACHE_HANDLES = {}
+_CACHE_LOCK = threading.RLock()
 
 
 @contextlib.contextmanager
@@ -488,7 +489,11 @@ def with_cache(
     path: Union[str, pathlib.Path], ignore_hosts: Optional[Sequence[str]] = None
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
-    global _OPEN_CACHES
+    print(
+        f"FOO TRYING FOR CACHE : {path} {ignore_hosts}",
+        flush=True,
+        file=sys.stderr,
+    )
     try:
         import vcr  # type: ignore[import-untyped]
     except ImportError:
@@ -498,48 +503,56 @@ def with_cache(
         )
 
     def _filter_request_headers(request: Any) -> Any:
+        print(f"Request: {repr(request)}: {ignore_hosts}", file=sys.stderr, flush=True)
         if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
+            print(f"Ignoring URL: {request.url}", file=sys.stderr, flush=True)
             return None
         request.headers = {}
         return request
 
     cache_dir, cache_file = os.path.split(path)
-    if _OPEN_CACHES:
-        print(
-            f"{len(_OPEN_CACHES)}ALREADY OPEN: {_OPEN_CACHES}",
-            file=sys.stderr,
-            flush=True,
-        )
-    else:
 
-        print(
-            "NEW CACHE",
-            file=sys.stderr,
-            flush=True,
-        )
+    with _CACHE_LOCK:
+        if path not in _CACHE_HANDLES:
+            ls_vcr = vcr.VCR(
+                serializer=(
+                    "yaml"
+                    if cache_file.endswith(".yaml") or cache_file.endswith(".yml")
+                    else "json"
+                ),
+                cassette_library_dir=cache_dir,
+                record_mode="new_episodes",
+                match_on=["uri", "method", "path", "body"],
+                filter_headers=["authorization", "Set-Cookie"],
+                before_record_request=_filter_request_headers,
+            )
 
-    ls_vcr = vcr.VCR(
-        serializer=(
-            "yaml"
-            if cache_file.endswith(".yaml") or cache_file.endswith(".yml")
-            else "json"
-        ),
-        cassette_library_dir=cache_dir,
-        # Replay previous requests, record new ones
-        # TODO: Support other modes
-        record_mode="new_episodes",
-        match_on=["uri", "method", "path", "body"],
-        filter_headers=["authorization", "Set-Cookie"],
-        before_record_request=_filter_request_headers,
-    )
-    with ls_vcr.use_cassette(cache_file):
-        _OPEN_CACHES.setdefault(str(cache_file), 0)
-        _OPEN_CACHES[str(cache_file)] += 1
+            cassette = ls_vcr.use_cassette(cache_file)
+            _CACHE_HANDLES[path] = (1, cassette)
+            print(f"FOO ENTERING CASSETTE: {path}", file=sys.stderr, flush=True)
+            cassette.__enter__()
+        else:
+            existing, handle = _CACHE_HANDLES[path]
+            print(f"FOO ALREADY MADE: {existing} - {path}", file=sys.stderr, flush=True)
+            _CACHE_HANDLES[path] = (existing + 1, handle)
 
+    try:
         yield
-    _OPEN_CACHES[str(cache_file)] -= 1
-    if _OPEN_CACHES[str(cache_file)] == 0:
-        _OPEN_CACHES.pop(str(cache_file), 0)
+    finally:
+        with _CACHE_LOCK:
+            count, handle = _CACHE_HANDLES[path]
+            count -= 1
+            if count == 0:
+                print(f"FOO EXITING HANDLE: {path}", file=sys.stderr, flush=True)
+                handle.__exit__(None, None, None)
+                del _CACHE_HANDLES[path]
+            else:
+                print(
+                    f"FOO DECREMENTING COUNT: {count} - {path}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                _CACHE_HANDLES[path] = (count, handle)
 
 
 @contextlib.contextmanager
