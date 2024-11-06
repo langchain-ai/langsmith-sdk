@@ -811,13 +811,10 @@ export class Client {
       this.drainAutoBatchQueue(sizeLimitBytes);
     }
     if (this.autoBatchQueue.items.length > 0) {
-      this.autoBatchTimeout = setTimeout(
-        () => {
-          this.autoBatchTimeout = undefined;
-          this.drainAutoBatchQueue(sizeLimitBytes);
-        },
-        this.autoBatchAggregationDelayMs
-      );
+      this.autoBatchTimeout = setTimeout(() => {
+        this.autoBatchTimeout = undefined;
+        this.drainAutoBatchQueue(sizeLimitBytes);
+      }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
   }
