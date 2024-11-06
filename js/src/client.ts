@@ -466,9 +466,7 @@ export class Client {
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  private autoBatchInitialDelayMs = 250;
-
-  private autoBatchAggregationDelayMs = 50;
+  private autoBatchAggregationDelayMs = 250;
 
   private batchSizeBytesLimit?: number;
 
@@ -802,7 +800,6 @@ export class Client {
   }
 
   private async processRunOperation(item: AutoBatchQueueItem) {
-    const oldTimeout = this.autoBatchTimeout;
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     if (item.action === "create") {
@@ -819,9 +816,7 @@ export class Client {
           this.autoBatchTimeout = undefined;
           this.drainAutoBatchQueue(sizeLimitBytes);
         },
-        oldTimeout
-          ? this.autoBatchAggregationDelayMs
-          : this.autoBatchInitialDelayMs
+        this.autoBatchAggregationDelayMs
       );
     }
     return itemPromise;
