@@ -330,7 +330,6 @@ class LLMEvaluator(RunEvaluator):
 
         return variables
 
-    @traceable
     def _parse_output(self, output: dict) -> Union[EvaluationResult, EvaluationResults]:
         """Parse the model output into an evaluation result."""
         run_info = output.get(RUN_KEY)
