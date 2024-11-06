@@ -480,11 +480,15 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
     return get_env_var("TEST_CACHE", default=None)
 
 
+_OPEN_CACHES = {}
+
+
 @contextlib.contextmanager
 def with_cache(
     path: Union[str, pathlib.Path], ignore_hosts: Optional[Sequence[str]] = None
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
+    global _OPEN_CACHES
     try:
         import vcr  # type: ignore[import-untyped]
     except ImportError:
@@ -500,6 +504,19 @@ def with_cache(
         return request
 
     cache_dir, cache_file = os.path.split(path)
+    if _OPEN_CACHES:
+        print(
+            f"{len(_OPEN_CACHES)}ALREADY OPEN: {_OPEN_CACHES}",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+
+        print(
+            "NEW CACHE",
+            file=sys.stderr,
+            flush=True,
+        )
 
     ls_vcr = vcr.VCR(
         serializer=(
@@ -516,7 +533,13 @@ def with_cache(
         before_record_request=_filter_request_headers,
     )
     with ls_vcr.use_cassette(cache_file):
+        _OPEN_CACHES.setdefault(str(cache_file), 0)
+        _OPEN_CACHES[str(cache_file)] += 1
+
         yield
+    _OPEN_CACHES[str(cache_file)] -= 1
+    if _OPEN_CACHES[str(cache_file)] == 0:
+        _OPEN_CACHES.pop(str(cache_file), 0)
 
 
 @contextlib.contextmanager
