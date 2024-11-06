@@ -1,5 +1,11 @@
 import * as uuid from "uuid";
-import { BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
+import {
+  Attachments,
+  BaseRun,
+  KVMap,
+  RunCreate,
+  RunUpdate,
+} from "./schemas.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
@@ -8,6 +14,7 @@ import {
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
 import { warnOnce } from "./utils/warn.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -54,6 +61,7 @@ export interface RunTreeConfig {
 
   trace_id?: string;
   dotted_order?: string;
+  attachments?: Attachments;
 }
 
 export interface RunnableConfigLike {
@@ -171,8 +179,18 @@ export class RunTree implements BaseRun {
   tracingEnabled?: boolean;
   execution_order: number;
   child_execution_order: number;
+  /**
+   * Attachments associated with the run.
+   * Each entry is a tuple of [mime_type, bytes]
+   */
+  attachments?: Attachments;
 
-  constructor(originalConfig: RunTreeConfig) {
+  constructor(originalConfig: RunTreeConfig | RunTree) {
+    // If you pass in a run tree directly, return a shallow clone
+    if (isRunTree(originalConfig)) {
+      Object.assign(this, { ...originalConfig });
+      return;
+    }
     const defaultConfig = RunTree.getDefaultConfig();
     const { metadata, ...config } = originalConfig;
     const client = config.client ?? RunTree.getSharedClient();
@@ -248,6 +266,13 @@ export class RunTree implements BaseRun {
       child_execution_order: child_execution_order,
     });
 
+    // Copy context vars over into the new run tree.
+    if (_LC_CONTEXT_VARIABLES_KEY in this) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (child as any)[_LC_CONTEXT_VARIABLES_KEY] =
+        this[_LC_CONTEXT_VARIABLES_KEY];
+    }
+
     type ExtraWithSymbol = Record<string | symbol, unknown>;
     const LC_CHILD = Symbol.for("lc:child_config");
 
@@ -298,11 +323,17 @@ export class RunTree implements BaseRun {
   async end(
     outputs?: KVMap,
     error?: string,
-    endTime = Date.now()
+    endTime = Date.now(),
+    metadata?: KVMap
   ): Promise<void> {
     this.outputs = this.outputs ?? outputs;
     this.error = this.error ?? error;
     this.end_time = this.end_time ?? endTime;
+    if (metadata && Object.keys(metadata).length > 0) {
+      this.extra = this.extra
+        ? { ...this.extra, metadata: { ...this.extra.metadata, ...metadata } }
+        : { metadata };
+    }
   }
 
   private _convertToCreate(
@@ -351,41 +382,51 @@ export class RunTree implements BaseRun {
       trace_id: run.trace_id,
       dotted_order: run.dotted_order,
       tags: run.tags,
+      attachments: run.attachments,
     };
     return persistedRun;
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
-    const runtimeEnv = await getRuntimeEnvironment();
-    const runCreate = await this._convertToCreate(this, runtimeEnv, true);
-    await this.client.createRun(runCreate);
+    try {
+      const runtimeEnv = getRuntimeEnvironment();
+      const runCreate = await this._convertToCreate(this, runtimeEnv, true);
+      await this.client.createRun(runCreate);
 
-    if (!excludeChildRuns) {
-      warnOnce(
-        "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
-      );
-      for (const childRun of this.child_runs) {
-        await childRun.postRun(false);
+      if (!excludeChildRuns) {
+        warnOnce(
+          "Posting with excludeChildRuns=false is deprecated and will be removed in a future version."
+        );
+        for (const childRun of this.child_runs) {
+          await childRun.postRun(false);
+        }
       }
+    } catch (error) {
+      console.error(`Error in postRun for run ${this.id}:`, error);
     }
   }
 
   async patchRun(): Promise<void> {
-    const runUpdate: RunUpdate = {
-      end_time: this.end_time,
-      error: this.error,
-      inputs: this.inputs,
-      outputs: this.outputs,
-      parent_run_id: this.parent_run?.id,
-      reference_example_id: this.reference_example_id,
-      extra: this.extra,
-      events: this.events,
-      dotted_order: this.dotted_order,
-      trace_id: this.trace_id,
-      tags: this.tags,
-    };
+    try {
+      const runUpdate: RunUpdate = {
+        end_time: this.end_time,
+        error: this.error,
+        inputs: this.inputs,
+        outputs: this.outputs,
+        parent_run_id: this.parent_run?.id,
+        reference_example_id: this.reference_example_id,
+        extra: this.extra,
+        events: this.events,
+        dotted_order: this.dotted_order,
+        trace_id: this.trace_id,
+        tags: this.tags,
+        attachments: this.attachments,
+      };
 
-    await this.client.updateRun(this.id, runUpdate);
+      await this.client.updateRun(this.id, runUpdate);
+    } catch (error) {
+      console.error(`Error in patchRun for run ${this.id}`, error);
+    }
   }
 
   toJSON() {

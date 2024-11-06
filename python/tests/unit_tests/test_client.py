@@ -3,11 +3,13 @@
 import asyncio
 import dataclasses
 import gc
+import io
 import itertools
 import json
+import logging
 import math
+import pathlib
 import sys
-import threading
 import time
 import uuid
 import warnings
@@ -15,15 +17,15 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Any, NamedTuple, Optional, Type, Union
+from typing import Dict, List, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
-import attr
 import dataclasses_json
 import orjson
 import pytest
 import requests
+from multipart import MultipartParser, MultipartPart, parse_options_header
 from pydantic import BaseModel
 from requests import HTTPError
 
@@ -31,12 +33,14 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
+from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
     _dumps_json,
     _is_langchain_hosted,
-    _serialize_json,
+    _parse_token_or_url,
 )
+from langsmith.utils import LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -65,7 +69,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client.api_url == "https://api.smith.langsmith-endpoint.com"
 
     # Scenario 2: Both LANGCHAIN_ENDPOINT and LANGSMITH_ENDPOINT
@@ -74,7 +78,11 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
-    client = Client(api_url="https://api.smith.langchain.com", api_key="123")
+    client = Client(
+        api_url="https://api.smith.langchain.com",
+        api_key="123",
+        auto_batch_tracing=False,
+    )
     assert client.api_url == "https://api.smith.langchain.com"
 
     # Scenario 3: LANGCHAIN_ENDPOINT is set, but LANGSMITH_ENDPOINT is not
@@ -82,7 +90,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
     monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
 
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client.api_url == "https://api.smith.langchain-endpoint.com"
 
     # Scenario 4: LANGCHAIN_ENDPOINT is not set, but LANGSMITH_ENDPOINT is set
@@ -90,7 +98,7 @@ def test_validate_api_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
 
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client.api_url == "https://api.smith.langsmith-endpoint.com"
 
 
@@ -154,12 +162,13 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
     monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
-    client = Client()
+    client = Client(auto_batch_tracing=False)
     assert client._write_api_urls == data
     assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
     assert client.api_key == "123"
 
 
+@mock.patch("langsmith.client.requests.Session")
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env_cache()
     monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
@@ -278,7 +287,10 @@ def test_create_run_unicode() -> None:
     client.update_run(id_, status="completed")
 
 
-def test_create_run_mutate() -> None:
+@pytest.mark.parametrize("use_multipart_endpoint", (True, False))
+def test_create_run_mutate(
+    use_multipart_endpoint: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
     inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
@@ -288,6 +300,7 @@ def test_create_run_mutate() -> None:
         session=session,
         info=ls_schemas.LangSmithInfo(
             batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=use_multipart_endpoint,
                 size_limit_bytes=None,  # Note this field is not used here
                 size_limit=100,
                 scale_up_nthreads_limit=16,
@@ -317,33 +330,90 @@ def test_create_run_mutate() -> None:
         trace_id=id_,
         dotted_order=run_dict["dotted_order"],
     )
-    for _ in range(10):
-        time.sleep(0.1)  # Give the background thread time to stop
-        payloads = [
-            json.loads(call[2]["data"])
-            for call in session.request.mock_calls
-            if call.args and call.args[1].endswith("runs/batch")
+    if use_multipart_endpoint:
+        for _ in range(10):
+            time.sleep(0.1)  # Give the background thread time to stop
+            payloads = [
+                (call[2]["headers"], call[2]["data"])
+                for call in session.request.mock_calls
+                if call.args and call.args[1].endswith("runs/multipart")
+            ]
+            if payloads:
+                break
+        else:
+            assert False, "No payloads found"
+
+        parts: List[MultipartPart] = []
+        for payload in payloads:
+            headers, data = payload
+            assert headers["Content-Type"].startswith("multipart/form-data")
+            # this is a current implementation detail, if we change implementation
+            # we update this assertion
+            assert isinstance(data, bytes)
+            boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+            parser = MultipartParser(io.BytesIO(data), boundary)
+            parts.extend(parser.parts())
+
+        assert [p.name for p in parts] == [
+            f"post.{id_}",
+            f"post.{id_}.inputs",
+            f"post.{id_}.outputs",
         ]
-        if payloads:
-            break
-    posts = [pr for payload in payloads for pr in payload.get("post", [])]
-    patches = [pr for payload in payloads for pr in payload.get("patch", [])]
-    inputs = next(
-        (pr["inputs"] for pr in itertools.chain(posts, patches) if pr.get("inputs")),
-        {},
-    )
-    outputs = next(
-        (pr["outputs"] for pr in itertools.chain(posts, patches) if pr.get("outputs")),
-        {},
-    )
-    # Check that the mutated value wasn't posted
-    assert "messages" in inputs
-    assert inputs["messages"] == ["hi"]
-    assert "mygen" in inputs
-    assert inputs["mygen"].startswith(  # type: ignore
-        "<generator object test_create_run_mutate.<locals>."
-    )
-    assert outputs == {"messages": ["hi", "there"]}
+        assert [p.headers.get("content-type") for p in parts] == [
+            "application/json",
+            "application/json",
+            "application/json",
+        ]
+        outputs_parsed = json.loads(parts[2].value)
+        assert outputs_parsed == outputs
+        inputs_parsed = json.loads(parts[1].value)
+        assert inputs_parsed["messages"] == ["hi"]
+        assert inputs_parsed["mygen"].startswith(  # type: ignore
+            "<generator object test_create_run_mutate.<locals>."
+        )
+        run_parsed = json.loads(parts[0].value)
+        assert "inputs" not in run_parsed
+        assert "outputs" not in run_parsed
+        assert run_parsed["trace_id"] == str(id_)
+        assert run_parsed["dotted_order"] == run_dict["dotted_order"]
+    else:
+        for _ in range(10):
+            time.sleep(0.1)  # Give the background thread time to stop
+            payloads = [
+                json.loads(call[2]["data"])
+                for call in session.request.mock_calls
+                if call.args and call.args[1].endswith("runs/batch")
+            ]
+            if payloads:
+                break
+        else:
+            assert False, "No payloads found"
+        posts = [pr for payload in payloads for pr in payload.get("post", [])]
+        patches = [pr for payload in payloads for pr in payload.get("patch", [])]
+        inputs = next(
+            (
+                pr["inputs"]
+                for pr in itertools.chain(posts, patches)
+                if pr.get("inputs")
+            ),
+            {},
+        )
+        outputs = next(
+            (
+                pr["outputs"]
+                for pr in itertools.chain(posts, patches)
+                if pr.get("outputs")
+            ),
+            {},
+        )
+        # Check that the mutated value wasn't posted
+        assert "messages" in inputs
+        assert inputs["messages"] == ["hi"]
+        assert "mygen" in inputs
+        assert inputs["mygen"].startswith(  # type: ignore
+            "<generator object test_create_run_mutate.<locals>."
+        )
+        assert outputs == {"messages": ["hi", "there"]}
 
 
 class CallTracker:
@@ -652,6 +722,7 @@ def test_pydantic_serialize() -> None:
 
     class ChildPydantic(BaseModel):
         uid: uuid.UUID
+        child_path_keys: Dict[pathlib.Path, pathlib.Path]
 
     class MyPydantic(BaseModel):
         foo: str
@@ -659,9 +730,16 @@ def test_pydantic_serialize() -> None:
         tim: datetime
         ex: Optional[str] = None
         child: Optional[ChildPydantic] = None
+        path_keys: Dict[pathlib.Path, pathlib.Path]
 
     obj = MyPydantic(
-        foo="bar", uid=test_uuid, tim=test_time, child=ChildPydantic(uid=test_uuid)
+        foo="bar",
+        uid=test_uuid,
+        tim=test_time,
+        child=ChildPydantic(
+            uid=test_uuid, child_path_keys={pathlib.Path("foo"): pathlib.Path("bar")}
+        ),
+        path_keys={pathlib.Path("foo"): pathlib.Path("bar")},
     )
     res = json.loads(json.dumps(obj, default=_serialize_json))
     expected = {
@@ -670,7 +748,9 @@ def test_pydantic_serialize() -> None:
         "tim": test_time.isoformat(),
         "child": {
             "uid": str(test_uuid),
+            "child_path_keys": {"foo": "bar"},
         },
+        "path_keys": {"foo": "bar"},
     }
     assert res == expected
 
@@ -679,7 +759,9 @@ def test_pydantic_serialize() -> None:
     assert res2 == {"output": expected}
 
 
-def test_serialize_json() -> None:
+def test_serialize_json(caplog) -> None:
+    caplog.set_level(logging.ERROR)
+
     class MyClass:
         def __init__(self, x: int) -> None:
             self.x = x
@@ -690,22 +772,25 @@ def test_serialize_json() -> None:
             self.a_dict = {"foo": "bar"}
             self.my_bytes = b"foo"
 
+        def __repr__(self) -> str:
+            return "I fell back"
+
+        def __hash__(self) -> int:
+            return 1
+
     class ClassWithTee:
         def __init__(self) -> None:
             tee_a, tee_b = itertools.tee(range(10))
             self.tee_a = tee_a
             self.tee_b = tee_b
 
-    class MyClassWithSlots:
-        __slots__ = ["x", "y"]
-
-        def __init__(self, x: int) -> None:
-            self.x = x
-            self.y = "y"
+        def __repr__(self):
+            return "tee_a, tee_b"
 
     class MyPydantic(BaseModel):
         foo: str
         bar: int
+        path_keys: Dict[pathlib.Path, "MyPydantic"]
 
     @dataclasses.dataclass
     class MyDataclass:
@@ -719,11 +804,11 @@ def test_serialize_json() -> None:
         FOO = "foo"
         BAR = "bar"
 
-    class ClassWithFakeJson:
-        def json(self):
+    class ClassWithFakeDict:
+        def dict(self) -> Dict:
             raise ValueError("This should not be called")
 
-        def to_json(self) -> dict:
+        def to_dict(self) -> Dict:
             return {"foo": "bar"}
 
     @dataclasses_json.dataclass_json
@@ -731,39 +816,8 @@ def test_serialize_json() -> None:
     class Person:
         name: str
 
-    @attr.dataclass
-    class AttrDict:
-        foo: str = attr.ib()
-        bar: int
-
     uid = uuid.uuid4()
     current_time = datetime.now()
-
-    class NestedClass:
-        __slots__ = ["person", "lock"]
-
-        def __init__(self) -> None:
-            self.person = Person(name="foo")
-            self.lock = [threading.Lock()]
-
-    class CyclicClass:
-        def __init__(self) -> None:
-            self.cyclic = self
-
-        def __repr__(self) -> str:
-            return "SoCyclic"
-
-    class CyclicClass2:
-        def __init__(self) -> None:
-            self.cyclic: Any = None
-            self.other: Any = None
-
-        def __repr__(self) -> str:
-            return "SoCyclic2"
-
-    cycle_2 = CyclicClass2()
-    cycle_2.cyclic = CyclicClass2()
-    cycle_2.cyclic.other = cycle_2
 
     class MyNamedTuple(NamedTuple):
         foo: str
@@ -774,59 +828,55 @@ def test_serialize_json() -> None:
         "time": current_time,
         "my_class": MyClass(1),
         "class_with_tee": ClassWithTee(),
-        "my_slotted_class": MyClassWithSlots(1),
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
-        "my_pydantic": MyPydantic(foo="foo", bar=1),
-        "person": Person(name="foo"),
+        "my_pydantic": MyPydantic(
+            foo="foo",
+            bar=1,
+            path_keys={pathlib.Path("foo"): MyPydantic(foo="foo", bar=1, path_keys={})},
+        ),
+        "my_pydantic_class": MyPydantic,
+        "person": Person(name="foo_person"),
         "a_bool": True,
         "a_none": None,
         "a_str": "foo",
         "an_int": 1,
         "a_float": 1.1,
-        "nested_class": NestedClass(),
-        "attr_dict": AttrDict(foo="foo", bar=1),
         "named_tuple": MyNamedTuple(foo="foo", bar=1),
-        "cyclic": CyclicClass(),
-        "cyclic2": cycle_2,
-        "fake_json": ClassWithFakeJson(),
+        "fake_json": ClassWithFakeDict(),
+        "some_set": set("a"),
+        "set_with_class": set([MyClass(1)]),
+        "my_mock": MagicMock(text="Hello, world"),
     }
     res = orjson.loads(_dumps_json(to_serialize))
+    assert (
+        "model_dump" not in caplog.text
+    ), f"Unexpected error logs were emitted: {caplog.text}"
+
     expected = {
         "uid": str(uid),
         "time": current_time.isoformat(),
-        "my_class": {
-            "x": 1,
-            "y": "y",
-            "a_list": [1, 2, 3],
-            "a_tuple": [1, 2, 3],
-            "a_set": [1, 2, 3],
-            "a_dict": {"foo": "bar"},
-            "my_bytes": "foo",
-        },
-        "class_with_tee": lambda val: all(
-            ["_tee object" in val[key] for key in ["tee_a", "tee_b"]]
-        ),
-        "my_slotted_class": {"x": 1, "y": "y"},
+        "my_class": "I fell back",
+        "class_with_tee": "tee_a, tee_b",
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
-        "my_pydantic": {"foo": "foo", "bar": 1},
-        "person": {"name": "foo"},
+        "my_pydantic": {
+            "foo": "foo",
+            "bar": 1,
+            "path_keys": {"foo": {"foo": "foo", "bar": 1, "path_keys": {}}},
+        },
+        "my_pydantic_class": lambda x: "MyPydantic" in x,
+        "person": {"name": "foo_person"},
         "a_bool": True,
         "a_none": None,
         "a_str": "foo",
         "an_int": 1,
         "a_float": 1.1,
-        "nested_class": (
-            lambda val: val["person"] == {"name": "foo"}
-            and "_thread.lock object" in str(val.get("lock"))
-        ),
-        "attr_dict": {"foo": "foo", "bar": 1},
-        "named_tuple": ["foo", 1],
-        "cyclic": {"cyclic": "SoCyclic"},
-        # We don't really care about this case just want to not err
-        "cyclic2": lambda _: True,
+        "named_tuple": {"bar": 1, "foo": "foo"},
         "fake_json": {"foo": "bar"},
+        "some_set": ["a"],
+        "set_with_class": ["I fell back"],
+        "my_mock": lambda x: "Mock" in x,
     }
     assert set(expected) == set(res)
     for k, v in expected.items():
@@ -837,6 +887,20 @@ def test_serialize_json() -> None:
                 assert res[k] == v, f"Failed for {k}"
         except AssertionError:
             raise
+
+    @dataclasses.dataclass
+    class CyclicClass:
+        other: Optional["CyclicClass"]
+
+        def __repr__(self) -> str:
+            return "my_cycles..."
+
+    my_cyclic = CyclicClass(other=CyclicClass(other=None))
+    my_cyclic.other.other = my_cyclic  # type: ignore
+
+    res = orjson.loads(_dumps_json({"cyclic": my_cyclic}))
+    assert res == {"cyclic": "my_cycles..."}
+    expected = {"foo": "foo", "bar": 1}
 
 
 def test__dumps_json():
@@ -988,7 +1052,10 @@ MB = 1024 * 1024
 
 
 @pytest.mark.parametrize("payload_size", [MB, 5 * MB, 9 * MB, 21 * MB])
-def test_batch_ingest_run_splits_large_batches(payload_size: int):
+@pytest.mark.parametrize("use_multipart_endpoint", (True, False))
+def test_batch_ingest_run_splits_large_batches(
+    payload_size: int, use_multipart_endpoint: bool
+):
     mock_session = MagicMock()
     client = Client(api_key="test", session=mock_session)
     mock_response = MagicMock()
@@ -1018,36 +1085,79 @@ def test_batch_ingest_run_splits_large_batches(payload_size: int):
         }
         for run_id in patch_ids
     ]
-    client.batch_ingest_runs(create=posts, update=patches)
-    # we can support up to 20MB per batch, so we need to find the number of batches
-    # we should be sending
-    max_in_batch = max(1, (20 * MB) // (payload_size + 20))
 
-    expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
-    # count the number of POST requests
-    assert (
-        sum([1 for call in mock_session.request.call_args_list if call[0][0] == "POST"])
-        == expected_num_requests
-    )
-    request_bodies = [
-        op
-        for call in mock_session.request.call_args_list
-        for reqs in (
-            orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+    if use_multipart_endpoint:
+        client.multipart_ingest(create=posts, update=patches)
+        # multipart endpoint should only send one request
+        expected_num_requests = 1
+        # count the number of POST requests
+        assert sum(
+            [1 for call in mock_session.request.call_args_list if call[0][0] == "POST"]
+        ) in (expected_num_requests, expected_num_requests + 1)
+
+        request_bodies = [
+            op
+            for call in mock_session.request.call_args_list
+            for op in (
+                MultipartParser(
+                    (
+                        io.BytesIO(call[1]["data"])
+                        if isinstance(call[1]["data"], bytes)
+                        else call[1]["data"]
+                    ),
+                    parse_options_header(call[1]["headers"]["Content-Type"])[1][
+                        "boundary"
+                    ],
+                )
+                if call[0][0] == "POST"
+                else []
+            )
+        ]
+        all_run_ids = run_ids + patch_ids
+
+        # Check that all the run_ids are present in the request bodies
+        for run_id in all_run_ids:
+            assert any(
+                [body.name.split(".")[1] == run_id for body in request_bodies]
+            ), run_id
+    else:
+        client.batch_ingest_runs(create=posts, update=patches)
+        # we can support up to 20MB per batch, so we need to find the number of batches
+        # we should be sending
+        max_in_batch = max(1, (20 * MB) // (payload_size + 20))
+
+        expected_num_requests = min(6, math.ceil((len(run_ids) * 2) / max_in_batch))
+        # count the number of POST requests
+        assert (
+            sum(
+                [
+                    1
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                ]
+            )
+            == expected_num_requests
         )
-        for op in reqs
-    ]
-    all_run_ids = run_ids + patch_ids
+        request_bodies = [
+            op
+            for call in mock_session.request.call_args_list
+            for reqs in (
+                orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+            )
+            for op in reqs
+        ]
+        all_run_ids = run_ids + patch_ids
 
-    # Check that all the run_ids are present in the request bodies
-    for run_id in all_run_ids:
-        assert any([body["id"] == str(run_id) for body in request_bodies])
+        # Check that all the run_ids are present in the request bodies
+        for run_id in all_run_ids:
+            assert any([body["id"] == str(run_id) for body in request_bodies])
 
-    # Check that no duplicate run_ids are present in the request bodies
-    assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
+        # Check that no duplicate run_ids are present in the request bodies
+        assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
 
 
-def test_select_eval_results():
+@mock.patch("langsmith.client.requests.Session")
+def test_select_eval_results(mock_session_cls: mock.Mock):
     expected = EvaluationResult(
         key="foo",
         value="bar",
@@ -1087,6 +1197,7 @@ def test_select_eval_results():
 
 
 @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@mock.patch("langsmith.client.requests.Session")
 def test_validate_api_key_if_hosted(
     monkeypatch: pytest.MonkeyPatch, client_cls: Union[Type[Client], Type[AsyncClient]]
 ) -> None:
@@ -1098,3 +1209,48 @@ def test_validate_api_key_if_hosted(
         # Check no warning is raised here.
         warnings.simplefilter("error")
         client_cls(api_url="http://localhost:1984")
+
+
+def test_parse_token_or_url():
+    # Test with URL
+    url = "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    api_url = "https://api.smith.langchain.com"
+    assert _parse_token_or_url(url, api_url) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    url = "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    beta_api_url = "https://beta.api.smith.langchain.com"
+    # Should still point to the correct public one
+    assert _parse_token_or_url(url, beta_api_url) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    token = "419dcab2-1d66-4b94-8901-0357ead390df"
+    assert _parse_token_or_url(token, api_url) == (
+        api_url,
+        token,
+    )
+
+    # Test with UUID object
+    token_uuid = uuid.UUID("419dcab2-1d66-4b94-8901-0357ead390df")
+    assert _parse_token_or_url(token_uuid, api_url) == (
+        api_url,
+        str(token_uuid),
+    )
+
+    # Test with custom num_parts
+    url_custom = (
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/p/q"
+    )
+    assert _parse_token_or_url(url_custom, api_url, num_parts=3) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    # Test with invalid URL
+    invalid_url = "https://invalid.com/419dcab2-1d66-4b94-8901-0357ead390df"
+    with pytest.raises(LangSmithUserError):
+        _parse_token_or_url(invalid_url, api_url)
