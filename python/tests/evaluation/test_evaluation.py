@@ -458,3 +458,31 @@ def test_pytest_skip():
 @test
 async def test_async_pytest_skip():
     pytest.skip("Skip this test")
+
+
+async def test_aevaluate_good_error():
+    client = Client()
+    ds_name = "__Empty Dataset Do Not Modify"
+    if not client.has_dataset(dataset_name=ds_name):
+        client.create_dataset(dataset_name=ds_name)
+
+    async def predict(inputs: dict):
+        return {}
+
+    match_val = "No examples found in the dataset."
+    with pytest.raises(ValueError, match=match_val):
+        await aevaluate(
+            predict,
+            data=ds_name,
+        )
+
+    with pytest.raises(ValueError, match=match_val):
+        await aevaluate(
+            predict,
+            data=[],
+        )
+    with pytest.raises(ValueError, match=match_val):
+        await aevaluate(
+            predict,
+            data=(_ for _ in range(0)),
+        )
