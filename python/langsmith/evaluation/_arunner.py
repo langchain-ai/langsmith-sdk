@@ -170,14 +170,10 @@ async def aevaluate(
 
         Evaluating over only a subset of the examples using an async generator:
 
-        >>> async def example_generator():
-        ...     examples = client.list_examples(dataset_name=dataset_name, limit=5)
-        ...     for example in examples:
-        ...         yield example
         >>> results = asyncio.run(
         ...     aevaluate(
         ...         apredict,
-        ...         data=example_generator(),
+        ...         data=client.list_examples(dataset_name=dataset_name, limit=5),
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...         experiment_prefix="My Subset Experiment",
@@ -405,7 +401,18 @@ async def _aevaluate(
         cache_path = pathlib.Path(cache_dir) / f"{dsid}.yaml"
     else:
         cache_path = None
-    with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+    with ls_utils.with_optional_cache(
+        cache_path,
+        ignore_hosts=list(
+            set(
+                (
+                    client.api_url,
+                    "https://beta.api.smith.langchain.com",
+                    "https://api.smith.langchain.com",
+                )
+            )
+        ),
+    ):
         if is_async_target:
             manager = await manager.awith_predictions(
                 cast(ATARGET_T, target), max_concurrency=max_concurrency

@@ -921,7 +921,18 @@ def _evaluate(
     cache_path = (
         pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml" if cache_dir else None
     )
-    with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
+    with ls_utils.with_optional_cache(
+        cache_path,
+        ignore_hosts=list(
+            set(
+                (
+                    client.api_url,
+                    "https://beta.api.smith.langchain.com",
+                    "https://api.smith.langchain.com",
+                )
+            )
+        ),
+    ):
         if _is_callable(target):
             # Add predictions to the experiment.
             manager = manager.with_predictions(
