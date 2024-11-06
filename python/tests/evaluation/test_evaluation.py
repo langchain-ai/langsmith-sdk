@@ -329,8 +329,9 @@ async def test_aevaluate():
         num_repetitions=2,
     )
     assert len(results) == 20
-    df = results.to_pandas()
-    assert len(df) == 20
+    if _has_pandas():
+        df = results.to_pandas()
+        assert len(df) == 20
     examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
     all_results = [r async for r in results]
     all_examples = []
