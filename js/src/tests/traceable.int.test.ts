@@ -696,8 +696,8 @@ test.concurrent(
           {
             test1bin: ["application/octet-stream", testAttachment1],
             test2bin: ["application/octet-stream", testAttachment2],
-            "inputbin": ["application/octet-stream", attachment],
-            "input2bin": [
+            inputbin: ["application/octet-stream", attachment],
+            input2bin: [
               "application/octet-stream",
               new Uint8Array(attachment2),
             ],
