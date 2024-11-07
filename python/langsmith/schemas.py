@@ -9,6 +9,7 @@ from typing import (
     Any,
     Dict,
     List,
+    NamedTuple,
     Optional,
     Protocol,
     Tuple,
@@ -43,7 +44,26 @@ from typing_extensions import Literal
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]
 
-Attachments = Dict[str, Tuple[str, bytes]]
+
+class Attachment(NamedTuple):
+    """Annotated type that will be stored as an attachment if used.
+
+    Examples:
+        --------
+        .. code-block:: python
+
+        @traceable
+        def my_function(bar: int, my_val: Attachment):
+            # my_val will be stored as an attachment
+            # bar will be stored as inputs
+            return bar
+    """
+
+    mime_type: str
+    data: bytes
+
+
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
 """Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
 
 
@@ -273,6 +293,10 @@ class RunBase(BaseModel):
         """Retrieve the revision ID (if any)."""
         return self.metadata.get("revision_id")
 
+    def __repr__(self):
+        """Return a string representation of the RunBase object."""
+        return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
+
 
 class Run(RunBase):
     """Run schema when loading from the DB."""
@@ -440,6 +464,8 @@ class FeedbackBase(BaseModel):
     """The time the feedback was last modified."""
     run_id: Optional[UUID]
     """The associated run ID this feedback is logged for."""
+    trace_id: Optional[UUID]
+    """The associated trace ID this feedback is logged for."""
     key: str
     """The metric name, tag, or aspect to provide feedback on."""
     score: SCORE_TYPE = None
@@ -460,6 +486,8 @@ class FeedbackBase(BaseModel):
     """For preference scoring, this group ID is shared across feedbacks for each
 
     run in the group that was being compared."""
+    extra: Optional[Dict] = None
+    """The metadata of the feedback."""
 
     class Config:
         """Configuration class for the schema."""

@@ -28,6 +28,7 @@ from typing import (
     Optional,
     Protocol,
     Sequence,
+    Set,
     Tuple,
     Type,
     TypedDict,
@@ -38,10 +39,10 @@ from typing import (
     runtime_checkable,
 )
 
-from typing_extensions import ParamSpec, TypeGuard
+from typing_extensions import Annotated, ParamSpec, TypeGuard, get_args, get_origin
 
 from langsmith import client as ls_client
-from langsmith import run_trees, utils
+from langsmith import run_trees, schemas, utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.env import _runtime_env
 
@@ -424,10 +425,13 @@ def traceable(
 
             manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
     """
-    run_type: ls_client.RUN_TYPE_T = (
-        args[0]
-        if args and isinstance(args[0], str)
-        else (kwargs.pop("run_type", None) or "chain")
+    run_type = cast(
+        ls_client.RUN_TYPE_T,
+        (
+            args[0]
+            if args and isinstance(args[0], str)
+            else (kwargs.pop("run_type", None) or "chain")
+        ),
     )
     if run_type not in _VALID_RUN_TYPES:
         warnings.warn(
@@ -839,6 +843,7 @@ class trace:
         run_id: Optional[ls_client.ID_TYPE] = None,
         reference_example_id: Optional[ls_client.ID_TYPE] = None,
         exceptions_to_handle: Optional[Tuple[Type[BaseException], ...]] = None,
+        attachments: Optional[schemas.Attachments] = None,
         **kwargs: Any,
     ):
         """Initialize the trace context manager.
@@ -854,6 +859,7 @@ class trace:
         self.name = name
         self.run_type = run_type
         self.inputs = inputs
+        self.attachments = attachments
         self.extra = extra
         self.project_name = project_name
         self.parent = parent
@@ -913,6 +919,7 @@ class trace:
                 extra=extra_outer,
                 inputs=self.inputs,
                 tags=tags_,
+                attachments=self.attachments,
             )
         else:
             self.new_run = run_trees.RunTree(
@@ -927,6 +934,7 @@ class trace:
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
+                attachments=self.attachments or {},
             )
 
         if enabled:
@@ -1349,7 +1357,7 @@ def _setup_run(
     metadata_.update(metadata or {})
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
-    inputs = _get_inputs_safe(signature, *args, **kwargs)
+    inputs, attachments = _get_inputs_and_attachments_safe(signature, *args, **kwargs)
     invocation_params_fn = container_input.get("invocation_params_fn")
     if invocation_params_fn:
         try:
@@ -1382,6 +1390,7 @@ def _setup_run(
             tags=tags_,
             extra=extra_inner,
             run_id=id_,
+            attachments=attachments,
         )
     else:
         new_run = run_trees.RunTree(
@@ -1401,6 +1410,7 @@ def _setup_run(
             extra=extra_inner,
             tags=tags_,
             client=client_,  # type: ignore
+            attachments=attachments,
         )
     try:
         new_run.post()
@@ -1469,6 +1479,41 @@ def _get_inputs_safe(
         return {"args": args, "kwargs": kwargs}
 
 
+@functools.lru_cache(maxsize=1000)
+def _attachment_args(signature: inspect.Signature) -> Set[str]:
+    def _is_attachment(param: inspect.Parameter) -> bool:
+        if param.annotation == schemas.Attachment or (
+            get_origin(param.annotation) == Annotated
+            and any(arg == schemas.Attachment for arg in get_args(param.annotation))
+        ):
+            return True
+        return False
+
+    return {
+        name for name, param in signature.parameters.items() if _is_attachment(param)
+    }
+
+
+def _get_inputs_and_attachments_safe(
+    signature: inspect.Signature, *args: Any, **kwargs: Any
+) -> Tuple[dict, schemas.Attachments]:
+    try:
+        inferred = _get_inputs(signature, *args, **kwargs)
+        attachment_args = _attachment_args(signature)
+        if attachment_args:
+            inputs, attachments = {}, {}
+            for k, v in inferred.items():
+                if k in attachment_args:
+                    attachments[k] = v
+                else:
+                    inputs[k] = v
+            return inputs, attachments
+        return inferred, {}
+    except BaseException as e:
+        LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
+        return {"args": args, "kwargs": kwargs}, {}
+
+
 def _set_tracing_context(context: Dict[str, Any]):
     """Set the tracing context."""
     for k, v in context.items():
@@ -1485,7 +1530,7 @@ def _process_iterator(
 ) -> Generator[T, None, Any]:
     try:
         while True:
-            item = run_container["context"].run(next, generator)
+            item: T = run_container["context"].run(next, generator)  # type: ignore[arg-type]
             if is_llm_run and run_container["new_run"]:
                 run_container["new_run"].add_event(
                     {

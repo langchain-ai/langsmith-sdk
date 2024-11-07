@@ -219,7 +219,7 @@ describe.each(ENDPOINT_TYPES)(
         end_time: endTime,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.awaitPendingTraceBatches();
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
@@ -298,7 +298,7 @@ describe.each(ENDPOINT_TYPES)(
         end_time: endTime,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.awaitPendingTraceBatches();
 
       expect(serverInfoFailedOnce).toBe(true);
 
@@ -331,10 +331,11 @@ describe.each(ENDPOINT_TYPES)(
       );
     });
 
-    it("should immediately trigger a batch on root run end", async () => {
+    it("should immediately trigger a batch on root run end if blockOnRootRunFinalization is set", async () => {
       const client = new Client({
         apiKey: "test-api-key",
         autoBatchTracing: true,
+        blockOnRootRunFinalization: true,
       });
       const callSpy = jest
         .spyOn((client as any).batchIngestCaller, "call")
@@ -608,24 +609,12 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(callSpy.mock.calls.length).toEqual(2);
-
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       const calledRequestParam2: any = callSpy.mock.calls[1][2];
 
-      const requestBody1 = await parseMockRequestBody(calledRequestParam?.body);
-      const requestBody2 = await parseMockRequestBody(
-        calledRequestParam2?.body
-      );
-
-      const largerBatch =
-        requestBody1.post.length === 10 ? requestBody1 : requestBody2;
-      const smallerBatch =
-        requestBody1.post.length === 10 ? requestBody2 : requestBody1;
-
       // Queue should drain as soon as size limit is reached,
       // sending both batches
-      expect(largerBatch).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: runIds.slice(0, 10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -639,7 +628,7 @@ describe.each(ENDPOINT_TYPES)(
         patch: [],
       });
 
-      expect(smallerBatch).toEqual({
+      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
         post: runIds.slice(10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -868,7 +857,7 @@ describe.each(ENDPOINT_TYPES)(
         end_time: endTime,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.awaitPendingTraceBatches();
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({

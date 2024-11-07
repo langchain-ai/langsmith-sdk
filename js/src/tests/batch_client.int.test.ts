@@ -10,6 +10,7 @@ import {
   waitUntilProjectFound,
   waitUntilRunFound,
 } from "./utils.js";
+import { traceable } from "../traceable.js";
 
 test.concurrent(
   "Test persist update run",
@@ -220,7 +221,7 @@ test.concurrent(
       trace_id: runId,
       dotted_order: dottedOrder,
       attachments: {
-        testimage: ["image/png", new Uint8Array(fs.readFileSync(pathname))],
+        testimage: ["image/png", fs.readFileSync(pathname)],
       },
     });
 
@@ -288,5 +289,44 @@ test("Test persist run with all items compressed", async () => {
 
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
+}, 180_000);
+
+test.skip("very large runs", async () => {
+  const langchainClient = new Client({
+    autoBatchTracing: true,
+    timeout_ms: 120_000,
+  });
+
+  const projectName = "__test_large_runs" + uuidv4().substring(0, 4);
+  await deleteProject(langchainClient, projectName);
+
+  console.time("largeRunTimer");
+
+  const promises = [];
+  for (let i = 0; i < 10; i++) {
+    promises.push(
+      traceable(
+        async () => {
+          return "x".repeat(9000000);
+        },
+        {
+          project_name: projectName,
+          client: langchainClient,
+          tracingEnabled: true,
+        }
+      )()
+    );
+  }
+
+  await Promise.all(promises);
+
+  console.timeLog("largeRunTimer");
+
+  await langchainClient.awaitPendingTraceBatches();
+
+  console.timeLog("largeRunTimer");
+
+  await Promise.all([waitUntilProjectFound(langchainClient, projectName)]);
+
   await langchainClient.deleteProject({ projectName });
 }, 180_000);
