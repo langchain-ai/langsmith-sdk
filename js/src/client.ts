@@ -34,6 +34,7 @@ import {
   ValueType,
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
+  Attachments,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -240,7 +241,7 @@ interface CreateRunParams {
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
-  attachments?: Record<string, [string, Uint8Array]>;
+  attachments?: Attachments;
 }
 
 interface UpdateRunParams extends RunUpdate {
@@ -465,9 +466,7 @@ export class Client {
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  private autoBatchInitialDelayMs = 250;
-
-  private autoBatchAggregationDelayMs = 50;
+  private autoBatchAggregationDelayMs = 250;
 
   private batchSizeBytesLimit?: number;
 
@@ -801,7 +800,6 @@ export class Client {
   }
 
   private async processRunOperation(item: AutoBatchQueueItem) {
-    const oldTimeout = this.autoBatchTimeout;
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     if (item.action === "create") {
@@ -813,15 +811,10 @@ export class Client {
       this.drainAutoBatchQueue(sizeLimitBytes);
     }
     if (this.autoBatchQueue.items.length > 0) {
-      this.autoBatchTimeout = setTimeout(
-        () => {
-          this.autoBatchTimeout = undefined;
-          this.drainAutoBatchQueue(sizeLimitBytes);
-        },
-        oldTimeout
-          ? this.autoBatchAggregationDelayMs
-          : this.autoBatchInitialDelayMs
-      );
+      this.autoBatchTimeout = setTimeout(() => {
+        this.autoBatchTimeout = undefined;
+        this.drainAutoBatchQueue(sizeLimitBytes);
+      }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
   }
@@ -1032,10 +1025,7 @@ export class Client {
       return;
     }
     // transform and convert to dicts
-    const allAttachments: Record<
-      string,
-      Record<string, [string, Uint8Array]>
-    > = {};
+    const allAttachments: Record<string, Attachments> = {};
     let preparedCreateParams = [];
     for (const create of runCreates ?? []) {
       const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
@@ -1048,7 +1038,6 @@ export class Client {
       delete preparedCreate.attachments;
       preparedCreateParams.push(preparedCreate);
     }
-
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
       preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
@@ -1116,7 +1105,8 @@ export class Client {
     ]) {
       for (const originalPayload of payloads) {
         // collect fields to be sent as separate parts
-        const { inputs, outputs, events, ...payload } = originalPayload;
+        const { inputs, outputs, events, attachments, ...payload } =
+          originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
         const stringifiedPayload = stringifyForTracing(payload);
@@ -1147,10 +1137,18 @@ export class Client {
             for (const [name, [contentType, content]] of Object.entries(
               attachments
             )) {
+              // Validate that the attachment name doesn't contain a '.'
+              if (name.includes(".")) {
+                console.warn(
+                  `Skipping attachment '${name}' for run ${payload.id}: Invalid attachment name. ` +
+                    `Attachment names must not contain periods ('.'). Please rename the attachment and try again.`
+                );
+                continue;
+              }
               accumulatedParts.push({
                 name: `attachment.${payload.id}.${name}`,
                 payload: new Blob([content], {
-                  type: `${contentType}; length=${content.length}`,
+                  type: `${contentType}; length=${content.byteLength}`,
                 }),
               });
             }
@@ -1172,6 +1170,7 @@ export class Client {
       for (const part of parts) {
         formData.append(part.name, part.payload);
       }
+      // Log the form data
       await this.batchIngestCaller.call(
         _getFetchImplementation(),
         `${this.apiUrl}/runs/multipart`,

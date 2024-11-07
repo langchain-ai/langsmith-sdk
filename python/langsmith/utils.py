@@ -37,9 +37,10 @@ from urllib import parse as urllib_parse
 import httpx
 import requests
 from typing_extensions import ParamSpec
-from urllib3.util import Retry
+from urllib3.util import Retry  # type: ignore[import-untyped]
 
 from langsmith import schemas as ls_schemas
+from langsmith._internal import _patch as patch_urllib3
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -492,6 +493,8 @@ def with_cache(
             "vcrpy is required to use caching. Install with:"
             'pip install -U "langsmith[vcr]"'
         )
+    # Fix concurrency issue in vcrpy's patching
+    patch_urllib3.patch_urllib3()
 
     def _filter_request_headers(request: Any) -> Any:
         if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):

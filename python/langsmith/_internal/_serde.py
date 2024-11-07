@@ -10,9 +10,7 @@ import logging
 import pathlib
 import re
 import uuid
-from typing import (
-    Any,
-)
+from typing import Any
 
 import orjson
 
@@ -33,14 +31,8 @@ def _simple_default(obj):
         # https://github.com/ijl/orjson#serialize
         if isinstance(obj, datetime.datetime):
             return obj.isoformat()
-        if isinstance(obj, uuid.UUID):
+        elif isinstance(obj, uuid.UUID):
             return str(obj)
-        if hasattr(obj, "model_dump") and callable(obj.model_dump):
-            return obj.model_dump()
-        elif hasattr(obj, "dict") and callable(obj.dict):
-            return obj.dict()
-        elif hasattr(obj, "_asdict") and callable(obj._asdict):
-            return obj._asdict()
         elif isinstance(obj, BaseException):
             return {"error": type(obj).__name__, "message": str(obj)}
         elif isinstance(obj, (set, frozenset, collections.deque)):
@@ -77,6 +69,16 @@ def _simple_default(obj):
     return str(obj)
 
 
+_serialization_methods = [
+    (
+        "model_dump",
+        {"exclude_none": True, "mode": "json"},
+    ),  # Pydantic V2 with non-serializable fields
+    ("dict", {}),  # Pydantic V1 with non-serializable field
+    ("to_dict", {}),  # dataclasses-json
+]
+
+
 def _serialize_json(obj: Any) -> Any:
     try:
         if isinstance(obj, (set, tuple)):
@@ -85,12 +87,7 @@ def _serialize_json(obj: Any) -> Any:
                 return obj._asdict()
             return list(obj)
 
-        serialization_methods = [
-            ("model_dump", True),  # Pydantic V2 with non-serializable fields
-            ("dict", False),  # Pydantic V1 with non-serializable field
-            ("to_dict", False),  # dataclasses-json
-        ]
-        for attr, exclude_none in serialization_methods:
+        for attr, kwargs in _serialization_methods:
             if (
                 hasattr(obj, attr)
                 and callable(getattr(obj, attr))
@@ -98,9 +95,7 @@ def _serialize_json(obj: Any) -> Any:
             ):
                 try:
                     method = getattr(obj, attr)
-                    response = (
-                        method(exclude_none=exclude_none) if exclude_none else method()
-                    )
+                    response = method(**kwargs)
                     if not isinstance(response, dict):
                         return str(response)
                     return response

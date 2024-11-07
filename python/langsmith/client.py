@@ -58,10 +58,12 @@ from urllib import parse as urllib_parse
 import orjson
 import requests
 from requests import adapters as requests_adapters
-from requests_toolbelt.multipart import MultipartEncoder  # type: ignore[import-untyped]
+from requests_toolbelt import (  # type: ignore[import-untyped]
+    multipart as rqtb_multipart,
+)
 from typing_extensions import TypeGuard
-from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined]
-from urllib3.util import Retry
+from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
+from urllib3.util import Retry  # type: ignore[import-untyped]
 
 import langsmith
 from langsmith import env as ls_env
@@ -137,8 +139,13 @@ def _parse_token_or_url(
     path_parts = parsed_url.path.split("/")
     if len(path_parts) >= num_parts:
         token_uuid = path_parts[-num_parts]
+        _as_uuid(token_uuid, var="token parts")
     else:
         raise ls_utils.LangSmithUserError(f"Invalid public {kind} URL: {url_or_token}")
+    if parsed_url.netloc == "smith.langchain.com":
+        api_url = "https://api.smith.langchain.com"
+    elif parsed_url.netloc == "beta.smith.langchain.com":
+        api_url = "https://beta.api.smith.langchain.com"
     return api_url, token_uuid
 
 
@@ -1556,12 +1563,16 @@ class Client:
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:
-                    encoder = MultipartEncoder(parts, boundary=BOUNDARY)
+                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
+                    if encoder.len <= 20_000_000:  # ~20 MB
+                        data = encoder.to_string()
+                    else:
+                        data = encoder
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
                         request_kwargs={
-                            "data": encoder,
+                            "data": data,
                             "headers": {
                                 **self._headers,
                                 X_API_KEY: api_key,
@@ -2428,7 +2439,7 @@ class Client:
                 self._tenant_id = tracer_session.tenant_id
                 return self._tenant_id
         except Exception as e:
-            logger.warning(
+            logger.debug(
                 "Failed to get tenant ID from LangSmith: %s", repr(e), exc_info=True
             )
         return None

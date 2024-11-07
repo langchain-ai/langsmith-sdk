@@ -425,10 +425,13 @@ def traceable(
 
             manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
     """
-    run_type: ls_client.RUN_TYPE_T = (
-        args[0]
-        if args and isinstance(args[0], str)
-        else (kwargs.pop("run_type", None) or "chain")
+    run_type = cast(
+        ls_client.RUN_TYPE_T,
+        (
+            args[0]
+            if args and isinstance(args[0], str)
+            else (kwargs.pop("run_type", None) or "chain")
+        ),
     )
     if run_type not in _VALID_RUN_TYPES:
         warnings.warn(

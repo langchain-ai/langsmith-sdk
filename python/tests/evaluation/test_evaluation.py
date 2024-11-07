@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 import time
 from contextlib import contextmanager
@@ -189,6 +190,17 @@ async def test_error_handling_evaluators():
     check_results([res async for res in async_results])
 
 
+@functools.lru_cache(maxsize=1)
+def _has_pandas() -> bool:
+    try:
+        import pandas  # noqa
+
+        return True
+
+    except Exception:
+        return False
+
+
 def test_evaluate():
     client = Client()
     _ = client.clone_public_dataset(
@@ -213,7 +225,7 @@ def test_evaluate():
 
     results = evaluate(
         predict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         description="My sync experiment",
@@ -224,14 +236,28 @@ def test_evaluate():
         num_repetitions=3,
     )
     assert len(results) == 30
-    examples = client.list_examples(dataset_name=dataset_name)
+    if _has_pandas():
+        df = results.to_pandas()
+        assert len(df) == 30
+        assert set(df.columns) == {
+            "inputs.context",
+            "inputs.question",
+            "outputs.output",
+            "error",
+            "reference.answer",
+            "feedback.accuracy",
+            "execution_time",
+            "example_id",
+            "id",
+        }
+    examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
     for example in examples:
         assert len([r for r in results if r["example"].id == example.id]) == 3
 
     # Run it again with the existing project
     results2 = evaluate(
         predict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=results.experiment_name,
@@ -242,7 +268,7 @@ def test_evaluate():
     experiment = client.read_project(project_name=results.experiment_name)
     results3 = evaluate(
         predict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=experiment,
@@ -252,7 +278,7 @@ def test_evaluate():
     # ... and again with the ID
     results4 = evaluate(
         predict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=str(experiment.id),
@@ -260,7 +286,6 @@ def test_evaluate():
     assert len(results4) == 10
 
 
-@pytest.mark.skip(reason="Skipping this test for now. Should remove in the future.")
 async def test_aevaluate():
     client = Client()
     _ = client.clone_public_dataset(
@@ -292,7 +317,7 @@ async def test_aevaluate():
 
     results = await aevaluate(
         apredict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy, slow_accuracy],
         summary_evaluators=[precision],
         experiment_prefix="My Experiment",
@@ -304,7 +329,10 @@ async def test_aevaluate():
         num_repetitions=2,
     )
     assert len(results) == 20
-    examples = client.list_examples(dataset_name=dataset_name)
+    if _has_pandas():
+        df = results.to_pandas()
+        assert len(df) == 20
+    examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
     all_results = [r async for r in results]
     all_examples = []
     for example in examples:
@@ -334,7 +362,7 @@ async def test_aevaluate():
     # Run it again with the existing project
     results2 = await aevaluate(
         apredict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=results.experiment_name,
@@ -345,7 +373,7 @@ async def test_aevaluate():
     experiment = client.read_project(project_name=results.experiment_name)
     results3 = await aevaluate(
         apredict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=experiment,
@@ -355,7 +383,7 @@ async def test_aevaluate():
     # ... and again with the ID
     results4 = await aevaluate(
         apredict,
-        data=dataset_name,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=str(experiment.id),
@@ -428,3 +456,31 @@ def test_pytest_skip():
 @test
 async def test_async_pytest_skip():
     pytest.skip("Skip this test")
+
+
+async def test_aevaluate_good_error():
+    client = Client()
+    ds_name = "__Empty Dataset Do Not Modify"
+    if not client.has_dataset(dataset_name=ds_name):
+        client.create_dataset(dataset_name=ds_name)
+
+    async def predict(inputs: dict):
+        return {}
+
+    match_val = "No examples found in the dataset."
+    with pytest.raises(ValueError, match=match_val):
+        await aevaluate(
+            predict,
+            data=ds_name,
+        )
+
+    with pytest.raises(ValueError, match=match_val):
+        await aevaluate(
+            predict,
+            data=[],
+        )
+    with pytest.raises(ValueError, match=match_val):
+        await aevaluate(
+            predict,
+            data=(_ for _ in range(0)),
+        )

@@ -13,6 +13,7 @@ import {
   getLangSmithEnvironmentVariable,
   getEnvironmentVariable,
 } from "./utils/env.js";
+import { isTracingEnabled } from "./env.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -319,6 +320,8 @@ export class AISDKExporter {
     this.client = args?.client ?? new Client();
     this.debug =
       args?.debug ?? getEnvironmentVariable("OTEL_LOG_LEVEL") === "DEBUG";
+
+    this.logDebug("creating exporter", { tracingEnabled: isTracingEnabled() });
   }
 
   static getSettings(settings?: TelemetrySettings) {
@@ -328,7 +331,7 @@ export class AISDKExporter {
     if (runName != null) metadata[RUN_NAME_METADATA_KEY.input] = runName;
 
     // attempt to obtain the run tree if used within a traceable function
-    let defaultEnabled = true;
+    let defaultEnabled = settings?.isEnabled ?? isTracingEnabled();
     try {
       const runTree = getCurrentRunTree();
       const headers = runTree.toHeaders();
