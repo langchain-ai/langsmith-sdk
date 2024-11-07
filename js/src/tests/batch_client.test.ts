@@ -2,6 +2,7 @@
 /* eslint-disable prefer-const */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
+import * as zlib from "node:zlib";
 import { Client, mergeRuntimeEnvIntoRunCreate } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
@@ -24,7 +25,16 @@ const parseMockRequestBody = async (body: string | FormData) => {
     try {
       parsedValue = JSON.parse(text);
     } catch (e) {
-      parsedValue = text;
+      try {
+        // Try decompression
+        const buffer = Buffer.from(text);
+        const decompressed = zlib.gunzipSync(buffer).toString();
+        parsedValue = JSON.parse(decompressed);
+      } catch (e) {
+        console.log(e);
+        // Give up
+        parsedValue = text;
+      }
     }
     // if (method === "attachment") {
     //   for (const item of reconstructedBody.post) {
@@ -796,7 +806,7 @@ describe.each(ENDPOINT_TYPES)(
         dotted_order: dottedOrder,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await client.awaitPendingTraceBatches();
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       expect(
@@ -915,3 +925,82 @@ describe.each(ENDPOINT_TYPES)(
     });
   }
 );
+
+it.only("should compress fields above the compression limit", async () => {
+  const client = new Client({
+    apiKey: "test-api-key",
+    tracePayloadByteCompressionLimit: 1000,
+    autoBatchTracing: true,
+  });
+  const callSpy = jest
+    .spyOn((client as any).batchIngestCaller, "call")
+    .mockResolvedValue({
+      ok: true,
+      text: () => "",
+    });
+  jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+    return {
+      version: "foo",
+      batch_ingest_config: { use_multipart_endpoint: true },
+    };
+  });
+
+  const projectName = "__test_compression";
+
+  const runId = uuidv4();
+  const dottedOrder = convertToDottedOrderFormat(
+    new Date().getTime() / 1000,
+    runId
+  );
+
+  await client.createRun({
+    id: runId,
+    project_name: projectName,
+    name: "test_run",
+    run_type: "llm",
+    inputs: { text: "hello world!" },
+    trace_id: runId,
+    dotted_order: dottedOrder,
+  });
+
+  const runId2 = uuidv4();
+  const dottedOrder2 = convertToDottedOrderFormat(
+    new Date().getTime() / 1000,
+    runId
+  );
+
+  await client.createRun({
+    id: runId2,
+    project_name: projectName,
+    name: "test_run2",
+    run_type: "llm",
+    inputs: { text: `hello world!${"x".repeat(1000)}` },
+    trace_id: runId,
+    dotted_order: dottedOrder2,
+  });
+
+  await client.awaitPendingTraceBatches();
+
+  const calledRequestParam: any = callSpy.mock.calls[0][2];
+  expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+    post: [
+      expect.objectContaining({
+        id: runId,
+        run_type: "llm",
+        inputs: {
+          text: "hello world!",
+        },
+        trace_id: runId,
+      }),
+      expect.objectContaining({
+        id: runId2,
+        run_type: "llm",
+        inputs: {
+          text: "foo",
+        },
+        trace_id: runId2,
+      }),
+    ],
+    patch: [],
+  });
+});
