@@ -245,7 +245,7 @@ class LLMEvaluator(RunEvaluator):
             dict,
             self.runnable.invoke(variables, config={"run_id": source_run_id}),
         )
-        return self._parse_output(output, source_run_id)
+        return self._parse_output(output, str(source_run_id))
 
     @warn_beta
     async def aevaluate_run(
@@ -259,7 +259,7 @@ class LLMEvaluator(RunEvaluator):
             await self.runnable.ainvoke(variables, config={"run_id": source_run_id}),
         )
 
-        return self._parse_output(output, source_run_id)
+        return self._parse_output(output, str(source_run_id))
 
     def _prepare_variables(self, run: Run, example: Optional[Example]) -> dict:
         """Prepare variables for model invocation."""
