@@ -34,12 +34,14 @@ import {
   ValueType,
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
+  Attachments,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
   isLangChainMessage,
 } from "./utils/messages.js";
 import {
+  getEnvironmentVariable,
   getLangChainEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
@@ -75,6 +77,7 @@ export interface ClientConfig {
   batchSizeBytesLimit?: number;
   tracePayloadByteCompressionLimit?: number;
   blockOnRootRunFinalization?: boolean;
+  traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
 }
 
@@ -239,7 +242,7 @@ interface CreateRunParams {
   revision_id?: string;
   trace_id?: string;
   dotted_order?: string;
-  attachments?: Record<string, [string, Uint8Array]>;
+  attachments?: Attachments;
 }
 
 interface UpdateRunParams extends RunUpdate {
@@ -402,7 +405,7 @@ const _preparePayload = async (
   return _compressPayload(finalPayload, contentType);
 };
 
-export class Queue {
+export class AutoBatchQueue {
   items: {
     action: "create" | "update";
     payload: RunCreate | RunUpdate;
@@ -502,13 +505,11 @@ export class Client {
 
   private autoBatchTracing = true;
 
-  private autoBatchQueue = new Queue();
+  private autoBatchQueue = new AutoBatchQueue();
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  private autoBatchInitialDelayMs = 250;
-
-  private autoBatchAggregationDelayMs = 50;
+  private autoBatchAggregationDelayMs = 250;
 
   private tracePayloadByteCompressionLimit =
     DEFAULT_MAX_UNCOMPRESSED_PAYLOAD_LIMIT;
@@ -519,7 +520,10 @@ export class Client {
 
   private settings: Promise<LangSmithSettings> | null;
 
-  private blockOnRootRunFinalization = true;
+  private blockOnRootRunFinalization =
+    getEnvironmentVariable("LANGSMITH_TRACING_BACKGROUND") === "false";
+
+  private traceBatchConcurrency = 5;
 
   private _serverInfo: RecordStringAny | undefined;
 
@@ -539,9 +543,16 @@ export class Client {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
-    this.timeout_ms = config.timeout_ms ?? 12_000;
+    this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.traceBatchConcurrency =
+      config.traceBatchConcurrency ?? this.traceBatchConcurrency;
+    if (this.traceBatchConcurrency < 1) {
+      throw new Error("Trace batch concurrency must be positive.");
+    }
     this.batchIngestCaller = new AsyncCaller({
+      maxRetries: 2,
+      maxConcurrency: this.traceBatchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
     });
@@ -792,7 +803,7 @@ export class Client {
     }
   }
 
-  private async _getBatchSizeLimitBytes() {
+  private async _getBatchSizeLimitBytes(): Promise<number> {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeBytesLimit ??
@@ -801,41 +812,43 @@ export class Client {
     );
   }
 
-  private async drainAutoBatchQueue() {
-    while (this.autoBatchQueue.items.length >= 0) {
-      const [batch, done] = this.autoBatchQueue.pop(
-        await this._getBatchSizeLimitBytes()
-      );
+  private drainAutoBatchQueue(batchSizeLimit: number) {
+    while (this.autoBatchQueue.items.length > 0) {
+      const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
       if (!batch.length) {
         done();
-        return;
+        break;
       }
-      try {
-        const ingestParams = {
-          runCreates: batch
-            .filter((item) => item.action === "create")
-            .map((item) => item.item) as RunCreate[],
-          runUpdates: batch
-            .filter((item) => item.action === "update")
-            .map((item) => item.item) as RunUpdate[],
-        };
-        const serverInfo = await this._ensureServerInfo();
-        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-          await this.multipartIngestRuns(ingestParams);
-        } else {
-          await this.batchIngestRuns(ingestParams);
-        }
-      } finally {
-        done();
-      }
+      void this._processBatch(batch, done).catch(console.error);
     }
   }
 
-  private async processRunOperation(
-    item: AutoBatchQueueItem,
-    immediatelyTriggerBatch?: boolean
-  ) {
-    const oldTimeout = this.autoBatchTimeout;
+  private async _processBatch(batch: AutoBatchQueueItem[], done: () => void) {
+    if (!batch.length) {
+      done();
+      return;
+    }
+    try {
+      const ingestParams = {
+        runCreates: batch
+          .filter((item) => item.action === "create")
+          .map((item) => item.item) as RunCreate[],
+        runUpdates: batch
+          .filter((item) => item.action === "update")
+          .map((item) => item.item) as RunUpdate[],
+      };
+      const serverInfo = await this._ensureServerInfo();
+      if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        await this.multipartIngestRuns(ingestParams);
+      } else {
+        await this.batchIngestRuns(ingestParams);
+      }
+    } finally {
+      done();
+    }
+  }
+
+  private async processRunOperation(item: AutoBatchQueueItem) {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     if (item.action === "create") {
@@ -843,24 +856,14 @@ export class Client {
     }
     const itemPromise = this.autoBatchQueue.push(item);
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
-    if (
-      immediatelyTriggerBatch ||
-      this.autoBatchQueue.sizeBytes > sizeLimitBytes
-    ) {
-      await this.drainAutoBatchQueue().catch(console.error);
+    if (this.autoBatchQueue.sizeBytes > sizeLimitBytes) {
+      this.drainAutoBatchQueue(sizeLimitBytes);
     }
     if (this.autoBatchQueue.items.length > 0) {
-      this.autoBatchTimeout = setTimeout(
-        () => {
-          this.autoBatchTimeout = undefined;
-          // This error would happen in the background and is uncatchable
-          // from the outside. So just log instead.
-          void this.drainAutoBatchQueue().catch(console.error);
-        },
-        oldTimeout
-          ? this.autoBatchAggregationDelayMs
-          : this.autoBatchInitialDelayMs
-      );
+      this.autoBatchTimeout = setTimeout(() => {
+        this.autoBatchTimeout = undefined;
+        this.drainAutoBatchQueue(sizeLimitBytes);
+      }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
   }
@@ -1071,10 +1074,7 @@ export class Client {
       return;
     }
     // transform and convert to dicts
-    const allAttachments: Record<
-      string,
-      Record<string, [string, Uint8Array]>
-    > = {};
+    const allAttachments: Record<string, Attachments> = {};
     let preparedCreateParams = [];
     for (const create of runCreates ?? []) {
       const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
@@ -1188,6 +1188,14 @@ export class Client {
             for (const [name, [contentType, content]] of Object.entries(
               attachments
             )) {
+              // Validate that the attachment name doesn't contain a '.'
+              if (name.includes(".")) {
+                console.warn(
+                  `Skipping attachment '${name}' for run ${payload.id}: Invalid attachment name. ` +
+                    `Attachment names must not contain periods ('.'). Please rename the attachment and try again.`
+                );
+                continue;
+              }
               accumulatedParts.push({
                 name: `attachment.${payload.id}.${name}`,
                 payload: await _preparePayload(
@@ -1259,9 +1267,11 @@ export class Client {
         data.parent_run_id === undefined &&
         this.blockOnRootRunFinalization
       ) {
-        // Trigger a batch as soon as a root trace ends and block to ensure trace finishes
+        // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
-        await this.processRunOperation({ action: "update", item: data }, true);
+        await this.processRunOperation({ action: "update", item: data }).catch(
+          console.error
+        );
         return;
       } else {
         void this.processRunOperation({ action: "update", item: data }).catch(
@@ -4200,8 +4210,9 @@ export class Client {
    * @returns A promise that resolves once all currently pending traces have sent.
    */
   public awaitPendingTraceBatches() {
-    return Promise.all(
-      this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise)
-    );
+    return Promise.all([
+      ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
+      this.batchIngestCaller.queue.onIdle(),
+    ]);
   }
 }

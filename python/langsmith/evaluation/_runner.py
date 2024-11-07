@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+import ast
 import collections
 import concurrent.futures as cf
 import datetime
 import functools
+import inspect
 import itertools
 import logging
 import pathlib
 import queue
 import random
+import textwrap
 import threading
 import uuid
 from contextvars import copy_context
 from typing import (
+    TYPE_CHECKING,
+    Any,
     Awaitable,
     Callable,
     DefaultDict,
@@ -42,6 +47,7 @@ from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import (
     ComparisonEvaluationResult,
     DynamicComparisonRunEvaluator,
+    DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
@@ -50,6 +56,12 @@ from langsmith.evaluation.evaluator import (
 )
 from langsmith.evaluation.integrations import LangChainStringEvaluator
 
+if TYPE_CHECKING:
+    import pandas as pd
+
+    DataFrame = pd.DataFrame
+else:
+    DataFrame = Any
 logger = logging.getLogger(__name__)
 
 TARGET_T = Callable[[dict], dict]
@@ -448,6 +460,20 @@ class ExperimentResults:
     def __len__(self) -> int:
         return len(self._results)
 
+    def to_pandas(
+        self, start: Optional[int] = 0, end: Optional[int] = None
+    ) -> DataFrame:
+        return _to_pandas(self._results, start=start, end=end)
+
+    def _repr_html_(self) -> str:
+        import importlib.util
+
+        if self._results and importlib.util.find_spec("pandas"):
+            df = self.to_pandas()
+            return df._repr_html_()  # type: ignore[operator]
+        else:
+            return self.__repr__()
+
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
 
@@ -655,15 +681,15 @@ def evaluate_comparative(
         ... )  # doctest: +ELLIPSIS
         View the pairwise evaluation results at:...
         >>> eval_results = list(results)
-        >>> assert len(eval_results) >= 10 # doctest: +SKIP
+        >>> assert len(eval_results) >= 10  # doctest: +SKIP
         >>> assert all(
         ...     "feedback.ranked_preference" in r["evaluation_results"]
         ...     for r in eval_results
-        ... ) # doctest: +SKIP
+        ... )  # doctest: +SKIP
         >>> assert all(
         ...     "feedback.length_difference" in r["evaluation_results"]
         ...     for r in eval_results
-        ... ) # doctest: +SKIP
+        ... )  # doctest: +SKIP
     """  # noqa: E501
     if len(experiments) < 2:
         raise ValueError("Comparative evaluation requires at least 2 experiments.")
@@ -1365,6 +1391,29 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         )
                     )
                 except Exception as e:
+                    try:
+                        feedback_keys = _extract_feedback_keys(evaluator)
+
+                        error_response = EvaluationResults(
+                            results=[
+                                EvaluationResult(
+                                    key=key,
+                                    source_run_id=run.id,
+                                    comment=repr(e),
+                                    extra={"error": True},
+                                )
+                                for key in feedback_keys
+                            ]
+                        )
+                        eval_results["results"].extend(
+                            # TODO: This is a hack
+                            self.client._log_evaluation_feedback(
+                                error_response, run=run, _executor=executor
+                            )
+                        )
+                    except Exception as e2:
+                        logger.debug(f"Error parsing feedback keys: {e2}")
+                        pass
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
                         f" run {run.id}: {repr(e)}",
@@ -1469,7 +1518,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             )
                     except Exception as e:
                         logger.error(
-                            f"Error running summary evaluator {repr(evaluator)}: {e}"
+                            f"Error running summary evaluator {repr(evaluator)}: {e}",
+                            exc_info=True,
                         )
         yield {"results": aggregate_feedback}
 
@@ -1593,7 +1643,9 @@ def _forward(
                 ),
             )
         except Exception as e:
-            logger.error(f"Error running target function: {e}")
+            logger.error(
+                f"Error running target function: {e}", exc_info=True, stacklevel=1
+            )
         return _ForwardResults(
             run=cast(schemas.Run, run),
             example=example,
@@ -1616,7 +1668,16 @@ def _ensure_traceable(
 ) -> rh.SupportsLangsmithExtra[[dict], dict]:
     """Ensure the target function is traceable."""
     if not callable(target):
-        raise ValueError("Target must be a callable function.")
+        raise ValueError(
+            "Target must be a callable function. For example:\n\n"
+            "def predict(inputs: dict) -> dict:\n"
+            "    # do work, like chain.invoke(inputs)\n"
+            "    return {...}\n\n"
+            "evaluate(\n"
+            "    predict,\n"
+            "    ...\n"
+            ")"
+        )
     if rh.is_traceable_function(target):
         fn = target
     else:
@@ -1662,3 +1723,203 @@ def _get_random_name() -> str:
     from langsmith.evaluation._name_generation import random_name  # noqa: F401
 
     return random_name()
+
+
+def _extract_feedback_keys(evaluator: RunEvaluator):
+    if isinstance(evaluator, DynamicRunEvaluator):
+        if getattr(evaluator, "func", None):
+            return _extract_code_evaluator_feedback_keys(evaluator.func)
+        elif getattr(evaluator, "afunc", None):
+            return _extract_code_evaluator_feedback_keys(evaluator.afunc)
+    # TODO: Support for DynamicComparisonRunEvaluator
+    if hasattr(evaluator, "evaluator"):
+        # LangChainStringEvaluator
+        if getattr(getattr(evaluator, "evaluator"), "evaluation_name", None):
+            return [evaluator.evaluator.evaluation_name]
+    return []
+
+
+def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
+    python_code = inspect.getsource(func)
+
+    def extract_dict_keys(node):
+        if isinstance(node, ast.Dict):
+            keys = []
+            key_value = None
+            for key, value in zip(node.keys, node.values):
+                if isinstance(key, (ast.Str, ast.Constant)):
+                    key_str = key.s if isinstance(key, ast.Str) else key.value
+                    if key_str == "key" and isinstance(value, (ast.Str, ast.Constant)):
+                        key_value = (
+                            value.s if isinstance(value, ast.Str) else value.value
+                        )
+            return [key_value] if key_value else keys
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "dict"
+        ):
+            for keyword in node.keywords:
+                if keyword.arg == "key" and isinstance(
+                    keyword.value, (ast.Str, ast.Constant)
+                ):
+                    return [
+                        (
+                            keyword.value.s
+                            if isinstance(keyword.value, ast.Str)
+                            else keyword.value.value
+                        )
+                    ]
+        return []
+
+    def extract_evaluation_result_key(node):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "EvaluationResult"
+        ):
+            for keyword in node.keywords:
+                if keyword.arg == "key" and isinstance(
+                    keyword.value, (ast.Str, ast.Constant)
+                ):
+                    return [
+                        (
+                            keyword.value.s
+                            if isinstance(keyword.value, ast.Str)
+                            else keyword.value.value
+                        )
+                    ]
+        return []
+
+    def extract_evaluation_results_keys(node, variables):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "EvaluationResults"
+        ):
+            for keyword in node.keywords:
+                if keyword.arg == "results":
+                    if isinstance(keyword.value, ast.Name):
+                        return variables.get(keyword.value.id, [])
+                    elif isinstance(keyword.value, ast.List):
+                        keys = []
+                        for elt in keyword.value.elts:
+                            keys.extend(extract_evaluation_result_key(elt))
+                        return keys
+        elif isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if isinstance(key, (ast.Str, ast.Constant)) and key.s == "results":
+                    if isinstance(value, ast.List):
+                        keys = []
+                        for elt in value.elts:
+                            if isinstance(elt, ast.Dict):
+                                for elt_key, elt_value in zip(elt.keys, elt.values):
+                                    if (
+                                        isinstance(elt_key, (ast.Str, ast.Constant))
+                                        and elt_key.s == "key"
+                                    ):
+                                        if isinstance(
+                                            elt_value, (ast.Str, ast.Constant)
+                                        ):
+                                            keys.append(elt_value.s)
+                            elif (
+                                isinstance(elt, ast.Call)
+                                and isinstance(elt.func, ast.Name)
+                                and elt.func.id in ("EvaluationResult", "dict")
+                            ):
+                                for keyword in elt.keywords:
+                                    if keyword.arg == "key" and isinstance(
+                                        keyword.value, (ast.Str, ast.Constant)
+                                    ):
+                                        keys.append(
+                                            keyword.value.s
+                                            if isinstance(keyword.value, ast.Str)
+                                            else keyword.value.value
+                                        )
+
+                        return keys
+        return []
+
+    python_code = textwrap.dedent(python_code)
+
+    try:
+        tree = ast.parse(python_code)
+        function_def = tree.body[0]
+        if not isinstance(function_def, ast.FunctionDef):
+            return []
+
+        variables = {}
+        keys = []
+
+        for node in ast.walk(function_def):
+            if isinstance(node, ast.Assign):
+                if isinstance(node.value, ast.List):
+                    list_keys = []
+                    for elt in node.value.elts:
+                        list_keys.extend(extract_evaluation_result_key(elt))
+                    if isinstance(node.targets[0], ast.Name):
+                        variables[node.targets[0].id] = list_keys
+            elif isinstance(node, ast.Return) and node.value is not None:
+                dict_keys = extract_dict_keys(node.value)
+                eval_result_key = extract_evaluation_result_key(node.value)
+                eval_results_keys = extract_evaluation_results_keys(
+                    node.value, variables
+                )
+
+                keys.extend(dict_keys)
+                keys.extend(eval_result_key)
+                keys.extend(eval_results_keys)
+
+        # If no keys found, return the function name
+        return keys if keys else [function_def.name]
+
+    except SyntaxError:
+        return []
+
+
+def _to_pandas(
+    results: list[ExperimentResultRow],
+    start: Optional[int] = 0,
+    end: Optional[int] = None,
+):
+    try:
+        import pandas as pd
+    except ImportError as e:
+        raise ImportError(
+            "The 'pandas' library is required to use the 'to_pandas' function. "
+            "Please install it using 'pip install pandas' or "
+            "'conda install pandas' before calling this method."
+        ) from e
+
+    return pd.DataFrame(_flatten_experiment_results(results, start=start, end=end))
+
+
+def _flatten_experiment_results(
+    results: list[ExperimentResultRow],
+    start: Optional[int] = 0,
+    end: Optional[int] = None,
+):
+    return [
+        {
+            **{f"inputs.{k}": v for k, v in x["example"].inputs.items()},
+            **{f"outputs.{k}": v for k, v in (x["run"].outputs or {}).items()},
+            "error": x["run"].error,
+            **(
+                {f"reference.{k}": v for k, v in x["example"].outputs.items()}
+                if x["example"].outputs is not None
+                else {}
+            ),
+            **{
+                f"feedback.{r.key}": r.score if r.score is not None else r.value
+                for r in x["evaluation_results"]["results"]
+            },
+            "execution_time": (
+                (x["run"].end_time - x["run"].start_time).total_seconds()
+                if x["run"].end_time
+                else None
+            ),
+            "example_id": x["run"].reference_example_id,
+            "id": x["run"].id,
+        }
+        for x in results[start:end]
+    ]
