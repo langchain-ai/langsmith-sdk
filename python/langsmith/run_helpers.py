@@ -484,7 +484,7 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
-            run_container = await aitertools.aio_to_thread(
+            run_container = await asyncio.to_thread(
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -513,19 +513,17 @@ def traceable(
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
                 await asyncio.shield(
-                    aitertools.aio_to_thread(_on_run_end, run_container, error=e)
+                    asyncio.to_thread(_on_run_end, run_container, error=e)
                 )
                 raise e
-            await aitertools.aio_to_thread(
-                _on_run_end, run_container, outputs=function_result
-            )
+            await asyncio.to_thread(_on_run_end, run_container, outputs=function_result)
             return function_result
 
         @functools.wraps(func)
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
-            run_container = await aitertools.aio_to_thread(
+            run_container = await asyncio.to_thread(
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -571,7 +569,7 @@ def traceable(
                     yield item
             except BaseException as e:
                 await asyncio.shield(
-                    aitertools.aio_to_thread(
+                    asyncio.to_thread(
                         _on_run_end,
                         run_container,
                         error=e,
@@ -579,7 +577,7 @@ def traceable(
                     )
                 )
                 raise e
-            await aitertools.aio_to_thread(
+            await asyncio.to_thread(
                 _on_run_end,
                 run_container,
                 outputs=_get_function_result(results, reduce_fn),
@@ -697,7 +695,7 @@ def traceable(
         async def async_stream_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
-            trace_container = await aitertools.aio_to_thread(
+            trace_container = await asyncio.to_thread(
                 _setup_run,
                 func,
                 container_input=container_input,
@@ -713,7 +711,7 @@ def traceable(
                     kwargs.pop("config", None)
                 stream = await func(*args, **kwargs)
             except Exception as e:
-                await aitertools.aio_to_thread(_on_run_end, trace_container, error=e)
+                await asyncio.to_thread(_on_run_end, trace_container, error=e)
                 raise
 
             if hasattr(stream, "__aiter__"):
@@ -723,7 +721,7 @@ def traceable(
                 return _TracedStream(stream, trace_container, reduce_fn)
 
             # If it's not iterable, end the trace immediately
-            await aitertools.aio_to_thread(_on_run_end, trace_container, outputs=stream)
+            await asyncio.to_thread(_on_run_end, trace_container, outputs=stream)
             return stream
 
         if inspect.isasyncgenfunction(func):
@@ -1010,7 +1008,7 @@ class trace:
             run_trees.RunTree: The newly created run.
         """
         ctx = copy_context()
-        result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
+        result = await asyncio.to_thread(self._setup)
         # Set the context for the current thread
         _set_tracing_context(get_tracing_context(ctx))
         return result
@@ -1031,14 +1029,10 @@ class trace:
         ctx = copy_context()
         if exc_type is not None:
             await asyncio.shield(
-                aitertools.aio_to_thread(
-                    self._teardown, exc_type, exc_value, traceback, __ctx=ctx
-                )
+                asyncio.to_thread(self._teardown, exc_type, exc_value, traceback)
             )
         else:
-            await aitertools.aio_to_thread(
-                self._teardown, exc_type, exc_value, traceback, __ctx=ctx
-            )
+            await asyncio.to_thread(self._teardown, exc_type, exc_value, traceback)
         _set_tracing_context(get_tracing_context(ctx))
 
 
@@ -1709,9 +1703,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
 
     async def _aend_trace(self, error: Optional[BaseException] = None):
         ctx = copy_context()
-        await asyncio.shield(
-            aitertools.aio_to_thread(self._end_trace, error, __ctx=ctx)
-        )
+        await asyncio.shield(asyncio.to_thread(self._end_trace, error))
         _set_tracing_context(get_tracing_context(ctx))
 
     async def __anext__(self) -> T:
