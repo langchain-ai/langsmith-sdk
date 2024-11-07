@@ -1155,7 +1155,8 @@ export class Client {
     ]) {
       for (const originalPayload of payloads) {
         // collect fields to be sent as separate parts
-        const { inputs, outputs, events, ...payload } = originalPayload;
+        const { inputs, outputs, events, attachments, ...payload } =
+          originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
         accumulatedParts.push({
