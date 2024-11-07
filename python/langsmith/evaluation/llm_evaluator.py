@@ -11,7 +11,18 @@ from langsmith.schemas import Example, Run
 
 
 class CategoricalScoreConfig(BaseModel):
-    """Configuration for a categorical score."""
+    """Configuration for a categorical score.
+
+    Attributes:
+        key (str): The feedback key for the evaluator.
+        choices (List[str]): List of valid categorical values that can be assigned.
+        description (str): Detailed description provided to the LLM judge of what
+            this score evaluates.
+        reasoning_key (Optional[str]): Key used to store the reasoning/explanation
+            for the score. Defaults to None.
+        reasoning_description (Optional[str]): Description provided to the LLM judge
+            of what should be included in the reasoning. Defaults to None.
+    """
 
     key: str
     choices: List[str]
@@ -21,7 +32,19 @@ class CategoricalScoreConfig(BaseModel):
 
 
 class ContinuousScoreConfig(BaseModel):
-    """Configuration for a continuous score."""
+    """Configuration for a continuous numerical score.
+
+    Attributes:
+        key (str): The feedback key for the evaluator.
+        min (float): The minimum allowed value for the score. Defaults to 0.
+        max (float): The maximum allowed value for the score. Defaults to 1.
+        description (str): Detailed description provided to the LLM judge of what
+            this score evaluates.
+        reasoning_key (Optional[str]): Key used to store the reasoning/explanation
+            for the score. Defaults to None.
+        reasoning_description (Optional[str]): Description provided to the LLM judge
+            of what should be included in the reasoning. Defaults to None.
+    """
 
     key: str
     min: float = 0
@@ -95,7 +118,6 @@ class LLMEvaluator(RunEvaluator):
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
         model_name: str = "gpt-4o",
         model_provider: str = "openai",
-        reasoning_key: str = "reasoning",
         **kwargs,
     ):
         """Initialize the LLMEvaluator.
@@ -127,9 +149,7 @@ class LLMEvaluator(RunEvaluator):
             model=model_name, model_provider=model_provider, **kwargs
         )
 
-        self._initialize(
-            prompt_template, score_config, map_variables, chat_model, reasoning_key
-        )
+        self._initialize(prompt_template, score_config, map_variables, chat_model)
 
     @classmethod
     def from_model(
