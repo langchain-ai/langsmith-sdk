@@ -27,8 +27,9 @@ const parseMockRequestBody = async (body: string | FormData) => {
     } catch (e) {
       try {
         // Try decompression
-        const buffer = Buffer.from(text);
-        const decompressed = zlib.gunzipSync(buffer).toString();
+        const decompressed = zlib
+          .gunzipSync(Buffer.from(await value.arrayBuffer()))
+          .toString();
         parsedValue = JSON.parse(decompressed);
       } catch (e) {
         console.log(e);
@@ -926,7 +927,7 @@ describe.each(ENDPOINT_TYPES)(
   }
 );
 
-it.only("should compress fields above the compression limit", async () => {
+it("should compress fields above the compression limit", async () => {
   const client = new Client({
     apiKey: "test-api-key",
     tracePayloadByteCompressionLimit: 1000,
@@ -975,7 +976,7 @@ it.only("should compress fields above the compression limit", async () => {
     name: "test_run2",
     run_type: "llm",
     inputs: { text: `hello world!${"x".repeat(1000)}` },
-    trace_id: runId,
+    trace_id: runId2,
     dotted_order: dottedOrder2,
   });
 
@@ -996,7 +997,7 @@ it.only("should compress fields above the compression limit", async () => {
         id: runId2,
         run_type: "llm",
         inputs: {
-          text: "foo",
+          text: `hello world!${"x".repeat(1000)}`,
         },
         trace_id: runId2,
       }),

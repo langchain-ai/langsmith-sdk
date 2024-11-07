@@ -365,13 +365,15 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
+const COMPRESSION_STREAM = new CompressionStream("gzip");
+
 const _compressPayload = async (
   payload: string | Uint8Array,
   contentType: string
 ) => {
   const compressedPayloadStream = new Blob([payload])
     .stream()
-    .pipeThrough(new CompressionStream("gzip"));
+    .pipeThrough(COMPRESSION_STREAM);
   const reader = compressedPayloadStream.getReader();
   const chunks = [];
   let totalLength = 0;
