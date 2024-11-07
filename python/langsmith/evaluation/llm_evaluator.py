@@ -1,34 +1,12 @@
 """Contains the LLMEvaluator class for building LLM-as-a-judge evaluators."""
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
-from uuid import UUID
-
-from langchain.schema import RUN_KEY
-from langchain_core.callbacks import CallbackManager
-from langchain_core.callbacks.base import BaseCallbackHandler
-from langchain_core.outputs import RunInfo
+from uuid import uuid4
 from pydantic import BaseModel
 
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith.evaluation import EvaluationResult, EvaluationResults, RunEvaluator
-from langsmith.run_helpers import traceable
 from langsmith.schemas import Example, Run
-
-
-class RunIdCapturingHandler(BaseCallbackHandler):
-    def __init__(self):
-        self.run_id: Optional[UUID] = None
-
-    def on_chain_start(
-        self,
-        serialized: Dict[str, Any],
-        inputs: Dict[str, Any],
-        run_id: UUID,
-        **kwargs: Any,
-    ) -> None:
-        if self.run_id is None:  # Only capture the root run_id
-            self.run_id = run_id
-
 
 class CategoricalScoreConfig(BaseModel):
     """Configuration for a categorical score."""
@@ -238,17 +216,14 @@ class LLMEvaluator(RunEvaluator):
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate a run."""
-        handler = RunIdCapturingHandler()
-        callback_manager = CallbackManager([handler])
-
+        run_id = uuid4()
         variables = self._prepare_variables(run, example)
         output: dict = cast(
             dict,
-            self.runnable.invoke(variables, config={"callbacks": callback_manager}),
+            self.runnable.invoke(variables, config={"run_id": run_id}),
         )
 
-        if handler.run_id:
-            output[RUN_KEY] = RunInfo(run_id=handler.run_id)
+        output["run_id"] = run_id
 
         return self._parse_output(output)
 
@@ -257,19 +232,16 @@ class LLMEvaluator(RunEvaluator):
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Asynchronously evaluate a run."""
-        handler = RunIdCapturingHandler()
-        callback_manager = CallbackManager([handler])
-
+        run_id = uuid4()
         variables = self._prepare_variables(run, example)
         output: dict = cast(
             dict,
             await self.runnable.ainvoke(
-                variables, config={"callbacks": callback_manager}
+                variables, config={"run_id": run_id}
             ),
         )
 
-        if handler.run_id:
-            output[RUN_KEY] = RunInfo(run_id=handler.run_id)
+        output["run_id"] = run_id
 
         return self._parse_output(output)
 
@@ -332,8 +304,7 @@ class LLMEvaluator(RunEvaluator):
 
     def _parse_output(self, output: dict) -> Union[EvaluationResult, EvaluationResults]:
         """Parse the model output into an evaluation result."""
-        run_info = output.get(RUN_KEY)
-        source_run_id = run_info.run_id if run_info is not None else None
+        source_run_id = output.get("run_id")
         if isinstance(self.score_config, CategoricalScoreConfig):
             value = output["score"]
             explanation = output.get(self.reasoning_key, None)
