@@ -2,11 +2,13 @@
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 from uuid import uuid4
+
 from pydantic import BaseModel
 
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith.evaluation import EvaluationResult, EvaluationResults, RunEvaluator
 from langsmith.schemas import Example, Run
+
 
 class CategoricalScoreConfig(BaseModel):
     """Configuration for a categorical score."""
@@ -14,8 +16,8 @@ class CategoricalScoreConfig(BaseModel):
     key: str
     choices: List[str]
     description: str
-    include_explanation: bool = False
-    explanation_description: Optional[str] = None
+    reasoning_key: Optional[str] = None
+    reasoning_description: Optional[str] = None
 
 
 class ContinuousScoreConfig(BaseModel):
@@ -25,28 +27,27 @@ class ContinuousScoreConfig(BaseModel):
     min: float = 0
     max: float = 1
     description: str
-    include_explanation: bool = False
-    explanation_description: Optional[str] = None
+    reasoning_key: Optional[str] = None
+    reasoning_description: Optional[str] = None
 
 
 def _create_score_json_schema(
     score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
-    reasoning_key: str,
 ) -> dict:
     properties: Dict[str, Any] = {}
 
-    if score_config.include_explanation:
-        properties[reasoning_key] = {
+    if score_config.reasoning_key:
+        properties[score_config.reasoning_key] = {
             "type": "string",
             "description": (
                 "The explanation for the score."
-                if score_config.explanation_description is None
-                else score_config.explanation_description
+                if score_config.reasoning_description is None
+                else score_config.reasoning_description
             ),
         }
 
     if isinstance(score_config, CategoricalScoreConfig):
-        properties["score"] = {
+        properties["value"] = {
             "type": "string",
             "enum": score_config.choices,
             "description": f"The score for the evaluation, one of "
@@ -69,7 +70,16 @@ def _create_score_json_schema(
         "type": "object",
         "properties": properties,
         "required": (
-            ["score", reasoning_key] if score_config.include_explanation else ["score"]
+            [
+                "value"
+                if isinstance(score_config, CategoricalScoreConfig)
+                else "score",
+                score_config.reasoning_key,
+            ]
+            if score_config.reasoning_key
+            else [
+                "value" if isinstance(score_config, CategoricalScoreConfig) else "score"
+            ]
         ),
     }
 
@@ -129,7 +139,6 @@ class LLMEvaluator(RunEvaluator):
         prompt_template: Union[str, List[Tuple[str, str]]],
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
-        reasoning_key: str = "reasoning",
     ):
         """Create an LLMEvaluator instance from a BaseChatModel instance.
 
@@ -149,9 +158,7 @@ class LLMEvaluator(RunEvaluator):
             LLMEvaluator: An instance of LLMEvaluator.
         """
         instance = cls.__new__(cls)
-        instance._initialize(
-            prompt_template, score_config, map_variables, model, reasoning_key
-        )
+        instance._initialize(prompt_template, score_config, map_variables, model)
         return instance
 
     def _initialize(
@@ -160,7 +167,6 @@ class LLMEvaluator(RunEvaluator):
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]],
         chat_model: Any,
-        reasoning_key: str,
     ):
         """Shared initialization code for __init__ and from_model.
 
@@ -202,11 +208,8 @@ class LLMEvaluator(RunEvaluator):
                     "variables other than 'input', 'output', and 'expected'"
                 )
         self.map_variables = map_variables
-        self.reasoning_key = reasoning_key
         self.score_config = score_config
-        self.score_schema = _create_score_json_schema(
-            self.score_config, self.reasoning_key
-        )
+        self.score_schema = _create_score_json_schema(self.score_config)
 
         chat_model = chat_model.with_structured_output(self.score_schema)
         self.runnable = self.prompt | chat_model
@@ -216,34 +219,27 @@ class LLMEvaluator(RunEvaluator):
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate a run."""
-        run_id = uuid4()
+        source_run_id = uuid4()
         variables = self._prepare_variables(run, example)
         output: dict = cast(
             dict,
-            self.runnable.invoke(variables, config={"run_id": run_id}),
+            self.runnable.invoke(variables, config={"run_id": source_run_id}),
         )
-
-        output["run_id"] = run_id
-
-        return self._parse_output(output)
+        return self._parse_output(output, source_run_id)
 
     @warn_beta
     async def aevaluate_run(
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Asynchronously evaluate a run."""
-        run_id = uuid4()
+        source_run_id = uuid4()
         variables = self._prepare_variables(run, example)
         output: dict = cast(
             dict,
-            await self.runnable.ainvoke(
-                variables, config={"run_id": run_id}
-            ),
+            await self.runnable.ainvoke(variables, config={"run_id": source_run_id}),
         )
 
-        output["run_id"] = run_id
-
-        return self._parse_output(output)
+        return self._parse_output(output, source_run_id)
 
     def _prepare_variables(self, run: Run, example: Optional[Example]) -> dict:
         """Prepare variables for model invocation."""
@@ -302,12 +298,13 @@ class LLMEvaluator(RunEvaluator):
 
         return variables
 
-    def _parse_output(self, output: dict) -> Union[EvaluationResult, EvaluationResults]:
+    def _parse_output(
+        self, output: dict, source_run_id: str
+    ) -> Union[EvaluationResult, EvaluationResults]:
         """Parse the model output into an evaluation result."""
-        source_run_id = output.get("run_id")
         if isinstance(self.score_config, CategoricalScoreConfig):
-            value = output["score"]
-            explanation = output.get(self.reasoning_key, None)
+            value = output["value"]
+            explanation = output.get(self.score_config.reasoning_key, None)
             return EvaluationResult(
                 key=self.score_config.key,
                 value=value,
@@ -316,7 +313,7 @@ class LLMEvaluator(RunEvaluator):
             )
         elif isinstance(self.score_config, ContinuousScoreConfig):
             score = output["score"]
-            explanation = output.get(self.reasoning_key, None)
+            explanation = output.get(self.score_config.reasoning_key, None)
             return EvaluationResult(
                 key=self.score_config.key,
                 score=score,
