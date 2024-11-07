@@ -1,8 +1,7 @@
-import { RunEvaluator } from "langsmith/evaluation";
 import { initChatModel } from "langchain/chat_models/universal";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import * as uuid from "uuid";
-import { EvaluationResult, EvaluationResults } from "./evaluator.js";
+import { EvaluationResult, EvaluationResults, RunEvaluator } from "./evaluator.js";
 import type { Run, Example } from "../schemas.js";
 export class CategoricalScoreConfig {
   key: string;
@@ -167,8 +166,10 @@ export class LLMEvaluator implements RunEvaluator {
     run: Run,
     example?: Example
   ): Promise<EvaluationResult | EvaluationResults> {
+    const runId = uuid.v4();
     const variables = this.prepareVariables(run, example);
-    const output = await this.runnable.invoke(variables, { config: { run_id: uuid.v4() }} );
+    let output = await this.runnable.invoke(variables, { runId: runId } );
+    output.runId = runId;
     return this.parseOutput(output);
   }
 
@@ -227,11 +228,11 @@ export class LLMEvaluator implements RunEvaluator {
     if ("choices" in this.scoreConfig) {
       const value = output.score;
       const explanation = output[this.reasoningKey];
-      console.log(output);
       return {
         key: this.scoreConfig.key,
         value,
         comment: explanation,
+        sourceRunId: output.runId
       };
     } else {
       const score = output.score;
@@ -240,6 +241,7 @@ export class LLMEvaluator implements RunEvaluator {
         key: this.scoreConfig.key,
         score,
         comment: explanation,
+        sourceRunId: output.runId
       };
     }
   }
