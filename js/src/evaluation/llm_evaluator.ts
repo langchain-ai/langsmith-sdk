@@ -3,50 +3,89 @@ import { ChatPromptTemplate } from "@langchain/core/prompts";
 import * as uuid from "uuid";
 import { EvaluationResult, EvaluationResults, RunEvaluator } from "./evaluator.js";
 import type { Run, Example } from "../schemas.js";
-export class CategoricalScoreConfig {
-  key: string;
-  choices: string[];
-  description: string;
-  includeExplanation: boolean;
-  explanationDescription?: string;
 
+/**
+* Configuration for categorical (enum-based) scoring in evaluations.
+* Used to define discrete categories or labels for evaluation results.
+*/
+export class CategoricalScoreConfig {
+ /** Feedback key for the evaluator */
+ key: string;
+ /** Array of valid categorical choices/labels that can be assigned */
+ choices: string[];
+ /** Description of what this score measures or represents */
+ description: string;
+ /** Optional key for the LLM reasoning/explanation for the score */
+ reasoningKey?: string;
+ /** Optional description of score reasoning, provided to the LLM in the structured output */
+ reasoningDescription?: string;
+
+ /**
+  * Creates a new categorical score configuration
+  * @param params Configuration parameters
+  * @param params.key Feedback key for the evaluator
+  * @param params.choices Array of valid categorical options
+  * @param params.description Description of the scoring criteria
+  * @param params.reasoningKey Optional key for the LLM reasoning/explanation for the score
+  * @param params.reasoningDescription Optional description of score reasoning, provided to the LLM in the structured output
+  */
   constructor(params: {
     key: string;
     choices: string[];
     description: string;
-    includeExplanation?: boolean;
-    explanationDescription?: string;
+    reasoningKey?: string;
+    reasoningDescription?: string;
   }) {
     this.key = params.key;
     this.choices = params.choices;
     this.description = params.description;
-    this.includeExplanation = params.includeExplanation ?? false;
-    this.explanationDescription = params.explanationDescription;
+    this.reasoningKey = params.reasoningKey;
+    this.reasoningDescription = params.reasoningDescription;
   }
 }
   
+/**
+ * Configuration for continuous (numeric) scoring in evaluations.
+ * Used to define scores that fall within a numeric range.
+ */
 export class ContinuousScoreConfig {
+  /** Feedback key for the evaluator */
   key: string;
+  /** Minimum allowed score value (defaults to 0) */
   min: number;
+  /** Maximum allowed score value (defaults to 1) */
   max: number;
+  /** Description of the scoring criteria */
   description: string;
-  includeExplanation: boolean;
-  explanationDescription?: string;
+  /** Optional key for the LLM reasoning/explanation for the score */
+  reasoningKey?: string;
+  /** Optional description of score reasoning, provided to the LLM in the structured output */
+  reasoningDescription?: string;
 
+  /**
+   * Creates a new continuous score configuration
+   * @param params Configuration parameters
+   * @param params.key Feedback key for the evaluator
+   * @param params.description Description of the scoring criteria
+   * @param params.min Optional minimum score value (defaults to 0)
+   * @param params.max Optional maximum score value (defaults to 1)
+   * @param params.reasoningKey Optional key for the LLM reasoning/explanation for the score
+   * @param params.reasoningDescription Optional description of score reasoning, provided to the LLM in the structured output
+   */
   constructor(params: {
     key: string;
     description: string;
     min?: number;
     max?: number;
-    includeExplanation?: boolean;
-    explanationDescription?: string;
+    reasoningKey?: string;
+    reasoningDescription?: string;
   }) {
     this.key = params.key;
     this.min = params.min ?? 0;
     this.max = params.max ?? 1;
     this.description = params.description;
-    this.includeExplanation = params.includeExplanation ?? false;
-    this.explanationDescription = params.explanationDescription;
+    this.reasoningKey = params.reasoningKey;
+    this.reasoningDescription = params.reasoningDescription;
   }
 }
 
@@ -54,19 +93,18 @@ type ScoreConfig = CategoricalScoreConfig | ContinuousScoreConfig;
 
 function createScoreJsonSchema(
   scoreConfig: ScoreConfig,
-  reasoningKey: string
 ): Record<string, any> {
   const properties: Record<string, any> = {};
 
-  if (scoreConfig.includeExplanation) {
-    properties[reasoningKey] = {
+  if (scoreConfig.reasoningKey) {
+    properties[scoreConfig.reasoningKey] = {
       type: "string",
-      description: scoreConfig.explanationDescription || "The explanation for the score.",
+      description: scoreConfig.reasoningDescription || "First, think step by step to explain your score.",
     };
   }
 
   if ("choices" in scoreConfig) {
-    properties.score = {
+    properties.value = {
       type: "string",
       enum: scoreConfig.choices,
       description: `The score for the evaluation, one of ${scoreConfig.choices.join(", ")}.`,
@@ -85,7 +123,7 @@ function createScoreJsonSchema(
     description: scoreConfig.description,
     type: "object",
     properties,
-    required: scoreConfig.includeExplanation ? ["score", reasoningKey] : ["score"],
+    required: scoreConfig.reasoningKey ? ["choices" in scoreConfig ? "value" : "score", scoreConfig.reasoningKey] : ["choices" in scoreConfig ? "value" : "score"],
   };
 }
 
@@ -116,8 +154,7 @@ export class LLMEvaluator implements RunEvaluator {
       params.scoreConfig,
       params.mapVariables,
       params.modelName || "gpt-4o",
-      params.modelProvider || "openai", 
-      params.reasoningKey || "reasoning"
+      params.modelProvider || "openai",
     );
     return evaluator;
   }
@@ -127,16 +164,14 @@ export class LLMEvaluator implements RunEvaluator {
     mapVariables?: (run: Run, example?: Example) => Record<string, any>,
     modelName: string = "gpt-4o",
     modelProvider: string = "openai",
-    reasoningKey: string = "reasoning"
   ) {
     try {
       // Store the configuration
       this.scoreConfig = scoreConfig;
       this.mapVariables = mapVariables;
-      this.reasoningKey = reasoningKey;
 
       // Create the score schema
-      this.scoreSchema = createScoreJsonSchema(scoreConfig, reasoningKey);
+      this.scoreSchema = createScoreJsonSchema(scoreConfig);
 
       // Create the prompt template
       if (typeof promptTemplate === "string") {
@@ -226,7 +261,7 @@ export class LLMEvaluator implements RunEvaluator {
 
   private parseOutput(output: Record<string, any>): EvaluationResult {
     if ("choices" in this.scoreConfig) {
-      const value = output.score;
+      const value = output.value;
       const explanation = output[this.reasoningKey];
       return {
         key: this.scoreConfig.key,
