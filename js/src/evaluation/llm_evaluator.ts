@@ -169,8 +169,8 @@ export class LLMEvaluator implements RunEvaluator {
     promptTemplate: string | [string, string][],
     scoreConfig: ScoreConfig,
     mapVariables?: (run: Run, example?: Example) => Record<string, any>,
-    modelName: string = "gpt-4o",
-    modelProvider: string = "openai"
+    modelName = "gpt-4o",
+    modelProvider = "openai"
   ) {
     try {
       // Store the configuration
@@ -213,7 +213,7 @@ export class LLMEvaluator implements RunEvaluator {
   ): Promise<EvaluationResult | EvaluationResults> {
     const runId = uuid.v4();
     const variables = this.prepareVariables(run, example);
-    let output = await this.runnable.invoke(variables, { runId: runId });
+    const output = await this.runnable.invoke(variables, { runId: runId });
 
     return this.parseOutput(output, runId);
   }
