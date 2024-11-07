@@ -243,14 +243,14 @@ test.concurrent(
   180_000
 );
 
-test("Test persist run with all items compressed", async () => {
+test.only("Test persist run with all items compressed", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
     callerOptions: { maxRetries: 2 },
     timeout_ms: 30_000,
     tracePayloadByteCompressionLimit: 1,
   });
-  const projectName = "__test_create_attachment" + uuidv4().substring(0, 4);
+  const projectName = "__test_compression" + uuidv4().substring(0, 4);
   await deleteProject(langchainClient, projectName);
 
   const runId = uuidv4();
@@ -289,6 +289,7 @@ test("Test persist run with all items compressed", async () => {
 
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
+  // await langchainClient.deleteProject({ projectName });
 }, 180_000);
 
 test.skip("very large runs", async () => {
