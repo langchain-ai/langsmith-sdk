@@ -15,7 +15,7 @@ def test_llm_evaluator_init() -> None:
             key="vagueness",
             choices=["Y", "N"],
             description="Whether the response is vague. Y for yes, N for no.",
-            include_explanation=True,
+            reasoning_key="explanation",
         ),
     )
     assert evaluator is not None
@@ -25,7 +25,7 @@ def test_llm_evaluator_init() -> None:
         "description": "Whether the response is vague. Y for yes, N for no.",
         "type": "object",
         "properties": {
-            "score": {
+            "value": {
                 "type": "string",
                 "enum": ["Y", "N"],
                 "description": "The score for the evaluation, one of Y, N.",
@@ -35,16 +35,14 @@ def test_llm_evaluator_init() -> None:
                 "description": "The explanation for the score.",
             },
         },
-        "required": ["score", "explanation"],
+        "required": ["value", "explanation"],
     }
 
     # Try a continuous score
     evaluator = LLMEvaluator(
         prompt_template="Rate the response from 0 to 1.\n{input}",
         score_config=ContinuousScoreConfig(
-            key="rating",
-            description="The rating of the response, from 0 to 1.",
-            include_explanation=False,
+            key="rating", description="The rating of the response, from 0 to 1."
         ),
     )
 
@@ -71,9 +69,7 @@ def test_llm_evaluator_init() -> None:
         LLMEvaluator(
             prompt_template="Rate the response from 0 to 1.\n{input}",
             score_config=ContinuousScoreConfig(
-                key="rating",
-                description="The rating of the response, from 0 to 1.",
-                include_explanation=False,
+                key="rating", description="The rating of the response, from 0 to 1."
             ),
             model_provider="invalid",
         )
@@ -81,9 +77,7 @@ def test_llm_evaluator_init() -> None:
     evaluator = LLMEvaluator(
         prompt_template="Rate the response from 0 to 1.\n{input} {output} {expected}",
         score_config=ContinuousScoreConfig(
-            key="rating",
-            description="The rating of the response, from 0 to 1.",
-            include_explanation=False,
+            key="rating", description="The rating of the response, from 0 to 1."
         ),
     )
     assert evaluator is not None
@@ -103,9 +97,7 @@ def test_llm_evaluator_init() -> None:
     evaluator = LLMEvaluator(
         prompt_template="Rate the response from 0 to 1.\n{input} {output} {hello}",
         score_config=ContinuousScoreConfig(
-            key="rating",
-            description="The rating of the response, from 0 to 1.",
-            include_explanation=False,
+            key="rating", description="The rating of the response, from 0 to 1."
         ),
         map_variables=lambda run, example: {"hello": "world"},
     )
@@ -120,9 +112,7 @@ def test_from_model() -> None:
         ChatOpenAI(),
         prompt_template="Rate the response from 0 to 1.\n{input}",
         score_config=ContinuousScoreConfig(
-            key="rating",
-            description="The rating of the response, from 0 to 1.",
-            include_explanation=False,
+            key="rating", description="The rating of the response, from 0 to 1."
         ),
     )
     assert evaluator is not None
@@ -165,7 +155,6 @@ async def test_evaluate() -> None:
             choices=["Y", "N"],
             description="Whether the output is accurate with respect to "
             "the expected output.",
-            include_explanation=False,
         ),
     )
 
@@ -183,7 +172,7 @@ async def test_evaluate() -> None:
             choices=["Y", "N"],
             description="Whether the output is accurate with respect to "
             "the context and question.",
-            include_explanation=True,
+            reasoning_key="explanation",
         ),
         map_variables=lambda run, example: {
             "context": example.inputs.get("context", "") if example else "",
