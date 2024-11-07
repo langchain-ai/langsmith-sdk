@@ -94,9 +94,11 @@ def _create_score_json_schema(
         "properties": properties,
         "required": (
             [
-                "value"
-                if isinstance(score_config, CategoricalScoreConfig)
-                else "score",
+                (
+                    "value"
+                    if isinstance(score_config, CategoricalScoreConfig)
+                    else "score"
+                ),
                 score_config.reasoning_key,
             ]
             if score_config.reasoning_key
