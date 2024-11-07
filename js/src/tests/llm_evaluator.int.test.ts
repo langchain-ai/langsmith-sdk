@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, expect, test } from "@jest/globals";
+import { expect, test } from "@jest/globals";
 import { Client } from "../index.js";
 import {
   CategoricalScoreConfig,
@@ -128,7 +128,7 @@ test("llm evaluator can evaluate runs", async () => {
   });
 
   const targetFunc = (input: Record<string, any>) => {
-    return { output: "This is a test response" };
+    return { output: input.question + " This is a test response" };
   };
 
   const evalRes = await evaluate(targetFunc, {
