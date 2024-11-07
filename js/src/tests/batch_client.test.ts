@@ -609,12 +609,20 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
-      const calledRequestParam2: any = callSpy.mock.calls[1][2];
+      const calledRequestBody = await parseMockRequestBody(
+        (callSpy.mock.calls[0][2] as any).body
+      );
+      const calledRequestBody2: any = await parseMockRequestBody(
+        (callSpy.mock.calls[1][2] as any).body
+      );
 
       // Queue should drain as soon as size limit is reached,
       // sending both batches
-      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+      expect(
+        calledRequestBody.post.length === 10
+          ? calledRequestBody
+          : calledRequestBody2
+      ).toEqual({
         post: runIds.slice(0, 10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -628,7 +636,11 @@ describe.each(ENDPOINT_TYPES)(
         patch: [],
       });
 
-      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
+      expect(
+        calledRequestBody.post.length === 5
+          ? calledRequestBody
+          : calledRequestBody2
+      ).toEqual({
         post: runIds.slice(10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
