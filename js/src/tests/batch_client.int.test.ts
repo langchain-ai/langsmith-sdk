@@ -243,7 +243,7 @@ test.concurrent(
   180_000
 );
 
-test.only("Test persist run with all items compressed", async () => {
+test("Test persist run with all items compressed", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
     callerOptions: { maxRetries: 2 },
@@ -276,10 +276,13 @@ test.only("Test persist run with all items compressed", async () => {
     },
   });
 
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
   await langchainClient.updateRun(runId, {
     outputs: { output: ["Hi"] },
     dotted_order: dottedOrder,
     trace_id: runId,
+    end_time: Math.floor(new Date().getTime() / 1000),
   });
 
   await Promise.all([
@@ -289,6 +292,7 @@ test.only("Test persist run with all items compressed", async () => {
 
   const storedRun = await langchainClient.readRun(runId);
   expect(storedRun.id).toEqual(runId);
+  expect(storedRun.status).toEqual("success");
   // await langchainClient.deleteProject({ projectName });
 }, 180_000);
 
