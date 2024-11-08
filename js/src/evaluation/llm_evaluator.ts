@@ -141,7 +141,6 @@ interface LLMEvaluatorParams {
   mapVariables?: (run: Run, example?: Example) => Record<string, any>;
   modelName?: string;
   modelProvider?: string;
-  reasoningKey?: string;
 }
 
 export class LLMEvaluator implements RunEvaluator {
@@ -150,7 +149,6 @@ export class LLMEvaluator implements RunEvaluator {
   scoreConfig: ScoreConfig;
   scoreSchema: Record<string, any>;
   runnable: any;
-  reasoningKey: string;
 
   constructor() {}
 
@@ -188,7 +186,7 @@ export class LLMEvaluator implements RunEvaluator {
       } else {
         this.prompt = ChatPromptTemplate.fromMessages(promptTemplate);
       }
-
+      
       // Initialize the chat model with structured output
       const chatModel = await initChatModel(modelName, {
         modelProvider: modelProvider,
@@ -273,9 +271,9 @@ export class LLMEvaluator implements RunEvaluator {
     output: Record<string, any>,
     runId: string
   ): EvaluationResult {
+    const explanation = this.scoreConfig.reasoningKey ? output[this.scoreConfig.reasoningKey] : undefined;
     if ("choices" in this.scoreConfig) {
       const value = output.value;
-      const explanation = output[this.reasoningKey];
       return {
         key: this.scoreConfig.key,
         value,
@@ -284,7 +282,6 @@ export class LLMEvaluator implements RunEvaluator {
       };
     } else {
       const score = output.score;
-      const explanation = output[this.reasoningKey];
       return {
         key: this.scoreConfig.key,
         score,
