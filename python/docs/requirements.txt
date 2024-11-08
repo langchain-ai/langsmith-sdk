@@ -9,4 +9,5 @@ pyyaml
 sphinx-design
 sphinx-copybutton
 beautifulsoup4
+six
 -e python
