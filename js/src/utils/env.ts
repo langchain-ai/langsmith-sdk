@@ -69,7 +69,7 @@ export type RuntimeEnvironment = {
 
 let runtimeEnvironment: RuntimeEnvironment | undefined;
 
-export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
+export function getRuntimeEnvironment(): RuntimeEnvironment {
   if (runtimeEnvironment === undefined) {
     const env = getEnv();
     const releaseEnv = getShas();
