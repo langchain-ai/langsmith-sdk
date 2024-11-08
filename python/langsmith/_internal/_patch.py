@@ -5,24 +5,14 @@ from urllib3 import __version__ as urllib3version  # noqa
 from urllib3 import connection  # noqa
 
 
-def _ensure_str(s, encoding='utf-8', errors='strict'):
-    """Coerce *s* to `str`.
-
-    For Python 2:
-      - `unicode` -> encoded to `str`
-      - `str` -> `str`
-
-    For Python 3:
-      - `str` -> `str`
-      - `bytes` -> decoded to `str`
-    """
-    # Taken from the six package
+def _ensure_str(s, encoding="utf-8", errors="strict") -> str:
     if isinstance(s, str):
         return s
-    
+
     if isinstance(s, bytes):
         return s.decode(encoding, errors)
-    return s
+    return str(s)
+
 
 # Copied from https://github.com/urllib3/urllib3/blob/1c994dfc8c5d5ecaee8ed3eb585d4785f5febf6e/src/urllib3/connection.py#L231
 def request(self, method, url, body=None, headers=None):
