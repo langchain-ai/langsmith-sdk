@@ -887,7 +887,7 @@ class Prompt(BaseModel):
     """The number of downloads."""
     num_views: int
     """The number of views."""
-    liked_by_auth_user: bool
+    liked_by_auth_user: Optional[bool] = None
     """Whether the prompt is liked by the authenticated user."""
     last_commit_hash: Optional[str] = None
     """The hash of the last commit."""
