@@ -18,18 +18,18 @@ import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TargetT<TInput = any, TOutput = KVMap> =
+export type TargetT<TInput = any, TOutput = KVMap> =
   | ((input: TInput, config?: KVMap) => Promise<TOutput>)
   | ((input: TInput, config?: KVMap) => TOutput)
   | { invoke: (input: TInput, config?: KVMap) => TOutput }
   | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
 
 // Data format: dataset-name, dataset_id, or examples
-type DataT = string | AsyncIterable<Example> | Example[];
+export type DataT = string | AsyncIterable<Example> | Example[];
 
 // Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
-type SummaryEvaluatorT =
+export type SummaryEvaluatorT =
   | ((
       runs: Array<Run>,
       examples: Array<Example>
@@ -40,7 +40,7 @@ type SummaryEvaluatorT =
     ) => EvaluationResult | EvaluationResults);
 
 // Row-level evaluator
-type EvaluatorT =
+export type EvaluatorT =
   | RunEvaluator
   | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
   | ((
@@ -128,7 +128,7 @@ export function evaluate(
   return _evaluate(target, options);
 }
 
-interface ExperimentResultRow {
+export interface ExperimentResultRow {
   run: Run;
   example: Example;
   evaluationResults: EvaluationResults;
