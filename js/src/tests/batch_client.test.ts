@@ -753,19 +753,19 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
-    it("If batching is unsupported, fall back to old endpoint", async () => {
+    it("Use batch endpoint if info call fails", async () => {
       const client = new Client({
         apiKey: "test-api-key",
         autoBatchTracing: true,
       });
       const callSpy = jest
-        .spyOn((client as any).caller, "call")
+        .spyOn((client as any).batchIngestCaller, "call")
         .mockResolvedValue({
           ok: true,
           text: () => "",
         });
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {};
+        throw new Error("Totally expected mock error");
       });
       const projectName = "__test_batch";
 
@@ -784,26 +784,32 @@ describe.each(ENDPOINT_TYPES)(
         dotted_order: dottedOrder,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await client.awaitPendingTraceBatches();
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
+
       expect(
         await parseMockRequestBody(calledRequestParam?.body)
       ).toMatchObject({
-        id: runId,
-        session_name: projectName,
-        extra: expect.anything(),
-        start_time: expect.any(Number),
-        name: "test_run",
-        run_type: "llm",
-        inputs: { text: "hello world" },
-        trace_id: runId,
-        dotted_order: dottedOrder,
+        post: [
+          {
+            id: runId,
+            session_name: projectName,
+            extra: expect.anything(),
+            start_time: expect.any(Number),
+            name: "test_run",
+            run_type: "llm",
+            inputs: { text: "hello world" },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          },
+        ],
+        patch: [],
       });
 
       expect(callSpy).toHaveBeenCalledWith(
         _getFetchImplementation(),
-        "https://api.smith.langchain.com/runs",
+        "https://api.smith.langchain.com/runs/batch",
         expect.objectContaining({
           body: expect.any(String),
         })
