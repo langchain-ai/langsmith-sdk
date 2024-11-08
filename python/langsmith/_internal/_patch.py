@@ -1,9 +1,28 @@
 # mypy: disable-error-code="import-untyped"
 import functools
 
-import six  # noqa
 from urllib3 import __version__ as urllib3version  # noqa
 from urllib3 import connection  # noqa
+
+
+def _ensure_str(s, encoding="utf-8", errors="strict"):
+    """Coerce *s* to `str`.
+
+    For Python 2:
+      - `unicode` -> encoded to `str`
+      - `str` -> `str`
+
+    For Python 3:
+      - `str` -> `str`
+      - `bytes` -> decoded to `str`
+    """
+    # Taken from the six package
+    if isinstance(s, str):
+        return s
+
+    if isinstance(s, bytes):
+        return s.decode(encoding, errors)
+    return s
 
 
 # Copied from https://github.com/urllib3/urllib3/blob/1c994dfc8c5d5ecaee8ed3eb585d4785f5febf6e/src/urllib3/connection.py#L231
@@ -33,7 +52,7 @@ def request(self, method, url, body=None, headers=None):
     else:
         # Avoid modifying the headers passed into .request()
         headers = headers.copy()
-    if "user-agent" not in (six.ensure_str(k.lower()) for k in headers):
+    if "user-agent" not in (_ensure_str(k.lower()) for k in headers):
         headers["User-Agent"] = connection._get_default_user_agent()
     # The above is all the same ^^^
     # The following is different:
