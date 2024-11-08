@@ -186,7 +186,7 @@ export class LLMEvaluator implements RunEvaluator {
       } else {
         this.prompt = ChatPromptTemplate.fromMessages(promptTemplate);
       }
-      
+
       // Initialize the chat model with structured output
       const chatModel = await initChatModel(modelName, {
         modelProvider: modelProvider,
@@ -271,7 +271,9 @@ export class LLMEvaluator implements RunEvaluator {
     output: Record<string, any>,
     runId: string
   ): EvaluationResult {
-    const explanation = this.scoreConfig.reasoningKey ? output[this.scoreConfig.reasoningKey] : undefined;
+    const explanation = this.scoreConfig.reasoningKey
+      ? output[this.scoreConfig.reasoningKey]
+      : undefined;
     if ("choices" in this.scoreConfig) {
       const value = output.value;
       return {
