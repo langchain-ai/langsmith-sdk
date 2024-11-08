@@ -113,7 +113,6 @@ test("llm evaluator with custom variable mapping", async () => {
 
 test("llm evaluator can evaluate runs", async () => {
   const client = new Client();
-  await client.deleteDataset({ datasetName: TESTING_DATASET_NAME });
   await client.clonePublicDataset(
     "https://beta.smith.langchain.com/public/06785303-0f70-4466-b637-f23d38c0f28e/d",
     {
