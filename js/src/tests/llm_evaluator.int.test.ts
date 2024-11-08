@@ -114,18 +114,22 @@ test("llm evaluator with custom variable mapping", async () => {
 test("llm evaluator can evaluate runs", async () => {
   const client = new Client();
   await client.clonePublicDataset(
-    "https://beta.smith.langchain.com/public/06785303-0f70-4466-b637-f23d38c0f28e/d", {
-        datasetName: TESTING_DATASET_NAME,
+    "https://beta.smith.langchain.com/public/06785303-0f70-4466-b637-f23d38c0f28e/d",
+    {
+      datasetName: TESTING_DATASET_NAME,
     }
   );
   const evaluator = await LLMEvaluator.create({
-    promptTemplate: "Is the response vague? Y/N\n{input}",
+    promptTemplate: "Is the response vague? Y/N\n{response}",
     scoreConfig: new CategoricalScoreConfig({
       key: "vagueness",
       choices: ["Y", "N"],
       description: "Whether the response is vague. Y for yes, N for no.",
       reasoningKey: "explanation",
       reasoningDescription: "First, think step by step to explain your score.",
+    }),
+    mapVariables: (run: any, _example?: any) => ({
+      response: run.outputs?.["output"] ?? "",
     }),
   });
 
@@ -153,13 +157,16 @@ test("llm evaluator with multiple prompt messages", async () => {
   const evaluator = await LLMEvaluator.create({
     promptTemplate: [
       ["system", "You are a helpful assistant evaluating responses."],
-      ["human", "Rate this response from 0 to 1: {input}"],
+      ["human", "Rate this response from 0 to 1: {response}"],
     ],
     scoreConfig: new ContinuousScoreConfig({
       key: "rating",
       description: "Quality rating from 0 to 1",
       min: 0,
       max: 1,
+    }),
+    mapVariables: (run: any, _example?: any) => ({
+      response: run.outputs?.["output"] ?? "",
     }),
   });
 
