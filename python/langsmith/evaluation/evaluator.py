@@ -90,6 +90,8 @@ class EvaluationResult(BaseModel):
     
     If none provided, the evaluation feedback is applied to the
     root trace being."""
+    extra: Optional[Dict] = None
+    """Metadata for the evaluator run."""
 
     class Config:
         """Pydantic model configuration."""

@@ -3,9 +3,12 @@
 import asyncio
 import dataclasses
 import gc
+import io
 import itertools
 import json
+import logging
 import math
+import pathlib
 import sys
 import time
 import uuid
@@ -25,18 +28,19 @@ import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
 from pydantic import BaseModel
 from requests import HTTPError
-from requests_toolbelt.multipart import MultipartEncoder
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
+from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
     _dumps_json,
     _is_langchain_hosted,
-    _serialize_json,
+    _parse_token_or_url,
 )
+from langsmith.utils import LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -287,9 +291,6 @@ def test_create_run_unicode() -> None:
 def test_create_run_mutate(
     use_multipart_endpoint: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if use_multipart_endpoint:
-        monkeypatch.setenv("LANGSMITH_FF_MULTIPART", "true")
-        # TODO remove this when removing FF
     inputs = {"messages": ["hi"], "mygen": (i for i in range(10))}
     session = mock.Mock()
     session.request = mock.Mock()
@@ -348,12 +349,11 @@ def test_create_run_mutate(
             assert headers["Content-Type"].startswith("multipart/form-data")
             # this is a current implementation detail, if we change implementation
             # we update this assertion
-            assert isinstance(data, MultipartEncoder)
+            assert isinstance(data, bytes)
             boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
-            parser = MultipartParser(data, boundary)
+            parser = MultipartParser(io.BytesIO(data), boundary)
             parts.extend(parser.parts())
 
-        assert len(parts) == 3
         assert [p.name for p in parts] == [
             f"post.{id_}",
             f"post.{id_}.inputs",
@@ -722,6 +722,7 @@ def test_pydantic_serialize() -> None:
 
     class ChildPydantic(BaseModel):
         uid: uuid.UUID
+        child_path_keys: Dict[pathlib.Path, pathlib.Path]
 
     class MyPydantic(BaseModel):
         foo: str
@@ -729,9 +730,16 @@ def test_pydantic_serialize() -> None:
         tim: datetime
         ex: Optional[str] = None
         child: Optional[ChildPydantic] = None
+        path_keys: Dict[pathlib.Path, pathlib.Path]
 
     obj = MyPydantic(
-        foo="bar", uid=test_uuid, tim=test_time, child=ChildPydantic(uid=test_uuid)
+        foo="bar",
+        uid=test_uuid,
+        tim=test_time,
+        child=ChildPydantic(
+            uid=test_uuid, child_path_keys={pathlib.Path("foo"): pathlib.Path("bar")}
+        ),
+        path_keys={pathlib.Path("foo"): pathlib.Path("bar")},
     )
     res = json.loads(json.dumps(obj, default=_serialize_json))
     expected = {
@@ -740,7 +748,9 @@ def test_pydantic_serialize() -> None:
         "tim": test_time.isoformat(),
         "child": {
             "uid": str(test_uuid),
+            "child_path_keys": {"foo": "bar"},
         },
+        "path_keys": {"foo": "bar"},
     }
     assert res == expected
 
@@ -749,7 +759,9 @@ def test_pydantic_serialize() -> None:
     assert res2 == {"output": expected}
 
 
-def test_serialize_json() -> None:
+def test_serialize_json(caplog) -> None:
+    caplog.set_level(logging.ERROR)
+
     class MyClass:
         def __init__(self, x: int) -> None:
             self.x = x
@@ -778,6 +790,7 @@ def test_serialize_json() -> None:
     class MyPydantic(BaseModel):
         foo: str
         bar: int
+        path_keys: Dict[pathlib.Path, "MyPydantic"]
 
     @dataclasses.dataclass
     class MyDataclass:
@@ -817,7 +830,12 @@ def test_serialize_json() -> None:
         "class_with_tee": ClassWithTee(),
         "my_dataclass": MyDataclass("foo", 1),
         "my_enum": MyEnum.FOO,
-        "my_pydantic": MyPydantic(foo="foo", bar=1),
+        "my_pydantic": MyPydantic(
+            foo="foo",
+            bar=1,
+            path_keys={pathlib.Path("foo"): MyPydantic(foo="foo", bar=1, path_keys={})},
+        ),
+        "my_pydantic_class": MyPydantic,
         "person": Person(name="foo_person"),
         "a_bool": True,
         "a_none": None,
@@ -831,6 +849,9 @@ def test_serialize_json() -> None:
         "my_mock": MagicMock(text="Hello, world"),
     }
     res = orjson.loads(_dumps_json(to_serialize))
+    assert (
+        "model_dump" not in caplog.text
+    ), f"Unexpected error logs were emitted: {caplog.text}"
 
     expected = {
         "uid": str(uid),
@@ -839,7 +860,12 @@ def test_serialize_json() -> None:
         "class_with_tee": "tee_a, tee_b",
         "my_dataclass": {"foo": "foo", "bar": 1},
         "my_enum": "foo",
-        "my_pydantic": {"foo": "foo", "bar": 1},
+        "my_pydantic": {
+            "foo": "foo",
+            "bar": 1,
+            "path_keys": {"foo": {"foo": "foo", "bar": 1, "path_keys": {}}},
+        },
+        "my_pydantic_class": lambda x: "MyPydantic" in x,
         "person": {"name": "foo_person"},
         "a_bool": True,
         "a_none": None,
@@ -1059,20 +1085,26 @@ def test_batch_ingest_run_splits_large_batches(
         }
         for run_id in patch_ids
     ]
+
     if use_multipart_endpoint:
-        client.multipart_ingest_runs(create=posts, update=patches)
+        client.multipart_ingest(create=posts, update=patches)
         # multipart endpoint should only send one request
         expected_num_requests = 1
         # count the number of POST requests
         assert sum(
             [1 for call in mock_session.request.call_args_list if call[0][0] == "POST"]
         ) in (expected_num_requests, expected_num_requests + 1)
+
         request_bodies = [
             op
             for call in mock_session.request.call_args_list
             for op in (
                 MultipartParser(
-                    call[1]["data"],
+                    (
+                        io.BytesIO(call[1]["data"])
+                        if isinstance(call[1]["data"], bytes)
+                        else call[1]["data"]
+                    ),
                     parse_options_header(call[1]["headers"]["Content-Type"])[1][
                         "boundary"
                     ],
@@ -1177,3 +1209,48 @@ def test_validate_api_key_if_hosted(
         # Check no warning is raised here.
         warnings.simplefilter("error")
         client_cls(api_url="http://localhost:1984")
+
+
+def test_parse_token_or_url():
+    # Test with URL
+    url = "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    api_url = "https://api.smith.langchain.com"
+    assert _parse_token_or_url(url, api_url) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    url = "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    beta_api_url = "https://beta.api.smith.langchain.com"
+    # Should still point to the correct public one
+    assert _parse_token_or_url(url, beta_api_url) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    token = "419dcab2-1d66-4b94-8901-0357ead390df"
+    assert _parse_token_or_url(token, api_url) == (
+        api_url,
+        token,
+    )
+
+    # Test with UUID object
+    token_uuid = uuid.UUID("419dcab2-1d66-4b94-8901-0357ead390df")
+    assert _parse_token_or_url(token_uuid, api_url) == (
+        api_url,
+        str(token_uuid),
+    )
+
+    # Test with custom num_parts
+    url_custom = (
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/p/q"
+    )
+    assert _parse_token_or_url(url_custom, api_url, num_parts=3) == (
+        api_url,
+        "419dcab2-1d66-4b94-8901-0357ead390df",
+    )
+
+    # Test with invalid URL
+    invalid_url = "https://invalid.com/419dcab2-1d66-4b94-8901-0357ead390df"
+    with pytest.raises(LangSmithUserError):
+        _parse_token_or_url(invalid_url, api_url)

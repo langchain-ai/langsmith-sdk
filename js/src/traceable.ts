@@ -7,12 +7,13 @@ import {
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
-import { InvocationParamsSchema, KVMap } from "./schemas.js";
+import { Attachments, InvocationParamsSchema, KVMap } from "./schemas.js";
 import { isTracingEnabled } from "./env.js";
 import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
 } from "./singletons/traceable.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import { TraceableFunction } from "./singletons/types.js";
 import {
   isKVMap,
@@ -28,29 +29,76 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
 );
 
-const handleRunInputs = (rawInputs: unknown[]): KVMap => {
+const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
+  let inputs: KVMap;
 
   if (firstInput == null) {
-    return {};
+    inputs = {};
+  } else if (rawInputs.length > 1) {
+    inputs = { args: rawInputs };
+  } else if (isKVMap(firstInput)) {
+    inputs = firstInput;
+  } else {
+    inputs = { input: firstInput };
   }
-
-  if (rawInputs.length > 1) {
-    return { args: rawInputs };
-  }
-
-  if (isKVMap(firstInput)) {
-    return firstInput;
-  }
-
-  return { input: firstInput };
+  return inputs;
 };
 
-const handleRunOutputs = (rawOutputs: unknown): KVMap => {
-  if (isKVMap(rawOutputs)) {
-    return rawOutputs;
+const handleRunInputs = (
+  inputs: KVMap,
+  processInputs: (inputs: Readonly<KVMap>) => KVMap
+): KVMap => {
+  try {
+    return processInputs(inputs);
+  } catch (e) {
+    console.error(
+      "Error occurred during processInputs. Sending raw inputs:",
+      e
+    );
+    return inputs;
   }
-  return { outputs: rawOutputs };
+};
+
+const handleRunOutputs = (
+  rawOutputs: unknown,
+  processOutputs: (outputs: Readonly<KVMap>) => KVMap
+): KVMap => {
+  let outputs: KVMap;
+
+  if (isKVMap(rawOutputs)) {
+    outputs = rawOutputs;
+  } else {
+    outputs = { outputs: rawOutputs };
+  }
+
+  try {
+    return processOutputs(outputs);
+  } catch (e) {
+    console.error(
+      "Error occurred during processOutputs. Sending raw outputs:",
+      e
+    );
+    return outputs;
+  }
+};
+const handleRunAttachments = (
+  rawInputs: unknown[],
+  extractAttachments?: (
+    ...args: unknown[]
+  ) => [Attachments | undefined, unknown[]]
+): [Attachments | undefined, unknown[]] => {
+  if (!extractAttachments) {
+    return [undefined, rawInputs];
+  }
+
+  try {
+    const [attachments, remainingArgs] = extractAttachments(...rawInputs);
+    return [attachments, remainingArgs];
+  } catch (e) {
+    console.error("Error occurred during extractAttachments:", e);
+    return [undefined, rawInputs];
+  }
 };
 
 const getTracingRunTree = <Args extends unknown[]>(
@@ -58,13 +106,24 @@ const getTracingRunTree = <Args extends unknown[]>(
   inputs: Args,
   getInvocationParams:
     | ((...args: Args) => InvocationParamsSchema | undefined)
+    | undefined,
+  processInputs: (inputs: Readonly<KVMap>) => KVMap,
+  extractAttachments:
+    | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
 ): RunTree | undefined => {
   if (!isTracingEnabled(runTree.tracingEnabled)) {
     return undefined;
   }
 
-  runTree.inputs = handleRunInputs(inputs);
+  const [attached, args] = handleRunAttachments(
+    inputs,
+    extractAttachments as
+      | ((...args: unknown[]) => [Attachments | undefined, unknown[]])
+      | undefined
+  );
+  runTree.attachments = attached;
+  runTree.inputs = handleRunInputs(args, processInputs);
 
   const invocationParams = getInvocationParams?.(...inputs);
   if (invocationParams != null) {
@@ -282,6 +341,15 @@ export function traceable<Func extends (...args: any[]) => any>(
     __finalTracedIteratorKey?: string;
 
     /**
+     * Extract attachments from args and return remaining args.
+     * @param args Arguments of the traced function
+     * @returns Tuple of [Attachments, remaining args]
+     */
+    extractAttachments?: (
+      ...args: Parameters<Func>
+    ) => [Attachments | undefined, KVMap];
+
+    /**
      * Extract invocation parameters from the arguments of the traced function.
      * This is useful for LangSmith to properly track common metadata like
      * provider, model name and temperature.
@@ -292,6 +360,26 @@ export function traceable<Func extends (...args: any[]) => any>(
     getInvocationParams?: (
       ...args: Parameters<Func>
     ) => InvocationParamsSchema | undefined;
+
+    /**
+     * Apply transformations to the inputs before logging.
+     * This function should NOT mutate the inputs.
+     * `processInputs` is not inherited by nested traceable functions.
+     *
+     * @param inputs Key-value map of the function inputs.
+     * @returns Transformed key-value map
+     */
+    processInputs?: (inputs: Readonly<KVMap>) => KVMap;
+
+    /**
+     * Apply transformations to the outputs before logging.
+     * This function should NOT mutate the outputs.
+     * `processOutputs` is not inherited by nested traceable functions.
+     *
+     * @param outputs Key-value map of the function outputs
+     * @returns Transformed key-value map
+     */
+    processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
   }
 ) {
   type Inputs = Parameters<Func>;
@@ -299,8 +387,16 @@ export function traceable<Func extends (...args: any[]) => any>(
     aggregator,
     argsConfigPath,
     __finalTracedIteratorKey,
+    processInputs,
+    processOutputs,
+    extractAttachments,
     ...runTreeConfig
   } = config ?? {};
+
+  const processInputsFn = processInputs ?? ((x) => x);
+  const processOutputsFn = processOutputs ?? ((x) => x);
+  const extractAttachmentsFn =
+    extractAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
 
   const traceableFunc = (
     ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -373,7 +469,9 @@ export function traceable<Func extends (...args: any[]) => any>(
           getTracingRunTree(
             RunTree.fromRunnableConfig(firstArg, ensuredConfig),
             restArgs as Inputs,
-            config?.getInvocationParams
+            config?.getInvocationParams,
+            processInputsFn,
+            extractAttachmentsFn
           ),
           restArgs as Inputs,
         ];
@@ -397,7 +495,9 @@ export function traceable<Func extends (...args: any[]) => any>(
             ? new RunTree(ensuredConfig)
             : firstArg.createChild(ensuredConfig),
           restArgs as Inputs,
-          config?.getInvocationParams
+          config?.getInvocationParams,
+          processInputsFn,
+          extractAttachmentsFn
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -406,12 +506,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
       // to allow storing context
       const prevRunFromStore = asyncLocalStorage.getStore();
-      if (prevRunFromStore) {
+      if (isRunTree(prevRunFromStore)) {
         return [
           getTracingRunTree(
             prevRunFromStore.createChild(ensuredConfig),
             processedArgs,
-            config?.getInvocationParams
+            config?.getInvocationParams,
+            processInputsFn,
+            extractAttachmentsFn
           ),
           processedArgs as Inputs,
         ];
@@ -420,8 +522,21 @@ export function traceable<Func extends (...args: any[]) => any>(
       const currentRunTree = getTracingRunTree(
         new RunTree(ensuredConfig),
         processedArgs,
-        config?.getInvocationParams
+        config?.getInvocationParams,
+        processInputsFn,
+        extractAttachmentsFn
       );
+      // If a context var is set by LangChain outside of a traceable,
+      // it will be an object with a single property and we should copy
+      // context vars over into the new run tree.
+      if (
+        prevRunFromStore !== undefined &&
+        _LC_CONTEXT_VARIABLES_KEY in prevRunFromStore
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (currentRunTree as any)[_LC_CONTEXT_VARIABLES_KEY] =
+          prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
+      }
       return [currentRunTree, processedArgs as Inputs];
     })();
 
@@ -458,7 +573,7 @@ export function traceable<Func extends (...args: any[]) => any>(
               if (result.done) {
                 finished = true;
                 await currentRunTree?.end(
-                  handleRunOutputs(await handleChunks(chunks))
+                  handleRunOutputs(await handleChunks(chunks), processOutputsFn)
                 );
                 await handleEnd();
                 controller.close();
@@ -471,7 +586,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           async cancel(reason) {
             if (!finished) await currentRunTree?.end(undefined, "Cancelled");
             await currentRunTree?.end(
-              handleRunOutputs(await handleChunks(chunks))
+              handleRunOutputs(await handleChunks(chunks), processOutputsFn)
             );
             await handleEnd();
             return reader.cancel(reason);
@@ -505,7 +620,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         } finally {
           if (!finished) await currentRunTree?.end(undefined, "Cancelled");
           await currentRunTree?.end(
-            handleRunOutputs(await handleChunks(chunks))
+            handleRunOutputs(await handleChunks(chunks), processOutputsFn)
           );
           await handleEnd();
         }
@@ -628,7 +743,8 @@ export function traceable<Func extends (...args: any[]) => any>(
 
                           return memo;
                         }, [])
-                      )
+                      ),
+                      processOutputsFn
                     )
                   );
                   await handleEnd();
@@ -645,7 +761,9 @@ export function traceable<Func extends (...args: any[]) => any>(
               }
 
               try {
-                await currentRunTree?.end(handleRunOutputs(rawOutput));
+                await currentRunTree?.end(
+                  handleRunOutputs(rawOutput, processOutputsFn)
+                );
                 await handleEnd();
               } finally {
                 // eslint-disable-next-line no-unsafe-finally
