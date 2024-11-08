@@ -148,6 +148,7 @@ test("llm evaluator can evaluate runs", async () => {
   const firstResult = evalRes.results[0];
 
   const evaluation = firstResult.evaluationResults.results[0];
+  console.log("FIRST", firstResult)
   expect(evaluation.key).toBe("vagueness");
   expect(["Y", "N"]).toContain(evaluation.value);
   expect(evaluation.comment).toBeDefined();
