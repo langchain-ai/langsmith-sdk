@@ -37,12 +37,14 @@ jobs:
           cache-key: build-and-test
       - name: Install dependencies
         run: |
-          poetry install --with dev,lint
+          poetry install --with lint
           poetry run pip install -U langchain langchain-core langchain_anthropic langchain_openai
       - name: Build ${{ matrix.python-version }}
         run: poetry build
       - name: Lint ${{ matrix.python-version }}
         run: make lint
+      - name: Install dev dependencies
+        run: poetry install --with dev
       - name: Run Unit tests ${{ matrix.python-version }}
         run: make tests
         shell: bash
