@@ -2,8 +2,6 @@
 
 from typing import TYPE_CHECKING, Any
 
-import parametrize as parametrize
-
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith._testing import test, unit
