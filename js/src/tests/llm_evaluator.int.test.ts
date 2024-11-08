@@ -7,7 +7,7 @@ import {
 } from "../evaluation/llm_evaluator.js";
 import { evaluate } from "../evaluation/_runner.js";
 
-const TESTING_DATASET_NAME = "Evaluate Examples";
+const TESTING_DATASET_NAME = "LLMEvaluator dataset";
 
 test("llm evaluator initialization with categorical config", async () => {
   const evaluator = await LLMEvaluator.create({
@@ -101,7 +101,7 @@ test("llm evaluator with custom variable mapping", async () => {
       reasoningKey: "explanation",
       reasoningDescription: "First, think step by step to explain your score.",
     }),
-    mapVariables: (run, example) => ({
+    mapVariables: (run: any, example?: any) => ({
       context: example?.inputs?.context || "",
       question: example?.inputs?.question || "",
       output: run.outputs?.output || "",
@@ -114,7 +114,9 @@ test("llm evaluator with custom variable mapping", async () => {
 test("llm evaluator can evaluate runs", async () => {
   const client = new Client();
   await client.clonePublicDataset(
-    "https://beta.smith.langchain.com/public/06785303-0f70-4466-b637-f23d38c0f28e/d"
+    "https://beta.smith.langchain.com/public/06785303-0f70-4466-b637-f23d38c0f28e/d", {
+        datasetName: TESTING_DATASET_NAME,
+    }
   );
   const evaluator = await LLMEvaluator.create({
     promptTemplate: "Is the response vague? Y/N\n{input}",
