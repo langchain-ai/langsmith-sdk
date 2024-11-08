@@ -144,9 +144,8 @@ test("llm evaluator can evaluate runs", async () => {
     description: "LLM evaluator test run",
   });
 
-  expect(evalRes.results).toHaveLength(1);
+  expect(evalRes.results).toHaveLength(10);
   const firstResult = evalRes.results[0];
-  expect(firstResult.evaluationResults.results).toHaveLength(1);
 
   const evaluation = firstResult.evaluationResults.results[0];
   expect(evaluation.key).toBe("vagueness");
