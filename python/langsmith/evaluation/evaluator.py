@@ -17,7 +17,7 @@ from typing import (
     cast,
 )
 
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, get_type_hints
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
@@ -194,6 +194,8 @@ class DynamicRunEvaluator(RunEvaluator):
             func (Callable): A function that takes a `Run` and an optional `Example` as
             arguments, and returns a dict or `ComparisonEvaluationResult`.
         """
+        func = _normalize_evaluator_func(func)
+
         wraps(func)(self)
         from langsmith import run_helpers  # type: ignore
 
@@ -632,3 +634,43 @@ def comparison_evaluator(
 ) -> DynamicComparisonRunEvaluator:
     """Create a comaprison evaluator from a function."""
     return DynamicComparisonRunEvaluator(func)
+
+
+def _normalize_evaluator_func(
+    func: Callable,
+) -> Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT]:
+    # for backwards compatibility, if args are untyped we assume they correspond to
+    # Run and Example:
+    if not (type_hints := get_type_hints(func)):
+        return func
+    elif {Run, Example, Optional[Example]}.intersection(type_hints.values()):
+        return func
+    else:
+        sig = inspect.signature(func)
+        num_positional = len(
+            [
+                p
+                for p in sig.parameters.values()
+                if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+            ]
+        )
+        has_positional_var = any(
+            p.kind == p.VAR_POSITIONAL for p in sig.parameters.values()
+        )
+        if not (
+            num_positional in (2, 3) or (num_positional <= 3 and has_positional_var)
+        ):
+            msg = ""
+            raise ValueError(msg)
+
+        def wrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
+            args = (example.inputs, run.outputs, example.outputs)
+            if has_positional_var:
+                return func(*args)
+            else:
+                return func(*args[:num_positional])
+
+        wrapper.__name__ = (
+            getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
+        )
+        return wrapper

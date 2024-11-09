@@ -86,6 +86,7 @@ EVALUATOR_T = Union[
         [schemas.Run, Optional[schemas.Example]],
         Union[EvaluationResult, EvaluationResults],
     ],
+    Callable[..., Union[dict, EvaluationResults, EvaluationResult]],
 ]
 AEVALUATOR_T = Union[
     Callable[
