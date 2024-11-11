@@ -7,6 +7,7 @@ import collections
 import concurrent.futures as cf
 import datetime
 import functools
+import importlib
 import inspect
 import itertools
 import logging
@@ -277,6 +278,17 @@ def evaluate(
             "    # ... other parameters\n"
             ")"
         )
+    if not callable(target):
+        if importlib.util.find_spec("langchain_core"):
+            from langchain_core.runnables import Runnable
+
+            if isinstance(target, Runnable):
+                target = target.invoke
+
+    if not callable(target):
+        msg = ""
+        raise ValueError(msg)
+
     if experiment and experiment_prefix:
         raise ValueError(
             "Expected at most one of 'experiment' or 'experiment_prefix',"
