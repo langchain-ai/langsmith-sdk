@@ -224,7 +224,7 @@ class DynamicRunEvaluator(RunEvaluator):
         self,
         result: Union[EvaluationResult, dict],
         source_run_id: uuid.UUID,
-        allow_no_key: bool = False,
+        default_name: str = "",
     ) -> EvaluationResult:
         if isinstance(result, EvaluationResult):
             if not result.source_run_id:
@@ -237,8 +237,7 @@ class DynamicRunEvaluator(RunEvaluator):
                     f" 'key' and optional 'score'; got empty result: {result}"
                 )
             if "key" not in result:
-                if allow_no_key:
-                    result["key"] = self._name
+                result["key"] = default_name
             if all(k not in result for k in ("score", "value", "comment")):
                 raise ValueError(
                     "Expected an EvaluationResult object, or dict with a metric"
@@ -259,33 +258,45 @@ class DynamicRunEvaluator(RunEvaluator):
         if "results" in results:
             cp = results.copy()
             cp["results"] = [
-                self._coerce_evaluation_result(r, source_run_id=source_run_id)
-                for r in results["results"]
+                self._coerce_evaluation_result(
+                    r, source_run_id=source_run_id, default_name=f"{self._name}_{i+1}"
+                )
+                for i, r in enumerate(results["results"])
             ]
             return EvaluationResults(**cp)
 
         return self._coerce_evaluation_result(
-            cast(dict, results), allow_no_key=True, source_run_id=source_run_id
+            cast(dict, results), source_run_id=source_run_id, default_name=self._name
         )
 
     def _format_result(
         self,
-        result: Union[EvaluationResult, EvaluationResults, dict],
+        result: Union[
+            EvaluationResult, EvaluationResults, dict, str, int, bool, float, list
+        ],
         source_run_id: uuid.UUID,
     ) -> Union[EvaluationResult, EvaluationResults]:
-        if isinstance(result, EvaluationResult):
-            if not result.source_run_id:
-                result.source_run_id = source_run_id
-            return result
-        if not result:
+        if not result and not isinstance(result, (int, float, bool)):
             raise ValueError(
                 "Expected an EvaluationResult or EvaluationResults object, or a"
                 " dict with key and one of score or value, EvaluationResults,"
                 f" got {result}"
             )
-        if not isinstance(result, dict):
+
+        if isinstance(result, EvaluationResult):
+            if not result.source_run_id:
+                result.source_run_id = source_run_id
+            return result
+        elif isinstance(result, list):
+            result = {"results": [_primitive_to_result_dict(r) for r in result]}  # type: ignore[misc]
+        elif isinstance(result, (bool, int, float, str, dict)):
+            result = _primitive_to_result_dict(
+                cast(Union[bool, int, float, str, dict], result)
+            )
+        else:
             raise ValueError(
-                f"Expected a dict, EvaluationResult, or EvaluationResults, got {result}"
+                f"Expected a dict, str, bool, int, float, list, EvaluationResult, or "
+                f"EvaluationResults. Got {result}"
             )
 
         return self._coerce_evaluation_results(result, source_run_id)
@@ -632,3 +643,17 @@ def comparison_evaluator(
 ) -> DynamicComparisonRunEvaluator:
     """Create a comaprison evaluator from a function."""
     return DynamicComparisonRunEvaluator(func)
+
+
+def _primitive_to_result_dict(result: Union[float, str, int, bool, dict]) -> dict:
+    if isinstance(result, (bool, float, int)):
+        return {"score": result}
+    elif isinstance(result, str):
+        return {"value": result}
+    elif isinstance(result, dict):
+        return result
+    else:
+        raise ValueError(
+            f"Expected evaluation result to be int, float, str, bool, or dict. "
+            f"Received: {result}"
+        )
