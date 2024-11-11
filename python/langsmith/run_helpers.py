@@ -151,9 +151,7 @@ def tracing_context(
 get_run_tree_context = get_current_run_tree
 
 
-def is_traceable_function(
-    func: Callable[P, R],
-) -> TypeGuard[SupportsLangsmithExtra[P, R]]:
+def is_traceable_function(func: Any) -> TypeGuard[SupportsLangsmithExtra[P, R]]:
     """Check if a function is @traceable decorated."""
     return (
         _is_traceable_function(func)
@@ -1445,7 +1443,7 @@ def _handle_container_end(
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
 
 
-def _is_traceable_function(func: Callable) -> bool:
+def _is_traceable_function(func: Any) -> bool:
     return getattr(func, "__langsmith_traceable__", False)
 
 
