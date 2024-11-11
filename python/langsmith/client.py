@@ -5611,7 +5611,7 @@ class Client:
         *,
         object: Optional[Any] = None,
         parent_commit_hash: str = "latest",
-        is_public: bool = False,
+        is_public: Optional[bool] = None,
         description: Optional[str] = None,
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
@@ -5628,7 +5628,10 @@ class Client:
             object (Optional[Any]): The LangChain object to push.
             parent_commit_hash (str): The parent commit hash.
               Defaults to "latest".
-            is_public (bool): Whether the prompt should be public. Defaults to False.
+            is_public (Optional[bool]): Whether the prompt should be public.
+                If None (default), the current visibility status is maintained for existing prompts.
+                For new prompts, None defaults to private.
+                Set to True to make public, or False to make private.
             description (Optional[str]): A description of the prompt.
               Defaults to an empty string.
             readme (Optional[str]): A readme for the prompt.
@@ -5643,8 +5646,7 @@ class Client:
         # Create or update prompt metadata
         if self._prompt_exists(prompt_identifier):
             if any(
-                param is not None
-                for param in [parent_commit_hash, is_public, description, readme, tags]
+                param is not None for param in [is_public, description, readme, tags]
             ):
                 self.update_prompt(
                     prompt_identifier,
@@ -5656,7 +5658,7 @@ class Client:
         else:
             self.create_prompt(
                 prompt_identifier,
-                is_public=is_public,
+                is_public=is_public if is_public is not None else False,
                 description=description,
                 readme=readme,
                 tags=tags,
