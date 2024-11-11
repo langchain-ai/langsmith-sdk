@@ -664,7 +664,7 @@ def _normalize_evaluator_func(
             raise ValueError(msg)
 
         def wrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
-            args = (example.inputs, run.outputs, example.outputs)
+            args = (example.inputs, run.outputs or {}, example.outputs or {})
             if has_positional_var:
                 return func(*args)
             else:
