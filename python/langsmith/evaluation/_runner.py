@@ -1939,4 +1939,4 @@ def _import_langchain_runnable() -> Optional[type]:
 
 
 def _is_langchain_runnable(o: Any) -> bool:
-    return bool(Runnable := _import_langchain_runnable()) and isinstance(o, Runnable)
+    return bool((Runnable := _import_langchain_runnable()) and isinstance(o, Runnable))
