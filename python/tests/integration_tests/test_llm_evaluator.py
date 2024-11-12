@@ -25,17 +25,17 @@ def test_llm_evaluator_init() -> None:
         "description": "Whether the response is vague. Y for yes, N for no.",
         "type": "object",
         "properties": {
-            "value": {
+            "category": {
                 "type": "string",
                 "enum": ["Y", "N"],
-                "description": "The score for the evaluation, one of Y, N.",
+                "description": "The selected catgory for the evaluation, one of Y, N.",
             },
             "explanation": {
                 "type": "string",
-                "description": "The explanation for the score.",
+                "description": "Think step-by-step about what the correct score should be.",  # noqa: E501
             },
         },
-        "required": ["value", "explanation"],
+        "required": ["category", "explanation"],
     }
 
     # Try a continuous score
@@ -196,3 +196,83 @@ async def test_evaluate() -> None:
         evaluators=[reference_accuracy, accuracy],
         experiment_prefix=__name__ + "::test_evaluate.aevaluate",
     )
+
+
+@pytest.mark.parametrize(
+    "config_class", [CategoricalScoreConfig, ContinuousScoreConfig]
+)
+def test_backwards_compatibility(config_class) -> None:
+    # Test include_explanation deprecation
+    with pytest.warns(DeprecationWarning, match="include_explanation.*reasoning_key"):
+        config = config_class(
+            key="test",
+            description="test description",
+            include_explanation=True,
+            **(
+                {"choices": ["Y", "N"]}
+                if config_class == CategoricalScoreConfig
+                else {}
+            ),
+        )
+        assert config.reasoning_key == "explanation"
+
+    # Test explanation_description deprecation
+    with pytest.warns(
+        DeprecationWarning, match="explanation_description.*reasoning_description"
+    ):
+        config = config_class(
+            key="test",
+            description="test description",
+            explanation_description="test explanation",
+            **(
+                {"choices": ["Y", "N"]}
+                if config_class == CategoricalScoreConfig
+                else {}
+            ),
+        )
+        assert config.reasoning_description == "test explanation"
+
+    # Test both deprecated fields together
+    with pytest.warns(DeprecationWarning) as warnings:
+        config = config_class(
+            key="test",
+            description="test description",
+            include_explanation=True,
+            explanation_description="test explanation",
+            **(
+                {"choices": ["Y", "N"]}
+                if config_class == CategoricalScoreConfig
+                else {}
+            ),
+        )
+        assert len(warnings) == 2  # Should show both deprecation warnings
+        assert config.reasoning_key == "explanation"
+        assert config.reasoning_description == "test explanation"
+
+    with pytest.raises(ValueError):
+        config = config_class(
+            key="test",
+            description="test description",
+            reasoning_key="custom_key",
+            reasoning_description="custom description",
+            explanation_description="old description",
+            **(
+                {"choices": ["Y", "N"]}
+                if config_class == CategoricalScoreConfig
+                else {}
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        config = config_class(
+            key="test",
+            description="test description",
+            reasoning_key="custom_key",
+            include_explanation=True,
+            reasoning_description="custom description",
+            **(
+                {"choices": ["Y", "N"]}
+                if config_class == CategoricalScoreConfig
+                else {}
+            ),
+        )
