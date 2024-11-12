@@ -344,13 +344,13 @@ async def aevaluate_existing(
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)
-        else (await asyncio.to_thread(_load_experiment, experiment, client))
+        else (await aitertools.aio_to_thread(_load_experiment, experiment, client))
     )
-    runs = await asyncio.to_thread(
+    runs = await aitertools.aio_to_thread(
         _load_traces, experiment, client, load_nested=load_nested
     )
-    data_map = await asyncio.to_thread(_load_examples_map, client, project)
-    data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
+    data_map = await aitertools.aio_to_thread(_load_examples_map, client, project)
+    data = [data_map[run.reference_example_id] for run in runs]
     return await _aevaluate(
         runs,
         data=data,
@@ -384,7 +384,7 @@ async def _aevaluate(
     )
     client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
-    experiment_, runs = await asyncio.to_thread(
+    experiment_, runs = await aitertools.aio_to_thread(
         _resolve_experiment,
         experiment,
         runs,
@@ -770,7 +770,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     for result in flattened_results:
                         feedback = result.dict(exclude={"target_run_id"})
                         evaluator_info = feedback.pop("evaluator_info", None)
-                        await asyncio.to_thread(
+                        await aitertools.aio_to_thread(
                             self.client.create_feedback,
                             **feedback,
                             run_id=None,
