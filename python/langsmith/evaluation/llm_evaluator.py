@@ -1,7 +1,8 @@
 """Contains the LLMEvaluator class for building LLM-as-a-judge evaluators."""
 
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 
@@ -19,16 +20,47 @@ class CategoricalScoreConfig(BaseModel):
         description (str): Detailed description provided to the LLM judge of what
             this score evaluates.
         reasoning_key (Optional[str]): Key used to store the reasoning/explanation
-            for the score. Defaults to None.
+            for the score. Defaults to None, which means not including a reasoning field in the LLM-judge output.
         reasoning_description (Optional[str]): Description provided to the LLM judge
             of what should be included in the reasoning. Defaults to None.
-    """
+            If None, but reasoning_key was passed it defaults to "Think step-by-step about what the correct score should be."
+    """  # noqa: E501
 
     key: str
     choices: List[str]
     description: str
     reasoning_key: Optional[str] = None
     reasoning_description: Optional[str] = None
+    include_explanation: bool = False  # Deprecated
+    explanation_description: Optional[str] = None  # Deprecated
+
+    def __init__(self, **data):
+        """Initialize CategoricalScoreConfig."""
+        if data.get("include_explanation") and data.get("reasoning_key"):
+            raise ValueError(
+                "Cannot include both include_explanation and reasoning_key, "
+                "please just use reasoning_key - include_explanation has been deprecated"  # noqa: E501
+            )
+        if data.get("explanation_description") and data.get("reasoning_description"):
+            raise ValueError(
+                "Cannot include both explanation_description and reasoning_description, "  # noqa: E501
+                "please just use reasoning_description - explanation_description has been deprecated"  # noqa: E501
+            )
+        if data.get("include_explanation"):
+            warnings.warn(
+                "'include_explanation' is deprecated. Use 'reasoning_key=\"explanation\"' instead.",  # noqa: E501
+                DeprecationWarning,
+            )
+            data["reasoning_key"] = "explanation"
+
+        if "explanation_description" in data:
+            warnings.warn(
+                "'explanation_description' is deprecated. Use 'reasoning_description' instead.",  # noqa: E501
+                DeprecationWarning,
+            )
+            data["reasoning_description"] = data["explanation_description"]
+
+        super().__init__(**data)
 
 
 class ContinuousScoreConfig(BaseModel):
@@ -41,10 +73,11 @@ class ContinuousScoreConfig(BaseModel):
         description (str): Detailed description provided to the LLM judge of what
             this score evaluates.
         reasoning_key (Optional[str]): Key used to store the reasoning/explanation
-            for the score. Defaults to None.
+            for the score. Defaults to None, which means not including a reasoning field in the LLM-judge output.
         reasoning_description (Optional[str]): Description provided to the LLM judge
             of what should be included in the reasoning. Defaults to None.
-    """
+            If None, but reasoning_key was passed it defaults to "Think step-by-step about what the correct score should be."
+    """  # noqa: E501
 
     key: str
     min: float = 0
@@ -52,6 +85,38 @@ class ContinuousScoreConfig(BaseModel):
     description: str
     reasoning_key: Optional[str] = None
     reasoning_description: Optional[str] = None
+    include_explanation: bool = False  # Deprecated
+    explanation_description: Optional[str] = None  # Deprecated
+
+    def __init__(self, **data):
+        """Initialize ContinuousScoreConfig."""
+        if data.get("include_explanation") and data.get("reasoning_key"):
+            raise ValueError(
+                "Cannot include both include_explanation and reasoning_key, "
+                "please just use reasoning_key - include_explanation has been deprecated"  # noqa: E501
+            )
+        if data.get("explanation_description") and data.get("reasoning_description"):
+            raise ValueError(
+                "Cannot include both explanation_description and reasoning_description, "  # noqa: E501
+                "please just use reasoning_description - explanation_description has been deprecated"  # noqa: E501
+            )
+        if data.get("include_explanation"):
+            warnings.warn(
+                "'include_explanation' is deprecated. Use \
+                    'reasoning_key=\"explanation\"' instead.",
+                DeprecationWarning,
+            )
+            data["reasoning_key"] = "explanation"
+
+        if "explanation_description" in data:
+            warnings.warn(
+                "'explanation_description' is deprecated. \
+                    Use 'reasoning_description' instead.",
+                DeprecationWarning,
+            )
+            data["reasoning_description"] = data["explanation_description"]
+
+        super().__init__(**data)
 
 
 def _create_score_json_schema(
@@ -63,17 +128,17 @@ def _create_score_json_schema(
         properties[score_config.reasoning_key] = {
             "type": "string",
             "description": (
-                "The explanation for the score."
+                "Think step-by-step about what the correct score should be."
                 if score_config.reasoning_description is None
                 else score_config.reasoning_description
             ),
         }
 
     if isinstance(score_config, CategoricalScoreConfig):
-        properties["value"] = {
+        properties["category"] = {
             "type": "string",
             "enum": score_config.choices,
-            "description": f"The score for the evaluation, one of "
+            "description": f"The selected catgory for the evaluation, one of "
             f"{', '.join(score_config.choices)}.",
         }
     elif isinstance(score_config, ContinuousScoreConfig):
@@ -87,25 +152,27 @@ def _create_score_json_schema(
     else:
         raise ValueError("Invalid score type. Must be 'categorical' or 'continuous'")
 
+    required_keys = (
+        [
+            (
+                "category"
+                if isinstance(score_config, CategoricalScoreConfig)
+                else "score"
+            ),
+            score_config.reasoning_key,
+        ]
+        if score_config.reasoning_key
+        else [
+            "category" if isinstance(score_config, CategoricalScoreConfig) else "score"
+        ]
+    )
+
     return {
         "title": score_config.key,
         "description": score_config.description,
         "type": "object",
         "properties": properties,
-        "required": (
-            [
-                (
-                    "value"
-                    if isinstance(score_config, CategoricalScoreConfig)
-                    else "score"
-                ),
-                score_config.reasoning_key,
-            ]
-            if score_config.reasoning_key
-            else [
-                "value" if isinstance(score_config, CategoricalScoreConfig) else "score"
-            ]
-        ),
+        "required": required_keys,
     }
 
 
@@ -247,7 +314,7 @@ class LLMEvaluator(RunEvaluator):
             dict,
             self.runnable.invoke(variables, config={"run_id": source_run_id}),
         )
-        return self._parse_output(output, str(source_run_id))
+        return self._parse_output(output, source_run_id)
 
     @warn_beta
     async def aevaluate_run(
@@ -261,7 +328,7 @@ class LLMEvaluator(RunEvaluator):
             await self.runnable.ainvoke(variables, config={"run_id": source_run_id}),
         )
 
-        return self._parse_output(output, str(source_run_id))
+        return self._parse_output(output, source_run_id)
 
     def _prepare_variables(self, run: Run, example: Optional[Example]) -> dict:
         """Prepare variables for model invocation."""
@@ -321,11 +388,11 @@ class LLMEvaluator(RunEvaluator):
         return variables
 
     def _parse_output(
-        self, output: dict, source_run_id: str
+        self, output: dict, source_run_id: UUID
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Parse the model output into an evaluation result."""
         if isinstance(self.score_config, CategoricalScoreConfig):
-            value = output["value"]
+            value = output["category"]
             explanation = output.get(self.score_config.reasoning_key, None)
             return EvaluationResult(
                 key=self.score_config.key,
