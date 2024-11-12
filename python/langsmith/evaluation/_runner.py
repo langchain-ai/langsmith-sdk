@@ -1713,9 +1713,8 @@ def _resolve_experiment(
         return experiment_, runs
     # If we have runs, that means the experiment was already started.
     if runs is not None:
-        if runs is not None:
-            runs_, runs = itertools.tee(runs)
-            first_run = next(runs_)
+        runs_, runs = itertools.tee(runs)
+        first_run = next(runs_)
         experiment_ = client.read_project(project_id=first_run.session_id)
         if not experiment_.name:
             raise ValueError("Experiment name not found for provided runs.")

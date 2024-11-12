@@ -380,8 +380,10 @@ async def _aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
-    is_async_target = asyncio.iscoroutinefunction(target) or (
-        hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())
+    is_async_target = (
+        asyncio.iscoroutinefunction(target)
+        or (hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__()))
+        or _is_langchain_runnable(target)
     )
     client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
