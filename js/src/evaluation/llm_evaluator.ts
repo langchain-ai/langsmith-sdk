@@ -171,6 +171,16 @@ export class LLMEvaluator implements RunEvaluator {
     modelProvider = "openai"
   ) {
     try {
+      require("langchain");
+      require("@langchain/core");
+    } catch (e) {
+      throw new Error(
+        "LLMEvaluator requires langchain and @langchain/core to be installed. " +
+        "Please install them by running `npm install langchain @langchain/core`."
+      );
+    }
+
+    try {
       // Store the configuration
       this.scoreConfig = scoreConfig;
       this.mapVariables = mapVariables;
@@ -197,11 +207,8 @@ export class LLMEvaluator implements RunEvaluator {
         this.scoreSchema
       );
       this.runnable = this.prompt.pipe(modelWithStructuredOutput);
-    } catch (e) {
-      throw new Error(
-        "LLMEvaluator requires langchain to be installed. " +
-          "Please install langchain by running `npm install langchain`."
-      );
+    } catch (e: unknown) {
+      throw new Error(`Failed to initialize LLMEvaluator: ${(e as Error).message}`);
     }
   }
 

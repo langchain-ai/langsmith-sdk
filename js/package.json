@@ -106,9 +106,7 @@
     "p-queue": "^6.6.2",
     "p-retry": "4",
     "semver": "^7.6.3",
-    "uuid": "^10.0.0",
-    "langchain": "^0.3.3",
-    "@langchain/core": "^0.3.14"
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@ai-sdk/openai": "^0.0.68",
@@ -141,10 +139,18 @@
     "zod": "^3.23.8"
   },
   "peerDependencies": {
-    "openai": "*"
+    "openai": "*",
+    "langchain": "^0.3.3",
+    "@langchain/core": "^0.3.14"
   },
   "peerDependenciesMeta": {
     "openai": {
+      "optional": true
+    },
+    "langchain": {
+      "optional": true
+    },
+    "@langchain/core": {
       "optional": true
     }
   },
