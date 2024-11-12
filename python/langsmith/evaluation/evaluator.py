@@ -195,6 +195,8 @@ class DynamicRunEvaluator(RunEvaluator):
             arguments, and returns a dict or `ComparisonEvaluationResult`.
         """
         func = _normalize_evaluator_func(func)
+        if afunc:
+            afunc = _normalize_evaluator_func(afunc)  # type: ignore[assignment]
 
         wraps(func)(self)
         from langsmith import run_helpers  # type: ignore
@@ -638,7 +640,10 @@ def comparison_evaluator(
 
 def _normalize_evaluator_func(
     func: Callable,
-) -> Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT]:
+) -> Union[
+    Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT],
+    Callable[[Run, Optional[Example]], Awaitable[_RUNNABLE_OUTPUT]],
+]:
     # for backwards compatibility, if args are untyped we assume they correspond to
     # Run and Example:
     if not (type_hints := get_type_hints(func)):
@@ -660,17 +665,41 @@ def _normalize_evaluator_func(
         if not (
             num_positional in (2, 3) or (num_positional <= 3 and has_positional_var)
         ):
-            msg = ""
+            msg = (
+                "Invalid evaluator function. Expected to take either 2 or 3 positional "
+                "arguments. Please see "
+                "https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"  # noqa: E501
+            )
             raise ValueError(msg)
 
-        def wrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
-            args = (example.inputs, run.outputs or {}, example.outputs or {})
-            if has_positional_var:
-                return func(*args)
-            else:
-                return func(*args[:num_positional])
+        if inspect.iscoroutinefunction(func):
 
-        wrapper.__name__ = (
-            getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
-        )
-        return wrapper
+            async def awrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
+                args = (example.inputs, run.outputs or {}, example.outputs or {})
+                if has_positional_var:
+                    return await func(*args)
+                else:
+                    return await func(*args[:num_positional])
+
+            awrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else awrapper.__name__
+            )
+            return awrapper  # type: ignore[return-value]
+
+        else:
+
+            def wrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
+                args = (example.inputs, run.outputs or {}, example.outputs or {})
+                if has_positional_var:
+                    return func(*args)
+                else:
+                    return func(*args[:num_positional])
+
+            wrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else wrapper.__name__
+            )
+            return wrapper  # type: ignore[return-value]

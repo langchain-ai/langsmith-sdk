@@ -184,11 +184,26 @@ def test_evaluate_results(blocking: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": 0.3}
 
+    def score_unpacked_inputs_outputs(inputs: dict, outputs: dict):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
+    def score_unpacked_inputs_outputs_reference(
+        inputs: dict, outputs: dict, reference_outputs: dict
+    ):
+        ordering_of_stuff.append("evaluate")
+        return {"score": reference_outputs["answer"]}
+
+    evaluators = [
+        score_value_first,
+        score_unpacked_inputs_outputs,
+        score_unpacked_inputs_outputs_reference,
+    ]
     results = evaluate(
         predict,
         client=client,
         data=dev_split,
-        evaluators=[score_value_first],
+        evaluators=evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
     )
@@ -219,14 +234,14 @@ def test_evaluate_results(blocking: bool) -> None:
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
-    _wait_until(lambda: len(ordering_of_stuff) == N_PREDS * 2)
+    _wait_until(lambda: len(ordering_of_stuff) == (N_PREDS * (len(evaluators) + 1)))
     _wait_until(lambda: slow_index is not None)
     # Want it to be interleaved
-    assert ordering_of_stuff != ["predict"] * N_PREDS + ["evaluate"] * N_PREDS
+    assert ordering_of_stuff[:N_PREDS] != ["predict"] * N_PREDS
 
     # It's delayed, so it'll be the penultimate event
     # Will run all other preds and evals, then this, then the last eval
-    assert slow_index == (N_PREDS * 2) - 2
+    assert slow_index == (len(evaluators) + 1) * (N_PREDS - 1)
 
     def score_value(run, example):
         return {"score": 0.7}
@@ -347,11 +362,27 @@ async def test_aevaluate_results(blocking: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": 0.3}
 
+    async def score_unpacked_inputs_outputs(inputs: dict, outputs: dict):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
+    async def score_unpacked_inputs_outputs_reference(
+        inputs: dict, outputs: dict, reference_outputs: dict
+    ):
+        ordering_of_stuff.append("evaluate")
+        return {"score": reference_outputs["answer"]}
+
+    evaluators = [
+        score_value_first,
+        score_unpacked_inputs_outputs,
+        score_unpacked_inputs_outputs_reference,
+    ]
+
     results = await aevaluate(
         predict,
         client=client,
         data=dev_split,
-        evaluators=[score_value_first],
+        evaluators=evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
     )
@@ -387,14 +418,14 @@ async def test_aevaluate_results(blocking: bool) -> None:
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
-    _wait_until(lambda: len(ordering_of_stuff) == N_PREDS * 2)
+    _wait_until(lambda: len(ordering_of_stuff) == N_PREDS * (len(evaluators) + 1))
     _wait_until(lambda: slow_index is not None)
     # Want it to be interleaved
-    assert ordering_of_stuff != ["predict"] * N_PREDS + ["evaluate"] * N_PREDS
+    assert ordering_of_stuff[:N_PREDS] != ["predict"] * N_PREDS
     assert slow_index is not None
     # It's delayed, so it'll be the penultimate event
     # Will run all other preds and evals, then this, then the last eval
-    assert slow_index == (N_PREDS * 2) - 2
+    assert slow_index == (N_PREDS - 1) * (len(evaluators) + 1)
 
     assert fake_request.created_session["name"]
 
