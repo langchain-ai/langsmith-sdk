@@ -1,3 +1,4 @@
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import * as uuid from "uuid";
 import {
@@ -6,6 +7,7 @@ import {
   RunEvaluator,
 } from "./evaluator.js";
 import type { Run, Example } from "../schemas.js";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { BaseLanguageModel } from "@langchain/core/language_models/base";
 
 /**
