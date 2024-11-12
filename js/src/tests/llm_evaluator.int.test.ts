@@ -4,8 +4,11 @@ import {
   CategoricalScoreConfig,
   ContinuousScoreConfig,
   LLMEvaluator,
-} from "../evaluation/llm_evaluator.js";
+} from "../evaluation/llm.js";
 import { evaluate } from "../evaluation/_runner.js";
+import { ChatOpenAI } from "@langchain/openai";
+
+const CHAT_MODEL = new ChatOpenAI({ model: "gpt-4" });
 
 const TESTING_DATASET_NAME = "LLMEvaluator dataset";
 
@@ -18,6 +21,7 @@ test("llm evaluator initialization with categorical config", async () => {
       description: "Whether the response is vague. Y for yes, N for no.",
       reasoningKey: "explanation",
     }),
+    chatModel: CHAT_MODEL,
   });
 
   expect(evaluator).toBeDefined();
@@ -57,6 +61,7 @@ test("llm evaluator initialization with continuous config", async () => {
       min: 0,
       max: 1,
     }),
+    chatModel: CHAT_MODEL,
   });
 
   expect(evaluator).toBeDefined();
@@ -101,6 +106,7 @@ test("llm evaluator with custom variable mapping", async () => {
       reasoningKey: "explanation",
       reasoningDescription: "First, think step by step to explain your score.",
     }),
+    chatModel: CHAT_MODEL,
     mapVariables: (run: any, example?: any) => ({
       context: example?.inputs?.context || "",
       question: example?.inputs?.question || "",
@@ -128,6 +134,7 @@ test("llm evaluator can evaluate runs", async () => {
       reasoningKey: "explanation",
       reasoningDescription: "First, think step by step to explain your score.",
     }),
+    chatModel: CHAT_MODEL,
     mapVariables: (run: any, _example?: any) => ({
       response: run.outputs?.["output"] ?? "",
     }),
@@ -166,6 +173,7 @@ test("llm evaluator with multiple prompt messages", async () => {
       min: 0,
       max: 1,
     }),
+    chatModel: CHAT_MODEL,
     mapVariables: (run: any, _example?: any) => ({
       response: run.outputs?.["output"] ?? "",
     }),

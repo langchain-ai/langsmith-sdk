@@ -12,6 +12,7 @@ const entrypoints = {
   traceable: "traceable",
   evaluation: "evaluation/index",
   "evaluation/langchain": "evaluation/langchain",
+  "evaluation/llm": "evaluation/llm_evaluator",
   schemas: "schemas",
   langchain: "langchain",
   vercel: "vercel",

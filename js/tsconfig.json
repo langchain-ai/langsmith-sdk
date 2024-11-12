@@ -38,6 +38,7 @@
       "src/traceable.ts",
       "src/evaluation/index.ts",
       "src/evaluation/langchain.ts",
+      "src/evaluation/llm_evaluator.ts",
       "src/schemas.ts",
       "src/langchain.ts",
       "src/vercel.ts",

@@ -51,6 +51,10 @@ Chinook_Sqlite.sql
 /evaluation/langchain.js
 /evaluation/langchain.d.ts
 /evaluation/langchain.d.cts
+/evaluation/llm.cjs
+/evaluation/llm.js
+/evaluation/llm.d.ts
+/evaluation/llm.d.cts
 /schemas.cjs
 /schemas.js
 /schemas.d.ts

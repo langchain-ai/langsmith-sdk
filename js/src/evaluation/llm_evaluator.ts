@@ -1,4 +1,3 @@
-import { initChatModel } from "langchain/chat_models/universal";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import * as uuid from "uuid";
 import {
@@ -7,6 +6,7 @@ import {
   RunEvaluator,
 } from "./evaluator.js";
 import type { Run, Example } from "../schemas.js";
+import { BaseLanguageModel } from "@langchain/core/language_models/base";
 
 /**
  * Configuration for categorical (enum-based) scoring in evaluations.
@@ -138,9 +138,8 @@ function createScoreJsonSchema(scoreConfig: ScoreConfig): Record<string, any> {
 interface LLMEvaluatorParams {
   promptTemplate: string | [string, string][];
   scoreConfig: ScoreConfig;
+  chatModel: BaseLanguageModel;
   mapVariables?: (run: Run, example?: Example) => Record<string, any>;
-  modelName?: string;
-  modelProvider?: string;
 }
 
 export class LLMEvaluator implements RunEvaluator {
@@ -157,29 +156,17 @@ export class LLMEvaluator implements RunEvaluator {
     await evaluator.initialize(
       params.promptTemplate,
       params.scoreConfig,
-      params.mapVariables,
-      params.modelName || "gpt-4o",
-      params.modelProvider || "openai"
+      params.chatModel,
+      params.mapVariables
     );
     return evaluator;
   }
   private async initialize(
     promptTemplate: string | [string, string][],
     scoreConfig: ScoreConfig,
-    mapVariables?: (run: Run, example?: Example) => Record<string, any>,
-    modelName = "gpt-4o",
-    modelProvider = "openai"
+    chatModel: BaseLanguageModel,
+    mapVariables?: (run: Run, example?: Example) => Record<string, any>
   ) {
-    try {
-      require("langchain");
-      require("@langchain/core");
-    } catch (e) {
-      throw new Error(
-        "LLMEvaluator requires langchain and @langchain/core to be installed. " +
-        "Please install them by running `npm install langchain @langchain/core`."
-      );
-    }
-
     try {
       // Store the configuration
       this.scoreConfig = scoreConfig;
@@ -197,18 +184,17 @@ export class LLMEvaluator implements RunEvaluator {
         this.prompt = ChatPromptTemplate.fromMessages(promptTemplate);
       }
 
-      // Initialize the chat model with structured output
-      const chatModel = await initChatModel(modelName, {
-        modelProvider: modelProvider,
-      });
-
-      // Create the runnable pipeline
-      const modelWithStructuredOutput = chatModel.withStructuredOutput(
-        this.scoreSchema
-      );
+      const modelWithStructuredOutput = chatModel.withStructuredOutput
+        ? chatModel.withStructuredOutput(this.scoreSchema)
+        : null;
+      if (!modelWithStructuredOutput) {
+        throw new Error("Passed chat model must support structured output");
+      }
       this.runnable = this.prompt.pipe(modelWithStructuredOutput);
     } catch (e: unknown) {
-      throw new Error(`Failed to initialize LLMEvaluator: ${(e as Error).message}`);
+      throw new Error(
+        `Failed to initialize LLMEvaluator: ${(e as Error).message}`
+      );
     }
   }
 
