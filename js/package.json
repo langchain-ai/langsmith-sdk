@@ -25,6 +25,10 @@
     "evaluation/langchain.js",
     "evaluation/langchain.d.ts",
     "evaluation/langchain.d.cts",
+    "evaluation/llm.cjs",
+    "evaluation/llm.js",
+    "evaluation/llm.d.ts",
+    "evaluation/llm.d.cts",
     "schemas.cjs",
     "schemas.js",
     "schemas.d.ts",
@@ -136,21 +140,14 @@
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
     "typescript": "^5.4.5",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@langchain/core": "^0.3.14"
   },
   "peerDependencies": {
-    "openai": "*",
-    "langchain": "^0.3.3",
-    "@langchain/core": "^0.3.14"
+    "openai": "*"
   },
   "peerDependenciesMeta": {
     "openai": {
-      "optional": true
-    },
-    "langchain": {
-      "optional": true
-    },
-    "@langchain/core": {
       "optional": true
     }
   },
@@ -214,6 +211,15 @@
       },
       "import": "./evaluation/langchain.js",
       "require": "./evaluation/langchain.cjs"
+    },
+    "./evaluation/llm": {
+      "types": {
+        "import": "./evaluation/llm.d.ts",
+        "require": "./evaluation/llm.d.cts",
+        "default": "./evaluation/llm.d.ts"
+      },
+      "import": "./evaluation/llm.js",
+      "require": "./evaluation/llm.cjs"
     },
     "./schemas": {
       "types": {
