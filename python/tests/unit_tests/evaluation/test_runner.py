@@ -80,7 +80,9 @@ class FakeRequest:
                 res = MagicMock()
                 res.json.return_value = {
                     "runs": [
-                        r for r in self.runs.values() if "reference_example_id" in r
+                        r
+                        for r in self.runs.values()
+                        if r["trace_id"] == r["id"] and r.get("reference_example_id")
                     ]
                 }
                 return res
