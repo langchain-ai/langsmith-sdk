@@ -5551,9 +5551,12 @@ class Client:
             Any: The prompt object in the specified format.
         """
         try:
+            from langchain_core.language_models.base import BaseLanguageModel
             from langchain_core.load.load import loads
+            from langchain_core.output_parsers import BaseOutputParser
             from langchain_core.prompts import BasePromptTemplate
-            from langchain_core.runnables.base import RunnableSequence
+            from langchain_core.prompts.structured import StructuredPrompt
+            from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
                 "The client.pull_prompt function requires the langchain_core"
@@ -5602,6 +5605,31 @@ class Client:
                     "lc_hub_commit_hash": prompt_object.commit_hash,
                 }
             )
+        if (
+            include_model
+            and isinstance(prompt, RunnableSequence)
+            and isinstance(prompt.first, StructuredPrompt)
+            # Make forward-compatible in case we let update the response type
+            and (
+                len(prompt.steps) == 2 and not isinstance(prompt.last, BaseOutputParser)
+            )
+        ):
+            if isinstance(prompt.last, RunnableBinding) and isinstance(
+                prompt.last.bound, BaseLanguageModel
+            ):
+                seq: RunnableSequence = prompt.first | prompt.last.bound
+                if len(seq.steps) == 3:  # prompt | bound llm | output parser
+                    rebound_llm = seq.steps[1]
+                    prompt = RunnableSequence(
+                        prompt.first, rebound_llm.bind(**{prompt.last.kwargs}), seq.last
+                    )
+                else:
+                    prompt = seq  # Not sure
+
+            elif isinstance(prompt.last, BaseLanguageModel):
+                prompt: RunnableSequence = prompt.first | prompt.last
+            else:
+                pass
 
         return prompt
 
