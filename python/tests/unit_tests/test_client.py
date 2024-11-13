@@ -416,6 +416,93 @@ def test_create_run_mutate(
         assert outputs == {"messages": ["hi", "there"]}
 
 
+@mock.patch("langsmith.client.requests.Session")
+def test_upsert_example_multipart(mock_session_cls: mock.Mock) -> None:
+    """Test that upsert_example_multipart sends correct multipart data."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    client = Client(api_url="http://localhost:1984", api_key="123")
+
+    # Create test data
+    example_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    created_at = datetime(2015, 1, 1, 0, 0, 0)
+
+    example = ls_schemas.ExampleCreateWithAttachments(
+        id=example_id,
+        dataset_id=dataset_id,
+        created_at=created_at,
+        inputs={"input": "test input"},
+        outputs={"output": "test output"},
+        metadata={"meta": "data"},
+        split="train",
+        attachments={
+            "file1": ("text/plain", b"test data"),
+            "file2": ls_schemas.Attachment(
+                mime_type="application/json", data=b'{"key": "value"}'
+            ),
+        },
+    )
+    client.upsert_example_multipart(upserts=[example])
+
+    # Verify the request
+    assert mock_session.request.call_count == 2  # we always make a call to /info
+    call_args = mock_session.request.call_args
+
+    assert call_args[0][0] == "POST"
+    assert call_args[0][1].endswith("/v1/examples/multipart")
+
+    # Parse the multipart data
+    request_data = call_args[1]["data"]
+    content_type = call_args[1]["headers"]["Content-Type"]
+    boundary = parse_options_header(content_type)[1]["boundary"]
+
+    parser = MultipartParser(
+        io.BytesIO(
+            request_data
+            if isinstance(request_data, bytes)
+            else request_data.to_string()
+        ),
+        boundary,
+    )
+    parts = list(parser.parts())
+
+    # Verify all expected parts are present
+    expected_parts = {
+        str(example_id): {
+            "dataset_id": str(dataset_id),
+            "created_at": created_at.isoformat(),
+            "metadata": {"meta": "data"},
+            "split": "train",
+        },
+        f"{example_id}.inputs": {"input": "test input"},
+        f"{example_id}.outputs": {"output": "test output"},
+        f"{example_id}.attachment.file1": "test data",
+        f"{example_id}.attachment.file2": '{"key": "value"}',
+    }
+
+    assert len(parts) == len(expected_parts)
+
+    for part in parts:
+        name = part.name
+        assert name in expected_parts, f"Unexpected part: {name}"
+
+        if name.endswith(".attachment.file1"):
+            assert part.value == expected_parts[name]
+            assert part.headers["Content-Type"] == "text/plain"
+        elif name.endswith(".attachment.file2"):
+            assert part.value == expected_parts[name]
+            assert part.headers["Content-Type"] == "application/json"
+        else:
+            value = json.loads(part.value)
+            assert value == expected_parts[name]
+            assert part.headers["Content-Type"] == "application/json"
+
+
 class CallTracker:
     def __init__(self) -> None:
         self.counter = 0
