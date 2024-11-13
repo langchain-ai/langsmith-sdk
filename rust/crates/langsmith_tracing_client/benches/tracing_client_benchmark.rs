@@ -1,8 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
-use langsmith_tracing_client::client::run::{
+use langsmith_tracing_client::client::async_enabled::{ClientConfig, TracingClient};
+use langsmith_tracing_client::client::blocking::{
+    ClientConfig as BlockingClientConfig, TracingClient as BlockingTracingClient,
+};
+use langsmith_tracing_client::client::{
     Attachment, EventType, RunCommon, RunCreate, RunCreateExtended, RunEventBytes, RunIO, TimeValue,
 };
-use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClient};
 use mockito::Server;
 use sonic_rs::{json, Value};
 use std::time::Duration;
@@ -18,11 +21,8 @@ fn create_mock_client_config(server_url: &str, batch_size: usize) -> ClientConfi
     }
 }
 
-fn create_mock_client_config_sync(
-    server_url: &str,
-    batch_size: usize,
-) -> langsmith_tracing_client::client::tracing_client_sync::ClientConfig {
-    langsmith_tracing_client::client::tracing_client_sync::ClientConfig {
+fn create_mock_client_config_sync(server_url: &str, batch_size: usize) -> BlockingClientConfig {
+    BlockingClientConfig {
         endpoint: server_url.to_string(),
         queue_capacity: 1_000_000,
         batch_size,
@@ -325,7 +325,7 @@ fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
                                     .collect();
                                 let client_config =
                                     create_mock_client_config_sync(&server_url, batch_size);
-                                let client = langsmith_tracing_client::client::tracing_client_sync::TracingClient::new(client_config).unwrap();
+                                let client = BlockingTracingClient::new(client_config).unwrap();
 
                                 let start = std::time::Instant::now();
                                 for run in runs {

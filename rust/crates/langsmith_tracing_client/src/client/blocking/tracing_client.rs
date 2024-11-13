@@ -1,12 +1,14 @@
-use crate::client::errors::TracingClientError;
-use crate::client::processor_sync::RunProcessor;
-use crate::client::run::{QueuedRun, RunEventBytes};
-use crate::client::run::{RunCreateExtended, RunUpdateExtended};
-use reqwest::header::HeaderMap;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+use reqwest::header::HeaderMap;
+
+use super::processor::RunProcessor;
+use crate::client::errors::TracingClientError;
+use crate::client::run::{QueuedRun, RunEventBytes};
+use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 
 #[derive(Clone)]
 pub struct ClientConfig {

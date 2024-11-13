@@ -1,13 +1,15 @@
-use crate::client::errors::TracingClientError;
-use crate::client::run::{Attachment, QueuedRun};
-use crate::client::run::{RunCreateExtended, RunUpdateExtended};
-use crate::client::tracing_client_sync::ClientConfig;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use reqwest::blocking::multipart::Part;
-use sonic_rs::{to_value, to_vec};
 use std::sync::mpsc::Receiver;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use reqwest::blocking::multipart::Part;
+use sonic_rs::{to_value, to_vec};
+
+use super::tracing_client::ClientConfig;
+use crate::client::errors::TracingClientError;
+use crate::client::run::{Attachment, QueuedRun};
+use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 
 pub struct RunProcessor {
     receiver: Arc<Mutex<Receiver<QueuedRun>>>,

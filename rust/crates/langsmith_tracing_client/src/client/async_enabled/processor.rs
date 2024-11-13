@@ -1,7 +1,3 @@
-use crate::client::errors::TracingClientError;
-use crate::client::run::{Attachment, EventType, QueuedRun, RunEventBytes};
-use crate::client::run::{RunCreateExtended, RunUpdateExtended};
-use crate::client::tracing_client::ClientConfig;
 use futures::stream::{FuturesUnordered, StreamExt};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::multipart::{Form, Part};
@@ -10,6 +6,11 @@ use tokio::sync::mpsc::Receiver;
 use tokio::task;
 use tokio::time::{sleep, Instant};
 use tokio_util::io::ReaderStream;
+
+use super::tracing_client::ClientConfig;
+use crate::client::errors::TracingClientError;
+use crate::client::run::{Attachment, EventType, QueuedRun, RunEventBytes};
+use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 
 pub struct RunProcessor {
     receiver: Receiver<QueuedRun>,

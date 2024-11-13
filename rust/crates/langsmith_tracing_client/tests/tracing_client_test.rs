@@ -1,8 +1,8 @@
-use langsmith_tracing_client::client::run::{
+use langsmith_tracing_client::client::async_enabled::{ClientConfig, TracingClient};
+use langsmith_tracing_client::client::{
     Attachment, RunCommon, RunCreate, RunCreateExtended, RunIO, RunUpdate, RunUpdateExtended,
     TimeValue,
 };
-use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClient};
 use mockito::Server;
 use multipart::server::Multipart;
 use reqwest::header::{HeaderMap, HeaderValue};
