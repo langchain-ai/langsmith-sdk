@@ -22,4 +22,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pyo3-async-runtimes = { workspace = true }
 pyo3 = { workspace = true }
+sonic-rs = { workspace = true }
+serde = { workspace = true }
 langsmith_tracing_client = { path = "../langsmith_tracing_client" }
