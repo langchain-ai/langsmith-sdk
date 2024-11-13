@@ -3394,9 +3394,11 @@ class Client:
             remaining_values = {
                 "dataset_id": example.dataset_id,
                 "created_at": example.created_at,
-                "metadata": example.metadata,
-                "split": example.split,
             }
+            if example.metadata is not None:
+                remaining_values["metadata"] = example.metadata
+            if example.split is not None:
+                remaining_values["split"] = example.split
             valb = _dumps_json(remaining_values)
 
             (
@@ -3455,8 +3457,8 @@ class Client:
                                     (
                                         None,
                                         data,
-                                        mime_type,
-                                        {"Content-Length": str(len(data))},
+                                        f"{mime_type}; length={len(data)}",
+                                        {},
                                     ),
                                 )
                             ),
@@ -3469,8 +3471,8 @@ class Client:
                                     (
                                         None,
                                         attachment.data,
-                                        attachment.mime_type,
-                                        {"Content-Length": str(len(attachment.data))},
+                                        f"{attachment.mime_type}; length={len(attachment.data)}",
+                                        {},
                                     ),
                                 )
                             ),
@@ -3484,7 +3486,7 @@ class Client:
 
         response = self.request_with_retries(
             "POST",
-            "/v1/examples/multipart",  # No clue what this is supposed to be
+            "/v1/platform/examples/multipart",  # No clue what this is supposed to be
             request_kwargs={
                 "data": data,
                 "headers": {

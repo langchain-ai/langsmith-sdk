@@ -22,6 +22,7 @@ from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import DataType, ExampleCreateWithAttachments
 from langsmith.utils import (
+    LangSmithNotFoundError,
     LangSmithConnectionError,
     LangSmithError,
     get_env_var,
@@ -368,12 +369,12 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
-
-@pytest.mark.parametrize("uri", ["http://dev.api.smith.langchain.com"])
+# NEED TO FIX ONCE CHANGES PUSH TO PROD
+@pytest.mark.parametrize("uri", ["https://dev.api.smith.langchain.com"])
 def test_upsert_examples_multipart(uri: str) -> None:
     """Test upserting examples with attachments via multipart endpoint."""
     dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
-    langchain_client = Client(api_url=uri, api_key="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")
+    langchain_client = Client(api_url=uri, api_key="NEED TO HARDCODE FOR TESTING")
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
 
@@ -404,7 +405,7 @@ def test_upsert_examples_multipart(uri: str) -> None:
         },
     )
 
-    langchain_client.upsert_examples_multipart([example_1, example_2])
+    langchain_client.upsert_examples_multipart(upserts=[example_1, example_2])
     
     created_example = langchain_client.read_example(example_id)
     assert created_example.inputs["text"] == "hello world"
@@ -423,15 +424,15 @@ def test_upsert_examples_multipart(uri: str) -> None:
         },
     )
 
-    # will this throw an error? idk need to test
-    langchain_client.upsert_examples_multipart([example_2, example_3]) # don't add example_1 because of explicit id
+    with pytest.raises(LangSmithNotFoundError):
+        langchain_client.upsert_examples_multipart(upserts=[example_3])
 
     all_examples_in_dataset = [example for example in langchain_client.list_examples(dataset_id=dataset.id)]
     assert len(all_examples_in_dataset) == 2
 
     # Throw type errors when not passing ExampleCreateWithAttachments
     with pytest.raises(TypeError):
-        langchain_client.upsert_examples_multipart([{"foo":"bar"}])
+        langchain_client.upsert_examples_multipart(upserts=[{"foo":"bar"}])
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
