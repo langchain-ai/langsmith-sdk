@@ -1,6 +1,6 @@
 use langsmith_tracing_client::client::{Attachment, RunIO, TimeValue};
 use pyo3::{
-    types::{PyAnyMethods as _, PyDateTime, PyMapping, PySequence, PyTuple},
+    types::{PyAnyMethods as _, PyDateTime, PyMapping, PyMappingMethods, PySequence, PyTuple},
     Bound, FromPyObject, PyAny, PyResult,
 };
 
@@ -32,8 +32,8 @@ impl FromPyObject<'_> for RunCreateExtended {
         };
 
         let io = RunIO {
-            inputs: extract_optional_value(&value.get_item("inputs")?)?,
-            outputs: extract_optional_value(&value.get_item("outputs")?)?,
+            inputs: extract_optional_value_from_mapping(value, "inputs")?,
+            outputs: extract_optional_value_from_mapping(value, "outputs")?,
         };
 
         Ok(Self(langsmith_tracing_client::client::RunCreateExtended {
@@ -140,18 +140,18 @@ impl FromPyObject<'_> for RunCommon {
         let trace_id = value.get_item("trace_id")?.extract()?;
 
         let dotted_order = value.get_item("dotted_order")?.extract()?;
-        let parent_run_id = value.get_item("parent_run_id")?.extract()?;
+        let parent_run_id = extract_optional_mapping_key(value, "parent_run_id")?;
 
-        let extra = extract_optional_value(&value.get_item("extra")?)?;
+        let extra = extract_optional_value_from_mapping(value, "extra")?;
 
-        let error = value.get_item("error")?.extract()?;
+        let error = extract_optional_mapping_key(value, "error")?;
 
-        let serialized = extract_optional_value(&value.get_item("serialized")?)?;
-        let events = extract_optional_value(&value.get_item("events")?)?;
-        let tags = extract_optional_value(&value.get_item("tags")?)?;
+        let serialized = extract_optional_value_from_mapping(value, "serialized")?;
+        let events = extract_optional_value_from_mapping(value, "events")?;
+        let tags = extract_optional_value_from_mapping(value, "tags")?;
 
-        let session_id = value.get_item("session_id")?.extract()?;
-        let session_name = value.get_item("session_name")?.extract()?;
+        let session_id = extract_optional_mapping_key(value, "session_id")?;
+        let session_name = extract_optional_mapping_key(value, "session_name")?;
 
         Ok(Self(langsmith_tracing_client::client::RunCommon {
             id,
@@ -169,6 +169,16 @@ impl FromPyObject<'_> for RunCommon {
     }
 }
 
+fn extract_optional_mapping_key<'py, T: FromPyObject<'py>>(
+    mapping: &Bound<'py, PyAny>,
+    key: &str,
+) -> PyResult<Option<T>> {
+    match mapping.get_item(key) {
+        Ok(x) => Ok(Some(x.extract()?)),
+        Err(_) => Ok(None),
+    }
+}
+
 fn extract_isoformat_time_value(value: &Bound<'_, PyDateTime>) -> PyResult<TimeValue> {
     let string_value = value.call_method0("isoformat")?.extract::<String>()?;
 
@@ -177,11 +187,19 @@ fn extract_isoformat_time_value(value: &Bound<'_, PyDateTime>) -> PyResult<TimeV
 
 // TODO: `Option<Value>` seems suspect as a type, since `Value` can be null already.
 //       It might be unnecessarily large and slowing us down for no reason.
-fn extract_optional_value(value: &Bound<'_, PyAny>) -> PyResult<Option<sonic_rs::Value>> {
-    if value.is_none() {
-        return Ok(None);
+fn extract_optional_value_from_mapping(
+    mapping: &Bound<'_, PyAny>,
+    key: &str,
+) -> PyResult<Option<sonic_rs::Value>> {
+    match mapping.get_item(key) {
+        Ok(value) => {
+            if value.is_none() {
+                return Ok(None);
+            }
+            extract_value(&value).map(Option::Some)
+        }
+        Err(_) => Ok(None),
     }
-    extract_value(value).map(Option::Some)
 }
 
 fn extract_value(value: &Bound<'_, PyAny>) -> PyResult<sonic_rs::Value> {
