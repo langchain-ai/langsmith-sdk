@@ -1,13 +1,15 @@
+#![expect(unused_imports)]
+
 use langsmith_tracing_client::client::run::{
     Attachment, RunCommon, RunCreate, RunCreateExtended, RunIO, RunUpdate, RunUpdateExtended,
     TimeValue,
 };
 use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClient};
+use rayon::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue};
+use serde_json::Value;
 use std::fs::File;
 use std::io::Write;
-use rayon::prelude::*;
-use serde_json::Value;
 use tempfile::TempDir;
 use tokio::time::Duration;
 use uuid::Uuid;
@@ -173,9 +175,7 @@ fn create_large_json(len: usize) -> Value {
 
 // Sequential processing
 fn benchmark_sequential(data: &[Value]) -> Vec<Vec<u8>> {
-    data.iter()
-        .map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON"))
-        .collect()
+    data.iter().map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON")).collect()
 }
 
 // Parallel processing
@@ -188,9 +188,7 @@ fn benchmark_parallel(data: &[Value]) -> Vec<Vec<u8>> {
 fn main() {
     let num_json_objects = 1000;
     let json_length = 3000;
-    let data: Vec<Value> = (0..num_json_objects)
-        .map(|_| create_large_json(json_length))
-        .collect();
+    let data: Vec<Value> = (0..num_json_objects).map(|_| create_large_json(json_length)).collect();
 
     let start = std::time::Instant::now();
     let _ = benchmark_parallel(&data);

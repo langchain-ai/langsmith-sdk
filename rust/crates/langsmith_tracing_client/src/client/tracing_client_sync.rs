@@ -1,12 +1,12 @@
-use std::sync::mpsc::{self, Sender, Receiver};
-use std::thread;
 use crate::client::errors::TracingClientError;
 use crate::client::processor_sync::RunProcessor;
 use crate::client::run::{QueuedRun, RunEventBytes};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use reqwest::header::HeaderMap;
-use std::time::Duration;
+use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct ClientConfig {
@@ -36,7 +36,7 @@ impl TracingClient {
 
             let handle = thread::spawn(move || {
                 let processor = RunProcessor::new(worker_receiver, worker_config);
-                processor.run();
+                processor.run().expect("run failed");
             });
 
             handles.push(handle);
@@ -45,47 +45,30 @@ impl TracingClient {
         Ok(Self { sender, handles })
     }
 
-    pub fn submit_run_create(
-        &self,
-        run: RunCreateExtended,
-    ) -> Result<(), TracingClientError> {
+    pub fn submit_run_create(&self, run: RunCreateExtended) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Create(run);
 
-        self.sender
-            .send(queued_run)
-            .map_err(|_| TracingClientError::QueueFull)
+        self.sender.send(queued_run).map_err(|_| TracingClientError::QueueFull)
     }
 
     // Similar methods for submit_run_update and submit_run_bytes
 
-    pub fn submit_run_bytes(
-        &self,
-        run_bytes: RunEventBytes,
-    ) -> Result<(), TracingClientError> {
+    pub fn submit_run_bytes(&self, run_bytes: RunEventBytes) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::RunBytes(run_bytes);
 
-        self.sender
-            .send(queued_run)
-            .map_err(|_| TracingClientError::QueueFull)
+        self.sender.send(queued_run).map_err(|_| TracingClientError::QueueFull)
     }
 
-    pub fn submit_run_update(
-        &self,
-        run: RunUpdateExtended,
-    ) -> Result<(), TracingClientError> {
+    pub fn submit_run_update(&self, run: RunUpdateExtended) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Update(run);
 
-        self.sender
-            .send(queued_run)
-            .map_err(|_| TracingClientError::QueueFull)
+        self.sender.send(queued_run).map_err(|_| TracingClientError::QueueFull)
     }
 
     pub fn shutdown(self) -> Result<(), TracingClientError> {
         // Send a Shutdown message to each worker thread
         for _ in &self.handles {
-            self.sender
-                .send(QueuedRun::Shutdown)
-                .map_err(|_| TracingClientError::QueueFull)?;
+            self.sender.send(QueuedRun::Shutdown).map_err(|_| TracingClientError::QueueFull)?;
         }
 
         // Wait for all worker threads to finish

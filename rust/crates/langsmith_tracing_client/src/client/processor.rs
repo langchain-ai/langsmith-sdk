@@ -3,13 +3,13 @@ use crate::client::run::{Attachment, EventType, QueuedRun, RunEventBytes};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use crate::client::tracing_client::ClientConfig;
 use futures::stream::{FuturesUnordered, StreamExt};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::multipart::{Form, Part};
+use sonic_rs::{to_value, to_vec};
 use tokio::sync::mpsc::Receiver;
 use tokio::task;
 use tokio::time::{sleep, Instant};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio_util::io::ReaderStream;
-use sonic_rs::{to_vec, to_value};
 
 pub struct RunProcessor {
     receiver: Receiver<QueuedRun>,
@@ -21,11 +21,7 @@ impl RunProcessor {
     pub(crate) fn new(receiver: Receiver<QueuedRun>, config: ClientConfig) -> Self {
         let http_client = reqwest::Client::new();
 
-        Self {
-            receiver,
-            http_client,
-            config,
-        }
+        Self { receiver, http_client, config }
     }
 
     pub(crate) async fn run(mut self) -> Result<(), TracingClientError> {
@@ -126,16 +122,13 @@ impl RunProcessor {
     //     }
     // }
 
+    #[expect(dead_code)]
     async fn consume_run_create(
         &self,
         run_create_extended: RunCreateExtended,
         form: &mut Form,
     ) -> Result<(), TracingClientError> {
-        let RunCreateExtended {
-            run_create,
-            io,
-            attachments,
-        } = run_create_extended;
+        let RunCreateExtended { run_create, io, attachments } = run_create_extended;
         let run_id = &run_create.common.id;
 
         // conditionally add the run_create and io parts to the form
@@ -151,24 +144,20 @@ impl RunProcessor {
 
         if let Some(attachments) = attachments {
             for attachment in attachments {
-                self.add_attachment_to_form(form, run_id, attachment)
-                    .await?;
+                self.add_attachment_to_form(form, run_id, attachment).await?;
             }
         }
 
         Ok(())
     }
 
+    #[expect(dead_code)]
     async fn consume_run_update(
         &self,
         run_update_extended: RunUpdateExtended,
         form: &mut Form,
     ) -> Result<(), TracingClientError> {
-        let RunUpdateExtended {
-            run_update,
-            io,
-            attachments,
-        } = run_update_extended;
+        let RunUpdateExtended { run_update, io, attachments } = run_update_extended;
         let run_id = &run_update.common.id;
 
         self.add_json_part_to_form(form, format!("patch.{}", run_id), &run_update)?;
@@ -179,14 +168,14 @@ impl RunProcessor {
 
         if let Some(attachments) = attachments {
             for attachment in attachments {
-                self.add_attachment_to_form(form, run_id, attachment)
-                    .await?;
+                self.add_attachment_to_form(form, run_id, attachment).await?;
             }
         }
 
         Ok(())
     }
 
+    #[expect(dead_code)]
     async fn consume_run_bytes(
         &self,
         run_event_bytes: RunEventBytes,
@@ -232,8 +221,7 @@ impl RunProcessor {
 
         if let Some(attachments) = attachments {
             for attachment in attachments {
-                self.add_attachment_to_form(form, &run_id, attachment)
-                    .await?;
+                self.add_attachment_to_form(form, &run_id, attachment).await?;
             }
         }
 
@@ -246,7 +234,7 @@ impl RunProcessor {
         part_name: String,
         data: &impl serde::Serialize,
     ) -> Result<(), TracingClientError> {
-        let data_bytes = to_vec(data).unwrap();  // TODO: get rid of unwrap
+        let data_bytes = to_vec(data).unwrap(); // TODO: get rid of unwrap
         let part_size = data_bytes.len() as u64;
         *form = std::mem::take(form).part(
             part_name,
@@ -268,10 +256,7 @@ impl RunProcessor {
                 part_name,
                 Part::bytes(data)
                     .file_name(attachment.filename)
-                    .mime_str(&format!(
-                        "{}; length={}",
-                        &attachment.content_type, part_size
-                    ))?,
+                    .mime_str(&format!("{}; length={}", &attachment.content_type, part_size))?,
             );
         } else {
             // stream the file from disk to avoid loading the entire file into memory
@@ -297,16 +282,14 @@ impl RunProcessor {
 
             let part = Part::stream_with_length(body, file_size)
                 .file_name(file_name)
-                .mime_str(&format!(
-                    "{}; length={}",
-                    &attachment.content_type, file_size
-                ))?;
+                .mime_str(&format!("{}; length={}", &attachment.content_type, file_size))?;
 
             *form = std::mem::take(form).part(part_name, part);
         }
         Ok(())
     }
 
+    #[expect(unused_variables)]
     async fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
         let start_send_batch = Instant::now();
         let mut json_data = Vec::new();
@@ -315,11 +298,7 @@ impl RunProcessor {
         for queued_run in batch {
             match queued_run {
                 QueuedRun::Create(run_create_extended) => {
-                    let RunCreateExtended {
-                        run_create,
-                        io,
-                        attachments,
-                    } = run_create_extended;
+                    let RunCreateExtended { run_create, io, attachments } = run_create_extended;
                     let run_id = run_create.common.id.clone();
 
                     // Collect JSON data
@@ -346,11 +325,7 @@ impl RunProcessor {
                     }
                 }
                 QueuedRun::Update(run_update_extended) => {
-                    let RunUpdateExtended {
-                        run_update,
-                        io,
-                        attachments,
-                    } = run_update_extended;
+                    let RunUpdateExtended { run_update, io, attachments } = run_update_extended;
                     let run_id = run_update.common.id.clone();
 
                     // Collect JSON data
@@ -388,7 +363,7 @@ impl RunProcessor {
         let json_parts = task::spawn_blocking(move || {
             println!("Parallel processing a batch of {} runs", json_data.len());
             let start_time_in_parallel = Instant::now();
-            let results = json_data
+            json_data
                 .into_par_iter()
                 .map(|(part_name, value)| {
                     let data_bytes = to_vec(&value).unwrap(); // TODO: get rid of unwrap
@@ -397,23 +372,21 @@ impl RunProcessor {
                         .mime_str(&format!("application/json; length={}", part_size))?;
                     Ok::<(String, Part), TracingClientError>((part_name, part))
                 })
-                .collect::<Result<Vec<_>, TracingClientError>>();
-            results
+                .collect::<Result<Vec<_>, TracingClientError>>()
         })
         .await
         .unwrap()?; // TODO: get rid of unwrap
         println!("JSON processing took {:?}", start.elapsed());
 
         // process attachments asynchronously
-        let attachment_parts_results =
-            FuturesUnordered::from_iter(attachment_futures.into_iter().map(
-                |(part_name, future)| async {
-                    let part = future.await?;
-                    Ok((part_name, part))
-                },
-            ))
-            .collect::<Vec<Result<(String, Part), TracingClientError>>>()
-            .await;
+        let attachment_parts_results = FuturesUnordered::from_iter(
+            attachment_futures.into_iter().map(|(part_name, future)| async {
+                let part = future.await?;
+                Ok((part_name, part))
+            }),
+        )
+        .collect::<Vec<Result<(String, Part), TracingClientError>>>()
+        .await;
         let mut attachment_parts = Vec::new();
         for result in attachment_parts_results {
             match result {
@@ -461,10 +434,7 @@ impl RunProcessor {
             let part_size = data.len() as u64;
             Part::bytes(data)
                 .file_name(attachment.filename)
-                .mime_str(&format!(
-                    "{}; length={}",
-                    &attachment.content_type, part_size
-                ))?
+                .mime_str(&format!("{}; length={}", &attachment.content_type, part_size))?
         } else {
             let file_path = std::path::Path::new(&attachment.filename);
             let metadata = tokio::fs::metadata(file_path).await.map_err(|e| {
@@ -487,10 +457,7 @@ impl RunProcessor {
 
             Part::stream_with_length(body, file_size)
                 .file_name(file_name)
-                .mime_str(&format!(
-                    "{}; length={}",
-                    &attachment.content_type, file_size
-                ))?
+                .mime_str(&format!("{}; length={}", &attachment.content_type, file_size))?
         };
 
         Ok(part)

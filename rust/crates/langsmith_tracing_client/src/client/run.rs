@@ -85,6 +85,7 @@ pub enum EventType {
 pub(crate) enum QueuedRun {
     Create(RunCreateExtended),
     Update(RunUpdateExtended),
+    #[expect(dead_code)]
     RunBytes(RunEventBytes),
     Shutdown,
 }
