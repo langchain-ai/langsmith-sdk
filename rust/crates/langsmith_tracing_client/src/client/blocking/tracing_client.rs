@@ -1,4 +1,4 @@
-use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -40,7 +40,8 @@ impl TracingClient {
             let cloned_drain_sender = drain_sender.clone();
 
             let handle = thread::spawn(move || {
-                let processor = RunProcessor::new(worker_receiver, cloned_drain_sender, worker_config);
+                let processor =
+                    RunProcessor::new(worker_receiver, cloned_drain_sender, worker_config);
                 processor.run().expect("run failed");
             });
 

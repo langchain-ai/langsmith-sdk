@@ -21,7 +21,11 @@ pub struct RunProcessor {
 }
 
 impl RunProcessor {
-    pub(crate) fn new(receiver: Arc<Mutex<Receiver<QueuedRun>>>, drain_sender: Sender<()>, config: ClientConfig) -> Self {
+    pub(crate) fn new(
+        receiver: Arc<Mutex<Receiver<QueuedRun>>>,
+        drain_sender: Sender<()>,
+        config: ClientConfig,
+    ) -> Self {
         let http_client = reqwest::blocking::Client::new();
 
         Self { receiver, drain_sender, http_client, config }
@@ -48,7 +52,18 @@ impl RunProcessor {
                         break;
                     }
                     QueuedRun::Drain => {
+                        if !buffer.is_empty() {
+                            self.send_and_clear_buffer(&mut buffer)?;
+                        }
+
                         self.drain_sender.send(()).expect("drain_sender should never fail");
+
+                        // Put this thread to sleep, so we know the remaining `Drain` messages
+                        // are almost certainly answered by other worker threads.
+                        //
+                        // HACK: This is very hacky!
+                        //       Drain should only be used for benchmarking.
+                        std::thread::sleep(Duration::from_secs(60));
                     }
                     _ => {
                         buffer.push(queued_run);
