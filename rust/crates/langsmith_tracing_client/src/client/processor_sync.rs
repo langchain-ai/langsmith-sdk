@@ -1,30 +1,27 @@
 use crate::client::errors::TracingClientError;
-use crate::client::run::{Attachment, EventType, QueuedRun, RunEventBytes};
+use crate::client::run::{Attachment, QueuedRun};
 use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 use crate::client::tracing_client_sync::ClientConfig;
-use futures::stream::{FuturesUnordered, StreamExt};
-use reqwest::blocking::multipart::{Form, Part};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use sonic_rs::{to_vec, to_value};
-use std::sync::{mpsc, Arc, Mutex};
+use reqwest::blocking::multipart::Part;
+use sonic_rs::{to_value, to_vec};
 use std::sync::mpsc::Receiver;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct RunProcessor {
     receiver: Arc<Mutex<Receiver<QueuedRun>>>,
-    http_client: reqwest::blocking::Client,
     config: ClientConfig,
+
+    #[expect(dead_code)]
+    http_client: reqwest::blocking::Client,
 }
 
 impl RunProcessor {
     pub(crate) fn new(receiver: Arc<Mutex<Receiver<QueuedRun>>>, config: ClientConfig) -> Self {
         let http_client = reqwest::blocking::Client::new();
 
-        Self {
-            receiver,
-            http_client,
-            config,
-        }
+        Self { receiver, http_client, config }
     }
 
     pub(crate) fn run(&self) -> Result<(), TracingClientError> {
@@ -73,10 +70,7 @@ impl RunProcessor {
         Ok(())
     }
 
-    fn send_and_clear_buffer(
-        &self,
-        buffer: &mut Vec<QueuedRun>,
-    ) -> Result<(), TracingClientError> {
+    fn send_and_clear_buffer(&self, buffer: &mut Vec<QueuedRun>) -> Result<(), TracingClientError> {
         if let Err(e) = self.send_batch(std::mem::take(buffer)) {
             // todo: retry logic?
             eprintln!("Error sending batch: {}", e);
@@ -84,6 +78,7 @@ impl RunProcessor {
         Ok(())
     }
 
+    #[expect(unused_variables)]
     fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
         //println!("Handling a batch of {} runs", batch.len());
         let start_send_batch = tokio::time::Instant::now();
@@ -94,11 +89,7 @@ impl RunProcessor {
         for queued_run in batch {
             match queued_run {
                 QueuedRun::Create(run_create_extended) => {
-                    let RunCreateExtended {
-                        run_create,
-                        io,
-                        attachments,
-                    } = run_create_extended;
+                    let RunCreateExtended { run_create, io, attachments } = run_create_extended;
                     let run_id = run_create.common.id.clone();
 
                     // Collect JSON data
@@ -117,7 +108,8 @@ impl RunProcessor {
 
                     if let Some(attachments) = attachments {
                         for attachment in attachments {
-                            let part_name = format!("attachment.{}.{}", run_id, attachment.ref_name);
+                            let part_name =
+                                format!("attachment.{}.{}", run_id, attachment.ref_name);
                             match self.create_attachment_part(attachment) {
                                 Ok(part) => {
                                     attachment_parts.push((part_name, part));
@@ -130,11 +122,7 @@ impl RunProcessor {
                     }
                 }
                 QueuedRun::Update(run_update_extended) => {
-                    let RunUpdateExtended {
-                        run_update,
-                        io,
-                        attachments,
-                    } = run_update_extended;
+                    let RunUpdateExtended { run_update, io, attachments } = run_update_extended;
                     let run_id = run_update.common.id.clone();
 
                     // Collect JSON data
@@ -149,7 +137,8 @@ impl RunProcessor {
 
                     if let Some(attachments) = attachments {
                         for attachment in attachments {
-                            let part_name = format!("attachment.{}.{}", run_id, attachment.ref_name);
+                            let part_name =
+                                format!("attachment.{}.{}", run_id, attachment.ref_name);
                             match self.create_attachment_part(attachment) {
                                 Ok(part) => {
                                     attachment_parts.push((part_name, part));
@@ -211,27 +200,20 @@ impl RunProcessor {
         Ok(())
     }
 
-    fn create_attachment_part(
-        &self,
-        attachment: Attachment,
-    ) -> Result<Part, TracingClientError> {
+    fn create_attachment_part(&self, attachment: Attachment) -> Result<Part, TracingClientError> {
         let part = if let Some(data) = attachment.data {
             let part_size = data.len() as u64;
             Part::bytes(data)
                 .file_name(attachment.filename)
-                .mime_str(&format!(
-                    "{}; length={}",
-                    &attachment.content_type, part_size
-                ))?
+                .mime_str(&format!("{}; length={}", &attachment.content_type, part_size))?
         } else {
             let file_path = std::path::Path::new(&attachment.filename);
             let metadata = std::fs::metadata(file_path).map_err(|e| {
                 TracingClientError::IoError(format!("Failed to read file metadata: {}", e))
             })?;
             let file_size = metadata.len();
-            let file = std::fs::File::open(file_path).map_err(|e| {
-                TracingClientError::IoError(format!("Failed to open file: {}", e))
-            })?;
+            let file = std::fs::File::open(file_path)
+                .map_err(|e| TracingClientError::IoError(format!("Failed to open file: {}", e)))?;
 
             let file_name = file_path
                 .file_name()
@@ -241,16 +223,11 @@ impl RunProcessor {
                 .to_string_lossy()
                 .into_owned();
 
-
             Part::reader_with_length(file, file_size)
                 .file_name(file_name)
-                .mime_str(&format!(
-                    "{}; length={}",
-                    &attachment.content_type, file_size
-                ))?
+                .mime_str(&format!("{}; length={}", &attachment.content_type, file_size))?
         };
 
         Ok(part)
     }
-
 }

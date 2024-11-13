@@ -43,10 +43,7 @@ impl TracingClient {
     ) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Create(run);
 
-        self.sender
-            .send(queued_run)
-            .await
-            .map_err(|_| TracingClientError::QueueFull)
+        self.sender.send(queued_run).await.map_err(|_| TracingClientError::QueueFull)
     }
 
     pub async fn submit_run_update(
@@ -55,26 +52,17 @@ impl TracingClient {
     ) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::Update(run);
 
-        self.sender
-            .send(queued_run)
-            .await
-            .map_err(|_| TracingClientError::QueueFull)
+        self.sender.send(queued_run).await.map_err(|_| TracingClientError::QueueFull)
     }
 
     pub async fn submit_run_bytes(&self, run: RunEventBytes) -> Result<(), TracingClientError> {
         let queued_run = QueuedRun::RunBytes(run);
 
-        self.sender
-            .send(queued_run)
-            .await
-            .map_err(|_| TracingClientError::QueueFull)
+        self.sender.send(queued_run).await.map_err(|_| TracingClientError::QueueFull)
     }
 
     pub async fn shutdown(self) -> Result<(), TracingClientError> {
-        self.sender
-            .send(QueuedRun::Shutdown)
-            .await
-            .map_err(|_| TracingClientError::QueueFull)?;
+        self.sender.send(QueuedRun::Shutdown).await.map_err(|_| TracingClientError::QueueFull)?;
 
         self.handle.await.unwrap()
     }

@@ -1,5 +1,5 @@
 use langsmith_tracing_client::client::run::{RunCommon, RunCreate, RunUpdate, TimeValue};
-use sonic_rs::{Value, json, to_string};
+use sonic_rs::{json, to_string, Value};
 
 #[test]
 fn test_run_common() {

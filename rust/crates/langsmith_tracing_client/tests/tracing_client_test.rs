@@ -6,12 +6,12 @@ use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClie
 use mockito::Server;
 use multipart::server::Multipart;
 use reqwest::header::{HeaderMap, HeaderValue};
+use sonic_rs::{from_str, json, Value};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
-use sonic_rs::{Value, from_str, json, to_string};
 
 #[derive(Debug)]
 struct MultipartField {
@@ -94,19 +94,20 @@ async fn test_tracing_client_submit_run_create() {
     let mut test_file = File::create(&test_file_path).unwrap();
     writeln!(test_file, "Test file content for create").unwrap();
 
-    let mut attachments = Vec::new();
-    attachments.push(Attachment {
-        ref_name: "attachment_1".to_string(),
-        filename: "file1.txt".to_string(),
-        data: Some(vec![1, 2, 3]),
-        content_type: "application/octet-stream".to_string(),
-    });
-    attachments.push(Attachment {
-        ref_name: "attachment_2".to_string(),
-        filename: test_file_path.into_os_string().into_string().unwrap(),
-        data: None, // this will cause the processor to read from disk
-        content_type: "text/plain".to_string(),
-    });
+    let attachments = vec![
+        Attachment {
+            ref_name: "attachment_1".to_string(),
+            filename: "file1.txt".to_string(),
+            data: Some(vec![1, 2, 3]),
+            content_type: "application/octet-stream".to_string(),
+        },
+        Attachment {
+            ref_name: "attachment_2".to_string(),
+            filename: test_file_path.into_os_string().into_string().unwrap(),
+            data: None, // this will cause the processor to read from disk
+            content_type: "text/plain".to_string(),
+        },
+    ];
 
     let run_create = RunCreateExtended {
         run_create: RunCreate {
@@ -149,29 +150,17 @@ async fn test_tracing_client_submit_run_create() {
 
     // assert run fields
     assert_eq!(fields[0].name, "post.test_id");
-    assert_eq!(
-        fields[0].content_type,
-        Some("application/json; length=375".to_string())
-    );
+    assert_eq!(fields[0].content_type, Some("application/json; length=375".to_string()));
     assert_eq!(fields[0].filename, None);
     let received_run: Value = from_str(&fields[0].data).unwrap();
     assert_eq!(received_run["id"], "test_id");
     assert_eq!(received_run["trace_id"], "trace_id");
     assert_eq!(received_run["dotted_order"], "1.1");
     assert_eq!(received_run["parent_run_id"], json!(null));
-    assert_eq!(
-        received_run["extra"],
-        json!({"extra_data": "value"})
-    );
+    assert_eq!(received_run["extra"], json!({"extra_data": "value"}));
     assert_eq!(received_run["error"], json!(null));
-    assert_eq!(
-        received_run["serialized"],
-        json!({"key": "value"})
-    );
-    assert_eq!(
-        received_run["events"],
-        Value::from(vec![json!({"event": "event_data"})])
-    );
+    assert_eq!(received_run["serialized"], json!({"key": "value"}));
+    assert_eq!(received_run["events"], Value::from(vec![json!({"event": "event_data"})]));
     assert_eq!(received_run["tags"], Value::from(vec!["tag1", "tag2"]));
     assert_eq!(received_run["session_name"], "Session Name");
     assert_eq!(received_run["session_id"], json!(null));
@@ -179,46 +168,31 @@ async fn test_tracing_client_submit_run_create() {
     assert_eq!(received_run["start_time"], 1697462400000i64);
     assert_eq!(received_run["end_time"], 1697466000000i64);
     assert_eq!(received_run["run_type"], "chain");
-    assert_eq!(
-        received_run["reference_example_id"],
-        json!(null)
-    );
+    assert_eq!(received_run["reference_example_id"], json!(null));
 
     // assert inputs fields
     assert_eq!(fields[1].name, "post.test_id.inputs");
-    assert_eq!(
-        fields[1].content_type,
-        Some("application/json; length=17".to_string())
-    );
+    assert_eq!(fields[1].content_type, Some("application/json; length=17".to_string()));
     assert_eq!(fields[1].filename, None);
     let received_inputs: Value = from_str(&fields[1].data).unwrap();
     assert_eq!(received_inputs, json!({"input": "value"}));
 
     // assert outputs fields
     assert_eq!(fields[2].name, "post.test_id.outputs");
-    assert_eq!(
-        fields[2].content_type,
-        Some("application/json; length=18".to_string())
-    );
+    assert_eq!(fields[2].content_type, Some("application/json; length=18".to_string()));
     assert_eq!(fields[2].filename, None);
     let received_outputs: Value = from_str(&fields[2].data).unwrap();
     assert_eq!(received_outputs, json!({"output": "value"}));
 
     // assert attachment_1 fields
     assert_eq!(fields[3].name, "attachment.test_id.attachment_1");
-    assert_eq!(
-        fields[3].content_type,
-        Some("application/octet-stream; length=3".to_string())
-    );
+    assert_eq!(fields[3].content_type, Some("application/octet-stream; length=3".to_string()));
     assert_eq!(fields[3].filename, Some("file1.txt".to_string()));
     assert_eq!(fields[3].data, "\u{1}\u{2}\u{3}");
 
     // assert attachment_2 fields
     assert_eq!(fields[4].name, "attachment.test_id.attachment_2");
-    assert_eq!(
-        fields[4].content_type,
-        Some("text/plain; length=29".to_string())
-    );
+    assert_eq!(fields[4].content_type, Some("text/plain; length=29".to_string()));
     assert_eq!(fields[4].filename, Some("test_file_create.txt".to_string()));
     assert_eq!(fields[4].data, "Test file content for create\n");
 }
@@ -248,9 +222,7 @@ async fn test_tracing_client_submit_run_update() {
             request.1 = content_type_str;
 
             let auth_headers = req.header("X-API-KEY");
-            assert!(auth_headers
-                .iter()
-                .any(|h| h.to_str().unwrap() == "test_key"));
+            assert!(auth_headers.iter().any(|h| h.to_str().unwrap() == "test_key"));
             vec![] // return empty response body
         })
         .create_async()
@@ -274,19 +246,20 @@ async fn test_tracing_client_submit_run_update() {
     let mut test_file = File::create(&test_file_path).unwrap();
     writeln!(test_file, "Test file content for update").unwrap();
 
-    let mut attachments = Vec::new();
-    attachments.push(Attachment {
-        ref_name: "attachment_1".to_string(),
-        filename: "file1_update.txt".to_string(),
-        data: Some(vec![4, 5, 6]),
-        content_type: "application/octet-stream".to_string(),
-    });
-    attachments.push(Attachment {
-        ref_name: "attachment_2".to_string(),
-        filename: test_file_path.to_string_lossy().into_owned(),
-        data: None, // this will cause the processor to read from disk
-        content_type: "text/plain".to_string(),
-    });
+    let attachments = vec![
+        Attachment {
+            ref_name: "attachment_1".to_string(),
+            filename: "file1_update.txt".to_string(),
+            data: Some(vec![4, 5, 6]),
+            content_type: "application/octet-stream".to_string(),
+        },
+        Attachment {
+            ref_name: "attachment_2".to_string(),
+            filename: test_file_path.to_string_lossy().into_owned(),
+            data: None, // this will cause the processor to read from disk
+            content_type: "text/plain".to_string(),
+        },
+    ];
 
     let run_update = RunUpdateExtended {
         run_update: RunUpdate {
@@ -306,10 +279,7 @@ async fn test_tracing_client_submit_run_update() {
             end_time: TimeValue::String("2024-10-16T12:00:00Z".to_string()),
         },
         attachments: Some(attachments),
-        io: RunIO {
-            inputs: None,
-            outputs: Some(json!({"updated_output": "value"})),
-        },
+        io: RunIO { inputs: None, outputs: Some(json!({"updated_output": "value"})) },
     };
 
     client.submit_run_update(run_update).await.unwrap();
@@ -325,59 +295,35 @@ async fn test_tracing_client_submit_run_update() {
 
     // assert run fields
     assert_eq!(fields[0].name, "patch.test_id");
-    assert_eq!(
-        fields[0].content_type,
-        Some("application/json; length=292".to_string())
-    );
+    assert_eq!(fields[0].content_type, Some("application/json; length=292".to_string()));
     assert_eq!(fields[0].filename, None);
     let received_run: Value = from_str(&fields[0].data).unwrap();
     assert_eq!(received_run["id"], "test_id");
     assert_eq!(received_run["trace_id"], "trace_id");
-    assert_eq!(
-        received_run["extra"],
-        json!({"extra_data": "value"})
-    );
+    assert_eq!(received_run["extra"], json!({"extra_data": "value"}));
     assert_eq!(received_run["error"], json!(null));
-    assert_eq!(
-        received_run["serialized"],
-        json!({"key": "value"})
-    );
-    assert_eq!(
-        received_run["events"],
-        Value::from(vec![json!({"event": "event_data"})])
-    );
+    assert_eq!(received_run["serialized"], json!({"key": "value"}));
+    assert_eq!(received_run["events"], Value::from(vec![json!({"event": "event_data"})]));
     assert_eq!(received_run["tags"], Value::from(vec!["tag1", "tag2"]));
     assert_eq!(received_run["session_name"], "Session Name");
     assert_eq!(received_run["end_time"], "2024-10-16T12:00:00Z");
 
     // assert outputs fields
     assert_eq!(fields[1].name, "patch.test_id.outputs");
-    assert_eq!(
-        fields[1].content_type,
-        Some("application/json; length=26".to_string())
-    );
+    assert_eq!(fields[1].content_type, Some("application/json; length=26".to_string()));
     assert_eq!(fields[1].filename, None);
     let received_outputs: Value = from_str(&fields[1].data).unwrap();
-    assert_eq!(
-        received_outputs,
-        json!({"updated_output": "value"})
-    );
+    assert_eq!(received_outputs, json!({"updated_output": "value"}));
 
     // assert attachment_1 fields
     assert_eq!(fields[2].name, "attachment.test_id.attachment_1");
-    assert_eq!(
-        fields[2].content_type,
-        Some("application/octet-stream; length=3".to_string())
-    );
+    assert_eq!(fields[2].content_type, Some("application/octet-stream; length=3".to_string()));
     assert_eq!(fields[2].filename, Some("file1_update.txt".to_string()));
     assert_eq!(fields[2].data, "\u{4}\u{5}\u{6}");
 
     // assert attachment_2 fields
     assert_eq!(fields[3].name, "attachment.test_id.attachment_2");
-    assert_eq!(
-        fields[3].content_type,
-        Some("text/plain; length=29".to_string())
-    );
+    assert_eq!(fields[3].content_type, Some("text/plain; length=29".to_string()));
     assert_eq!(fields[3].filename, Some("test_file_update.txt".to_string()));
     assert_eq!(fields[3].data, "Test file content for update\n");
 }
