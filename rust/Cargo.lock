@@ -1022,6 +1022,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "langsmith_pyo3"
+version = "0.1.0"
+dependencies = [
+ "langsmith_tracing_client",
+ "pyo3",
+ "pyo3-async-runtimes",
+]
+
+[[package]]
 name = "langsmith_tracing_client"
 version = "0.1.0"
 dependencies = [
@@ -1031,8 +1040,6 @@ dependencies = [
  "futures",
  "mockito",
  "multipart",
- "pyo3",
- "pyo3-async-runtimes",
  "rayon",
  "reqwest",
  "serde",
