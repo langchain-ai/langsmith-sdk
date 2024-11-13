@@ -58,15 +58,14 @@ fn extract_attachments(value: &Bound<'_, PyAny>) -> PyResult<Option<Vec<Attachme
 
     let mut attachments = Vec::with_capacity(size);
 
-    for pair in mapping.iter()? {
-        let pair_data = pair?;
-        let tuple = pair_data.downcast_exact::<PyTuple>()?;
+    for result in mapping.items()?.iter()? {
+        let key_value_pair = result?;
 
-        let key_item = tuple.get_item(0)?;
+        let key_item = key_value_pair.get_item(0)?;
         let key = key_item.extract::<&str>()?;
 
         // Each value in the attachments dict is a (mime_type, bytes) tuple.
-        let value = tuple.get_item(1)?;
+        let value = key_value_pair.get_item(1)?;
         let value_tuple = value.downcast_exact::<PyTuple>()?;
         let mime_type_value = value_tuple.get_item(0)?;
         let bytes_value = value_tuple.get_item(1)?;
@@ -102,16 +101,20 @@ impl FromPyObject<'_> for RunCreate {
         let start_time = extract_isoformat_time_value(value.get_item("start_time")?.downcast()?)?;
 
         let end_time = {
-            let py_end_time = value.get_item("end_time")?;
-            if py_end_time.is_none() {
-                None
-            } else {
-                Some(extract_isoformat_time_value(py_end_time.downcast()?)?)
+            match value.get_item("end_time") {
+                Ok(py_end_time) => {
+                    if py_end_time.is_none() {
+                        None
+                    } else {
+                        Some(extract_isoformat_time_value(py_end_time.downcast()?)?)
+                    }
+                }
+                Err(_) => None,
             }
         };
 
         let run_type = value.get_item("run_type")?.extract::<String>()?;
-        let reference_example_id = value.get_item("key")?.extract::<Option<String>>()?;
+        let reference_example_id = extract_optional_mapping_key(value, "reference_example_id")?;
 
         Ok(Self(langsmith_tracing_client::client::RunCreate {
             common,
@@ -226,15 +229,14 @@ fn extract_value(value: &Bound<'_, PyAny>) -> PyResult<sonic_rs::Value> {
     } else if let Ok(mapping) = value.downcast::<PyMapping>() {
         let mut dict = sonic_rs::Object::with_capacity(mapping.len()?);
 
-        for pair in mapping.iter()? {
-            let pair_data = pair?;
-            let tuple = pair_data.downcast_exact::<PyTuple>()?;
+        for result in mapping.items()?.iter()? {
+            let key_value_pair = result?;
 
             // Sonic wants all object keys to be strings,
             // so we'll error on non-string dict keys.
-            let key_item = tuple.get_item(0)?;
+            let key_item = key_value_pair.get_item(0)?;
             let key = key_item.extract::<&str>()?;
-            let value = extract_value(&tuple.get_item(1)?)?;
+            let value = extract_value(&key_value_pair.get_item(1)?)?;
             dict.insert(key, value);
         }
 

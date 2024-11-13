@@ -1,3 +1,4 @@
+import datetime
 import statistics
 import time
 from typing import Dict
@@ -20,6 +21,11 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
     for _ in range(samples):
         print("creating data")
         runs = [create_run_data(str(uuid4()), json_size) for i in range(num_runs)]
+
+        # We need to add "start_time" manually since
+        # it isn't added on the Rust side right now.
+        for run in runs:
+            run["start_time"] = datetime.datetime.now(datetime.timezone.utc)
 
         endpoint = "http://localhost:1234/FILL_ME_IN"
         queue_capacity = 128
@@ -45,7 +51,7 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
         client.drain()
         elapsed = time.perf_counter() - start
 
-        print("runs complete: {elapsed:.3f}s")
+        print(f"runs complete: {elapsed:.3f}s")
 
         timings.append(elapsed)
 
