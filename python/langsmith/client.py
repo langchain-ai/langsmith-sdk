@@ -3370,12 +3370,19 @@ class Client:
             created_at=created_at,
         )
 
-    def upsert_example_multipart(
+    def upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleCreateWithAttachments] = None,
+        upserts: List[ls_schemas.ExampleCreateWithAttachments] = [],
     ) -> None:
         """Upsert examples."""
+        # not sure if the below checks are necessary
+        if not isinstance(upserts, list):
+            raise TypeError(f"upserts must be a list, got {type(upserts)}")
+        for item in upserts:
+            if not isinstance(item, ls_schemas.ExampleCreateWithAttachments):
+                raise TypeError(f"Each item must be ExampleCreateWithAttachments, got {type(item)}")
+            
         parts: list[MultipartPart] = []
 
         for example in upserts:

@@ -417,8 +417,8 @@ def test_create_run_mutate(
 
 
 @mock.patch("langsmith.client.requests.Session")
-def test_upsert_example_multipart(mock_session_cls: mock.Mock) -> None:
-    """Test that upsert_example_multipart sends correct multipart data."""
+def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
+    """Test that upsert_examples_multipart sends correct multipart data."""
     mock_session = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -447,7 +447,7 @@ def test_upsert_example_multipart(mock_session_cls: mock.Mock) -> None:
             ),
         },
     )
-    client.upsert_example_multipart(upserts=[example])
+    client.upsert_examples_multipart(upserts=[example])
 
     # Verify the request
     assert mock_session.request.call_count == 2  # we always make a call to /info

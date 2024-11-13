@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 from langsmith.client import ID_TYPE, Client
-from langsmith.schemas import DataType
+from langsmith.schemas import DataType, ExampleCreateWithAttachments
 from langsmith.utils import (
     LangSmithConnectionError,
     LangSmithError,
@@ -368,6 +368,72 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
+
+@pytest.mark.parametrize("uri", ["http://dev.api.smith.langchain.com"])
+def test_upsert_examples_multipart(uri: str) -> None:
+    """Test upserting examples with attachments via multipart endpoint."""
+    dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
+    langchain_client = Client(api_url=uri, api_key="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")
+    if langchain_client.has_dataset(dataset_name=dataset_name):
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for multipart example upload",
+        data_type=DataType.kv,
+    )
+
+    # Test example with all fields
+    example_id = uuid4()
+    example_1 = ExampleCreateWithAttachments(
+        id=example_id,
+        dataset_id=dataset.id,
+        inputs={"text": "hello world"},
+        outputs={"response": "greeting"},
+        attachments={
+            "test_file": ("text/plain", b"test content"),
+        },
+    )
+    # Test example without id
+    example_2 = ExampleCreateWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"text": "foo bar"},
+        outputs={"response": "baz"},
+        attachments={
+            "my_file": ("text/plain", b"more test content"),
+        },
+    )
+
+    langchain_client.upsert_examples_multipart([example_1, example_2])
+    
+    created_example = langchain_client.read_example(example_id)
+    assert created_example.inputs["text"] == "hello world"
+    assert created_example.outputs["response"] == "greeting"
+
+    all_examples_in_dataset = [example for example in langchain_client.list_examples(dataset_id=dataset.id)]
+    assert len(all_examples_in_dataset) == 2
+
+    # Test that adding invalid example fails - even if valid examples are added alongside
+    example_3 = ExampleCreateWithAttachments(
+        dataset_id=uuid4(), # not a real dataset
+        inputs={"text": "foo bar"},
+        outputs={"response": "baz"},
+        attachments={
+            "my_file": ("text/plain", b"more test content"),
+        },
+    )
+
+    # will this throw an error? idk need to test
+    langchain_client.upsert_examples_multipart([example_2, example_3]) # don't add example_1 because of explicit id
+
+    all_examples_in_dataset = [example for example in langchain_client.list_examples(dataset_id=dataset.id)]
+    assert len(all_examples_in_dataset) == 2
+
+    # Throw type errors when not passing ExampleCreateWithAttachments
+    with pytest.raises(TypeError):
+        langchain_client.upsert_examples_multipart([{"foo":"bar"}])
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
 
 def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
