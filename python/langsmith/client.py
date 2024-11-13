@@ -1616,6 +1616,7 @@ class Client:
         events: Optional[Sequence[dict]] = None,
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
+        attachments: Optional[Dict[str, ls_schemas.Attachment]] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1640,6 +1641,9 @@ class Client:
             The extra information for the run.
         tags : List[str] or None, default=None
             The tags for the run.
+        attachments: dict[str, ls_schemas.Attachment] or None, default=None
+            A dictionary of attachments to add to the run. The keys are the attachment names,
+            and the values are Attachment objects containing the data and mime type.
         **kwargs : Any
             Kwargs are ignored.
         """
@@ -1654,6 +1658,8 @@ class Client:
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
         }
+        if attachments:
+            data["attachments"] = attachments
         use_multipart = (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
