@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sonic_rs::Value;
 
 // Map attachment ref to tuple of filename, optional bytes
+#[derive(Debug)]
 pub struct Attachment {
     pub ref_name: String,
     pub filename: String,
@@ -56,18 +57,21 @@ pub struct RunUpdate {
     pub end_time: TimeValue,
 }
 
+#[derive(Debug)]
 pub struct RunCreateExtended {
     pub run_create: RunCreate,
     pub io: RunIO,
     pub attachments: Option<Vec<Attachment>>,
 }
 
+#[derive(Debug)]
 pub struct RunUpdateExtended {
     pub run_update: RunUpdate,
     pub io: RunIO,
     pub attachments: Option<Vec<Attachment>>,
 }
 
+#[derive(Debug)]
 pub struct RunEventBytes {
     pub run_id: String,
     pub event_type: EventType,
@@ -77,11 +81,13 @@ pub struct RunEventBytes {
     pub attachments: Option<Vec<Attachment>>,
 }
 
+#[derive(Debug)]
 pub enum EventType {
     Create,
     Update,
 }
 
+#[derive(Debug)]
 pub(crate) enum QueuedRun {
     Create(RunCreateExtended),
     Update(RunUpdateExtended),

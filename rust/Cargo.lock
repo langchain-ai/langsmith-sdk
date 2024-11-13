@@ -1028,6 +1028,8 @@ dependencies = [
  "langsmith_tracing_client",
  "pyo3",
  "pyo3-async-runtimes",
+ "serde",
+ "sonic-rs",
 ]
 
 [[package]]
