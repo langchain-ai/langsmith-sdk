@@ -38,20 +38,31 @@ impl BlockingTracingClient {
             headers: None, // TODO: support custom headers
             num_worker_threads: worker_threads,
         };
+
         let client = RustTracingClient::new(config).map_err(|e| {
             // TODO: There's probably a more elegant way to handle errors than this.
             Python::with_gil(|py| {
                 crate::errors::TracingClientError::new_err(format!("{e}").into_py(py))
             })
         })?;
+
         Ok(Self { client: Arc::from(client) })
     }
 
     // N.B.: We use `Py<Self>` so that we don't hold the GIL while running this method.
     //       `slf.get()` below is only valid if the `Self` type is `Sync` and `pyclass(frozen)`,
     //       which is enforced at compile-time.
-    pub fn submit_run_create(slf: Py<Self>, run: super::py_run::RunCreateExtended) -> PyResult<()> {
+    pub fn create_run(slf: Py<Self>, run: super::py_run::RunCreateExtended) -> PyResult<()> {
         slf.get().client.submit_run_create(run.into_inner()).map_err(|e| {
+            // TODO: There's probably a more elegant way to handle errors than this.
+            Python::with_gil(|py| {
+                crate::errors::TracingClientError::new_err(format!("{e}").into_py(py))
+            })
+        })
+    }
+
+    pub fn drain(slf: Py<Self>) -> PyResult<()> {
+        slf.get().client.drain().map_err(|e| {
             // TODO: There's probably a more elegant way to handle errors than this.
             Python::with_gil(|py| {
                 crate::errors::TracingClientError::new_err(format!("{e}").into_py(py))
