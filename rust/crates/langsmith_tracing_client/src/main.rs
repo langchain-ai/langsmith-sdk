@@ -1,15 +1,16 @@
 #![expect(unused_imports)]
 
-use langsmith_tracing_client::client::run::{
+use std::fs::File;
+use std::io::Write;
+
+use langsmith_tracing_client::client::async_enabled::{ClientConfig, TracingClient};
+use langsmith_tracing_client::client::{
     Attachment, RunCommon, RunCreate, RunCreateExtended, RunIO, RunUpdate, RunUpdateExtended,
     TimeValue,
 };
-use langsmith_tracing_client::client::tracing_client::{ClientConfig, TracingClient};
 use rayon::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::Value;
-use std::fs::File;
-use std::io::Write;
 use tempfile::TempDir;
 use tokio::time::Duration;
 use uuid::Uuid;

@@ -1,6 +1,11 @@
-pub mod errors;
-pub mod processor;
-mod processor_sync;
-pub mod run;
-pub mod tracing_client;
-pub mod tracing_client_sync;
+mod errors;
+mod run;
+
+pub mod async_enabled;
+pub mod blocking;
+
+pub use errors::TracingClientError;
+pub use run::{
+    Attachment, EventType, RunCommon, RunCreate, RunCreateExtended, RunEventBytes, RunIO,
+    RunUpdate, RunUpdateExtended, TimeValue,
+};

@@ -1,11 +1,13 @@
-use crate::client::errors::TracingClientError;
-use crate::client::processor::RunProcessor;
-use crate::client::run::{QueuedRun, RunEventBytes};
-use crate::client::run::{RunCreateExtended, RunUpdateExtended};
-use reqwest::header::HeaderMap;
 use std::time::Duration;
+
+use reqwest::header::HeaderMap;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
+
+use super::processor::RunProcessor;
+use crate::client::errors::TracingClientError;
+use crate::client::run::{QueuedRun, RunEventBytes};
+use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 
 pub struct ClientConfig {
     pub endpoint: String,
