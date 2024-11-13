@@ -1,4 +1,4 @@
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -22,12 +22,14 @@ pub struct ClientConfig {
 
 pub struct TracingClient {
     sender: Sender<QueuedRun>,
+    drain: Mutex<Receiver<()>>,
     handles: Vec<thread::JoinHandle<()>>, // Handles to worker threads
 }
 
 impl TracingClient {
     pub fn new(config: ClientConfig) -> Result<Self, TracingClientError> {
         let (sender, receiver) = mpsc::channel::<QueuedRun>();
+        let (drain_sender, drain_receiver) = mpsc::channel::<()>();
         let receiver = Arc::new(Mutex::new(receiver));
 
         let mut handles = Vec::new();
@@ -35,16 +37,17 @@ impl TracingClient {
         for _ in 0..config.num_worker_threads {
             let worker_receiver = Arc::clone(&receiver);
             let worker_config = config.clone();
+            let cloned_drain_sender = drain_sender.clone();
 
             let handle = thread::spawn(move || {
-                let processor = RunProcessor::new(worker_receiver, worker_config);
+                let processor = RunProcessor::new(worker_receiver, cloned_drain_sender, worker_config);
                 processor.run().expect("run failed");
             });
 
             handles.push(handle);
         }
 
-        Ok(Self { sender, handles })
+        Ok(Self { sender, drain: drain_receiver.into(), handles })
     }
 
     pub fn submit_run_create(&self, run: RunCreateExtended) -> Result<(), TracingClientError> {
@@ -65,6 +68,20 @@ impl TracingClient {
         let queued_run = QueuedRun::Update(run);
 
         self.sender.send(queued_run).map_err(|_| TracingClientError::QueueFull)
+    }
+
+    pub fn drain(&self) -> Result<(), TracingClientError> {
+        for _ in &self.handles {
+            self.sender.send(QueuedRun::Drain).map_err(|_| TracingClientError::QueueFull)?;
+        }
+
+        let drain_guard = self.drain.lock().expect("locking failed");
+        for _ in &self.handles {
+            drain_guard.recv().expect("failed to receive drained message");
+        }
+        drop(drain_guard);
+
+        Ok(())
     }
 
     pub fn shutdown(self) -> Result<(), TracingClientError> {

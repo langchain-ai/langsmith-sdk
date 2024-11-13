@@ -93,5 +93,6 @@ pub(crate) enum QueuedRun {
     Update(RunUpdateExtended),
     #[expect(dead_code)]
     RunBytes(RunEventBytes),
+    Drain,
     Shutdown,
 }

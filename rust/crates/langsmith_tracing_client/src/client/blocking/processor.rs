@@ -1,4 +1,4 @@
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -13,6 +13,7 @@ use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 
 pub struct RunProcessor {
     receiver: Arc<Mutex<Receiver<QueuedRun>>>,
+    drain_sender: Sender<()>,
     config: ClientConfig,
 
     #[expect(dead_code)]
@@ -20,10 +21,10 @@ pub struct RunProcessor {
 }
 
 impl RunProcessor {
-    pub(crate) fn new(receiver: Arc<Mutex<Receiver<QueuedRun>>>, config: ClientConfig) -> Self {
+    pub(crate) fn new(receiver: Arc<Mutex<Receiver<QueuedRun>>>, drain_sender: Sender<()>, config: ClientConfig) -> Self {
         let http_client = reqwest::blocking::Client::new();
 
-        Self { receiver, http_client, config }
+        Self { receiver, drain_sender, http_client, config }
     }
 
     pub(crate) fn run(&self) -> Result<(), TracingClientError> {
@@ -45,6 +46,9 @@ impl RunProcessor {
                             self.send_and_clear_buffer(&mut buffer)?;
                         }
                         break;
+                    }
+                    QueuedRun::Drain => {
+                        self.drain_sender.send(()).expect("drain_sender should never fail");
                     }
                     _ => {
                         buffer.push(queued_run);
@@ -155,6 +159,9 @@ impl RunProcessor {
                 QueuedRun::RunBytes(_) => {
                     // TODO: fix this
                     return Err(TracingClientError::UnexpectedShutdown);
+                }
+                QueuedRun::Drain => {
+                    unreachable!("drain message in batch");
                 }
                 QueuedRun::Shutdown => {
                     return Err(TracingClientError::UnexpectedShutdown);

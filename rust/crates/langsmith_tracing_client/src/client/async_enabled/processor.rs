@@ -352,6 +352,9 @@ impl RunProcessor {
                     // TODO: fix this
                     return Err(TracingClientError::UnexpectedShutdown);
                 }
+                QueuedRun::Drain => {
+                    unreachable!("drain message in batch");
+                }
                 QueuedRun::Shutdown => {
                     return Err(TracingClientError::UnexpectedShutdown);
                 }
