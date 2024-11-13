@@ -19,4 +19,9 @@ To build wheels, run `uvx maturin build`.
 
 To make performance-optimized builds, append `--release` to either command.
 
+To run install these bindings into another virtualenv (e.g. to run benchmarks),
+activate that virtualenv, then `cd` to this directory and run `uvx maturin develop --release`.
+When that command completes, the virtualenv will have an optimized build
+of `langsmith_pyo3` installed.
+
 TODO: Move the `.github/workflows` CI workflow for testing the maturin build to the top level of the repo.
