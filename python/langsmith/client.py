@@ -82,6 +82,7 @@ from langsmith._internal._constants import (
     _SIZE_LIMIT_BYTES,
 )
 from langsmith._internal._multipart import (
+    MultipartPart,
     MultipartPartsAndContext,
     join_multipart_parts_and_context,
 )
@@ -3368,6 +3369,94 @@ class Client:
             dataset_name=dataset_name,
             created_at=created_at,
         )
+
+    def upsert_example_multipart(
+        self,
+        *,
+        upserts: List[ls_schemas.ExampleCreateWithAttachments] = None,
+    ) -> None:
+        """Upsert examples"""
+        parts = list[MultipartPart]
+
+        for example in upserts:
+
+            if example.id is not None:
+                example_id = str(example.id) # is the conversion to string neccessary?
+            else:
+                example_id = str(uuid.uuid4())
+
+            remaining_values = {
+                "dataset_id": example.dataset_id,
+                "created_at": example.created_at,
+                "metadata": example.metadata,
+                "split": example.split
+            }
+            valb = _dumps_json(remaining_values)
+            
+            parts.append(
+                f"{example_id}",
+                (
+                    None,
+                    valb,
+                    "application/json",
+                    {"Content-Length": str(len(valb))},
+                ),
+            ),
+
+            inputsb = example.inputs
+            outputsb = example.outputs
+
+            parts.append(
+                f"{example_id}.inputs",
+                (
+                    None,
+                    inputsb,
+                    "application/json",
+                    {"Content-Length": str(len(inputsb))},
+                ),
+            ),
+        
+            parts.append(
+                f"{example_id}.outputs",
+                (
+                    None,
+                    outputsb,
+                    "application/json",
+                    {"Content-Length": str(len(outputsb))},
+                ),
+            ),
+        
+            if example.attachments:
+                for attachment in example.attachments:
+                    parts.append(
+                        f"{example_id}.attachment.{attachment.mime_type}",
+                        (
+                            None,
+                            attachment.data,
+                            "application/json", # I feel like this is wrong
+                            {"Content-Length": str(len(attachment.data))},
+                        ),
+                    ),
+                    
+        encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
+        if encoder.len <= 20_000_000:  # ~20 MB
+            data = encoder.to_string()
+        else:
+            data = encoder
+        
+
+        response = self.request_with_retries(
+            "POST",
+            "/v1/examples/multipart", # No clue what this is supposed to be
+            request_kwargs={
+                "data": data,
+                "headers": {
+                    **self._headers,
+                    "Content-Type": encoder.content_type,
+                },
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
 
     def create_examples(
         self,
