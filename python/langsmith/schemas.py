@@ -88,9 +88,12 @@ class ExampleCreate(ExampleBase):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     split: Optional[Union[str, List[str]]] = None
 
+
 class ExampleCreateWithAttachments(ExampleCreate):
     """Example create with attachments."""
-    attachments: Optional[List[Attachment]] = None
+
+    attachments: Optional[Attachments] = None
+
 
 class Example(ExampleBase):
     """Example model."""
