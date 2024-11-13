@@ -1,14 +1,12 @@
-use pyo3::{
-    pymodule,
-    types::{PyModule, PyModuleMethods},
-    Bound, PyResult, Python,
-};
+use pyo3::{pymodule, types::PyModule, Bound, PyResult, Python};
 
 mod blocking_tracing_client;
+mod errors;
 mod py_run;
 
 #[pymodule]
-fn langsmith_pyo3(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<blocking_tracing_client::TracingClient>()?;
+fn langsmith_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    blocking_tracing_client::register(py, m)?;
+    errors::register(py, m)?;
     Ok(())
 }

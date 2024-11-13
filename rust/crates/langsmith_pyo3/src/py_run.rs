@@ -10,11 +10,11 @@ use pyo3::{
 //       since none of them are growable and we can make them more compact in memory
 
 #[derive(Debug)]
-pub(crate) struct RunCreateExtended(langsmith_tracing_client::client::RunCreateExtended);
+pub struct RunCreateExtended(langsmith_tracing_client::client::RunCreateExtended);
 
 impl RunCreateExtended {
     #[inline]
-    fn into_inner(self) -> langsmith_tracing_client::client::RunCreateExtended {
+    pub(crate) fn into_inner(self) -> langsmith_tracing_client::client::RunCreateExtended {
         self.0
     }
 }
@@ -89,7 +89,7 @@ pub(crate) struct RunCreate(langsmith_tracing_client::client::RunCreate);
 
 impl RunCreate {
     #[inline]
-    fn into_inner(self) -> langsmith_tracing_client::client::RunCreate {
+    pub(crate) fn into_inner(self) -> langsmith_tracing_client::client::RunCreate {
         self.0
     }
 }
@@ -129,7 +129,7 @@ pub(crate) struct RunCommon(langsmith_tracing_client::client::RunCommon);
 
 impl RunCommon {
     #[inline]
-    fn into_inner(self) -> langsmith_tracing_client::client::RunCommon {
+    pub(crate) fn into_inner(self) -> langsmith_tracing_client::client::RunCommon {
         self.0
     }
 }
