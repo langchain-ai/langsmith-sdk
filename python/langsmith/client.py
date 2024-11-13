@@ -5617,17 +5617,19 @@ class Client:
             if isinstance(prompt.last, RunnableBinding) and isinstance(
                 prompt.last.bound, BaseLanguageModel
             ):
-                seq: RunnableSequence = prompt.first | prompt.last.bound
+                seq = cast(RunnableSequence, prompt.first | prompt.last.bound)
                 if len(seq.steps) == 3:  # prompt | bound llm | output parser
                     rebound_llm = seq.steps[1]
                     prompt = RunnableSequence(
-                        prompt.first, rebound_llm.bind(**{prompt.last.kwargs}), seq.last
+                        prompt.first,
+                        rebound_llm.bind(**{**prompt.last.kwargs}),
+                        seq.last,
                     )
                 else:
                     prompt = seq  # Not sure
 
             elif isinstance(prompt.last, BaseLanguageModel):
-                prompt: RunnableSequence = prompt.first | prompt.last
+                prompt: RunnableSequence = prompt.first | prompt.last  # type: ignore[no-redef, assignment]
             else:
                 pass
 
