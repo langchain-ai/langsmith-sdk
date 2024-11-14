@@ -259,7 +259,7 @@ class DynamicRunEvaluator(RunEvaluator):
             cp = results.copy()
             cp["results"] = [
                 self._coerce_evaluation_result(r, source_run_id=source_run_id)
-                for i, r in enumerate(results["results"])
+                for r in results["results"]
             ]
             return EvaluationResults(**cp)
 
