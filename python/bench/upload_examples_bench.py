@@ -4,8 +4,7 @@ from typing import Dict
 from uuid import uuid4
 from langsmith.schemas import DataType, ExampleCreateWithAttachments
 import sys
-sys.path.append('./../langsmith')
-from client import Client
+from langsmith import Client
 
 def create_large_json(length: int) -> Dict:
     """Create a large JSON object for benchmarking purposes."""
@@ -38,7 +37,7 @@ def create_example_data(dataset_id: str, json_size: int) -> Dict:
         "outputs": create_large_json(json_size),
     })
 
-DATASET_NAME = "TEST DATASET"
+DATASET_NAME = "upsert_llm_evaluator_benchmark_dataset"
 def benchmark_example_uploading(num_examples: int, json_size: int, samples: int = 1) -> Dict:
     """
     Benchmark run creation with specified parameters.
@@ -64,13 +63,10 @@ def benchmark_example_uploading(num_examples: int, json_size: int, samples: int 
         old_start = time.perf_counter()
         inputs=[e.inputs for e in examples]
         outputs=[e.outputs for e in examples]
-        # the create_examples endpoint fails above 20mb
-        try:
-            client.create_examples(inputs=inputs,
-                                outputs=outputs,dataset_id=dataset.id)
-            old_elapsed = time.perf_counter() - old_start
-        except:
-            old_elapsed = 1000000
+        # the create_examples endpoint fails above 20mb - so this will crash with json_size > ~100
+        client.create_examples(inputs=inputs,
+                            outputs=outputs,dataset_id=dataset.id)
+        old_elapsed = time.perf_counter() - old_start
 
         # New method
         multipart_start = time.perf_counter()

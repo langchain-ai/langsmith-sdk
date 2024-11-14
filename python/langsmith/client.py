@@ -3373,14 +3373,14 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleCreateWithAttachments] = None,
-    ) -> dict: # Should we create an object for the return type - like UpsertExamplesResponse?
+        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = None,
+    ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples."""
-        if not (self.info.instance_flags or {}).get(
+        """ if not (self.info.instance_flags or {}).get(
                 "examples_multipart_enabled", False
             ):
             raise ValueError("Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version.")
-        
+         """
         if upserts is None:
             upserts = []
         parts: list[MultipartPart] = []
