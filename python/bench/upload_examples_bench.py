@@ -48,7 +48,7 @@ def benchmark_example_uploading(num_examples: int, json_size: int, samples: int 
 
 
     for _ in range(samples):
-        client = Client(api_url="https://dev.api.smith.langchain.com", api_key="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")
+        client = Client(api_url="https://dev.api.smith.langchain.com")
 
         if client.has_dataset(dataset_name=DATASET_NAME):
             client.delete_dataset(dataset_name=DATASET_NAME)
