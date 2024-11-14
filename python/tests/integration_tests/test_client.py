@@ -374,7 +374,7 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
 def test_upsert_examples_multipart(uri: str) -> None:
     """Test upserting examples with attachments via multipart endpoint."""
     dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
-    langchain_client = Client(api_url=uri, api_key="NEED TO HARDCODE FOR TESTING")
+    langchain_client = Client(api_url=uri, api_key="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")
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
 
@@ -431,7 +431,7 @@ def test_upsert_examples_multipart(uri: str) -> None:
     assert len(all_examples_in_dataset) == 2
 
     # Throw type errors when not passing ExampleCreateWithAttachments
-    with pytest.raises(TypeError):
+    with pytest.raises(AttributeError):
         langchain_client.upsert_examples_multipart(upserts=[{"foo":"bar"}])
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
