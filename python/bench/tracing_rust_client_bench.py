@@ -28,10 +28,10 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
             run["start_time"] = datetime.datetime.now(datetime.timezone.utc)
 
         endpoint = "http://localhost:1234/FILL_ME_IN"
-        queue_capacity = 128
-        batch_size = 16
-        batch_timeout_millis = 100
-        worker_threads = 4
+        queue_capacity = 1_000_000
+        batch_size = 100
+        batch_timeout_millis = 1000
+        worker_threads = 1
 
         print("initializing client")
         client = BlockingTracingClient(
@@ -64,7 +64,7 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
     }
 
 
-json_size = 5_000
+json_size = 3_000
 num_runs = 1000
 
 

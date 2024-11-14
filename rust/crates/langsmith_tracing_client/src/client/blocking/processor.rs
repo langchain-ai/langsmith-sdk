@@ -63,7 +63,7 @@ impl RunProcessor {
                         //
                         // HACK: This is very hacky!
                         //       Drain should only be used for benchmarking.
-                        std::thread::sleep(Duration::from_secs(60));
+                        std::thread::sleep(Duration::from_secs(120));
                     }
                     _ => {
                         buffer.push(queued_run);
