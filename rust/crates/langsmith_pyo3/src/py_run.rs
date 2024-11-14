@@ -213,7 +213,7 @@ fn extract_value(value: &Bound<'_, PyAny>) -> PyResult<sonic_rs::Value> {
     } else if let Ok(number) = value.extract::<u64>() {
         Ok(number.into())
     } else if let Ok(float) = value.extract::<f64>() {
-        Ok(sonic_rs::Value::new_f64(float).unwrap_or_default())
+        Ok(sonic_rs::Number::try_from(float).map(sonic_rs::Value::from).unwrap_or_default())
     } else if let Ok(string) = value.extract::<&str>() {
         Ok(string.into())
     } else if let Ok(bool) = value.extract::<bool>() {
@@ -235,9 +235,12 @@ fn extract_value(value: &Bound<'_, PyAny>) -> PyResult<sonic_rs::Value> {
             // Sonic wants all object keys to be strings,
             // so we'll error on non-string dict keys.
             let key_item = key_value_pair.get_item(0)?;
-            let key = key_item.extract::<&str>()?;
             let value = extract_value(&key_value_pair.get_item(1)?)?;
-            dict.insert(key, value);
+
+            // sonic_rs 0.3.14 doesn't allow `K: ?Sized` for the `&K` key,
+            // so we can't extract `&str` and have to get a `String` instead.
+            let key = key_item.extract::<String>()?;
+            dict.insert(&key, value);
         }
 
         Ok(dict.into_value())
