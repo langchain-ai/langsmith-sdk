@@ -3374,8 +3374,13 @@ class Client:
         self,
         *,
         upserts: List[ls_schemas.ExampleCreateWithAttachments] = None,
-    ) -> None:
+    ) -> dict: # Should we create an object for the return type - like UpsertExamplesResponse?
         """Upsert examples."""
+        if not (self.info.instance_flags or {}).get(
+                "examples_multipart_enabled", False
+            ):
+            raise ValueError("Your LangChain version does not allow using the multipart examples endpoint, please update to the latest version.")
+        
         if upserts is None:
             upserts = []
         parts: list[MultipartPart] = []
@@ -3491,6 +3496,7 @@ class Client:
             },
         )
         ls_utils.raise_for_status_with_text(response)
+        return response.json()
 
     def create_examples(
         self,
