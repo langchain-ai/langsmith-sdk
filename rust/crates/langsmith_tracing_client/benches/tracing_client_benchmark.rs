@@ -67,14 +67,8 @@ fn create_run_bytes(
 ) -> RunEventBytes {
     let run_create = create_run_create(attachments, inputs, outputs);
     let run_bytes = serde_json::to_vec(&run_create.run_create).unwrap();
-    let inputs_bytes = run_create
-        .io
-        .inputs
-        .map(|i| serde_json::to_vec(&i).unwrap());
-    let outputs_bytes = run_create
-        .io
-        .outputs
-        .map(|o| serde_json::to_vec(&o).unwrap());
+    let inputs_bytes = run_create.io.inputs.map(|i| serde_json::to_vec(&i).unwrap());
+    let outputs_bytes = run_create.io.outputs.map(|o| serde_json::to_vec(&o).unwrap());
 
     RunEventBytes {
         run_id: run_create.run_create.common.id,
@@ -112,25 +106,22 @@ fn create_large_json(len: usize) -> Value {
     })
 }
 
+#[expect(dead_code)]
 fn bench_run_create(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let server = rt.block_on(async {
         let mut server = Server::new_async().await;
-        server
-            .mock("POST", "/runs/multipart")
-            .with_status(202)
-            .create_async()
-            .await;
+        server.mock("POST", "/runs/multipart").with_status(202).create_async().await;
         server
     });
 
     let mut group = c.benchmark_group("run_create");
-    for batch_size in vec![50] {
-        for json_len in vec![1_000, 5_000] {
-            for num_runs in vec![500, 1_000] {
+    for batch_size in [50] {
+        for json_len in [1_000, 5_000] {
+            for num_runs in [500, 1_000] {
                 group.bench_with_input(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_async",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     &(batch_size, json_len, num_runs),
@@ -170,26 +161,23 @@ fn bench_run_create(c: &mut Criterion) {
     group.finish();
 }
 
+#[expect(dead_code, clippy::single_element_loop)]
 fn bench_run_create_iter_custom(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let server = rt.block_on(async {
         let mut server = Server::new_async().await;
-        server
-            .mock("POST", "/runs/multipart")
-            .with_status(202)
-            .create_async()
-            .await;
+        server.mock("POST", "/runs/multipart").with_status(202).create_async().await;
         server
     });
 
     let mut group = c.benchmark_group("run_create_custom_iter");
     let server_url = server.url();
-    for batch_size in vec![100] {
-        for json_len in vec![3_000] {
-            for num_runs in vec![1_000] {
+    for batch_size in [100] {
+        for json_len in [3_000] {
+            for num_runs in [1_000] {
                 group.bench_function(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_async",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     |b| {
@@ -223,7 +211,10 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
                                     println!("----------SHUTDOWN----------");
                                     client.shutdown().await.unwrap();
                                     println!("----------SHUTDOWN END----------");
-                                    println!("Elapsed time for shutdown: {:?}", start_shutdown.elapsed());
+                                    println!(
+                                        "Elapsed time for shutdown: {:?}",
+                                        start_shutdown.elapsed()
+                                    );
                                     elapsed_time += start.elapsed();
                                     println!("Elapsed time: {:?}", elapsed_time);
                                 }
@@ -238,26 +229,23 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
     group.finish();
 }
 
+#[expect(dead_code)]
 fn bench_run_bytes_iter_custom(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let server = rt.block_on(async {
         let mut server = Server::new_async().await;
-        server
-            .mock("POST", "/runs/multipart")
-            .with_status(202)
-            .create_async()
-            .await;
+        server.mock("POST", "/runs/multipart").with_status(202).create_async().await;
         server
     });
 
-    let mut group = c.benchmark_group("run_create_custom_iter");
+    let mut group = c.benchmark_group("run_create_bytes_iter");
     let server_url = server.url();
-    for batch_size in vec![50] {
-        for json_len in vec![1_000, 5_000] {
-            for num_runs in vec![500, 1_000] {
+    for batch_size in [50] {
+        for json_len in [1_000, 5_000] {
+            for num_runs in [500, 1_000] {
                 group.bench_function(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_async",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     |b| {
@@ -267,13 +255,12 @@ fn bench_run_bytes_iter_custom(c: &mut Criterion) {
                             async move {
                                 for _ in 0..iters {
                                     let runs: Vec<RunEventBytes> = (0..num_runs)
-                                        .map(|i| {
-                                            let mut run = create_run_bytes(
+                                        .map(|_i| {
+                                            create_run_bytes(
                                                 None,
                                                 Some(create_large_json(json_len)),
                                                 Some(create_large_json(json_len)),
-                                            );
-                                            run
+                                            )
                                         })
                                         .collect();
                                     let client_config =
@@ -299,24 +286,22 @@ fn bench_run_bytes_iter_custom(c: &mut Criterion) {
     group.finish();
 }
 
+#[expect(unused_variables, clippy::single_element_loop)]
 fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
     let server = {
         let mut server = Server::new();
-        server
-            .mock("POST", "/runs/multipart")
-            .with_status(202)
-            .create();
+        server.mock("POST", "/runs/multipart").with_status(202).create();
         server
     };
 
     let mut group = c.benchmark_group("run_create_custom_iter");
     let server_url = server.url();
-    for batch_size in vec![100] {
-        for json_len in vec![5_000] {
-            for num_runs in vec![1_000] {
+    for batch_size in [100] {
+        for json_len in [5_000] {
+            for num_runs in [1_000] {
                 group.bench_function(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_sync",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     |b| {
@@ -341,12 +326,14 @@ fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
 
                                 let start = std::time::Instant::now();
                                 for run in runs {
-                                    client.submit_run_create(run).unwrap();
+                                    std::hint::black_box(
+                                        client.submit_run_create(std::hint::black_box(run))
+                                    ).unwrap();
                                 }
 
                                 // shutdown the client to flush the queue
                                 let start_shutdown = std::time::Instant::now();
-                                client.shutdown().unwrap();
+                                std::hint::black_box(client.shutdown()).unwrap();
                                 // println!("Elapsed time for shutdown: {:?}", start_shutdown.elapsed());
                                 elapsed_time += start.elapsed();
                                 println!("Elapsed time: {:?}", elapsed_time);
