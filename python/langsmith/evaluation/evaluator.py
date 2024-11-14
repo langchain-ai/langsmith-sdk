@@ -236,9 +236,8 @@ class DynamicRunEvaluator(RunEvaluator):
                     "Expected an EvaluationResult object, or dict with a metric"
                     f" 'key' and optional 'score'; got empty result: {result}"
                 )
-            if "key" not in result:
-                if allow_no_key:
-                    result["key"] = self._name
+            if "key" not in result and allow_no_key:
+                result["key"] = self._name
             if all(k not in result for k in ("score", "value", "comment")):
                 raise ValueError(
                     "Expected an EvaluationResult object, or dict with a metric"
@@ -265,27 +264,41 @@ class DynamicRunEvaluator(RunEvaluator):
             return EvaluationResults(**cp)
 
         return self._coerce_evaluation_result(
-            cast(dict, results), allow_no_key=True, source_run_id=source_run_id
+            cast(dict, results), source_run_id=source_run_id, allow_no_key=True
         )
 
     def _format_result(
         self,
-        result: Union[EvaluationResult, EvaluationResults, dict],
+        result: Union[
+            EvaluationResult, EvaluationResults, dict, str, int, bool, float, list
+        ],
         source_run_id: uuid.UUID,
     ) -> Union[EvaluationResult, EvaluationResults]:
-        if isinstance(result, EvaluationResult):
+        if isinstance(result, (bool, float, int)):
+            result = {"score": result}
+        elif not result:
+            raise ValueError(
+                f"Expected a non-empty dict, str, bool, int, float, list, "
+                f"EvaluationResult, or EvaluationResults. Got {result}"
+            )
+        elif isinstance(result, EvaluationResult):
             if not result.source_run_id:
                 result.source_run_id = source_run_id
             return result
-        if not result:
+        elif isinstance(result, list):
+            if not all(isinstance(x, dict) for x in result):
+                raise ValueError(
+                    f"Expected a list of dicts or EvaluationResult. Received {result}."
+                )
+            result = {"results": result}  # type: ignore[misc]
+        elif isinstance(result, str):
+            result = {"value": result}
+        elif isinstance(result, dict):
+            pass
+        else:
             raise ValueError(
-                "Expected an EvaluationResult or EvaluationResults object, or a"
-                " dict with key and one of score or value, EvaluationResults,"
-                f" got {result}"
-            )
-        if not isinstance(result, dict):
-            raise ValueError(
-                f"Expected a dict, EvaluationResult, or EvaluationResults, got {result}"
+                f"Expected a dict, str, bool, int, float, list, EvaluationResult, or "
+                f"EvaluationResults. Got {result}"
             )
 
         return self._coerce_evaluation_results(result, source_run_id)
