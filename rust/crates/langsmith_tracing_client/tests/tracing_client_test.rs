@@ -6,7 +6,7 @@ use langsmith_tracing_client::client::{
 use mockito::Server;
 use multipart::server::Multipart;
 use reqwest::header::{HeaderMap, HeaderValue};
-use sonic_rs::{from_str, json, Value};
+use sonic_rs::{from_str, json, to_vec, Value};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -132,8 +132,8 @@ async fn test_tracing_client_submit_run_create() {
         },
         attachments: Some(attachments),
         io: RunIO {
-            inputs: Some(json!({"input": "value"})),
-            outputs: Some(json!({"output": "value"})),
+            inputs: Some(to_vec(&json!({"input": "value"})).expect("to_vec failed")),
+            outputs: Some(to_vec(&json!({"output": "value"})).expect("to_vec failed")),
         },
     };
 
@@ -279,7 +279,10 @@ async fn test_tracing_client_submit_run_update() {
             end_time: TimeValue::String("2024-10-16T12:00:00Z".to_string()),
         },
         attachments: Some(attachments),
-        io: RunIO { inputs: None, outputs: Some(json!({"updated_output": "value"})) },
+        io: RunIO {
+            inputs: None,
+            outputs: Some(to_vec(&json!({"updated_output": "value"})).expect("to_vec failed")),
+        },
     };
 
     client.submit_run_update(run_update).await.unwrap();

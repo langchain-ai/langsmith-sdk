@@ -20,8 +20,8 @@ pub enum TimeValue {
 
 #[derive(PartialEq, Debug)]
 pub struct RunIO {
-    pub inputs: Option<Value>,
-    pub outputs: Option<Value>,
+    pub inputs: Option<Vec<u8>>,
+    pub outputs: Option<Vec<u8>>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]

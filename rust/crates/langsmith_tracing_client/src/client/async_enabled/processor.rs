@@ -1,7 +1,7 @@
 use futures::stream::{FuturesUnordered, StreamExt};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::multipart::{Form, Part};
-use sonic_rs::{to_value, to_vec};
+use sonic_rs::to_vec;
 use tokio::sync::mpsc::Receiver;
 use tokio::task;
 use tokio::time::{sleep, Instant};
@@ -305,7 +305,7 @@ impl RunProcessor {
                     // Collect JSON data
                     json_data.push((
                         format!("post.{}", run_id),
-                        to_value(&run_create).unwrap(), // TODO: get rid of unwrap
+                        to_vec(&run_create).unwrap(), // TODO: get rid of unwrap
                     ));
 
                     if let Some(inputs) = io.inputs {
@@ -332,7 +332,7 @@ impl RunProcessor {
                     // Collect JSON data
                     json_data.push((
                         format!("patch.{}", run_id),
-                        to_value(&run_update).unwrap(), // TODO: get rid of unwrap
+                        to_vec(&run_update).unwrap(), // TODO: get rid of unwrap
                     ));
 
                     if let Some(outputs) = io.outputs {
@@ -369,8 +369,7 @@ impl RunProcessor {
             let start_time_in_parallel = Instant::now();
             json_data
                 .into_par_iter()
-                .map(|(part_name, value)| {
-                    let data_bytes = to_vec(&value).unwrap(); // TODO: get rid of unwrap
+                .map(|(part_name, data_bytes)| {
                     let part_size = data_bytes.len() as u64;
                     let part = Part::bytes(data_bytes)
                         .mime_str(&format!("application/json; length={}", part_size))?;

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::blocking::multipart::Part;
-use sonic_rs::{to_value, to_vec};
+use sonic_rs::to_vec;
 
 use super::tracing_client::ClientConfig;
 use crate::client::errors::TracingClientError;
@@ -116,7 +116,7 @@ impl RunProcessor {
                     // Collect JSON data
                     json_data.push((
                         format!("post.{}", run_id),
-                        to_value(&run_create).unwrap(), // TODO: get rid of unwrap
+                        to_vec(&run_create).unwrap(), // TODO: get rid of unwrap
                     ));
 
                     if let Some(inputs) = io.inputs {
@@ -149,7 +149,7 @@ impl RunProcessor {
                     // Collect JSON data
                     json_data.push((
                         format!("patch.{}", run_id),
-                        to_value(&run_update).unwrap(), // TODO: get rid of unwrap
+                        to_vec(&run_update).unwrap(), // TODO: get rid of unwrap
                     ));
 
                     if let Some(outputs) = io.outputs {
@@ -188,8 +188,7 @@ impl RunProcessor {
         let start = Instant::now();
         let json_parts = json_data
             .into_par_iter()
-            .map(|(part_name, value)| {
-                let data_bytes = to_vec(&value).unwrap(); // TODO: get rid of unwrap
+            .map(|(part_name, data_bytes)| {
                 let part_size = data_bytes.len() as u64;
                 let part = Part::bytes(data_bytes)
                     .mime_str(&format!("application/json; length={}", part_size))?;
