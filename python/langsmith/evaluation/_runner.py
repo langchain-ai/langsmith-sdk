@@ -58,6 +58,7 @@ from langsmith.evaluation.integrations import LangChainStringEvaluator
 
 if TYPE_CHECKING:
     import pandas as pd
+    from langchain_core.runnables import Runnable
 
     DataFrame = pd.DataFrame
 else:
@@ -96,7 +97,7 @@ AEVALUATOR_T = Union[
 
 
 def evaluate(
-    target: TARGET_T,
+    target: Union[TARGET_T, Runnable],
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -878,12 +879,12 @@ def _print_comparative_experiment_start(
         )
 
 
-def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run]]) -> bool:
-    return callable(target) or (hasattr(target, "invoke") and callable(target.invoke))
+def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run], Runnable]) -> bool:
+    return callable(target) or _is_langchain_runnable(target)
 
 
 def _evaluate(
-    target: Union[TARGET_T, Iterable[schemas.Run]],
+    target: Union[TARGET_T, Iterable[schemas.Run], Runnable],
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -1664,12 +1665,13 @@ def _resolve_data(
 
 
 def _ensure_traceable(
-    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],
+    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict] | Runnable,
 ) -> rh.SupportsLangsmithExtra[[dict], dict]:
     """Ensure the target function is traceable."""
-    if not callable(target):
+    if not _is_callable(target):
         raise ValueError(
-            "Target must be a callable function. For example:\n\n"
+            "Target must be a callable function or a langchain/langgraph object. For "
+            "example:\n\n"
             "def predict(inputs: dict) -> dict:\n"
             "    # do work, like chain.invoke(inputs)\n"
             "    return {...}\n\n"
@@ -1679,9 +1681,11 @@ def _ensure_traceable(
             ")"
         )
     if rh.is_traceable_function(target):
-        fn = target
+        fn: rh.SupportsLangsmithExtra[[dict], dict] = target
     else:
-        fn = rh.traceable(name="Target")(target)
+        if _is_langchain_runnable(target):
+            target = target.invoke  # type: ignore[union-attr]
+        fn = rh.traceable(name="Target")(cast(Callable, target))
     return fn
 
 
@@ -1709,9 +1713,8 @@ def _resolve_experiment(
         return experiment_, runs
     # If we have runs, that means the experiment was already started.
     if runs is not None:
-        if runs is not None:
-            runs_, runs = itertools.tee(runs)
-            first_run = next(runs_)
+        runs_, runs = itertools.tee(runs)
+        first_run = next(runs_)
         experiment_ = client.read_project(project_id=first_run.session_id)
         if not experiment_.name:
             raise ValueError("Experiment name not found for provided runs.")
@@ -1923,3 +1926,17 @@ def _flatten_experiment_results(
         }
         for x in results[start:end]
     ]
+
+
+@functools.lru_cache(maxsize=1)
+def _import_langchain_runnable() -> Optional[type]:
+    try:
+        from langchain_core.runnables import Runnable
+
+        return Runnable
+    except ImportError:
+        return None
+
+
+def _is_langchain_runnable(o: Any) -> bool:
+    return bool((Runnable := _import_langchain_runnable()) and isinstance(o, Runnable))

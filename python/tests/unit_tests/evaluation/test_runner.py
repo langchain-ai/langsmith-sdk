@@ -80,7 +80,9 @@ class FakeRequest:
                 res = MagicMock()
                 res.json.return_value = {
                     "runs": [
-                        r for r in self.runs.values() if "reference_example_id" in r
+                        r
+                        for r in self.runs.values()
+                        if r["trace_id"] == r["id"] and r.get("reference_example_id")
                     ]
                 }
                 return res
@@ -120,7 +122,8 @@ def _wait_until(condition: Callable, timeout: int = 8):
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
-def test_evaluate_results(blocking: bool) -> None:
+@pytest.mark.parametrize("as_runnable", [False, True])
+def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
@@ -179,6 +182,15 @@ def test_evaluate_results(blocking: bool) -> None:
         else:
             ordering_of_stuff.append("predict")
         return {"output": inputs["in"] + 1}
+
+    if as_runnable:
+        try:
+            from langchain_core.runnables import RunnableLambda
+        except ImportError:
+            pytest.skip("langchain-core not installed.")
+            return
+        else:
+            predict = RunnableLambda(predict)
 
     def score_value_first(run, example):
         ordering_of_stuff.append("evaluate")
@@ -278,26 +290,24 @@ def test_evaluate_raises_for_async():
     with pytest.raises(ValueError, match=match):
         evaluate(functools.partial(my_other_func, other_val=3), data="foo")
 
+    if sys.version_info < (3, 10):
+        return
     try:
         from langchain_core.runnables import RunnableLambda
     except ImportError:
         pytest.skip("langchain-core not installed.")
-
-    @RunnableLambda
-    def foo(inputs: dict):
-        return "bar"
-
-    with pytest.raises(ValueError, match=match):
-        evaluate(foo.ainvoke, data="foo")
-    if sys.version_info < (3, 10):
         return
     with pytest.raises(ValueError, match=match):
-        evaluate(functools.partial(foo.ainvoke, inputs={"foo": "bar"}), data="foo")
+        evaluate(
+            functools.partial(RunnableLambda(my_func).ainvoke, inputs={"foo": "bar"}),
+            data="foo",
+        )
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
-async def test_aevaluate_results(blocking: bool) -> None:
+@pytest.mark.parametrize("as_runnable", [False, True])
+async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
@@ -357,6 +367,15 @@ async def test_aevaluate_results(blocking: bool) -> None:
         else:
             ordering_of_stuff.append("predict")
         return {"output": inputs["in"] + 1}
+
+    if as_runnable:
+        try:
+            from langchain_core.runnables import RunnableLambda
+        except ImportError:
+            pytest.skip("langchain-core not installed.")
+            return
+        else:
+            predict = RunnableLambda(predict)
 
     async def score_value_first(run, example):
         ordering_of_stuff.append("evaluate")

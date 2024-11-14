@@ -40,7 +40,6 @@ from typing_extensions import ParamSpec
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
 from langsmith import schemas as ls_schemas
-from langsmith._internal import _patch as patch_urllib3
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -494,6 +493,8 @@ def with_cache(
             'pip install -U "langsmith[vcr]"'
         )
     # Fix concurrency issue in vcrpy's patching
+    from langsmith._internal import _patch as patch_urllib3
+
     patch_urllib3.patch_urllib3()
 
     def _filter_request_headers(request: Any) -> Any:
