@@ -3379,7 +3379,7 @@ class Client:
         if not (self.info.instance_flags or {}).get(
                 "examples_multipart_enabled", False
             ):
-            raise ValueError("Your LangChain version does not allow using the multipart examples endpoint, please update to the latest version.")
+            raise ValueError("Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version.")
         
         if upserts is None:
             upserts = []
