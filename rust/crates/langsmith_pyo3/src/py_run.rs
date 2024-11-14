@@ -1,6 +1,9 @@
 use langsmith_tracing_client::client::{Attachment, RunIO, TimeValue};
 use pyo3::{
-    types::{PyAnyMethods as _, PyDateTime, PyMapping, PyMappingMethods, PySequence, PyTuple},
+    types::{
+        PyAnyMethods as _, PyBytesMethods, PyDateTime, PyMapping, PyMappingMethods, PySequence,
+        PyTuple,
+    },
     Bound, FromPyObject, PyAny, PyResult,
 };
 
@@ -32,8 +35,8 @@ impl FromPyObject<'_> for RunCreateExtended {
         };
 
         let io = RunIO {
-            inputs: extract_optional_value_from_mapping(value, "inputs")?,
-            outputs: extract_optional_value_from_mapping(value, "outputs")?,
+            inputs: extract_optional_bytes_from_mapping(value, "inputs")?,
+            outputs: extract_optional_bytes_from_mapping(value, "outputs")?,
         };
 
         Ok(Self(langsmith_tracing_client::client::RunCreateExtended {
@@ -186,6 +189,25 @@ fn extract_isoformat_time_value(value: &Bound<'_, PyDateTime>) -> PyResult<TimeV
     let string_value = value.call_method0("isoformat")?.extract::<String>()?;
 
     Ok(TimeValue::String(string_value))
+}
+
+fn extract_bytes(value: &Bound<'_, PyAny>) -> Option<Vec<u8>> {
+    value.downcast::<pyo3::types::PyBytes>().map(|bytes| bytes.as_bytes().to_owned()).ok()
+}
+
+fn extract_optional_bytes_from_mapping(
+    mapping: &Bound<'_, PyAny>,
+    key: &str,
+) -> PyResult<Option<Vec<u8>>> {
+    match mapping.get_item(key) {
+        Ok(value) => {
+            if value.is_none() {
+                return Ok(None);
+            }
+            Ok(extract_bytes(&value))
+        }
+        Err(_) => Ok(None),
+    }
 }
 
 // TODO: `Option<Value>` seems suspect as a type, since `Value` can be null already.

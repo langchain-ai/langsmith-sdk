@@ -52,21 +52,21 @@ impl BlockingTracingClient {
     // N.B.: We use `Py<Self>` so that we don't hold the GIL while running this method.
     //       `slf.get()` below is only valid if the `Self` type is `Sync` and `pyclass(frozen)`,
     //       which is enforced at compile-time.
-    pub fn create_run(slf: &Bound<'_, Self>, run: super::py_run::RunCreateExtended) -> PyResult<()> {
+    pub fn create_run(
+        slf: &Bound<'_, Self>,
+        run: super::py_run::RunCreateExtended,
+    ) -> PyResult<()> {
         let unpacked = slf.get();
-        Python::allow_threads(slf.py(), || {
-            unpacked.client.submit_run_create(run.into_inner())
-        }).map_err(|e| {
-            // TODO: There's probably a more elegant way to handle errors than this.
-            crate::errors::TracingClientError::new_err(format!("{e}").into_py(slf.py()))
-        })
+        Python::allow_threads(slf.py(), || unpacked.client.submit_run_create(run.into_inner()))
+            .map_err(|e| {
+                // TODO: There's probably a more elegant way to handle errors than this.
+                crate::errors::TracingClientError::new_err(format!("{e}").into_py(slf.py()))
+            })
     }
 
     pub fn drain(slf: &Bound<'_, Self>) -> PyResult<()> {
         let unpacked = slf.get();
-        Python::allow_threads(slf.py(), || {
-            unpacked.client.drain()
-        }).map_err(|e| {
+        Python::allow_threads(slf.py(), || unpacked.client.drain()).map_err(|e| {
             // TODO: There's probably a more elegant way to handle errors than this.
             crate::errors::TracingClientError::new_err(format!("{e}").into_py(slf.py()))
         })

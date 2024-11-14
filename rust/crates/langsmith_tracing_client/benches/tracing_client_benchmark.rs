@@ -59,7 +59,10 @@ fn create_run_create(
             reference_example_id: None,
         },
         attachments,
-        io: RunIO { inputs, outputs },
+        io: RunIO {
+            inputs: inputs.map(|i| serde_json::to_vec(&i).unwrap()),
+            outputs: outputs.map(|i| serde_json::to_vec(&i).unwrap()),
+        },
     }
 }
 
@@ -68,10 +71,10 @@ fn create_run_bytes(
     inputs: Option<Value>,
     outputs: Option<Value>,
 ) -> RunEventBytes {
+    let inputs_bytes = inputs.as_ref().map(|i| serde_json::to_vec(&i).unwrap());
+    let outputs_bytes = outputs.as_ref().map(|o| serde_json::to_vec(&o).unwrap());
     let run_create = create_run_create(attachments, inputs, outputs);
     let run_bytes = serde_json::to_vec(&run_create.run_create).unwrap();
-    let inputs_bytes = run_create.io.inputs.map(|i| serde_json::to_vec(&i).unwrap());
-    let outputs_bytes = run_create.io.outputs.map(|o| serde_json::to_vec(&o).unwrap());
 
     RunEventBytes {
         run_id: run_create.run_create.common.id,
@@ -330,8 +333,9 @@ fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
                                 let start = std::time::Instant::now();
                                 for run in runs {
                                     std::hint::black_box(
-                                        client.submit_run_create(std::hint::black_box(run))
-                                    ).unwrap();
+                                        client.submit_run_create(std::hint::black_box(run)),
+                                    )
+                                    .unwrap();
                                 }
 
                                 // shutdown the client to flush the queue
