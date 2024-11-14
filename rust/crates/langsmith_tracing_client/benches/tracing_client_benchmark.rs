@@ -124,7 +124,7 @@ fn bench_run_create(c: &mut Criterion) {
             for num_runs in [500, 1_000] {
                 group.bench_with_input(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_async",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     &(batch_size, json_len, num_runs),
@@ -180,7 +180,7 @@ fn bench_run_create_iter_custom(c: &mut Criterion) {
             for num_runs in [1_000] {
                 group.bench_function(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_async",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     |b| {
@@ -241,14 +241,14 @@ fn bench_run_bytes_iter_custom(c: &mut Criterion) {
         server
     });
 
-    let mut group = c.benchmark_group("run_create_custom_iter");
+    let mut group = c.benchmark_group("run_create_bytes_iter");
     let server_url = server.url();
     for batch_size in [50] {
         for json_len in [1_000, 5_000] {
             for num_runs in [500, 1_000] {
                 group.bench_function(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_async",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     |b| {
@@ -304,7 +304,7 @@ fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
             for num_runs in [1_000] {
                 group.bench_function(
                     BenchmarkId::new(
-                        "run_create",
+                        "run_create_sync",
                         format!("batch_{}_json_{}_runs_{}", batch_size, json_len, num_runs),
                     ),
                     |b| {
@@ -329,12 +329,14 @@ fn bench_run_create_sync_iter_custom(c: &mut Criterion) {
 
                                 let start = std::time::Instant::now();
                                 for run in runs {
-                                    client.submit_run_create(run).unwrap();
+                                    std::hint::black_box(
+                                        client.submit_run_create(std::hint::black_box(run))
+                                    ).unwrap();
                                 }
 
                                 // shutdown the client to flush the queue
                                 let start_shutdown = std::time::Instant::now();
-                                client.shutdown().unwrap();
+                                std::hint::black_box(client.shutdown()).unwrap();
                                 // println!("Elapsed time for shutdown: {:?}", start_shutdown.elapsed());
                                 elapsed_time += start.elapsed();
                                 println!("Elapsed time: {:?}", elapsed_time);
