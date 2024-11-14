@@ -17,7 +17,7 @@ from typing import (
     cast,
 )
 
-from typing_extensions import TypedDict, get_type_hints
+from typing_extensions import TypedDict
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
@@ -644,42 +644,42 @@ def _normalize_evaluator_func(
     Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT],
     Callable[[Run, Optional[Example]], Awaitable[_RUNNABLE_OUTPUT]],
 ]:
-    # for backwards compatibility, if args are untyped we assume they correspond to
-    # Run and Example:
-    if not (type_hints := get_type_hints(func)):
-        return func
-    elif {Run, Example, Optional[Example]}.intersection(type_hints.values()):
+    supported_args = ("run", "example", "inputs", "outputs", "reference_outputs")
+    sig = inspect.signature(func)
+    positional_no_default = [
+        pname
+        for pname, p in sig.parameters.items()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+        and p.default is p.empty
+    ]
+    if (
+        not all(pname in supported_args for pname in positional_no_default)
+        and len(positional_no_default) != 2
+    ):
+        msg = (
+            f"Invalid evaluator function argument names. Supported positional args are "
+            f"{supported_args}. Please see "
+            "https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"
+            # noqa: E501
+        )
+        raise ValueError(msg)
+    elif not all(pname in supported_args for pname in positional_no_default):
+        # For backwards compatibility we assume custom arg names are Run and Example
+        # types, respectively.
         return func
     else:
-        sig = inspect.signature(func)
-        num_positional = len(
-            [
-                p
-                for p in sig.parameters.values()
-                if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
-            ]
-        )
-        has_positional_var = any(
-            p.kind == p.VAR_POSITIONAL for p in sig.parameters.values()
-        )
-        if not (
-            num_positional in (2, 3) or (num_positional <= 3 and has_positional_var)
-        ):
-            msg = (
-                "Invalid evaluator function. Expected to take either 2 or 3 positional "
-                "arguments. Please see "
-                "https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"  # noqa: E501
-            )
-            raise ValueError(msg)
-
         if inspect.iscoroutinefunction(func):
 
             async def awrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
-                args = (example.inputs, run.outputs or {}, example.outputs or {})
-                if has_positional_var:
-                    return await func(*args)
-                else:
-                    return await func(*args[:num_positional])
+                arg_map = {
+                    "run": run,
+                    "example": example,
+                    "inputs": example.inputs,
+                    "outputs": run.outputs or {},
+                    "reference_outputs": example.outputs or {},
+                }
+                args = (arg_map[arg] for arg in positional_no_default)
+                return await func(*args)
 
             awrapper.__name__ = (
                 getattr(func, "__name__")
@@ -691,11 +691,15 @@ def _normalize_evaluator_func(
         else:
 
             def wrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
-                args = (example.inputs, run.outputs or {}, example.outputs or {})
-                if has_positional_var:
-                    return func(*args)
-                else:
-                    return func(*args[:num_positional])
+                arg_map = {
+                    "run": run,
+                    "example": example,
+                    "inputs": example.inputs,
+                    "outputs": run.outputs or {},
+                    "reference_outputs": example.outputs or {},
+                }
+                args = (arg_map[arg] for arg in positional_no_default)
+                return func(*args)
 
             wrapper.__name__ = (
                 getattr(func, "__name__")
