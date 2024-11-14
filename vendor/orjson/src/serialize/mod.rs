@@ -8,4 +8,6 @@ mod serializer;
 mod state;
 mod writer;
 
-pub use serializer::serialize;
+pub use serializer::{serialize, PyObjectSerializer};
+pub use state::SerializerState;
+pub use writer::{to_writer, WriteExt};

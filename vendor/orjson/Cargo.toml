@@ -27,7 +27,7 @@ include = [
 
 [lib]
 name = "orjson"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []

@@ -1,11 +1,10 @@
 use langsmith_tracing_client::client::{Attachment, RunIO, TimeValue};
 use pyo3::{
-    types::{
-        PyAnyMethods as _, PyBytesMethods, PyDateTime, PyMapping, PyMappingMethods, PySequence,
-        PyTuple,
-    },
+    types::{PyAnyMethods as _, PyDateTime, PyMapping, PyMappingMethods, PySequence, PyTuple},
     Bound, FromPyObject, PyAny, PyResult,
 };
+
+use crate::{errors::TracingClientError, serialization};
 
 // TODO: consider interning all the strings here
 
@@ -35,8 +34,8 @@ impl FromPyObject<'_> for RunCreateExtended {
         };
 
         let io = RunIO {
-            inputs: extract_optional_bytes_from_mapping(value, "inputs")?,
-            outputs: extract_optional_bytes_from_mapping(value, "outputs")?,
+            inputs: serialize_optional_dict_value(value, "inputs")?,
+            outputs: serialize_optional_dict_value(value, "outputs")?,
         };
 
         Ok(Self(langsmith_tracing_client::client::RunCreateExtended {
@@ -191,11 +190,7 @@ fn extract_isoformat_time_value(value: &Bound<'_, PyDateTime>) -> PyResult<TimeV
     Ok(TimeValue::String(string_value))
 }
 
-fn extract_bytes(value: &Bound<'_, PyAny>) -> Option<Vec<u8>> {
-    value.downcast::<pyo3::types::PyBytes>().map(|bytes| bytes.as_bytes().to_owned()).ok()
-}
-
-fn extract_optional_bytes_from_mapping(
+fn serialize_optional_dict_value(
     mapping: &Bound<'_, PyAny>,
     key: &str,
 ) -> PyResult<Option<Vec<u8>>> {
@@ -204,7 +199,9 @@ fn extract_optional_bytes_from_mapping(
             if value.is_none() {
                 return Ok(None);
             }
-            Ok(extract_bytes(&value))
+            serialization::dumps(value.as_ptr())
+                .map(Option::Some)
+                .map_err(|e| TracingClientError::new_err(e))
         }
         Err(_) => Ok(None),
     }
