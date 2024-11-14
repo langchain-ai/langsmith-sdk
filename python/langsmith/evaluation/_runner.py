@@ -1849,7 +1849,7 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
     try:
         tree = ast.parse(python_code)
         function_def = tree.body[0]
-        if not isinstance(function_def, ast.FunctionDef):
+        if not isinstance(function_def, (ast.FunctionDef, ast.AsyncFunctionDef)):
             return []
 
         variables = {}

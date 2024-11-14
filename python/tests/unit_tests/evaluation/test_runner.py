@@ -206,11 +206,30 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
 
+    def eval_float(run, example):
+        ordering_of_stuff.append("evaluate")
+        return 0.2
+
+    def eval_str(run, example):
+        ordering_of_stuff.append("evaluate")
+        return "good"
+
+    def eval_list(run, example):
+        ordering_of_stuff.append("evaluate")
+        return [
+            {"score": True, "key": "list_eval_bool"},
+            {"score": 1, "key": "list_eval_int"},
+        ]
+
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
         score_unpacked_inputs_outputs_reference,
+        eval_float,
+        eval_str,
+        eval_list,
     ]
+
     results = evaluate(
         predict,
         client=client,
@@ -274,6 +293,22 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         assert r["evaluation_results"]["results"][0].score == 0.7
         assert r["run"].reference_example_id in dev_xample_ids
     assert not fake_request.should_fail
+
+    # Returning list of non-dicts not supported.
+    def bad_eval_list(run, example):
+        ordering_of_stuff.append("evaluate")
+        return ["foo", 1]
+
+    results = evaluate(
+        predict,
+        client=client,
+        data=dev_split,
+        evaluators=[bad_eval_list],
+        num_repetitions=NUM_REPETITIONS,
+        blocking=blocking,
+    )
+    for r in results:
+        assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
 
 def test_evaluate_raises_for_async():
@@ -391,10 +426,28 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
 
+    async def eval_float(run, example):
+        ordering_of_stuff.append("evaluate")
+        return 0.2
+
+    async def eval_str(run, example):
+        ordering_of_stuff.append("evaluate")
+        return "good"
+
+    async def eval_list(run, example):
+        ordering_of_stuff.append("evaluate")
+        return [
+            {"score": True, "key": "list_eval_bool"},
+            {"score": 1, "key": "list_eval_int"},
+        ]
+
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
         score_unpacked_inputs_outputs_reference,
+        eval_float,
+        eval_str,
+        eval_list,
     ]
 
     results = await aevaluate(
@@ -462,3 +515,19 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         assert r["evaluation_results"]["results"][0].score == 0.7
         assert r["run"].reference_example_id in dev_xample_ids
     assert not fake_request.should_fail
+    # Returning list of non-dicts not supported.
+
+    async def bad_eval_list(run, example):
+        ordering_of_stuff.append("evaluate")
+        return ["foo", 1]
+
+    results = await aevaluate(
+        predict,
+        client=client,
+        data=dev_split,
+        evaluators=[bad_eval_list],
+        num_repetitions=NUM_REPETITIONS,
+        blocking=blocking,
+    )
+    async for r in results:
+        assert r["evaluation_results"]["results"][0].extra == {"error": True}
