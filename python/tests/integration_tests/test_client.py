@@ -389,7 +389,7 @@ def test_upsert_examples_multipart() -> None:
         id=example_id,
         dataset_id=dataset.id,
         inputs={"text": "hello world"},
-        outputs={"response": "greeting"},
+        # test without outputs
         attachments={
             "test_file": ("text/plain", b"test content"),
         },
@@ -409,7 +409,7 @@ def test_upsert_examples_multipart() -> None:
     
     created_example_1 = langchain_client.read_example(created_examples['example_ids'][0])
     assert created_example_1.inputs["text"] == "hello world"
-    assert created_example_1.outputs["response"] == "greeting"
+    assert created_example_1.outputs == None
 
     created_example_2 = langchain_client.read_example(created_examples['example_ids'][1])
     assert created_example_2.inputs["text"] == "foo bar"

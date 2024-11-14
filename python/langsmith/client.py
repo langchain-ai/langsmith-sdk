@@ -3416,7 +3416,6 @@ class Client:
             )
 
             inputsb = _dumps_json(example.inputs)
-            outputsb = _dumps_json(example.outputs)
 
             (
                 parts.append(
@@ -3431,20 +3430,22 @@ class Client:
                     )
                 ),
             )
-
-            (
-                parts.append(
-                    (
-                        f"{example_id}.outputs",
+            
+            if example.outputs:
+                outputsb = _dumps_json(example.outputs)
+                (
+                    parts.append(
                         (
-                            None,
-                            outputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
-                ),
-            )
+                            f"{example_id}.outputs",
+                            (
+                                None,
+                                outputsb,
+                                "application/json",
+                                {},
+                            ),
+                        )
+                    ),
+                )
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
