@@ -3373,33 +3373,28 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleCreateWithAttachments] = [],
+        upserts: List[ls_schemas.ExampleCreateWithAttachments] = None,
     ) -> None:
         """Upsert examples."""
-        # not sure if the below checks are necessary
-        if not isinstance(upserts, list):
-            raise TypeError(f"upserts must be a list, got {type(upserts)}")
-        for item in upserts:
-            if not isinstance(item, ls_schemas.ExampleCreateWithAttachments):
-                raise TypeError(f"Each item must be ExampleCreateWithAttachments, got {type(item)}")
-            
+        if upserts is None:
+            upserts = []
         parts: list[MultipartPart] = []
 
         for example in upserts:
             if example.id is not None:
-                example_id = str(example.id)  # is the conversion to string neccessary?
+                example_id = str(example.id)
             else:
                 example_id = str(uuid.uuid4())
 
-            remaining_values = {
+            example_body = {
                 "dataset_id": example.dataset_id,
                 "created_at": example.created_at,
             }
             if example.metadata is not None:
-                remaining_values["metadata"] = example.metadata
+                example_body["metadata"] = example.metadata
             if example.split is not None:
-                remaining_values["split"] = example.split
-            valb = _dumps_json(remaining_values)
+                example_body["split"] = example.split
+            valb = _dumps_json(example_body)
 
             (
                 parts.append(
@@ -3409,7 +3404,7 @@ class Client:
                             None,
                             valb,
                             "application/json",
-                            {"Content-Length": str(len(valb))},
+                            {},
                         ),
                     )
                 ),
@@ -3426,7 +3421,7 @@ class Client:
                             None,
                             inputsb,
                             "application/json",
-                            {"Content-Length": str(len(inputsb))},
+                            {},
                         ),
                     )
                 ),
@@ -3440,7 +3435,7 @@ class Client:
                             None,
                             outputsb,
                             "application/json",
-                            {"Content-Length": str(len(outputsb))},
+                            {},
                         ),
                     )
                 ),
@@ -3486,7 +3481,7 @@ class Client:
 
         response = self.request_with_retries(
             "POST",
-            "/v1/platform/examples/multipart",  # No clue what this is supposed to be
+            "/v1/platform/examples/multipart",
             request_kwargs={
                 "data": data,
                 "headers": {
