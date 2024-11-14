@@ -409,3 +409,22 @@ p {
   font-size: 0.9rem;
   margin-bottom: 0.5rem;
 }
+
+.gp {
+  display: none !important;
+}
+
+.doctest-output {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-left: 3px solid #dee2e6;
+  color: #666;
+  font-family: var(--pst-font-family-monospace);
+}
+
+.highlight + .highlight,
+.highlight + .doctest-output {
+    margin-top: 1rem;
+}
