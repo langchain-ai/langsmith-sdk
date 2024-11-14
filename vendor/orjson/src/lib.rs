@@ -28,6 +28,9 @@ mod serialize;
 mod str;
 mod typeref;
 
+pub use typeref::init_typerefs;
+pub use serialize::{to_writer, WriteExt, PyObjectSerializer, SerializerState};
+
 use core::ffi::{c_char, c_int, c_void};
 use pyo3_ffi::*;
 

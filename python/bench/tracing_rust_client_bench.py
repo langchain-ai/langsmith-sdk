@@ -5,7 +5,6 @@ from typing import Dict
 from unittest.mock import Mock
 from uuid import uuid4
 
-import orjson
 from langsmith_pyo3 import BlockingTracingClient
 from tracing_client_bench import create_run_data
 
@@ -44,8 +43,6 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
         print("beginning runs")
         start = time.perf_counter()
         for run in runs:
-            run["inputs"] = orjson.dumps(run["inputs"])
-            run["outputs"] = orjson.dumps(run["outputs"])
             client.create_run(run)
 
         # wait for client queues to be empty

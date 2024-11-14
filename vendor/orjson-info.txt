@@ -1,5 +1,7 @@
 cloned from commit 8ece0d4bec4553934aa5883c15efdc3ccc49515f
 
+then change crate-type to add "rlib" type so it can be used directly from Rust
+
 then apply diff:
 
 diff --git a/Cargo.toml b/Cargo.toml
