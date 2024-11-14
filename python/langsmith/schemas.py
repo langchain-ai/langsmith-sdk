@@ -89,7 +89,7 @@ class ExampleCreate(ExampleBase):
     split: Optional[Union[str, List[str]]] = None
 
 
-class ExampleCreateWithAttachments(ExampleCreate):
+class ExampleUpsertWithAttachments(ExampleCreate):
     """Example create with attachments."""
 
     attachments: Optional[Attachments] = None
@@ -131,12 +131,6 @@ class Example(ExampleBase):
         return None
 
 
-class ExampleSearch(ExampleBase):
-    """Example returned via search."""
-
-    id: UUID
-
-
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
 
@@ -151,6 +145,10 @@ class ExampleUpdate(BaseModel):
 
         frozen = True
 
+class ExampleUpdateWithAttachments(ExampleUpdate):
+    """Example update with attachments."""
+    id: UUID
+    attachments: Optional[Attachments] = None
 
 class DataType(str, Enum):
     """Enum for dataset data types."""
@@ -988,3 +986,11 @@ class UsageMetadata(TypedDict):
 
     Does *not* need to sum to full output token count. Does *not* need to have all keys.
     """
+
+class UpsertExamplesResponse(TypedDict):
+    """Response object returned from the upsert_examples_multipart method."""
+
+    count: int
+    """The number of examples that were upserted."""
+    example_ids: List[str]
+    """The ids of the examples that were upserted."""
