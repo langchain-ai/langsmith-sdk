@@ -4,20 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { workspace = true }
-uuid = { workspace = true }
-serde_json = { workspace = true }
-serde = { workspace = true }
-chrono = { workspace = true }
-reqwest = { workspace = true }
-thiserror = { workspace = true }
-tokio-util = { workspace = true }
-tempfile = { workspace = true }
-futures = { workspace = true }
-rayon = { workspace = true }
-sonic-rs = { workspace = true }
-ureq = { workspace = true }
-flate2 = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.11.0", features = ["v4"] }
+serde_json = "1.0.128"
+serde = { version = "1.0.210", features = ["derive"] }
+chrono = "0.4.38"
+reqwest = { version = "0.12.8", features = ["multipart", "stream", "blocking"] }
+thiserror = "1.0"
+tokio-util = "0.7.12"
+tempfile = "3.13.0"
+pyo3-asyncio = { version = "0.20.0", features = ["testing", "attributes", "async-std-runtime", "tokio-runtime"] }
+pyo3 = "0.20.3"
+futures = "0.3.31"
+rayon = "1.10.0"
+sonic-rs = "0.3.14"
+ureq = "2.10.1"
+flate2 = "1.0.34"
 
 [dev-dependencies]
 multipart = "0.18.0"
