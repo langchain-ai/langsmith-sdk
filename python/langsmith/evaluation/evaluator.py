@@ -665,14 +665,14 @@ def _normalize_evaluator_func(
         if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
         and p.default is p.empty
     ]
-    if (
+    if not positional_no_default or (
         not all(pname in supported_args for pname in positional_no_default)
         and len(positional_no_default) != 2
     ):
         msg = (
-            f"Invalid evaluator function argument names. Supported positional args are "
-            f"{supported_args}. Please see "
-            "https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"
+            f"Invalid evaluator function. Must have at least one positional "
+            f"argument. Supported positional arguments are {supported_args}. Please "
+            f"see https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"
             # noqa: E501
         )
         raise ValueError(msg)

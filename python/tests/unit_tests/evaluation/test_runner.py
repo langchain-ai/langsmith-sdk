@@ -21,6 +21,7 @@ from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
 from langsmith.evaluation._runner import evaluate_existing
+from langsmith.evaluation.evaluator import _normalize_evaluator_func
 
 
 class FakeRequest:
@@ -120,6 +121,16 @@ def _wait_until(condition: Callable, timeout: int = 8):
     raise TimeoutError("Condition not met")
 
 
+def _create_example(idx: int) -> ls_schemas.Example:
+    return ls_schemas.Example(
+        id=uuid.uuid4(),
+        inputs={"in": idx},
+        outputs={"answer": idx + 1},
+        dataset_id="00886375-eb2a-4038-9032-efff60309896",
+        created_at=datetime.now(timezone.utc),
+    )
+
+
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
 @pytest.mark.parametrize("as_runnable", [False, True])
@@ -127,15 +138,6 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
-
-    def _create_example(idx: int) -> ls_schemas.Example:
-        return ls_schemas.Example(
-            id=uuid.uuid4(),
-            inputs={"in": idx},
-            outputs={"answer": idx + 1},
-            dataset_id=ds_id,
-            created_at=datetime.now(timezone.utc),
-        )
 
     SPLIT_SIZE = 3
     NUM_REPETITIONS = 4
@@ -196,13 +198,11 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": 0.3}
 
-    def score_unpacked_inputs_outputs(inputs: dict, outputs: dict):
+    def score_unpacked_inputs_outputs(inputs, outputs):
         ordering_of_stuff.append("evaluate")
         return {"score": outputs["output"]}
 
-    def score_unpacked_inputs_outputs_reference(
-        inputs: dict, outputs: dict, reference_outputs: dict
-    ):
+    def score_unpacked_inputs_outputs_reference(inputs, outputs, reference_outputs):
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
 
@@ -347,15 +347,6 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
 
-    def _create_example(idx: int) -> ls_schemas.Example:
-        return ls_schemas.Example(
-            id=uuid.uuid4(),
-            inputs={"in": idx},
-            outputs={"answer": idx + 1},
-            dataset_id=ds_id,
-            created_at=datetime.now(timezone.utc),
-        )
-
     SPLIT_SIZE = 3
     NUM_REPETITIONS = 4
     ds_examples = [_create_example(i) for i in range(10)]
@@ -416,12 +407,12 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": 0.3}
 
-    async def score_unpacked_inputs_outputs(inputs: dict, outputs: dict):
+    async def score_unpacked_inputs_outputs(inputs, outputs):
         ordering_of_stuff.append("evaluate")
         return {"score": outputs["output"]}
 
     async def score_unpacked_inputs_outputs_reference(
-        inputs: dict, outputs: dict, reference_outputs: dict
+        inputs, outputs, reference_outputs
     ):
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
@@ -531,3 +522,58 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
     )
     async for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
+
+
+@pytest.mark.parametrize("sync", [True, False])
+async def test_evaluate_invalid_evaluator_signature(sync: bool) -> None:
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    session = mock.Mock()
+    tenant_id = str(uuid.uuid4())
+    ds_examples = [_create_example(0)]
+    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    session.request = fake_request.request
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        session=session,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+    client._tenant_id = tenant_id  # type: ignore
+
+    # args need to be positional
+    async def eval1(*, inputs, outputs):
+        pass
+
+    # if more than 2 positional args, they must all have default arg names
+    # (run, example, ...)
+    async def eval2(x, y, inputs):
+        pass
+
+    evaluators = [eval1, eval2]
+
+    async def atarget(x):
+        return x
+
+    for eval_ in evaluators:
+        with pytest.raises(ValueError, match="Invalid evaluator function."):
+            _normalize_evaluator_func(eval_)
+
+        with pytest.raises(ValueError, match="Invalid evaluator function."):
+            if sync:
+                evaluate(
+                    (lambda x: x), data=ds_examples, evaluators=[eval_], client=client
+                )
+            else:
+                await aevaluate(
+                    atarget, data=ds_examples, evaluators=[eval_], client=client
+                )
