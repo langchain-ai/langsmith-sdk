@@ -64,7 +64,7 @@ else:
     DataFrame = Any
 logger = logging.getLogger(__name__)
 
-TARGET_T = Callable[[dict], dict]
+TARGET_T = Union[Callable[[dict], dict], Callable[[dict, dict], dict]]
 # Data format: dataset-name, dataset_id, or examples
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
 # Summary evaluator runs over the whole dataset
@@ -109,6 +109,7 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    with_attachments: bool = False,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -296,6 +297,7 @@ def evaluate(
         client=client,
         blocking=blocking,
         experiment=experiment,
+        with_attachments=with_attachments
     )
 
 
@@ -896,6 +898,7 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    with_attachments: bool = False,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
@@ -912,6 +915,7 @@ def _evaluate(
         metadata=metadata,
         experiment=experiment_ or experiment_prefix,
         description=description,
+        with_attachments=with_attachments,
         num_repetitions=num_repetitions,
         # If provided, we don't need to create a new experiment.
         runs=runs,
@@ -925,7 +929,7 @@ def _evaluate(
         if _is_callable(target):
             # Add predictions to the experiment.
             manager = manager.with_predictions(
-                cast(TARGET_T, target), max_concurrency=max_concurrency
+                cast(TARGET_T, target), max_concurrency=max_concurrency, with_attachments=with_attachments,
             )
         if evaluators:
             # Apply evaluators to the predictions.
@@ -1159,6 +1163,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluation_results: Optional[Iterable[EvaluationResults]] = None,
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
+        with_attachments: Optional[bool] = None,
         num_repetitions: int = 1,
     ):
         super().__init__(
@@ -1173,11 +1178,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._with_attachments = with_attachments
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
-            self._examples = _resolve_data(self._data, client=self.client)
+            self._examples = _resolve_data(self._data, client=self.client, with_attachments=self._with_attachments)
             if self._num_repetitions > 1:
                 self._examples = itertools.chain.from_iterable(
                     itertools.tee(self._examples, self._num_repetitions)
@@ -1237,6 +1243,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
             self._predict, target, max_concurrency=max_concurrency
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
+        # QUESTION: Do we need to propogate with_attachments here?
+        # If we don't then the evaluators won't have access to example.attachments
         return _ExperimentManager(
             (pred["example"] for pred in r1),
             experiment=self._experiment,
@@ -1323,14 +1331,14 @@ class _ExperimentManager(_ExperimentManagerMixin):
     # Private methods
 
     def _predict(
-        self, target: TARGET_T, /, max_concurrency: Optional[int] = None
+        self, target: TARGET_T, /, max_concurrency: Optional[int] = None,
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client
+                    fn, example, self.experiment_name, self._metadata, self.client, self._with_attachments
                 )
 
         else:
@@ -1343,6 +1351,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
+                        self._with_attachments
                     )
                     for example in self.examples
                 ]
@@ -1616,6 +1625,7 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
+    with_attachments: Optional[bool] = None
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1625,23 +1635,43 @@ def _forward(
 
     with rh.tracing_context(enabled=True):
         try:
-            fn(
-                example.inputs,
-                langsmith_extra=rh.LangSmithExtra(
-                    reference_example_id=example.id,
-                    on_end=_get_run,
-                    project_name=experiment_name,
-                    metadata={
-                        **metadata,
-                        "example_version": (
-                            example.modified_at.isoformat()
-                            if example.modified_at
-                            else example.created_at.isoformat()
-                        ),
-                    },
-                    client=client,
-                ),
-            )
+            if with_attachments == True:
+                fn(
+                    example.inputs,
+                    example.attachments, # NEED TO FIX THIS
+                    langsmith_extra=rh.LangSmithExtra(
+                        reference_example_id=example.id,
+                        on_end=_get_run,
+                        project_name=experiment_name,
+                        metadata={
+                            **metadata,
+                            "example_version": (
+                                example.modified_at.isoformat()
+                                if example.modified_at
+                                else example.created_at.isoformat()
+                            ),
+                        },
+                        client=client,
+                    ),
+                )
+            else:
+                fn(
+                    example.inputs,
+                    langsmith_extra=rh.LangSmithExtra(
+                        reference_example_id=example.id,
+                        on_end=_get_run,
+                        project_name=experiment_name,
+                        metadata={
+                            **metadata,
+                            "example_version": (
+                                example.modified_at.isoformat()
+                                if example.modified_at
+                                else example.created_at.isoformat()
+                            ),
+                        },
+                        client=client,
+                    ),
+                )
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
@@ -1653,13 +1683,13 @@ def _forward(
 
 
 def _resolve_data(
-    data: DATA_T, *, client: langsmith.Client
+    data: DATA_T, *, client: langsmith.Client, with_attachments: Optional[bool] = None,
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
     if isinstance(data, str):
-        return client.list_examples(dataset_name=data)
+        return client.list_examples(dataset_name=data, get_attachment_urls=with_attachments)
     elif isinstance(data, uuid.UUID):
-        return client.list_examples(dataset_id=data)
+        return client.list_examples(dataset_id=data, get_attachment_urls=with_attachments)
     return data
 
 
