@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 # Avoid calling into importlib on every call to __version__
 version = ""
 try:
-    metadata.version(__package__)
+    version = metadata.version(__package__)
 except metadata.PackageNotFoundError:
     pass
 
