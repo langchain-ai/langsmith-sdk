@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING, Any
 
+from importlib import metadata
+
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith._testing import test, unit
@@ -21,15 +23,17 @@ if TYPE_CHECKING:
         ContextThreadPoolExecutor,
     )
 
+# Avoid calling into importlib on every call to __version__
+version = ""
+try:
+    metadata.version(__package__)
+except metadata.PackageNotFoundError:
+    pass
+
 
 def __getattr__(name: str) -> Any:
     if name == "__version__":
-        try:
-            from importlib import metadata
-
-            return metadata.version(__package__)
-        except metadata.PackageNotFoundError:
-            return ""
+        return version
     elif name == "Client":
         from langsmith.client import Client
 
