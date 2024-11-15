@@ -1,8 +1,7 @@
 """LangSmith Client."""
 
-from typing import TYPE_CHECKING, Any
-
 from importlib import metadata
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
