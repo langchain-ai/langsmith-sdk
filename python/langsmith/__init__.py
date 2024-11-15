@@ -7,7 +7,9 @@ if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith._testing import test, unit
     from langsmith.async_client import AsyncClient
+    from langsmith.async_client import AsyncClient as AsyncLangSmith
     from langsmith.client import Client
+    from langsmith.client import Client as LangSmith
     from langsmith.evaluation import aevaluate, evaluate
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
     from langsmith.run_helpers import (
@@ -33,11 +35,11 @@ except metadata.PackageNotFoundError:
 def __getattr__(name: str) -> Any:
     if name == "__version__":
         return version
-    elif name == "Client":
+    elif name == "Client" or name == "LangSmith":
         from langsmith.client import Client
 
         return Client
-    elif name == "AsyncClient":
+    elif name == "AsyncClient" or name == "AsyncLangSmith":
         from langsmith.async_client import AsyncClient
 
         return AsyncClient
@@ -136,4 +138,6 @@ __all__ = [
     "get_current_run_tree",
     "ContextThreadPoolExecutor",
     "AsyncClient",
+    "LangSmith",
+    "AsyncLangSmith",
 ]
