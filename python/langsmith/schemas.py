@@ -74,7 +74,7 @@ class ExampleBase(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
-    attachments: Optional[Dict[str, str]] = Field(default=None)
+    attachment_urls: Optional[Dict[str, str]] = Field(default=None)
 
     class Config:
         """Configuration class for the schema."""

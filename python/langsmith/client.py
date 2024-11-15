@@ -3732,9 +3732,15 @@ class Client:
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            print("HERE", example['attachment_urls'])
+            attachment_urls = {}
+            if example['attachment_urls']:
+                for key, value in example['attachment_urls'].items():
+                    attachment_urls[key.split(".")[1]] = value['presigned_url']
+            del example['attachment_urls']
+
             yield ls_schemas.Example(
                 **example,
+                attachment_urls=attachment_urls,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )

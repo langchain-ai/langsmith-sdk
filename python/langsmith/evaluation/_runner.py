@@ -929,7 +929,7 @@ def _evaluate(
         if _is_callable(target):
             # Add predictions to the experiment.
             manager = manager.with_predictions(
-                cast(TARGET_T, target), max_concurrency=max_concurrency, with_attachments=with_attachments,
+                cast(TARGET_T, target), max_concurrency=max_concurrency
             )
         if evaluators:
             # Apply evaluators to the predictions.
@@ -1229,6 +1229,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            with_attachments=self._with_attachments
         )
 
     def with_predictions(
@@ -1335,10 +1336,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
+
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client, self._with_attachments
+                    fn, example, self.experiment_name, self._metadata, self.client, with_attachments=self._with_attachments
                 )
 
         else:
@@ -1351,7 +1353,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        self._with_attachments
+                        with_attachments=self._with_attachments
                     )
                     for example in self.examples
                 ]
@@ -1638,7 +1640,7 @@ def _forward(
             if with_attachments == True:
                 fn(
                     example.inputs,
-                    example.attachments, # NEED TO FIX THIS
+                    example.attachment_urls,
                     langsmith_extra=rh.LangSmithExtra(
                         reference_example_id=example.id,
                         on_end=_get_run,
