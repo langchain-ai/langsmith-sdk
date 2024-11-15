@@ -124,6 +124,10 @@ class Example(ExampleBase):
             return f"{self._host_url}{path}"
         return None
 
+    def __repr__(self):
+        """Return a string representation of the RunBase object."""
+        return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
+
 
 class ExampleSearch(ExampleBase):
     """Example returned via search."""
