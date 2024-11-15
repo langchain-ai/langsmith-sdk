@@ -62,6 +62,8 @@ _EXCLUDED_NAMES = {
     "as_runnable",
     "SupportsLangsmithExtra",
     "get_tracing_context",
+    "run_evaluator",
+    "comparison_evaluator"
 }
 
 _EXCLUDED_MODULES = {"cli"}
