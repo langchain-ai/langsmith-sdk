@@ -3657,6 +3657,7 @@ class Client:
                 "as_of": as_of.isoformat() if as_of else None,
             },
         )
+
         return ls_schemas.Example(
             **response.json(),
             _host_url=self._host_url,
@@ -3676,6 +3677,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
+        get_attachment_urls: Optional[bool] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3725,9 +3727,12 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
+        if get_attachment_urls == True:
+            params['select'] = ['attachment_urls', 'outputs'] # don't need to add other stuff, because of always_select variable in API endpoint
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
+            print("HERE", example['attachment_urls'])
             yield ls_schemas.Example(
                 **example,
                 _host_url=self._host_url,
