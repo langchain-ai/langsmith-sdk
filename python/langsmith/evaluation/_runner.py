@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 
 TARGET_T = Callable[[dict], dict]
 # Data format: dataset-name, dataset_id, or examples
-DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
+DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example], schemas.Dataset]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
 SUMMARY_EVALUATOR_T = Union[
@@ -1661,6 +1661,8 @@ def _resolve_data(
         return client.list_examples(dataset_name=data)
     elif isinstance(data, uuid.UUID):
         return client.list_examples(dataset_id=data)
+    elif isinstance(data, schemas.Dataset):
+        return client.list_examples(dataset_id=data.id)
     return data
 
 
