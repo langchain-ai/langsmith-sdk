@@ -3381,7 +3381,7 @@ class Client:
             ):
             raise ValueError("Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version.")
          """
-        parts: list[MultipartPart] = []
+        parts: List[MultipartPart] = []
 
         for example in upserts:
             if example.id is not None:
