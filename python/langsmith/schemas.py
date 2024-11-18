@@ -135,6 +135,12 @@ class Example(ExampleBase):
         return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
 
 
+class ExampleSearch(ExampleBase):
+     """Example returned via search."""
+
+     id: UUID
+
+
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
 
