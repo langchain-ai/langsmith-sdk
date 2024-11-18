@@ -1,6 +1,4 @@
-"""
-Stubs for orjson operations, compatible with PyPy via a json fallback
-"""
+"""Stubs for orjson operations, compatible with PyPy via a json fallback."""
 
 try:
     from orjson import (
@@ -16,7 +14,7 @@ try:
 
 except ImportError:
     import json
-    from typing import Any, Optional, Callable
+    from typing import Any, Callable, Optional
 
     OPT_NON_STR_KEYS = 1
     OPT_SERIALIZE_DATACLASS = 2
@@ -35,7 +33,6 @@ except ImportError:
         default: Optional[Callable[[Any], Any]] = None,
         option: int = 0,
     ) -> bytes:
-
         class CustomEncoder(json.JSONEncoder):
             def encode(o: Any) -> str:
                 if isinstance(o, Fragment):

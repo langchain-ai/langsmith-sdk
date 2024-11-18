@@ -1,5 +1,4 @@
 from langsmith._internal import _orjson
-
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,

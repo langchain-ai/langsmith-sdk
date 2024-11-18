@@ -55,8 +55,6 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-
-from langsmith._internal import _orjson
 import requests
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
@@ -70,6 +68,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _orjson
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )

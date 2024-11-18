@@ -22,8 +22,6 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import dataclasses_json
-
-from langsmith._internal import _orjson
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
@@ -34,6 +32,7 @@ import langsmith.env as ls_env
 import langsmith.utils as ls_utils
 from langsmith import AsyncClient, EvaluationResult, run_trees
 from langsmith import schemas as ls_schemas
+from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
