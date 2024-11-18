@@ -7,6 +7,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     NamedTuple,
@@ -18,6 +19,7 @@ from typing import (
 )
 from uuid import UUID
 
+import requests
 from typing_extensions import NotRequired, TypedDict
 
 try:
@@ -74,7 +76,7 @@ class ExampleBase(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
-    attachment_urls: Optional[Dict[str, str]] = Field(default=None)
+    attachments: Optional[Dict[str, Tuple[str, Callable[[], requests.Response]]]] = Field(default=None)
 
     class Config:
         """Configuration class for the schema."""

@@ -3677,7 +3677,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
-        get_attachment_urls: Optional[bool] = None,
+        get_attachments: Optional[bool] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3706,6 +3706,8 @@ class Client:
         Yields:
             Example: The examples.
         """
+        
+        
         params: Dict[str, Any] = {
             **kwargs,
             "offset": offset,
@@ -3727,20 +3729,28 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
-        if get_attachment_urls == True:
-            params['select'] = ['attachment_urls', 'outputs'] # don't need to add other stuff, because of always_select variable in API endpoint
+        if get_attachments == True:
+            params['select'] = ['attachment_urls', 'outputs', 'metadata']
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachment_urls = {}
+            attachments = {}
             if example['attachment_urls']:
                 for key, value in example['attachment_urls'].items():
-                    attachment_urls[key.split(".")[1]] = value['presigned_url']
+                    def create_reader(url=value['presigned_url']):
+                        response = requests.get(url, stream=True)
+                        response.raise_for_status()
+                        # Return the raw response object so caller can handle streaming
+                        return response
+                    attachments[key.split(".")[1]] = (
+                        value['presigned_url'],
+                        create_reader
+                    )
             del example['attachment_urls']
 
             yield ls_schemas.Example(
                 **example,
-                attachment_urls=attachment_urls,
+                attachments=attachments,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
