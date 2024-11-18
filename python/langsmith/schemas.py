@@ -149,10 +149,13 @@ class ExampleUpdate(BaseModel):
 
         frozen = True
 
+
 class ExampleUpdateWithAttachments(ExampleUpdate):
     """Example update with attachments."""
+
     id: UUID
     attachments: Optional[Attachments] = None
+
 
 class DataType(str, Enum):
     """Enum for dataset data types."""
@@ -990,6 +993,7 @@ class UsageMetadata(TypedDict):
 
     Does *not* need to sum to full output token count. Does *not* need to have all keys.
     """
+
 
 class UpsertExamplesResponse(TypedDict):
     """Response object returned from the upsert_examples_multipart method."""

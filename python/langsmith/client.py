@@ -3430,7 +3430,7 @@ class Client:
                     )
                 ),
             )
-            
+
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)
                 (
