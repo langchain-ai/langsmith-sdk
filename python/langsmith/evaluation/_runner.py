@@ -110,6 +110,7 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -297,6 +298,7 @@ def evaluate(
         client=client,
         blocking=blocking,
         experiment=experiment,
+        upload_results=upload_results,
     )
 
 
@@ -897,6 +899,7 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
@@ -917,6 +920,7 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
+        upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
     cache_path = (
@@ -1103,9 +1107,9 @@ class _ExperimentManagerMixin:
         return project
 
     def _print_experiment_start(
-        self, project: schemas.TracerSession, first_example: schemas.Example
+        self, project: Optional[schemas.TracerSession], first_example: schemas.Example
     ) -> None:
-        if project.url:
+        if project and project.url:
             # TODO: Make this a public API
             project_url = project.url.split("?")[0]
             dataset_id = first_example.dataset_id
@@ -1161,6 +1165,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        upload_results: bool = True,
     ):
         super().__init__(
             experiment=experiment,
@@ -1174,6 +1179,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._upload_results = upload_results
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
@@ -1214,7 +1220,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
     def start(self) -> _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
-        project = self._get_project(first_example)
+        project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
@@ -1224,6 +1230,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            upload_results=self._upload_results,
         )
 
     def with_predictions(
@@ -1295,6 +1302,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=self.runs,
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            upload_results=self._upload_results
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1331,7 +1339,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client
+                    fn, example, self.experiment_name, self._metadata, self.client, self._upload_results
                 )
 
         else:
@@ -1344,6 +1352,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
+                        self._upload_results
                     )
                     for example in self.examples
                 ]
@@ -1357,6 +1366,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
         executor: cf.ThreadPoolExecutor,
+        upload_results: bool
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
@@ -1372,7 +1382,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": True,
+                "enabled": upload_results,
                 "client": self.client,
             }
         ):
@@ -1385,12 +1395,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         run=run,
                         example=example,
                     )
-                    eval_results["results"].extend(
+                    eval_results["results"].extend(self.client._select_eval_results(evaluator_response))
+                    if upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run, _executor=executor
                         )
-                    )
                 except Exception as e:
                     try:
                         feedback_keys = _extract_feedback_keys(evaluator)
@@ -1407,11 +1417,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             ]
                         )
                         eval_results["results"].extend(
+                            self.client._select_eval_results(error_response))
+                        if upload_results:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
                                 error_response, run=run, _executor=executor
                             )
-                        )
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")
                         pass
@@ -1480,7 +1491,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             examples.append(example)
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
-            project_id = self._get_experiment().id
+            project_id = self._get_experiment().id if self._upload_results else None
             current_context = rh.get_tracing_context()
             metadata = {
                 **(current_context["metadata"] or {}),
@@ -1495,7 +1506,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     "project_name": "evaluators",
                     "metadata": metadata,
                     "client": self.client,
-                    "enabled": True,
+                    "enabled": self._upload_results,
                 }
             ):
                 for evaluator in summary_evaluators:
@@ -1507,16 +1518,17 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             fn_name=evaluator.__name__,
                         )
                         aggregate_feedback.extend(flattened_results)
-                        for result in flattened_results:
-                            feedback = result.dict(exclude={"target_run_id"})
-                            evaluator_info = feedback.pop("evaluator_info", None)
-                            executor.submit(
-                                self.client.create_feedback,
-                                **feedback,
-                                run_id=None,
-                                project_id=project_id,
-                                source_info=evaluator_info,
-                            )
+                        if self._upload_results:
+                            for result in flattened_results:
+                                feedback = result.dict(exclude={"target_run_id"})
+                                evaluator_info = feedback.pop("evaluator_info", None)
+                                executor.submit(
+                                    self.client.create_feedback,
+                                    **feedback,
+                                    run_id=None,
+                                    project_id=project_id,
+                                    source_info=evaluator_info,
+                                )
                     except Exception as e:
                         logger.error(
                             f"Error running summary evaluator {repr(evaluator)}: {e}",
@@ -1617,6 +1629,7 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
+    upload_results: bool,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1624,25 +1637,26 @@ def _forward(
         nonlocal run
         run = r
 
-    with rh.tracing_context(enabled=True):
-        try:
-            fn(
-                example.inputs,
-                langsmith_extra=rh.LangSmithExtra(
-                    reference_example_id=example.id,
-                    on_end=_get_run,
-                    project_name=experiment_name,
-                    metadata={
-                        **metadata,
-                        "example_version": (
-                            example.modified_at.isoformat()
-                            if example.modified_at
-                            else example.created_at.isoformat()
-                        ),
-                    },
-                    client=client,
+    with rh.tracing_context(enabled=upload_results):
+        langsmith_extra = rh.LangSmithExtra(
+            reference_example_id=example.id,
+            on_end=_get_run,
+            project_name=experiment_name,
+            metadata={
+                **metadata,
+                "example_version": (
+                    example.modified_at.isoformat()
+                    if example.modified_at
+                    else example.created_at.isoformat()
                 ),
-            )
+            },
+            client=client,
+        )
+        try:
+            if upload_results:
+                fn(example.inputs, langsmith_extra=langsmith_extra)
+            else:
+                fn(example.inputs)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
