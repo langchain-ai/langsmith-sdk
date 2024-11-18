@@ -29,17 +29,17 @@ except ImportError:
 
     def dumps(
         obj: Any,
-        *,
+        /,
         default: Optional[Callable[[Any], Any]] = None,
         option: int = 0,
     ) -> bytes:
         class CustomEncoder(json.JSONEncoder):
-            def encode(o: Any) -> str:
+            def encode(self, o: Any) -> str:
                 if isinstance(o, Fragment):
                     return o.payloadb.decode("utf-8")
                 return super().encode(o)
 
-            def default(o: Any) -> Any:
+            def default(self, o: Any) -> Any:
                 if default is not None:
                     return default(o)
                 # TODO: handle OPT_ keys
@@ -47,7 +47,7 @@ except ImportError:
 
         return json.dumps(obj, cls=CustomEncoder).encode("utf-8")
 
-    def loads(payload: bytes) -> Any:
+    def loads(payload: bytes, /) -> Any:
         return json.loads(payload)
 
 
