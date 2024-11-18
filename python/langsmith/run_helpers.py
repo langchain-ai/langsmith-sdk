@@ -940,6 +940,7 @@ class trace:
 
         if enabled is True:
             self.new_run.post()
+        if enabled:
             _TAGS.set(tags_)
             _METADATA.set(metadata)
             _PARENT_RUN_TREE.set(self.new_run)
