@@ -368,6 +368,7 @@ class Client:
         "_info",
         "_write_api_urls",
         "_settings",
+        "_manual_cleanup",
     ]
 
     def __init__(
@@ -515,6 +516,8 @@ class Client:
         )
 
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
+
+        self._manual_cleanup = False
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.

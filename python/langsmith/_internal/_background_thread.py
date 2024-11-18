@@ -155,13 +155,24 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     num_known_refs = 3
 
+    def keep_thread_active() -> bool:
+        # if `client.cleanup()` was called, stop thread
+        if client and client._manual_cleanup:
+            return False
+        if not threading.main_thread().is_alive():
+            # main thread is dead. should not be active
+            return False
+        try:
+            # check if client refs count indicates we're the only remaining
+            # reference to the client
+            return sys.getrefcount(client) > num_known_refs + len(sub_threads)
+        except AttributeError:
+            # in PyPy, there is no sys.getrefcount attribute
+            # for now, keep thread alive
+            return True
+
     # loop until
-    while (
-        # the main thread dies
-        threading.main_thread().is_alive()
-        # or we're the only remaining reference to the client
-        and sys.getrefcount(client) > num_known_refs + len(sub_threads)
-    ):
+    while keep_thread_active():
         for thread in sub_threads:
             if not thread.is_alive():
                 sub_threads.remove(thread)
