@@ -13,7 +13,7 @@ const CHAT_MODEL = new ChatOpenAI({ model: "gpt-4" });
 const TESTING_DATASET_NAME = "LLMEvaluator dataset";
 
 test("llm evaluator initialization with categorical config", async () => {
-  const evaluator = await LLMEvaluator.create({
+  const evaluator = new LLMEvaluator({
     promptTemplate: "Is the response vague? Y/N\n{input}",
     scoreConfig: new CategoricalScoreConfig({
       key: "vagueness",
@@ -53,7 +53,7 @@ test("llm evaluator initialization with categorical config", async () => {
 });
 
 test("llm evaluator initialization with continuous config", async () => {
-  const evaluator = await LLMEvaluator.create({
+  const evaluator = new LLMEvaluator({
     promptTemplate: "Rate the response from 0 to 1.\n{input}",
     scoreConfig: new ContinuousScoreConfig({
       key: "rating",
@@ -90,7 +90,7 @@ test("llm evaluator initialization with continuous config", async () => {
 });
 
 test("llm evaluator with custom variable mapping", async () => {
-  const evaluator = await LLMEvaluator.create({
+  const evaluator = new LLMEvaluator({
     promptTemplate: [
       [
         "system",
@@ -125,7 +125,7 @@ test("llm evaluator can evaluate runs", async () => {
       datasetName: TESTING_DATASET_NAME,
     }
   );
-  const evaluator = await LLMEvaluator.create({
+  const evaluator = new LLMEvaluator({
     promptTemplate: "Is the response vague? Y/N\n{response}",
     scoreConfig: new CategoricalScoreConfig({
       key: "vagueness",
@@ -162,7 +162,7 @@ test("llm evaluator can evaluate runs", async () => {
 });
 
 test("llm evaluator with multiple prompt messages", async () => {
-  const evaluator = await LLMEvaluator.create({
+  const evaluator = new LLMEvaluator({
     promptTemplate: [
       ["system", "You are a helpful assistant evaluating responses."],
       ["human", "Rate this response from 0 to 1: {response}"],
