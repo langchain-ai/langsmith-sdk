@@ -5678,6 +5678,10 @@ class Client:
         )
         return url
 
+    def cleanup(self) -> None:
+        """Manually trigger cleanup of the background thread."""
+        self._manual_cleanup = True
+
 
 def convert_prompt_to_openai_format(
     messages: Any,
