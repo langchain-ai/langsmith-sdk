@@ -24,6 +24,7 @@ from typing import (
     Generic,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Protocol,
@@ -60,8 +61,6 @@ _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
 
 
-from typing import Literal
-
 _TRACING_ENABLED = contextvars.ContextVar[Optional[Union[bool, Literal["local"]]]](
     "_TRACING_ENABLED", default=None
 )
@@ -95,9 +94,6 @@ def get_tracing_context(
             "client": _CLIENT.get(),
         }
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
-
-
-from typing import Literal
 
 
 @contextlib.contextmanager

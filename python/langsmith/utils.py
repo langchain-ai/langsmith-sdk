@@ -24,6 +24,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -89,9 +90,6 @@ class LangSmithWarning(UserWarning):
 
 class LangSmithMissingAPIKeyWarning(LangSmithWarning):
     """Warning for missing API key."""
-
-
-from typing import Literal
 
 
 def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
