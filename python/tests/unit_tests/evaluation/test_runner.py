@@ -261,6 +261,7 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
     for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
         assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
+        assert len(r["evaluation_results"]["results"]) == len(evaluators) + 1
 
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)

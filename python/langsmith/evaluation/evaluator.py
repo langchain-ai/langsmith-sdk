@@ -292,7 +292,7 @@ class DynamicRunEvaluator(RunEvaluator):
         elif isinstance(result, list):
             if not all(isinstance(x, dict) for x in result):
                 raise ValueError(
-                    f"Expected a list of dicts or EvaluationResult. Received {result}."
+                    f"Expected a list of dicts or EvaluationResults. Received {result}."
                 )
             result = {"results": result}  # type: ignore[misc]
         elif isinstance(result, str):
@@ -675,7 +675,9 @@ def _normalize_evaluator_func(
             # noqa: E501
         )
         raise ValueError(msg)
-    elif not all(pname in supported_args for pname in positional_args):
+    elif not all(
+        pname in supported_args for pname in positional_args
+    ) or positional_args == ("run", "example"):
         # For backwards compatibility we assume custom arg names are Run and Example
         # types, respectively.
         return func
