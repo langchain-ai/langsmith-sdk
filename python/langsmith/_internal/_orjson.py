@@ -21,22 +21,22 @@ except ImportError:
     OPT_SERIALIZE_NUMPY = 4
     OPT_SERIALIZE_UUID = 8
 
-    class Fragment:
+    class Fragment:  # type: ignore
         def __init__(self, payloadb: bytes):
             self.payloadb = payloadb
 
-    from json import JSONDecodeError
+    from json import JSONDecodeError  # type: ignore
 
-    def dumps(
+    def dumps(  # type: ignore
         obj: Any,
         /,
         default: Optional[Callable[[Any], Any]] = None,
         option: int = 0,
-    ) -> bytes:
-        class CustomEncoder(json.JSONEncoder):
+    ) -> bytes:  # type: ignore
+        class CustomEncoder(json.JSONEncoder):  # type: ignore
             def encode(self, o: Any) -> str:
                 if isinstance(o, Fragment):
-                    return o.payloadb.decode("utf-8")
+                    return o.payloadb.decode("utf-8")  # type: ignore
                 return super().encode(o)
 
             def default(self, o: Any) -> Any:
@@ -47,7 +47,7 @@ except ImportError:
 
         return json.dumps(obj, cls=CustomEncoder).encode("utf-8")
 
-    def loads(payload: bytes, /) -> Any:
+    def loads(payload: bytes, /) -> Any:  # type: ignore
         return json.loads(payload)
 
 
