@@ -432,7 +432,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     dataset_id = uuid.uuid4()
     created_at = datetime(2015, 1, 1, 0, 0, 0)
 
-    example = ls_schemas.ExampleCreateWithAttachments(
+    example = ls_schemas.ExampleUpsertWithAttachments(
         id=example_id,
         dataset_id=dataset_id,
         created_at=created_at,
