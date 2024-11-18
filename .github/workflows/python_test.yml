@@ -46,3 +46,5 @@ jobs:
       - name: Run Unit tests ${{ matrix.python-version }}
         run: make tests
         shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
