@@ -3413,7 +3413,6 @@ class Client:
 
             inputsb = _dumps_json(example.inputs)
 
-            
             parts.append(
                 (
                     f"{example_id}.inputs",
@@ -3425,7 +3424,6 @@ class Client:
                     ),
                 )
             )
-            
 
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)

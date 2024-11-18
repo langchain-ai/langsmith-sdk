@@ -96,9 +96,9 @@ def benchmark_example_uploading(
         "new": {
             "mean": statistics.mean(multipart_timings),
             "median": statistics.median(multipart_timings),
-            "stdev": statistics.stdev(multipart_timings)
-            if len(multipart_timings) > 1
-            else 0,
+            "stdev": (
+                statistics.stdev(multipart_timings) if len(multipart_timings) > 1 else 0
+            ),
             "min": min(multipart_timings),
             "max": max(multipart_timings),
         },
