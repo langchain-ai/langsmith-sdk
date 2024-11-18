@@ -369,11 +369,10 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
-# NEED TO FIX ONCE CHANGES PUSH TO PROD
-def test_upsert_examples_multipart() -> None:
+
+def test_upsert_examples_multipart(langchain_client: Client) -> None:
     """Test upserting examples with attachments via multipart endpoint."""
-    dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
-    langchain_client = Client(api_url="https://dev.api.smith.langchain.com", api_key="HARDCODE FOR TESTING")
+    dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]"
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
 
