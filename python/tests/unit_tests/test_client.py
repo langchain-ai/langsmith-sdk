@@ -493,7 +493,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
 
         if name.endswith(".attachment.file1"):
             assert part.value == expected_parts[name]
-            assert part.headers["Content-Type"] == "text/plain"
+            assert part.headers["Content-Type"] == "text/plain; length=9"
         elif name.endswith(".attachment.file2"):
             assert part.value == expected_parts[name]
             assert part.headers["Content-Type"] == "application/json"
