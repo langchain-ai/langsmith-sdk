@@ -146,16 +146,16 @@ interface LLMEvaluatorParams {
 
 /**
  * An LLM-as-a-judge evluator to assess runs based on configured scoring criteria.
- * 
+ *
  * This evaluator can handle both categorical (enum-based) and continuous (numeric) scoring,
  * and can provide CoT style explanations for its evaluations when configured to do so.
- * 
+ *
  * @example
  * ```typescript
  * import { LLMEvaluator, ContinuousScoreConfig } from "langsmith/evaluation/llm";
  * import { OpenAI } from "@langchain/openai"
- * 
- * 
+ *
+ *
  * const evaluator = new LLMEvaluator({
  *   promptTemplate: "Rate the quality of this response...",
  *   scoreConfig: new ContinuousScoreConfig({
@@ -167,7 +167,7 @@ interface LLMEvaluatorParams {
  *   chatModel: new OpenAI({ model: "gpt-4" })
  * });
  * ```
- * 
+ *
  * @implements {RunEvaluator}
  */
 export class LLMEvaluator implements RunEvaluator {
@@ -179,7 +179,7 @@ export class LLMEvaluator implements RunEvaluator {
 
   constructor(params: LLMEvaluatorParams) {
     const { promptTemplate, scoreConfig, chatModel, mapVariables } = params;
-    
+
     // Store the configuration
     this.scoreConfig = scoreConfig;
     this.mapVariables = mapVariables;
