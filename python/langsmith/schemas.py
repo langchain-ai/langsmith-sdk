@@ -136,9 +136,9 @@ class Example(ExampleBase):
 
 
 class ExampleSearch(ExampleBase):
-     """Example returned via search."""
+    """Example returned via search."""
 
-     id: UUID
+    id: UUID
 
 
 class ExampleUpdate(BaseModel):
