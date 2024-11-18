@@ -40,6 +40,7 @@ from langsmith.evaluation._runner import (
     _ExperimentManagerMixin,
     _extract_feedback_keys,
     _ForwardResults,
+    _is_langchain_runnable,
     _load_examples_map,
     _load_experiment,
     _load_tqdm,
@@ -379,8 +380,10 @@ async def _aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
 ) -> AsyncExperimentResults:
-    is_async_target = asyncio.iscoroutinefunction(target) or (
-        hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__())
+    is_async_target = (
+        asyncio.iscoroutinefunction(target)
+        or (hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__()))
+        or _is_langchain_runnable(target)
     )
     client = client or rt.get_cached_client()
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
@@ -940,7 +943,7 @@ async def _aforward(
 def _ensure_async_traceable(
     target: ATARGET_T,
 ) -> rh.SupportsLangsmithExtra[[dict], Awaitable]:
-    if not asyncio.iscoroutinefunction(target):
+    if not asyncio.iscoroutinefunction(target) and not _is_langchain_runnable(target):
         if callable(target):
             raise ValueError(
                 "Target must be an async function. For sync functions, use evaluate."
@@ -961,7 +964,10 @@ def _ensure_async_traceable(
             )
     if rh.is_traceable_function(target):
         return target  # type: ignore
-    return rh.traceable(name="AsyncTarget")(target)
+    else:
+        if _is_langchain_runnable(target):
+            target = target.ainvoke  # type: ignore[attr-defined]
+        return rh.traceable(name="AsyncTarget")(target)
 
 
 def _aresolve_data(
