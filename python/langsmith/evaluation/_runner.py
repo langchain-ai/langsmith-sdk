@@ -183,6 +183,8 @@ def evaluate(
         ...     summary_evaluators=[precision],
         ...     experiment_prefix="My Experiment",
         ...     description="Evaluating the accuracy of a simple prediction model.",
+        ...     max_concurrency=0,
+        ...     upload_results=False,
         ...     metadata={
         ...         "my-prompt-version": "abcd-1234",
         ...     },
@@ -1252,6 +1254,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             metadata=self._metadata,
             client=self.client,
             runs=(pred["run"] for pred in r2),
+            upload_results=self._upload_results,
             # TODO: Can't do multiple prediction rounds rn.
         )
 
@@ -1283,6 +1286,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
             summary_results=self._summary_results,
+            upload_results=self._upload_results,
         )
 
     def with_summary_evaluators(
@@ -1372,7 +1376,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
         executor: cf.ThreadPoolExecutor,
-        upload_results: bool,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
@@ -1388,7 +1391,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": "local" if not upload_results else True,
+                "enabled": "local" if not self._upload_results else True,
                 "client": self.client,
             }
         ):
@@ -1401,10 +1404,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         run=run,
                         example=example,
                     )
+
                     eval_results["results"].extend(
                         self.client._select_eval_results(evaluator_response)
                     )
-                    if upload_results:
+                    if self._upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run, _executor=executor
@@ -1427,7 +1431,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         eval_results["results"].extend(
                             self.client._select_eval_results(error_response)
                         )
-                        if upload_results:
+                        if self._upload_results:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
                                 error_response, run=run, _executor=executor
@@ -1457,7 +1461,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         (e.g. from a previous prediction step)
         """
         with ls_utils.ContextThreadPoolExecutor(
-            max_workers=max_concurrency
+            max_workers=max_concurrency or 1
         ) as executor:
             if max_concurrency == 0:
                 context = copy_context()
@@ -1467,7 +1471,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         evaluators,
                         current_results,
                         executor,
-                        self._upload_results,
                     )
             else:
                 futures = set()
@@ -1478,7 +1481,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             evaluators,
                             current_results,
                             executor,
-                            self._upload_results,
                         )
                     )
                     try:
