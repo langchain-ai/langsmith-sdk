@@ -231,7 +231,7 @@ export class LLMEvaluator implements RunEvaluator {
     }
     if (Object.keys(run.inputs).length !== 1) {
       throw new Error(
-        "Multiple input keys are present in run.inputs. Please provide a map_variables function."
+        "Multiple input keys are present in run.inputs. Please provide a mapVariables function."
       );
     }
     variables.input = Object.values(run.inputs)[0];
@@ -244,7 +244,7 @@ export class LLMEvaluator implements RunEvaluator {
     }
     if (Object.keys(run.outputs).length !== 1) {
       throw new Error(
-        "Multiple output keys are present in run.outputs. Please provide a map_variables function."
+        "Multiple output keys are present in run.outputs. Please provide a mapVariables function."
       );
     }
     variables.output = Object.values(run.outputs)[0];
@@ -258,7 +258,7 @@ export class LLMEvaluator implements RunEvaluator {
       }
       if (Object.keys(example.outputs).length !== 1) {
         throw new Error(
-          "Multiple output keys are present in example.outputs. Please provide a map_variables function."
+          "Multiple output keys are present in example.outputs. Please provide a mapVariables function."
         );
       }
       variables.expected = Object.values(example.outputs)[0];
