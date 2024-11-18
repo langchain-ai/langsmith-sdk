@@ -1372,12 +1372,13 @@ class _ExperimentManager(_ExperimentManagerMixin):
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),
-            **{
-                "experiment": self.experiment_name,
-                "reference_example_id": current_results["example"].id,
-                "reference_run_id": current_results["run"].id,
-            },
+            **{ "experiment": self.experiment_name},
         }
+        if current_results["example"]:
+            metadata["reference_example_id"] = current_results["example"].id
+        if current_results["run"]:
+            metadata["reference_run_id"] = current_results["run"].id
+
         with rh.tracing_context(
             **{
                 **current_context,
@@ -1429,7 +1430,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         pass
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
-                        f" run {run.id}: {repr(e)}",
+                        f" run {run.id if run else ''}: {repr(e)}",
                         exc_info=True,
                     )
             return ExperimentResultRow(
@@ -1458,7 +1459,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self._run_evaluators,
                         evaluators,
                         current_results,
-                        executor=executor,
+                        executor,
+                        self._upload_results,
                     )
             else:
                 futures = set()
@@ -1468,7 +1470,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             self._run_evaluators,
                             evaluators,
                             current_results,
-                            executor=executor,
+                            executor,
+                            self._upload_results,
                         )
                     )
                     try:
@@ -1563,6 +1566,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
         return list(splits)
 
     def _end(self) -> None:
+        if not self._upload_results:
+            return
         experiment = self._experiment
         if experiment is None:
             raise ValueError("Experiment not started yet.")
@@ -1639,33 +1644,21 @@ def _forward(
         run = r
 
     with rh.tracing_context(enabled=upload_results):
+        example_version = example.modified_at.isoformat() if example.modified_at else example.created_at.isoformat()
         langsmith_extra = rh.LangSmithExtra(
             reference_example_id=example.id,
             on_end=_get_run,
             project_name=experiment_name,
-            metadata={
-                **metadata,
-                "example_version": (
-                    example.modified_at.isoformat()
-                    if example.modified_at
-                    else example.created_at.isoformat()
-                ),
-            },
+            metadata={ **metadata, "example_version": example_version },
             client=client,
         )
         try:
-            if upload_results:
-                fn(example.inputs, langsmith_extra=langsmith_extra)
-            else:
-                fn(example.inputs)
+            fn(example.inputs, langsmith_extra=langsmith_extra)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
             )
-        return _ForwardResults(
-            run=cast(schemas.Run, run),
-            example=example,
-        )
+        return _ForwardResults( run=cast(schemas.Run, run), example=example )
 
 
 def _resolve_data(
