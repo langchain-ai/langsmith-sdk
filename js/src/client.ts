@@ -887,7 +887,7 @@ export class Client {
             this._serverInfo = await this._getServerInfo();
           } catch (e) {
             console.warn(
-              `[WARNING]: LangSmith failed to fetch info on supported operations. Falling back to single calls and default limits.`
+              `[WARNING]: LangSmith failed to fetch info on supported operations. Falling back to batch operations and default limits.`
             );
           }
         }
@@ -1003,22 +1003,6 @@ export class Client {
       patch: this._filterForSampling(preparedUpdateParams, true),
     };
     if (!rawBatch.post.length && !rawBatch.patch.length) {
-      return;
-    }
-    const serverInfo = await this._ensureServerInfo();
-    if (serverInfo.version === undefined) {
-      this.autoBatchTracing = false;
-      for (const preparedCreateParam of rawBatch.post) {
-        await this.createRun(preparedCreateParam as CreateRunParams);
-      }
-      for (const preparedUpdateParam of rawBatch.patch) {
-        if (preparedUpdateParam.id !== undefined) {
-          await this.updateRun(
-            preparedUpdateParam.id,
-            preparedUpdateParam as UpdateRunParams
-          );
-        }
-      }
       return;
     }
     const batchChunks = {

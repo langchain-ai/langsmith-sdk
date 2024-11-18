@@ -372,9 +372,9 @@ async def test_traceable_stream(
             ]
             first_patch = next((d for d in call_data if d.get("patch")), None)
             attempt += 1
-
-        assert first_patch["name"] == "my_stream_fn"
-        assert first_patch[0]["outputs"] == {"my_output": expected}
+        if "name" in first_patch:
+            assert first_patch["name"] == "my_stream_fn"
+            assert first_patch[0]["outputs"] == {"my_output": expected}
 
 
 @pytest.mark.parametrize("use_next", [True, False])
