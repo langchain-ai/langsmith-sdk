@@ -372,7 +372,7 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
 
 def test_upsert_examples_multipart(langchain_client: Client) -> None:
     """Test upserting examples with attachments via multipart endpoint."""
-    dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]"
+    dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
 
