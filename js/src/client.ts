@@ -36,7 +36,7 @@ import {
   RunWithAnnotationQueueInfo,
   Attachments,
   ExampleUpsertWithAttachments,
-  UpsertExamplesResponse
+  UpsertExamplesResponse,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -3839,68 +3839,69 @@ export class Client {
    * @param upserts List of ExampleUpsertWithAttachments objects to upsert
    * @returns Promise with the upsert response
    */
-  public async upsertExamplesMultipart({
-    upserts = [],
-  }: {
-    upserts?: ExampleUpsertWithAttachments[];
-  }): Promise<UpsertExamplesResponse> {
+  public async upsertExamplesMultipart(
+    upserts: ExampleUpsertWithAttachments[] = []
+  ): Promise<UpsertExamplesResponse> {
     const formData = new FormData();
 
-  for (const example of upserts) {
-    const exampleId = (example.id ?? uuid.v4()).toString();
+    for (const example of upserts) {
+      const exampleId = (example.id ?? uuid.v4()).toString();
 
-    // Prepare the main example body
-    const exampleBody = {
-      dataset_id: example.dataset_id,
-      created_at: example.created_at,
-      ...(example.metadata && { metadata: example.metadata }),
-      ...(example.split && { split: example.split }),
-    };
+      // Prepare the main example body
+      const exampleBody = {
+        dataset_id: example.dataset_id,
+        created_at: example.created_at,
+        ...(example.metadata && { metadata: example.metadata }),
+        ...(example.split && { split: example.split }),
+      };
 
-    // Add main example data
-    const stringifiedExample = stringifyForTracing(exampleBody);
-    const exampleBlob = new Blob([stringifiedExample], { 
-      type: "application/json"
-    });
-    formData.append(exampleId, exampleBlob);
-
-    // Add inputs
-    const stringifiedInputs = stringifyForTracing(example.inputs);
-    const inputsBlob = new Blob([stringifiedInputs], { 
-      type: "application/json"
-    });
-    formData.append(`${exampleId}.inputs`, inputsBlob);
-
-    // Add outputs if present
-    if (example.outputs) {
-      const stringifiedOutputs = stringifyForTracing(example.outputs);
-      const outputsBlob = new Blob([stringifiedOutputs], { 
-        type: "application/json"
+      // Add main example data
+      const stringifiedExample = stringifyForTracing(exampleBody);
+      const exampleBlob = new Blob([stringifiedExample], {
+        type: "application/json",
       });
-      formData.append(`${exampleId}.outputs`, outputsBlob);
-    }
+      formData.append(exampleId, exampleBlob);
 
-    // Add attachments if present
-    if (example.attachments) {
-      for (const [name, [mimeType, data]] of Object.entries(example.attachments)) {
-        const attachmentBlob = new Blob([data], { type: `${mimeType}; length=${data.byteLength}` });
-        formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+      // Add inputs
+      const stringifiedInputs = stringifyForTracing(example.inputs);
+      const inputsBlob = new Blob([stringifiedInputs], {
+        type: "application/json",
+      });
+      formData.append(`${exampleId}.inputs`, inputsBlob);
+
+      // Add outputs if present
+      if (example.outputs) {
+        const stringifiedOutputs = stringifyForTracing(example.outputs);
+        const outputsBlob = new Blob([stringifiedOutputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.outputs`, outputsBlob);
+      }
+
+      // Add attachments if present
+      if (example.attachments) {
+        for (const [name, [mimeType, data]] of Object.entries(
+          example.attachments
+        )) {
+          const attachmentBlob = new Blob([data], {
+            type: `${mimeType}; length=${data.byteLength}`,
+          });
+          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+        }
       }
     }
-  }
 
-  const response = await this.caller.call(
-    _getFetchImplementation(),
-    `${this.apiUrl}/v1/platform/examples/multipart`,
-    {
-      method: "POST",
-      headers: this.headers,
-      body: formData,
-    }
-  );
-  const result = await response.json();
-  return result;
-
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/v1/platform/examples/multipart`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: formData,
+      }
+    );
+    const result = await response.json();
+    return result;
   }
 
   public async updatePrompt(
