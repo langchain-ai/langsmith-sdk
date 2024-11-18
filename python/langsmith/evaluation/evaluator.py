@@ -677,7 +677,7 @@ def _normalize_evaluator_func(
         raise ValueError(msg)
     elif not all(
         pname in supported_args for pname in positional_args
-    ) or positional_args == ("run", "example"):
+    ) or positional_args == ["run", "example"]:
         # For backwards compatibility we assume custom arg names are Run and Example
         # types, respectively.
         return func
