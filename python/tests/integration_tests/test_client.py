@@ -22,9 +22,9 @@ from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import DataType, ExampleUpsertWithAttachments
 from langsmith.utils import (
-    LangSmithNotFoundError,
     LangSmithConnectionError,
     LangSmithError,
+    LangSmithNotFoundError,
     get_env_var,
 )
 
@@ -403,19 +403,27 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
         },
     )
 
-    created_examples = langchain_client.upsert_examples_multipart(upserts=[example_1, example_2])
-    assert created_examples['count'] == 2
-    
-    created_example_1 = langchain_client.read_example(created_examples['example_ids'][0])
-    assert created_example_1.inputs["text"] == "hello world"
-    assert created_example_1.outputs == None
+    created_examples = langchain_client.upsert_examples_multipart(
+        upserts=[example_1, example_2]
+    )
+    assert created_examples["count"] == 2
 
-    created_example_2 = langchain_client.read_example(created_examples['example_ids'][1])
+    created_example_1 = langchain_client.read_example(
+        created_examples["example_ids"][0]
+    )
+    assert created_example_1.inputs["text"] == "hello world"
+    assert created_example_1.outputs is None
+
+    created_example_2 = langchain_client.read_example(
+        created_examples["example_ids"][1]
+    )
     assert created_example_2.inputs["text"] == "foo bar"
     assert created_example_2.outputs["response"] == "baz"
 
     # make sure examples were sent to the correct dataset
-    all_examples_in_dataset = [example for example in langchain_client.list_examples(dataset_id=dataset.id)]
+    all_examples_in_dataset = [
+        example for example in langchain_client.list_examples(dataset_id=dataset.id)
+    ]
     assert len(all_examples_in_dataset) == 2
 
     example_1_update = ExampleUpsertWithAttachments(
@@ -427,16 +435,19 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
             "my_file": ("text/plain", b"more test content"),
         },
     )
-    updated_examples = langchain_client.upsert_examples_multipart(upserts=[example_1_update])
-    assert updated_examples['count'] == 1
-    assert updated_examples['example_ids'][0] == str(example_id)
-    updated_example = langchain_client.read_example(updated_examples['example_ids'][0])
-    assert updated_example.inputs['text'] == "bar baz"
-    assert updated_example.outputs['response'] == "foo"
+    updated_examples = langchain_client.upsert_examples_multipart(
+        upserts=[example_1_update]
+    )
+    assert updated_examples["count"] == 1
+    assert updated_examples["example_ids"][0] == str(example_id)
+    updated_example = langchain_client.read_example(updated_examples["example_ids"][0])
+    assert updated_example.inputs["text"] == "bar baz"
+    assert updated_example.outputs["response"] == "foo"
 
-    # Test that adding invalid example fails - even if valid examples are added alongside
+    # Test that adding invalid example fails
+    # even if valid examples are added alongside
     example_3 = ExampleUpsertWithAttachments(
-        dataset_id=uuid4(), # not a real dataset
+        dataset_id=uuid4(),  # not a real dataset
         inputs={"text": "foo bar"},
         outputs={"response": "baz"},
         attachments={
@@ -447,14 +458,17 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
     with pytest.raises(LangSmithNotFoundError):
         langchain_client.upsert_examples_multipart(upserts=[example_3])
 
-    all_examples_in_dataset = [example for example in langchain_client.list_examples(dataset_id=dataset.id)]
+    all_examples_in_dataset = [
+        example for example in langchain_client.list_examples(dataset_id=dataset.id)
+    ]
     assert len(all_examples_in_dataset) == 2
 
     # Throw type errors when not passing ExampleUpsertWithAttachments
     with pytest.raises(AttributeError):
-        langchain_client.upsert_examples_multipart(upserts=[{"foo":"bar"}])
+        langchain_client.upsert_examples_multipart(upserts=[{"foo": "bar"}])
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
+
 
 def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
