@@ -713,7 +713,7 @@ class LangSmithInfo(BaseModel):
     """The time the license will expire."""
     batch_ingest_config: Optional[BatchIngestConfig] = None
     """The instance flags."""
-    instance_flags: Optional[dict[str, Any]] = None
+    instance_flags: Optional[Dict[str, Any]] = None
 
 
 Example.update_forward_refs()
