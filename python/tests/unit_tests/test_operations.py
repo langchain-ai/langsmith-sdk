@@ -20,6 +20,7 @@ def test_combine_serialized_queue_operations():
             attachments=None,
         ),
         SerializedRunOperation(
+            operation="patch",
             id="id1",
             trace_id="trace_id1",
             _none=_orjson.dumps({"b": "2"}),
