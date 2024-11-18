@@ -31,7 +31,7 @@ pydantic = [
   { version = "^2.7.4", python = ">=3.12.4" },
 ]
 requests = "^2"
-orjson = { version = "^3.9.14", markers = "platform_python_implementation != 'PyPy' and extra != 'no-orjson'" }
+orjson = { version = "^3.9.14", markers = "platform_python_implementation != 'PyPy' and extra != 'defaultjson'" }
 httpx = ">=0.23.0,<1"
 requests-toolbelt = "^1.0.0"
 
@@ -71,6 +71,7 @@ pytest-socket = "^0.7.0"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]
+defaultjson = []
 
 [build-system]
 requires = ["poetry-core"]

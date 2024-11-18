@@ -2065,9 +2065,10 @@ multidict = ">=4.0"
 propcache = ">=0.2.0"
 
 [extras]
+defaultjson = []
 vcr = []
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4.0"
-content-hash = "af3b8bc4b04b9e64b98adba7ac3528e34e40502ad721298e4ecc559edc89d252"
+content-hash = "2af050c1fb5b7ba121c731253c044d85a276e8f77e76b30de1cc531eda60b53d"
