@@ -91,7 +91,10 @@ class LangSmithMissingAPIKeyWarning(LangSmithWarning):
     """Warning for missing API key."""
 
 
-def tracing_is_enabled(ctx: Optional[dict] = None) -> bool:
+from typing import Literal
+
+
+def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
     """Return True if tracing is enabled."""
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 

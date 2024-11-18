@@ -900,7 +900,7 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-    upload_results: bool = True
+    upload_results: bool = True,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
@@ -1303,7 +1303,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=self.runs,
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
-            upload_results=self._upload_results
+            upload_results=self._upload_results,
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1340,7 +1340,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client, self._upload_results
+                    fn,
+                    example,
+                    self.experiment_name,
+                    self._metadata,
+                    self.client,
+                    self._upload_results,
                 )
 
         else:
@@ -1353,7 +1358,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        self._upload_results
+                        self._upload_results,
                     )
                     for example in self.examples
                 ]
@@ -1367,24 +1372,23 @@ class _ExperimentManager(_ExperimentManagerMixin):
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
         executor: cf.ThreadPoolExecutor,
-        upload_results: bool
+        upload_results: bool,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),
-            **{ "experiment": self.experiment_name},
+            **{
+                "experiment": self.experiment_name,
+                "reference_example_id": current_results["example"].id,
+                "reference_run_id": current_results["run"].id,
+            },
         }
-        if current_results["example"]:
-            metadata["reference_example_id"] = current_results["example"].id
-        if current_results["run"]:
-            metadata["reference_run_id"] = current_results["run"].id
-
         with rh.tracing_context(
             **{
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": upload_results,
+                "enabled": "local" if not upload_results else True,
                 "client": self.client,
             }
         ):
@@ -1397,7 +1401,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         run=run,
                         example=example,
                     )
-                    eval_results["results"].extend(self.client._select_eval_results(evaluator_response))
+                    eval_results["results"].extend(
+                        self.client._select_eval_results(evaluator_response)
+                    )
                     if upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
@@ -1419,7 +1425,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             ]
                         )
                         eval_results["results"].extend(
-                            self.client._select_eval_results(error_response))
+                            self.client._select_eval_results(error_response)
+                        )
                         if upload_results:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
@@ -1510,7 +1517,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     "project_name": "evaluators",
                     "metadata": metadata,
                     "client": self.client,
-                    "enabled": self._upload_results,
+                    "enabled": "local" if not self._upload_results else True,
                 }
             ):
                 for evaluator in summary_evaluators:
@@ -1643,13 +1650,17 @@ def _forward(
         nonlocal run
         run = r
 
-    with rh.tracing_context(enabled=upload_results):
-        example_version = example.modified_at.isoformat() if example.modified_at else example.created_at.isoformat()
+    with rh.tracing_context(enabled="local" if not upload_results else True):
+        example_version = (
+            example.modified_at.isoformat()
+            if example.modified_at
+            else example.created_at.isoformat()
+        )
         langsmith_extra = rh.LangSmithExtra(
             reference_example_id=example.id,
             on_end=_get_run,
             project_name=experiment_name,
-            metadata={ **metadata, "example_version": example_version },
+            metadata={**metadata, "example_version": example_version},
             client=client,
         )
         try:
@@ -1658,7 +1669,7 @@ def _forward(
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
             )
-        return _ForwardResults( run=cast(schemas.Run, run), example=example )
+        return _ForwardResults(run=cast(schemas.Run, run), example=example)
 
 
 def _resolve_data(

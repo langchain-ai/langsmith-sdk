@@ -58,7 +58,11 @@ _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
 _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
-_TRACING_ENABLED = contextvars.ContextVar[Optional[bool]](
+
+
+from typing import Literal
+
+_TRACING_ENABLED = contextvars.ContextVar[Optional[Union[bool, Literal["local"]]]](
     "_TRACING_ENABLED", default=None
 )
 _CLIENT = contextvars.ContextVar[Optional[ls_client.Client]]("_CLIENT", default=None)
@@ -93,6 +97,9 @@ def get_tracing_context(
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
 
 
+from typing import Literal
+
+
 @contextlib.contextmanager
 def tracing_context(
     *,
@@ -100,7 +107,7 @@ def tracing_context(
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str]] = None,
-    enabled: Optional[bool] = None,
+    enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
@@ -935,7 +942,7 @@ class trace:
                 attachments=self.attachments or {},
             )
 
-        if enabled:
+        if enabled is True:
             self.new_run.post()
             _TAGS.set(tags_)
             _METADATA.set(metadata)
@@ -1226,7 +1233,8 @@ def _container_end(
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
     run_tree.end(outputs=outputs_, error=error_)
-    run_tree.patch()
+    if utils.tracing_is_enabled() is True:
+        run_tree.patch()
     on_end = container.get("on_end")
     if on_end is not None and callable(on_end):
         try:
@@ -1328,7 +1336,8 @@ def _setup_run(
     id_ = langsmith_extra.get("run_id")
     if not parent_run_ and not utils.tracing_is_enabled():
         utils.log_once(
-            logging.DEBUG, "LangSmith tracing is enabled, returning original function."
+            logging.DEBUG,
+            "LangSmith tracing is not enabled, returning original function.",
         )
         return _TraceableContainer(
             new_run=None,
@@ -1410,10 +1419,11 @@ def _setup_run(
             client=client_,  # type: ignore
             attachments=attachments,
         )
-    try:
-        new_run.post()
-    except BaseException as e:
-        LOGGER.error(f"Failed to post run {new_run.id}: {e}")
+    if utils.tracing_is_enabled() is True:
+        try:
+            new_run.post()
+        except BaseException as e:
+            LOGGER.error(f"Failed to post run {new_run.id}: {e}")
     response_container = _TraceableContainer(
         new_run=new_run,
         project_name=selected_project,
