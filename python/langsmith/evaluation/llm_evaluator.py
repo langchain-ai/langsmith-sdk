@@ -34,33 +34,55 @@ class CategoricalScoreConfig(BaseModel):
     include_explanation: bool = False  # Deprecated
     explanation_description: Optional[str] = None  # Deprecated
 
-    def __init__(self, **data):
+    def __init__(
+        self,
+        *,
+        key: str,
+        choices: List[str],
+        description: str,
+        reasoning_key: Optional[str] = None,
+        reasoning_description: Optional[str] = None,
+        include_explanation: bool = False,  # Deprecated
+        explanation_description: Optional[str] = None,  # Deprecated
+    ):
         """Initialize CategoricalScoreConfig."""
-        if data.get("include_explanation") and data.get("reasoning_key"):
+        if include_explanation and reasoning_key:
             raise ValueError(
                 "Cannot include both include_explanation and reasoning_key, "
-                "please just use reasoning_key - include_explanation has been deprecated"  # noqa: E501
+                "please just use reasoning_key - include_explanation has been "
+                "deprecated"
             )
-        if data.get("explanation_description") and data.get("reasoning_description"):
+        if explanation_description and reasoning_description:
             raise ValueError(
-                "Cannot include both explanation_description and reasoning_description, "  # noqa: E501
-                "please just use reasoning_description - explanation_description has been deprecated"  # noqa: E501
+                "Cannot include both explanation_description and "
+                "reasoning_description, please just use reasoning_description - "
+                "explanation_description has been deprecated"
             )
-        if data.get("include_explanation"):
+        if include_explanation:
             warnings.warn(
-                "'include_explanation' is deprecated. Use 'reasoning_key=\"explanation\"' instead.",  # noqa: E501
+                "'include_explanation' is deprecated. Use "
+                "'reasoning_key=\"explanation\"' instead.",
                 DeprecationWarning,
             )
-            data["reasoning_key"] = "explanation"
+            reasoning_key = "explanation"
 
-        if "explanation_description" in data:
+        if explanation_description:
             warnings.warn(
-                "'explanation_description' is deprecated. Use 'reasoning_description' instead.",  # noqa: E501
+                "'explanation_description' is deprecated. Use "
+                "'reasoning_description' instead.",
                 DeprecationWarning,
             )
-            data["reasoning_description"] = data["explanation_description"]
+            reasoning_description = explanation_description
 
-        super().__init__(**data)
+        super().__init__(
+            key=key,
+            choices=choices,
+            description=description,
+            reasoning_key=reasoning_key,
+            reasoning_description=reasoning_description,
+            include_explanation=include_explanation,
+            explanation_description=explanation_description,
+        )
 
 
 class ContinuousScoreConfig(BaseModel):
@@ -88,35 +110,57 @@ class ContinuousScoreConfig(BaseModel):
     include_explanation: bool = False  # Deprecated
     explanation_description: Optional[str] = None  # Deprecated
 
-    def __init__(self, **data):
+    def __init__(
+        self,
+        *,
+        key: str,
+        description: str,
+        min: float = 0,
+        max: float = 1,
+        reasoning_key: Optional[str] = None,
+        reasoning_description: Optional[str] = None,
+        include_explanation: bool = False,  # Deprecated
+        explanation_description: Optional[str] = None,  # Deprecated
+    ):
         """Initialize ContinuousScoreConfig."""
-        if data.get("include_explanation") and data.get("reasoning_key"):
+        if include_explanation and reasoning_key:
             raise ValueError(
                 "Cannot include both include_explanation and reasoning_key, "
-                "please just use reasoning_key - include_explanation has been deprecated"  # noqa: E501
+                "please just use reasoning_key - include_explanation has been "
+                "deprecated"
             )
-        if data.get("explanation_description") and data.get("reasoning_description"):
+        if explanation_description and reasoning_description:
             raise ValueError(
-                "Cannot include both explanation_description and reasoning_description, "  # noqa: E501
-                "please just use reasoning_description - explanation_description has been deprecated"  # noqa: E501
+                "Cannot include both explanation_description and "
+                "reasoning_description, please just use reasoning_description - "
+                "explanation_description has been deprecated"
             )
-        if data.get("include_explanation"):
+        if include_explanation:
             warnings.warn(
-                "'include_explanation' is deprecated. Use \
-                    'reasoning_key=\"explanation\"' instead.",
+                "'include_explanation' is deprecated. Use "
+                "'reasoning_key=\"explanation\"' instead.",
                 DeprecationWarning,
             )
-            data["reasoning_key"] = "explanation"
+            reasoning_key = "explanation"
 
-        if "explanation_description" in data:
+        if explanation_description:
             warnings.warn(
-                "'explanation_description' is deprecated. \
-                    Use 'reasoning_description' instead.",
+                "'explanation_description' is deprecated. Use "
+                "'reasoning_description' instead.",
                 DeprecationWarning,
             )
-            data["reasoning_description"] = data["explanation_description"]
+            reasoning_description = explanation_description
 
-        super().__init__(**data)
+        super().__init__(
+            key=key,
+            min=min,
+            max=max,
+            description=description,
+            reasoning_key=reasoning_key,
+            reasoning_description=reasoning_description,
+            include_explanation=include_explanation,
+            explanation_description=explanation_description,
+        )
 
 
 def _create_score_json_schema(
