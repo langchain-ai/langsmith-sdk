@@ -22,7 +22,8 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import dataclasses_json
-import orjson
+
+from langsmith._internal import _orjson
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
@@ -848,7 +849,7 @@ def test_serialize_json(caplog) -> None:
         "set_with_class": set([MyClass(1)]),
         "my_mock": MagicMock(text="Hello, world"),
     }
-    res = orjson.loads(_dumps_json(to_serialize))
+    res = _orjson.loads(_dumps_json(to_serialize))
     assert (
         "model_dump" not in caplog.text
     ), f"Unexpected error logs were emitted: {caplog.text}"
@@ -898,7 +899,7 @@ def test_serialize_json(caplog) -> None:
     my_cyclic = CyclicClass(other=CyclicClass(other=None))
     my_cyclic.other.other = my_cyclic  # type: ignore
 
-    res = orjson.loads(_dumps_json({"cyclic": my_cyclic}))
+    res = _orjson.loads(_dumps_json({"cyclic": my_cyclic}))
     assert res == {"cyclic": "my_cycles..."}
     expected = {"foo": "foo", "bar": 1}
 
@@ -1142,7 +1143,7 @@ def test_batch_ingest_run_splits_large_batches(
             op
             for call in mock_session.request.call_args_list
             for reqs in (
-                orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+                _orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
             )
             for op in reqs
         ]
