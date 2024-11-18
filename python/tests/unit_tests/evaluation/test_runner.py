@@ -310,6 +310,25 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
     for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
+    # test invalid evaluators
+    # args need to be positional
+    def eval1(*, inputs, outputs):
+        pass
+
+    # if more than 2 positional args, they must all have default arg names
+    # (run, example, ...)
+    def eval2(x, y, inputs):
+        pass
+
+    evaluators = [eval1, eval2]
+
+    for eval_ in evaluators:
+        with pytest.raises(ValueError, match="Invalid evaluator function."):
+            _normalize_evaluator_func(eval_)
+
+        with pytest.raises(ValueError, match="Invalid evaluator function."):
+            evaluate((lambda x: x), data=ds_examples, evaluators=[eval_], client=client)
+
 
 def test_evaluate_raises_for_async():
     async def my_func(inputs: dict):
@@ -523,33 +542,7 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
     async for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
-
-@pytest.mark.parametrize("sync", [True, False])
-async def test_evaluate_invalid_evaluator_signature(sync: bool) -> None:
-    ds_name = "my-dataset"
-    ds_id = "00886375-eb2a-4038-9032-efff60309896"
-
-    session = mock.Mock()
-    tenant_id = str(uuid.uuid4())
-    ds_examples = [_create_example(0)]
-    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
-    session.request = fake_request.request
-    client = Client(
-        api_url="http://localhost:1984",
-        api_key="123",
-        session=session,
-        info=ls_schemas.LangSmithInfo(
-            batch_ingest_config=ls_schemas.BatchIngestConfig(
-                size_limit_bytes=None,  # Note this field is not used here
-                size_limit=100,
-                scale_up_nthreads_limit=16,
-                scale_up_qsize_trigger=1000,
-                scale_down_nempty_trigger=4,
-            )
-        ),
-    )
-    client._tenant_id = tenant_id  # type: ignore
-
+    # test invalid evaluators
     # args need to be positional
     async def eval1(*, inputs, outputs):
         pass
@@ -569,11 +562,6 @@ async def test_evaluate_invalid_evaluator_signature(sync: bool) -> None:
             _normalize_evaluator_func(eval_)
 
         with pytest.raises(ValueError, match="Invalid evaluator function."):
-            if sync:
-                evaluate(
-                    (lambda x: x), data=ds_examples, evaluators=[eval_], client=client
-                )
-            else:
-                await aevaluate(
-                    atarget, data=ds_examples, evaluators=[eval_], client=client
-                )
+            await aevaluate(
+                atarget, data=ds_examples, evaluators=[eval_], client=client
+            )

@@ -659,15 +659,14 @@ def _normalize_evaluator_func(
 ]:
     supported_args = ("run", "example", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
-    positional_no_default = [
+    positional_args = [
         pname
         for pname, p in sig.parameters.items()
         if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
-        and p.default is p.empty
     ]
-    if not positional_no_default or (
-        not all(pname in supported_args for pname in positional_no_default)
-        and len(positional_no_default) != 2
+    if not positional_args or (
+        not all(pname in supported_args for pname in positional_args)
+        and len(positional_args) != 2
     ):
         msg = (
             f"Invalid evaluator function. Must have at least one positional "
@@ -676,7 +675,7 @@ def _normalize_evaluator_func(
             # noqa: E501
         )
         raise ValueError(msg)
-    elif not all(pname in supported_args for pname in positional_no_default):
+    elif not all(pname in supported_args for pname in positional_args):
         # For backwards compatibility we assume custom arg names are Run and Example
         # types, respectively.
         return func
@@ -691,7 +690,7 @@ def _normalize_evaluator_func(
                     "outputs": run.outputs or {},
                     "reference_outputs": example.outputs or {},
                 }
-                args = (arg_map[arg] for arg in positional_no_default)
+                args = (arg_map[arg] for arg in positional_args)
                 return await func(*args)
 
             awrapper.__name__ = (
@@ -711,7 +710,7 @@ def _normalize_evaluator_func(
                     "outputs": run.outputs or {},
                     "reference_outputs": example.outputs or {},
                 }
-                args = (arg_map[arg] for arg in positional_no_default)
+                args = (arg_map[arg] for arg in positional_args)
                 return func(*args)
 
             wrapper.__name__ = (
