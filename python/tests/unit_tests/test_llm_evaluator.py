@@ -6,6 +6,7 @@ from langsmith.evaluation.llm_evaluator import (
     LLMEvaluator,
 )
 
+
 def test_llm_evaluator_init() -> None:
     evaluator = LLMEvaluator(
         prompt_template="Is the response vague? Y/N\n{input}",
@@ -50,12 +51,12 @@ def test_llm_evaluator_init() -> None:
         "title": "rating",
         "description": "The rating of the response, from 0 to 1.",
         "type": "object",
-        'properties': {
-            'score': {
-                'description': 'The score for the evaluation, between 0.0 and 1.0, inclusive.',
-                'maximum': 1.0, 
-                'minimum': 0.0, 
-                'type': 'number'
+        "properties": {
+            "score": {
+                "description": "The score for the evaluation, between 0.0 and 1.0, inclusive.",  # noqa: E501
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number",
             }
         },
         "required": ["score"],
@@ -100,6 +101,7 @@ def test_llm_evaluator_init() -> None:
     )
     assert evaluator is not None
     assert set(evaluator.prompt.input_variables) == {"input", "output", "hello"}
+
 
 @pytest.mark.parametrize(
     "config_class", [CategoricalScoreConfig, ContinuousScoreConfig]

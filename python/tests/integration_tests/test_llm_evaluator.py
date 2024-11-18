@@ -1,15 +1,16 @@
+from langchain_openai import ChatOpenAI
+
 from langsmith import Client, aevaluate, evaluate
 from langsmith.evaluation.llm_evaluator import (
     CategoricalScoreConfig,
     ContinuousScoreConfig,
     LLMEvaluator,
 )
-from langchain_openai import ChatOpenAI
 
 
 def test_from_model() -> None:
     evaluator = LLMEvaluator.from_model(
-        ChatOpenAI(), # can't use FakeChatModel because of bind_tools call in LLMEvaluator
+        ChatOpenAI(),  # can't use FakeChatModel because of bind_tools call
         prompt_template="Rate the response from 0 to 1.\n{input}",
         score_config=ContinuousScoreConfig(
             key="rating", description="The rating of the response, from 0 to 1."
@@ -22,15 +23,16 @@ def test_from_model() -> None:
         "description": "The rating of the response, from 0 to 1.",
         "type": "object",
         "properties": {
-            'score': {
-                'description': 'The score for the evaluation, between 0.0 and 1.0, inclusive.',
-                'maximum': 1.0, 
-                'minimum': 0.0, 
-                'type': 'number'
+            "score": {
+                "description": "The score for the evaluation, between 0.0 and 1.0, inclusive.",  # noqa: E501
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number",
             }
         },
         "required": ["score"],
     }
+
 
 async def test_evaluate() -> None:
     client = Client()
@@ -85,7 +87,7 @@ async def test_evaluate() -> None:
         data=dataset_name,
         evaluators=[reference_accuracy, accuracy],
         experiment_prefix=__name__ + "::test_evaluate.evaluate",
-        client=client
+        client=client,
     )
     results.wait()
 
@@ -94,5 +96,5 @@ async def test_evaluate() -> None:
         data=dataset_name,
         evaluators=[reference_accuracy, accuracy],
         experiment_prefix=__name__ + "::test_evaluate.aevaluate",
-        client=client
+        client=client,
     )
