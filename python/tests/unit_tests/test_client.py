@@ -454,7 +454,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     call_args = mock_session.request.call_args
 
     assert call_args[0][0] == "POST"
-    assert call_args[0][1].endswith("/v1/examples/multipart")
+    assert call_args[0][1].endswith("/v1/platform/examples/multipart")
 
     # Parse the multipart data
     request_data = call_args[1]["data"]
