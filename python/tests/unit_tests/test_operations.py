@@ -1,4 +1,5 @@
-from langsmith._internal import _orjson
+import orjson
+
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
@@ -13,7 +14,7 @@ def test_combine_serialized_queue_operations():
             operation="post",
             id="id1",
             trace_id="trace_id1",
-            _none=_orjson.dumps({"a": 1}),
+            _none=orjson.dumps({"a": 1}),
             inputs="inputs1",
             outputs="outputs1",
             events="events1",
@@ -23,7 +24,7 @@ def test_combine_serialized_queue_operations():
             operation="patch",
             id="id1",
             trace_id="trace_id1",
-            _none=_orjson.dumps({"b": "2"}),
+            _none=orjson.dumps({"b": "2"}),
             inputs="inputs1-patched",
             outputs="outputs1-patched",
             events="events1",
@@ -86,7 +87,7 @@ def test_combine_serialized_queue_operations():
             operation="post",
             id="id1",
             trace_id="trace_id1",
-            _none=_orjson.dumps({"a": 1, "b": "2"}),
+            _none=orjson.dumps({"a": 1, "b": "2"}),
             inputs="inputs1-patched",
             outputs="outputs1-patched",
             events="events1",

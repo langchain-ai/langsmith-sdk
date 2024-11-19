@@ -12,6 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
+import orjson
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
@@ -20,7 +21,6 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _orjson
 
 try:
     import pytest  # type: ignore
@@ -374,7 +374,7 @@ def _serde_example_values(values: VT) -> VT:
     if values is None:
         return values
     bts = ls_client._dumps_json(values)
-    return _orjson.loads(bts)
+    return orjson.loads(bts)
 
 
 class _LangSmithTestSuite:
