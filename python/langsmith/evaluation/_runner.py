@@ -1753,7 +1753,7 @@ def _include_attachments(
             "arguments (inputs, attachments)"
         )
     elif len(positional_params) == 2:
-        if (p.name for p in positional_params) != ("inputs", "attachments"):
+        if tuple(p.name for p in positional_params) != ("inputs", "attachments"):
             raise ValueError(
                 "When target function has two positional arguments, they must be named "
                 "'inputs' and 'attachments', respectively."

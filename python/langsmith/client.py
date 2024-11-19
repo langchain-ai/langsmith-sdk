@@ -25,6 +25,7 @@ import itertools
 import json
 import logging
 import os
+from pathlib import Path
 import random
 import threading
 import time
@@ -3405,15 +3406,21 @@ class Client:
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
-                    if isinstance(attachment, tuple):
-                        mime_type, data = attachment
+                    if isinstance(attachment, tuple) and isinstance(attachment[1], Path):
+                        mime_type, file_path = attachment
+                        file_size = os.path.getsize(file_path)
+                        data = open(file_path, "rb"),
                     else:
-                        mime_type = attachment.mime_type
-                        data = attachment.data
+                        if isinstance(attachment, tuple):
+                            mime_type, data = attachment
+                        else:
+                            mime_type = attachment.mime_type
+                            data = attachment.data
+                        file_size = len(data)
                     parts.append(
                         (
                             f"{example_id}.attachment.{name}",
-                            (None, data, f"{mime_type}; length={len(data)}", {}),
+                            (None, data, f"{mime_type}; length={file_size}", {}),
                         )
                     )
 
@@ -3640,7 +3647,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
-        include_attachments: bool = True,
+        include_attachments: bool = False,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
