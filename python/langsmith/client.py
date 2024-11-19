@@ -3406,10 +3406,12 @@ class Client:
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
-                    if isinstance(attachment, tuple) and isinstance(attachment[1], Path):
+                    if isinstance(attachment, tuple) and isinstance(
+                        attachment[1], Path
+                    ):
                         mime_type, file_path = attachment
                         file_size = os.path.getsize(file_path)
-                        data = open(file_path, "rb"),
+                        data = (open(file_path, "rb"),)
                     else:
                         if isinstance(attachment, tuple):
                             mime_type, data = attachment
