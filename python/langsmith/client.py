@@ -38,6 +38,7 @@ from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
+    BinaryIO,
     Callable,
     DefaultDict,
     Dict,
@@ -3726,8 +3727,8 @@ class Client:
             if example["attachment_urls"]:
                 for key, value in example["attachment_urls"].items():
                     response = requests.get(value["presigned_url"], stream=True)
+                    response.raise_for_status()
                     reader = io.BytesIO(response.content)
-                    reader.seek(0)
                     attachment_urls[key.split(".")[1]] = (
                         value["presigned_url"],
                         reader,
