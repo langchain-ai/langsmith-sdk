@@ -1205,7 +1205,6 @@ def test_trace_to_traceable(enabled: Union[bool, Literal["local"]]):
     assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
-@pytest.mark.parametrize("enabled", [True, "local"])
 def test_client_passed_when_traceable_parent():
     mock_client = _get_mock_client()
     rt = RunTree(name="foo", client=mock_client)
