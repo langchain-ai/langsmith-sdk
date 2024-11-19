@@ -82,19 +82,6 @@ class BinaryIOLike(Protocol):
         ...
 
 
-@runtime_checkable
-class BinaryIOLike(Protocol):
-    """Protocol for binary IO-like objects."""
-
-    def read(self, size: int = -1) -> bytes:
-        """Read function."""
-        ...
-
-    def write(self, b: bytes) -> int:
-        """Write function."""
-        ...
-
-
 class ExampleBase(BaseModel):
     """Example base model."""
 
