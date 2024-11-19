@@ -404,7 +404,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
         },
     )
 
-    created_examples = langchain_client.upsert_examples_multipart(
+    created_examples = langchain_client._upsert_examples_multipart(
         upserts=[example_1, example_2]
     )
     assert created_examples["count"] == 2
@@ -436,7 +436,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
             "my_file": ("text/plain", b"more test content"),
         },
     )
-    updated_examples = langchain_client.upsert_examples_multipart(
+    updated_examples = langchain_client._upsert_examples_multipart(
         upserts=[example_1_update]
     )
     assert updated_examples["count"] == 1
@@ -457,7 +457,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
     )
 
     with pytest.raises(LangSmithNotFoundError):
-        langchain_client.upsert_examples_multipart(upserts=[example_3])
+        langchain_client._upsert_examples_multipart(upserts=[example_3])
 
     all_examples_in_dataset = [
         example for example in langchain_client.list_examples(dataset_id=dataset.id)
@@ -466,7 +466,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
 
     # Throw type errors when not passing ExampleUpsertWithAttachments
     with pytest.raises(AttributeError):
-        langchain_client.upsert_examples_multipart(upserts=[{"foo": "bar"}])
+        langchain_client._upsert_examples_multipart(upserts=[{"foo": "bar"}])
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
@@ -1186,7 +1186,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         },
     )
 
-    langchain_client.upsert_examples_multipart(upserts=[example])
+    langchain_client._upsert_examples_multipart(upserts=[example])
 
     # 3. Define target function that uses attachments
     def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
