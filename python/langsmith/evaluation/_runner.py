@@ -907,7 +907,6 @@ def _evaluate(
         runs,
         client,
     )
-
     manager = _ExperimentManager(
         data,
         client=client,
@@ -918,6 +917,7 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
+        include_attachments=_include_attachments(target),
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
     cache_path = (
@@ -1162,6 +1162,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        include_attachments: bool = False,
     ):
         super().__init__(
             experiment=experiment,
@@ -1175,11 +1176,16 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._include_attachments = include_attachments
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
-            self._examples = _resolve_data(self._data, client=self.client)
+            self._examples = _resolve_data(
+                self._data,
+                client=self.client,
+                include_attachments=self._include_attachments,
+            )
             if self._num_repetitions > 1:
                 self._examples = itertools.chain.from_iterable(
                     itertools.tee(self._examples, self._num_repetitions)
@@ -1225,6 +1231,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            include_attachments=self._include_attachments,
         )
 
     def with_predictions(
@@ -1246,6 +1253,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=(pred["run"] for pred in r2),
             # TODO: Can't do multiple prediction rounds rn.
+            include_attachments=self._include_attachments,
         )
 
     def with_evaluators(
@@ -1276,6 +1284,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
             summary_results=self._summary_results,
+            include_attachments=self._include_attachments,
         )
 
     def with_summary_evaluators(
@@ -1296,6 +1305,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=self.runs,
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            include_attachments=self._include_attachments,
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1332,7 +1342,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
-        with_attachments = _with_attachments(target)
 
         if max_concurrency == 0:
             for example in self.examples:
@@ -1342,7 +1351,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self.experiment_name,
                     self._metadata,
                     self.client,
-                    with_attachments=with_attachments,
+                    include_attachments=self._include_attachments,
                 )
 
         else:
@@ -1355,7 +1364,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        with_attachments=with_attachments,
+                        include_attachments=self._include_attachments,
                     )
                     for example in self.examples
                 ]
@@ -1629,7 +1638,7 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
-    with_attachments: Optional[bool] = None,
+    include_attachments: Optional[bool] = None,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1641,7 +1650,7 @@ def _forward(
         try:
             args = (
                 (example.inputs, example.attachment_urls)
-                if with_attachments
+                if include_attachments
                 else (example.inputs,)
             )
             fn(
@@ -1675,16 +1684,23 @@ def _resolve_data(
     data: DATA_T,
     *,
     client: langsmith.Client,
+    include_attachments: bool = False,
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
     # TODO: Find a smarter way of determining whether
     # to get attachments (don't just default to true)
     if isinstance(data, str):
-        return client.list_examples(dataset_name=data, include_attachments=True)
+        return client.list_examples(
+            dataset_name=data, include_attachments=include_attachments
+        )
     elif isinstance(data, uuid.UUID):
-        return client.list_examples(dataset_id=data, include_attachments=True)
+        return client.list_examples(
+            dataset_id=data, include_attachments=include_attachments
+        )
     elif isinstance(data, schemas.Dataset):
-        return client.list_examples(dataset_id=data.id, include_attachments=True)
+        return client.list_examples(
+            dataset_id=data.id, include_attachments=include_attachments
+        )
     return data
 
 
@@ -1714,10 +1730,12 @@ def _ensure_traceable(
     return fn
 
 
-def _with_attachments(
-    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],
+def _include_attachments(
+    target: Union[TARGET_T, Iterable[schemas.Run], Runnable],
 ) -> bool:
     """Whether the target function accepts attachments."""
+    if _is_langchain_runnable(target) or not callable(target):
+        return False
     # Check function signature
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
@@ -1735,13 +1753,10 @@ def _with_attachments(
             "arguments (inputs, attachments)"
         )
     elif len(positional_params) == 2:
-        if (
-            positional_params[0].name != "inputs"
-            or positional_params[1].name != "attachments"
-        ):
+        if (p.name for p in positional_params) != ("inputs", "attachments"):
             raise ValueError(
-                "When using two arguments, they must be named "
-                "'inputs' and 'attachments'"
+                "When target function has two positional arguments, they must be named "
+                "'inputs' and 'attachments', respectively."
             )
 
     return len(positional_params) == 2
