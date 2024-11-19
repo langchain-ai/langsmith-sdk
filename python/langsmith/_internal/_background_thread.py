@@ -157,7 +157,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
-        if client and client._manual_cleanup:
+        if not client or client._manual_cleanup:
             return False
         if not threading.main_thread().is_alive():
             # main thread is dead. should not be active
