@@ -1125,12 +1125,9 @@ def test_slow_run_read_multipart(
 @pytest.mark.skip(
     reason="Need to land https://github.com/langchain-ai/langsmith-sdk/pull/1209 first"
 )
-def test_list_examples_attachments_keys() -> None:
+def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     """Test list_examples returns same keys with and without attachments."""
     dataset_name = "__test_list_examples_attachments" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_key="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"
-    )
     dataset = langchain_client.create_dataset(dataset_name=dataset_name)
 
     langchain_client.create_example(

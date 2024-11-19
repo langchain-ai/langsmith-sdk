@@ -3680,7 +3680,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
-        include_attachments: bool = True,
+        include_attachments: bool = False,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
