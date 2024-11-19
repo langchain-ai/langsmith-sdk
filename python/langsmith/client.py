@@ -3454,6 +3454,21 @@ class Client:
                                 ),
                             )
                         )
+                    elif isinstance(attachment, str):
+                        file_path = attachment
+                        mime_type = "application/octet-stream"
+                        file_size = os.path.getsize(file_path)
+                        parts.append(
+                            (
+                                f"{example_id}.attachment.{name}",
+                                (
+                                    None,
+                                    open(file_path, "rb"),
+                                    f"{mime_type}; length={file_size}",
+                                    {},
+                                ),
+                            )
+                        )
                     else:
                         parts.append(
                             (
@@ -3645,6 +3660,7 @@ class Client:
                 "as_of": as_of.isoformat() if as_of else None,
             },
         )
+
         return ls_schemas.Example(
             **response.json(),
             _host_url=self._host_url,
@@ -3664,6 +3680,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
+        include_attachments: bool = False,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3713,11 +3730,26 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
+        if include_attachments:
+            params["select"] = ["attachment_urls", "outputs", "metadata"]
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
+            attachment_urls = {}
+            if example["attachment_urls"]:
+                for key, value in example["attachment_urls"].items():
+                    response = requests.get(value["presigned_url"], stream=True)
+                    response.raise_for_status()
+                    reader = io.BytesIO(response.content)
+                    attachment_urls[key.split(".")[1]] = (
+                        value["presigned_url"],
+                        reader,
+                    )
+            del example["attachment_urls"]
+
             yield ls_schemas.Example(
                 **example,
+                attachment_urls=attachment_urls,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )

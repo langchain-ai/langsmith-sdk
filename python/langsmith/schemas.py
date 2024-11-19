@@ -63,8 +63,22 @@ class Attachment(NamedTuple):
     data: bytes
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
-"""Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, str]]
+"""Attachments associated with the run. 
+Each entry is a tuple of (mime_type, bytes), or a fliepath"""
+
+
+@runtime_checkable
+class BinaryIOLike(Protocol):
+    """Protocol for binary IO-like objects."""
+
+    def read(self, size: int = -1) -> bytes:
+        """Read function."""
+        ...
+
+    def write(self, b: bytes) -> int:
+        """Write function."""
+        ...
 
 
 class ExampleBase(BaseModel):
@@ -74,11 +88,15 @@ class ExampleBase(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
+    attachment_urls: Optional[Dict[str, Tuple[str, BinaryIOLike]]] = Field(default=None)
+    """Dictionary with attachment names as keys and a tuple of the S3 url
+    and a reader of the data for the file."""
 
     class Config:
         """Configuration class for the schema."""
 
         frozen = True
+        arbitrary_types_allowed = True
 
 
 class ExampleCreate(ExampleBase):
