@@ -1677,7 +1677,7 @@ def _resolve_data(
     client: langsmith.Client,
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
-    # TODO: Find a smarter way of determining whether 
+    # TODO: Find a smarter way of determining whether
     # to get attachments (don't just default to true)
     if isinstance(data, str):
         return client.list_examples(dataset_name=data, get_attachments=True)
