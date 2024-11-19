@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+from pathlib import Path
 import uuid
 from typing import Literal, Optional, Union, cast
 
@@ -256,18 +257,23 @@ def serialized_run_operation_to_multipart_parts_and_context(
                     " periods ('.'). Please rename the attachment and try again."
                 )
                 continue
-
-            acc_parts.append(
-                (
-                    f"attachment.{op.id}.{n}",
+            
+            if isinstance(valb, Path):
+                #TODO: actually deal with this case
+                # This is just for speed of getting something out
+                continue
+            else:
+                acc_parts.append(
                     (
-                        None,
-                        valb,
-                        content_type,
-                        {"Content-Length": str(len(valb))},
-                    ),
+                        f"attachment.{op.id}.{n}",
+                        (
+                            None,
+                            valb,
+                            content_type,
+                            {"Content-Length": str(len(valb))},
+                        ),
+                    )
                 )
-            )
     return MultipartPartsAndContext(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",
