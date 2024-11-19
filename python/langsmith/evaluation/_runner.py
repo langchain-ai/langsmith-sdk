@@ -1326,7 +1326,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self, target: TARGET_T, /, max_concurrency: Optional[int] = None,
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
-        fn, with_attachments = _ensure_traceable(target)
+        fn = _ensure_traceable(target)
+        with_attachments = _with_attachments(target)
 
         if max_concurrency == 0:
             for example in self.examples:
@@ -1628,43 +1629,28 @@ def _forward(
 
     with rh.tracing_context(enabled=True):
         try:
-            if with_attachments == True:
-                fn(
-                    example.inputs,
-                    example.attachments,
-                    langsmith_extra=rh.LangSmithExtra(
-                        reference_example_id=example.id,
-                        on_end=_get_run,
-                        project_name=experiment_name,
-                        metadata={
-                            **metadata,
-                            "example_version": (
-                                example.modified_at.isoformat()
-                                if example.modified_at
-                                else example.created_at.isoformat()
-                            ),
-                        },
-                        client=client,
-                    ),
-                )
-            else:
-                fn(
-                    example.inputs,
-                    langsmith_extra=rh.LangSmithExtra(
-                        reference_example_id=example.id,
-                        on_end=_get_run,
-                        project_name=experiment_name,
-                        metadata={
-                            **metadata,
-                            "example_version": (
-                                example.modified_at.isoformat()
-                                if example.modified_at
-                                else example.created_at.isoformat()
-                            ),
-                        },
-                        client=client,
-                    ),
-                )
+            args = (
+                (example.inputs, example.attachments)
+                if with_attachments
+                else (example.inputs,)
+            )
+            fn(
+                *args,
+                langsmith_extra=rh.LangSmithExtra(
+                    reference_example_id=example.id,
+                    on_end=_get_run,
+                    project_name=experiment_name,
+                    metadata={
+                        **metadata,
+                        "example_version": (
+                            example.modified_at.isoformat()
+                            if example.modified_at
+                            else example.created_at.isoformat()
+                        ),
+                    },
+                    client=client,
+                ),
+            )
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
@@ -1702,6 +1688,17 @@ def _ensure_traceable(
             "    ...\n"
             ")"
         )
+
+    if rh.is_traceable_function(target):
+        fn = target
+    else:
+        fn = rh.traceable(name="Target")(target)
+    return fn
+
+def _with_attachments(
+    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],       
+) -> bool:
+    """Whether the target function accepts attachments."""
     # Check function signature
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
@@ -1715,14 +1712,7 @@ def _ensure_traceable(
         if positional_params[0].name != "inputs" or positional_params[1].name != "attachments":
             raise ValueError("When using two arguments, they must be named 'inputs' and 'attachments'")
 
-    with_attachments = len(positional_params) == 2
-
-    if rh.is_traceable_function(target):
-        fn = target
-    else:
-        fn = rh.traceable(name="Target")(target)
-    return fn, with_attachments
-
+    return len(positional_params) == 2
 
 def _resolve_experiment(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]],
