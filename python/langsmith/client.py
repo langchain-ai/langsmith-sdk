@@ -3373,7 +3373,7 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = None,
+        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples."""
         """ if not (self.info.instance_flags or {}).get(
@@ -3381,9 +3381,7 @@ class Client:
             ):
             raise ValueError("Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version.")
          """
-        if upserts is None:
-            upserts = []
-        parts: list[MultipartPart] = []
+        parts: List[MultipartPart] = []
 
         for example in upserts:
             if example.id is not None:
@@ -3401,34 +3399,30 @@ class Client:
                 example_body["split"] = example.split
             valb = _dumps_json(example_body)
 
-            (
-                parts.append(
+            parts.append(
+                (
+                    f"{example_id}",
                     (
-                        f"{example_id}",
-                        (
-                            None,
-                            valb,
-                            "application/json",
-                            {},
-                        ),
-                    )
-                ),
+                        None,
+                        valb,
+                        "application/json",
+                        {},
+                    ),
+                )
             )
 
             inputsb = _dumps_json(example.inputs)
 
-            (
-                parts.append(
+            parts.append(
+                (
+                    f"{example_id}.inputs",
                     (
-                        f"{example_id}.inputs",
-                        (
-                            None,
-                            inputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
-                ),
+                        None,
+                        inputsb,
+                        "application/json",
+                        {},
+                    ),
+                )
             )
 
             if example.outputs:
@@ -3451,32 +3445,28 @@ class Client:
                 for name, attachment in example.attachments.items():
                     if isinstance(attachment, tuple):
                         mime_type, data = attachment
-                        (
-                            parts.append(
+                        parts.append(
+                            (
+                                f"{example_id}.attachment.{name}",
                                 (
-                                    f"{example_id}.attachment.{name}",
-                                    (
-                                        None,
-                                        data,
-                                        f"{mime_type}; length={len(data)}",
-                                        {},
-                                    ),
-                                )
-                            ),
+                                    None,
+                                    data,
+                                    f"{mime_type}; length={len(data)}",
+                                    {},
+                                ),
+                            )
                         )
                     else:
-                        (
-                            parts.append(
+                        parts.append(
+                            (
+                                f"{example_id}.attachment.{name}",
                                 (
-                                    f"{example_id}.attachment.{name}",
-                                    (
-                                        None,
-                                        attachment.data,
-                                        f"{attachment.mime_type}; length={len(attachment.data)}",
-                                        {},
-                                    ),
-                                )
-                            ),
+                                    None,
+                                    attachment.data,
+                                    f"{attachment.mime_type}; length={len(attachment.data)}",
+                                    {},
+                                ),
+                            )
                         )
 
         encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)

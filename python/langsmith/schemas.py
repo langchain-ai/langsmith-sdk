@@ -135,6 +135,16 @@ class Example(ExampleBase):
             return f"{self._host_url}{path}"
         return None
 
+    def __repr__(self):
+        """Return a string representation of the RunBase object."""
+        return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
+
+
+class ExampleSearch(ExampleBase):
+    """Example returned via search."""
+
+    id: UUID
+
 
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
@@ -708,7 +718,7 @@ class LangSmithInfo(BaseModel):
     """The time the license will expire."""
     batch_ingest_config: Optional[BatchIngestConfig] = None
     """The instance flags."""
-    instance_flags: dict[str, Any] = None
+    instance_flags: Optional[Dict[str, Any]] = None
 
 
 Example.update_forward_refs()
