@@ -5,9 +5,8 @@ import logging
 import uuid
 from typing import Literal, Optional, Union, cast
 
-import orjson
-
 from langsmith import schemas as ls_schemas
+from langsmith._internal import _orjson
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -169,12 +168,12 @@ def combine_serialized_queue_operations(
             if op._none is not None and op._none != create_op._none:
                 # TODO optimize this more - this would currently be slowest
                 # for large payloads
-                create_op_dict = orjson.loads(create_op._none)
+                create_op_dict = _orjson.loads(create_op._none)
                 op_dict = {
-                    k: v for k, v in orjson.loads(op._none).items() if v is not None
+                    k: v for k, v in _orjson.loads(op._none).items() if v is not None
                 }
                 create_op_dict.update(op_dict)
-                create_op._none = orjson.dumps(create_op_dict)
+                create_op._none = _orjson.dumps(create_op_dict)
 
             if op.inputs is not None:
                 create_op.inputs = op.inputs
