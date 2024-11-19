@@ -25,6 +25,7 @@ import itertools
 import json
 import logging
 import os
+from pathlib import Path
 import random
 import threading
 import time
@@ -3442,33 +3443,33 @@ class Client:
             if example.attachments:
                 for name, attachment in example.attachments.items():
                     if isinstance(attachment, tuple):
-                        mime_type, data = attachment
-                        parts.append(
-                            (
-                                f"{example_id}.attachment.{name}",
+                        if isinstance(attachment[1], Path):
+                            mime_type, file_path = attachment
+                            file_size = os.path.getsize(file_path)
+                            parts.append(
                                 (
-                                    None,
-                                    data,
-                                    f"{mime_type}; length={len(data)}",
-                                    {},
-                                ),
+                                    f"{example_id}.attachment.{name}",
+                                    (
+                                        None,
+                                        open(file_path, "rb"),
+                                        f"{mime_type}; length={file_size}",
+                                        {},
+                                    ),
+                                )
                             )
-                        )
-                    elif isinstance(attachment, str):
-                        file_path = attachment
-                        mime_type = "application/octet-stream"
-                        file_size = os.path.getsize(file_path)
-                        parts.append(
-                            (
-                                f"{example_id}.attachment.{name}",
+                        else:
+                            mime_type, data = attachment
+                            parts.append(
                                 (
-                                    None,
-                                    open(file_path, "rb"),
-                                    f"{mime_type}; length={file_size}",
-                                    {},
-                                ),
+                                    f"{example_id}.attachment.{name}",
+                                    (
+                                        None,
+                                        data,
+                                        f"{mime_type}; length={len(data)}",
+                                        {},
+                                    ),
+                                )
                             )
-                        )
                     else:
                         parts.append(
                             (
