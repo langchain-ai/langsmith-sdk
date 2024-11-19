@@ -3427,18 +3427,16 @@ class Client:
 
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)
-                (
-                    parts.append(
+                parts.append(
+                    (
+                        f"{example_id}.outputs",
                         (
-                            f"{example_id}.outputs",
-                            (
-                                None,
-                                outputsb,
-                                "application/json",
-                                {},
-                            ),
-                        )
-                    ),
+                            None,
+                            outputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
                 )
 
             if example.attachments:
