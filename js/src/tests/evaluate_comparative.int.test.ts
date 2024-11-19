@@ -28,7 +28,7 @@ afterAll(async () => {
 });
 
 describe("evaluate comparative", () => {
-  test.skip("basic", async () => {
+  test("basic", async () => {
     const client = new Client();
 
     const firstEval = await evaluate(
@@ -62,7 +62,7 @@ describe("evaluate comparative", () => {
     expect(pairwise.results.length).toEqual(2);
   });
 
-  test.skip("pass directly", async () => {
+  test("pass directly", async () => {
     const pairwise = await evaluateComparative(
       [
         evaluate((input) => ({ foo: `first:${input.input}` }), {
