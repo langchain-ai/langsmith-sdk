@@ -1753,10 +1753,17 @@ def _include_attachments(
             "arguments (inputs, attachments)"
         )
     elif len(positional_params) == 2:
-        if tuple(p.name for p in positional_params) != ("inputs", "attachments"):
+        mismatches = []
+        for i, (p, expected) in enumerate(zip(positional_params, ("inputs", "attachments"))):
+            if p.name != expected:
+                mismatches.append((i, p.name))
+
+        if mismatches:
             raise ValueError(
                 "When target function has two positional arguments, they must be named "
-                "'inputs' and 'attachments', respectively."
+                "'inputs' and 'attachments', respectively. Received: " + ",".join(
+                    f"'{p}' at index {i}" for i, p in mismatches
+                )
             )
 
     return len(positional_params) == 2
