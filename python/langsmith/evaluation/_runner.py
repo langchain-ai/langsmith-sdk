@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 
 TARGET_T = Callable[[dict], dict]
 # Data format: dataset-name, dataset_id, or examples
-DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
+DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example], schemas.Dataset]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
 SUMMARY_EVALUATOR_T = Union[
@@ -87,6 +87,7 @@ EVALUATOR_T = Union[
         [schemas.Run, Optional[schemas.Example]],
         Union[EvaluationResult, EvaluationResults],
     ],
+    Callable[..., Union[dict, EvaluationResults, EvaluationResult]],
 ]
 AEVALUATOR_T = Union[
     Callable[
@@ -1661,6 +1662,8 @@ def _resolve_data(
         return client.list_examples(dataset_name=data)
     elif isinstance(data, uuid.UUID):
         return client.list_examples(dataset_id=data)
+    elif isinstance(data, schemas.Dataset):
+        return client.list_examples(dataset_id=data.id)
     return data
 
 
@@ -1848,7 +1851,7 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
     try:
         tree = ast.parse(python_code)
         function_def = tree.body[0]
-        if not isinstance(function_def, ast.FunctionDef):
+        if not isinstance(function_def, (ast.FunctionDef, ast.AsyncFunctionDef)):
             return []
 
         variables = {}
