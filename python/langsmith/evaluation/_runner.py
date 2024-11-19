@@ -1677,7 +1677,8 @@ def _resolve_data(
     client: langsmith.Client,
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
-    # TODO: Find a smarter way of determining whether to get attachments (don't just default to true)
+    # TODO: Find a smarter way of determining whether 
+    # to get attachments (don't just default to true)
     if isinstance(data, str):
         return client.list_examples(dataset_name=data, get_attachments=True)
     elif isinstance(data, uuid.UUID):
@@ -1730,7 +1731,8 @@ def _with_attachments(
         )
     elif len(positional_params) > 2:
         raise ValueError(
-            "Target function must accept at most two positional arguments (inputs, attachments)"
+            "Target function must accept at most two positional "
+            "arguments (inputs, attachments)"
         )
     elif len(positional_params) == 2:
         if (
@@ -1738,7 +1740,8 @@ def _with_attachments(
             or positional_params[1].name != "attachments"
         ):
             raise ValueError(
-                "When using two arguments, they must be named 'inputs' and 'attachments'"
+                "When using two arguments, they must be named "
+                "'inputs' and 'attachments'"
             )
 
     return len(positional_params) == 2
