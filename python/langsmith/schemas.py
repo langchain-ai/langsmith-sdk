@@ -63,8 +63,9 @@ class Attachment(NamedTuple):
     data: bytes
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
-"""Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, str]]
+"""Attachments associated with the run. 
+Each entry is a tuple of (mime_type, bytes), or a fliepath"""
 
 
 @runtime_checkable

@@ -3454,6 +3454,21 @@ class Client:
                                 ),
                             )
                         )
+                    elif isinstance(attachment, str):
+                        file_path = attachment
+                        mime_type = "application/octet-stream"
+                        file_size = os.path.getsize(file_path)
+                        parts.append(
+                            (
+                                f"{example_id}.attachment.{name}",
+                                (
+                                    None,
+                                    open(file_path, "rb"),
+                                    f"{mime_type}; length={file_size}",
+                                    {},
+                                ),
+                            )
+                        )
                     else:
                         parts.append(
                             (
