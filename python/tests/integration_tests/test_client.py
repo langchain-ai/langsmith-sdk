@@ -1183,11 +1183,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         },
     )
 
-<<<<<<< HEAD
     langchain_client._upsert_examples_multipart(upserts=[example])
-=======
-    langchain_client.upsert_examples_multipart(upserts=[example])
->>>>>>> isaac/multipartstuff
 
     # 3. Define target function that uses attachments
     def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
