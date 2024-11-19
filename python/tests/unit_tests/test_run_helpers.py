@@ -1156,7 +1156,7 @@ async def test_traceable_to_atrace(enabled: Union[bool, Literal["local"]]):
         run = r
 
     mock_client_ = _get_mock_client()
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=enabled):
         result = await parent_fn(
             1, 2, langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
