@@ -73,6 +73,8 @@ def benchmark_example_uploading(
         inputs = [e.inputs for e in examples]
         outputs = [e.outputs for e in examples]
         # the create_examples endpoint fails above 20mb - so this will crash with json_size > ~100
+        # the create_examples endpoint fails above 20mb
+        # so this will crash with json_size > ~100
         client.create_examples(inputs=inputs, outputs=outputs, dataset_id=dataset.id)
         old_elapsed = time.perf_counter() - old_start
 
@@ -95,9 +97,9 @@ def benchmark_example_uploading(
         "new": {
             "mean": statistics.mean(multipart_timings),
             "median": statistics.median(multipart_timings),
-            "stdev": statistics.stdev(multipart_timings)
-            if len(multipart_timings) > 1
-            else 0,
+            "stdev": (
+                statistics.stdev(multipart_timings) if len(multipart_timings) > 1 else 0
+            ),
             "min": min(multipart_timings),
             "max": max(multipart_timings),
         },
@@ -126,12 +128,14 @@ def main(json_size: int, num_examples: int):
     metrics = ["mean", "median", "stdev", "min", "max"]
     for metric in metrics:
         print(
-            f"{metric:<15} {results['old'][metric]:>20.4f} {results['new'][metric]:>20.4f}"
+            f"{metric:<15} {results['old'][metric]:>20.4f} "
+            f"{results['new'][metric]:>20.4f}"
         )
 
     print("-" * 60)
     print(
-        f"{'Throughput':<15} {num_examples / results['old']['mean']:>20.2f} {num_examples / results['new']['mean']:>20.2f}"
+        f"{'Throughput':<15} {num_examples / results['old']['mean']:>20.2f} "
+        f"{num_examples / results['new']['mean']:>20.2f}"
     )
     print("(examples/second)")
 

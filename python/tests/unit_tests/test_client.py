@@ -432,7 +432,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     dataset_id = uuid.uuid4()
     created_at = datetime(2015, 1, 1, 0, 0, 0)
 
-    example = ls_schemas.ExampleCreateWithAttachments(
+    example = ls_schemas.ExampleUpsertWithAttachments(
         id=example_id,
         dataset_id=dataset_id,
         created_at=created_at,
@@ -454,7 +454,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     call_args = mock_session.request.call_args
 
     assert call_args[0][0] == "POST"
-    assert call_args[0][1].endswith("/v1/examples/multipart")
+    assert call_args[0][1].endswith("/v1/platform/examples/multipart")
 
     # Parse the multipart data
     request_data = call_args[1]["data"]
@@ -493,10 +493,10 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
 
         if name.endswith(".attachment.file1"):
             assert part.value == expected_parts[name]
-            assert part.headers["Content-Type"] == "text/plain"
+            assert part.headers["Content-Type"] == "text/plain; length=9"
         elif name.endswith(".attachment.file2"):
             assert part.value == expected_parts[name]
-            assert part.headers["Content-Type"] == "application/json"
+            assert part.headers["Content-Type"] == "application/json; length=16"
         else:
             value = json.loads(part.value)
             assert value == expected_parts[name]

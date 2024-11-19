@@ -370,13 +370,9 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
 
-# NEED TO FIX ONCE CHANGES PUSH TO PROD
-def test_upsert_examples_multipart() -> None:
+def test_upsert_examples_multipart(langchain_client: Client) -> None:
     """Test upserting examples with attachments via multipart endpoint."""
     dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_url="https://dev.api.smith.langchain.com", api_key="HARDCODE FOR TESTING"
-    )
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
 
@@ -416,7 +412,7 @@ def test_upsert_examples_multipart() -> None:
         created_examples["example_ids"][0]
     )
     assert created_example_1.inputs["text"] == "hello world"
-    assert created_example_1.outputs == None
+    assert created_example_1.outputs is None
 
     created_example_2 = langchain_client.read_example(
         created_examples["example_ids"][1]
@@ -448,7 +444,8 @@ def test_upsert_examples_multipart() -> None:
     assert updated_example.inputs["text"] == "bar baz"
     assert updated_example.outputs["response"] == "foo"
 
-    # Test that adding invalid example fails - even if valid examples are added alongside
+    # Test that adding invalid example fails
+    # even if valid examples are added alongside
     example_3 = ExampleUpsertWithAttachments(
         dataset_id=uuid4(),  # not a real dataset
         inputs={"text": "foo bar"},

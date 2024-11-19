@@ -1,8 +1,7 @@
-# mypy: disable-error-code="import-untyped"
 import functools
 
-from urllib3 import __version__ as urllib3version  # noqa
-from urllib3 import connection  # noqa
+from urllib3 import __version__ as urllib3version  # type: ignore[import-untyped]
+from urllib3 import connection  # type: ignore[import-untyped]
 
 
 def _ensure_str(s, encoding="utf-8", errors="strict") -> str:
