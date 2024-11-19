@@ -55,6 +55,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+import orjson
 import requests
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
@@ -68,7 +69,6 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-from langsmith._internal import _orjson
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -368,7 +368,6 @@ class Client:
         "_info",
         "_write_api_urls",
         "_settings",
-        "_manual_cleanup",
     ]
 
     def __init__(
@@ -516,8 +515,6 @@ class Client:
         )
 
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
-
-        self._manual_cleanup = False
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -1255,7 +1252,7 @@ class Client:
         if self._hide_inputs is True:
             return {}
         if self._anonymizer:
-            json_inputs = _orjson.loads(_dumps_json(inputs))
+            json_inputs = orjson.loads(_dumps_json(inputs))
             return self._anonymizer(json_inputs)
         if self._hide_inputs is False:
             return inputs
@@ -1265,7 +1262,7 @@ class Client:
         if self._hide_outputs is True:
             return {}
         if self._anonymizer:
-            json_outputs = _orjson.loads(_dumps_json(outputs))
+            json_outputs = orjson.loads(_dumps_json(outputs))
             return self._anonymizer(json_outputs)
         if self._hide_outputs is False:
             return outputs
@@ -1285,20 +1282,20 @@ class Client:
         # form the partial body and ids
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                curr_dict = _orjson.loads(op._none)
+                curr_dict = orjson.loads(op._none)
                 if op.inputs:
-                    curr_dict["inputs"] = _orjson.Fragment(op.inputs)
+                    curr_dict["inputs"] = orjson.Fragment(op.inputs)
                 if op.outputs:
-                    curr_dict["outputs"] = _orjson.Fragment(op.outputs)
+                    curr_dict["outputs"] = orjson.Fragment(op.outputs)
                 if op.events:
-                    curr_dict["events"] = _orjson.Fragment(op.events)
+                    curr_dict["events"] = orjson.Fragment(op.events)
                 if op.attachments:
                     logger.warning(
                         "Attachments are not supported when use_multipart_endpoint "
                         "is False"
                     )
                 ids_and_partial_body[op.operation].append(
-                    (f"trace={op.trace_id},id={op.id}", _orjson.dumps(curr_dict))
+                    (f"trace={op.trace_id},id={op.id}", orjson.dumps(curr_dict))
                 )
             elif isinstance(op, SerializedFeedbackOperation):
                 logger.warning(
@@ -1324,7 +1321,7 @@ class Client:
                     and body_size + len(body_deque[0][1]) > size_limit_bytes
                 ):
                     self._post_batch_ingest_runs(
-                        _orjson.dumps(body_chunks),
+                        orjson.dumps(body_chunks),
                         _context=f"\n{key}: {'; '.join(context_ids[key])}",
                     )
                     body_size = 0
@@ -1332,12 +1329,12 @@ class Client:
                     context_ids.clear()
                 curr_id, curr_body = body_deque.popleft()
                 body_size += len(curr_body)
-                body_chunks[key].append(_orjson.Fragment(curr_body))
+                body_chunks[key].append(orjson.Fragment(curr_body))
                 context_ids[key].append(curr_id)
         if body_size:
             context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
             self._post_batch_ingest_runs(
-                _orjson.dumps(body_chunks), _context="\n" + context
+                orjson.dumps(body_chunks), _context="\n" + context
             )
 
     def batch_ingest_runs(
@@ -2762,7 +2759,7 @@ class Client:
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_orjson.dumps(dataset),
+            data=orjson.dumps(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -5677,10 +5674,6 @@ class Client:
             parent_commit_hash=parent_commit_hash,
         )
         return url
-
-    def cleanup(self) -> None:
-        """Manually trigger cleanup of the background thread."""
-        self._manual_cleanup = True
 
 
 def convert_prompt_to_openai_format(

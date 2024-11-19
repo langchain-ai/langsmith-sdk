@@ -12,7 +12,7 @@ import re
 import uuid
 from typing import Any
 
-from langsmith._internal import _orjson
+import orjson
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -133,13 +133,13 @@ def dumps_json(obj: Any) -> bytes:
         The JSON formatted string.
     """
     try:
-        return _orjson.dumps(
+        return orjson.dumps(
             obj,
             default=_serialize_json,
-            option=_orjson.OPT_SERIALIZE_NUMPY
-            | _orjson.OPT_SERIALIZE_DATACLASS
-            | _orjson.OPT_SERIALIZE_UUID
-            | _orjson.OPT_NON_STR_KEYS,
+            option=orjson.OPT_SERIALIZE_NUMPY
+            | orjson.OPT_SERIALIZE_DATACLASS
+            | orjson.OPT_SERIALIZE_UUID
+            | orjson.OPT_NON_STR_KEYS,
         )
     except TypeError as e:
         # Usually caused by UTF surrogate characters
@@ -150,9 +150,9 @@ def dumps_json(obj: Any) -> bytes:
             ensure_ascii=True,
         ).encode("utf-8")
         try:
-            result = _orjson.dumps(
-                _orjson.loads(result.decode("utf-8", errors="surrogateescape"))
+            result = orjson.dumps(
+                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
             )
-        except _orjson.JSONDecodeError:
+        except orjson.JSONDecodeError:
             result = _elide_surrogates(result)
         return result
