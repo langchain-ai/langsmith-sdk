@@ -66,11 +66,19 @@ class Attachment(NamedTuple):
 Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
 """Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
 
+
 @runtime_checkable
 class BinaryIOLike(Protocol):
     """Protocol for binary IO-like objects."""
-    def read(self, size: int = -1) -> bytes: ...
-    def write(self, b: bytes) -> int: ...
+
+    def read(self, size: int = -1) -> bytes:
+        """Read function."""
+        ...
+
+    def write(self, b: bytes) -> int:
+        """Write function."""
+        ...
+
 
 class ExampleBase(BaseModel):
     """Example base model."""

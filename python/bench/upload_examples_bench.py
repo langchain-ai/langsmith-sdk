@@ -72,7 +72,6 @@ def benchmark_example_uploading(
         old_start = time.perf_counter()
         inputs = [e.inputs for e in examples]
         outputs = [e.outputs for e in examples]
-        # the create_examples endpoint fails above 20mb - so this will crash with json_size > ~100
         # the create_examples endpoint fails above 20mb
         # so this will crash with json_size > ~100
         client.create_examples(inputs=inputs, outputs=outputs, dataset_id=dataset.id)

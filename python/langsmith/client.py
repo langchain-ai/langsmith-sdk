@@ -38,7 +38,6 @@ from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
-    BinaryIO,
     Callable,
     DefaultDict,
     Dict,
@@ -3718,7 +3717,7 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
-        if get_attachments == True:
+        if get_attachments:
             params["select"] = ["attachment_urls", "outputs", "metadata"]
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
