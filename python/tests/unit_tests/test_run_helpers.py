@@ -1104,9 +1104,10 @@ def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
         nonlocal run
         run = r
 
+    mock_client_ = _get_mock_client()
     with tracing_context(enabled=enabled):
         result = parent_fn(
-            1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+            1, 2, langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
 
     assert result == 3
@@ -1120,6 +1121,8 @@ def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
     assert len(child_runs) == 1
     assert child_runs[0].name == "child_fn"
     assert child_runs[0].inputs == {"a": 1, "b": 2}
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -1152,9 +1155,10 @@ async def test_traceable_to_atrace(enabled: Union[bool, Literal["local"]]):
         nonlocal run
         run = r
 
+    mock_client_ = _get_mock_client()
     with tracing_context(enabled=True):
         result = await parent_fn(
-            1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+            1, 2, langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
 
     assert result == 3
@@ -1180,6 +1184,8 @@ async def test_traceable_to_atrace(enabled: Union[bool, Literal["local"]]):
     ggc = grandchild.child_runs[1]
     assert ggc.name == "great_grandchild_fn"
     assert ggc.inputs == {"a": 1, "b": 2}
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
