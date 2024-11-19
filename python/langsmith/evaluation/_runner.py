@@ -1584,6 +1584,7 @@ def _wrap_summary_evaluators(
 ) -> List[SUMMARY_EVALUATOR_T]:
     def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
+        evaluator = _normalize_summary_evaluator(evaluator)
 
         @functools.wraps(evaluator)
         def _wrapper_inner(
@@ -1943,3 +1944,47 @@ def _import_langchain_runnable() -> Optional[type]:
 
 def _is_langchain_runnable(o: Any) -> bool:
     return bool((Runnable := _import_langchain_runnable()) and isinstance(o, Runnable))
+
+
+def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
+    supported_args = ("runs", "examples", "inputs", "outputs", "reference_outputs")
+    sig = inspect.signature(func)
+    positional_args = [
+        pname
+        for pname, p in sig.parameters.items()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+    ]
+    if not positional_args or (
+        not all(pname in supported_args for pname in positional_args)
+        and len(positional_args) != 2
+    ):
+        msg = (
+            f"Invalid evaluator function. Must have at least one positional "
+            f"argument. Supported positional arguments are {supported_args}."
+        )
+        raise ValueError(msg)
+    # For backwards compatibility we assume custom arg names are Sequence[Run] and
+    # Sequence[Example] types, respectively.
+    elif not all(
+        pname in supported_args for pname in positional_args
+    ) or positional_args == ["runs", "examples"]:
+        return func
+    else:
+
+        def wrapper(
+            runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
+        ) -> Union[EvaluationResult, EvaluationResults]:
+            arg_map = {
+                "runs": runs,
+                "examples": examples,
+                "inputs": [example.inputs for example in examples],
+                "outputs": [run.outputs or {} for run in runs],
+                "reference_outputs": [example.outputs or {} for example in examples],
+            }
+            args = (arg_map[arg] for arg in positional_args)
+            return func(*args)
+
+        wrapper.__name__ = (
+            getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
+        )
+        return wrapper  # type: ignore[return-value]
