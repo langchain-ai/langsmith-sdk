@@ -3665,7 +3665,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
-        get_attachments: Optional[bool] = True,
+        include_attachments: bool = True,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3715,7 +3715,7 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
-        if get_attachments:
+        if include_attachments:
             params["select"] = ["attachment_urls", "outputs", "metadata"]
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)

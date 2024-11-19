@@ -1680,11 +1680,11 @@ def _resolve_data(
     # TODO: Find a smarter way of determining whether
     # to get attachments (don't just default to true)
     if isinstance(data, str):
-        return client.list_examples(dataset_name=data, get_attachments=True)
+        return client.list_examples(dataset_name=data, include_attachments=True)
     elif isinstance(data, uuid.UUID):
-        return client.list_examples(dataset_id=data, get_attachments=True)
+        return client.list_examples(dataset_id=data, include_attachments=True)
     elif isinstance(data, schemas.Dataset):
-        return client.list_examples(dataset_id=data.id, get_attachments=True)
+        return client.list_examples(dataset_id=data.id, include_attachments=True)
     return data
 
 

@@ -1144,18 +1144,18 @@ def test_list_examples_attachments_keys() -> None:
 
     # Get examples with attachments
     with_attachments = next(
-        langchain_client.list_examples(dataset_id=dataset.id, get_attachments=True)
+        langchain_client.list_examples(dataset_id=dataset.id, include_attachments=True)
     )
 
     # Get examples without attachments
     without_attachments = next(
-        langchain_client.list_examples(dataset_id=dataset.id, get_attachments=False)
+        langchain_client.list_examples(dataset_id=dataset.id, include_attachments=False)
     )
 
     with_keys = set(with_attachments.dict().keys())
     without_keys = set(without_attachments.dict().keys())
     assert with_keys == without_keys, (
-        f"Keys differ when get_attachments=True vs False.\n"
+        f"Keys differ when include_attachments=True vs False.\n"
         f"Only in with_attachments: {with_keys - without_keys}\n"
         f"Only in without_attachments: {without_keys - with_keys}"
     )
