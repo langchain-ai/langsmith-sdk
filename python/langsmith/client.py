@@ -3370,25 +3370,16 @@ class Client:
             created_at=created_at,
         )
 
-    def upsert_examples_multipart(
+    def _upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
+        upserts: Sequence[ls_schemas.ExampleUpsertWithAttachments] = (),
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples."""
-        """ if not (self.info.instance_flags or {}).get(
-                "examples_multipart_enabled", False
-            ):
-            raise ValueError("Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version.")
-         """
         parts: List[MultipartPart] = []
 
         for example in upserts:
-            if example.id is not None:
-                example_id = str(example.id)
-            else:
-                example_id = str(uuid.uuid4())
-
+            example_id = str(example.id or uuid.uuid4())
             example_body = {
                 "dataset_id": example.dataset_id,
                 "created_at": example.created_at,
@@ -3397,75 +3388,34 @@ class Client:
                 example_body["metadata"] = example.metadata
             if example.split is not None:
                 example_body["split"] = example.split
-            valb = _dumps_json(example_body)
 
-            parts.append(
-                (
-                    f"{example_id}",
-                    (
-                        None,
-                        valb,
-                        "application/json",
-                        {},
-                    ),
-                )
-            )
+            valb = _dumps_json(example_body)
+            parts.append((example_id, (None, valb, "application/json", {})))
 
             inputsb = _dumps_json(example.inputs)
-
             parts.append(
-                (
-                    f"{example_id}.inputs",
-                    (
-                        None,
-                        inputsb,
-                        "application/json",
-                        {},
-                    ),
-                )
+                (f"{example_id}.inputs", (None, inputsb, "application/json", {}))
             )
 
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)
                 parts.append(
-                    (
-                        f"{example_id}.outputs",
-                        (
-                            None,
-                            outputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
+                    (f"{example_id}.outputs", (None, outputsb, "application/json", {}))
                 )
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
                     if isinstance(attachment, tuple):
                         mime_type, data = attachment
-                        parts.append(
-                            (
-                                f"{example_id}.attachment.{name}",
-                                (
-                                    None,
-                                    data,
-                                    f"{mime_type}; length={len(data)}",
-                                    {},
-                                ),
-                            )
-                        )
                     else:
-                        parts.append(
-                            (
-                                f"{example_id}.attachment.{name}",
-                                (
-                                    None,
-                                    attachment.data,
-                                    f"{attachment.mime_type}; length={len(attachment.data)}",
-                                    {},
-                                ),
-                            )
+                        mime_type = attachment.mime_type
+                        data = attachment.data
+                    parts.append(
+                        (
+                            f"{example_id}.attachment.{name}",
+                            (None, data, f"{mime_type}; length={len(data)}", {}),
                         )
+                    )
 
         encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
         if encoder.len <= 20_000_000:  # ~20 MB
@@ -3478,10 +3428,7 @@ class Client:
             "/v1/platform/examples/multipart",
             request_kwargs={
                 "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
-                },
+                "headers": {**self._headers, "Content-Type": encoder.content_type},
             },
         )
         ls_utils.raise_for_status_with_text(response)
@@ -3492,6 +3439,7 @@ class Client:
         *,
         inputs: Sequence[Mapping[str, Any]],
         outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
+        attachments: Optional[Sequence[ls_schemas.Attachments]] = None,
         metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
         splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
@@ -3508,6 +3456,8 @@ class Client:
             The input values for the examples.
         outputs : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The output values for the examples.
+        attachments: Optional[Sequence[Attachment]], default=None
+            The attachments for the examples.
         metadata : Optional[Sequence[Optional[Mapping[str, Any]]]], default=None
             The metadata for the examples.
         splits :  Optional[Sequence[Optional[str | List[str]]]], default=None
@@ -3521,12 +3471,37 @@ class Client:
             The ID of the dataset to create the examples in.
         dataset_name : Optional[str], default=None
             The name of the dataset to create the examples in.
+        kwargs: Additional keyword arguments are ignored.
         """
         if dataset_id is None and dataset_name is None:
             raise ValueError("Either dataset_id or dataset_name must be provided.")
-
-        if dataset_id is None:
+        elif dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        else:
+            pass
+        if attachments:
+            upserts = [
+                ls_schemas.ExampleUpsertWithAttachments(
+                    inputs=in_,
+                    outputs=out_,
+                    attachments=attach_,
+                    dataset_id=cast(uuid.UUID, dataset_id),
+                    metadata=metadata_,
+                    split=split_,
+                    id=id_ or uuid.uuid4(),
+                )
+                for in_, out_, attach_, metadata_, split_, id_ in zip(
+                    inputs,
+                    outputs or [None] * len(inputs),
+                    attachments,
+                    metadata or [None] * len(inputs),
+                    splits or [None] * len(inputs),
+                    ids or [None] * len(inputs),
+                )
+            ]
+            self._upsert_examples_multipart(upserts=upserts)
+            return
+
         examples = [
             {
                 "inputs": in_,

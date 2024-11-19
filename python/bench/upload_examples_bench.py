@@ -79,7 +79,7 @@ def benchmark_example_uploading(
 
         # New method
         multipart_start = time.perf_counter()
-        client.upsert_examples_multipart(upserts=examples)
+        client._upsert_examples_multipart(upserts=examples)
         multipart_elapsed = time.perf_counter() - multipart_start
 
         multipart_timings.append(multipart_elapsed)

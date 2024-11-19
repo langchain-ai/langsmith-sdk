@@ -447,7 +447,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
             ),
         },
     )
-    client.upsert_examples_multipart(upserts=[example])
+    client._upsert_examples_multipart(upserts=[example])
 
     # Verify the request
     assert mock_session.request.call_count == 2  # we always make a call to /info
