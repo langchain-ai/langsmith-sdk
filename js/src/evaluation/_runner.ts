@@ -18,9 +18,11 @@ import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TargetT<TInput = any, TOutput = KVMap> =
+export type TargetT<TInput = any, TOutput = KVMap, TAttachments = Record<string, [string, () => Response]>> =
   | ((input: TInput, config?: KVMap) => Promise<TOutput>)
   | ((input: TInput, config?: KVMap) => TOutput)
+  | ((input: TInput, attachments: TAttachments, config?: KVMap) => Promise<TOutput>)
+  | ((input: TInput, attachments: TAttachments, config?: KVMap) => TOutput)
   | { invoke: (input: TInput, config?: KVMap) => TOutput }
   | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
 
@@ -695,7 +697,7 @@ export class _ExperimentManager {
 
     // Python might return microseconds, which we need
     // to account for when comparing dates.
-    const modifiedAtTime = modifiedAt.map((date) => {
+    const modifiedAtTime = modifiedAt.filter(date => date != undefined).map((date) => {
       function getMiliseconds(isoString: string) {
         const time = isoString.split("T").at(1);
         if (!time) return "";

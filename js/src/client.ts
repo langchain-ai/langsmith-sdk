@@ -35,6 +35,7 @@ import {
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
   Attachments,
+  ListExampleResponse,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -2714,6 +2715,7 @@ export class Client {
     limit,
     offset,
     filter,
+    getAttachments,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2725,6 +2727,7 @@ export class Client {
     limit?: number;
     offset?: number;
     filter?: string;
+    getAttachments?: boolean;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2771,13 +2774,39 @@ export class Client {
     if (filter !== undefined) {
       params.append("filter", filter);
     }
+    if (getAttachments === true) {
+      ["attachment_urls", "outputs", "metadata"].forEach(field => 
+        params.append("select", field)
+      );
+    }
     let i = 0;
-    for await (const examples of this._getPaginated<Example>(
+    for await (const examples of this._getPaginated<ListExampleResponse>(
       "/examples",
       params
     )) {
       for (const example of examples) {
-        yield example;
+        const attachments: Record<string, [string, () => Promise<Response>]> = {};
+        if (example.attachment_urls) {
+          for (const [key, value] of Object.entries(example.attachment_urls)) {
+            const createReader = () => {
+              return this.caller.call(
+                _getFetchImplementation(),
+                value.presigned_url,
+                {
+                  method: "GET",
+                  signal: AbortSignal.timeout(this.timeout_ms),
+                  ...this.fetchOptions,
+                }
+              );
+            };
+            attachments[key.split(".")[1]] = [value.presigned_url, createReader];
+          }
+        }
+        const { attachment_urls, ...exampleWithoutAttachments } = example;
+        yield {
+          ...exampleWithoutAttachments,
+          attachments
+        };
         i++;
       }
       if (limit !== undefined && i >= limit) {
