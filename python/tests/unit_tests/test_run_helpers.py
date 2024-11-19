@@ -999,6 +999,8 @@ def test_traceable_regular(enabled: Union[bool, Literal["local"]]):
         "summarize_answers",
     ]
     assert len(child_runs[2].child_runs) == 1  # type: ignore
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -1083,6 +1085,8 @@ async def test_traceable_async(enabled: Union[bool, Literal["local"]]):
         "summarize_answers",
     ]
     assert len(child_runs[2].child_runs) == 1  # type: ignore
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -1218,7 +1222,7 @@ def test_client_passed_when_traceable_parent():
     mock_calls = _get_calls(mock_client)
     assert len(mock_calls) == 0
     # call = mock_client.session.request.call_arg
-    # assert call.args[0] == "POST"
+    # assert call.args[0] == "post"
     # assert call.args[1].startswith("https://api.smith.langchain.com")
     # body = json.loads(call.kwargs["data"])
     # assert body["post"]
