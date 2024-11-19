@@ -14,13 +14,14 @@ from typing import Any, Callable, Dict
 from unittest import mock
 from uuid import uuid4
 
+from langsmith.evaluation import evaluate
 import pytest
 from freezegun import freeze_time
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 from langsmith.client import ID_TYPE, Client
-from langsmith.schemas import DataType, ExampleUpsertWithAttachments
+from langsmith.schemas import DataType, ExampleUpsertWithAttachments, Example, Run
 from langsmith.utils import (
     LangSmithConnectionError,
     LangSmithError,
@@ -1160,3 +1161,60 @@ def test_list_examples_attachments_keys() -> None:
     )
 
     langchain_client.delete_dataset(dataset_id=dataset.id)
+
+@pytest.mark.skip(
+    reason="Need to land https://github.com/langchain-ai/langsmith-sdk/pull/1209 first"
+)
+def test_evaluate_with_attachments(langchain_client: Client) -> None:
+    """Test evaluating examples with attachments."""
+    dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
+    # 1. Create dataset
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for evals with attachments",
+        data_type=DataType.kv,
+    )
+    
+    # 2. Create example with attachments
+    example = ExampleUpsertWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"question": "What is shown in the image?"},
+        outputs={"answer": "test image"},
+        attachments={
+            "image": ("image/png", b"fake image data for testing"),
+        },
+    )
+    
+    langchain_client.upsert_examples_multipart(upserts=[example])
+    
+    # 3. Define target function that uses attachments
+    def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert "image" in attachments
+        image_url, image_data = attachments["image"]
+        assert image_data.read() == b"fake image data for testing"
+        return {"answer": "test image"}
+    
+    # 4. Define simple evaluator
+    def evaluator(run: Run, example: Example) -> Dict[str, Any]:
+        return {
+            "score": float(
+                run.outputs.get("answer") == example.outputs.get("answer")  # type: ignore
+            )
+        }
+    
+    # 5. Run evaluation
+    results = evaluate(
+        target,
+        data=dataset_name,
+        evaluators=[evaluator],
+        client=langchain_client
+    )
+    
+    # 6. Verify results
+    assert len(results) == 1
+    for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+    
+    # Cleanup
+    langchain_client.delete_dataset(dataset_name=dataset_name)
