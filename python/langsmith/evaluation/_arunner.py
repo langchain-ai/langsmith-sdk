@@ -40,6 +40,7 @@ from langsmith.evaluation._runner import (
     _ExperimentManagerMixin,
     _extract_feedback_keys,
     _ForwardResults,
+    _include_attachments,
     _is_langchain_runnable,
     _load_examples_map,
     _load_experiment,
@@ -66,7 +67,9 @@ else:
 
 logger = logging.getLogger(__name__)
 
-ATARGET_T = Callable[[dict], Awaitable[dict]]
+ATARGET_T = Union[
+    Callable[[dict], Awaitable[dict]], Callable[[dict, dict], Awaitable[dict]]
+]
 
 
 async def aevaluate(
@@ -401,6 +404,7 @@ async def _aevaluate(
         description=description,
         num_repetitions=num_repetitions,
         runs=runs,
+        include_attachments=_include_attachments(target),
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
     if cache_dir is not None:
@@ -461,6 +465,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        include_attachments: bool = False,
     ):
         super().__init__(
             experiment=experiment,
@@ -476,10 +481,15 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._include_attachments = include_attachments
 
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
-            self._examples = _aresolve_data(self._data, client=self.client)
+            self._examples = _aresolve_data(
+                self._data,
+                client=self.client,
+                include_attachments=self._include_attachments,
+            )
             if self._num_repetitions > 1:
                 self._examples = async_chain_from_iterable(
                     aitertools.atee(self._examples, self._num_repetitions)
@@ -545,6 +555,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            include_attachments=self._include_attachments,
         )
 
     async def awith_predictions(
@@ -561,6 +572,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             metadata=self._metadata,
             client=self.client,
             runs=(pred["run"] async for pred in r2),
+            include_attachments=self._include_attachments,
         )
 
     async def awith_evaluators(
@@ -580,6 +592,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] async for result in r2),
             evaluation_results=(result["evaluation_results"] async for result in r3),
             summary_results=self._summary_results,
+            include_attachments=self._include_attachments,
         )
 
     async def awith_summary_evaluators(
@@ -596,6 +609,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs=self.aget_runs(),
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            include_attachments=self._include_attachments,
         )
 
     async def aget_results(self) -> AsyncIterator[ExperimentResultRow]:
@@ -630,7 +644,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             async for example in await self.aget_examples():
                 # Yield the coroutine to be awaited later
                 yield _aforward(
-                    fn, example, self.experiment_name, self._metadata, self.client
+                    fn,
+                    example,
+                    self.experiment_name,
+                    self._metadata,
+                    self.client,
+                    include_attachments=self._include_attachments,
                 )
 
         async for result in aitertools.aiter_with_concurrency(
@@ -904,6 +923,7 @@ async def _aforward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
+    include_attachments: bool = False,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -913,8 +933,13 @@ async def _aforward(
 
     with rh.tracing_context(enabled=True):
         try:
+            args = (
+                (example.inputs, example.attachment_urls)
+                if include_attachments
+                else (example.inputs,)
+            )
             await fn(
-                example.inputs,
+                *args,
                 langsmith_extra=rh.LangSmithExtra(
                     reference_example_id=example.id,
                     on_end=_get_run,
@@ -971,12 +996,17 @@ def _ensure_async_traceable(
 
 
 def _aresolve_data(
-    data: Union[DATA_T, AsyncIterable[schemas.Example]], *, client: langsmith.Client
+    data: Union[DATA_T, AsyncIterable[schemas.Example]],
+    *,
+    client: langsmith.Client,
+    include_attachments: bool = False,
 ) -> AsyncIterator[schemas.Example]:
     """Return the examples for the given dataset."""
     if isinstance(data, AsyncIterable):
         return aitertools.ensure_async_iterator(data)
-    return aitertools.ensure_async_iterator(_resolve_data(data, client=client))
+    return aitertools.ensure_async_iterator(
+        _resolve_data(data, client=client, include_attachments=include_attachments)
+    )
 
 
 T = TypeVar("T")
