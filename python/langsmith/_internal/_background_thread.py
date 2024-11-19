@@ -162,11 +162,12 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if not threading.main_thread().is_alive():
             # main thread is dead. should not be active
             return False
-        try:
+
+        if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
             return sys.getrefcount(client) > num_known_refs + len(sub_threads)
-        except AttributeError:
+        else:
             # in PyPy, there is no sys.getrefcount attribute
             # for now, keep thread alive
             return True
