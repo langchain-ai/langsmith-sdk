@@ -2,9 +2,10 @@ import statistics
 import time
 from typing import Dict
 from uuid import uuid4
-from langsmith.schemas import DataType, ExampleCreateWithAttachments
-import sys
+
 from langsmith import Client
+from langsmith.schemas import DataType, ExampleCreateWithAttachments
+
 
 def create_large_json(length: int) -> Dict:
     """Create a large JSON object for benchmarking purposes."""
@@ -31,20 +32,26 @@ def create_large_json(length: int) -> Dict:
 
 def create_example_data(dataset_id: str, json_size: int) -> Dict:
     """Create a single example data object."""
-    return ExampleCreateWithAttachments(**{
-        "dataset_id": dataset_id,
-        "inputs": create_large_json(json_size),
-        "outputs": create_large_json(json_size),
-    })
+    return ExampleCreateWithAttachments(
+        **{
+            "dataset_id": dataset_id,
+            "inputs": create_large_json(json_size),
+            "outputs": create_large_json(json_size),
+        }
+    )
+
 
 DATASET_NAME = "upsert_llm_evaluator_benchmark_dataset"
-def benchmark_example_uploading(num_examples: int, json_size: int, samples: int = 1) -> Dict:
+
+
+def benchmark_example_uploading(
+    num_examples: int, json_size: int, samples: int = 1
+) -> Dict:
     """
     Benchmark run creation with specified parameters.
     Returns timing statistics.
     """
     multipart_timings, old_timings = [], []
-
 
     for _ in range(samples):
         client = Client(api_url="https://dev.api.smith.langchain.com")
@@ -57,15 +64,16 @@ def benchmark_example_uploading(num_examples: int, json_size: int, samples: int 
             description="Test dataset for multipart example upload",
             data_type=DataType.kv,
         )
-        examples = [create_example_data(dataset.id, json_size) for i in range(num_examples)]
+        examples = [
+            create_example_data(dataset.id, json_size) for i in range(num_examples)
+        ]
 
         # Old method
         old_start = time.perf_counter()
-        inputs=[e.inputs for e in examples]
-        outputs=[e.outputs for e in examples]
+        inputs = [e.inputs for e in examples]
+        outputs = [e.outputs for e in examples]
         # the create_examples endpoint fails above 20mb - so this will crash with json_size > ~100
-        client.create_examples(inputs=inputs,
-                            outputs=outputs,dataset_id=dataset.id)
+        client.create_examples(inputs=inputs, outputs=outputs, dataset_id=dataset.id)
         old_elapsed = time.perf_counter() - old_start
 
         # New method
@@ -87,32 +95,44 @@ def benchmark_example_uploading(num_examples: int, json_size: int, samples: int 
         "new": {
             "mean": statistics.mean(multipart_timings),
             "median": statistics.median(multipart_timings),
-            "stdev": statistics.stdev(multipart_timings) if len(multipart_timings) > 1 else 0,
+            "stdev": statistics.stdev(multipart_timings)
+            if len(multipart_timings) > 1
+            else 0,
             "min": min(multipart_timings),
             "max": max(multipart_timings),
-        }
+        },
     }
+
 
 json_size = 1000
 num_examples = 1000
+
 
 def main(json_size: int, num_examples: int):
     """
     Run benchmarks with different combinations of parameters and report results.
     """
-    results = benchmark_example_uploading(num_examples=num_examples, json_size=json_size)
-    
-    print(f"\nBenchmark Results for {num_examples} examples with JSON size {json_size}:")
+    results = benchmark_example_uploading(
+        num_examples=num_examples, json_size=json_size
+    )
+
+    print(
+        f"\nBenchmark Results for {num_examples} examples with JSON size {json_size}:"
+    )
     print("-" * 60)
     print(f"{'Metric':<15} {'Old Method':>20} {'New Method':>20}")
     print("-" * 60)
-    
-    metrics = ['mean', 'median', 'stdev', 'min', 'max']
+
+    metrics = ["mean", "median", "stdev", "min", "max"]
     for metric in metrics:
-        print(f"{metric:<15} {results['old'][metric]:>20.4f} {results['new'][metric]:>20.4f}")
-    
+        print(
+            f"{metric:<15} {results['old'][metric]:>20.4f} {results['new'][metric]:>20.4f}"
+        )
+
     print("-" * 60)
-    print(f"{'Throughput':<15} {num_examples / results['old']['mean']:>20.2f} {num_examples / results['new']['mean']:>20.2f}")
+    print(
+        f"{'Throughput':<15} {num_examples / results['old']['mean']:>20.2f} {num_examples / results['new']['mean']:>20.2f}"
+    )
     print("(examples/second)")
 
 

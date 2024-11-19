@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from io import BytesIO
 from typing import (
     Any,
-    Callable,
     Dict,
     List,
     NamedTuple,
@@ -19,7 +19,6 @@ from typing import (
 )
 from uuid import UUID
 
-import requests
 from typing_extensions import NotRequired, TypedDict
 
 try:
@@ -76,12 +75,15 @@ class ExampleBase(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
-    attachments: Optional[Dict[str, Tuple[str, Callable[[], requests.Response]]]] = Field(default=None)
+    attachment_urls: Optional[Dict[str, Tuple[str, BytesIO]]] = Field(default=None)
+    """Dictionary with attachment names as keys and a tuple of the S3 url
+    and a reader of the data for the file."""
 
     class Config:
         """Configuration class for the schema."""
 
         frozen = True
+        arbitrary_types_allowed = True
 
 
 class ExampleCreate(ExampleBase):
@@ -148,10 +150,13 @@ class ExampleUpdate(BaseModel):
 
         frozen = True
 
+
 class ExampleUpdateWithAttachments(ExampleUpdate):
     """Example update with attachments."""
+
     id: UUID
     attachments: Optional[Attachments] = None
+
 
 class DataType(str, Enum):
     """Enum for dataset data types."""
@@ -989,6 +994,7 @@ class UsageMetadata(TypedDict):
 
     Does *not* need to sum to full output token count. Does *not* need to have all keys.
     """
+
 
 class UpsertExamplesResponse(TypedDict):
     """Response object returned from the upsert_examples_multipart method."""

@@ -1323,7 +1323,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
     # Private methods
 
     def _predict(
-        self, target: TARGET_T, /, max_concurrency: Optional[int] = None,
+        self,
+        target: TARGET_T,
+        /,
+        max_concurrency: Optional[int] = None,
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
@@ -1332,7 +1335,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client, with_attachments=with_attachments
+                    fn,
+                    example,
+                    self.experiment_name,
+                    self._metadata,
+                    self.client,
+                    with_attachments=with_attachments,
                 )
 
         else:
@@ -1345,7 +1353,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        with_attachments=with_attachments
+                        with_attachments=with_attachments,
                     )
                     for example in self.examples
                 ]
@@ -1619,7 +1627,7 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
-    with_attachments: Optional[bool] = None
+    with_attachments: Optional[bool] = None,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1630,7 +1638,7 @@ def _forward(
     with rh.tracing_context(enabled=True):
         try:
             args = (
-                (example.inputs, example.attachments)
+                (example.inputs, example.attachment_urls)
                 if with_attachments
                 else (example.inputs,)
             )
@@ -1662,12 +1670,14 @@ def _forward(
 
 
 def _resolve_data(
-    data: DATA_T, *, client: langsmith.Client,
+    data: DATA_T,
+    *,
+    client: langsmith.Client,
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
     # TODO: Find a smarter way of determining whether to get attachments (don't just default to true)
     if isinstance(data, str):
-        return client.list_examples(dataset_name=data, get_attachments=True) 
+        return client.list_examples(dataset_name=data, get_attachments=True)
     elif isinstance(data, uuid.UUID):
         return client.list_examples(dataset_id=data, get_attachments=True)
     return data
@@ -1695,24 +1705,37 @@ def _ensure_traceable(
         fn = rh.traceable(name="Target")(target)
     return fn
 
+
 def _with_attachments(
-    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],       
+    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],
 ) -> bool:
     """Whether the target function accepts attachments."""
     # Check function signature
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
-    positional_params = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-    
+    positional_params = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+
     if len(positional_params) == 0:
-        raise ValueError("Target function must accept at least one positional argument (inputs)")
+        raise ValueError(
+            "Target function must accept at least one positional argument (inputs)"
+        )
     elif len(positional_params) > 2:
-        raise ValueError("Target function must accept at most two positional arguments (inputs, attachments)")
+        raise ValueError(
+            "Target function must accept at most two positional arguments (inputs, attachments)"
+        )
     elif len(positional_params) == 2:
-        if positional_params[0].name != "inputs" or positional_params[1].name != "attachments":
-            raise ValueError("When using two arguments, they must be named 'inputs' and 'attachments'")
+        if (
+            positional_params[0].name != "inputs"
+            or positional_params[1].name != "attachments"
+        ):
+            raise ValueError(
+                "When using two arguments, they must be named 'inputs' and 'attachments'"
+            )
 
     return len(positional_params) == 2
+
 
 def _resolve_experiment(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]],

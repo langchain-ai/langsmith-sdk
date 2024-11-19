@@ -3430,7 +3430,7 @@ class Client:
                     )
                 ),
             )
-            
+
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)
                 (
@@ -3677,7 +3677,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
-        get_attachments: Optional[bool] = None,
+        get_attachments: Optional[bool] = True,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3706,8 +3706,6 @@ class Client:
         Yields:
             Example: The examples.
         """
-        
-        
         params: Dict[str, Any] = {
             **kwargs,
             "offset": offset,
@@ -3730,27 +3728,25 @@ class Client:
         else:
             pass
         if get_attachments == True:
-            params['select'] = ['attachment_urls', 'outputs', 'metadata']
+            params["select"] = ["attachment_urls", "outputs", "metadata"]
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachments = {}
-            if example['attachment_urls']:
-                for key, value in example['attachment_urls'].items():
-                    def create_reader(url=value['presigned_url']):
-                        response = requests.get(url, stream=True)
-                        response.raise_for_status()
-                        # Return the raw response object so caller can handle streaming
-                        return response
-                    attachments[key.split(".")[1]] = (
-                        value['presigned_url'],
-                        create_reader
+            attachment_urls = {}
+            if example["attachment_urls"]:
+                for key, value in example["attachment_urls"].items():
+                    response = requests.get(value["presigned_url"], stream=True)
+                    reader = io.BytesIO(response.content)
+                    reader.seek(0)
+                    attachment_urls[key.split(".")[1]] = (
+                        value["presigned_url"],
+                        reader,
                     )
-            del example['attachment_urls']
+            del example["attachment_urls"]
 
             yield ls_schemas.Example(
                 **example,
-                attachments=attachments,
+                attachment_urls=attachment_urls,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
