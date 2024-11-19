@@ -184,7 +184,6 @@ def evaluate(
         ...     experiment_prefix="My Experiment",
         ...     description="Evaluating the accuracy of a simple prediction model.",
         ...     max_concurrency=0,
-        ...     upload_results=False,
         ...     metadata={
         ...         "my-prompt-version": "abcd-1234",
         ...     },
