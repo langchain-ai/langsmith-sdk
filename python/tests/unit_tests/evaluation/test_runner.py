@@ -208,6 +208,14 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
 
+    def score_unpacked_inputs_outputs_attachments(inputs, outputs, attachments):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
+    def score_unpacked_outputs(outputs):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
     def eval_float(run, example):
         ordering_of_stuff.append("evaluate")
         return 0.2
@@ -227,6 +235,8 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         score_value_first,
         score_unpacked_inputs_outputs,
         score_unpacked_inputs_outputs_reference,
+        score_unpacked_inputs_outputs_attachments,
+        score_unpacked_outputs,
         eval_float,
         eval_str,
         eval_list,
@@ -312,25 +322,6 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
     )
     for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
-
-    # test invalid evaluators
-    # args need to be positional
-    def eval1(*, inputs, outputs):
-        pass
-
-    # if more than 2 positional args, they must all have default arg names
-    # (run, example, ...)
-    def eval2(x, y, inputs):
-        pass
-
-    evaluators = [eval1, eval2]
-
-    for eval_ in evaluators:
-        with pytest.raises(ValueError, match="Invalid evaluator function."):
-            _normalize_evaluator_func(eval_)
-
-        with pytest.raises(ValueError, match="Invalid evaluator function."):
-            evaluate((lambda x: x), data=ds_examples, evaluators=[eval_], client=client)
 
 
 def test_evaluate_raises_for_async():
@@ -439,6 +430,14 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
 
+    async def score_unpacked_inputs_outputs_attachments(inputs, outputs, attachments):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
+    async def score_unpacked_outputs(outputs):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
     async def eval_float(run, example):
         ordering_of_stuff.append("evaluate")
         return 0.2
@@ -458,6 +457,8 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         score_value_first,
         score_unpacked_inputs_outputs,
         score_unpacked_inputs_outputs_reference,
+        score_unpacked_inputs_outputs_attachments,
+        score_unpacked_outputs,
         eval_float,
         eval_str,
         eval_list,
@@ -545,30 +546,6 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
     async for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
-    # test invalid evaluators
-    # args need to be positional
-    async def eval1(*, inputs, outputs):
-        pass
-
-    # if more than 2 positional args, they must all have default arg names
-    # (run, example, ...)
-    async def eval2(x, y, inputs):
-        pass
-
-    evaluators = [eval1, eval2]
-
-    async def atarget(x):
-        return x
-
-    for eval_ in evaluators:
-        with pytest.raises(ValueError, match="Invalid evaluator function."):
-            _normalize_evaluator_func(eval_)
-
-        with pytest.raises(ValueError, match="Invalid evaluator function."):
-            await aevaluate(
-                atarget, data=ds_examples, evaluators=[eval_], client=client
-            )
-
 
 @as_runnable
 def nested_predict(inputs):
@@ -647,3 +624,131 @@ def test_include_attachments(target, expected, error_msg):
     else:
         result = _include_attachments(target)
         assert result == expected
+
+
+def valid_single_supported(inputs, *, optional=None):
+    return {"score": 1}
+
+
+async def valid_single_supported_async(inputs, *, optional=None):
+    return {"score": 1}
+
+
+def valid_two_arbitrary(foo, bar, *, optional=None):
+    return {"score": 1}
+
+
+async def valid_two_arbitrary_async(foo, bar, *, optional=None):
+    return {"score": 1}
+
+
+def valid_multiple_supported(inputs, outputs, reference_outputs, *, optional=None):
+    return {"score": 1}
+
+
+async def valid_multiple_supported_async(
+    inputs, outputs, reference_outputs, *, optional=None
+):
+    return {"score": 1}
+
+
+def invalid_single_unsupported(foo, *, optional=None):
+    return {"score": 1}
+
+
+async def invalid_single_unsupported_async(foo, *, optional=None):
+    return {"score": 1}
+
+
+def invalid_three_args(inputs, outputs, foo, *, optional=None):
+    return {"score": 1}
+
+
+async def invalid_three_args_async(inputs, outputs, foo, *, optional=None):
+    return {"score": 1}
+
+
+def invalid_no_positional(*, inputs, outputs, optional=None):
+    return {"score": 1}
+
+
+async def invalid_no_positional_async(*, inputs, outputs, optional=None):
+    return {"score": 1}
+
+
+# Test cases that should succeed
+VALID_EVALUATOR_CASES = [
+    (valid_single_supported, False),
+    (valid_single_supported_async, True),
+    (valid_two_arbitrary, False),
+    (valid_two_arbitrary_async, True),
+    (valid_multiple_supported, False),
+    (valid_multiple_supported_async, True),
+]
+
+# Test cases that should raise ValueError
+INVALID_EVALUATOR_CASES = [
+    (invalid_single_unsupported, False),
+    (invalid_single_unsupported_async, True),
+    (invalid_three_args, False),
+    (invalid_three_args_async, True),
+    (invalid_no_positional, False),
+    (invalid_no_positional_async, True),
+]
+
+
+def target(inputs, attachments):
+    return {"foo": "bar"}
+
+
+async def atarget(inputs, attachments):
+    return {"foo": "bar"}
+
+
+@pytest.mark.parametrize("func,is_async", VALID_EVALUATOR_CASES)
+def test_normalize_evaluator_func_valid(func, is_async):
+    """Test _normalize_evaluator_func succeeds."""
+    func = _normalize_evaluator_func(func)
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_examples = [_create_example(i) for i in range(10)]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    session.request = fake_request.request
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    client._tenant_id = tenant_id  # type: ignore
+
+    if is_async:
+        asyncio.run(
+            aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
+        )
+    else:
+        evaluate(target, data=ds_examples, evaluators=[func], client=client)
+
+
+@pytest.mark.parametrize("func,is_async", INVALID_EVALUATOR_CASES)
+def test_normalize_evaluator_func_invalid(func, is_async):
+    """Test _normalize_evaluator_func fails correctly."""
+    with pytest.raises(ValueError, match="Invalid evaluator function"):
+        _normalize_evaluator_func(func)
+
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_examples = [_create_example(i) for i in range(10)]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    session.request = fake_request.request
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    client._tenant_id = tenant_id  # type: ignore
+
+    with pytest.raises(ValueError, match="Invalid evaluator function"):
+        if is_async:
+            asyncio.run(
+                aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
+            )
+        else:
+            evaluate(target, data=ds_examples, evaluators=[func], client=client)

@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 from langsmith.client import ID_TYPE, Client
-from langsmith.evaluation import evaluate
+from langsmith.evaluation import aevaluate, evaluate
 from langsmith.schemas import DataType, Example, ExampleUpsertWithAttachments, Run
 from langsmith.utils import (
     LangSmithConnectionError,
@@ -1122,9 +1122,6 @@ def test_slow_run_read_multipart(
         assert not caplog.records
 
 
-@pytest.mark.skip(
-    reason="Need to land https://github.com/langchain-ai/langsmith-sdk/pull/1209 first"
-)
 def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     """Test list_examples returns same keys with and without attachments."""
     dataset_name = "__test_list_examples_attachments" + uuid4().hex[:4]
@@ -1160,20 +1157,18 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-@pytest.mark.skip(
-    reason="Need to land https://github.com/langchain-ai/langsmith-sdk/pull/1209 first"
-)
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
-    # 1. Create dataset
+    langchain_client = Client(
+        api_key="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",
+    )
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
         data_type=DataType.kv,
     )
 
-    # 2. Create example with attachments
     example = ExampleUpsertWithAttachments(
         dataset_id=dataset.id,
         inputs={"question": "What is shown in the image?"},
@@ -1185,7 +1180,6 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
 
     langchain_client.upsert_examples_multipart(upserts=[example])
 
-    # 3. Define target function that uses attachments
     def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
         # Verify we receive the attachment data
         assert "image" in attachments
@@ -1193,25 +1187,26 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         assert image_data.read() == b"fake image data for testing"
         return {"answer": "test image"}
 
-    # 4. Define simple evaluator
-    def evaluator(run: Run, example: Example) -> Dict[str, Any]:
+    def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        image_url, image_data = attachments["image"]
+        assert image_data.read() == b"fake image data for testing"
         return {
             "score": float(
-                run.outputs.get("answer") == example.outputs.get("answer")  # type: ignore
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
             )
         }
 
-    # 5. Run evaluation
     results = evaluate(
         target, data=dataset_name, evaluators=[evaluator], client=langchain_client
     )
 
-    # 6. Verify results
     assert len(results) == 1
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    # Cleanup
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
@@ -1258,6 +1253,111 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
 
     assert len(results) == 2
     for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
+async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
+    """Test evaluating examples with attachments."""
+    dataset_name = "__test_aevaluate_attachments" + uuid4().hex[:4]
+    langchain_client = Client(
+        api_key="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",
+    )
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for evals with attachments",
+        data_type=DataType.kv,
+    )
+
+    example = ExampleUpsertWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"question": "What is shown in the image?"},
+        outputs={"answer": "test image"},
+        attachments={
+            "image": ("image/png", b"fake image data for testing"),
+        },
+    )
+
+    langchain_client.upsert_examples_multipart(upserts=[example])
+
+    async def target(
+        inputs: Dict[str, Any], attachments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert "image" in attachments
+        image_url, image_data = attachments["image"]
+        assert image_data.read() == b"fake image data for testing"
+        return {"answer": "test image"}
+
+    async def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        image_url, image_data = attachments["image"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = await aevaluate(
+        target, data=dataset_name, evaluators=[evaluator], client=langchain_client
+    )
+
+    assert len(results) == 1
+    async for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
+async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
+    """Test evaluating examples without attachments using a target with attachments."""
+    dataset_name = "__test_aevaluate_no_attachments" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for evals without attachments",
+        data_type=DataType.kv,
+    )
+
+    # Create example using old way, attachments should be set to {}
+    langchain_client.create_example(
+        dataset_id=dataset.id,
+        inputs={"question": "What is 2+2?"},
+        outputs={"answer": "4"},
+    )
+
+    # Verify we can create example the new way without attachments
+    example = ExampleUpsertWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"question": "What is 3+1?"},
+        outputs={"answer": "4"},
+    )
+    langchain_client.upsert_examples_multipart(upserts=[example])
+
+    async def target(
+        inputs: Dict[str, Any], attachments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        # Verify we receive an empty attachments dict
+        assert isinstance(attachments, dict)
+        assert len(attachments) == 0
+        return {"answer": "4"}
+
+    async def evaluator(run: Run, example: Example) -> Dict[str, Any]:
+        return {
+            "score": float(
+                run.outputs.get("answer") == example.outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = await aevaluate(
+        target, data=dataset_name, evaluators=[evaluator], client=langchain_client
+    )
+
+    assert len(results) == 2
+    async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
     langchain_client.delete_dataset(dataset_name=dataset_name)

@@ -657,7 +657,14 @@ def _normalize_evaluator_func(
     Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT],
     Callable[[Run, Optional[Example]], Awaitable[_RUNNABLE_OUTPUT]],
 ]:
-    supported_args = ("run", "example", "inputs", "outputs", "reference_outputs")
+    supported_args = (
+        "run",
+        "example",
+        "inputs",
+        "outputs",
+        "reference_outputs",
+        "attachments",
+    )
     sig = inspect.signature(func)
     positional_args = [
         pname
@@ -691,6 +698,7 @@ def _normalize_evaluator_func(
                     "inputs": example.inputs,
                     "outputs": run.outputs or {},
                     "reference_outputs": example.outputs or {},
+                    "attachments": example.attachment_urls or {},
                 }
                 args = (arg_map[arg] for arg in positional_args)
                 return await func(*args)
@@ -711,6 +719,7 @@ def _normalize_evaluator_func(
                     "inputs": example.inputs,
                     "outputs": run.outputs or {},
                     "reference_outputs": example.outputs or {},
+                    "attachments": example.attachment_urls or {},
                 }
                 args = (arg_map[arg] for arg in positional_args)
                 return func(*args)
