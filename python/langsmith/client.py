@@ -3662,8 +3662,22 @@ class Client:
             },
         )
 
+        example = response.json()
+        attachment_urls = {}
+        if example["attachment_urls"]:
+            for key, value in example["attachment_urls"].items():
+                response = requests.get(value["presigned_url"], stream=True)
+                response.raise_for_status()
+                reader = io.BytesIO(response.content)
+                attachment_urls[key.split(".")[1]] = (
+                    value["presigned_url"],
+                    reader,
+                )
+        del example["attachment_urls"]
+
         return ls_schemas.Example(
-            **response.json(),
+            **example,
+            attachment_urls=attachment_urls,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
