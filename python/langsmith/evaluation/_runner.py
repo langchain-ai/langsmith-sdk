@@ -20,6 +20,7 @@ from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
     Any,
+    AsyncIterable,
     Awaitable,
     Callable,
     DefaultDict,
@@ -44,6 +45,7 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
+from langsmith.evaluation._arunner import ATARGET_T
 from langsmith.evaluation.evaluator import (
     ComparisonEvaluationResult,
     DynamicComparisonRunEvaluator,
@@ -1731,7 +1733,9 @@ def _ensure_traceable(
 
 
 def _include_attachments(
-    target: Union[TARGET_T, Iterable[schemas.Run], Runnable],
+    target: Union[
+        ATARGET_T, TARGET_T, Iterable[schemas.Run], AsyncIterable[dict], Runnable
+    ],
 ) -> bool:
     """Whether the target function accepts attachments."""
     if _is_langchain_runnable(target) or not callable(target):

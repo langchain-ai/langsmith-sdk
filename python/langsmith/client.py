@@ -3451,7 +3451,7 @@ class Client:
                                     f"{example_id}.attachment.{name}",
                                     (
                                         None,
-                                        open(file_path, "rb"),
+                                        open(file_path, "rb"),  # type: ignore[arg-type]
                                         f"{mime_type}; length={file_size}",
                                         {},
                                     ),
