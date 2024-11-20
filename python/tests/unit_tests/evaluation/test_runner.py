@@ -21,7 +21,7 @@ from langsmith import evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
-from langsmith.evaluation._runner import evaluate_existing, _include_attachments
+from langsmith.evaluation._runner import _include_attachments, evaluate_existing
 from langsmith.evaluation.evaluator import _normalize_evaluator_func
 
 
@@ -575,40 +575,41 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         # Valid cases
         (lambda inputs: None, False, None),
         (lambda inputs, attachments: None, True, None),
-        
         # Invalid parameter names
         (
-            lambda x, y: None, 
-            None, 
+            lambda x, y: None,
+            None,
             "When target function has two positional arguments, they must be named "
-            "'inputs' and 'attachments', respectively. Received: 'x' at index 0,'y' at index 1"
+            "'inputs' and 'attachments', respectively. Received: 'x' at index 0,'y' "
+            "at index 1",
         ),
         (
-            lambda input, attachment: None, 
+            lambda input, attachment: None,
             None,
             "When target function has two positional arguments, they must be named "
             "'inputs' and 'attachments', respectively. Received: 'input' at index 0,"
-            "'attachment' at index 1"
+            "'attachment' at index 1",
         ),
-        
         # Too many parameters
         (
             lambda inputs, attachments, extra: None,
             None,
-            re.escape("Target function must accept at most two positional arguments (inputs, attachments)")
+            re.escape(
+                "Target function must accept at most two positional arguments "
+                "(inputs, attachments)"
+            ),
         ),
-        
         # No positional parameters
         (
             lambda *, foo="bar": None,
             None,
-            re.escape("Target function must accept at least one positional argument (inputs)")
+            re.escape(
+                "Target function must accept at least one positional argument (inputs)"
+            ),
         ),
-        
         # Mixed positional and keyword
         (lambda inputs, *, optional=None: None, False, None),
         (lambda inputs, attachments, *, optional=None: None, True, None),
-        
         # Non-callable
         ("not_a_function", False, None),
     ],
@@ -621,7 +622,7 @@ def test_include_attachments(target, expected, error_msg):
         if target == "runnable":
             pytest.skip("langchain-core not installed")
             return
-    
+
     if target == "runnable":
         target = RunnableLambda(lambda x: x)
         expected = False

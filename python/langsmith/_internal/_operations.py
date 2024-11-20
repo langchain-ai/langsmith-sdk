@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import itertools
 import logging
-from pathlib import Path
 import uuid
+from pathlib import Path
 from typing import Literal, Optional, Union, cast
 
 import orjson
@@ -257,9 +257,9 @@ def serialized_run_operation_to_multipart_parts_and_context(
                     " periods ('.'). Please rename the attachment and try again."
                 )
                 continue
-            
+
             if isinstance(valb, Path):
-                #TODO: actually deal with this case
+                # TODO: actually deal with this case
                 # This is just for speed of getting something out
                 continue
             else:
