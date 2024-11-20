@@ -1213,3 +1213,51 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
 
     # Cleanup
     langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
+def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
+    """Test evaluating examples without attachments using a target that accepts attachments."""
+    dataset_name = "__test_evaluate_no_attachments" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for evals without attachments",
+        data_type=DataType.kv,
+    )
+
+    # Create example using old way, attachments should be set to {}
+    langchain_client.create_example(
+        dataset_id=dataset.id,
+        inputs={"question": "What is 2+2?"},
+        outputs={"answer": "4"},
+    )
+
+    # Verify we can create example the new way without attachments
+    example = ExampleUpsertWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"question": "What is 3+1?"},
+        outputs={"answer": "4"},
+    )
+    langchain_client.upsert_examples_multipart(upserts=[example])
+
+    def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive an empty attachments dict
+        assert isinstance(attachments, dict)
+        assert len(attachments) == 0
+        return {"answer": "4"}
+
+    def evaluator(run: Run, example: Example) -> Dict[str, Any]:
+        return {
+            "score": float(
+                run.outputs.get("answer") == example.outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = evaluate(
+        target, data=dataset_name, evaluators=[evaluator], client=langchain_client
+    )
+
+    assert len(results) == 2
+    for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
