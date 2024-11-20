@@ -158,6 +158,9 @@ class ComparisonEvaluationResult(BaseModel):
     """The scores for each run in the comparison."""
     source_run_id: Optional[Union[uuid.UUID, str]] = None
     """The ID of the trace of the evaluator itself."""
+    comment: Optional[Union[str, Dict[Union[uuid.UUID, str], str]]] = None
+    """Comment for the scores. If a string, it's shared across all target runs.
+    If a dict, it maps run IDs to individual comments."""
 
 
 _COMPARISON_OUTPUT = Union[ComparisonEvaluationResult, dict]
