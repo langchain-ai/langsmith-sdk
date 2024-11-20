@@ -1151,7 +1151,8 @@ export class Client {
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
       // Create multipart form data manually using Blobs
-      const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
+      const boundary =
+        "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
       const chunks: Blob[] = [];
 
       for (const part of parts) {
