@@ -543,7 +543,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         if self._runs is None:
             if self.client.has_project(self.experiment_name):
                 runs = aitertools.ensure_async_iterator(
-                    self.client.list_runs(project_name=self.experiment_name, is_root=True)
+                    self.client.list_runs(
+                        project_name=self.experiment_name, is_root=True
+                    )
                 )
             else:
                 raise ValueError("Runs not loaded yet.")
@@ -560,7 +562,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 yield EvaluationResults(
                     results=[
                         {"key": k, **v}
-                        for k, v in (run.feedback_stats or {}).items()
+                        for k, v in (getattr(run, "feedback_stats", {}) or {}).items()
                     ]
                 )
             else:
