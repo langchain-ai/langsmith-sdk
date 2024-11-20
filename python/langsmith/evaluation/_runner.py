@@ -1740,7 +1740,10 @@ def _include_attachments(
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
     positional_params = [
-        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        p
+        for p in params
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        and p.default is p.empty
     ]
 
     if len(positional_params) == 0:
