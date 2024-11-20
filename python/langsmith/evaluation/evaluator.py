@@ -535,7 +535,7 @@ class DynamicComparisonRunEvaluator:
             provided arguments.
 
         Args:
-            run (Run): The run to be evaluated.
+            runs (Run): The runs to be evaluated.
             example (Optional[Example]): An optional example to be used
                 in the evaluation.
 

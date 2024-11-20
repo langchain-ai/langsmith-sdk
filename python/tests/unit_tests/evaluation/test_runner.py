@@ -20,8 +20,15 @@ from langsmith import evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
-from langsmith.evaluation._runner import _normalize_summary_evaluator, evaluate_existing
-from langsmith.evaluation.evaluator import _normalize_evaluator_func
+from langsmith.evaluation._runner import (
+    _normalize_summary_evaluator,
+    evaluate_comparative,
+    evaluate_existing,
+)
+from langsmith.evaluation.evaluator import (
+    _normalize_comparison_evaluator_func,
+    _normalize_evaluator_func,
+)
 
 
 class FakeRequest:
@@ -55,7 +62,14 @@ class FakeRequest:
                 response = MagicMock()
                 response.json.return_value = res
                 return response
-
+            elif (
+                endpoint
+                == f"http://localhost:1984/sessions/{self.created_session['id']}"
+            ):  # type: ignore
+                res = self.created_session  # type: ignore
+                response = MagicMock()
+                response.json.return_value = res
+                return response
             else:
                 self.should_fail = True
                 raise ValueError(f"Unknown endpoint: {endpoint}")
@@ -90,6 +104,14 @@ class FakeRequest:
             elif endpoint == "http://localhost:1984/feedback":
                 response = MagicMock()
                 response.json.return_value = {}
+                return response
+            elif endpoint == "http://localhost:1984/datasets/comparative":
+                response = MagicMock()
+                self.created_comparative_experiment = json.loads(kwargs["data"]) | {
+                    "tenant_id": self.tenant_id,
+                    "modified_at": datetime.now(),
+                }
+                response.json.return_value = self.created_comparative_experiment
                 return response
 
             else:
@@ -300,7 +322,10 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         return {"score": 0.7}
 
     ex_results = evaluate_existing(
-        fake_request.created_session["name"], evaluators=[score_value], client=client
+        fake_request.created_session["name"],
+        evaluators=[score_value],
+        client=client,
+        blocking=blocking,
     )
     second_item = next(itertools.islice(iter(ex_results), 1, 2))
     first_list = list(ex_results)
@@ -350,6 +375,16 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
 
         with pytest.raises(ValueError, match="Invalid evaluator function."):
             evaluate((lambda x: x), data=ds_examples, evaluators=[eval_], client=client)
+
+    def comparative_eval(inputs, outputs, reference_outputs):
+        assert len(outputs) == 2
+        return [o["output"] for o in outputs]
+
+    evaluate_comparative(
+        (fake_request.created_session["id"], fake_request.created_session["id"]),
+        evaluators=[comparative_eval],
+        client=client,
+    )
 
 
 def test_evaluate_raises_for_async():
@@ -666,3 +701,104 @@ def summary_eval_unknown_positional_args(runs, examples, foo):
 def test__normalize_summary_evaluator_invalid(evaluator: Callable) -> None:
     with pytest.raises(ValueError, match="Invalid evaluator function."):
         _normalize_summary_evaluator(evaluator)
+
+
+def comparison_eval(runs, example):
+    return [len(r.outputs["response"]) for r in runs]
+
+
+def comparison_eval_simple(inputs, outputs, reference_outputs):
+    return [len(o["response"]) for o in outputs]
+
+
+def comparison_eval_no_inputs(outputs, reference_outputs):
+    return [min(len(o["response"]), len(reference_outputs["answer"])) for o in outputs]
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [comparison_eval, comparison_eval_simple, comparison_eval_no_inputs],
+)
+def test__normalize_comparison_evaluator(evaluator: Callable) -> None:
+    runs = [
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="a",
+            outputs={"response": "c" * 2},
+        ),
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="d",
+            outputs={"response": "e" * 3},
+        ),
+    ]
+    example = ls_schemas.Example(
+        id=uuid.uuid4(), inputs={"in": "b"}, outputs={"answer": "f" * 4}
+    )
+    normalized = _normalize_comparison_evaluator_func(evaluator)
+    assert normalized(runs, example) == [2, 3]
+
+
+async def acomparison_eval(runs, example):
+    return [len(r.outputs["response"]) for r in runs]
+
+
+async def acomparison_eval_simple(inputs, outputs, reference_outputs):
+    return [len(o["response"]) for o in outputs]
+
+
+async def acomparison_eval_no_inputs(outputs, reference_outputs):
+    return [min(len(o["response"]), len(reference_outputs["answer"])) for o in outputs]
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [acomparison_eval, acomparison_eval_simple, acomparison_eval_no_inputs],
+)
+async def test__normalize_comparison_evaluator_async(evaluator: Callable) -> None:
+    runs = [
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="a",
+            outputs={"response": "c" * 2},
+        ),
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="d",
+            outputs={"response": "e" * 3},
+        ),
+    ]
+    example = ls_schemas.Example(
+        id=uuid.uuid4(), inputs={"in": "b"}, outputs={"answer": "f" * 4}
+    )
+    normalized = _normalize_comparison_evaluator_func(evaluator)
+    assert await normalized(runs, example) == [2, 3]
+
+
+def comparison_eval_kwargs(*, runs, example):
+    return
+
+
+def comparison_eval_unknown_positional_args(runs, example, foo):
+    return
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [comparison_eval_kwargs, comparison_eval_unknown_positional_args],
+)
+def test__normalize_comparison_evaluator_invalid(evaluator: Callable) -> None:
+    with pytest.raises(ValueError, match="Invalid evaluator function."):
+        _normalize_comparison_evaluator_func(evaluator)

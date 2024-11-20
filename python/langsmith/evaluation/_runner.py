@@ -799,9 +799,7 @@ def evaluate_comparative(
     ) as executor:
         futures = []
         for example_id, runs_list in tqdm(runs_dict.items()):
-            results[example_id] = {
-                "runs": runs_list,
-            }
+            results[example_id] = {"runs": runs_list}
             for comparator in comparators:
                 if max_concurrency > 1:
                     future = executor.submit(
