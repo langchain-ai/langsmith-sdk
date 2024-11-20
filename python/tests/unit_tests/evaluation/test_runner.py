@@ -20,7 +20,7 @@ from langsmith import evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
-from langsmith.evaluation._runner import evaluate_existing
+from langsmith.evaluation._runner import _normalize_summary_evaluator, evaluate_existing
 from langsmith.evaluation.evaluator import _normalize_evaluator_func
 
 
@@ -221,6 +221,15 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
             {"score": 1, "key": "list_eval_int"},
         ]
 
+    def summary_eval_runs_examples(runs_, examples_):
+        return {"score": len(runs_[0].dotted_order)}
+
+    def summary_eval_inputs_outputs(inputs, outputs):
+        return {"score": len([x["in"] for x in inputs])}
+
+    def summary_eval_outputs_reference(outputs, reference_outputs):
+        return {"score": len([x["answer"] for x in reference_outputs])}
+
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
@@ -230,11 +239,18 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         eval_list,
     ]
 
+    summary_evaluators = [
+        summary_eval_runs_examples,
+        summary_eval_inputs_outputs,
+        summary_eval_outputs_reference,
+    ]
+
     results = evaluate(
         predict,
         client=client,
         data=dev_split,
         evaluators=evaluators,
+        summary_evaluators=summary_evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
     )
@@ -262,6 +278,11 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
         assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
         assert len(r["evaluation_results"]["results"]) == len(evaluators) + 1
+        assert all(
+            er.score is not None or er.value is not None
+            for er in r["evaluation_results"]["results"]
+        )
+    assert len(results._summary_results["results"]) == len(summary_evaluators)
 
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
@@ -452,6 +473,15 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
             {"score": 1, "key": "list_eval_int"},
         ]
 
+    def summary_eval_runs_examples(runs_, examples_):
+        return {"score": len(runs_[0].dotted_order)}
+
+    def summary_eval_inputs_outputs(inputs, outputs):
+        return {"score": len([x["in"] for x in inputs])}
+
+    def summary_eval_outputs_reference(outputs, reference_outputs):
+        return {"score": len([x["answer"] for x in reference_outputs])}
+
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
@@ -461,11 +491,18 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         eval_list,
     ]
 
+    summary_evaluators = [
+        summary_eval_runs_examples,
+        summary_eval_inputs_outputs,
+        summary_eval_outputs_reference,
+    ]
+
     results = await aevaluate(
         predict,
         client=client,
         data=dev_split,
         evaluators=evaluators,
+        summary_evaluators=summary_evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
     )
@@ -497,6 +534,11 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
     async for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
         assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
+        assert all(
+            er.score is not None or er.value is not None
+            for er in r["evaluation_results"]["results"]
+        )
+    assert len(results._summary_results["results"]) == len(summary_evaluators)
 
     assert fake_request.created_session
     _wait_until(lambda: fake_request.runs)
@@ -566,3 +608,61 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
             await aevaluate(
                 atarget, data=ds_examples, evaluators=[eval_], client=client
             )
+
+
+def summary_eval_runs_examples(runs_, examples_):
+    return {"score": len(runs_[0].dotted_order)}
+
+
+def summary_eval_inputs_outputs(inputs, outputs):
+    return {"score": max([len(x["in"]) for x in inputs])}
+
+
+def summary_eval_outputs_reference(outputs, reference_outputs):
+    return {"score": min([len(x["response"]) for x in outputs])}
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [
+        summary_eval_runs_examples,
+        summary_eval_inputs_outputs,
+        summary_eval_outputs_reference,
+    ],
+)
+def test__normalize_summary_evaluator(evaluator: Callable) -> None:
+    normalized = _normalize_summary_evaluator(evaluator)
+    runs = [
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="a" * 12,
+            outputs={"response": "c" * 12},
+        )
+    ]
+    examples = [
+        ls_schemas.Example(
+            id=uuid.uuid4(),
+            inputs={"in": "b" * 12},
+        )
+    ]
+    assert normalized(runs, examples)["score"] == 12
+
+
+def summary_eval_kwargs(*, runs, examples):
+    return
+
+
+def summary_eval_unknown_positional_args(runs, examples, foo):
+    return
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [summary_eval_kwargs, summary_eval_unknown_positional_args],
+)
+def test__normalize_summary_evaluator_invalid(evaluator: Callable) -> None:
+    with pytest.raises(ValueError, match="Invalid evaluator function."):
+        _normalize_summary_evaluator(evaluator)
