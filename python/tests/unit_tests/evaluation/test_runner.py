@@ -5,6 +5,7 @@ import functools
 import itertools
 import json
 import random
+import re
 import sys
 import time
 import uuid
@@ -20,7 +21,7 @@ from langsmith import evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
-from langsmith.evaluation._runner import evaluate_existing
+from langsmith.evaluation._runner import evaluate_existing, _include_attachments
 from langsmith.evaluation.evaluator import _normalize_evaluator_func
 
 
@@ -566,3 +567,69 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
             await aevaluate(
                 atarget, data=ds_examples, evaluators=[eval_], client=client
             )
+
+
+@pytest.mark.parametrize(
+    "target,expected,error_msg",
+    [
+        # Valid cases
+        (lambda inputs: None, False, None),
+        (lambda inputs, attachments: None, True, None),
+        
+        # Invalid parameter names
+        (
+            lambda x, y: None, 
+            None, 
+            "When target function has two positional arguments, they must be named "
+            "'inputs' and 'attachments', respectively. Received: 'x' at index 0,'y' at index 1"
+        ),
+        (
+            lambda input, attachment: None, 
+            None,
+            "When target function has two positional arguments, they must be named "
+            "'inputs' and 'attachments', respectively. Received: 'input' at index 0,"
+            "'attachment' at index 1"
+        ),
+        
+        # Too many parameters
+        (
+            lambda inputs, attachments, extra: None,
+            None,
+            re.escape("Target function must accept at most two positional arguments (inputs, attachments)")
+        ),
+        
+        # No positional parameters
+        (
+            lambda *, foo="bar": None,
+            None,
+            re.escape("Target function must accept at least one positional argument (inputs)")
+        ),
+        
+        # Mixed positional and keyword
+        (lambda inputs, *, optional=None: None, False, None),
+        (lambda inputs, attachments, *, optional=None: None, True, None),
+        
+        # Non-callable
+        ("not_a_function", False, None),
+    ],
+)
+def test_include_attachments(target, expected, error_msg):
+    """Test the _include_attachments function with various input cases."""
+    try:
+        from langchain_core.runnables import RunnableLambda
+    except ImportError:
+        if target == "runnable":
+            pytest.skip("langchain-core not installed")
+            return
+    
+    if target == "runnable":
+        target = RunnableLambda(lambda x: x)
+        expected = False
+        error_msg = None
+
+    if error_msg is not None:
+        with pytest.raises(ValueError, match=error_msg):
+            _include_attachments(target)
+    else:
+        result = _include_attachments(target)
+        assert result == expected
