@@ -1150,33 +1150,50 @@ export class Client {
 
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
-      const formData = new FormData();
+      // Create multipart form data manually using Blobs
+      const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
+      const chunks: Blob[] = [];
+
       for (const part of parts) {
-        formData.append(part.name, part.payload);
+        // Add field boundary
+        chunks.push(new Blob([`--${boundary}\r\n`]));
+        chunks.push(
+          new Blob([
+            `Content-Disposition: form-data; name="${part.name}"\r\n`,
+            `Content-Type: ${part.payload.type}\r\n\r\n`,
+          ])
+        );
+        chunks.push(part.payload);
+        chunks.push(new Blob(["\r\n"]));
       }
-      // Log the form data
-      await this.batchIngestCaller.call(
+
+      // Add final boundary
+      chunks.push(new Blob([`--${boundary}--\r\n`]));
+
+      // Combine all chunks into a single Blob
+      const body = new Blob(chunks);
+
+      // Convert Blob to ArrayBuffer for compatibility
+      const arrayBuffer = await body.arrayBuffer();
+
+      const res = await this.batchIngestCaller.call(
         _getFetchImplementation(),
         `${this.apiUrl}/runs/multipart`,
         {
           method: "POST",
           headers: {
             ...this.headers,
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
           },
-          body: formData,
+          body: arrayBuffer,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
       );
-    } catch (e) {
-      let errorMessage = "Failed to multipart ingest runs";
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      if (e instanceof Error) {
-        errorMessage += `: ${e.stack || e.message}`;
-      } else {
-        errorMessage += `: ${String(e)}`;
-      }
-      console.warn(`${errorMessage.trim()}\n\nContext: ${context}`);
+      await raiseForStatus(res, "ingest multipart runs", true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
 
