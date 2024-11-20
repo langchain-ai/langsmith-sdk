@@ -1160,9 +1160,6 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_key="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",
-    )
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
@@ -1261,9 +1258,6 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
 async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_aevaluate_attachments" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_key="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",
-    )
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
