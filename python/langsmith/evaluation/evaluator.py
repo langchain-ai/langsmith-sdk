@@ -452,7 +452,7 @@ class DynamicComparisonRunEvaluator:
         """
         func = _normalize_comparison_evaluator_func(func)
         if afunc:
-            afunc = _normalize_comparison_evaluator_func(func)  # type: ignore[assignment]
+            afunc = _normalize_comparison_evaluator_func(afunc)  # type: ignore[assignment]
 
         wraps(func)(self)
         from langsmith import run_helpers  # type: ignore
