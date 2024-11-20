@@ -16,6 +16,7 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_core.runnables import chain as as_runnable
 
 from langsmith import evaluate
 from langsmith import schemas as ls_schemas
@@ -569,6 +570,16 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
             )
 
 
+@as_runnable
+def nested_predict(inputs):
+    return {"output": "Yes"}
+
+
+@as_runnable
+def lc_predict(inputs):
+    return nested_predict.invoke(inputs)
+
+
 @pytest.mark.parametrize(
     "target,expected,error_msg",
     [
@@ -612,6 +623,8 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         (lambda inputs, attachments, *, optional=None: None, True, None),
         # Non-callable
         ("not_a_function", False, None),
+        # Runnable
+        (lc_predict.invoke, False, None),
     ],
 )
 def test_include_attachments(target, expected, error_msg):
