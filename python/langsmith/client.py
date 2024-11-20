@@ -3413,6 +3413,22 @@ class Client:
 
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
+
+        sequence_args = {
+            "outputs": outputs,
+            "metadata": metadata,
+            "splits": splits,
+            "ids": ids,
+            "source_run_ids": source_run_ids,
+        }
+        # Since inputs are required, we will check against them
+        input_len = len(inputs)
+        for arg_name, arg_value in sequence_args.items():
+            if arg_value is not None and len(arg_value) != input_len:
+                raise ValueError(
+                    f"Length of {arg_name} ({len(arg_value)}) does not match"
+                    f" length of inputs ({input_len})"
+                )
         examples = [
             {
                 "inputs": in_,
@@ -3816,6 +3832,21 @@ class Client:
         Dict[str, Any]
             The response from the server (specifies the number of examples updated).
         """
+        sequence_args = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "metadata": metadata,
+            "splits": splits,
+            "dataset_ids": dataset_ids,
+        }
+        # Since inputs are required, we will check against them
+        examples_len = len(example_ids)
+        for arg_name, arg_value in sequence_args.items():
+            if arg_value is not None and len(arg_value) != examples_len:
+                raise ValueError(
+                    f"Length of {arg_name} ({len(arg_value)}) does not match"
+                    f" length of examples ({examples_len})"
+                )
         examples = [
             {
                 "id": id_,
