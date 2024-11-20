@@ -1037,7 +1037,7 @@ def test_examples_length_validation(langchain_client: Client) -> None:
     )
 
     # Create some valid examples for testing update
-    valid_examples = langchain_client.create_examples(
+    langchain_client.create_examples(
         inputs=[{"text": "hello"}, {"text": "world"}],
         outputs=[{"response": "hi"}, {"response": "earth"}],
         dataset_id=dataset.id,
