@@ -991,8 +991,8 @@ def _ensure_async_traceable(
         return target  # type: ignore
     else:
         if _is_langchain_runnable(target):
-            target = target.ainvoke  # type: ignore[attr-defined]
-        return rh.traceable(name="AsyncTarget")(target)
+            target = target.ainvoke  # type: ignore[union-attr]
+        return rh.traceable(name="AsyncTarget")(target)  # type: ignore[arg-type]
 
 
 def _aresolve_data(
