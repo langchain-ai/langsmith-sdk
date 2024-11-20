@@ -243,6 +243,59 @@ test.concurrent(
   180_000
 );
 
+test("Test persist run with all items compressed", async () => {
+  const langchainClient = new Client({
+    autoBatchTracing: true,
+    callerOptions: { maxRetries: 2 },
+    timeout_ms: 30_000,
+    tracePayloadByteCompressionLimit: 1,
+  });
+  const projectName = "__test_compression" + uuidv4().substring(0, 4);
+  await deleteProject(langchainClient, projectName);
+
+  const runId = uuidv4();
+  const dottedOrder = convertToDottedOrderFormat(
+    new Date().getTime() / 1000,
+    runId
+  );
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+  await langchainClient.createRun({
+    id: runId,
+    project_name: projectName,
+    name: "test_run",
+    run_type: "llm",
+    inputs: { text: "hello world" },
+    trace_id: runId,
+    dotted_order: dottedOrder,
+    attachments: {
+      testimage: ["image/png", new Uint8Array(fs.readFileSync(pathname))],
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  await langchainClient.updateRun(runId, {
+    outputs: { output: ["Hi"] },
+    dotted_order: dottedOrder,
+    trace_id: runId,
+    end_time: Math.floor(new Date().getTime() / 1000),
+  });
+
+  await Promise.all([
+    waitUntilRunFound(langchainClient, runId, true),
+    waitUntilProjectFound(langchainClient, projectName),
+  ]);
+
+  const storedRun = await langchainClient.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
+  expect(storedRun.status).toEqual("success");
+  // await langchainClient.deleteProject({ projectName });
+}, 180_000);
+
 test.skip("very large runs", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,

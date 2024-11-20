@@ -75,6 +75,7 @@ export interface ClientConfig {
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
   autoBatchTracing?: boolean;
   batchSizeBytesLimit?: number;
+  tracePayloadByteCompressionLimit?: number;
   blockOnRootRunFinalization?: boolean;
   traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
@@ -364,6 +365,46 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
+const _compressPayload = async (
+  payload: string | Uint8Array,
+  contentType: string
+) => {
+  const compressedPayloadStream = new Blob([payload])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  const reader = compressedPayloadStream.getReader();
+  const chunks = [];
+  let totalLength = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    totalLength += value.length;
+  }
+  return new Blob(chunks, {
+    type: `${contentType}; length=${totalLength}; encoding=gzip`,
+  });
+};
+
+const _preparePayload = async (
+  payload: any,
+  contentType: string,
+  compressionThreshold: number
+) => {
+  let finalPayload = payload;
+  // eslint-disable-next-line no-instanceof/no-instanceof
+  if (!(payload instanceof Uint8Array)) {
+    finalPayload = stringifyForTracing(payload);
+  }
+  if (finalPayload.length < compressionThreshold) {
+    return new Blob([finalPayload], {
+      type: `${contentType}; length=${finalPayload.length}`,
+    });
+  }
+  return _compressPayload(finalPayload, contentType);
+};
+
 export class AutoBatchQueue {
   items: {
     action: "create" | "update";
@@ -435,6 +476,8 @@ export class AutoBatchQueue {
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
+const DEFAULT_MAX_UNCOMPRESSED_PAYLOAD_LIMIT = 10 * 1024;
+
 const SERVER_INFO_REQUEST_TIMEOUT = 1000;
 
 export class Client {
@@ -467,6 +510,9 @@ export class Client {
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
   private autoBatchAggregationDelayMs = 250;
+
+  private tracePayloadByteCompressionLimit =
+    DEFAULT_MAX_UNCOMPRESSED_PAYLOAD_LIMIT;
 
   private batchSizeBytesLimit?: number;
 
@@ -520,6 +566,9 @@ export class Client {
     this.blockOnRootRunFinalization =
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
+    this.tracePayloadByteCompressionLimit =
+      config.tracePayloadByteCompressionLimit ??
+      this.tracePayloadByteCompressionLimit;
     this.fetchOptions = config.fetchOptions || {};
   }
 
@@ -1022,6 +1071,7 @@ export class Client {
       delete preparedCreate.attachments;
       preparedCreateParams.push(preparedCreate);
     }
+
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
       preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
@@ -1093,24 +1143,26 @@ export class Client {
           originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
-        const stringifiedPayload = stringifyForTracing(payload);
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
-          payload: new Blob([stringifiedPayload], {
-            type: `application/json; length=${stringifiedPayload.length}`, // encoding=gzip
-          }),
+          payload: await _preparePayload(
+            payload,
+            "application/json",
+            this.tracePayloadByteCompressionLimit
+          ),
         });
         // encode the fields we collected
         for (const [key, value] of Object.entries(fields)) {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = stringifyForTracing(value);
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
-            payload: new Blob([stringifiedValue], {
-              type: `application/json; length=${stringifiedValue.length}`,
-            }),
+            payload: await _preparePayload(
+              value,
+              "application/json",
+              this.tracePayloadByteCompressionLimit
+            ),
           });
         }
         // encode the attachments
@@ -1131,9 +1183,11 @@ export class Client {
               }
               accumulatedParts.push({
                 name: `attachment.${payload.id}.${name}`,
-                payload: new Blob([content], {
-                  type: `${contentType}; length=${content.byteLength}`,
-                }),
+                payload: await _preparePayload(
+                  content,
+                  contentType,
+                  this.tracePayloadByteCompressionLimit
+                ),
               });
             }
           }
@@ -1154,8 +1208,7 @@ export class Client {
       for (const part of parts) {
         formData.append(part.name, part.payload);
       }
-      // Log the form data
-      await this.batchIngestCaller.call(
+      const res = await this.batchIngestCaller.call(
         _getFetchImplementation(),
         `${this.apiUrl}/runs/multipart`,
         {
@@ -1168,15 +1221,10 @@ export class Client {
           ...this.fetchOptions,
         }
       );
-    } catch (e) {
-      let errorMessage = "Failed to multipart ingest runs";
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      if (e instanceof Error) {
-        errorMessage += `: ${e.stack || e.message}`;
-      } else {
-        errorMessage += `: ${String(e)}`;
-      }
-      console.warn(`${errorMessage.trim()}\n\nContext: ${context}`);
+      await raiseForStatus(res, "ingest multipart runs", true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
 
