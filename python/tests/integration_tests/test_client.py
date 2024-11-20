@@ -1216,7 +1216,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
 
 
 def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
-    """Test evaluating examples without attachments using a target that accepts attachments."""
+    """Test evaluating examples without attachments using a target with attachments."""
     dataset_name = "__test_evaluate_no_attachments" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(
         dataset_name,

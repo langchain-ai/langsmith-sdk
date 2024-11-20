@@ -1,16 +1,14 @@
+import os
 import statistics
 import time
 from pathlib import Path
 from typing import Dict
-from uuid import uuid4
-
 
 from langsmith import Client
-from langsmith.schemas import DataType, ExampleUpsertWithAttachments
-
-import os
+from langsmith.schemas import ExampleUpsertWithAttachments
 
 WRITE_BATCH = 10000
+
 
 def create_large_file(size: int, dir: str) -> str:
     """Create a large file for benchmarking purposes."""
@@ -32,9 +30,13 @@ def create_large_file(size: int, dir: str) -> str:
     print("Done creating big file...")
     return filepath
 
+
 DATASET_NAME = "upsert_big_file_to_dataset"
 
-def benchmark_big_file_upload(size_bytes: int, num_examples: int, samples: int = 1) -> Dict:
+
+def benchmark_big_file_upload(
+    size_bytes: int, num_examples: int, samples: int = 1
+) -> Dict:
     """
     Benchmark run creation with specified parameters.
     Returns timing statistics.
@@ -60,7 +62,8 @@ def benchmark_big_file_upload(size_bytes: int, num_examples: int, samples: int =
                 attachments={
                     "bigfile": ("text/plain", Path(large_file)),
                 },
-            ) for _ in range(num_examples)
+            )
+            for _ in range(num_examples)
         ]
 
         multipart_start = time.perf_counter()
@@ -83,29 +86,24 @@ def benchmark_big_file_upload(size_bytes: int, num_examples: int, samples: int =
 size_bytes = 50000000
 num_examples = 10
 
+
 def main(size_bytes: int, num_examples: int = 1):
     """
     Run benchmarks with different combinations of parameters and report results.
     """
     results = benchmark_big_file_upload(size_bytes, num_examples)
 
-    print(
-        f"\nBenchmark Results for size {size_bytes} and {num_examples} examples:"
-    )
+    print(f"\nBenchmark Results for size {size_bytes} and {num_examples} examples:")
     print("-" * 30)
     print(f"{'Metric':<15} {'Result':>20}")
     print("-" * 30)
 
     metrics = ["mean", "median", "stdev", "min", "max"]
     for metric in metrics:
-        print(
-            f"{results[metric]:>20.4f}"
-        )
+        print(f"{results[metric]:>20.4f}")
 
     print("-" * 30)
-    print(
-        f"{'Throughput':<15} {num_examples / results['mean']:>20.2f} "
-    )
+    print(f"{'Throughput':<15} {num_examples / results['mean']:>20.2f} ")
     print("(examples/second)")
 
 
