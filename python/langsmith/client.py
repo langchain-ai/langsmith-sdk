@@ -399,8 +399,9 @@ class Client:
             environment variable.
         retry_config : Retry or None, default=None
             Retry configuration for the HTTPAdapter.
-        timeout_ms : int or None, default=None
-            Timeout in milliseconds for the HTTPAdapter.
+        timeout_ms : int, tuple[int, int], or None, default=None
+            Timeout for the HTTPAdapter. Can also be a 2-tuple of
+            (connect timeout, read timeout) to set them separately.
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
