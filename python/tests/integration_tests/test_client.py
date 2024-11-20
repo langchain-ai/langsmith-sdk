@@ -1018,3 +1018,44 @@ def test_slow_run_read_multipart(
                 myobj["key_1"]
 
         assert not caplog.records
+
+
+def test_examples_length_validation(langchain_client: Client) -> None:
+    """Test that mismatched lengths raise ValueError for create and update examples."""
+    dataset_name = "__test_examples_length_validation" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    # Test create_examples validation
+    inputs = [{"text": "hello"}, {"text": "world"}]
+    outputs = [{"response": "hi"}]  # One less than inputs
+    with pytest.raises(ValueError) as exc_info:
+        langchain_client.create_examples(
+            inputs=inputs, outputs=outputs, dataset_id=dataset.id
+        )
+    assert "Length of outputs (1) does not match length of inputs (2)" in str(
+        exc_info.value
+    )
+
+    # Create some valid examples for testing update
+    valid_examples = langchain_client.create_examples(
+        inputs=[{"text": "hello"}, {"text": "world"}],
+        outputs=[{"response": "hi"}, {"response": "earth"}],
+        dataset_id=dataset.id,
+    )
+    example_ids = [
+        example.id for example in langchain_client.list_examples(dataset_id=dataset.id)
+    ]
+
+    # Test update_examples validation
+    with pytest.raises(ValueError) as exc_info:
+        langchain_client.update_examples(
+            example_ids=example_ids,
+            inputs=[{"text": "new hello"}],  # One less than example_ids
+            outputs=[{"response": "new hi"}, {"response": "new earth"}],
+        )
+    assert "Length of inputs (1) does not match length of examples (2)" in str(
+        exc_info.value
+    )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
