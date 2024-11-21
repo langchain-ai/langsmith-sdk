@@ -20,8 +20,11 @@ from langsmith import evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
-from langsmith.evaluation._runner import _normalize_summary_evaluator, evaluate_existing
-from langsmith.evaluation.evaluator import _normalize_evaluator_func
+from langsmith.evaluation._runner import evaluate_existing
+from langsmith.evaluation.evaluator import (
+    _normalize_evaluator_func,
+    _normalize_summary_evaluator,
+)
 
 
 class FakeRequest:
@@ -225,10 +228,10 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         return {"score": len(runs_[0].dotted_order)}
 
     def summary_eval_inputs_outputs(inputs, outputs):
-        return {"score": len([x["in"] for x in inputs])}
+        return [{"score": len([x["in"] for x in inputs])}]
 
     def summary_eval_outputs_reference(outputs, reference_outputs):
-        return {"score": len([x["answer"] for x in reference_outputs])}
+        return len([x["answer"] for x in reference_outputs])
 
     evaluators = [
         score_value_first,
@@ -619,7 +622,7 @@ def summary_eval_inputs_outputs(inputs, outputs):
 
 
 def summary_eval_outputs_reference(outputs, reference_outputs):
-    return {"score": min([len(x["response"]) for x in outputs])}
+    return min([len(x["response"]) for x in outputs])
 
 
 @pytest.mark.parametrize(
