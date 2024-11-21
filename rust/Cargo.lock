@@ -908,10 +908,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "langsmith_pyo3"
+name = "langsmith-pyo3"
 version = "0.1.0"
 dependencies = [
- "langsmith_tracing_client",
+ "langsmith-tracing-client",
  "orjson",
  "pyo3",
  "pyo3-ffi",
@@ -920,7 +920,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "langsmith_tracing_client"
+name = "langsmith-tracing-client"
 version = "0.1.0"
 dependencies = [
  "chrono",

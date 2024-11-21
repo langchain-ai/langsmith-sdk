@@ -1,5 +1,5 @@
 [package]
-name = "langsmith_tracing_client"
+name = "langsmith-tracing-client"
 version = "0.1.0"
 edition = "2021"
 

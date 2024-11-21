@@ -1,4 +1,4 @@
-# langsmith_pyo3
+# langsmith-pyo3
 
 Python bindings for LangSmith internals.
 
@@ -22,4 +22,4 @@ To make performance-optimized builds, append `--release` to either command.
 To run install these bindings into another virtualenv (e.g. to run benchmarks),
 activate that virtualenv, then `cd` to this directory and run `uvx maturin develop --release`.
 When that command completes, the virtualenv will have an optimized build
-of `langsmith_pyo3` installed.
+of `langsmith-pyo3` installed.
