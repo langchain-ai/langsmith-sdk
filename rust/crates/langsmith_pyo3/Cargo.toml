@@ -33,7 +33,3 @@ sonic-rs = { workspace = true }
 serde = { workspace = true }
 langsmith_tracing_client = { path = "../langsmith_tracing_client" }
 orjson = { path = "../../../vendor/orjson" }
-
-# We don't use this directly but our dependencies do.
-# We just need to enable the vendoring feature so that cross-compilation is easier.
-openssl-sys = { version = "0.9.104", features = ["vendored"] }
