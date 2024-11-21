@@ -66,6 +66,9 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: '2_28'  # The default is 'auto' AKA '2014', which is too old for us.
+          # Workaround for missing `pip` in manylinux_2_28:
+          # https://github.com/PyO3/maturin-action/issues/249
+          before-script-linux: '(python3 -m pip --version || python3 -m ensurepip)'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
