@@ -26,4 +26,4 @@ uuid = { version = "1.11.0", features = ["v4"] }
 # OpenSSL is a default feature, so we have to disable all default features, then re-add
 # everything except `default-tls` which pulls in OpenSSL:
 # https://github.com/seanmonstar/reqwest/blob/e2d4b14c695acaebe531af7ce4712e182278f38a/Cargo.toml#L30
-reqwest = { version = "0.12.8", default_features = false, features = ["rustls-tls", "charset", "http2", "macos-system-configuration", "multipart", "stream", "blocking"] }
+reqwest = { version = "0.12.8", default-features = false, features = ["rustls-tls", "charset", "http2", "macos-system-configuration", "multipart", "stream", "blocking"] }
