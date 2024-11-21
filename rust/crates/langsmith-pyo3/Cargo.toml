@@ -1,5 +1,5 @@
 [package]
-name = "langsmith_pyo3"
+name = "langsmith-pyo3"
 version = "0.1.0"
 edition = "2021"
 
@@ -31,5 +31,5 @@ pyo3 = { path = "../../../vendor/pyo3", features = ["extension-module"] }
 pyo3-ffi = { path = "../../../vendor/pyo3/pyo3-ffi", features = ["extension-module"] }
 sonic-rs = { workspace = true }
 serde = { workspace = true }
-langsmith_tracing_client = { path = "../langsmith_tracing_client" }
+langsmith-tracing-client = { path = "../langsmith-tracing-client" }
 orjson = { path = "../../../vendor/orjson" }

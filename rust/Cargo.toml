@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "crates/langsmith_pyo3",
-    "crates/langsmith_tracing_client",
+    "crates/langsmith-pyo3",
+    "crates/langsmith-tracing-client",
 ]
 resolver = "2"
 
