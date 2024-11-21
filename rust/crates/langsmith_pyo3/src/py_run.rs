@@ -8,9 +8,6 @@ use crate::{errors::TracingClientError, serialization};
 
 // TODO: consider interning all the strings here
 
-// TODO: consider replacing `String` with `Box<str>`, and `Vec<T>` with `Box<[T]>`,
-//       since none of them are growable and we can make them more compact in memory
-
 #[derive(Debug)]
 pub struct RunCreateExtended(langsmith_tracing_client::client::RunCreateExtended);
 

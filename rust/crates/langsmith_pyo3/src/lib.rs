@@ -1,4 +1,3 @@
-#![feature(vec_into_raw_parts)]
 #![allow(deprecated)]
 
 use pyo3::{pymodule, types::PyModule, Bound, PyResult, Python};
