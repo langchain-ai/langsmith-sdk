@@ -35,7 +35,6 @@ from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
     EVALUATOR_T,
-    SUMMARY_EVALUATOR_T,
     ExperimentResultRow,
     _ExperimentManagerMixin,
     _extract_feedback_keys,
@@ -52,6 +51,7 @@ from langsmith.evaluation._runner import (
     _wrap_summary_evaluators,
 )
 from langsmith.evaluation.evaluator import (
+    SUMMARY_EVALUATOR_T,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
