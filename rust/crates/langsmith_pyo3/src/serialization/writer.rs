@@ -1,5 +1,15 @@
 use std::io::Error;
 
+/// Writer that points directly to a `[u8]` buffer.
+///
+/// # Safety
+/// The external interface of this type is fully safe.
+///
+/// An internal invariant is that the `(buf, len, cap)` fields must be equivalent to a valid `Vec`
+/// both at the start and conclusion of any method call:
+/// - `self.buf` points to valid, initialized memory to which `Self` has exclusive access
+/// - `self.len` is a legal offset that remains in bounds when used with `self.buf`.
+/// - `self.cap` accurately shows how much capacity the `self.buf` memory region has.
 pub(super) struct BufWriter {
     buf: *mut u8,
     len: usize,
@@ -11,7 +21,23 @@ impl BufWriter {
 
     pub(super) fn new() -> Self {
         let buffer = Vec::with_capacity(Self::DEFAULT_CAPACITY);
-        let (buf, len, cap) = buffer.into_raw_parts();
+
+        let (buf, len, cap) = {
+            // Prevent the `Vec` from being dropped at the end of this scope.
+            let mut buffer = std::mem::ManuallyDrop::new(buffer);
+
+            // Get the `Vec`'s components.
+            let buf = buffer.as_mut_ptr();
+            let len = buffer.len();
+            let cap = buffer.capacity();
+
+            // We now own the `Vec`'s backing data.
+            // The `Vec` goes out of scope but will not be dropped
+            // due to being wrapped in `ManuallyDrop`.
+            (buf, len, cap)
+        };
+
+        // SAFETY: These values are derived from a valid `Vec` that has not been dropped.
         Self { buf, len, cap }
     }
 
@@ -51,10 +77,27 @@ impl BufWriter {
         // SAFETY: The buffer used to be a vector, and is exclusively owned by us.
         //         The `&mut self` here guarantees there can't be another mutable reference to it.
         //         It's safe to turn it back into a `Vec` and ask the `Vec` to resize itself.
+        //         After resizing, we deconstruct the `Vec` *and* ensure it isn't dropped,
+        //         meaning that the memory is still live and not use-after-free'd.
         unsafe {
-            let mut v = Vec::from_raw_parts(self.buf, self.len, self.cap);
-            v.reserve(cap - self.cap);
-            (self.buf, self.len, self.cap) = v.into_raw_parts();
+            // SAFETY: `self`'s `(buf, len, cap)` are no longer valid for accessing data
+            //         after the next line, until they are reassigned new values.
+            let mut buffer = Vec::from_raw_parts(self.buf, self.len, self.cap);
+
+            buffer.reserve(cap - self.cap);
+
+            // Prevent the `Vec` from being dropped at the end of this scope.
+            let mut buffer = std::mem::ManuallyDrop::new(buffer);
+
+            // Get the `Vec`'s components.
+            let buf = buffer.as_mut_ptr();
+            let len = buffer.len();
+            let cap = buffer.capacity();
+
+            // SAFETY: `self`'s `(buf, len, cap)` values are valid again from this point onward.
+            //         We own the `Vec`'s backing data. The `Vec` goes out of scope but
+            //         will not be dropped due to being wrapped in `ManuallyDrop`.
+            (self.buf, self.len, self.cap) = (buf, len, cap);
         }
     }
 }
