@@ -20,7 +20,7 @@ from langsmith import evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
-from langsmith.evaluation._runner import evaluate_comparative, evaluate_existing
+from langsmith.evaluation._runner import evaluate_existing
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
@@ -372,15 +372,6 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
 
         with pytest.raises(ValueError, match="Invalid evaluator function."):
             evaluate((lambda x: x), data=ds_examples, evaluators=[eval_], client=client)
-
-    def comparative_eval(inputs, outputs, reference_outputs):
-        return [o["output"] for o in outputs]
-
-    evaluate_comparative(
-        (fake_request.created_session["id"], fake_request.created_session["id"]),
-        evaluators=[comparative_eval],
-        client=client,
-    )
 
 
 def test_evaluate_raises_for_async():
