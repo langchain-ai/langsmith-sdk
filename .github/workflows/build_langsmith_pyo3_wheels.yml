@@ -11,16 +11,14 @@ name: Build langsmith-pyo3 wheels
 
 # Our wheels build depends on both the `langsmith-pyo3` crate itself and all its dependencies:
 # - The Rust workspace-level dependency specification in `rust/Cargo.toml` and `rust/Cargo.lock`.
-# - Other local Rust crates, like `langsmith_tracing_client`.
+# - Other local Rust crates, like `langsmith-tracing-client`.
 # - The vendored `orjson` and `pyo3` workspaces.
 on:
   push:
     branches:
       - main
-      - master
-      - pg/vendored-orjson
     tags:
-      - '*'
+      - 'langsmith-pyo3*'
     paths:
       - "rust/**"
       - "vendor/orjson/**"
