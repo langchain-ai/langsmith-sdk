@@ -764,6 +764,8 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
             f"Invalid evaluator function. Must have at least one positional "
             f"argument. Supported positional arguments are {supported_args}."
         )
+        if positional_args:
+            msg += f" Received positional arguments {positional_args}."
         raise ValueError(msg)
     # For backwards compatibility we assume custom arg names are Sequence[Run] and
     # Sequence[Example] types, respectively.
