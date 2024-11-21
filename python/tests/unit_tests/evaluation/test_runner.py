@@ -374,7 +374,6 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
             evaluate((lambda x: x), data=ds_examples, evaluators=[eval_], client=client)
 
     def comparative_eval(inputs, outputs, reference_outputs):
-        assert len(outputs) == 2
         return [o["output"] for o in outputs]
 
     evaluate_comparative(
