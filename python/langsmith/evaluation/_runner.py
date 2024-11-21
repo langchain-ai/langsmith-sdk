@@ -45,12 +45,14 @@ from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import (
+    SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
     DynamicComparisonRunEvaluator,
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
+    _normalize_summary_evaluator,
     comparison_evaluator,
     run_evaluator,
 )
@@ -70,16 +72,6 @@ TARGET_T = Callable[[dict], dict]
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example], schemas.Dataset]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
-SUMMARY_EVALUATOR_T = Union[
-    Callable[
-        [Sequence[schemas.Run], Sequence[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-    Callable[
-        [List[schemas.Run], List[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-]
 # Row-level evaluator
 EVALUATOR_T = Union[
     RunEvaluator,
@@ -647,16 +639,20 @@ def evaluate_comparative(
         ...         },
         ...     )
         ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
-        ...     preference = json.loads(tool_args)["preferred_option"]
+        ...     loaded_args = json.loads(tool_args)
+        ...     preference = loaded_args["preferred_option"]
+        ...     comment = loaded_args["reasoning"]
         ...     if preference == "A":
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...             "comment": comment,
         ...         }
         ...     else:
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...             "comment": comment,
         ...         }
         >>> def score_length_difference(runs: list, example: schemas.Example):
         ...     # Just return whichever response is longer.
@@ -781,12 +777,18 @@ def evaluate_comparative(
             result = comparator.compare_runs(runs_list, example)
             if client is None:
                 raise ValueError("Client is required to submit feedback.")
+        comments = (
+            {str(rid): result.comment for rid in result.scores}
+            if isinstance(result.comment, str)
+            else (result.comment or {})
+        )
         for run_id, score in result.scores.items():
             executor.submit(
                 client.create_feedback,
                 run_id=run_id,
                 key=result.key,
                 score=score,
+                comment=comments.get(str(run_id)),
                 comparative_experiment_id=comparative_experiment.id,
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
@@ -1942,47 +1944,3 @@ def _import_langchain_runnable() -> Optional[type]:
 
 def _is_langchain_runnable(o: Any) -> bool:
     return bool((Runnable := _import_langchain_runnable()) and isinstance(o, Runnable))
-
-
-def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
-    supported_args = ("runs", "examples", "inputs", "outputs", "reference_outputs")
-    sig = inspect.signature(func)
-    positional_args = [
-        pname
-        for pname, p in sig.parameters.items()
-        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
-    ]
-    if not positional_args or (
-        not all(pname in supported_args for pname in positional_args)
-        and len(positional_args) != 2
-    ):
-        msg = (
-            f"Invalid evaluator function. Must have at least one positional "
-            f"argument. Supported positional arguments are {supported_args}."
-        )
-        raise ValueError(msg)
-    # For backwards compatibility we assume custom arg names are Sequence[Run] and
-    # Sequence[Example] types, respectively.
-    elif not all(
-        pname in supported_args for pname in positional_args
-    ) or positional_args == ["runs", "examples"]:
-        return func
-    else:
-
-        def wrapper(
-            runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
-        ) -> Union[EvaluationResult, EvaluationResults]:
-            arg_map = {
-                "runs": runs,
-                "examples": examples,
-                "inputs": [example.inputs for example in examples],
-                "outputs": [run.outputs or {} for run in runs],
-                "reference_outputs": [example.outputs or {} for example in examples],
-            }
-            args = (arg_map[arg] for arg in positional_args)
-            return func(*args)
-
-        wrapper.__name__ = (
-            getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
-        )
-        return wrapper  # type: ignore[return-value]
