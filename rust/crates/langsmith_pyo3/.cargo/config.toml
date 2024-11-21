@@ -1,0 +1,7 @@
+# Required flags to enable building langsmith_pyo3 on macOS:
+# https://pyo3.rs/v0.23.1/building-and-distribution#macos
+[target.aarch64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]
