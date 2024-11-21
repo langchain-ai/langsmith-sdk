@@ -1655,14 +1655,24 @@ def _forward(
         )
 
 
+def _is_valid_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
 def _resolve_data(
     data: DATA_T, *, client: langsmith.Client
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
-    if isinstance(data, str):
-        return client.list_examples(dataset_name=data)
-    elif isinstance(data, uuid.UUID):
+    if isinstance(data, uuid.UUID):
         return client.list_examples(dataset_id=data)
+    elif isinstance(data, str) and _is_valid_uuid(data):
+        return client.list_examples(dataset_id=uuid.UUID(data))
+    elif isinstance(data, str):
+        return client.list_examples(dataset_name=data)
     elif isinstance(data, schemas.Dataset):
         return client.list_examples(dataset_id=data.id)
     return data
