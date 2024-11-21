@@ -3123,4 +3123,264 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: '{"messages": [{"content": "Is the output accurate with respect to the expected
+      output? Y/N\nOutput: Yes\nExpected: Yes", "role": "user"}], "model": "gpt-4o",
+      "n": 1, "parallel_tool_calls": false, "stream": false, "temperature": 0.7, "tool_choice":
+      {"type": "function", "function": {"name": "reference_accuracy"}}, "tools": [{"type":
+      "function", "function": {"name": "reference_accuracy", "description": "Whether
+      the output is accurate with respect to the expected output.", "parameters":
+      {"type": "object", "properties": {"score": {"type": "string", "enum": ["Y",
+      "N"], "description": "The score for the evaluation, one of Y, N."}}, "required":
+      ["score"]}}}]}'
+    headers: {}
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAA4xT24rbMBB991eIeY6Lk9i7id8W2i2UQi+79EKzGFkeO9rIkpBk2hDy70V21nLS
+        LNQPQsyZOWfmaHyICAFeQU6AbaljrRbx3ZfvdbYwv5VdZ/f7t99Wzw+Szh/LDz9c9xlmvkKVz8jc
+        S9Ubplot0HElB5gZpA496/x2maxWWZoue6BVFQpf1mgXpypeJIs0TlZxcnMq3CrO0EJOfkWEEHLo
+        T9+irPAP5CSZvURatJY2CPmYRAgYJXwEqLXcOiodzALIlHQofdeyE2ICOKVEwagQQXj4DpN78IkK
+        Ubzj6/tPXU0f3dcHtXxf3u0+ljfNfjfRG6j3um+o7iQb/ZngYzy/ECMEJG37WoM1GpQMC8pYZyjb
+        X7AQAtQ0XYvS+QngsAHLlMEN5Bv4uYEjnKUfo2v3p4khBuvOUnFy6hQ/jtYL1WijSnvhJNRccrst
+        DFLbTwTWKT1oe51eAbqzVwNtVKtd4dQOpSdc3w50EHYqgNkJc8pREcLzZDG7wlZU6CjvH3XcI0bZ
+        FqtQGvaJdhVXEyCazPxvM9e4h7m5bP6HPgCMoXZYFdpgxdn5wCHNoP/jXksbPe4bBru3Dtui5rJB
+        ow3vlx5qXaQZq7O0QooQHaO/AAAA//8DAERRdCH9AwAA
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 8de411052c0a2320-SJC
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 06 Nov 2024 09:30:43 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=46aW_1z3Yu96PFQG.9WdGafKDLThRQ2V2BH4Wc__v2k-1730885443-1.0.1.1-dyb20fuCsDK3FwOSUtTnfWmhmQbPJl2FAYfbORyKyICHL1woSnrX0KQ1fQOaD8ifq8ABkL0lDQdEb9zPCgTcMA;
+        path=/; expires=Wed, 06-Nov-24 10:00:43 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=AQfLeHBIv_Vjs.O8aHH2.5xm6D8_TmJg6.A65iJorpk-1730885443709-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '223'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9998'
+      x-ratelimit-remaining-tokens:
+      - '29999959'
+      x-ratelimit-reset-requests:
+      - 11ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_737e0742debe3c7d3d8504412cf9fbe7
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"content": "Is the output accurate with respect to the expected
+      output? Y/N\nOutput: Yes\nExpected: No", "role": "user"}], "model": "gpt-4o",
+      "n": 1, "parallel_tool_calls": false, "stream": false, "temperature": 0.7, "tool_choice":
+      {"type": "function", "function": {"name": "reference_accuracy"}}, "tools": [{"type":
+      "function", "function": {"name": "reference_accuracy", "description": "Whether
+      the output is accurate with respect to the expected output.", "parameters":
+      {"type": "object", "properties": {"score": {"type": "string", "enum": ["Y",
+      "N"], "description": "The score for the evaluation, one of Y, N."}}, "required":
+      ["score"]}}}]}'
+    headers: {}
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAA4xTUW/TMBB+z6+w7rlFaZqwLm/VJiqKBgJtbIKiyLtcUoNjG9sRVFX/O0rSJWkp
+        EnmwrPvuvu/u82UfMAYih5QBbrnHysjp8uNjkTyJeLn6NFNPb78sI3V3++4+2pkbfgOTpkI/fyf0
+        L1WvUFdGkhdadTBa4p4a1tnVPFwskjiet0Clc5JNWWn8NNbTKIziabiYhq+PhVstkByk7GvAGGP7
+        9mxaVDn9hpSFk5dIRc7xkiDtkxgDq2UTAe6ccJ4rD5MBRK08qaZrVUs5ArzWMkMu5SDcffvRffCJ
+        S5klvz6sP6/Ez2KNj2u8267eqPuHW40jvY56Z9qGilph788I7+PpmRhjoHjV1loqyJJCyjhibTnu
+        zlgYA27LuiLlmwlgvwGH2tIG0g2838ABTtIPwaX7t5EhloracXl06hg/9NZLXRqrn92Zk1AIJdw2
+        s8RdOxE4r02n3ei0ClCfvBoYqyvjM69/kGoIr686Ohh2agCTI+a153IIz8JocoEty8lz0T5qv0fI
+        cUv5UDrsE69zoUdAMJr572YucXdzC1X+D/0AIJLxlGfGUi7wdOAhzVLzx/0rrfe4bRjcznmqskKo
+        kqyxol16KEw2S67zxTyeIUJwCP4AAAD//wMAqYUqgf0DAAA=
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 8de4110529839e56-SJC
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 06 Nov 2024 09:30:43 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=loqAsRu86UykMKQMg3z8gB4BBDAuZ6Vca9ZfOTq66Qo-1730885443-1.0.1.1-YK976xVsj2Yu_OpQs.IoHyxvN0bSXd._..jfqU8pn1HtpMMHXCDbEUpMcqNTuhYvuuA95HQGI6Jq_vjEVd_SLQ;
+        path=/; expires=Wed, 06-Nov-24 10:00:43 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=LX36sP3b4IHGOqhbqRPeGY5sTMM8V.N5Kv_LqSGFIH8-1730885443866-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '380'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '30000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '29999960'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_43e9f6e698f554ded303aa5ff5fe57b8
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"max_tokens": 1024, "messages": [{"role": "user", "content": "Context:
+      The man is not steering a car\nQuestion: Can we logically conclude for sure
+      that the man is not steering a jeep?\nOutput: "}], "model": "claude-3-haiku-20240307",
+      "system": "Is the output accurate with respect to the context and question?
+      Y/N", "tool_choice": {"type": "tool", "name": "accuracy"}, "tools": [{"name":
+      "accuracy", "description": "Whether the output is accurate with respect to the
+      context and question.", "input_schema": {"type": "object", "properties": {"score":
+      {"type": "string", "enum": ["Y", "N"], "description": "The score for the evaluation,
+      one of Y, N."}, "explanation": {"type": "string", "description": "The explanation
+      for the score."}}, "required": ["score", "explanation"]}}]}'
+    headers: {}
+    method: POST
+    uri: https://api.anthropic.com/v1/messages
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAA5ySTWsbMRCG/8owZ7msHZeke2ugpDQ5hKSUmiYYWRqvZcuarTRyshj/9yIt6Qcl
+        l5yE5h0982pmjugstrhP3bKZ3m3p2xe6ve3s/G5qF93209U1PaFCGXoqWZSS7ggVRvYloFNySXQQ
+        VLhnSx5bNF5nS5OzyUa7XZ7Mmtm8OWvOUaHhIBQE2x/HF6Iw+2VOBVl9lHteNtMPF8EuLs+v58Pq
+        5v5Gf57e775fDagw6H0tbEyO2pSIC30WbI+YDMeiLVAhPfdeBy2OA7Z4qRNZ4ACyIejcgQJUL88C
+        stECD1iEvQ7gEgQWSEIUXehAg9HxARU8ERgdiua5c0Z7PxSG8dkSrDlCypFG2uusLVH/Dj7Ws8ga
+        ShuA13CgjTOeFKyy1Fe1sILEFffito98cJYsWKaRHrMn4DxW7Tklt3LeyfCvFcPZW1jR/2a+bijS
+        miOpmsxZ+iwwtlfIDxBp7clIGoF/2vC2z+Pp9KgwCffLSDrV6fy1A1VI9DNTMIRtyN4rzHXn2uM4
+        6aXwjkLC9v2sUTj6/R2bzi9Op18AAAD//wMAkleKc9MCAAA=
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 8de41107cea917e8-SJC
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 06 Nov 2024 09:30:45 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      request-id:
+      - req_01Viqb8TwVsSAoVK9VoijQww
+      via:
+      - 1.1 google
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"max_tokens": 1024, "messages": [{"role": "user", "content": "Context:
+      The man is not steering a SUV\nQuestion: Can we logically conclude for sure
+      that the man is not steering a car?\nOutput: "}], "model": "claude-3-haiku-20240307",
+      "system": "Is the output accurate with respect to the context and question?
+      Y/N", "tool_choice": {"type": "tool", "name": "accuracy"}, "tools": [{"name":
+      "accuracy", "description": "Whether the output is accurate with respect to the
+      context and question.", "input_schema": {"type": "object", "properties": {"score":
+      {"type": "string", "enum": ["Y", "N"], "description": "The score for the evaluation,
+      one of Y, N."}, "explanation": {"type": "string", "description": "The explanation
+      for the score."}}, "required": ["score", "explanation"]}}]}'
+    headers: {}
+    method: POST
+    uri: https://api.anthropic.com/v1/messages
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAA4SSQW/bMAyF/wrBs1M4SbNhvg0tstMKDG1WbGthMDJjK5VFT5TSGkH++yAH3brD
+        sJMgPerjo56OaBussNe2Ludr3ozD9ebL9f16f/Pp6kD3K75cYYFxHDhXsSq1jAUGcfmAVK1G8hEL
+        7KVhhxUaR6nh2XLWkX1Ks0W5uCyX5Xss0IiP7CNWP46vxCji6qQZOfnI+1SX89ur73bRt5/3z/Hd
+        t0B+vafOWyzQUz81NiYFMmO+54cUsTqiGglZu8EC+WVw5Cla8VjhXcfQ2gN7mCy8RNBIkRViRxEe
+        MHYMPXmwCl6yyBysb4HgdvP1AQvYpgixswqN8LnGs8mPEawboWfy8G+GoXABH/OSRYJtEGo4gKHI
+        rYTx7MJ641LDmltqASoT0fqdhH6aA4YgB9tw88cEOSfPkBSigJPWGnJuzDNOKNhJAE2Bzw3+Y/Cu
+        48BAgUFixwFyQAqyy6rCltW+mvsbZyS5Brb8G3iBp9NjgRplqAOTTgm8yXkSlH8m9oax8sm5AtP0
+        r6rjOc06yhN7xWq1KAuUFN+ezZcfTqdfAAAA//8DAGwLxC23AgAA
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 8de411087a3ecfc8-SJC
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 06 Nov 2024 09:30:45 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      request-id:
+      - req_01NPZFdoNbxrSN1nczYcmoZ8
+      via:
+      - 1.1 google
+    status:
+      code: 200
+      message: OK
 version: 1

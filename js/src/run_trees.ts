@@ -1,5 +1,11 @@
 import * as uuid from "uuid";
-import { BaseRun, KVMap, RunCreate, RunUpdate } from "./schemas.js";
+import {
+  Attachments,
+  BaseRun,
+  KVMap,
+  RunCreate,
+  RunUpdate,
+} from "./schemas.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
@@ -55,6 +61,7 @@ export interface RunTreeConfig {
 
   trace_id?: string;
   dotted_order?: string;
+  attachments?: Attachments;
 }
 
 export interface RunnableConfigLike {
@@ -172,6 +179,11 @@ export class RunTree implements BaseRun {
   tracingEnabled?: boolean;
   execution_order: number;
   child_execution_order: number;
+  /**
+   * Attachments associated with the run.
+   * Each entry is a tuple of [mime_type, bytes]
+   */
+  attachments?: Attachments;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -370,13 +382,14 @@ export class RunTree implements BaseRun {
       trace_id: run.trace_id,
       dotted_order: run.dotted_order,
       tags: run.tags,
+      attachments: run.attachments,
     };
     return persistedRun;
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
     try {
-      const runtimeEnv = await getRuntimeEnvironment();
+      const runtimeEnv = getRuntimeEnvironment();
       const runCreate = await this._convertToCreate(this, runtimeEnv, true);
       await this.client.createRun(runCreate);
 
@@ -407,6 +420,7 @@ export class RunTree implements BaseRun {
         dotted_order: this.dotted_order,
         trace_id: this.trace_id,
         tags: this.tags,
+        attachments: this.attachments,
       };
 
       await this.client.updateRun(this.id, runUpdate);

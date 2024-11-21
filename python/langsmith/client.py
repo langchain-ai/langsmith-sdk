@@ -13,24 +13,19 @@ For detailed API documentation, visit: https://docs.smith.langchain.com/.
 from __future__ import annotations
 
 import atexit
-import base64
 import collections
 import concurrent.futures as cf
 import contextlib
 import datetime
-import decimal
 import functools
 import importlib
 import importlib.metadata
 import io
-import ipaddress
+import itertools
 import json
 import logging
 import os
-import pathlib
 import random
-import re
-import sys
 import threading
 import time
 import traceback
@@ -38,9 +33,8 @@ import typing
 import uuid
 import warnings
 import weakref
-from dataclasses import dataclass, field
 from inspect import signature
-from queue import Empty, PriorityQueue, Queue
+from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -61,19 +55,46 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import orjson
 import requests
 from requests import adapters as requests_adapters
-from requests_toolbelt.multipart import MultipartEncoder  # type: ignore[import-untyped]
+from requests_toolbelt import (  # type: ignore[import-untyped]
+    multipart as rqtb_multipart,
+)
 from typing_extensions import TypeGuard
-from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined]
-from urllib3.util import Retry
+from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
+from urllib3.util import Retry  # type: ignore[import-untyped]
 
 import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _orjson
+from langsmith._internal._background_thread import (
+    TracingQueueItem,
+)
+from langsmith._internal._background_thread import (
+    tracing_control_thread_func as _tracing_control_thread_func,
+)
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._constants import (
+    _AUTO_SCALE_UP_NTHREADS_LIMIT,
+    _BLOCKSIZE_BYTES,
+    _SIZE_LIMIT_BYTES,
+)
+from langsmith._internal._multipart import (
+    MultipartPartsAndContext,
+    join_multipart_parts_and_context,
+)
+from langsmith._internal._operations import (
+    SerializedFeedbackOperation,
+    SerializedRunOperation,
+    combine_serialized_queue_operations,
+    serialize_feedback_dict,
+    serialize_run_dict,
+    serialized_feedback_operation_to_multipart_parts_and_context,
+    serialized_run_operation_to_multipart_parts_and_context,
+)
+from langsmith._internal._serde import dumps_json as _dumps_json
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -96,7 +117,6 @@ X_API_KEY = "x-api-key"
 WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
 BOUNDARY = uuid.uuid4().hex
-MultipartParts = List[Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]]
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
@@ -119,8 +139,13 @@ def _parse_token_or_url(
     path_parts = parsed_url.path.split("/")
     if len(path_parts) >= num_parts:
         token_uuid = path_parts[-num_parts]
+        _as_uuid(token_uuid, var="token parts")
     else:
         raise ls_utils.LangSmithUserError(f"Invalid public {kind} URL: {url_or_token}")
+    if parsed_url.netloc == "smith.langchain.com":
+        api_url = "https://api.smith.langchain.com"
+    elif parsed_url.netloc == "beta.smith.langchain.com":
+        api_url = "https://beta.api.smith.langchain.com"
     return api_url, token_uuid
 
 
@@ -181,144 +206,6 @@ def _default_retry_config() -> Retry:
         retry_params["allowed_methods"] = None
 
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
-
-
-def _simple_default(obj):
-    try:
-        # Only need to handle types that orjson doesn't serialize by default
-        # https://github.com/ijl/orjson#serialize
-        if isinstance(obj, datetime.datetime):
-            return obj.isoformat()
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-        if hasattr(obj, "model_dump") and callable(obj.model_dump):
-            return obj.model_dump()
-        elif hasattr(obj, "dict") and callable(obj.dict):
-            return obj.dict()
-        elif hasattr(obj, "_asdict") and callable(obj._asdict):
-            return obj._asdict()
-        elif isinstance(obj, BaseException):
-            return {"error": type(obj).__name__, "message": str(obj)}
-        elif isinstance(obj, (set, frozenset, collections.deque)):
-            return list(obj)
-        elif isinstance(obj, (datetime.timezone, ZoneInfo)):
-            return obj.tzname(None)
-        elif isinstance(obj, datetime.timedelta):
-            return obj.total_seconds()
-        elif isinstance(obj, decimal.Decimal):
-            if obj.as_tuple().exponent >= 0:
-                return int(obj)
-            else:
-                return float(obj)
-        elif isinstance(
-            obj,
-            (
-                ipaddress.IPv4Address,
-                ipaddress.IPv4Interface,
-                ipaddress.IPv4Network,
-                ipaddress.IPv6Address,
-                ipaddress.IPv6Interface,
-                ipaddress.IPv6Network,
-                pathlib.Path,
-            ),
-        ):
-            return str(obj)
-        elif isinstance(obj, re.Pattern):
-            return obj.pattern
-        elif isinstance(obj, (bytes, bytearray)):
-            return base64.b64encode(obj).decode()
-        return str(obj)
-    except BaseException as e:
-        logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-    return str(obj)
-
-
-def _serialize_json(obj: Any) -> Any:
-    try:
-        if isinstance(obj, (set, tuple)):
-            if hasattr(obj, "_asdict") and callable(obj._asdict):
-                # NamedTuple
-                return obj._asdict()
-            return list(obj)
-
-        serialization_methods = [
-            ("model_dump", True),  # Pydantic V2 with non-serializable fields
-            ("dict", False),  # Pydantic V1 with non-serializable field
-            ("to_dict", False),  # dataclasses-json
-        ]
-        for attr, exclude_none in serialization_methods:
-            if hasattr(obj, attr) and callable(getattr(obj, attr)):
-                try:
-                    method = getattr(obj, attr)
-                    response = (
-                        method(exclude_none=exclude_none) if exclude_none else method()
-                    )
-                    if not isinstance(response, dict):
-                        return str(response)
-                    return response
-                except Exception as e:
-                    logger.error(
-                        f"Failed to use {attr} to serialize {type(obj)} to"
-                        f" JSON: {repr(e)}"
-                    )
-                    pass
-        return _simple_default(obj)
-    except BaseException as e:
-        logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
-        return str(obj)
-
-
-def _elide_surrogates(s: bytes) -> bytes:
-    pattern = re.compile(rb"\\ud[89a-f][0-9a-f]{2}", re.IGNORECASE)
-    result = pattern.sub(b"", s)
-    return result
-
-
-def _dumps_json_single(
-    obj: Any, default: Optional[Callable[[Any], Any]] = None
-) -> bytes:
-    try:
-        return orjson.dumps(
-            obj,
-            default=default or _simple_default,
-            option=orjson.OPT_SERIALIZE_NUMPY
-            | orjson.OPT_SERIALIZE_DATACLASS
-            | orjson.OPT_SERIALIZE_UUID
-            | orjson.OPT_NON_STR_KEYS,
-        )
-    except TypeError as e:
-        # Usually caused by UTF surrogate characters
-        logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
-        result = json.dumps(
-            obj,
-            default=_simple_default,
-            ensure_ascii=True,
-        ).encode("utf-8")
-        try:
-            result = orjson.dumps(
-                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
-            )
-        except orjson.JSONDecodeError:
-            result = _elide_surrogates(result)
-        return result
-
-
-def _dumps_json(obj: Any, depth: int = 0) -> bytes:
-    """Serialize an object to a JSON formatted string.
-
-    Parameters
-    ----------
-    obj : Any
-        The object to serialize.
-    default : Callable[[Any], Any] or None, default=None
-        The default function to use for serialization.
-
-    Returns:
-    -------
-    str
-        The JSON formatted string.
-    """
-    return _dumps_json_single(obj, _serialize_json)
 
 
 def close_session(session: requests.Session) -> None:
@@ -431,21 +318,6 @@ def _parse_url(url):
     return host
 
 
-@dataclass(order=True)
-class TracingQueueItem:
-    """An item in the tracing queue.
-
-    Attributes:
-        priority (str): The priority of the item.
-        action (str): The action associated with the item.
-        item (Any): The item itself.
-    """
-
-    priority: str
-    action: str
-    item: Any = field(compare=False)
-
-
 class _LangSmithHttpAdapter(requests_adapters.HTTPAdapter):
     __attrs__ = [
         "max_retries",
@@ -496,6 +368,7 @@ class Client:
         "_info",
         "_write_api_urls",
         "_settings",
+        "_manual_cleanup",
     ]
 
     def __init__(
@@ -526,8 +399,9 @@ class Client:
             environment variable.
         retry_config : Retry or None, default=None
             Retry configuration for the HTTPAdapter.
-        timeout_ms : int or None, default=None
-            Timeout in milliseconds for the HTTPAdapter.
+        timeout_ms : int, tuple[int, int], or None, default=None
+            Timeout for the HTTPAdapter. Can also be a 2-tuple of
+            (connect timeout, read timeout) to set them separately.
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
@@ -643,6 +517,8 @@ class Client:
         )
 
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
+
+        self._manual_cleanup = False
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -827,8 +703,8 @@ class Client:
             *(retry_on or ()),
             *(
                 ls_utils.LangSmithConnectionError,
-                ls_utils.LangSmithRequestTimeout,
-                ls_utils.LangSmithAPIError,
+                ls_utils.LangSmithRequestTimeout,  # 408
+                ls_utils.LangSmithAPIError,  # 500
             ),
         )
         to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
@@ -1207,7 +1083,6 @@ class Client:
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
         update: bool = False,
         copy: bool = False,
-        attachments_collector: Optional[Dict[str, ls_schemas.Attachments]] = None,
     ) -> dict:
         """Transform the given run object into a dictionary representation.
 
@@ -1215,9 +1090,6 @@ class Client:
             run (Union[ls_schemas.Run, dict]): The run object to transform.
             update (bool, optional): Whether the payload is for an "update" event.
             copy (bool, optional): Whether to deepcopy run inputs/outputs.
-            attachments_collector (Optional[dict[str, ls_schemas.Attachments]]):
-                A dictionary to collect attachments. If not passed, attachments
-                will be dropped.
 
         Returns:
             dict: The transformed run object as a dictionary.
@@ -1254,19 +1126,6 @@ class Client:
             else:
                 # Drop graph
                 run_create["serialized"].pop("graph", None)
-
-        # Collect or drop attachments
-        if attachments := run_create.get("attachments", None):
-            if attachments_collector is not None:
-                attachments_collector[run_create["id"]] = attachments
-            elif not WARNED_ATTACHMENTS:
-                WARNED_ATTACHMENTS = True
-                logger.warning(
-                    "You're trying to submit a run with attachments, but your current"
-                    " LangSmith integration doesn't support it. Please contact the "
-                    " LangChain team at support at langchain"
-                    " dot dev for assistance on how to upgrade."
-                )
 
         return run_create
 
@@ -1360,20 +1219,25 @@ class Client:
         }
         if not self._filter_for_sampling([run_create]):
             return
-        run_create = self._run_transform(run_create, copy=False)
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
+        run_create = self._run_transform(
+            run_create,
+            copy=False,
+        )
+        self._insert_runtime_env([run_create])
         if (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            return self.tracing_queue.put(
-                TracingQueueItem(run_create["dotted_order"], "create", run_create)
+            serialized_op = serialize_run_dict("post", run_create)
+            self.tracing_queue.put(
+                TracingQueueItem(run_create["dotted_order"], serialized_op)
             )
-        self._insert_runtime_env([run_create])
-        self._create_run(run_create)
+        else:
+            self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
         for api_url, api_key in self._write_api_urls.items():
@@ -1392,7 +1256,7 @@ class Client:
         if self._hide_inputs is True:
             return {}
         if self._anonymizer:
-            json_inputs = orjson.loads(_dumps_json(inputs))
+            json_inputs = _orjson.loads(_dumps_json(inputs))
             return self._anonymizer(json_inputs)
         if self._hide_inputs is False:
             return inputs
@@ -1402,11 +1266,80 @@ class Client:
         if self._hide_outputs is True:
             return {}
         if self._anonymizer:
-            json_outputs = orjson.loads(_dumps_json(outputs))
+            json_outputs = _orjson.loads(_dumps_json(outputs))
             return self._anonymizer(json_outputs)
         if self._hide_outputs is False:
             return outputs
         return self._hide_outputs(outputs)
+
+    def _batch_ingest_run_ops(
+        self,
+        ops: List[SerializedRunOperation],
+    ) -> None:
+        ids_and_partial_body: dict[
+            Literal["post", "patch"], list[tuple[str, bytes]]
+        ] = {
+            "post": [],
+            "patch": [],
+        }
+
+        # form the partial body and ids
+        for op in ops:
+            if isinstance(op, SerializedRunOperation):
+                curr_dict = _orjson.loads(op._none)
+                if op.inputs:
+                    curr_dict["inputs"] = _orjson.Fragment(op.inputs)
+                if op.outputs:
+                    curr_dict["outputs"] = _orjson.Fragment(op.outputs)
+                if op.events:
+                    curr_dict["events"] = _orjson.Fragment(op.events)
+                if op.attachments:
+                    logger.warning(
+                        "Attachments are not supported when use_multipart_endpoint "
+                        "is False"
+                    )
+                ids_and_partial_body[op.operation].append(
+                    (f"trace={op.trace_id},id={op.id}", _orjson.dumps(curr_dict))
+                )
+            elif isinstance(op, SerializedFeedbackOperation):
+                logger.warning(
+                    "Feedback operations are not supported in non-multipart mode"
+                )
+            else:
+                logger.error("Unknown item type in tracing queue: %s", type(op))
+
+        # send the requests in batches
+        info = self.info
+        size_limit_bytes = (info.batch_ingest_config or {}).get(
+            "size_limit_bytes"
+        ) or _SIZE_LIMIT_BYTES
+
+        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
+        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
+        body_size = 0
+        for key in cast(List[Literal["post", "patch"]], ["post", "patch"]):
+            body_deque = collections.deque(ids_and_partial_body[key])
+            while body_deque:
+                if (
+                    body_size > 0
+                    and body_size + len(body_deque[0][1]) > size_limit_bytes
+                ):
+                    self._post_batch_ingest_runs(
+                        _orjson.dumps(body_chunks),
+                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                    )
+                    body_size = 0
+                    body_chunks.clear()
+                    context_ids.clear()
+                curr_id, curr_body = body_deque.popleft()
+                body_size += len(curr_body)
+                body_chunks[key].append(_orjson.Fragment(curr_body))
+                context_ids[key].append(curr_id)
+        if body_size:
+            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
+            self._post_batch_ingest_runs(
+                _orjson.dumps(body_chunks), _context="\n" + context
+            )
 
     def batch_ingest_runs(
         self,
@@ -1445,22 +1378,13 @@ class Client:
         if not create and not update:
             return
         # transform and convert to dicts
-        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
-        update_dicts = [
-            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
+        create_dicts = [
+            self._run_transform(run, copy=False) for run in create or EMPTY_SEQ
         ]
-        # combine post and patch dicts where possible
-        if update_dicts and create_dicts:
-            create_by_id = {run["id"]: run for run in create_dicts}
-            standalone_updates: list[dict] = []
-            for run in update_dicts:
-                if run["id"] in create_by_id:
-                    create_by_id[run["id"]].update(
-                        {k: v for k, v in run.items() if v is not None}
-                    )
-                else:
-                    standalone_updates.append(run)
-            update_dicts = standalone_updates
+        update_dicts = [
+            self._run_transform(run, update=True, copy=False)
+            for run in update or EMPTY_SEQ
+        ]
         for run in create_dicts:
             if not run.get("trace_id") or not run.get("dotted_order"):
                 raise ls_utils.LangSmithUserError(
@@ -1472,64 +1396,29 @@ class Client:
                     "Batch ingest requires trace_id and dotted_order to be set."
                 )
         # filter out runs that are not sampled
-        if pre_sampled:
-            raw_body = {
-                "post": create_dicts,
-                "patch": update_dicts,
-            }
-        else:
-            raw_body = {
-                "post": self._filter_for_sampling(create_dicts),
-                "patch": self._filter_for_sampling(update_dicts, patch=True),
-            }
-        if not raw_body["post"] and not raw_body["patch"]:
+        if not pre_sampled:
+            create_dicts = self._filter_for_sampling(create_dicts)
+            update_dicts = self._filter_for_sampling(update_dicts, patch=True)
+
+        if not create_dicts and not update_dicts:
             return
 
-        self._insert_runtime_env(raw_body["post"] + raw_body["patch"])
-        info = self.info
+        self._insert_runtime_env(create_dicts + update_dicts)
 
-        size_limit_bytes = (info.batch_ingest_config or {}).get(
-            "size_limit_bytes"
-        ) or _SIZE_LIMIT_BYTES
-        # Get orjson fragments to avoid going over the max request size
-        partial_body = {
-            "post": [_dumps_json(run) for run in raw_body["post"]],
-            "patch": [_dumps_json(run) for run in raw_body["patch"]],
-        }
-        ids = {
-            "post": [
-                f"trace={run.get('trace_id')},id={run.get('id')}"
-                for run in raw_body["post"]
-            ],
-            "patch": [
-                f"trace={run.get('trace_id')},id={run.get('id')}"
-                for run in raw_body["patch"]
-            ],
-        }
-
-        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
-        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
-        body_size = 0
-        for key in ["post", "patch"]:
-            body = collections.deque(partial_body[key])
-            ids_ = collections.deque(ids[key])
-            while body:
-                if body_size > 0 and body_size + len(body[0]) > size_limit_bytes:
-                    self._post_batch_ingest_runs(
-                        orjson.dumps(body_chunks),
-                        _context=f"\n{key}: {'; '.join(context_ids[key])}",
+        # convert to serialized ops
+        serialized_ops = cast(
+            List[SerializedRunOperation],
+            combine_serialized_queue_operations(
+                list(
+                    itertools.chain(
+                        (serialize_run_dict("post", run) for run in create_dicts),
+                        (serialize_run_dict("patch", run) for run in update_dicts),
                     )
-                    body_size = 0
-                    body_chunks.clear()
-                    context_ids.clear()
-                body_size += len(body[0])
-                body_chunks[key].append(orjson.Fragment(body.popleft()))
-                context_ids[key].append(ids_.popleft())
-        if body_size:
-            context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
-            self._post_batch_ingest_runs(
-                orjson.dumps(body_chunks), _context="\n" + context
-            )
+                )
+            ),
+        )
+
+        self._batch_ingest_run_ops(serialized_ops)
 
     def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
@@ -1556,7 +1445,26 @@ class Client:
                 except Exception:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
-    def multipart_ingest_runs(
+    def _multipart_ingest_ops(
+        self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+    ) -> None:
+        parts: list[MultipartPartsAndContext] = []
+        for op in ops:
+            if isinstance(op, SerializedRunOperation):
+                parts.append(
+                    serialized_run_operation_to_multipart_parts_and_context(op)
+                )
+            elif isinstance(op, SerializedFeedbackOperation):
+                parts.append(
+                    serialized_feedback_operation_to_multipart_parts_and_context(op)
+                )
+            else:
+                logger.error("Unknown operation type in tracing queue: %s", type(op))
+        acc_multipart = join_multipart_parts_and_context(parts)
+        if acc_multipart:
+            self._send_multipart_req(acc_multipart)
+
+    def multipart_ingest(
         self,
         create: Optional[
             Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
@@ -1590,17 +1498,12 @@ class Client:
             - The run objects MUST contain the dotted_order and trace_id fields
                 to be accepted by the API.
         """
-        if not create and not update:
+        if not (create or update):
             return
         # transform and convert to dicts
-        all_attachments: Dict[str, ls_schemas.Attachments] = {}
-        create_dicts = [
-            self._run_transform(run, attachments_collector=all_attachments)
-            for run in create or EMPTY_SEQ
-        ]
+        create_dicts = [self._run_transform(run) for run in create or EMPTY_SEQ]
         update_dicts = [
-            self._run_transform(run, update=True, attachments_collector=all_attachments)
-            for run in update or EMPTY_SEQ
+            self._run_transform(run, update=True) for run in update or EMPTY_SEQ
         ]
         # require trace_id and dotted_order
         if create_dicts:
@@ -1644,94 +1547,66 @@ class Client:
         # insert runtime environment
         self._insert_runtime_env(create_dicts)
         self._insert_runtime_env(update_dicts)
-        # send the runs in multipart requests
-        acc_context: List[str] = []
-        acc_parts: MultipartParts = []
-        for event, payloads in (("post", create_dicts), ("patch", update_dicts)):
-            for payload in payloads:
-                # collect fields to be sent as separate parts
-                fields = [
-                    ("inputs", payload.pop("inputs", None)),
-                    ("outputs", payload.pop("outputs", None)),
-                    ("events", payload.pop("events", None)),
-                ]
-                # encode the main run payload
-                # print("Dumping payload for run in multipart ingest runs")
-                payloadb = _dumps_json(payload)
-                acc_parts.append(
-                    (
-                        f"{event}.{payload['id']}",
-                        (
-                            None,
-                            payloadb,
-                            "application/json",
-                            {"Content-Length": str(len(payloadb))},
-                        ),
-                    )
-                )
-                # encode the fields we collected
-                for key, value in fields:
-                    if value is None:
-                        continue
-                    # print("Dumping payload in multipart ingest runs", event)
-                    valb = _dumps_json(value)
-                    acc_parts.append(
-                        (
-                            f"{event}.{payload['id']}.{key}",
-                            (
-                                None,
-                                valb,
-                                "application/json",
-                                {"Content-Length": str(len(valb))},
-                            ),
-                        ),
-                    )
-                # encode the attachments
-                if attachments := all_attachments.pop(payload["id"], None):
-                    for n, (ct, ba) in attachments.items():
-                        acc_parts.append(
-                            (
-                                f"attachment.{payload['id']}.{n}",
-                                (None, ba, ct, {"Content-Length": str(len(ba))}),
-                            )
-                        )
-                # compute context
-                acc_context.append(
-                    f"trace={payload.get('trace_id')},id={payload.get('id')}"
-                )
-        # send the request
-        # self._send_multipart_req(acc_parts, _context="; ".join(acc_context))
-        # simply time.sleep for now for 5ms
-        time.sleep(0.005)
 
-    def _send_multipart_req(self, parts: MultipartParts, *, _context: str):
-        for api_url, api_key in self._write_api_urls.items():
-            try:
-                now = time.perf_counter()
-                encoder = MultipartEncoder(parts, boundary=BOUNDARY)
-                self.request_with_retries(
-                    "POST",
-                    f"{api_url}/runs/multipart",
-                    request_kwargs={
-                        "data": encoder,
-                        "headers": {
-                            **self._headers,
-                            X_API_KEY: api_key,
-                            "Content-Type": encoder.content_type,
-                        },
-                    },
-                    to_ignore=(ls_utils.LangSmithConflictError,),
-                    stop_after_attempt=3,
-                    _context=_context,
+        # format as serialized operations
+        serialized_ops = combine_serialized_queue_operations(
+            list(
+                itertools.chain(
+                    (serialize_run_dict("post", run) for run in create_dicts),
+                    (serialize_run_dict("patch", run) for run in update_dicts),
                 )
-                print("SENDING the multipart request took", time.perf_counter() - now)
-            except Exception as e:
+            )
+        )
+
+        # sent the runs in multipart requests
+        self._multipart_ingest_ops(serialized_ops)
+
+    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+        parts = acc.parts
+        _context = acc.context
+        for api_url, api_key in self._write_api_urls.items():
+            for idx in range(1, attempts + 1):
                 try:
-                    exc_desc_lines = traceback.format_exception_only(type(e), e)
-                    exc_desc = "".join(exc_desc_lines).rstrip()
-                    logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
-                except Exception:
-                    logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
+                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
+                    if encoder.len <= 20_000_000:  # ~20 MB
+                        data = encoder.to_string()
+                    else:
+                        data = encoder
+                    self.request_with_retries(
+                        "POST",
+                        f"{api_url}/runs/multipart",
+                        request_kwargs={
+                            "data": data,
+                            "headers": {
+                                **self._headers,
+                                X_API_KEY: api_key,
+                                "Content-Type": encoder.content_type,
+                            },
+                        },
+                        stop_after_attempt=1,
+                        _context=_context,
+                    )
+                    break
+                except ls_utils.LangSmithConflictError:
+                    break
+                except (
+                    ls_utils.LangSmithConnectionError,
+                    ls_utils.LangSmithRequestTimeout,
+                    ls_utils.LangSmithAPIError,
+                ) as exc:
+                    if idx == attempts:
+                        logger.warning(f"Failed to multipart ingest runs: {exc}")
+                    else:
+                        continue
+                except Exception as e:
+                    try:
+                        exc_desc_lines = traceback.format_exception_only(type(e), e)
+                        exc_desc = "".join(exc_desc_lines).rstrip()
+                        logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
+                    except Exception:
+                        logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
+                    # do not retry by default
+                    return
 
     def update_run(
         self,
@@ -1745,6 +1620,9 @@ class Client:
         events: Optional[Sequence[dict]] = None,
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
+        attachments: Optional[
+            Dict[str, tuple[str, bytes] | ls_schemas.Attachment]
+        ] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1769,6 +1647,9 @@ class Client:
             The extra information for the run.
         tags : List[str] or None, default=None
             The tags for the run.
+        attachments: dict[str, ls_schemas.Attachment] or None, default=None
+            A dictionary of attachments to add to the run. The keys are the attachment names,
+            and the values are Attachment objects containing the data and mime type.
         **kwargs : Any
             Kwargs are ignored.
         """
@@ -1783,6 +1664,14 @@ class Client:
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
         }
+        if attachments:
+            data["attachments"] = attachments
+        use_multipart = (
+            self.tracing_queue is not None
+            # batch ingest requires trace_id and dotted_order to be set
+            and data["trace_id"] is not None
+            and data["dotted_order"] is not None
+        )
         if not self._filter_for_sampling([data], patch=True):
             return
         if end_time is not None:
@@ -1794,20 +1683,21 @@ class Client:
         if inputs is not None:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
-            outputs = ls_utils.deepish_copy(outputs)
+            if not use_multipart:
+                outputs = ls_utils.deepish_copy(outputs)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
-        if (
-            self.tracing_queue is not None
-            # batch ingest requires trace_id and dotted_order to be set
-            and data["trace_id"] is not None
-            and data["dotted_order"] is not None
-        ):
-            return self.tracing_queue.put(
-                TracingQueueItem(data["dotted_order"], "update", data)
+        if data["extra"]:
+            self._insert_runtime_env([data])
+        if use_multipart and self.tracing_queue is not None:
+            # not collecting attachments currently, use empty dict
+            serialized_op = serialize_run_dict(operation="patch", payload=data)
+            self.tracing_queue.put(
+                TracingQueueItem(data["dotted_order"], serialized_op)
             )
-        return self._update_run(data)
+        else:
+            self._update_run(data)
 
     def _update_run(self, run_update: dict) -> None:
         for api_url, api_key in self._write_api_urls.items():
@@ -2561,7 +2451,7 @@ class Client:
                 self._tenant_id = tracer_session.tenant_id
                 return self._tenant_id
         except Exception as e:
-            logger.warning(
+            logger.debug(
                 "Failed to get tenant ID from LangSmith: %s", repr(e), exc_info=True
             )
         return None
@@ -2881,7 +2771,7 @@ class Client:
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=orjson.dumps(dataset),
+            data=_orjson.dumps(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -3531,6 +3421,22 @@ class Client:
 
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
+
+        sequence_args = {
+            "outputs": outputs,
+            "metadata": metadata,
+            "splits": splits,
+            "ids": ids,
+            "source_run_ids": source_run_ids,
+        }
+        # Since inputs are required, we will check against them
+        input_len = len(inputs)
+        for arg_name, arg_value in sequence_args.items():
+            if arg_value is not None and len(arg_value) != input_len:
+                raise ValueError(
+                    f"Length of {arg_name} ({len(arg_value)}) does not match"
+                    f" length of inputs ({input_len})"
+                )
         examples = [
             {
                 "inputs": in_,
@@ -3934,6 +3840,21 @@ class Client:
         Dict[str, Any]
             The response from the server (specifies the number of examples updated).
         """
+        sequence_args = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "metadata": metadata,
+            "splits": splits,
+            "dataset_ids": dataset_ids,
+        }
+        # Since inputs are required, we will check against them
+        examples_len = len(example_ids)
+        for arg_name, arg_value in sequence_args.items():
+            if arg_value is not None and len(arg_value) != examples_len:
+                raise ValueError(
+                    f"Length of {arg_name} ({len(arg_value)}) does not match"
+                    f" length of examples ({examples_len})"
+                )
         examples = [
             {
                 "id": id_,
@@ -4253,6 +4174,8 @@ class Client:
                 ),
                 feedback_source_type=ls_schemas.FeedbackSourceType.MODEL,
                 project_id=project_id,
+                extra=res.extra,
+                trace_id=run.trace_id if run else None,
             )
         return results
 
@@ -4323,6 +4246,8 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
+        extra: Optional[Dict] = None,
+        trace_id: Optional[ID_TYPE] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -4332,6 +4257,8 @@ class Client:
         run_id : str or UUID
             The ID of the run to provide feedback for. Either the run_id OR
             the project_id must be provided.
+        trace_id : str or UUID
+            The trace ID of the run to provide feedback for. This is optional.
         key : str
             The name of the metric or 'aspect' this feedback is about.
         score : float or int or bool or None, default=None
@@ -4368,6 +4295,9 @@ class Client:
         feedback_group_id : str or UUID
             When logging preferences, ranking runs, or other comparative feedback,
             this is used to group feedback together.
+        extra : dict
+            Metadata for the feedback.
+        trace_id: Optional[ID_TYPE] = The trace ID of the run to provide feedback for. Enables batch ingestion.
         """
         if run_id is None and project_id is None:
             raise ValueError("One of run_id and project_id must be provided")
@@ -4379,66 +4309,91 @@ class Client:
                 f" endpoint: {sorted(kwargs)}",
                 DeprecationWarning,
             )
-        if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
-            feedback_source_type = ls_schemas.FeedbackSourceType(feedback_source_type)
-        if feedback_source_type == ls_schemas.FeedbackSourceType.API:
-            feedback_source: ls_schemas.FeedbackSourceBase = (
-                ls_schemas.APIFeedbackSource(metadata=source_info)
-            )
-        elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
-            feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
-        else:
-            raise ValueError(f"Unknown feedback source type {feedback_source_type}")
-        feedback_source.metadata = (
-            feedback_source.metadata if feedback_source.metadata is not None else {}
-        )
-        if source_run_id is not None and "__run" not in feedback_source.metadata:
-            feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
-        if feedback_source.metadata and "__run" in feedback_source.metadata:
-            # Validate that the linked run ID is a valid UUID
-            # Run info may be a base model or dict.
-            _run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
-            if hasattr(_run_meta, "dict") and callable(_run_meta):
-                _run_meta = _run_meta.dict()
-            if "run_id" in _run_meta:
-                _run_meta["run_id"] = str(
-                    _as_uuid(
-                        feedback_source.metadata["__run"]["run_id"],
-                        "feedback_source.metadata['__run']['run_id']",
-                    )
+        try:
+            if not isinstance(feedback_source_type, ls_schemas.FeedbackSourceType):
+                feedback_source_type = ls_schemas.FeedbackSourceType(
+                    feedback_source_type
                 )
-            feedback_source.metadata["__run"] = _run_meta
-        feedback = ls_schemas.FeedbackCreate(
-            id=_ensure_uuid(feedback_id),
-            # If run_id is None, this is interpreted as session-level
-            # feedback.
-            run_id=_ensure_uuid(run_id, accept_null=True),
-            key=key,
-            score=score,
-            value=value,
-            correction=correction,
-            comment=comment,
-            feedback_source=feedback_source,
-            created_at=datetime.datetime.now(datetime.timezone.utc),
-            modified_at=datetime.datetime.now(datetime.timezone.utc),
-            feedback_config=feedback_config,
-            session_id=_ensure_uuid(project_id, accept_null=True),
-            comparative_experiment_id=_ensure_uuid(
-                comparative_experiment_id, accept_null=True
-            ),
-            feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
-        )
-        feedback_block = _dumps_json(feedback.dict(exclude_none=True))
-        self.request_with_retries(
-            "POST",
-            "/feedback",
-            request_kwargs={
-                "data": feedback_block,
-            },
-            stop_after_attempt=stop_after_attempt,
-            retry_on=(ls_utils.LangSmithNotFoundError,),
-        )
-        return ls_schemas.Feedback(**feedback.dict())
+            if feedback_source_type == ls_schemas.FeedbackSourceType.API:
+                feedback_source: ls_schemas.FeedbackSourceBase = (
+                    ls_schemas.APIFeedbackSource(metadata=source_info)
+                )
+            elif feedback_source_type == ls_schemas.FeedbackSourceType.MODEL:
+                feedback_source = ls_schemas.ModelFeedbackSource(metadata=source_info)
+            else:
+                raise ValueError(f"Unknown feedback source type {feedback_source_type}")
+            feedback_source.metadata = (
+                feedback_source.metadata if feedback_source.metadata is not None else {}
+            )
+            if source_run_id is not None and "__run" not in feedback_source.metadata:
+                feedback_source.metadata["__run"] = {"run_id": str(source_run_id)}
+            if feedback_source.metadata and "__run" in feedback_source.metadata:
+                # Validate that the linked run ID is a valid UUID
+                # Run info may be a base model or dict.
+                _run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
+                if hasattr(_run_meta, "dict") and callable(_run_meta):
+                    _run_meta = _run_meta.dict()
+                if "run_id" in _run_meta:
+                    _run_meta["run_id"] = str(
+                        _as_uuid(
+                            feedback_source.metadata["__run"]["run_id"],
+                            "feedback_source.metadata['__run']['run_id']",
+                        )
+                    )
+                feedback_source.metadata["__run"] = _run_meta
+            feedback = ls_schemas.FeedbackCreate(
+                id=_ensure_uuid(feedback_id),
+                # If run_id is None, this is interpreted as session-level
+                # feedback.
+                run_id=_ensure_uuid(run_id, accept_null=True),
+                trace_id=_ensure_uuid(trace_id, accept_null=True),
+                key=key,
+                score=score,
+                value=value,
+                correction=correction,
+                comment=comment,
+                feedback_source=feedback_source,
+                created_at=datetime.datetime.now(datetime.timezone.utc),
+                modified_at=datetime.datetime.now(datetime.timezone.utc),
+                feedback_config=feedback_config,
+                session_id=_ensure_uuid(project_id, accept_null=True),
+                comparative_experiment_id=_ensure_uuid(
+                    comparative_experiment_id, accept_null=True
+                ),
+                feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
+                extra=extra,
+            )
+
+            use_multipart = (self.info.batch_ingest_config or {}).get(
+                "use_multipart_endpoint", False
+            )
+
+            if (
+                use_multipart
+                and self.info.version  # TODO: Remove version check once versions have updated
+                and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
+                and self.tracing_queue is not None
+                and feedback.trace_id is not None
+            ):
+                serialized_op = serialize_feedback_dict(feedback)
+                self.tracing_queue.put(
+                    TracingQueueItem(str(feedback.id), serialized_op)
+                )
+            else:
+                feedback_block = _dumps_json(feedback.dict(exclude_none=True))
+                self.request_with_retries(
+                    "POST",
+                    "/feedback",
+                    request_kwargs={
+                        "data": feedback_block,
+                    },
+                    stop_after_attempt=stop_after_attempt,
+                    retry_on=(ls_utils.LangSmithNotFoundError,),
+                )
+            return ls_schemas.Feedback(**feedback.dict())
+        except Exception as e:
+            logger.error("Error creating feedback", exc_info=True)
+            raise e
 
     def update_feedback(
         self,
@@ -5124,7 +5079,9 @@ class Client:
             DeprecationWarning,
         )
         try:
-            from langchain.smith import run_on_dataset as _run_on_dataset
+            from langchain.smith import (
+                run_on_dataset as _run_on_dataset,  # type: ignore
+            )
         except ImportError:
             raise ImportError(
                 "The client.run_on_dataset function requires the langchain"
@@ -5697,7 +5654,7 @@ class Client:
         *,
         object: Optional[Any] = None,
         parent_commit_hash: str = "latest",
-        is_public: bool = False,
+        is_public: Optional[bool] = None,
         description: Optional[str] = None,
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
@@ -5714,7 +5671,10 @@ class Client:
             object (Optional[Any]): The LangChain object to push.
             parent_commit_hash (str): The parent commit hash.
               Defaults to "latest".
-            is_public (bool): Whether the prompt should be public. Defaults to False.
+            is_public (Optional[bool]): Whether the prompt should be public.
+                If None (default), the current visibility status is maintained for existing prompts.
+                For new prompts, None defaults to private.
+                Set to True to make public, or False to make private.
             description (Optional[str]): A description of the prompt.
               Defaults to an empty string.
             readme (Optional[str]): A readme for the prompt.
@@ -5729,8 +5689,7 @@ class Client:
         # Create or update prompt metadata
         if self._prompt_exists(prompt_identifier):
             if any(
-                param is not None
-                for param in [parent_commit_hash, is_public, description, readme, tags]
+                param is not None for param in [is_public, description, readme, tags]
             ):
                 self.update_prompt(
                     prompt_identifier,
@@ -5742,7 +5701,7 @@ class Client:
         else:
             self.create_prompt(
                 prompt_identifier,
-                is_public=is_public,
+                is_public=is_public if is_public is not None else False,
                 description=description,
                 readme=readme,
                 tags=tags,
@@ -5759,179 +5718,9 @@ class Client:
         )
         return url
 
-
-def _tracing_thread_drain_queue(
-    tracing_queue: Queue, limit: int = 100, block: bool = True
-) -> List[TracingQueueItem]:
-    next_batch: List[TracingQueueItem] = []
-    try:
-        # wait 250ms for the first item, then
-        # - drain the queue with a 50ms block timeout
-        # - stop draining if we hit the limit
-        # shorter drain timeout is used instead of non-blocking calls to
-        # avoid creating too many small batches
-        if item := tracing_queue.get(block=block, timeout=0.25):
-            next_batch.append(item)
-        while item := tracing_queue.get(block=block, timeout=0.05):
-            next_batch.append(item)
-            if limit and len(next_batch) >= limit:
-                break
-    except Empty:
-        pass
-    return next_batch
-
-
-def _tracing_thread_handle_batch(
-    client: Client,
-    tracing_queue: Queue,
-    batch: List[TracingQueueItem],
-    use_multipart: bool = True,
-) -> None:
-    print("Handling a batch of size", len(batch))
-    create = [it.item for it in batch if it.action == "create"]
-    update = [it.item for it in batch if it.action == "update"]
-    try:
-        if True:
-            print("Using multipart endpoint")
-            now = time.perf_counter()
-            client.multipart_ingest_runs(create=create, update=update, pre_sampled=True)
-            print("Multipart ingest took", time.perf_counter() - now)
-        else:
-            print("Using batch endpoint")
-            now = time.time()
-            client.batch_ingest_runs(create=create, update=update, pre_sampled=True)
-            print("Batch ingest took", time.time() - now)
-    except Exception:
-        print("Error in tracing queue")
-        logger.error("Error in tracing queue", exc_info=True)
-        # exceptions are logged elsewhere, but we need to make sure the
-        # background thread continues to run
-        pass
-    finally:
-        for _ in batch:
-            # print("marking task as done")
-            tracing_queue.task_done()
-
-
-_SIZE_LIMIT_BYTES = 20_971_520  # 20MB by default
-_AUTO_SCALE_UP_QSIZE_TRIGGER = 200
-_AUTO_SCALE_UP_NTHREADS_LIMIT = 32
-_AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
-_BLOCKSIZE_BYTES = 1024 * 1024  # 1MB
-
-
-def _ensure_ingest_config(
-    info: ls_schemas.LangSmithInfo,
-) -> ls_schemas.BatchIngestConfig:
-    default_config = ls_schemas.BatchIngestConfig(
-        use_multipart_endpoint=False,
-        size_limit_bytes=None,  # Note this field is not used here
-        size_limit=100,
-        scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
-        scale_up_qsize_trigger=_AUTO_SCALE_UP_QSIZE_TRIGGER,
-        scale_down_nempty_trigger=_AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
-    )
-    if not info:
-        return default_config
-    try:
-        if not info.batch_ingest_config:
-            return default_config
-        return info.batch_ingest_config
-    except BaseException:
-        return default_config
-
-
-def _tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
-    client = client_ref()
-    if client is None:
-        return
-    tracing_queue = client.tracing_queue
-    assert tracing_queue is not None
-    batch_ingest_config = _ensure_ingest_config(client.info)
-    size_limit: int = batch_ingest_config["size_limit"]
-    scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
-    scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
-    use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
-
-    sub_threads: List[threading.Thread] = []
-    # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
-    num_known_refs = 3
-
-    # loop until
-    while (
-        # the main thread dies
-        threading.main_thread().is_alive()
-        # or we're the only remaining reference to the client
-        and sys.getrefcount(client) > num_known_refs + len(sub_threads)
-    ):
-        for thread in sub_threads:
-            if not thread.is_alive():
-                sub_threads.remove(thread)
-        if (
-            len(sub_threads) < scale_up_nthreads_limit
-            and tracing_queue.qsize() > scale_up_qsize_trigger
-        ):
-            print("Scaling up...")
-            new_thread = threading.Thread(
-                target=_tracing_sub_thread_func,
-                args=(weakref.ref(client), use_multipart),
-            )
-            sub_threads.append(new_thread)
-            new_thread.start()
-            print("Started new thread, there are now", len(sub_threads), "threads")
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            _tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
-    # drain the queue on exit
-    print("Draining queue on exit")
-    while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
-    ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
-
-
-def _tracing_sub_thread_func(
-    client_ref: weakref.ref[Client],
-    use_multipart: bool,
-) -> None:
-    client = client_ref()
-    if client is None:
-        return
-    try:
-        if not client.info:
-            return
-    except BaseException as e:
-        logger.debug("Error in tracing control thread: %s", e)
-        return
-    tracing_queue = client.tracing_queue
-    assert tracing_queue is not None
-    batch_ingest_config = _ensure_ingest_config(client.info)
-    size_limit = batch_ingest_config.get("size_limit", 100)
-    seen_successive_empty_queues = 0
-
-    # loop until
-    while (
-        # the main thread dies
-        threading.main_thread().is_alive()
-        # or we've seen the queue empty 4 times in a row
-        and seen_successive_empty_queues
-        <= batch_ingest_config["scale_down_nempty_trigger"]
-    ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            seen_successive_empty_queues = 0
-            _tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
-        else:
-            seen_successive_empty_queues += 1
-
-    # drain the queue on exit
-    print("Draining queue on exit")
-    while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
-    ):
-        _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
+    def cleanup(self) -> None:
+        """Manually trigger cleanup of the background thread."""
+        self._manual_cleanup = True
 
 
 def convert_prompt_to_openai_format(

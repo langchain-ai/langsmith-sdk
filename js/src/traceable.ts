@@ -7,7 +7,7 @@ import {
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
-import { InvocationParamsSchema, KVMap } from "./schemas.js";
+import { Attachments, InvocationParamsSchema, KVMap } from "./schemas.js";
 import { isTracingEnabled } from "./env.js";
 import {
   ROOT,
@@ -29,10 +29,7 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
 );
 
-const handleRunInputs = (
-  rawInputs: unknown[],
-  processInputs: (inputs: Readonly<KVMap>) => KVMap
-): KVMap => {
+const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
   let inputs: KVMap;
 
@@ -45,7 +42,13 @@ const handleRunInputs = (
   } else {
     inputs = { input: firstInput };
   }
+  return inputs;
+};
 
+const handleRunInputs = (
+  inputs: KVMap,
+  processInputs: (inputs: Readonly<KVMap>) => KVMap
+): KVMap => {
   try {
     return processInputs(inputs);
   } catch (e) {
@@ -79,6 +82,24 @@ const handleRunOutputs = (
     return outputs;
   }
 };
+const handleRunAttachments = (
+  rawInputs: unknown[],
+  extractAttachments?: (
+    ...args: unknown[]
+  ) => [Attachments | undefined, unknown[]]
+): [Attachments | undefined, unknown[]] => {
+  if (!extractAttachments) {
+    return [undefined, rawInputs];
+  }
+
+  try {
+    const [attachments, remainingArgs] = extractAttachments(...rawInputs);
+    return [attachments, remainingArgs];
+  } catch (e) {
+    console.error("Error occurred during extractAttachments:", e);
+    return [undefined, rawInputs];
+  }
+};
 
 const getTracingRunTree = <Args extends unknown[]>(
   runTree: RunTree,
@@ -86,13 +107,23 @@ const getTracingRunTree = <Args extends unknown[]>(
   getInvocationParams:
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined,
-  processInputs: (inputs: Readonly<KVMap>) => KVMap
+  processInputs: (inputs: Readonly<KVMap>) => KVMap,
+  extractAttachments:
+    | ((...args: Args) => [Attachments | undefined, KVMap])
+    | undefined
 ): RunTree | undefined => {
   if (!isTracingEnabled(runTree.tracingEnabled)) {
     return undefined;
   }
 
-  runTree.inputs = handleRunInputs(inputs, processInputs);
+  const [attached, args] = handleRunAttachments(
+    inputs,
+    extractAttachments as
+      | ((...args: unknown[]) => [Attachments | undefined, unknown[]])
+      | undefined
+  );
+  runTree.attachments = attached;
+  runTree.inputs = handleRunInputs(args, processInputs);
 
   const invocationParams = getInvocationParams?.(...inputs);
   if (invocationParams != null) {
@@ -310,6 +341,15 @@ export function traceable<Func extends (...args: any[]) => any>(
     __finalTracedIteratorKey?: string;
 
     /**
+     * Extract attachments from args and return remaining args.
+     * @param args Arguments of the traced function
+     * @returns Tuple of [Attachments, remaining args]
+     */
+    extractAttachments?: (
+      ...args: Parameters<Func>
+    ) => [Attachments | undefined, KVMap];
+
+    /**
      * Extract invocation parameters from the arguments of the traced function.
      * This is useful for LangSmith to properly track common metadata like
      * provider, model name and temperature.
@@ -349,11 +389,14 @@ export function traceable<Func extends (...args: any[]) => any>(
     __finalTracedIteratorKey,
     processInputs,
     processOutputs,
+    extractAttachments,
     ...runTreeConfig
   } = config ?? {};
 
   const processInputsFn = processInputs ?? ((x) => x);
   const processOutputsFn = processOutputs ?? ((x) => x);
+  const extractAttachmentsFn =
+    extractAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
 
   const traceableFunc = (
     ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
@@ -427,7 +470,8 @@ export function traceable<Func extends (...args: any[]) => any>(
             RunTree.fromRunnableConfig(firstArg, ensuredConfig),
             restArgs as Inputs,
             config?.getInvocationParams,
-            processInputsFn
+            processInputsFn,
+            extractAttachmentsFn
           ),
           restArgs as Inputs,
         ];
@@ -452,7 +496,8 @@ export function traceable<Func extends (...args: any[]) => any>(
             : firstArg.createChild(ensuredConfig),
           restArgs as Inputs,
           config?.getInvocationParams,
-          processInputsFn
+          processInputsFn,
+          extractAttachmentsFn
         );
 
         return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
@@ -467,7 +512,8 @@ export function traceable<Func extends (...args: any[]) => any>(
             prevRunFromStore.createChild(ensuredConfig),
             processedArgs,
             config?.getInvocationParams,
-            processInputsFn
+            processInputsFn,
+            extractAttachmentsFn
           ),
           processedArgs as Inputs,
         ];
@@ -477,7 +523,8 @@ export function traceable<Func extends (...args: any[]) => any>(
         new RunTree(ensuredConfig),
         processedArgs,
         config?.getInvocationParams,
-        processInputsFn
+        processInputsFn,
+        extractAttachmentsFn
       );
       // If a context var is set by LangChain outside of a traceable,
       // it will be an object with a single property and we should copy
