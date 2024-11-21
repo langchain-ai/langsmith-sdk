@@ -1662,6 +1662,7 @@ def _is_valid_uuid(value: str) -> bool:
     except ValueError:
         return False
 
+
 def _resolve_data(
     data: DATA_T, *, client: langsmith.Client
 ) -> Iterable[schemas.Example]:
