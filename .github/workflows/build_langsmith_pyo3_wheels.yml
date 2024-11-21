@@ -36,7 +36,7 @@ permissions:
   contents: read
 
 env:
-  RUST_VERSION: stable
+  RUST_VERSION: '1.82'  # Be careful, "stable" gets you "whatever GitHub ships", which is quite old.
   SUPPORTED_PYTHON_VERSIONS: 'python3.8 python3.9 python3.10 python3.11 python3.12'
   WORKING_DIRECTORY: rust/crates/langsmith_pyo3
 
