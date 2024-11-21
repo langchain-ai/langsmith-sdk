@@ -27,8 +27,18 @@ crate-type = ["cdylib", "rlib"]
 # More info:
 # - https://pyo3.rs/v0.22.5/building-and-distribution#the-extension-module-feature
 # - https://peps.python.org/pep-0513/
-pyo3 = { path = "../../../vendor/pyo3", features = ["extension-module"] }
-pyo3-ffi = { path = "../../../vendor/pyo3/pyo3-ffi", features = ["extension-module"] }
+#
+# The "abi3-py38" feature says "please make wheels compatible with any Python 3.8+".
+# When the minimum supported Python version is bumped up, change the feature accordingly to
+# "abi3-py39" or "abi3-py310" etc.
+#
+# Raising up the minimum supported version will generally *improve performance*
+# as the compiled code can rely on newer and more advanced Python functionality.
+# More info:
+# - https://pyo3.rs/v0.23.1/building-and-distribution.html#py_limited_apiabi3
+# - https://pyo3.rs/v0.23.1/building-and-distribution.html#minimum-python-version-for-abi3
+pyo3 = { path = "../../../vendor/pyo3", features = ["extension-module", "abi3-py38"] }
+pyo3-ffi = { path = "../../../vendor/pyo3/pyo3-ffi", features = ["extension-module", "abi3-py38"] }
 sonic-rs = { workspace = true }
 serde = { workspace = true }
 langsmith_tracing_client = { path = "../langsmith_tracing_client" }
