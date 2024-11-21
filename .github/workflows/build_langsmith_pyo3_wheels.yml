@@ -35,6 +35,8 @@ on:
 permissions:
   contents: read
 
+# TODO: Switch off of nightly Rust.
+
 jobs:
   linux:
     runs-on: ${{ matrix.platform.runner }}
@@ -62,6 +64,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           working-directory: rust/crates/langsmith_pyo3
+          rust-toolchain: nightly
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
@@ -98,6 +101,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           working-directory: rust/crates/langsmith_pyo3
+          rust-toolchain: nightly
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
@@ -128,6 +132,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           working-directory: rust/crates/langsmith_pyo3
+          rust-toolchain: nightly
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
@@ -156,6 +161,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           working-directory: rust/crates/langsmith_pyo3
+          rust-toolchain: nightly
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
@@ -174,6 +180,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           working-directory: rust/crates/langsmith_pyo3
+          rust-toolchain: nightly
           command: sdist
           args: --out dist
       - name: Upload sdist
@@ -210,5 +217,6 @@ jobs:
   #         MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
   #       with:
   #         working-directory: rust/crates/langsmith_pyo3
+  #         rust-toolchain: nightly
   #         command: upload
   #         args: --non-interactive --skip-existing wheels-*/*
