@@ -1618,7 +1618,9 @@ class Client:
         events: Optional[Sequence[dict]] = None,
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
-        attachments: Optional[Dict[str, tuple[str, bytes] | ls_schemas.Attachment]] = None,
+        attachments: Optional[
+            Dict[str, tuple[str, bytes] | ls_schemas.Attachment]
+        ] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
