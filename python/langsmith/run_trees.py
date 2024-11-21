@@ -114,6 +114,8 @@ class RunTree(ls_schemas.RunBase):
             values["tags"] = []
         if values.get("outputs") is None:
             values["outputs"] = {}
+        if values.get("attachments") is None:
+            values["attachments"] = {}
         return values
 
     @root_validator(pre=False)
@@ -257,6 +259,7 @@ class RunTree(ls_schemas.RunBase):
         end_time: Optional[datetime] = None,
         tags: Optional[List[str]] = None,
         extra: Optional[Dict] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
         serialized_ = serialized or {"name": name}
@@ -276,6 +279,7 @@ class RunTree(ls_schemas.RunBase):
             project_name=self.session_name,
             ls_client=self.ls_client,
             tags=tags,
+            attachments=attachments or {},
         )
         self.child_runs.append(run)
         return run
@@ -297,6 +301,15 @@ class RunTree(ls_schemas.RunBase):
         """Post the run tree to the API asynchronously."""
         kwargs = self._get_dicts_safe()
         self.client.create_run(**kwargs)
+        if attachments := kwargs.get("attachments"):
+            keys = [str(name) for name in attachments]
+            self.events.append(
+                {
+                    "name": "uploaded_attachment",
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "message": set(keys),
+                }
+            )
         if not exclude_child_runs:
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
@@ -305,6 +318,26 @@ class RunTree(ls_schemas.RunBase):
         """Patch the run tree to the API in a background thread."""
         if not self.end_time:
             self.end()
+        attachments = self.attachments
+        try:
+            # Avoid loading the same attachment twice
+            if attachments:
+                uploaded = next(
+                    (
+                        ev
+                        for ev in self.events
+                        if ev.get("name") == "uploaded_attachment"
+                    ),
+                    None,
+                )
+                if uploaded:
+                    attachments = {
+                        a: v
+                        for a, v in attachments.items()
+                        if a not in uploaded["message"]
+                    }
+        except Exception as e:
+            logger.warning(f"Error filtering attachments to upload: {e}")
         self.client.update_run(
             name=self.name,
             run_id=self.id,
@@ -318,6 +351,7 @@ class RunTree(ls_schemas.RunBase):
             events=self.events,
             tags=self.tags,
             extra=self.extra,
+            attachments=attachments,
         )
 
     def wait(self) -> None:
@@ -478,6 +512,13 @@ class RunTree(ls_schemas.RunBase):
         )
         headers["baggage"] = baggage.to_header()
         return headers
+
+    def __repr__(self):
+        """Return a string representation of the RunTree object."""
+        return (
+            f"RunTree(id={self.id}, name='{self.name}', "
+            f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
+        )
 
 
 class _Baggage:
