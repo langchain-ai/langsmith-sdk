@@ -35,7 +35,11 @@ on:
 permissions:
   contents: read
 
-# TODO: Switch off of nightly Rust.
+env:
+  # TODO: Switch off of nightly Rust.
+  RUST_VERSION: nightly
+  SUPPORTED_PYTHON_VERSIONS: 'python3.8 python3.9 python3.10 python3.11 python3.12'
+  WORKING_DIRECTORY: rust/crates/langsmith_pyo3
 
 jobs:
   linux:
@@ -55,10 +59,10 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: rust/crates/langsmith_pyo3
-          rust-toolchain: nightly
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          rust-toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.platform.target }}
-          args: '--release --out dist --interpreter python3.8 python3.9 python3.10 python3.11 python3.12'
+          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }}'
           sccache: 'true'
           manylinux: '2_28'  # The default is 'auto' AKA '2014', which is too old for us.
           # Workaround for missing `pip` in manylinux_2_28:
@@ -68,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.platform.target }}
-          path: rust/crates/langsmith_pyo3/dist
+          path: ${{ env.WORKING_DIRECTORY }}/dist
           if-no-files-found: error
 
   musllinux:
@@ -88,17 +92,17 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: rust/crates/langsmith_pyo3
-          rust-toolchain: nightly
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          rust-toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.platform.target }}
-          args: '--release --out dist --interpreter python3.8 python3.9 python3.10 python3.11 python3.12'
+          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }}'
           sccache: 'true'
           manylinux: musllinux_1_2
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
-          path: rust/crates/langsmith_pyo3/dist
+          path: ${{ env.WORKING_DIRECTORY }}/dist
           if-no-files-found: error
 
   windows:
@@ -117,16 +121,16 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: rust/crates/langsmith_pyo3
-          rust-toolchain: nightly
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          rust-toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.platform.target }}
-          args: '--release --out dist --interpreter python3.8 python3.9 python3.10 python3.11 python3.12'
+          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }}'
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: rust/crates/langsmith_pyo3/dist
+          path: ${{ env.WORKING_DIRECTORY }}/dist
           if-no-files-found: error
 
   macos:
@@ -144,16 +148,16 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: rust/crates/langsmith_pyo3
-          rust-toolchain: nightly
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          rust-toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.platform.target }}
-          args: '--release --out dist --interpreter python3.8 python3.9 python3.10 python3.11 python3.12'
+          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }}'
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-macos-${{ matrix.platform.target }}
-          path: rust/crates/langsmith_pyo3/dist
+          path: ${{ env.WORKING_DIRECTORY }}/dist
           if-no-files-found: error
 
   sdist:
@@ -163,15 +167,15 @@ jobs:
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: rust/crates/langsmith_pyo3
-          rust-toolchain: nightly
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          rust-toolchain: ${{ env.RUST_VERSION }}
           command: sdist
           args: --out dist
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
           name: wheels-sdist
-          path: rust/crates/langsmith_pyo3/dist
+          path: ${{ env.WORKING_DIRECTORY }}/dist
           if-no-files-found: error
 
   release:
@@ -189,14 +193,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: rust/crates/langsmith_pyo3
+          path: ${{ env.WORKING_DIRECTORY }}
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1
         with:
-          subject-path: 'rust/crates/langsmith_pyo3/wheels-*/*'
+          subject-path: ${{ env.WORKING_DIRECTORY }}/wheels-*/*
       - name: Show which wheels exist
         run: |
-          cd rust/crates/langsmith_pyo3
+          cd "$WORKING_DIRECTORY"
           ls -alh wheels-*
       # - name: Publish to PyPI
       #   if: startsWith(github.ref, 'refs/tags/')
@@ -204,6 +208,6 @@ jobs:
       #   env:
       #     MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
       #   with:
-      #     working-directory: rust/crates/langsmith_pyo3
+      #     working-directory: ${{ env.WORKING_DIRECTORY }}
       #     command: upload
       #     args: --non-interactive --skip-existing wheels-*/*
