@@ -153,7 +153,10 @@ def _create_example(idx: int) -> ls_schemas.Example:
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
 @pytest.mark.parametrize("as_runnable", [False, True])
-def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
+@pytest.mark.parametrize("upload_results", [False, True])
+def test_evaluate_results(
+    blocking: bool, as_runnable: bool, upload_results: bool
+) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
@@ -272,6 +275,7 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         summary_evaluators=summary_evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
+        upload_results=upload_results,
     )
     if not blocking:
         deltas = []
@@ -303,40 +307,45 @@ def test_evaluate_results(blocking: bool, as_runnable: bool) -> None:
         )
     assert len(results._summary_results["results"]) == len(summary_evaluators)
 
-    assert fake_request.created_session
-    _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
-    _wait_until(lambda: len(ordering_of_stuff) == (N_PREDS * (len(evaluators) + 1)))
-    _wait_until(lambda: slow_index is not None)
-    # Want it to be interleaved
-    assert ordering_of_stuff[:N_PREDS] != ["predict"] * N_PREDS
+    if upload_results:
+        assert fake_request.created_session
+        _wait_until(lambda: fake_request.runs)
+        _wait_until(lambda: len(ordering_of_stuff) == (N_PREDS * (len(evaluators) + 1)))
+        _wait_until(lambda: slow_index is not None)
+        # Want it to be interleaved
+        assert ordering_of_stuff[:N_PREDS] != ["predict"] * N_PREDS
+    else:
+        assert not fake_request.created_session
 
     # It's delayed, so it'll be the penultimate event
     # Will run all other preds and evals, then this, then the last eval
     assert slow_index == (len(evaluators) + 1) * (N_PREDS - 1)
 
-    def score_value(run, example):
-        return {"score": 0.7}
+    if upload_results:
 
-    ex_results = evaluate_existing(
-        fake_request.created_session["name"],
-        evaluators=[score_value],
-        client=client,
-        blocking=blocking,
-    )
-    second_item = next(itertools.islice(iter(ex_results), 1, 2))
-    first_list = list(ex_results)
-    second_list = list(ex_results)
-    second_item_after = next(itertools.islice(iter(ex_results), 1, 2))
-    assert len(first_list) == len(second_list) == SPLIT_SIZE * NUM_REPETITIONS
-    assert first_list == second_list
-    assert second_item == second_item_after
-    dev_xample_ids = [e.id for e in dev_split]
-    for r in ex_results:
-        assert r["example"].id in dev_xample_ids
-        assert r["evaluation_results"]["results"][0].score == 0.7
-        assert r["run"].reference_example_id in dev_xample_ids
-    assert not fake_request.should_fail
+        def score_value(run, example):
+            return {"score": 0.7}
+
+        ex_results = evaluate_existing(
+            fake_request.created_session["name"],
+            evaluators=[score_value],
+            client=client,
+            blocking=blocking,
+        )
+        second_item = next(itertools.islice(iter(ex_results), 1, 2))
+        first_list = list(ex_results)
+        second_list = list(ex_results)
+        second_item_after = next(itertools.islice(iter(ex_results), 1, 2))
+        assert len(first_list) == len(second_list) == SPLIT_SIZE * NUM_REPETITIONS
+        assert first_list == second_list
+        assert second_item == second_item_after
+        dev_xample_ids = [e.id for e in dev_split]
+        for r in ex_results:
+            assert r["example"].id in dev_xample_ids
+            assert r["evaluation_results"]["results"][0].score == 0.7
+            assert r["run"].reference_example_id in dev_xample_ids
+        assert not fake_request.should_fail
 
     # Returning list of non-dicts not supported.
     def bad_eval_list(run, example):
@@ -405,7 +414,10 @@ def test_evaluate_raises_for_async():
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 @pytest.mark.parametrize("blocking", [False, True])
 @pytest.mark.parametrize("as_runnable", [False, True])
-async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
+@pytest.mark.parametrize("upload_results", [False, True])
+async def test_aevaluate_results(
+    blocking: bool, as_runnable: bool, upload_results: bool
+) -> None:
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
@@ -527,6 +539,7 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         summary_evaluators=summary_evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
+        upload_results=upload_results,
     )
     if not blocking:
         deltas = []
@@ -562,36 +575,44 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         )
     assert len(results._summary_results["results"]) == len(summary_evaluators)
 
-    assert fake_request.created_session
-    _wait_until(lambda: fake_request.runs)
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
-    _wait_until(lambda: len(ordering_of_stuff) == N_PREDS * (len(evaluators) + 1))
-    _wait_until(lambda: slow_index is not None)
-    # Want it to be interleaved
-    assert ordering_of_stuff[:N_PREDS] != ["predict"] * N_PREDS
-    assert slow_index is not None
-    # It's delayed, so it'll be the penultimate event
-    # Will run all other preds and evals, then this, then the last eval
-    assert slow_index == (N_PREDS - 1) * (len(evaluators) + 1)
 
-    assert fake_request.created_session["name"]
+    if upload_results:
+        assert fake_request.created_session
+        _wait_until(lambda: fake_request.runs)
+        _wait_until(lambda: len(ordering_of_stuff) == N_PREDS * (len(evaluators) + 1))
+        _wait_until(lambda: slow_index is not None)
+        # Want it to be interleaved
+        assert ordering_of_stuff[:N_PREDS] != ["predict"] * N_PREDS
+        assert slow_index is not None
+        # It's delayed, so it'll be the penultimate event
+        # Will run all other preds and evals, then this, then the last eval
+        assert slow_index == (N_PREDS - 1) * (len(evaluators) + 1)
+
+        assert fake_request.created_session["name"]
+    else:
+        assert not fake_request.created_session
 
     async def score_value(run, example):
         return {"score": 0.7}
 
-    ex_results = await aevaluate_existing(
-        fake_request.created_session["name"], evaluators=[score_value], client=client
-    )
-    all_results = [r async for r in ex_results]
-    assert len(all_results) == SPLIT_SIZE * NUM_REPETITIONS
-    dev_xample_ids = [e.id for e in dev_split]
-    async for r in ex_results:
-        assert r["example"].id in dev_xample_ids
-        assert r["evaluation_results"]["results"][0].score == 0.7
-        assert r["run"].reference_example_id in dev_xample_ids
-    assert not fake_request.should_fail
-    # Returning list of non-dicts not supported.
+    if upload_results:
+        ex_results = await aevaluate_existing(
+            fake_request.created_session["name"],
+            evaluators=[score_value],
+            client=client,
+            blocking=blocking,
+        )
+        all_results = [r async for r in ex_results]
+        assert len(all_results) == SPLIT_SIZE * NUM_REPETITIONS
+        dev_xample_ids = [e.id for e in dev_split]
+        async for r in ex_results:
+            assert r["example"].id in dev_xample_ids
+            assert r["evaluation_results"]["results"][0].score == 0.7
+            assert r["run"].reference_example_id in dev_xample_ids
+        assert not fake_request.should_fail
 
+    # Returning list of non-dicts not supported.
     async def bad_eval_list(run, example):
         ordering_of_stuff.append("evaluate")
         return ["foo", 1]
@@ -603,6 +624,7 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
         evaluators=[bad_eval_list],
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
+        upload_results=upload_results,
     )
     async for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
@@ -628,7 +650,12 @@ async def test_aevaluate_results(blocking: bool, as_runnable: bool) -> None:
 
         with pytest.raises(ValueError, match="Invalid evaluator function."):
             await aevaluate(
-                atarget, data=ds_examples, evaluators=[eval_], client=client
+                atarget,
+                data=ds_examples,
+                evaluators=[eval_],
+                client=client,
+                upload_results=upload_results,
+                blocking=blocking,
             )
 
 
