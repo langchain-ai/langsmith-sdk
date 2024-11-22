@@ -140,16 +140,17 @@ def test_replacer_declared_in_traceable():
         assert patched_data["inputs"] == expected_inputs
     assert patched_data["outputs"] == expected_outputs
 
+
 def test_rule_node_processor_scrub_sensitive_info():
     rules = [
-        StringNodeRule(pattern=re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), replace="[ssn]"), 
+        StringNodeRule(pattern=re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), replace="[ssn]"),
         StringNodeRule(
             pattern=re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
             replace="[email]",
-        ),  
+        ),
         StringNodeRule(
             pattern=re.compile(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b"), replace="[phone]"
-        ), 
+        ),
     ]
     processor = RuleNodeProcessor(rules)
 
@@ -168,6 +169,7 @@ def test_rule_node_processor_scrub_sensitive_info():
     result = processor.mask_nodes(nodes)
 
     assert result == expected
+
 
 def test_rule_node_processor_default_replace():
     rules = [

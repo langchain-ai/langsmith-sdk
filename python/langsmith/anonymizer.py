@@ -92,12 +92,16 @@ class RuleNodeProcessor(StringNodeProcessor):
         """Initialize the processor with a list of rules."""
         self.rules = [
             {
-                "pattern": rule["pattern"]
-                if isinstance(rule["pattern"], re.Pattern)
-                else re.compile(rule["pattern"]),
-                "replace": rule["replace"]
-                if isinstance(rule.get("replace"), str)
-                else "[redacted]",
+                "pattern": (
+                    rule["pattern"]
+                    if isinstance(rule["pattern"], re.Pattern)
+                    else re.compile(rule["pattern"])
+                ),
+                "replace": (
+                    rule["replace"]
+                    if isinstance(rule.get("replace"), str)
+                    else "[redacted]"
+                ),
             }
             for rule in rules
         ]
