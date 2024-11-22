@@ -9,7 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from langsmith import Client, traceable, tracing_context
-from langsmith.anonymizer import StringNodeRule, create_anonymizer, RuleNodeProcessor
+from langsmith.anonymizer import RuleNodeProcessor, StringNodeRule, create_anonymizer
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 UUID_REGEX = re.compile(
