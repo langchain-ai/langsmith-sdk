@@ -45,12 +45,14 @@ from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
 from langsmith.evaluation.evaluator import (
+    SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
     DynamicComparisonRunEvaluator,
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
+    _normalize_summary_evaluator,
     comparison_evaluator,
     run_evaluator,
 )
@@ -70,16 +72,6 @@ TARGET_T = Callable[[dict], dict]
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example], schemas.Dataset]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
-SUMMARY_EVALUATOR_T = Union[
-    Callable[
-        [Sequence[schemas.Run], Sequence[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-    Callable[
-        [List[schemas.Run], List[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-]
 # Row-level evaluator
 EVALUATOR_T = Union[
     RunEvaluator,
@@ -650,16 +642,20 @@ def evaluate_comparative(
         ...         },
         ...     )
         ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
-        ...     preference = json.loads(tool_args)["preferred_option"]
+        ...     loaded_args = json.loads(tool_args)
+        ...     preference = loaded_args["preferred_option"]
+        ...     comment = loaded_args["reasoning"]
         ...     if preference == "A":
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...             "comment": comment,
         ...         }
         ...     else:
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...             "comment": comment,
         ...         }
         >>> def score_length_difference(runs: list, example: schemas.Example):
         ...     # Just return whichever response is longer.
@@ -784,12 +780,18 @@ def evaluate_comparative(
             result = comparator.compare_runs(runs_list, example)
             if client is None:
                 raise ValueError("Client is required to submit feedback.")
+        comments = (
+            {str(rid): result.comment for rid in result.scores}
+            if isinstance(result.comment, str)
+            else (result.comment or {})
+        )
         for run_id, score in result.scores.items():
             executor.submit(
                 client.create_feedback,
                 run_id=run_id,
                 key=result.key,
                 score=score,
+                comment=comments.get(str(run_id)),
                 comparative_experiment_id=comparative_experiment.id,
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
@@ -802,9 +804,7 @@ def evaluate_comparative(
     ) as executor:
         futures = []
         for example_id, runs_list in tqdm(runs_dict.items()):
-            results[example_id] = {
-                "runs": runs_list,
-            }
+            results[example_id] = {"runs": runs_list}
             for comparator in comparators:
                 if max_concurrency > 1:
                     future = executor.submit(
@@ -1609,6 +1609,7 @@ def _wrap_summary_evaluators(
 ) -> List[SUMMARY_EVALUATOR_T]:
     def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
+        evaluator = _normalize_summary_evaluator(evaluator)
 
         @functools.wraps(evaluator)
         def _wrapper_inner(

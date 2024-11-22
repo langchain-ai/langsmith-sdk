@@ -1751,7 +1751,11 @@ def test_traceable_input_attachments():
             val: int,
             att1: ls_schemas.Attachment,
             att2: Annotated[tuple, ls_schemas.Attachment],
+            run_tree: RunTree,
         ):
+            run_tree.attachments["anoutput"] = ls_schemas.Attachment(
+                mime_type="text/plain", data=b"noidea"
+            )
             return "foo"
 
         mock_client = _get_mock_client(
@@ -1776,11 +1780,15 @@ def test_traceable_input_attachments():
             )
             assert result == "foo"
 
-        calls = _get_calls(mock_client)
-        datas = _get_multipart_data(calls)
+        for _ in range(10):
+            calls = _get_calls(mock_client)
+            datas = _get_multipart_data(calls)
+            if len(datas) >= 7:
+                break
+            time.sleep(1)
 
-        # main run, inputs, outputs, events, att1, att2
-        assert len(datas) == 6
+        # main run, inputs, outputs, events, att1, att2, anoutput
+        assert len(datas) == 7
         # First 4 are type application/json (run, inputs, outputs, events)
         trace_id = datas[0][0].split(".")[1]
         _, (_, run_stuff) = next(
@@ -1797,7 +1805,7 @@ def test_traceable_input_attachments():
             data for data in datas if data[0] == f"post.{trace_id}.inputs"
         )
         assert json.loads(inputs) == {"val": 42}
-        # last two are the mime types provided
+        # last three are the mime types provided
         _, (mime_type1, content1) = next(
             data for data in datas if data[0] == f"attachment.{trace_id}.att1"
         )
@@ -1809,3 +1817,10 @@ def test_traceable_input_attachments():
         )
         assert mime_type2 == "application/octet-stream"
         assert content2 == b"content2"
+
+        # Assert that anoutput is uploaded
+        _, (mime_type_output, content_output) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.anoutput"
+        )
+        assert mime_type_output == "text/plain"
+        assert content_output == b"noidea"

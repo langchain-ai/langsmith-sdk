@@ -21,7 +21,11 @@ from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
 from langsmith.evaluation._runner import evaluate_existing
-from langsmith.evaluation.evaluator import _normalize_evaluator_func
+from langsmith.evaluation.evaluator import (
+    _normalize_comparison_evaluator_func,
+    _normalize_evaluator_func,
+    _normalize_summary_evaluator,
+)
 
 
 class FakeRequest:
@@ -55,7 +59,14 @@ class FakeRequest:
                 response = MagicMock()
                 response.json.return_value = res
                 return response
-
+            elif (
+                endpoint
+                == f"http://localhost:1984/sessions/{self.created_session['id']}"
+            ):  # type: ignore
+                res = self.created_session  # type: ignore
+                response = MagicMock()
+                response.json.return_value = res
+                return response
             else:
                 self.should_fail = True
                 raise ValueError(f"Unknown endpoint: {endpoint}")
@@ -90,6 +101,14 @@ class FakeRequest:
             elif endpoint == "http://localhost:1984/feedback":
                 response = MagicMock()
                 response.json.return_value = {}
+                return response
+            elif endpoint == "http://localhost:1984/datasets/comparative":
+                response = MagicMock()
+                self.created_comparative_experiment = json.loads(kwargs["data"]) | {
+                    "tenant_id": self.tenant_id,
+                    "modified_at": datetime.now(),
+                }
+                response.json.return_value = self.created_comparative_experiment
                 return response
 
             else:
@@ -224,6 +243,15 @@ def test_evaluate_results(
             {"score": 1, "key": "list_eval_int"},
         ]
 
+    def summary_eval_runs_examples(runs_, examples_):
+        return {"score": len(runs_[0].dotted_order)}
+
+    def summary_eval_inputs_outputs(inputs, outputs):
+        return [{"score": len([x["in"] for x in inputs])}]
+
+    def summary_eval_outputs_reference(outputs, reference_outputs):
+        return len([x["answer"] for x in reference_outputs])
+
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
@@ -233,11 +261,18 @@ def test_evaluate_results(
         eval_list,
     ]
 
+    summary_evaluators = [
+        summary_eval_runs_examples,
+        summary_eval_inputs_outputs,
+        summary_eval_outputs_reference,
+    ]
+
     results = evaluate(
         predict,
         client=client,
         data=dev_split,
         evaluators=evaluators,
+        summary_evaluators=summary_evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
         upload_results=upload_results,
@@ -266,6 +301,11 @@ def test_evaluate_results(
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
         assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
         assert len(r["evaluation_results"]["results"]) == len(evaluators) + 1
+        assert all(
+            er.score is not None or er.value is not None
+            for er in r["evaluation_results"]["results"]
+        )
+    assert len(results._summary_results["results"]) == len(summary_evaluators)
 
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
     if upload_results:
@@ -291,6 +331,7 @@ def test_evaluate_results(
             fake_request.created_session["name"],
             evaluators=[score_value],
             client=client,
+            blocking=blocking,
         )
         second_item = next(itertools.islice(iter(ex_results), 1, 2))
         first_list = list(ex_results)
@@ -466,6 +507,15 @@ async def test_aevaluate_results(
             {"score": 1, "key": "list_eval_int"},
         ]
 
+    def summary_eval_runs_examples(runs_, examples_):
+        return {"score": len(runs_[0].dotted_order)}
+
+    def summary_eval_inputs_outputs(inputs, outputs):
+        return {"score": len([x["in"] for x in inputs])}
+
+    def summary_eval_outputs_reference(outputs, reference_outputs):
+        return {"score": len([x["answer"] for x in reference_outputs])}
+
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
@@ -475,11 +525,18 @@ async def test_aevaluate_results(
         eval_list,
     ]
 
+    summary_evaluators = [
+        summary_eval_runs_examples,
+        summary_eval_inputs_outputs,
+        summary_eval_outputs_reference,
+    ]
+
     results = await aevaluate(
         predict,
         client=client,
         data=dev_split,
         evaluators=evaluators,
+        summary_evaluators=summary_evaluators,
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
         upload_results=upload_results,
@@ -512,6 +569,11 @@ async def test_aevaluate_results(
     async for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
         assert set(r["run"].outputs.keys()) == {"output"}  # type: ignore
+        assert all(
+            er.score is not None or er.value is not None
+            for er in r["evaluation_results"]["results"]
+        )
+    assert len(results._summary_results["results"]) == len(summary_evaluators)
 
     N_PREDS = SPLIT_SIZE * NUM_REPETITIONS
 
@@ -593,3 +655,162 @@ async def test_aevaluate_results(
                 client=client,
                 upload_results=upload_results,
             )
+
+
+def summary_eval_runs_examples(runs_, examples_):
+    return {"score": len(runs_[0].dotted_order)}
+
+
+def summary_eval_inputs_outputs(inputs, outputs):
+    return {"score": max([len(x["in"]) for x in inputs])}
+
+
+def summary_eval_outputs_reference(outputs, reference_outputs):
+    return min([len(x["response"]) for x in outputs])
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [
+        summary_eval_runs_examples,
+        summary_eval_inputs_outputs,
+        summary_eval_outputs_reference,
+    ],
+)
+def test__normalize_summary_evaluator(evaluator: Callable) -> None:
+    normalized = _normalize_summary_evaluator(evaluator)
+    runs = [
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="a" * 12,
+            outputs={"response": "c" * 12},
+        )
+    ]
+    examples = [
+        ls_schemas.Example(
+            id=uuid.uuid4(),
+            inputs={"in": "b" * 12},
+        )
+    ]
+    assert normalized(runs, examples)["score"] == 12
+
+
+def summary_eval_kwargs(*, runs, examples):
+    return
+
+
+def summary_eval_unknown_positional_args(runs, examples, foo):
+    return
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [summary_eval_kwargs, summary_eval_unknown_positional_args],
+)
+def test__normalize_summary_evaluator_invalid(evaluator: Callable) -> None:
+    with pytest.raises(ValueError, match="Invalid evaluator function."):
+        _normalize_summary_evaluator(evaluator)
+
+
+def comparison_eval(runs, example):
+    return [len(r.outputs["response"]) for r in runs]
+
+
+def comparison_eval_simple(inputs, outputs, reference_outputs):
+    return [len(o["response"]) for o in outputs]
+
+
+def comparison_eval_no_inputs(outputs, reference_outputs):
+    return [min(len(o["response"]), len(reference_outputs["answer"])) for o in outputs]
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [comparison_eval, comparison_eval_simple, comparison_eval_no_inputs],
+)
+def test__normalize_comparison_evaluator(evaluator: Callable) -> None:
+    runs = [
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="a",
+            outputs={"response": "c" * 2},
+        ),
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="d",
+            outputs={"response": "e" * 3},
+        ),
+    ]
+    example = ls_schemas.Example(
+        id=uuid.uuid4(), inputs={"in": "b"}, outputs={"answer": "f" * 4}
+    )
+    normalized = _normalize_comparison_evaluator_func(evaluator)
+    assert normalized(runs, example) == [2, 3]
+
+
+async def acomparison_eval(runs, example):
+    return [len(r.outputs["response"]) for r in runs]
+
+
+async def acomparison_eval_simple(inputs, outputs, reference_outputs):
+    return [len(o["response"]) for o in outputs]
+
+
+async def acomparison_eval_no_inputs(outputs, reference_outputs):
+    return [min(len(o["response"]), len(reference_outputs["answer"])) for o in outputs]
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [acomparison_eval, acomparison_eval_simple, acomparison_eval_no_inputs],
+)
+async def test__normalize_comparison_evaluator_async(evaluator: Callable) -> None:
+    runs = [
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="a",
+            outputs={"response": "c" * 2},
+        ),
+        ls_schemas.Run(
+            name="foo",
+            start_time=datetime.now(),
+            run_type="chain",
+            id=uuid.uuid4(),
+            dotted_order="d",
+            outputs={"response": "e" * 3},
+        ),
+    ]
+    example = ls_schemas.Example(
+        id=uuid.uuid4(), inputs={"in": "b"}, outputs={"answer": "f" * 4}
+    )
+    normalized = _normalize_comparison_evaluator_func(evaluator)
+    assert await normalized(runs, example) == [2, 3]
+
+
+def comparison_eval_kwargs(*, runs, example):
+    return
+
+
+def comparison_eval_unknown_positional_args(runs, example, foo):
+    return
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    [comparison_eval_kwargs, comparison_eval_unknown_positional_args],
+)
+def test__normalize_comparison_evaluator_invalid(evaluator: Callable) -> None:
+    with pytest.raises(ValueError, match="Invalid evaluator function."):
+        _normalize_comparison_evaluator_func(evaluator)

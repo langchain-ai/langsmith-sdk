@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.144rc1"
+version = "0.1.144"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -31,7 +31,7 @@ pydantic = [
   { version = "^2.7.4", python = ">=3.12.4" },
 ]
 requests = "^2"
-orjson = "^3.9.14"
+orjson = { version = "^3.9.14", markers = "platform_python_implementation != 'PyPy'" }
 httpx = ">=0.23.0,<1"
 requests-toolbelt = "^1.0.0"
 
