@@ -757,7 +757,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs.append(run)
             examples.append(example)
         aggregate_feedback = []
-        project_id = self._get_experiment().id
+        project_id = self._get_experiment().id if self._upload_results else None
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),

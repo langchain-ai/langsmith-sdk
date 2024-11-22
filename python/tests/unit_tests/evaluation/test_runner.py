@@ -601,6 +601,7 @@ async def test_aevaluate_results(
             fake_request.created_session["name"],
             evaluators=[score_value],
             client=client,
+            blocking=blocking,
         )
         all_results = [r async for r in ex_results]
         assert len(all_results) == SPLIT_SIZE * NUM_REPETITIONS
@@ -654,6 +655,7 @@ async def test_aevaluate_results(
                 evaluators=[eval_],
                 client=client,
                 upload_results=upload_results,
+                blocking=blocking,
             )
 
 

@@ -175,7 +175,6 @@ def evaluate(
         ...     summary_evaluators=[precision],
         ...     experiment_prefix="My Experiment",
         ...     description="Evaluating the accuracy of a simple prediction model.",
-        ...     max_concurrency=0,
         ...     metadata={
         ...         "my-prompt-version": "abcd-1234",
         ...     },
@@ -1460,7 +1459,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         (e.g. from a previous prediction step)
         """
         with ls_utils.ContextThreadPoolExecutor(
-            max_workers=max_concurrency or 1
+            max_workers=max_concurrency
         ) as executor:
             if max_concurrency == 0:
                 context = copy_context()
