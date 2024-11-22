@@ -1215,7 +1215,7 @@ def test_trace_to_traceable(enabled: Union[bool, Literal["local"]]):
     assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
-def test_client_passed_when_traceable_parent():
+def test_client_not_passed_when_traceable_parent():
     mock_client = _get_mock_client()
     rt = RunTree(name="foo", client=mock_client)
     headers = rt.to_headers()
@@ -1227,13 +1227,6 @@ def test_client_passed_when_traceable_parent():
     my_run(foo="bar", langsmith_extra={"parent": headers, "client": mock_client})
     mock_calls = _get_calls(mock_client)
     assert len(mock_calls) == 0
-    # call = mock_client.session.request.call_arg
-    # assert call.args[0] == "post"
-    # assert call.args[1].startswith("https://api.smith.langchain.com")
-    # body = json.loads(call.kwargs["data"])
-    # assert body["post"]
-    # assert body["post"][0]["inputs"] == {"foo": "bar"}
-    # assert body["post"][0]["outputs"] == {"baz": "buzz"}
 
 
 def test_client_passed_when_trace_parent():

@@ -44,6 +44,7 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation.evaluator import (
     SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
@@ -260,6 +261,8 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if not upload_results:
+        _warn_once("'upload_results' parameter is in beta.")
     if callable(target) and rh.is_async(target):
         raise ValueError(
             "Async functions are not supported by `evaluate`. "

@@ -31,6 +31,7 @@ from langsmith import run_trees, schemas
 from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
+from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
@@ -242,6 +243,8 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if not upload_results:
+        _warn_once("'upload_results' parameter is in beta.")
     if experiment and experiment_prefix:
         raise ValueError(
             "Expected at most one of 'experiment' or 'experiment_prefix',"
