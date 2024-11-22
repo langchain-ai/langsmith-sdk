@@ -95,7 +95,9 @@ class RuleNodeProcessor(StringNodeProcessor):
                 "pattern": rule["pattern"]
                 if isinstance(rule["pattern"], re.Pattern)
                 else re.compile(rule["pattern"]),
-                "replace": rule.get("replace"),
+                "replace": rule["replace"]
+                if isinstance(rule.get("replace"), str)
+                else "[redacted]",
             }
             for rule in rules
         ]
@@ -106,14 +108,7 @@ class RuleNodeProcessor(StringNodeProcessor):
         for item in nodes:
             new_value = item["value"]
             for rule in self.rules:
-                new_value = rule["pattern"].sub(
-                    (
-                        rule["replace"]
-                        if isinstance(rule["replace"], str)
-                        else "[redacted]"
-                    ),
-                    new_value,
-                )
+                new_value = rule["pattern"].sub(rule["replace"], new_value)
             if new_value != item["value"]:
                 result.append(StringNode(value=new_value, path=item["path"]))
         return result
