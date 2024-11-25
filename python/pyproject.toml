@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.145"
+version = "0.1.146"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -106,6 +106,7 @@ convention = "google"
 "langsmith/client.py" = ["E501"]
 "langsmith/schemas.py" = ["E501"]
 "tests/evaluation/__init__.py" = ["E501"]
+"tests/unit_tests/test_client.py" = ["E501"]
 "tests/*" = ["D", "UP"]
 "bench/*" = ["D", "UP", "T"]
 "docs/*" = ["T", "D"]
