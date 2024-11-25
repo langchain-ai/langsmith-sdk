@@ -1236,6 +1236,7 @@ class Client:
             self.tracing_queue.put(
                 TracingQueueItem(run_create["dotted_order"], serialized_op)
             )
+            print("Tracing Queue Length: ", self.tracing_queue.qsize())
         else:
             self._create_run(run_create)
 
