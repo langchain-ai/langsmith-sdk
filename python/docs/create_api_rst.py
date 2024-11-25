@@ -199,7 +199,7 @@ module_order = [
     "schemas",
     "utils",
     "anonymizer",
-    "wrappers"
+    "wrappers",
 ]
 
 
@@ -379,9 +379,9 @@ Welcome to the API reference for the LangSmith Python SDK.
 For user guides see [https://docs.smith.langchain.com](https://docs.smith.langchain.com).
 """
 
-    doc += f"""
+    doc += """
 
-```{{toctree}}
+```{toctree}
 :maxdepth: 2
 :hidden:
 
@@ -422,6 +422,7 @@ Reference<reference>
 """
     with open(HERE / "index.md", "w") as f:
         f.write(dummy_index)
+
 
 def main() -> None:
     print("Starting to build API reference files.")
