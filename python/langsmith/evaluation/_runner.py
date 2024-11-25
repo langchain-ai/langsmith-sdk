@@ -106,7 +106,7 @@ def evaluate(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
 ) -> ExperimentResults:
-    r"""Evaluate a target system or function on a given dataset.
+    r"""Evaluate an application on a given dataset.
 
     Args:
         target (TARGET_T): The target system or function to evaluate.

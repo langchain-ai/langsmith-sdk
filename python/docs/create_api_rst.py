@@ -108,18 +108,18 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                     else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
                 )
             )
-            if hasattr(type_, "__slots__"):
-                for func_name, func_type in inspect.getmembers(type_):
-                    if inspect.isfunction(func_type):
-                        functions.append(
-                            FunctionInfo(
-                                name=func_name,
-                                qualified_name=f"{namespace}.{name}.{func_name}",
-                                is_public=not func_name.startswith("_"),
-                                is_deprecated=".. deprecated::"
-                                in (func_type.__doc__ or ""),
-                            )
-                        )
+            # if hasattr(type_, "__slots__"):
+            #     for func_name, func_type in inspect.getmembers(type_):
+            #         if inspect.isfunction(func_type):
+            #             functions.append(
+            #                 FunctionInfo(
+            #                     name=func_name,
+            #                     qualified_name=f"{namespace}.{name}.{func_name}",
+            #                     is_public=not func_name.startswith("_"),
+            #                     is_deprecated=".. deprecated::"
+            #                     in (func_type.__doc__ or ""),
+            #                 )
+            #             )
             classes_.append(
                 ClassInfo(
                     name=name,
@@ -158,6 +158,7 @@ def _load_package_modules(
                 "_arunner.py",
                 "_testing.py",
                 "_expect.py",
+                "_openai.py",
             }:
                 continue
 
@@ -198,6 +199,7 @@ module_order = [
     "schemas",
     "utils",
     "anonymizer",
+    "wrappers"
 ]
 
 
@@ -355,7 +357,7 @@ def _construct_doc(
 
 """
         docs.append((f"{module}.rst", module_doc))
-    docs.append(("index.rst", index_doc))
+    # docs.append(("index.rst", index_doc))
     return docs
 
 
@@ -369,6 +371,58 @@ def _get_package_version(package_dir: Path) -> str:
         sys.exit(1)
 
 
+def _build_index() -> None:
+    doc = """# LangSmith Python SDK API Reference
+
+Welcome to the API reference for the LangSmith Python SDK. 
+
+For user guides see [https://docs.smith.langchain.com](https://docs.smith.langchain.com).
+"""
+
+    doc += f"""
+
+```{{toctree}}
+:maxdepth: 2
+:hidden:
+
+  client<client>
+  async_client<async_client>
+  evaluation<evaluation>
+  run_helpers<run_helpers>
+  wrappers<wrappers>
+  _testing<_testing>
+``` 
+
+#### Key classes and functions
+
+| Class/function | Description |
+| :- | :- | 
+| [Client](client/langsmith.client.Client) |  Synchronous client for interacting with the LangSmith API. |
+| [AsyncClient](async_client/langsmith.async_client.AsyncClient) | Asynchronous client for interacting with the LangSmith API. |
+| [traceable](run_helpers/langsmith.run_helpers.traceable) | Wrapper/decorator for tracing any function. |
+| [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
+| [evaluate](evaluation/langsmith.evaluation._runner.evaluate) | Evaluate an application on a dataset. |
+| [aevaluate](evaluation/langsmith.evaluation._arunner.aevaluate) | Asynchronously evaluate an application on a dataset. |
+| [unit](_testing/langsmith._testing.unit) | Create a unit test. |
+
+"""
+
+    with open(HERE / "reference.md", "w") as f:
+        f.write(doc)
+
+    dummy_index = """\
+# API reference
+
+```{toctree}
+:maxdepth: 3
+:hidden:
+
+Reference<reference>
+```
+"""
+    with open(HERE / "index.md", "w") as f:
+        f.write(dummy_index)
+
 def main() -> None:
     print("Starting to build API reference files.")
     package_members = _load_package_modules(PACKAGE_DIR)
@@ -377,6 +431,7 @@ def main() -> None:
     for name, rst in rsts:
         with open(HERE / name, "w") as f:
             f.write(rst)
+    _build_index()
     print("API reference files built.")
 
 
