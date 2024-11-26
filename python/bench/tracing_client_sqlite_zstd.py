@@ -7,6 +7,7 @@ import zstandard as zstd
 import io
 import os
 import orjson
+from memory_profiler import profile
 
 NUM_RUNS = 0
 INSERT_STMT = '''
@@ -109,7 +110,7 @@ def run_processor(db_file, stop_event):
     finally:
         conn.close()
 
-#@profile
+@profile
 def benchmark_run_creation(json_size, num_runs) -> None:
     """Benchmark the creation of runs."""
     # delete the existing database file
@@ -173,7 +174,7 @@ def benchmark_run_creation(json_size, num_runs) -> None:
 def main():
     """Run benchmarks with specified parameters."""
     json_size = 5_000
-    num_runs = 1_000
+    num_runs = 2_000
 
     benchmark_run_creation(json_size, num_runs)
 
