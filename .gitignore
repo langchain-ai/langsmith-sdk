@@ -166,3 +166,9 @@ cython_debug/
 *.sqlite3
 *.sqlite
 *.db
+
+# memory profiler results
+*.mprof
+mprofile_*.dat
+
+runs.lmdb/
