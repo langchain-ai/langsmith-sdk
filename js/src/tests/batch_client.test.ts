@@ -7,24 +7,36 @@ import { convertToDottedOrderFormat } from "../run_trees.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { RunCreate } from "../schemas.js";
 
-const parseMockRequestBody = async (body: string | FormData) => {
+const parseMockRequestBody = async (body: string | ArrayBuffer) => {
   if (typeof body === "string") {
     return JSON.parse(body);
   }
   // Typing is missing
-  const entries: any[] = Array.from((body as any).entries());
+  const rawMultipart = new TextDecoder().decode(body);
+  // Parse the multipart form data boundary from the raw text
+  const boundary = rawMultipart.split("\r\n")[0].trim();
+  // Split the multipart body into individual parts
+  const parts = rawMultipart.split(boundary).slice(1, -1);
+
+  const entries: [string, any][] = parts.map((part) => {
+    const [headers, ...contentParts] = part.trim().split("\r\n\r\n");
+    const content = contentParts.join("\r\n\r\n");
+    // Extract the name from Content-Disposition header
+    const nameMatch = headers.match(/name="([^"]+)"/);
+    const name = nameMatch ? nameMatch[1] : "";
+    return [name, content.trim()];
+  });
   const reconstructedBody: any = {
     post: [],
     patch: [],
   };
   for (const [key, value] of entries) {
     let [method, id, type] = key.split(".");
-    const text = await value.text();
     let parsedValue;
     try {
-      parsedValue = JSON.parse(text);
+      parsedValue = JSON.parse(value);
     } catch (e) {
-      parsedValue = text;
+      parsedValue = value;
     }
     // if (method === "attachment") {
     //   for (const item of reconstructedBody.post) {
@@ -131,7 +143,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
         })
       );
     });
@@ -245,7 +257,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
         })
       );
     });
@@ -326,7 +338,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
         })
       );
     });
@@ -612,9 +624,21 @@ describe.each(ENDPOINT_TYPES)(
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       const calledRequestParam2: any = callSpy.mock.calls[1][2];
 
+      const firstBatchBody = await parseMockRequestBody(
+        calledRequestParam?.body
+      );
+      const secondBatchBody = await parseMockRequestBody(
+        calledRequestParam2?.body
+      );
+
+      const initialBatchBody =
+        firstBatchBody.post.length === 10 ? firstBatchBody : secondBatchBody;
+      const followupBatchBody =
+        firstBatchBody.post.length === 10 ? secondBatchBody : firstBatchBody;
+
       // Queue should drain as soon as size limit is reached,
       // sending both batches
-      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+      expect(initialBatchBody).toEqual({
         post: runIds.slice(0, 10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -628,7 +652,7 @@ describe.each(ENDPOINT_TYPES)(
         patch: [],
       });
 
-      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
+      expect(followupBatchBody).toEqual({
         post: runIds.slice(10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -753,19 +777,19 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
-    it("If batching is unsupported, fall back to old endpoint", async () => {
+    it("Use batch endpoint if info call fails", async () => {
       const client = new Client({
         apiKey: "test-api-key",
         autoBatchTracing: true,
       });
       const callSpy = jest
-        .spyOn((client as any).caller, "call")
+        .spyOn((client as any).batchIngestCaller, "call")
         .mockResolvedValue({
           ok: true,
           text: () => "",
         });
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {};
+        throw new Error("Totally expected mock error");
       });
       const projectName = "__test_batch";
 
@@ -784,26 +808,32 @@ describe.each(ENDPOINT_TYPES)(
         dotted_order: dottedOrder,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await client.awaitPendingTraceBatches();
 
       const calledRequestParam: any = callSpy.mock.calls[0][2];
+
       expect(
         await parseMockRequestBody(calledRequestParam?.body)
       ).toMatchObject({
-        id: runId,
-        session_name: projectName,
-        extra: expect.anything(),
-        start_time: expect.any(Number),
-        name: "test_run",
-        run_type: "llm",
-        inputs: { text: "hello world" },
-        trace_id: runId,
-        dotted_order: dottedOrder,
+        post: [
+          {
+            id: runId,
+            session_name: projectName,
+            extra: expect.anything(),
+            start_time: expect.any(Number),
+            name: "test_run",
+            run_type: "llm",
+            inputs: { text: "hello world" },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          },
+        ],
+        patch: [],
       });
 
       expect(callSpy).toHaveBeenCalledWith(
         _getFetchImplementation(),
-        "https://api.smith.langchain.com/runs",
+        "https://api.smith.langchain.com/runs/batch",
         expect.objectContaining({
           body: expect.any(String),
         })
@@ -897,7 +927,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
         })
       );
     });

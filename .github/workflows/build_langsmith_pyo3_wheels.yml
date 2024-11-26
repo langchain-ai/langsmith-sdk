@@ -1,0 +1,16 @@
+name: Build langsmith_pyo3 wheels
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  hello-world:
+    runs-on: ubuntu-20.04
+    steps:
+      - run: echo 'hello world'
