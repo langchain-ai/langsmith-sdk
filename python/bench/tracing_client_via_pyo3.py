@@ -1,8 +1,8 @@
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 from uuid import uuid4
-import time
-import os
 
 from tracing_client_bench import create_run_data
 

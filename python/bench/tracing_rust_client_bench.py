@@ -2,7 +2,6 @@ import datetime
 import statistics
 import time
 from typing import Dict
-from unittest.mock import Mock
 from uuid import uuid4
 
 from langsmith_pyo3 import BlockingTracingClient
