@@ -3,7 +3,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use reqwest::blocking::multipart::Part;
+use reqwest::blocking::multipart::{Form, Part};
+use reqwest::header::HeaderValue;
 use sonic_rs::to_vec;
 
 use super::tracing_client::ClientConfig;
@@ -15,8 +16,6 @@ pub struct RunProcessor {
     receiver: Arc<Mutex<Receiver<QueuedRun>>>,
     drain_sender: Sender<()>,
     config: ClientConfig,
-
-    #[expect(dead_code)]
     http_client: reqwest::blocking::Client,
 }
 
@@ -195,32 +194,35 @@ impl RunProcessor {
                 Ok::<(String, Part), TracingClientError>((part_name, part))
             })
             .collect::<Result<Vec<_>, TracingClientError>>()?;
-        println!("JSON processing took {:?}", start.elapsed());
+        // println!("JSON processing took {:?}", start.elapsed());
 
-        // let mut form = Form::new();
-        // for (part_name, part) in json_parts.into_iter().chain(attachment_parts) {
-        //     form = form.part(part_name, part);
-        // }
+        let mut form = Form::new();
+        for (part_name, part) in json_parts.into_iter().chain(attachment_parts) {
+            form = form.part(part_name, part);
+        }
+
+        let mut headers = self.config.headers.clone().unwrap_or_default();
+        headers.append(
+            "X-API-KEY",
+            HeaderValue::from_str(&self.config.api_key)
+                .expect("failed to convert API key into header"),
+        );
 
         // send the multipart POST request
-        // let start_send_batch = Instant::now();
-        // let response = self
-        //     .http_client
-        //     .post(format!("{}/runs/multipart", self.config.endpoint))
-        //     .multipart(form)
-        //     .headers(self.config.headers.clone().unwrap_or_default())
-        //     .send()?;
-        // println!("Sending batch took {:?}", start_send_batch.elapsed());
-        //
-        // if response.status().is_success() {
-        //     Ok(())
-        // } else {
-        //     Err(TracingClientError::HttpError(response.status()))
-        // }
+        let start_send_batch = Instant::now();
+        let response = self
+            .http_client
+            .post(format!("{}/runs/multipart", self.config.endpoint))
+            .multipart(form)
+            .headers(headers)
+            .send()?;
+        println!("Sending batch took {:?}", start_send_batch.elapsed());
 
-        // sleep for 5 ms to simulate network latency
-        std::thread::sleep(Duration::from_millis(5));
-        Ok(())
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(TracingClientError::HttpError(response.status()))
+        }
     }
 
     fn create_attachment_part(&self, attachment: Attachment) -> Result<Part, TracingClientError> {
