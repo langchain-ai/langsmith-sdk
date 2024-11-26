@@ -1,5 +1,6 @@
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -208,21 +209,25 @@ impl RunProcessor {
                 .expect("failed to convert API key into header"),
         );
 
-        // send the multipart POST request
-        let start_send_batch = Instant::now();
-        let response = self
-            .http_client
-            .post(format!("{}/runs/multipart", self.config.endpoint))
-            .multipart(form)
-            .headers(headers)
-            .send()?;
-        println!("Sending batch took {:?}", start_send_batch.elapsed());
+        // Pretend we're sending stuff.
+        thread::sleep(Duration::from_millis(50));
+        Ok(())
 
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(TracingClientError::HttpError(response.status()))
-        }
+        // // send the multipart POST request
+        // let start_send_batch = Instant::now();
+        // let response = self
+        //     .http_client
+        //     .post(format!("{}/runs/multipart", self.config.endpoint))
+        //     .multipart(form)
+        //     .headers(headers)
+        //     .send()?;
+        // println!("Sending batch took {:?}", start_send_batch.elapsed());
+
+        // if response.status().is_success() {
+        //     Ok(())
+        // } else {
+        //     Err(TracingClientError::HttpError(response.status()))
+        // }
     }
 
     fn create_attachment_part(&self, attachment: Attachment) -> Result<Part, TracingClientError> {

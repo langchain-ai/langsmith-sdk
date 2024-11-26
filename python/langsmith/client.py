@@ -1631,20 +1631,24 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
-                    self.request_with_retries(
-                        "POST",
-                        f"{api_url}/runs/multipart",
-                        request_kwargs={
-                            "data": data,
-                            "headers": {
-                                **self._headers,
-                                X_API_KEY: api_key,
-                                "Content-Type": encoder.content_type,
-                            },
+                    request_kwargs = {
+                        "data": data,
+                        "headers": {
+                            **self._headers,
+                            X_API_KEY: api_key,
+                            "Content-Type": encoder.content_type,
                         },
-                        stop_after_attempt=1,
-                        _context=_context,
-                    )
+                    }
+                    # Pretend we're sending stuff for 50ms.
+                    time.sleep(0.05)
+
+                    # self.request_with_retries(
+                    #     "POST",
+                    #     f"{api_url}/runs/multipart",
+                    #     request_kwargs=request_kwargs,
+                    #     stop_after_attempt=1,
+                    #     _context=_context,
+                    # )
                     break
                 except ls_utils.LangSmithConflictError:
                     break

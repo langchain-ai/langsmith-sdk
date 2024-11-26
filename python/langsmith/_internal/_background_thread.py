@@ -122,7 +122,7 @@ def _ensure_ingest_config(
     info: ls_schemas.LangSmithInfo,
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
-        use_multipart_endpoint=False,
+        use_multipart_endpoint=True,
         size_limit_bytes=None,  # Note this field is not used here
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,

@@ -97,7 +97,7 @@ def main():
     Run benchmarks with different combinations of parameters and report results.
     """
 
-    json_size = 3_000
+    json_size = 7_500
     num_runs = 1000
 
     benchmark_run_creation(json_size, num_runs)
