@@ -9,7 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from langsmith import Client, traceable, tracing_context
-from langsmith.anonymizer import StringNodeRule, create_anonymizer
+from langsmith.anonymizer import RuleNodeProcessor, StringNodeRule, create_anonymizer
 
 EMAIL_REGEX = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 UUID_REGEX = re.compile(
@@ -139,3 +139,51 @@ def test_replacer_declared_in_traceable():
     if "inputs" in patched_data:
         assert patched_data["inputs"] == expected_inputs
     assert patched_data["outputs"] == expected_outputs
+
+
+def test_rule_node_processor_scrub_sensitive_info():
+    rules = [
+        StringNodeRule(pattern=re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), replace="[ssn]"),
+        StringNodeRule(
+            pattern=re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
+            replace="[email]",
+        ),
+        StringNodeRule(
+            pattern=re.compile(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b"), replace="[phone]"
+        ),
+    ]
+    processor = RuleNodeProcessor(rules)
+
+    nodes = [
+        {"value": "My SSN is 123-45-6789.", "path": ["field1"]},
+        {"value": "Contact me at john.doe@example.com.", "path": ["field2"]},
+        {"value": "Call me on 123-456-7890.", "path": ["field3"]},
+    ]
+
+    expected = [
+        {"value": "My SSN is [ssn].", "path": ["field1"]},
+        {"value": "Contact me at [email].", "path": ["field2"]},
+        {"value": "Call me on [phone].", "path": ["field3"]},
+    ]
+
+    result = processor.mask_nodes(nodes)
+
+    assert result == expected
+
+
+def test_rule_node_processor_default_replace():
+    rules = [
+        StringNodeRule(pattern=re.compile(r"sensitive")),
+    ]
+    processor = RuleNodeProcessor(rules)
+
+    nodes = [
+        {"value": "This contains sensitive data", "path": ["field1"]},
+    ]
+
+    expected = [
+        {"value": "This contains [redacted] data", "path": ["field1"]},
+    ]
+
+    result = processor.mask_nodes(nodes)
+    assert result == expected

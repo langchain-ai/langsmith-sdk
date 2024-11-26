@@ -21,9 +21,9 @@ from uuid import UUID
 from typing_extensions import NotRequired, TypedDict
 
 try:
-    from pydantic.v1 import (  # type: ignore[import]
+    from pydantic.v1 import (
         BaseModel,
-        Field,
+        Field,  # type: ignore[import]
         PrivateAttr,
         StrictBool,
         StrictFloat,
@@ -123,6 +123,10 @@ class Example(ExampleBase):
                 return f"{self._host_url}/o/{str(self._tenant_id)}{path}"
             return f"{self._host_url}{path}"
         return None
+
+    def __repr__(self):
+        """Return a string representation of the RunBase object."""
+        return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
 
 
 class ExampleSearch(ExampleBase):
@@ -567,6 +571,8 @@ class TracerSession(BaseModel):
         """Initialize a Run object."""
         super().__init__(**kwargs)
         self._host_url = _host_url
+        if self.start_time.tzinfo is None:
+            self.start_time = self.start_time.replace(tzinfo=timezone.utc)
 
     @property
     def url(self) -> Optional[str]:
@@ -887,7 +893,7 @@ class Prompt(BaseModel):
     """The number of downloads."""
     num_views: int
     """The number of views."""
-    liked_by_auth_user: bool
+    liked_by_auth_user: Optional[bool] = None
     """Whether the prompt is liked by the authenticated user."""
     last_commit_hash: Optional[str] = None
     """The hash of the last commit."""

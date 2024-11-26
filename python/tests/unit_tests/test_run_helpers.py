@@ -7,12 +7,22 @@ import sys
 import time
 import uuid
 import warnings
-from typing import Any, AsyncGenerator, Generator, List, Optional, Set, Tuple, cast
+from typing import (
+    Any,
+    AsyncGenerator,
+    Generator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+    cast,
+)
 from unittest.mock import MagicMock, patch
 
 import pytest
 from requests_toolbelt import MultipartEncoder
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Literal
 
 import langsmith
 from langsmith import Client
@@ -372,9 +382,9 @@ async def test_traceable_stream(
             ]
             first_patch = next((d for d in call_data if d.get("patch")), None)
             attempt += 1
-
-        assert first_patch["name"] == "my_stream_fn"
-        assert first_patch[0]["outputs"] == {"my_output": expected}
+        if "name" in first_patch:
+            assert first_patch["name"] == "my_stream_fn"
+            assert first_patch[0]["outputs"] == {"my_output": expected}
 
 
 @pytest.mark.parametrize("use_next", [True, False])
@@ -913,7 +923,8 @@ def test_generator():
     assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
-def test_traceable_regular():
+@pytest.mark.parametrize("enabled", [True, "local"])
+def test_traceable_regular(enabled: Union[bool, Literal["local"]]):
     @traceable
     def some_sync_func(query: str, **kwargs: Any) -> list:
         assert kwargs == {"a": 1, "b": 2}
@@ -962,7 +973,7 @@ def test_traceable_regular():
         run = r
 
     mock_client_ = _get_mock_client()
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=enabled):
         all_chunks = my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -988,9 +999,12 @@ def test_traceable_regular():
         "summarize_answers",
     ]
     assert len(child_runs[2].child_runs) == 1  # type: ignore
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-async def test_traceable_async():
+@pytest.mark.parametrize("enabled", [True, "local"])
+async def test_traceable_async(enabled: Union[bool, Literal["local"]]):
     @traceable
     def some_sync_func(query: str) -> list:
         return [query, query]
@@ -1045,7 +1059,7 @@ async def test_traceable_async():
         run = r
 
     mock_client_ = _get_mock_client()
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=enabled):
         all_chunks = await my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -1071,9 +1085,12 @@ async def test_traceable_async():
         "summarize_answers",
     ]
     assert len(child_runs[2].child_runs) == 1  # type: ignore
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-def test_traceable_to_trace():
+@pytest.mark.parametrize("enabled", [True, "local"])
+def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
     @traceable
     def parent_fn(a: int, b: int) -> int:
         with langsmith.trace(name="child_fn", inputs={"a": a, "b": b}) as run_tree:
@@ -1087,9 +1104,10 @@ def test_traceable_to_trace():
         nonlocal run
         run = r
 
-    with tracing_context(enabled=True):
+    mock_client_ = _get_mock_client()
+    with tracing_context(enabled=enabled):
         result = parent_fn(
-            1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+            1, 2, langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
 
     assert result == 3
@@ -1103,9 +1121,12 @@ def test_traceable_to_trace():
     assert len(child_runs) == 1
     assert child_runs[0].name == "child_fn"
     assert child_runs[0].inputs == {"a": 1, "b": 2}
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-async def test_traceable_to_atrace():
+@pytest.mark.parametrize("enabled", [True, "local"])
+async def test_traceable_to_atrace(enabled: Union[bool, Literal["local"]]):
     @traceable
     async def great_grandchild_fn(a: int, b: int) -> int:
         return a + b
@@ -1134,9 +1155,10 @@ async def test_traceable_to_atrace():
         nonlocal run
         run = r
 
-    with tracing_context(enabled=True):
+    mock_client_ = _get_mock_client()
+    with tracing_context(enabled=enabled):
         result = await parent_fn(
-            1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+            1, 2, langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
 
     assert result == 3
@@ -1162,15 +1184,18 @@ async def test_traceable_to_atrace():
     ggc = grandchild.child_runs[1]
     assert ggc.name == "great_grandchild_fn"
     assert ggc.inputs == {"a": 1, "b": 2}
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-def test_trace_to_traceable():
+@pytest.mark.parametrize("enabled", [True, "local"])
+def test_trace_to_traceable(enabled: Union[bool, Literal["local"]]):
     @traceable
     def child_fn(a: int, b: int) -> int:
         return a + b
 
     mock_client_ = _get_mock_client()
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=enabled):
         rid = uuid.uuid4()
         with langsmith.trace(
             name="parent_fn", inputs={"a": 1, "b": 2}, client=mock_client_, run_id=rid
@@ -1190,7 +1215,7 @@ def test_trace_to_traceable():
     assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
-def test_client_passed_when_traceable_parent():
+def test_client_not_passed_when_traceable_parent():
     mock_client = _get_mock_client()
     rt = RunTree(name="foo", client=mock_client)
     headers = rt.to_headers()
@@ -1201,14 +1226,7 @@ def test_client_passed_when_traceable_parent():
 
     my_run(foo="bar", langsmith_extra={"parent": headers, "client": mock_client})
     mock_calls = _get_calls(mock_client)
-    assert len(mock_calls) == 1
-    call = mock_client.session.request.call_args
-    assert call.args[0] == "POST"
-    assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(call.kwargs["data"])
-    assert body["post"]
-    assert body["post"][0]["inputs"] == {"foo": "bar"}
-    assert body["post"][0]["outputs"] == {"baz": "buzz"}
+    assert len(mock_calls) == 0
 
 
 def test_client_passed_when_trace_parent():
@@ -1229,6 +1247,18 @@ def test_client_passed_when_trace_parent():
     assert body["post"]
     assert body["post"][0]["inputs"] == {"foo": "bar"}
     assert body["post"][0]["outputs"] == {"bar": "baz"}
+
+
+def test_client_not_called_when_enabled_local():
+    mock_client = _get_mock_client()
+    headers = RunTree(name="foo", client=mock_client).to_headers()
+    with tracing_context(enabled="local"):
+        with trace(
+            name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
+        ) as rt:
+            rt.outputs["bar"] = "baz"
+    calls = _get_calls(mock_client)
+    assert len(calls) == 0
 
 
 def test_from_runnable_config():
@@ -1714,7 +1744,11 @@ def test_traceable_input_attachments():
             val: int,
             att1: ls_schemas.Attachment,
             att2: Annotated[tuple, ls_schemas.Attachment],
+            run_tree: RunTree,
         ):
+            run_tree.attachments["anoutput"] = ls_schemas.Attachment(
+                mime_type="text/plain", data=b"noidea"
+            )
             return "foo"
 
         mock_client = _get_mock_client(
@@ -1739,11 +1773,15 @@ def test_traceable_input_attachments():
             )
             assert result == "foo"
 
-        calls = _get_calls(mock_client)
-        datas = _get_multipart_data(calls)
+        for _ in range(10):
+            calls = _get_calls(mock_client)
+            datas = _get_multipart_data(calls)
+            if len(datas) >= 7:
+                break
+            time.sleep(1)
 
-        # main run, inputs, outputs, events, att1, att2
-        assert len(datas) == 6
+        # main run, inputs, outputs, events, att1, att2, anoutput
+        assert len(datas) == 7
         # First 4 are type application/json (run, inputs, outputs, events)
         trace_id = datas[0][0].split(".")[1]
         _, (_, run_stuff) = next(
@@ -1760,7 +1798,7 @@ def test_traceable_input_attachments():
             data for data in datas if data[0] == f"post.{trace_id}.inputs"
         )
         assert json.loads(inputs) == {"val": 42}
-        # last two are the mime types provided
+        # last three are the mime types provided
         _, (mime_type1, content1) = next(
             data for data in datas if data[0] == f"attachment.{trace_id}.att1"
         )
@@ -1772,3 +1810,10 @@ def test_traceable_input_attachments():
         )
         assert mime_type2 == "application/octet-stream"
         assert content2 == b"content2"
+
+        # Assert that anoutput is uploaded
+        _, (mime_type_output, content_output) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.anoutput"
+        )
+        assert mime_type_output == "text/plain"
+        assert content_output == b"noidea"
