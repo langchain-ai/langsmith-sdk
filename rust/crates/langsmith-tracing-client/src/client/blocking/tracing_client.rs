@@ -34,7 +34,7 @@ impl TracingClient {
         let receiver = Arc::new(Mutex::new(receiver));
 
         // Ensure our headers include the API key.
-        config.headers.get_or_insert_default().append(
+        config.headers.get_or_insert_with(Default::default).append(
             "X-API-KEY",
             HeaderValue::from_str(&config.api_key).expect("failed to convert API key into header"),
         );
