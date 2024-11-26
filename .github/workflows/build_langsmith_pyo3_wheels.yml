@@ -155,7 +155,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.platform.target }}
+          name: wheels-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
           path: ${{ env.WORKING_DIRECTORY }}/dist
           if-no-files-found: error
 
