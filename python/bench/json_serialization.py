@@ -12,10 +12,7 @@ def create_json_with_large_array(length):
         {
             "index": i,
             "data": f"This is element number {i}",
-            "nested": {
-                "id": i,
-                "value": f"Nested value for element {i}"
-            }
+            "nested": {"id": i, "value": f"Nested value for element {i}"},
         }
         for i in range(length)
     ]
@@ -27,8 +24,8 @@ def create_json_with_large_array(length):
         "metadata": {
             "created_at": "2024-10-22T19:00:00Z",
             "author": "Python Program",
-            "version": 1.0
-        }
+            "version": 1.0,
+        },
     }
 
 
@@ -44,10 +41,9 @@ def create_json_with_large_strings(length: int) -> dict:
         "metadata": {
             "created_at": "2024-10-22T19:00:00Z",
             "author": "Python Program",
-            "version": 1.0
-        }
+            "version": 1.0,
+        },
     }
-
 
 
 def serialize_sequential(data):
@@ -72,6 +68,7 @@ def serialize_sequential_gz(data):
         compressed_data.append(compressed)
     return compressed_data
 
+
 def serialize_parallel_gz(data):
     """Serialize data in parallel with zlib.
 
@@ -85,10 +82,12 @@ def serialize_parallel_gz(data):
         compressed_data = list(executor.map(compress_item, data))
     return compressed_data
 
+
 def gzip_parallel(serialized_data):
     """Compress serialized data in parallel using ThreadPoolExecutor and zlib."""
     with ThreadPoolExecutor() as executor:
         return list(executor.map(zlib.compress, serialized_data))
+
 
 def gzip_sequential(serialized_data):
     """Compress serialized data sequentially using zlib."""
