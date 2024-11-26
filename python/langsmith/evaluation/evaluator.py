@@ -1,5 +1,7 @@
 """This module contains the evaluator classes for evaluating runs."""
 
+from __future__ import annotations
+
 import asyncio
 import inspect
 import uuid
@@ -18,6 +20,8 @@ from typing import (
 )
 
 from typing_extensions import TypedDict
+
+from langsmith import schemas
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
@@ -281,33 +285,11 @@ class DynamicRunEvaluator(RunEvaluator):
         ],
         source_run_id: uuid.UUID,
     ) -> Union[EvaluationResult, EvaluationResults]:
-        if isinstance(result, (bool, float, int)):
-            result = {"score": result}
-        elif not result:
-            raise ValueError(
-                f"Expected a non-empty dict, str, bool, int, float, list, "
-                f"EvaluationResult, or EvaluationResults. Got {result}"
-            )
-        elif isinstance(result, EvaluationResult):
+        if isinstance(result, EvaluationResult):
             if not result.source_run_id:
                 result.source_run_id = source_run_id
             return result
-        elif isinstance(result, list):
-            if not all(isinstance(x, dict) for x in result):
-                raise ValueError(
-                    f"Expected a list of dicts or EvaluationResults. Received {result}."
-                )
-            result = {"results": result}  # type: ignore[misc]
-        elif isinstance(result, str):
-            result = {"value": result}
-        elif isinstance(result, dict):
-            pass
-        else:
-            raise ValueError(
-                f"Expected a dict, str, bool, int, float, list, EvaluationResult, or "
-                f"EvaluationResults. Got {result}"
-            )
-
+        result = _format_evaluator_result(result)
         return self._coerce_evaluation_results(result, source_run_id)
 
     @property
@@ -453,6 +435,10 @@ class DynamicComparisonRunEvaluator:
             func (Callable): A function that takes a `Run` and an optional `Example` as
             arguments, and returns an `EvaluationResult` or `EvaluationResults`.
         """
+        func = _normalize_comparison_evaluator_func(func)
+        if afunc:
+            afunc = _normalize_comparison_evaluator_func(afunc)  # type: ignore[assignment]
+
         wraps(func)(self)
         from langsmith import run_helpers  # type: ignore
 
@@ -523,7 +509,7 @@ class DynamicComparisonRunEvaluator:
             example,
             langsmith_extra={"run_id": source_run_id, "tags": tags},
         )
-        return self._format_results(result, source_run_id)
+        return self._format_results(result, source_run_id, runs)
 
     async def acompare_runs(
         self, runs: Sequence[Run], example: Optional[Example] = None
@@ -534,7 +520,7 @@ class DynamicComparisonRunEvaluator:
             provided arguments.
 
         Args:
-            run (Run): The run to be evaluated.
+            runs (Run): The runs to be evaluated.
             example (Optional[Example]): An optional example to be used
                 in the evaluation.
 
@@ -551,7 +537,7 @@ class DynamicComparisonRunEvaluator:
             example,
             langsmith_extra={"run_id": source_run_id, "tags": tags},
         )
-        return self._format_results(result, source_run_id)
+        return self._format_results(result, source_run_id, runs)
 
     def __call__(
         self, runs: Sequence[Run], example: Optional[Example] = None
@@ -585,53 +571,31 @@ class DynamicComparisonRunEvaluator:
                 tags.append("experiment:" + str(run.session_id))
         return tags
 
-    def _coerce_evaluation_result(
-        self,
-        result: Union[EvaluationResult, dict],
-        source_run_id: uuid.UUID,
-        allow_no_key: bool = False,
-    ) -> EvaluationResult:
-        if isinstance(result, EvaluationResult):
-            if not result.source_run_id:
-                result.source_run_id = source_run_id
-            return result
-        try:
-            if "key" not in result:
-                if allow_no_key:
-                    result["key"] = self._name
-            return EvaluationResult(**{"source_run_id": source_run_id, **result})
-        except ValidationError as e:
-            raise ValueError(
-                "Expected an EvaluationResult object, or dict with a metric"
-                f" 'key' and optional 'score'; got {result}"
-            ) from e
-
-    def _coerce_evaluation_results(
-        self,
-        results: Union[dict, EvaluationResults],
-        source_run_id: uuid.UUID,
-    ) -> Union[EvaluationResult, EvaluationResults]:
-        if "results" in results:
-            cp = results.copy()
-            cp["results"] = [
-                self._coerce_evaluation_result(r, source_run_id=source_run_id)
-                for r in results["results"]
-            ]
-            return EvaluationResults(**cp)
-
-        return self._coerce_evaluation_result(
-            cast(dict, results), allow_no_key=True, source_run_id=source_run_id
-        )
-
     def _format_results(
         self,
-        result: Union[dict, ComparisonEvaluationResult],
+        result: Union[dict, list, ComparisonEvaluationResult],
         source_run_id: uuid.UUID,
+        runs: Sequence[Run],
     ) -> ComparisonEvaluationResult:
         if isinstance(result, ComparisonEvaluationResult):
             if not result.source_run_id:
                 result.source_run_id = source_run_id
             return result
+        elif isinstance(result, list):
+            result = {
+                "scores": {run.id: score for run, score in zip(runs, result)},
+                "key": self._name,
+                "source_run_id": source_run_id,
+            }
+        elif isinstance(result, dict):
+            if "key" not in result:
+                result["key"] = self._name
+        else:
+            msg = (
+                "Expected 'dict', 'list' or 'ComparisonEvaluationResult' result "
+                f"object. Received: {result=}"
+            )
+            raise ValueError(msg)
         try:
             return ComparisonEvaluationResult(
                 **{"source_run_id": source_run_id, **result}
@@ -687,13 +651,15 @@ def _normalize_evaluator_func(
     else:
         if inspect.iscoroutinefunction(func):
 
-            async def awrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
+            async def awrapper(
+                run: Run, example: Optional[Example]
+            ) -> _RUNNABLE_OUTPUT:
                 arg_map = {
                     "run": run,
                     "example": example,
-                    "inputs": example.inputs,
+                    "inputs": example.inputs if example else {},
                     "outputs": run.outputs or {},
-                    "reference_outputs": example.outputs or {},
+                    "reference_outputs": example.outputs or {} if example else {},
                 }
                 args = (arg_map[arg] for arg in positional_args)
                 return await func(*args)
@@ -711,9 +677,9 @@ def _normalize_evaluator_func(
                 arg_map = {
                     "run": run,
                     "example": example,
-                    "inputs": example.inputs,
+                    "inputs": example.inputs if example else {},
                     "outputs": run.outputs or {},
-                    "reference_outputs": example.outputs or {},
+                    "reference_outputs": example.outputs or {} if example else {},
                 }
                 args = (arg_map[arg] for arg in positional_args)
                 return func(*args)
@@ -724,3 +690,166 @@ def _normalize_evaluator_func(
                 else wrapper.__name__
             )
             return wrapper  # type: ignore[return-value]
+
+
+def _normalize_comparison_evaluator_func(
+    func: Callable,
+) -> Union[
+    Callable[[Sequence[Run], Optional[Example]], _COMPARISON_OUTPUT],
+    Callable[[Sequence[Run], Optional[Example]], Awaitable[_COMPARISON_OUTPUT]],
+]:
+    supported_args = ("runs", "example", "inputs", "outputs", "reference_outputs")
+    sig = inspect.signature(func)
+    positional_args = [
+        pname
+        for pname, p in sig.parameters.items()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+    ]
+    if not positional_args or (
+        not all(pname in supported_args for pname in positional_args)
+        and len(positional_args) != 2
+    ):
+        msg = (
+            f"Invalid evaluator function. Must have at least one positional "
+            f"argument. Supported positional arguments are {supported_args}. Please "
+            f"see https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"
+            # noqa: E501
+        )
+        raise ValueError(msg)
+    # For backwards compatibility we assume custom arg names are List[Run] and
+    # List[Example] types, respectively.
+    elif not all(
+        pname in supported_args for pname in positional_args
+    ) or positional_args == ["runs", "example"]:
+        return func
+    else:
+        if inspect.iscoroutinefunction(func):
+
+            async def awrapper(
+                runs: Sequence[Run], example: Optional[Example]
+            ) -> _COMPARISON_OUTPUT:
+                arg_map = {
+                    "runs": runs,
+                    "example": example,
+                    "inputs": example.inputs if example else {},
+                    "outputs": [run.outputs or {} for run in runs],
+                    "reference_outputs": example.outputs or {} if example else {},
+                }
+                args = (arg_map[arg] for arg in positional_args)
+                return await func(*args)
+
+            awrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else awrapper.__name__
+            )
+            return awrapper  # type: ignore[return-value]
+
+        else:
+
+            def wrapper(runs: Sequence[Run], example: Example) -> _COMPARISON_OUTPUT:
+                arg_map = {
+                    "runs": runs,
+                    "example": example,
+                    "inputs": example.inputs if example else {},
+                    "outputs": [run.outputs or {} for run in runs],
+                    "reference_outputs": example.outputs or {} if example else {},
+                }
+                args = (arg_map[arg] for arg in positional_args)
+                return func(*args)
+
+            wrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else wrapper.__name__
+            )
+            return wrapper  # type: ignore[return-value]
+
+
+def _format_evaluator_result(
+    result: Union[EvaluationResults, dict, str, int, bool, float, list],
+) -> Union[EvaluationResults, dict]:
+    if isinstance(result, (bool, float, int)):
+        result = {"score": result}
+    elif not result:
+        raise ValueError(
+            f"Expected a non-empty dict, str, bool, int, float, list, "
+            f"EvaluationResult, or EvaluationResults. Got {result}"
+        )
+    elif isinstance(result, list):
+        if not all(isinstance(x, dict) for x in result):
+            raise ValueError(
+                f"Expected a list of dicts or EvaluationResults. Received {result}."
+            )
+        result = {"results": result}  # type: ignore[misc]
+    elif isinstance(result, str):
+        result = {"value": result}
+    elif isinstance(result, dict):
+        pass
+    else:
+        raise ValueError(
+            f"Expected a dict, str, bool, int, float, list, EvaluationResult, or "
+            f"EvaluationResults. Got {result}"
+        )
+    return result
+
+
+SUMMARY_EVALUATOR_T = Union[
+    Callable[
+        [Sequence[schemas.Run], Sequence[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
+    Callable[
+        [List[schemas.Run], List[schemas.Example]],
+        Union[EvaluationResult, EvaluationResults],
+    ],
+]
+
+
+def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
+    supported_args = ("runs", "examples", "inputs", "outputs", "reference_outputs")
+    sig = inspect.signature(func)
+    positional_args = [
+        pname
+        for pname, p in sig.parameters.items()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+    ]
+    if not positional_args or (
+        not all(pname in supported_args for pname in positional_args)
+        and len(positional_args) != 2
+    ):
+        msg = (
+            f"Invalid evaluator function. Must have at least one positional "
+            f"argument. Supported positional arguments are {supported_args}."
+        )
+        if positional_args:
+            msg += f" Received positional arguments {positional_args}."
+        raise ValueError(msg)
+    # For backwards compatibility we assume custom arg names are Sequence[Run] and
+    # Sequence[Example] types, respectively.
+    elif not all(
+        pname in supported_args for pname in positional_args
+    ) or positional_args == ["runs", "examples"]:
+        return func
+    else:
+
+        def wrapper(
+            runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
+        ) -> Union[EvaluationResult, EvaluationResults]:
+            arg_map = {
+                "runs": runs,
+                "examples": examples,
+                "inputs": [example.inputs for example in examples],
+                "outputs": [run.outputs or {} for run in runs],
+                "reference_outputs": [example.outputs or {} for example in examples],
+            }
+            args = (arg_map[arg] for arg in positional_args)
+            result = func(*args)
+            if isinstance(result, EvaluationResult):
+                return result
+            return _format_evaluator_result(result)  # type: ignore[return-value]
+
+        wrapper.__name__ = (
+            getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
+        )
+        return wrapper  # type: ignore[return-value]
