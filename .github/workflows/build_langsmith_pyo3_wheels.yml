@@ -205,6 +205,28 @@ jobs:
           mkdir dist
           mv wheels-*/* dist/
           ls -alh dist/
+      - name: Ensure the tagged version matches the wheel versions
+        if: startsWith(github.ref, 'refs/tags/langsmith-pyo3==')
+        env:
+          REF_NAME: ${{ github.ref }}
+        run: |
+          cd "$WORKING_DIRECTORY"
+
+          # - Look up the first wheel file
+          # - Select just the filename,
+          #   for example `langsmith_pyo3-0.1.0rc1-cp313-cp313-manylinux_2_34_x86_64.whl`
+          # - Split on dashes, and extract the version field (the second field).
+          EXPECTED_VERSION="$(find dist/ -name 'langsmith_pyo3-*.whl' -printf '%f\n' | head -1 | cut -d- -f2)"
+          EXPECTED_REF="refs/tags/langsmith-pyo3==${EXPECTED_VERSION}"
+
+          if [[ "$REF_NAME" != "$EXPECTED_REF" ]]; then
+            echo 'Current tag does not match the expected tag for the wheel versions being published!'
+            echo "Expected ref name: ${EXPECTED_REF}"
+            echo "Actual ref name:   ${REF_NAME}"
+            echo ''
+            echo 'Something is wrong, so refusing to publish.'
+            exit 1
+          fi
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1
         with:
