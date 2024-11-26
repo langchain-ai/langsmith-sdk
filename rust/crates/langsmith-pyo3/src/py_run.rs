@@ -1,12 +1,12 @@
 use langsmith_tracing_client::client::{Attachment, RunIO, TimeValue};
 use pyo3::{
-    types::{PyAnyMethods as _, PyDateTime, PyMapping, PyMappingMethods, PySequence, PyTuple},
+    types::{
+        PyAnyMethods as _, PyDateTime, PyMapping, PyMappingMethods, PySequence, PyString, PyTuple,
+    },
     Bound, FromPyObject, PyAny, PyResult,
 };
 
 use crate::{errors::TracingClientError, serialization};
-
-// TODO: consider interning all the strings here
 
 #[derive(Debug)]
 pub struct RunCreateExtended(langsmith_tracing_client::client::RunCreateExtended);
@@ -23,7 +23,8 @@ impl FromPyObject<'_> for RunCreateExtended {
         let run_create = value.extract::<RunCreate>()?.into_inner();
 
         let attachments = {
-            if let Ok(attachments_value) = value.get_item("attachments") {
+            if let Ok(attachments_value) = value.get_item(pyo3::intern!(value.py(), "attachments"))
+            {
                 extract_attachments(&attachments_value)?
             } else {
                 None
@@ -31,8 +32,8 @@ impl FromPyObject<'_> for RunCreateExtended {
         };
 
         let io = RunIO {
-            inputs: serialize_optional_dict_value(value, "inputs")?,
-            outputs: serialize_optional_dict_value(value, "outputs")?,
+            inputs: serialize_optional_dict_value(value, pyo3::intern!(value.py(), "inputs"))?,
+            outputs: serialize_optional_dict_value(value, pyo3::intern!(value.py(), "outputs"))?,
         };
 
         Ok(Self(langsmith_tracing_client::client::RunCreateExtended {
@@ -95,12 +96,13 @@ impl RunCreate {
 impl FromPyObject<'_> for RunCreate {
     fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let common = RunCommon::extract_bound(value)?.into_inner();
-        let name = value.get_item("name")?.extract::<String>()?;
+        let name = value.get_item(pyo3::intern!(value.py(), "name"))?.extract::<String>()?;
 
-        let start_time = extract_time_value(&value.get_item("start_time")?)?;
+        let start_time =
+            extract_time_value(&value.get_item(pyo3::intern!(value.py(), "start_time"))?)?;
 
         let end_time = {
-            match value.get_item("end_time") {
+            match value.get_item(pyo3::intern!(value.py(), "end_time")) {
                 Ok(py_end_time) => {
                     if py_end_time.is_none() {
                         None
@@ -112,8 +114,10 @@ impl FromPyObject<'_> for RunCreate {
             }
         };
 
-        let run_type = value.get_item("run_type")?.extract::<String>()?;
-        let reference_example_id = extract_optional_mapping_key(value, "reference_example_id")?;
+        let run_type =
+            value.get_item(pyo3::intern!(value.py(), "run_type"))?.extract::<String>()?;
+        let reference_example_id =
+            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "reference_example_id"))?;
 
         Ok(Self(langsmith_tracing_client::client::RunCreate {
             common,
@@ -138,22 +142,27 @@ impl RunCommon {
 
 impl FromPyObject<'_> for RunCommon {
     fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let id = value.get_item("id")?.extract()?;
-        let trace_id = value.get_item("trace_id")?.extract()?;
+        let id = value.get_item(pyo3::intern!(value.py(), "id"))?.extract()?;
+        let trace_id = value.get_item(pyo3::intern!(value.py(), "trace_id"))?.extract()?;
 
-        let dotted_order = value.get_item("dotted_order")?.extract()?;
-        let parent_run_id = extract_optional_mapping_key(value, "parent_run_id")?;
+        let dotted_order = value.get_item(pyo3::intern!(value.py(), "dotted_order"))?.extract()?;
+        let parent_run_id =
+            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "parent_run_id"))?;
 
-        let extra = extract_optional_value_from_mapping(value, "extra")?;
+        let extra = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "extra"))?;
 
-        let error = extract_optional_mapping_key(value, "error")?;
+        let error = extract_optional_mapping_key(value, pyo3::intern!(value.py(), "error"))?;
 
-        let serialized = extract_optional_value_from_mapping(value, "serialized")?;
-        let events = extract_optional_value_from_mapping(value, "events")?;
-        let tags = extract_optional_value_from_mapping(value, "tags")?;
+        let serialized =
+            extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "serialized"))?;
+        let events =
+            extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "events"))?;
+        let tags = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "tags"))?;
 
-        let session_id = extract_optional_mapping_key(value, "session_id")?;
-        let session_name = extract_optional_mapping_key(value, "session_name")?;
+        let session_id =
+            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "session_id"))?;
+        let session_name =
+            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "session_name"))?;
 
         Ok(Self(langsmith_tracing_client::client::RunCommon {
             id,
@@ -173,7 +182,7 @@ impl FromPyObject<'_> for RunCommon {
 
 fn extract_optional_mapping_key<'py, T: FromPyObject<'py>>(
     mapping: &Bound<'py, PyAny>,
-    key: &str,
+    key: &Bound<'py, PyString>,
 ) -> PyResult<Option<T>> {
     match mapping.get_item(key) {
         Ok(x) => Ok(Some(x.extract()?)),
@@ -194,7 +203,7 @@ fn extract_time_value(value: &Bound<'_, PyAny>) -> PyResult<TimeValue> {
 
 fn serialize_optional_dict_value(
     mapping: &Bound<'_, PyAny>,
-    key: &str,
+    key: &Bound<'_, PyString>,
 ) -> PyResult<Option<Vec<u8>>> {
     match mapping.get_item(key) {
         Ok(value) => {
@@ -203,7 +212,7 @@ fn serialize_optional_dict_value(
             }
             serialization::dumps(value.as_ptr())
                 .map(Option::Some)
-                .map_err(|e| TracingClientError::new_err(e))
+                .map_err(TracingClientError::new_err)
         }
         Err(_) => Ok(None),
     }
@@ -213,7 +222,7 @@ fn serialize_optional_dict_value(
 //       It might be unnecessarily large and slowing us down for no reason.
 fn extract_optional_value_from_mapping(
     mapping: &Bound<'_, PyAny>,
-    key: &str,
+    key: &Bound<'_, PyString>,
 ) -> PyResult<Option<sonic_rs::Value>> {
     match mapping.get_item(key) {
         Ok(value) => {

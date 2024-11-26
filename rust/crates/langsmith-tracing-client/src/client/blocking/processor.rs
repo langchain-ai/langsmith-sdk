@@ -216,7 +216,7 @@ impl RunProcessor {
             .multipart(form)
             .headers(headers)
             .send()?;
-        println!("Sending batch took {:?}", start_send_batch.elapsed());
+        // println!("Sending batch took {:?}", start_send_batch.elapsed());
 
         if response.status().is_success() {
             Ok(())
