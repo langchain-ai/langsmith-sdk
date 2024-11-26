@@ -137,6 +137,8 @@ jobs:
         platform:
           - runner: macos-14
             target: aarch64
+          - runner: macos-15
+            target: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
