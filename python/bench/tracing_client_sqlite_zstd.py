@@ -14,6 +14,7 @@ INSERT_STMT = '''
     INSERT INTO runs (run_id, dotted_order, inputs, outputs)
     VALUES (?, ?, ?, ?)
 '''
+NUM_THREADS = 1
 
 
 def create_large_json(length: int) -> Dict:
@@ -190,8 +191,11 @@ def benchmark_run_creation(json_size, num_runs) -> None:
     print("Runs created.")
 
     stop_event = threading.Event()
-    processor_thread = threading.Thread(target=run_processor, args=(db_file, stop_event))
-    processor_thread.start()
+    processor_threads = []
+    for _ in range(NUM_THREADS):
+        processor_thread = threading.Thread(target=run_processor, args=(db_file, stop_event))
+        processor_thread.start()
+        processor_threads.append(processor_thread)
 
     start = time.perf_counter()
 
@@ -203,7 +207,10 @@ def benchmark_run_creation(json_size, num_runs) -> None:
 
     # Signal the processor thread to stop
     stop_event.set()
-    processor_thread.join()
+
+    # Join the processor threads
+    for processor_thread in processor_threads:
+        processor_thread.join()
 
     print("Time taken to insert runs: ", time.perf_counter() - start)
     print("Total runs processed: ", NUM_RUNS)
