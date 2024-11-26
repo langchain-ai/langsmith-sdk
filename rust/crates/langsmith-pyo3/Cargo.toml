@@ -1,0 +1,35 @@
+[package]
+name = "langsmith-pyo3"
+version = "0.1.0-rc1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The name of the native library. This is the name which will be used in Python to import the
+# library (i.e. `from langsmith_pyo3 import *`). If you change this, you must also change
+# the name of the top `#[pymodule]` in `src/lib.rs`.
+name = "langsmith_pyo3"
+
+# "cdylib" is necessary to produce a shared library for Python to import from.
+# "rlib" is what Rust uses to use this crate as a library, for example in tests, benchmarks,
+#    examples, or Rust binaries built using this library.
+#
+# Downstream *Rust* code (including any code in `bin/`, `examples/`, and `tests/`) will not be able
+# to `use langsmith_pyo3;` unless the "rlib" or "lib" crate type is also included.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The `extension-module` feature is necessary to produce a "manylinux" portable Python library.
+# Otherwise PyO3 will link to its own Python interpreter and run our code inside it,
+# which will make the library only work with *that specific* Python build and no other.
+# Not just that *Python version* but also glibc-vs-musl, etc.
+# More info:
+# - https://pyo3.rs/v0.22.5/building-and-distribution#the-extension-module-feature
+# - https://peps.python.org/pep-0513/
+pyo3 = { path = "../../../vendor/pyo3", features = ["extension-module"] }
+pyo3-ffi = { path = "../../../vendor/pyo3/pyo3-ffi", features = ["extension-module"] }
+sonic-rs = { workspace = true }
+serde = { workspace = true }
+langsmith-tracing-client = { path = "../langsmith-tracing-client" }
+orjson = { path = "../../../vendor/orjson" }
