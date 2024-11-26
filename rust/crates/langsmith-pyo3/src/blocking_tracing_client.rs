@@ -22,6 +22,7 @@ impl BlockingTracingClient {
     #[new]
     pub fn new(
         endpoint: String,
+        api_key: String,
         queue_capacity: usize,
         batch_size: usize,
         batch_timeout_millis: u64,
@@ -29,6 +30,7 @@ impl BlockingTracingClient {
     ) -> PyResult<Self> {
         let config = langsmith_tracing_client::client::blocking::ClientConfig {
             endpoint,
+            api_key,
             queue_capacity,
             batch_size,
 

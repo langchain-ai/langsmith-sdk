@@ -552,6 +552,7 @@ class Client:
                 try:
                     self._pyo3_client = langsmith_pyo3.BlockingTracingClient(
                         self.api_url,
+                        self.api_key,
                         queue_capacity,
                         batch_size,
                         batch_timeout_millis,
@@ -1281,6 +1282,9 @@ class Client:
             and run_create.get("dotted_order") is not None
         ):
             if self._pyo3_client is not None:
+                # `self._run_transform()` above turns the `id` key into a `UUID` object.
+                # We need to pass a string since `orjson` doesn't seem to serialize `UUID` objects.
+                run_create["id"] = str(run_create["id"])
                 self._pyo3_client.create_run(run_create)
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)

@@ -24,6 +24,7 @@ fn create_mock_client_config(server_url: &str, batch_size: usize) -> ClientConfi
 fn create_mock_client_config_sync(server_url: &str, batch_size: usize) -> BlockingClientConfig {
     BlockingClientConfig {
         endpoint: server_url.to_string(),
+        api_key: "anything".into(),
         queue_capacity: 1_000_000,
         batch_size,
         batch_timeout: Duration::from_secs(1),

@@ -13,6 +13,7 @@ use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 #[derive(Clone)]
 pub struct ClientConfig {
     pub endpoint: String,
+    pub api_key: String,
     pub queue_capacity: usize,
     pub batch_size: usize,
     pub batch_timeout: Duration,
