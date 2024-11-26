@@ -371,17 +371,27 @@ def _get_package_version(package_dir: Path) -> str:
         sys.exit(1)
 
 
-def _build_index() -> None:
-    doc = """# LangSmith Python SDK API Reference
+def _build_index(package_version: str) -> None:
+    doc = f"""# LangSmith Python SDK
+**Version: `{package_version}`**
 
 Welcome to the API reference for the LangSmith Python SDK. 
 
 For user guides see [https://docs.smith.langchain.com](https://docs.smith.langchain.com).
-"""
 
-    doc += """
+Here are quick links to some of the key classes and functions:
 
-```{toctree}
+| Class/function | Description |
+| :- | :- | 
+| [Client](client/langsmith.client.Client) |  Synchronous client for interacting with the LangSmith API. |
+| [AsyncClient](async_client/langsmith.async_client.AsyncClient) | Asynchronous client for interacting with the LangSmith API. |
+| [traceable](run_helpers/langsmith.run_helpers.traceable) | Wrapper/decorator for tracing any function. |
+| [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
+| [evaluate](evaluation/langsmith.evaluation._runner.evaluate) | Evaluate an application on a dataset. |
+| [aevaluate](evaluation/langsmith.evaluation._arunner.aevaluate) | Asynchronously evaluate an application on a dataset. |
+| [unit](_testing/langsmith._testing.unit) | Create a LangSmith unit test. |
+
+```{{toctree}}
 :maxdepth: 2
 :hidden:
 
@@ -392,18 +402,6 @@ For user guides see [https://docs.smith.langchain.com](https://docs.smith.langch
   wrappers<wrappers>
   _testing<_testing>
 ``` 
-
-#### Key classes and functions
-
-| Class/function | Description |
-| :- | :- | 
-| [Client](client/langsmith.client.Client) |  Synchronous client for interacting with the LangSmith API. |
-| [AsyncClient](async_client/langsmith.async_client.AsyncClient) | Asynchronous client for interacting with the LangSmith API. |
-| [traceable](run_helpers/langsmith.run_helpers.traceable) | Wrapper/decorator for tracing any function. |
-| [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
-| [evaluate](evaluation/langsmith.evaluation._runner.evaluate) | Evaluate an application on a dataset. |
-| [aevaluate](evaluation/langsmith.evaluation._arunner.aevaluate) | Asynchronously evaluate an application on a dataset. |
-| [unit](_testing/langsmith._testing.unit) | Create a unit test. |
 
 """
 
@@ -432,7 +430,7 @@ def main() -> None:
     for name, rst in rsts:
         with open(HERE / name, "w") as f:
             f.write(rst)
-    _build_index()
+    _build_index(package_version)
     print("API reference files built.")
 
 
