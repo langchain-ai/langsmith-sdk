@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, HeaderValue};
 
 use super::processor::RunProcessor;
 use crate::client::errors::TracingClientError;
@@ -28,16 +28,26 @@ pub struct TracingClient {
 }
 
 impl TracingClient {
-    pub fn new(config: ClientConfig) -> Result<Self, TracingClientError> {
+    pub fn new(mut config: ClientConfig) -> Result<Self, TracingClientError> {
         let (sender, receiver) = mpsc::channel::<QueuedRun>();
         let (drain_sender, drain_receiver) = mpsc::channel::<()>();
         let receiver = Arc::new(Mutex::new(receiver));
+
+        // Ensure our headers include the API key.
+        config.headers.get_or_insert_default().append(
+            "X-API-KEY",
+            HeaderValue::from_str(&config.api_key).expect("failed to convert API key into header"),
+        );
+
+        // We're going to share the config across threads.
+        // It's immutable from this point onward, so Arc it for efficiency.
+        let config = Arc::from(config);
 
         let mut handles = Vec::new();
 
         for _ in 0..config.num_worker_threads {
             let worker_receiver = Arc::clone(&receiver);
-            let worker_config = config.clone();
+            let worker_config = Arc::clone(&config);
             let cloned_drain_sender = drain_sender.clone();
 
             let handle = thread::spawn(move || {
