@@ -41,12 +41,8 @@ impl BlockingTracingClient {
             num_worker_threads: worker_threads,
         };
 
-        let client = RustTracingClient::new(config).map_err(|e| {
-            // TODO: There's probably a more elegant way to handle errors than this.
-            Python::with_gil(|py| {
-                crate::errors::TracingClientError::new_err(format!("{e}").into_py(py))
-            })
-        })?;
+        let client = RustTracingClient::new(config)
+            .map_err(|e| Python::with_gil(|py| into_py_err(py, e)))?;
 
         Ok(Self { client: Arc::from(client) })
     }
@@ -60,17 +56,16 @@ impl BlockingTracingClient {
     ) -> PyResult<()> {
         let unpacked = slf.get();
         Python::allow_threads(slf.py(), || unpacked.client.submit_run_create(run.into_inner()))
-            .map_err(|e| {
-                // TODO: There's probably a more elegant way to handle errors than this.
-                crate::errors::TracingClientError::new_err(format!("{e}").into_py(slf.py()))
-            })
+            .map_err(|e| into_py_err(slf.py(), e))
     }
 
     pub fn drain(slf: &Bound<'_, Self>) -> PyResult<()> {
         let unpacked = slf.get();
-        Python::allow_threads(slf.py(), || unpacked.client.drain()).map_err(|e| {
-            // TODO: There's probably a more elegant way to handle errors than this.
-            crate::errors::TracingClientError::new_err(format!("{e}").into_py(slf.py()))
-        })
+        Python::allow_threads(slf.py(), || unpacked.client.drain())
+            .map_err(|e| into_py_err(slf.py(), e))
     }
+}
+
+fn into_py_err(py: Python<'_>, e: langsmith_tracing_client::client::TracingClientError) -> PyErr {
+    crate::errors::TracingClientError::new_err(format!("{e}").into_py(py))
 }
