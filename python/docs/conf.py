@@ -222,6 +222,7 @@ html_theme_options = {
     ],
     "icon_links_label": "Quick Links",
     "external_links": [],
+    "sidebar_primary_title": "Your Custom Title Here",
 }
 
 
@@ -259,3 +260,4 @@ if os.environ.get("READTHEDOCS", "") == "True":
     html_context["READTHEDOCS"] = True
 
 master_doc = "index"
+templates_path=['templates']
