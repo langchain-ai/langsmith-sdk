@@ -537,8 +537,9 @@ class Client:
                 import langsmith_pyo3
             except ImportError as e:
                 logger.warning(
-                    f"Failed to import `langsmith_pyo3` when PyO3 client was requested, "
-                    f"falling back to Python impl: {repr(e)}",
+                    "Failed to import `langsmith_pyo3` when PyO3 client was requested, "
+                    "falling back to Python impl: %s",
+                    repr(e),
                 )
 
             if langsmith_pyo3:
@@ -558,8 +559,9 @@ class Client:
                     )
                 except Exception as e:
                     logger.warning(
-                        f"Failed to instantiate `langsmith_pyo3.BlockingTracingClient` "
-                        f"when PyO3 client was requested, falling back to Python impl: {repr(e)}",
+                        "Failed to instantiate `langsmith_pyo3.BlockingTracingClient` "
+                        "when PyO3 client was requested, falling back to Python impl: %s",
+                        repr(e),
                     )
 
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
