@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::blocking::multipart::{Form, Part};
-use reqwest::header::HeaderValue;
 use sonic_rs::to_vec;
 
 use super::tracing_client::ClientConfig;
@@ -15,7 +14,7 @@ use crate::client::run::{RunCreateExtended, RunUpdateExtended};
 pub struct RunProcessor {
     receiver: Arc<Mutex<Receiver<QueuedRun>>>,
     drain_sender: Sender<()>,
-    config: ClientConfig,
+    config: Arc<ClientConfig>,
     http_client: reqwest::blocking::Client,
 }
 
@@ -23,7 +22,7 @@ impl RunProcessor {
     pub(crate) fn new(
         receiver: Arc<Mutex<Receiver<QueuedRun>>>,
         drain_sender: Sender<()>,
-        config: ClientConfig,
+        config: Arc<ClientConfig>,
     ) -> Self {
         let http_client = reqwest::blocking::Client::new();
 
@@ -201,20 +200,13 @@ impl RunProcessor {
             form = form.part(part_name, part);
         }
 
-        let mut headers = self.config.headers.clone().unwrap_or_default();
-        headers.append(
-            "X-API-KEY",
-            HeaderValue::from_str(&self.config.api_key)
-                .expect("failed to convert API key into header"),
-        );
-
         // send the multipart POST request
         let start_send_batch = Instant::now();
         let response = self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
             .multipart(form)
-            .headers(headers)
+            .headers(self.config.headers.as_ref().cloned().unwrap_or_default())
             .send()?;
         // println!("Sending batch took {:?}", start_send_batch.elapsed());
 
