@@ -129,9 +129,7 @@
 //! ```
 //!
 //! **`src/lib.rs`**
-//! ```rust
-#![doc = include_str!("../examples/string-sum/src/lib.rs")]
-//! ```
+//! see: `../examples/string-sum/src/lib.rs`
 //!
 //! With those two files in place, now `maturin` needs to be installed. This can be done using
 //! Python's package manager `pip`. First, load up a new Python `virtualenv`, and install `maturin`
