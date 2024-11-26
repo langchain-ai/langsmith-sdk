@@ -37,7 +37,7 @@ permissions:
 
 env:
   RUST_VERSION: '1.82'  # Be careful, "stable" gets you "whatever GitHub ships", which is quite old.
-  SUPPORTED_PYTHON_VERSIONS: 'python3.8 python3.9 python3.10 python3.11 python3.12'
+  SUPPORTED_PYTHON_VERSIONS: 'python3.8 python3.9 python3.10 python3.11 python3.12 python3.13'
   WORKING_DIRECTORY: rust/crates/langsmith-pyo3
 
 jobs:
@@ -139,6 +139,8 @@ jobs:
         platform:
           - runner: macos-14
             target: aarch64
+          - runner: macos-15
+            target: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -155,7 +157,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.platform.target }}
+          name: wheels-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
           path: ${{ env.WORKING_DIRECTORY }}/dist
           if-no-files-found: error
 
