@@ -1463,7 +1463,10 @@ class Client:
                 logger.error("Unknown operation type in tracing queue: %s", type(op))
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
-            self._send_multipart_req(acc_multipart)
+            # self._send_multipart_req(acc_multipart)
+            # sleep to simulate network latency
+            print("Multipart Ingest Length: ", len(acc_multipart.parts))
+            time.sleep(0.150)
 
     def multipart_ingest(
         self,
