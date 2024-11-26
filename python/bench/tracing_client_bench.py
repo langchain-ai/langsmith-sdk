@@ -102,6 +102,7 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
 json_size = 3_000
 num_runs = 1000
 
+
 def main(json_size: int, num_runs: int):
     """
     Run benchmarks with different combinations of parameters and report results.
