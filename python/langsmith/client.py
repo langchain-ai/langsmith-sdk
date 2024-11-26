@@ -369,6 +369,7 @@ class Client:
         "_write_api_urls",
         "_settings",
         "_manual_cleanup",
+        "_pyo3_client",
     ]
 
     def __init__(
@@ -515,6 +516,51 @@ class Client:
             if hide_outputs is not None
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
+
+        # To set this up on the Rust side:
+        # - Navigate to the rust/crates/langsmith-pyo3 directory.
+        # - Run:
+        #   maturin build --release
+        # - Then, back inside python/langsmith, run:
+        #   poetry install --with pyo3
+        #
+        # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
+        #
+        # Currently this requires Python 3.13 since the Poetry setup references the 3.13 wheel.
+        # Once the PyO3 package is uploaded to PyPI, we won't have to specify the *wheel* itself
+        # and can instead reference the *PyPI package name*. That will allow Poetry to choose
+        # a wheel that matches the locally-installed version of Python.
+        self._pyo3_client = None
+        if ls_utils.get_env_var("USE_PYO3_CLIENT") is not None:
+            langsmith_pyo3 = None
+            try:
+                import langsmith_pyo3
+            except ImportError as e:
+                logger.warning(
+                    f"Failed to import `langsmith_pyo3` when PyO3 client was requested, "
+                    f"falling back to Python impl: {repr(e)}",
+                )
+
+            if langsmith_pyo3:
+                # TODO: tweak these constants as needed
+                queue_capacity = 1_000_000
+                batch_size = 100
+                batch_timeout_millis = 1000
+                worker_threads = 1
+
+                try:
+                    self._pyo3_client = langsmith_pyo3.BlockingTracingClient(
+                        self.api_url,
+                        queue_capacity,
+                        batch_size,
+                        batch_timeout_millis,
+                        worker_threads,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to instantiate `langsmith_pyo3.BlockingTracingClient` "
+                        f"when PyO3 client was requested, falling back to Python impl: {repr(e)}",
+                    )
 
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
@@ -1226,7 +1272,10 @@ class Client:
             copy=False,
         )
         self._insert_runtime_env([run_create])
-        if (
+
+        if self._pyo3_client is not None:
+            self._pyo3_client.create_run(run_create)
+        elif (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
             and run_create.get("trace_id") is not None
