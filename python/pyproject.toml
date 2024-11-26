@@ -69,6 +69,9 @@ openai = "^1.10"
 [tool.poetry.group.test.dependencies]
 pytest-socket = "^0.7.0"
 
+[tool.poetry.group.pyo3.dependencies]
+langsmith-pyo3 = {path = "../rust/target/wheels/langsmith_pyo3-0.1.0-cp313-cp313-manylinux_2_34_x86_64.whl"}
+
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 
