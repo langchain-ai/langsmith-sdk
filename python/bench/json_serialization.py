@@ -1,9 +1,9 @@
-import time
 import statistics
-from concurrent.futures import ThreadPoolExecutor
-import threading
-import orjson
+import time
 import zlib
+from concurrent.futures import ThreadPoolExecutor
+
+import orjson
 
 
 def create_json_with_large_array(length):
@@ -62,7 +62,9 @@ def serialize_parallel(data):
 
 
 def serialize_sequential_gz(data):
-    """Serialize data sequentially and compress using zlib with adjustable compression level."""
+    """Serialize data sequentially and compress using zlib.
+
+    With adjustable compression level."""
     compressed_data = []
     for json_obj in data:
         serialized = orjson.dumps(json_obj)
@@ -71,7 +73,9 @@ def serialize_sequential_gz(data):
     return compressed_data
 
 def serialize_parallel_gz(data):
-    """Serialize data in parallel using ThreadPoolExecutor and compress using zlib with adjustable compression level."""
+    """Serialize data in parallel with zlib.
+
+    Using ThreadPoolExecutor and zlib with adjustable compression level."""
 
     def compress_item(json_obj):
         serialized = orjson.dumps(json_obj)
@@ -116,11 +120,28 @@ def main():
     data = [create_json_with_large_array(json_length) for _ in range(num_json_objects)]
     serialized_data = serialize_sequential(data)
 
-    for func in [serialize_sequential, serialize_parallel, serialize_sequential_gz, serialize_parallel_gz, gzip_sequential, gzip_parallel]:
-        # data = [create_json_with_large_strings(json_length) for _ in range(num_json_objects)]
+    for func in [
+        serialize_sequential,
+        serialize_parallel,
+        serialize_sequential_gz,
+        serialize_parallel_gz,
+        gzip_sequential,
+        gzip_parallel,
+    ]:
+        # data = [
+        #     create_json_with_large_strings(json_length)
+        #     for _ in range(num_json_objects)
+        # ]
 
-        print(f"\nBenchmarking {func.__name__} with {num_json_objects} JSON objects of length {json_length}...")
-        results_seq = benchmark_serialization(data, func) if not func.__name__.startswith("gzip") else benchmark_serialization(serialized_data, func)
+        print(
+            f"\nBenchmarking {func.__name__} with {num_json_objects} JSON objects "
+            f"of length {json_length}..."
+        )
+        results_seq = (
+            benchmark_serialization(data, func)
+            if not func.__name__.startswith("gzip")
+            else benchmark_serialization(serialized_data, func)
+        )
         print(f"Mean time: {results_seq['mean']:.4f} seconds")
         print(f"Median time: {results_seq['median']:.4f} seconds")
         print(f"Std Dev: {results_seq['stdev']:.4f} seconds")

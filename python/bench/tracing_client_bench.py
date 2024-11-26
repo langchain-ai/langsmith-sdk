@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
 import statistics
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 from unittest.mock import Mock
 from uuid import uuid4
