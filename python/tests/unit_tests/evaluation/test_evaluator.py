@@ -51,7 +51,7 @@ def test_run_evaluator_decorator(run_1: Run, example_1: Example):
     assert result.score == 1.0
 
 
-async def test_dynamie_comparison_run_evaluator():
+async def test_dynamic_comparison_run_evaluator():
     def foo(runs: list, example):
         return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
 
