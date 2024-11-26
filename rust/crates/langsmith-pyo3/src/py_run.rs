@@ -97,7 +97,7 @@ impl FromPyObject<'_> for RunCreate {
         let common = RunCommon::extract_bound(value)?.into_inner();
         let name = value.get_item("name")?.extract::<String>()?;
 
-        let start_time = extract_isoformat_time_value(value.get_item("start_time")?.downcast()?)?;
+        let start_time = extract_time_value(&value.get_item("start_time")?)?;
 
         let end_time = {
             match value.get_item("end_time") {
@@ -105,7 +105,7 @@ impl FromPyObject<'_> for RunCreate {
                     if py_end_time.is_none() {
                         None
                     } else {
-                        Some(extract_isoformat_time_value(py_end_time.downcast()?)?)
+                        Some(extract_time_value(&py_end_time)?)
                     }
                 }
                 Err(_) => None,
@@ -181,10 +181,15 @@ fn extract_optional_mapping_key<'py, T: FromPyObject<'py>>(
     }
 }
 
-fn extract_isoformat_time_value(value: &Bound<'_, PyDateTime>) -> PyResult<TimeValue> {
-    let string_value = value.call_method0("isoformat")?.extract::<String>()?;
+fn extract_time_value(value: &Bound<'_, PyAny>) -> PyResult<TimeValue> {
+    if let Ok(string) = value.extract::<String>() {
+        return Ok(TimeValue::String(string));
+    }
 
-    Ok(TimeValue::String(string_value))
+    let datetime = value.downcast::<PyDateTime>()?;
+    let isoformat =
+        datetime.call_method0(pyo3::intern!(value.py(), "isoformat"))?.extract::<String>()?;
+    Ok(TimeValue::String(isoformat))
 }
 
 fn serialize_optional_dict_value(

@@ -16,14 +16,17 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
     """
     timings = []
 
+    bench_start_time = datetime.datetime.now(datetime.timezone.utc)
     for _ in range(samples):
         print("creating data")
-        runs = [create_run_data(str(uuid4()), json_size) for i in range(num_runs)]
-
-        # We need to add "start_time" manually since
-        # it isn't added on the Rust side right now.
-        for run in runs:
-            run["start_time"] = datetime.datetime.now(datetime.timezone.utc)
+        runs = [
+            create_run_data(
+                str(uuid4()),
+                json_size,
+                bench_start_time + datetime.timedelta(milliseconds=i * 2),
+            )
+            for i in range(num_runs)
+        ]
 
         endpoint = "http://localhost:1234/FILL_ME_IN"
         queue_capacity = 1_000_000
@@ -34,6 +37,7 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
         print("initializing client")
         client = BlockingTracingClient(
             endpoint,
+            "mock-api-key",
             queue_capacity,
             batch_size,
             batch_timeout_millis,
