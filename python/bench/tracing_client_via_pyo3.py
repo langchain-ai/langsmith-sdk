@@ -4,53 +4,9 @@ from uuid import uuid4
 import time
 import os
 
+from tracing_client_bench import create_run_data
+
 from langsmith.client import Client
-
-
-def create_large_json(length: int) -> Dict:
-    """Create a large JSON object for benchmarking purposes."""
-    large_array = [
-        {
-            "index": i,
-            "data": f"This is element number {i}",
-            "nested": {"id": i, "value": f"Nested value for element {i}"},
-        }
-        for i in range(length)
-    ]
-
-    return {
-        "name": "Huge JSON",
-        "description": "This is a very large JSON object for benchmarking purposes.",
-        "array": large_array,
-        "metadata": {
-            "created_at": "2024-10-22T19:00:00Z",
-            "author": "Python Program",
-            "version": 1.0,
-        },
-    }
-
-
-def create_run_data(run_id: str, start_time: datetime, json_size: int) -> Dict:
-    """Create a single run data object."""
-
-    end_time = start_time + timedelta(milliseconds=1)
-
-    dotted_order = f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}"
-
-    return {
-        "name": "Run Name",
-        "id": run_id,
-        "run_type": "chain",
-        "inputs": create_large_json(json_size),
-        "outputs": create_large_json(json_size),
-        "extra": {"extra_data": "value"},
-        "trace_id": run_id,
-        "dotted_order": dotted_order,
-        "tags": ["tag1", "tag2"],
-        "session_name": "Session Name",
-        "start_time": start_time.isoformat(),
-        "end_time": end_time.isoformat(),
-    }
 
 
 def amend_run_data_in_place(
@@ -69,9 +25,13 @@ def amend_run_data_in_place(
 
 def benchmark_run_creation(json_size, num_runs) -> None:
     """Benchmark the creation of runs."""
-    os.environ["LANGSMITH_USE_PYO3_CLIENT"] = "1"
-    api_key = os.environ["LANGSMITH_API_KEY"]
+    if os.environ.get("LANGSMITH_USE_PYO3_CLIENT") is None:
+        print(
+            "LANGSMITH_USE_PYO3_CLIENT is not set, so this run will not use PyO3.\n"
+            "  It will use only the pure Python code paths."
+        )
 
+    api_key = os.environ["LANGSMITH_API_KEY"]
     if not api_key:
         raise Exception("No API key configured")
 
@@ -85,21 +45,33 @@ def benchmark_run_creation(json_size, num_runs) -> None:
     )
 
     bench_start_time = datetime.now(timezone.utc)
-    run = create_run_data(str(uuid4()), bench_start_time, json_size)
 
-    data = []
-    for i in range(num_runs):
-        run_id = str(uuid4())
-        start_time = bench_start_time + timedelta(milliseconds=i * 2)
-        end_time = start_time + timedelta(milliseconds=1)
-        dotted_order = f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}"
-        data.append((run_id, start_time, end_time, dotted_order))
+    runs = [
+        create_run_data(
+            str(uuid4()), json_size, bench_start_time + timedelta(milliseconds=i * 2)
+        )
+        for i in range(num_runs)
+    ]
 
     start = time.perf_counter()
-    for data_tuple in data:
-        amend_run_data_in_place(run, *data_tuple)
+    for run in runs:
         client.create_run(**run, project_name=project_name)
     end = time.perf_counter()
+
+    # data = []
+    # run = create_run_data(str(uuid4()), json_size, bench_start_time)
+    # for i in range(num_runs):
+    #     run_id = str(uuid4())
+    #     start_time = bench_start_time + timedelta(milliseconds=i * 2)
+    #     end_time = start_time + timedelta(milliseconds=1)
+    #     dotted_order = f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}"
+    #     data.append((run_id, start_time, end_time, dotted_order))
+    #
+    # start = time.perf_counter()
+    # for data_tuple in data:
+    #     amend_run_data_in_place(run, *data_tuple)
+    #     client.create_run(**run, project_name=project_name)
+    # end = time.perf_counter()
 
     if client._pyo3_client:
         # Wait for the queue to drain.
@@ -125,7 +97,7 @@ def main():
     Run benchmarks with different combinations of parameters and report results.
     """
 
-    json_size = 7_500
+    json_size = 3_000
     num_runs = 1000
 
     benchmark_run_creation(json_size, num_runs)

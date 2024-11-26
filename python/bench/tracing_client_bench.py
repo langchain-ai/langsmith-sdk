@@ -1,10 +1,9 @@
+from datetime import datetime, timedelta, timezone
 import statistics
 import time
-from typing import Dict
+from typing import Dict, Optional
 from unittest.mock import Mock
 from uuid import uuid4
-
-import pytest
 
 from langsmith.client import Client
 
@@ -32,8 +31,16 @@ def create_large_json(length: int) -> Dict:
     }
 
 
-def create_run_data(run_id: str, json_size: int) -> Dict:
+def create_run_data(
+    run_id: str, json_size: int, start_time: Optional[datetime] = None
+) -> Dict:
     """Create a single run data object."""
+    if start_time is None:
+        start_time = datetime.now(timezone.utc)
+    end_time = start_time + timedelta(milliseconds=1)
+
+    dotted_order = f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}"
+
     return {
         "name": "Run Name",
         "id": run_id,
@@ -41,10 +48,12 @@ def create_run_data(run_id: str, json_size: int) -> Dict:
         "inputs": create_large_json(json_size),
         "outputs": create_large_json(json_size),
         "extra": {"extra_data": "value"},
-        "trace_id": "trace_id",
-        "dotted_order": "1.1",
+        "trace_id": run_id,
+        "dotted_order": dotted_order,
         "tags": ["tag1", "tag2"],
         "session_name": "Session Name",
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
     }
 
 
@@ -54,6 +63,10 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
     Returns timing statistics.
     """
     timings = []
+
+    project_name = "__tracing_client_bench_python" + datetime.now().strftime(
+        "%Y%m%dT%H%M%S"
+    )
 
     for _ in range(samples):
         runs = [create_run_data(str(uuid4()), json_size) for i in range(num_runs)]
@@ -68,7 +81,7 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
 
         start = time.perf_counter()
         for run in runs:
-            client.create_run(**run)
+            client.create_run(**run, project_name=project_name)
 
         # wait for client.tracing_queue to be empty
         client.tracing_queue.join()
@@ -86,7 +99,7 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
     }
 
 
-json_size = 5_000
+json_size = 3_000
 num_runs = 1000
 
 def main(json_size: int, num_runs: int):
