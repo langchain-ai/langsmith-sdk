@@ -1273,18 +1273,22 @@ class Client:
         )
         self._insert_runtime_env([run_create])
 
-        if self._pyo3_client is not None:
-            self._pyo3_client.create_run(run_create)
-        elif (
-            self.tracing_queue is not None
+        if (
             # batch ingest requires trace_id and dotted_order to be set
-            and run_create.get("trace_id") is not None
+            run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            serialized_op = serialize_run_dict("post", run_create)
-            self.tracing_queue.put(
-                TracingQueueItem(run_create["dotted_order"], serialized_op)
-            )
+            if self._pyo3_client is not None:
+                self._pyo3_client.create_run(run_create)
+            elif self.tracing_queue is not None:
+                serialized_op = serialize_run_dict("post", run_create)
+                self.tracing_queue.put(
+                    TracingQueueItem(run_create["dotted_order"], serialized_op)
+                )
+            else:
+                # Neither Rust nor Python batch ingestion is configured,
+                # fall back to the non-batch approach.
+                self._create_run(run_create)
         else:
             self._create_run(run_create)
 
