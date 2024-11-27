@@ -241,7 +241,30 @@ export function runEvaluator(func: RunEvaluatorLike): RunEvaluator {
   return new DynamicRunEvaluator(func);
 }
 
-function getEvaluatorParameters(func: Function): { type: "tuple" | "object" } {
+// Define the object parameter type
+type EvaluatorObjectParams = {
+  run?: Run;
+  example?: Example;
+  inputs?: Record<string, any>;
+  outputs?: Record<string, any>;
+  referenceOutputs?: Record<string, any>;
+};
+
+// Define all possible evaluator function signatures
+type EvaluatorFunction =
+  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
+  | ((
+      run: Run,
+      example?: Example
+    ) => Promise<EvaluationResult | EvaluationResults>)
+  | ((params: EvaluatorObjectParams) => EvaluationResult | EvaluationResults)
+  | ((
+      params: EvaluatorObjectParams
+    ) => Promise<EvaluationResult | EvaluationResults>);
+
+function getEvaluatorParameters(func: EvaluatorFunction): {
+  type: "tuple" | "object";
+} {
   const funcStr = func.toString();
 
   // Check if the function accepts a single object parameter
