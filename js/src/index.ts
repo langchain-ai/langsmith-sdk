@@ -1,4 +1,8 @@
-export { Client, type ClientConfig } from "./client.js";
+export {
+  Client,
+  type ClientConfig,
+  LangSmithTracingClientInterface,
+} from "./client.js";
 
 export type {
   Dataset,
