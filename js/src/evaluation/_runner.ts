@@ -43,7 +43,10 @@ export type SummaryEvaluatorT =
 export type EvaluatorT =
   | RunEvaluator
   | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
-  | ((run: Run, example?: Example) => Promise<EvaluationResult | EvaluationResults>)
+  | ((
+      run: Run,
+      example?: Example
+    ) => Promise<EvaluationResult | EvaluationResults>)
   | ((args: {
       run?: Run;
       example?: Example;

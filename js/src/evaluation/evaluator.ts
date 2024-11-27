@@ -110,20 +110,20 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
       langSmithRunAndExample: { run: Run; example: Example };
     }) => {
       const { run, example } = input.langSmithRunAndExample;
-      
+
       // Check if the evaluator expects the new argument format
       const params = getEvaluatorParameters(evaluator);
-      
+
       if (params.type === "object") {
         return evaluator({
           run,
           example,
           inputs: example?.inputs,
           outputs: run?.outputs,
-          referenceOutputs: example?.outputs
+          referenceOutputs: example?.outputs,
         });
       }
-      
+
       // Fallback to original behavior for backward compatibility
       return evaluator(run, example);
     }) as Func;
@@ -243,17 +243,19 @@ export function runEvaluator(func: RunEvaluatorLike): RunEvaluator {
 
 function getEvaluatorParameters(func: Function): { type: "tuple" | "object" } {
   const funcStr = func.toString();
-  
+
   // Check if the function accepts a single object parameter
   if (funcStr.match(/^\s*(?:async\s+)?(?:function\s*)?\(?\s*{\s*[a-zA-Z_]/)) {
     return { type: "object" };
   }
-  
+
   // Check if the function accepts run and example parameters
-  if (funcStr.match(/^\s*(?:async\s+)?(?:function\s*)?\(?\s*run\s*,\s*example/)) {
+  if (
+    funcStr.match(/^\s*(?:async\s+)?(?:function\s*)?\(?\s*run\s*,\s*example/)
+  ) {
     return { type: "tuple" };
   }
-  
+
   // Default to object type for any other case
   return { type: "object" };
 }

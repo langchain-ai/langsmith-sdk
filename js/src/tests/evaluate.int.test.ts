@@ -863,7 +863,7 @@ test("evaluate can mix evaluators with different parameter styles", async () => 
   // Check both evaluators ran for each example
   for (const result of evalRes.results) {
     expect(result.evaluationResults.results).toHaveLength(2);
-    
+
     const traditionalResult = result.evaluationResults.results.find(
       (r) => r.key === "traditional"
     );
@@ -924,7 +924,7 @@ test("evaluate handles partial object parameters correctly", async () => {
   // Check both evaluators ran for each example
   for (const result of evalRes.results) {
     expect(result.evaluationResults.results).toHaveLength(2);
-    
+
     const outputResult = result.evaluationResults.results.find(
       (r) => r.key === "output_only"
     );
