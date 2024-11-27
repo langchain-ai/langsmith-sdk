@@ -437,7 +437,7 @@ export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
 const SERVER_INFO_REQUEST_TIMEOUT = 1000;
 
-export class Client {
+export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
   private apiUrl: string;
@@ -4170,4 +4170,12 @@ export class Client {
       this.batchIngestCaller.queue.onIdle(),
     ]);
   }
+}
+
+export interface LangSmithTracingClientInterface {
+  createRun: (run: CreateRunParams) => Promise<void>;
+
+  updateRun: (runId: string, run: RunUpdate) => Promise<void>;
+
+  awaitPendingTraceBatches: () => Promise<any>;
 }
