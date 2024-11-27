@@ -4176,6 +4176,4 @@ export interface LangSmithTracingClientInterface {
   createRun: (run: CreateRunParams) => Promise<void>;
 
   updateRun: (runId: string, run: RunUpdate) => Promise<void>;
-
-  awaitPendingTraceBatches: () => Promise<any>;
 }
