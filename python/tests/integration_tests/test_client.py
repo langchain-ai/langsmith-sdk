@@ -1160,12 +1160,14 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-@pytest.mark.skip(
-    reason="Need to land https://github.com/langchain-ai/langsmith-sdk/pull/1209 first"
-)
+
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
+    langchain_client = Client(
+        api_key="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",
+        api_url="https://dev.api.smith.langchain.com"
+    )
     # 1. Create dataset
     dataset = langchain_client.create_dataset(
         dataset_name,
@@ -1203,11 +1205,11 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
 
     # 5. Run evaluation
     results = evaluate(
-        target, data=dataset_name, evaluators=[evaluator], client=langchain_client
+        target, data=dataset_name, evaluators=[evaluator], client=langchain_client, num_repetitions=2
     )
 
     # 6. Verify results
-    assert len(results) == 1
+    assert len(results) == 2
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 

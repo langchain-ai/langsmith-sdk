@@ -1670,6 +1670,10 @@ def _forward(
                     client=client,
                 ),
             )
+            if include_attachments:
+                for attachment in example.attachment_urls:
+                    _, reader = example.attachment_urls[attachment]
+                    reader.seek(0)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1

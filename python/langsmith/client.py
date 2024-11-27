@@ -3381,11 +3381,11 @@ class Client:
         upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples."""
-        """ if not (self.info.instance_flags or {}).get(
+        if not (self.info.instance_flags or {}).get(
                 "examples_multipart_enabled", False
             ):
             raise ValueError("Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version.")
-         """
+        
         parts: List[MultipartPart] = []
 
         for example in upserts:
