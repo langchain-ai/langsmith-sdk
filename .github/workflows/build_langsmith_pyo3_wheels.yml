@@ -37,7 +37,10 @@ permissions:
 
 env:
   RUST_VERSION: '1.82'  # Be careful, "stable" gets you "whatever GitHub ships", which is quite old.
-  SUPPORTED_PYTHON_VERSIONS: 'python3.8 python3.9 python3.10 python3.11 python3.12 python3.13'
+  # Building wheels for Python 3.13 on Windows is broken at the moment with a linking error,
+  # so we build 3.13 wheels for other platforms explicitly instead of adding 3.13 here.
+  # https://github.com/PyO3/maturin-action/issues/292
+  SUPPORTED_PYTHON_VERSIONS: 'python3.8 python3.9 python3.10 python3.11 python3.12'
   WORKING_DIRECTORY: rust/crates/langsmith-pyo3
 
 jobs:
@@ -61,7 +64,7 @@ jobs:
           working-directory: ${{ env.WORKING_DIRECTORY }}
           rust-toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.platform.target }}
-          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }}'
+          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }} python3.13'
           sccache: 'true'
           manylinux: '2_28'  # The default is 'auto' AKA '2014', which is too old for us.
           # Workaround for missing `pip` in manylinux_2_28:
@@ -94,7 +97,7 @@ jobs:
           working-directory: ${{ env.WORKING_DIRECTORY }}
           rust-toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.platform.target }}
-          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }}'
+          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }} python3.13'
           sccache: 'true'
           manylinux: musllinux_1_2
       - name: Upload wheels
@@ -152,7 +155,7 @@ jobs:
           working-directory: ${{ env.WORKING_DIRECTORY }}
           rust-toolchain: ${{ env.RUST_VERSION }}
           target: ${{ matrix.platform.target }}
-          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }}'
+          args: '--release --out dist --interpreter ${{ env.SUPPORTED_PYTHON_VERSIONS }} python3.13'
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
