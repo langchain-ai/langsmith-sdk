@@ -260,4 +260,4 @@ if os.environ.get("READTHEDOCS", "") == "True":
     html_context["READTHEDOCS"] = True
 
 master_doc = "index"
-templates_path=['templates']
+templates_path = ["templates"]
