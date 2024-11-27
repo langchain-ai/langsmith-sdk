@@ -1160,7 +1160,9 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-
+@pytest.mark.skip(
+    reason="Need to land https://github.com/langchain-ai/langsmith-sdk/pull/1209 first"
+)
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
