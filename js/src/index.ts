@@ -1,7 +1,7 @@
 export {
   Client,
   type ClientConfig,
-  LangSmithTracingClientInterface,
+  type LangSmithTracingClientInterface,
 } from "./client.js";
 
 export type {
