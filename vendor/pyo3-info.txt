@@ -1,0 +1,35 @@
+cloned from commit a42e53e888227724928c7f370cad47153a13b329
+
+then apply diff:
+
+diff --git a/pyo3-ffi/src/modsupport.rs b/pyo3-ffi/src/modsupport.rs
+index 4a18d30f..6da2795b 100644
+--- a/pyo3-ffi/src/modsupport.rs
++++ b/pyo3-ffi/src/modsupport.rs
+@@ -36,6 +36,13 @@ extern "C" {
+     pub fn Py_BuildValue(arg1: *const c_char, ...) -> *mut PyObject;
+     // skipped Py_VaBuildValue
+
++    #[cfg(Py_3_13)]
++    pub fn PyModule_Add(
++        module: *mut PyObject,
++        name: *const c_char,
++        value: *mut PyObject,
++    ) -> core::ffi::c_int;
++
+     #[cfg(Py_3_10)]
+     #[cfg_attr(PyPy, link_name = "PyPyModule_AddObjectRef")]
+     pub fn PyModule_AddObjectRef(
+diff --git a/pyo3-ffi/src/object.rs b/pyo3-ffi/src/object.rs
+index fc3484be..d2fa1930 100644
+--- a/pyo3-ffi/src/object.rs
++++ b/pyo3-ffi/src/object.rs
+@@ -211,7 +211,7 @@ pub unsafe fn Py_SIZE(ob: *mut PyObject) -> Py_ssize_t {
+
+ #[inline(always)]
+ #[cfg(all(Py_3_12, not(Py_GIL_DISABLED)))]
+-unsafe fn _Py_IsImmortal(op: *mut PyObject) -> c_int {
++pub unsafe fn _Py_IsImmortal(op: *mut PyObject) -> c_int {
+     #[cfg(target_pointer_width = "64")]
+     {
+         (((*op).ob_refcnt.ob_refcnt as crate::PY_INT32_T) < 0) as c_int
