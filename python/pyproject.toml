@@ -35,6 +35,9 @@ orjson = { version = "^3.9.14", markers = "platform_python_implementation != 'Py
 httpx = ">=0.23.0,<1"
 requests-toolbelt = "^1.0.0"
 
+# Enabled via `langsmith_pyo3` extra: `pip install langsmith[langsmith_pyo3]`.
+langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
 black = ">=23.3,<25.0"
@@ -71,6 +74,7 @@ pytest-socket = "^0.7.0"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]
+langsmith_pyo3 = ["langsmith-pyo3"]
 
 [build-system]
 requires = ["poetry-core"]
