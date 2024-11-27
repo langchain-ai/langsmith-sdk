@@ -463,7 +463,7 @@ pub use pyo3_macros::{
 
 /// A proc macro used to expose Rust structs and fieldless enums as Python objects.
 ///
-#[doc = include_str!("../guide/pyclass-parameters.md")]
+/// see: `../guide/pyclass-parameters.md`
 ///
 /// For more on creating Python classes,
 /// see the [class section of the guide][1].
