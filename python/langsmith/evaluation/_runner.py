@@ -36,7 +36,7 @@ from typing import (
     cast,
 )
 
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, overload
 
 import langsmith
 from langsmith import env as ls_env
@@ -88,10 +88,12 @@ AEVALUATOR_T = Union[
         Awaitable[Union[EvaluationResult, EvaluationResults]],
     ],
 ]
+EXPERIMENT_T = Union[str, uuid.UUID, schemas.TracerSession]
 
 
+@overload
 def evaluate(
-    target: Union[TARGET_T, Runnable],
+    target: Union[TARGET_T, Runnable, EXPERIMENT_T],
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -103,10 +105,52 @@ def evaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
-) -> ExperimentResults:
-    r"""Evaluate a target system or function on a given dataset.
+    **kwargs: Any,
+) -> ExperimentResults: ...
+
+
+@overload
+def evaluate(
+    target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    /,
+    data: DATA_T,
+    evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+    experiment: Optional[EXPERIMENT_T] = None,
+    upload_results: bool = True,
+    **kwargs: Any,
+) -> ComparativeExperimentResults: ...
+
+
+def evaluate(
+    target: Union[TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    /,
+    data: DATA_T,
+    evaluators: Optional[
+        Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
+    ] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+    experiment: Optional[EXPERIMENT_T] = None,
+    upload_results: bool = True,
+    **kwargs: Any,
+) -> Union[ExperimentResults, ComparativeExperimentResults]:
+    r"""Evaluate a target system on a given dataset.
 
     Args:
         target (TARGET_T): The target system or function to evaluate.
@@ -133,9 +177,15 @@ def evaluate(
         experiment (Optional[schemas.TracerSession]): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
             usage only.
+        load_nested (bool): Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs. Should only be specified
+            when evaluating existing experiments.
+        randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
+            Default is False. Should only be specified when comparing two experiments.
 
     Returns:
-        ExperimentResults: The results of the evaluation.
+        Union[ExperimentResults, ComparativeExperimentResults]: The results of the
+            evaluation.
 
     Examples:
         Prepare the dataset:
@@ -261,41 +311,82 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    if not upload_results:
-        _warn_once("'upload_results' parameter is in beta.")
-    if callable(target) and rh.is_async(target):
-        raise ValueError(
-            "Async functions are not supported by `evaluate`. "
-            "Please use `aevaluate` instead:\n\n"
-            "from langsmith import aevaluate\n\n"
-            "await aevaluate(\n"
-            "    async_target_function,\n"
-            "    data=data,\n"
-            "    evaluators=evaluators,\n"
-            "    # ... other parameters\n"
-            ")"
+    if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
+        if num_repetitions > 1 or experiment or not upload_results:
+            msg = ""
+            raise ValueError(msg)
+        return evaluate_existing(
+            target,
+            evaluators=cast(Optional[Sequence[EVALUATOR_T]], evaluators),
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            **kwargs,
         )
-    if experiment and experiment_prefix:
-        raise ValueError(
-            "Expected at most one of 'experiment' or 'experiment_prefix',"
-            " but both were provided. "
-            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+    elif isinstance(target, tuple):
+        if (
+            num_repetitions > 1
+            or experiment
+            or not upload_results
+            or summary_evaluators
+        ):
+            msg = ""
+            raise ValueError(msg)
+        if max_concurrency is not None:
+            kwargs["max_concurrency"] = max_concurrency
+        return evaluate_comparative(
+            target,
+            evaluators=cast(Sequence[COMPARATIVE_EVALUATOR_T], evaluators or ()),
+            experiment_prefix=experiment_prefix,
+            description=description,
+            client=client,
+            metadata=metadata,
+            **kwargs,
         )
-    return _evaluate(
-        target,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        experiment_prefix=experiment_prefix,
-        description=description,
-        max_concurrency=max_concurrency,
-        num_repetitions=num_repetitions,
-        client=client,
-        blocking=blocking,
-        experiment=experiment,
-        upload_results=upload_results,
-    )
+    elif kwargs:
+        msg = (
+            f"Received unsupported arguments {kwargs}. These arguments are not "
+            f"supported when creating a new experiment."
+        )
+        raise ValueError(msg)
+    else:
+        if not upload_results:
+            _warn_once("'upload_results' parameter is in beta.")
+        if callable(target) and rh.is_async(target):
+            raise ValueError(
+                "Async functions are not supported by `evaluate`. "
+                "Please use `aevaluate` instead:\n\n"
+                "from langsmith import aevaluate\n\n"
+                "await aevaluate(\n"
+                "    async_target_function,\n"
+                "    data=data,\n"
+                "    evaluators=evaluators,\n"
+                "    # ... other parameters\n"
+                ")"
+            )
+        if experiment and experiment_prefix:
+            raise ValueError(
+                "Expected at most one of 'experiment' or 'experiment_prefix',"
+                " but both were provided. "
+                f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+            )
+        return _evaluate(
+            target,
+            data=data,
+            evaluators=cast(Optional[Sequence[EVALUATOR_T]], evaluators),
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            experiment_prefix=experiment_prefix,
+            description=description,
+            max_concurrency=max_concurrency,
+            num_repetitions=num_repetitions,
+            client=client,
+            blocking=blocking,
+            experiment=experiment,
+            upload_results=upload_results,
+        )
 
 
 def evaluate_existing(
@@ -371,11 +462,7 @@ def evaluate_existing(
         View the evaluation results for experiment:...
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
-    project = (
-        experiment
-        if isinstance(experiment, schemas.TracerSession)
-        else _load_experiment(experiment, client)
-    )
+    project = _load_experiment(experiment, client)
     runs = _load_traces(experiment, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
@@ -499,7 +586,7 @@ COMPARATIVE_EVALUATOR_T = Callable[
 
 
 def evaluate_comparative(
-    experiments: Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]],
+    experiments: Tuple[EXPERIMENT_T, EXPERIMENT_T],
     /,
     evaluators: Sequence[COMPARATIVE_EVALUATOR_T],
     experiment_prefix: Optional[str] = None,
@@ -958,11 +1045,14 @@ def _is_uuid(value: str) -> bool:
 
 
 def _load_experiment(
-    project: Union[str, uuid.UUID], client: langsmith.Client
-) -> schemas.TracerSessionResult:
-    if isinstance(project, uuid.UUID) or _is_uuid(project):
+    project: EXPERIMENT_T, client: langsmith.Client
+) -> schemas.TracerSession:
+    if isinstance(project, schemas.TracerSession):
+        return project
+    elif isinstance(project, uuid.UUID) or _is_uuid(project):
         return client.read_project(project_id=project)
-    return client.read_project(project_name=project)
+    else:
+        return client.read_project(project_name=project)
 
 
 def _load_traces(
