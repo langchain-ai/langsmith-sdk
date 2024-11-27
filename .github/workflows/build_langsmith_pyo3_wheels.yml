@@ -23,11 +23,13 @@ on:
       - "rust/**"
       - "vendor/orjson/**"
       - "vendor/pyo3/**"
+      - ".github/workflows/build_langsmith_pyo3_wheels.yml"
   pull_request:
     paths:
       - "rust/**"
       - "vendor/orjson/**"
       - "vendor/pyo3/**"
+      - ".github/workflows/build_langsmith_pyo3_wheels.yml"
   workflow_dispatch:
 
 permissions:
