@@ -43,10 +43,21 @@ export type SummaryEvaluatorT =
 export type EvaluatorT =
   | RunEvaluator
   | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
-  | ((
-      run: Run,
-      example?: Example
-    ) => Promise<EvaluationResult | EvaluationResults>);
+  | ((run: Run, example?: Example) => Promise<EvaluationResult | EvaluationResults>)
+  | ((args: {
+      run?: Run;
+      example?: Example;
+      inputs?: Record<string, any>;
+      outputs?: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      run?: Run;
+      example?: Example;
+      inputs?: Record<string, any>;
+      outputs?: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => Promise<EvaluationResult | EvaluationResults>);
 
 interface _ForwardResults {
   run: Run;

@@ -770,3 +770,209 @@ test("evaluate accepts evaluators which return multiple feedback keys", async ()
     { key: "second-key", score: 2, comment },
   ]);
 });
+
+test("evaluate can handle evaluators with object parameters", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const objectEvaluator = ({
+    inputs,
+    outputs,
+    referenceOutputs,
+  }: {
+    inputs?: Record<string, any>;
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    return {
+      key: "object_evaluator",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+      comment: `Input: ${inputs?.input}, Output: ${outputs?.foo}, Expected: ${referenceOutputs?.output}`,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [objectEvaluator],
+    description: "evaluate can handle evaluators with object parameters",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  // Check first result
+  const firstResult = evalRes.results[0];
+  expect(firstResult.evaluationResults.results).toHaveLength(1);
+  const firstEval = firstResult.evaluationResults.results[0];
+  expect(firstEval.key).toBe("object_evaluator");
+  expect(firstEval.score).toBeDefined();
+  expect(firstEval.comment).toContain("Input:");
+  expect(firstEval.comment).toContain("Output:");
+  expect(firstEval.comment).toContain("Expected:");
+
+  // Check second result
+  const secondResult = evalRes.results[1];
+  expect(secondResult.evaluationResults.results).toHaveLength(1);
+  const secondEval = secondResult.evaluationResults.results[0];
+  expect(secondEval.key).toBe("object_evaluator");
+  expect(secondEval.score).toBeDefined();
+  expect(secondEval.comment).toContain("Input:");
+  expect(secondEval.comment).toContain("Output:");
+  expect(secondEval.comment).toContain("Expected:");
+});
+
+test("evaluate can mix evaluators with different parameter styles", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  // Traditional style evaluator
+  const traditionalEvaluator = (run: Run, example?: Example) => {
+    return {
+      key: "traditional",
+      score: run.outputs?.foo === example?.outputs?.output ? 1 : 0,
+    };
+  };
+
+  // Object style evaluator
+  const objectEvaluator = ({
+    outputs,
+    referenceOutputs,
+  }: {
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    return {
+      key: "object_style",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [traditionalEvaluator, objectEvaluator],
+    description: "evaluate can mix evaluators with different parameter styles",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  // Check both evaluators ran for each example
+  for (const result of evalRes.results) {
+    expect(result.evaluationResults.results).toHaveLength(2);
+    
+    const traditionalResult = result.evaluationResults.results.find(
+      (r) => r.key === "traditional"
+    );
+    expect(traditionalResult).toBeDefined();
+    expect(typeof traditionalResult?.score).toBe("number");
+
+    const objectResult = result.evaluationResults.results.find(
+      (r) => r.key === "object_style"
+    );
+    expect(objectResult).toBeDefined();
+    expect(typeof objectResult?.score).toBe("number");
+  }
+});
+
+test("evaluate handles partial object parameters correctly", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  // Evaluator that only uses outputs and referenceOutputs
+  const outputOnlyEvaluator = ({
+    outputs,
+    referenceOutputs,
+  }: {
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    return {
+      key: "output_only",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+    };
+  };
+
+  // Evaluator that only uses run and example
+  const runOnlyEvaluator = ({
+    run,
+    example,
+  }: {
+    run?: Run;
+    example?: Example;
+  }) => {
+    return {
+      key: "run_only",
+      score: run?.outputs?.foo === example?.outputs?.output ? 1 : 0,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [outputOnlyEvaluator, runOnlyEvaluator],
+    description: "evaluate handles partial object parameters correctly",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  // Check both evaluators ran for each example
+  for (const result of evalRes.results) {
+    expect(result.evaluationResults.results).toHaveLength(2);
+    
+    const outputResult = result.evaluationResults.results.find(
+      (r) => r.key === "output_only"
+    );
+    expect(outputResult).toBeDefined();
+    expect(typeof outputResult?.score).toBe("number");
+
+    const runResult = result.evaluationResults.results.find(
+      (r) => r.key === "run_only"
+    );
+    expect(runResult).toBeDefined();
+    expect(typeof runResult?.score).toBe("number");
+  }
+});
+
+test("evaluate handles async object-style evaluators", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const asyncEvaluator = async ({
+    outputs,
+    referenceOutputs,
+  }: {
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    // Simulate async operation
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return {
+      key: "async_evaluator",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [asyncEvaluator],
+    description: "evaluate handles async object-style evaluators",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  for (const result of evalRes.results) {
+    expect(result.evaluationResults.results).toHaveLength(1);
+    const evalResult = result.evaluationResults.results[0];
+    expect(evalResult.key).toBe("async_evaluator");
+    expect(typeof evalResult.score).toBe("number");
+  }
+});
