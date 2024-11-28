@@ -134,7 +134,7 @@ def evaluate(
 def evaluate(
     target: Union[TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
-    data: Optional[DATA_T]=None,
+    data: Optional[DATA_T] = None,
     evaluators: Optional[
         Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
     ] = None,
@@ -394,7 +394,7 @@ def evaluate(
         msg = "Must specify 'data' when running evaluations over a target function."
         raise ValueError(msg)
     elif callable(target) and rh.is_async(target):
-        msg =(
+        msg = (
             "Async functions are not supported by `evaluate`. "
             "Please use `aevaluate` instead:\n\n"
             "from langsmith import aevaluate\n\n"
@@ -407,7 +407,7 @@ def evaluate(
         )
         raise ValueError(msg)
     elif experiment and experiment_prefix:
-        msg =(
+        msg = (
             "Expected at most one of 'experiment' or 'experiment_prefix',"
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"

@@ -76,7 +76,9 @@ async def aevaluate(
         ATARGET_T, AsyncIterable[dict], Runnable, str, uuid.UUID, schemas.TracerSession
     ],
     /,
-    data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None] = None,
+    data: Union[
+        DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None
+    ] = None,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
@@ -297,7 +299,7 @@ async def aevaluate(
         msg = "Must specify 'data' when running evaluations over a target function."
         raise ValueError(msg)
     elif experiment and experiment_prefix:
-        msg =(
+        msg = (
             "Expected at most one of 'experiment' or 'experiment_prefix',"
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
