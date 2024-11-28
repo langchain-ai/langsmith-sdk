@@ -44,13 +44,16 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation.evaluator import (
+    SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
     DynamicComparisonRunEvaluator,
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
+    _normalize_summary_evaluator,
     comparison_evaluator,
     run_evaluator,
 )
@@ -58,6 +61,7 @@ from langsmith.evaluation.integrations import LangChainStringEvaluator
 
 if TYPE_CHECKING:
     import pandas as pd
+    from langchain_core.runnables import Runnable
 
     DataFrame = pd.DataFrame
 else:
@@ -66,19 +70,9 @@ logger = logging.getLogger(__name__)
 
 TARGET_T = Callable[[dict], dict]
 # Data format: dataset-name, dataset_id, or examples
-DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example]]
+DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example], schemas.Dataset]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
-SUMMARY_EVALUATOR_T = Union[
-    Callable[
-        [Sequence[schemas.Run], Sequence[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-    Callable[
-        [List[schemas.Run], List[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-]
 # Row-level evaluator
 EVALUATOR_T = Union[
     RunEvaluator,
@@ -86,6 +80,7 @@ EVALUATOR_T = Union[
         [schemas.Run, Optional[schemas.Example]],
         Union[EvaluationResult, EvaluationResults],
     ],
+    Callable[..., Union[dict, EvaluationResults, EvaluationResult]],
 ]
 AEVALUATOR_T = Union[
     Callable[
@@ -96,7 +91,7 @@ AEVALUATOR_T = Union[
 
 
 def evaluate(
-    target: TARGET_T,
+    target: Union[TARGET_T, Runnable],
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -109,6 +104,7 @@ def evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
 ) -> ExperimentResults:
     r"""Evaluate a target system or function on a given dataset.
 
@@ -265,6 +261,8 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
+    if not upload_results:
+        _warn_once("'upload_results' parameter is in beta.")
     if callable(target) and rh.is_async(target):
         raise ValueError(
             "Async functions are not supported by `evaluate`. "
@@ -296,6 +294,7 @@ def evaluate(
         client=client,
         blocking=blocking,
         experiment=experiment,
+        upload_results=upload_results,
     )
 
 
@@ -645,16 +644,20 @@ def evaluate_comparative(
         ...         },
         ...     )
         ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
-        ...     preference = json.loads(tool_args)["preferred_option"]
+        ...     loaded_args = json.loads(tool_args)
+        ...     preference = loaded_args["preferred_option"]
+        ...     comment = loaded_args["reasoning"]
         ...     if preference == "A":
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...             "comment": comment,
         ...         }
         ...     else:
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...             "comment": comment,
         ...         }
         >>> def score_length_difference(runs: list, example: schemas.Example):
         ...     # Just return whichever response is longer.
@@ -779,12 +782,18 @@ def evaluate_comparative(
             result = comparator.compare_runs(runs_list, example)
             if client is None:
                 raise ValueError("Client is required to submit feedback.")
+        comments = (
+            {str(rid): result.comment for rid in result.scores}
+            if isinstance(result.comment, str)
+            else (result.comment or {})
+        )
         for run_id, score in result.scores.items():
             executor.submit(
                 client.create_feedback,
                 run_id=run_id,
                 key=result.key,
                 score=score,
+                comment=comments.get(str(run_id)),
                 comparative_experiment_id=comparative_experiment.id,
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
@@ -797,9 +806,7 @@ def evaluate_comparative(
     ) as executor:
         futures = []
         for example_id, runs_list in tqdm(runs_dict.items()):
-            results[example_id] = {
-                "runs": runs_list,
-            }
+            results[example_id] = {"runs": runs_list}
             for comparator in comparators:
                 if max_concurrency > 1:
                     future = executor.submit(
@@ -878,12 +885,12 @@ def _print_comparative_experiment_start(
         )
 
 
-def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run]]) -> bool:
-    return callable(target) or (hasattr(target, "invoke") and callable(target.invoke))
+def _is_callable(target: Union[TARGET_T, Iterable[schemas.Run], Runnable]) -> bool:
+    return callable(target) or _is_langchain_runnable(target)
 
 
 def _evaluate(
-    target: Union[TARGET_T, Iterable[schemas.Run]],
+    target: Union[TARGET_T, Iterable[schemas.Run], Runnable],
     /,
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
@@ -896,6 +903,7 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
@@ -916,6 +924,7 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
+        upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
     cache_path = (
@@ -1102,9 +1111,9 @@ class _ExperimentManagerMixin:
         return project
 
     def _print_experiment_start(
-        self, project: schemas.TracerSession, first_example: schemas.Example
+        self, project: Optional[schemas.TracerSession], first_example: schemas.Example
     ) -> None:
-        if project.url:
+        if project and project.url:
             # TODO: Make this a public API
             project_url = project.url.split("?")[0]
             dataset_id = first_example.dataset_id
@@ -1160,6 +1169,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        upload_results: bool = True,
     ):
         super().__init__(
             experiment=experiment,
@@ -1173,6 +1183,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._upload_results = upload_results
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
@@ -1213,7 +1224,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
     def start(self) -> _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
-        project = self._get_project(first_example)
+        project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
@@ -1223,6 +1234,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            upload_results=self._upload_results,
         )
 
     def with_predictions(
@@ -1243,6 +1255,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             metadata=self._metadata,
             client=self.client,
             runs=(pred["run"] for pred in r2),
+            upload_results=self._upload_results,
             # TODO: Can't do multiple prediction rounds rn.
         )
 
@@ -1274,6 +1287,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
             summary_results=self._summary_results,
+            upload_results=self._upload_results,
         )
 
     def with_summary_evaluators(
@@ -1294,6 +1308,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=self.runs,
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            upload_results=self._upload_results,
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1330,7 +1345,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client
+                    fn,
+                    example,
+                    self.experiment_name,
+                    self._metadata,
+                    self.client,
+                    self._upload_results,
                 )
 
         else:
@@ -1343,6 +1363,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
+                        self._upload_results,
                     )
                     for example in self.examples
                 ]
@@ -1371,7 +1392,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": True,
+                "enabled": "local" if not self._upload_results else True,
                 "client": self.client,
             }
         ):
@@ -1384,12 +1405,15 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         run=run,
                         example=example,
                     )
+
                     eval_results["results"].extend(
+                        self.client._select_eval_results(evaluator_response)
+                    )
+                    if self._upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run, _executor=executor
                         )
-                    )
                 except Exception as e:
                     try:
                         feedback_keys = _extract_feedback_keys(evaluator)
@@ -1406,17 +1430,19 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             ]
                         )
                         eval_results["results"].extend(
+                            self.client._select_eval_results(error_response)
+                        )
+                        if self._upload_results:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
                                 error_response, run=run, _executor=executor
                             )
-                        )
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")
                         pass
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
-                        f" run {run.id}: {repr(e)}",
+                        f" run {run.id if run else ''}: {repr(e)}",
                         exc_info=True,
                     )
             return ExperimentResultRow(
@@ -1445,7 +1471,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self._run_evaluators,
                         evaluators,
                         current_results,
-                        executor=executor,
+                        executor,
                     )
             else:
                 futures = set()
@@ -1455,7 +1481,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             self._run_evaluators,
                             evaluators,
                             current_results,
-                            executor=executor,
+                            executor,
                         )
                     )
                     try:
@@ -1479,7 +1505,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             examples.append(example)
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
-            project_id = self._get_experiment().id
+            project_id = self._get_experiment().id if self._upload_results else None
             current_context = rh.get_tracing_context()
             metadata = {
                 **(current_context["metadata"] or {}),
@@ -1494,7 +1520,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     "project_name": "evaluators",
                     "metadata": metadata,
                     "client": self.client,
-                    "enabled": True,
+                    "enabled": "local" if not self._upload_results else True,
                 }
             ):
                 for evaluator in summary_evaluators:
@@ -1506,16 +1532,17 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             fn_name=evaluator.__name__,
                         )
                         aggregate_feedback.extend(flattened_results)
-                        for result in flattened_results:
-                            feedback = result.dict(exclude={"target_run_id"})
-                            evaluator_info = feedback.pop("evaluator_info", None)
-                            executor.submit(
-                                self.client.create_feedback,
-                                **feedback,
-                                run_id=None,
-                                project_id=project_id,
-                                source_info=evaluator_info,
-                            )
+                        if self._upload_results:
+                            for result in flattened_results:
+                                feedback = result.dict(exclude={"target_run_id"})
+                                evaluator_info = feedback.pop("evaluator_info", None)
+                                executor.submit(
+                                    self.client.create_feedback,
+                                    **feedback,
+                                    run_id=None,
+                                    project_id=project_id,
+                                    source_info=evaluator_info,
+                                )
                     except Exception as e:
                         logger.error(
                             f"Error running summary evaluator {repr(evaluator)}: {e}",
@@ -1549,6 +1576,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
         return list(splits)
 
     def _end(self) -> None:
+        if not self._upload_results:
+            return
         experiment = self._experiment
         if experiment is None:
             raise ValueError("Experiment not started yet.")
@@ -1558,8 +1587,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         project_metadata["dataset_splits"] = self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
-            end_time=datetime.datetime.now(datetime.timezone.utc),
-            metadata=project_metadata,
+            end_time=experiment.end_time
+            or datetime.datetime.now(datetime.timezone.utc),
+            metadata={
+                **experiment.metadata,
+                **project_metadata,
+            },
         )
 
 
@@ -1582,6 +1615,7 @@ def _wrap_summary_evaluators(
 ) -> List[SUMMARY_EVALUATOR_T]:
     def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
+        evaluator = _normalize_summary_evaluator(evaluator)
 
         @functools.wraps(evaluator)
         def _wrapper_inner(
@@ -1616,6 +1650,7 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
+    upload_results: bool,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1623,33 +1658,26 @@ def _forward(
         nonlocal run
         run = r
 
-    with rh.tracing_context(enabled=True):
+    with rh.tracing_context(enabled="local" if not upload_results else True):
+        example_version = (
+            example.modified_at.isoformat()
+            if example.modified_at
+            else example.created_at.isoformat()
+        )
+        langsmith_extra = rh.LangSmithExtra(
+            reference_example_id=example.id,
+            on_end=_get_run,
+            project_name=experiment_name,
+            metadata={**metadata, "example_version": example_version},
+            client=client,
+        )
         try:
-            fn(
-                example.inputs,
-                langsmith_extra=rh.LangSmithExtra(
-                    reference_example_id=example.id,
-                    on_end=_get_run,
-                    project_name=experiment_name,
-                    metadata={
-                        **metadata,
-                        "example_version": (
-                            example.modified_at.isoformat()
-                            if example.modified_at
-                            else example.created_at.isoformat()
-                        ),
-                    },
-                    client=client,
-                ),
-            )
+            fn(example.inputs, langsmith_extra=langsmith_extra)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
             )
-        return _ForwardResults(
-            run=cast(schemas.Run, run),
-            example=example,
-        )
+        return _ForwardResults(run=cast(schemas.Run, run), example=example)
 
 
 def _resolve_data(
@@ -1660,16 +1688,19 @@ def _resolve_data(
         return client.list_examples(dataset_name=data)
     elif isinstance(data, uuid.UUID):
         return client.list_examples(dataset_id=data)
+    elif isinstance(data, schemas.Dataset):
+        return client.list_examples(dataset_id=data.id)
     return data
 
 
 def _ensure_traceable(
-    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict],
+    target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict] | Runnable,
 ) -> rh.SupportsLangsmithExtra[[dict], dict]:
     """Ensure the target function is traceable."""
-    if not callable(target):
+    if not _is_callable(target):
         raise ValueError(
-            "Target must be a callable function. For example:\n\n"
+            "Target must be a callable function or a langchain/langgraph object. For "
+            "example:\n\n"
             "def predict(inputs: dict) -> dict:\n"
             "    # do work, like chain.invoke(inputs)\n"
             "    return {...}\n\n"
@@ -1679,9 +1710,11 @@ def _ensure_traceable(
             ")"
         )
     if rh.is_traceable_function(target):
-        fn = target
+        fn: rh.SupportsLangsmithExtra[[dict], dict] = target
     else:
-        fn = rh.traceable(name="Target")(target)
+        if _is_langchain_runnable(target):
+            target = target.invoke  # type: ignore[union-attr]
+        fn = rh.traceable(name="Target")(cast(Callable, target))
     return fn
 
 
@@ -1709,9 +1742,8 @@ def _resolve_experiment(
         return experiment_, runs
     # If we have runs, that means the experiment was already started.
     if runs is not None:
-        if runs is not None:
-            runs_, runs = itertools.tee(runs)
-            first_run = next(runs_)
+        runs_, runs = itertools.tee(runs)
+        first_run = next(runs_)
         experiment_ = client.read_project(project_id=first_run.session_id)
         if not experiment_.name:
             raise ValueError("Experiment name not found for provided runs.")
@@ -1845,7 +1877,7 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
     try:
         tree = ast.parse(python_code)
         function_def = tree.body[0]
-        if not isinstance(function_def, ast.FunctionDef):
+        if not isinstance(function_def, (ast.FunctionDef, ast.AsyncFunctionDef)):
             return []
 
         variables = {}
@@ -1923,3 +1955,17 @@ def _flatten_experiment_results(
         }
         for x in results[start:end]
     ]
+
+
+@functools.lru_cache(maxsize=1)
+def _import_langchain_runnable() -> Optional[type]:
+    try:
+        from langchain_core.runnables import Runnable
+
+        return Runnable
+    except ImportError:
+        return None
+
+
+def _is_langchain_runnable(o: Any) -> bool:
+    return bool((Runnable := _import_langchain_runnable()) and isinstance(o, Runnable))

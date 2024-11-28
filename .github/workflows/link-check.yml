@@ -19,3 +19,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Check links in Markdown files
         uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          # Do not check the `vendor/` directory.
+          folder-path: .github,js,openapi,python,rust
+          file-path: ./README.md

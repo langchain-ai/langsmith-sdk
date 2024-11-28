@@ -24,6 +24,7 @@ from typing import (
     Generic,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Protocol,
@@ -58,7 +59,9 @@ _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
 _TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
-_TRACING_ENABLED = contextvars.ContextVar[Optional[bool]](
+
+
+_TRACING_ENABLED = contextvars.ContextVar[Optional[Union[bool, Literal["local"]]]](
     "_TRACING_ENABLED", default=None
 )
 _CLIENT = contextvars.ContextVar[Optional[ls_client.Client]]("_CLIENT", default=None)
@@ -100,7 +103,7 @@ def tracing_context(
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str]] = None,
-    enabled: Optional[bool] = None,
+    enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
@@ -151,9 +154,7 @@ def tracing_context(
 get_run_tree_context = get_current_run_tree
 
 
-def is_traceable_function(
-    func: Callable[P, R],
-) -> TypeGuard[SupportsLangsmithExtra[P, R]]:
+def is_traceable_function(func: Any) -> TypeGuard[SupportsLangsmithExtra[P, R]]:
     """Check if a function is @traceable decorated."""
     return (
         _is_traceable_function(func)
@@ -937,8 +938,9 @@ class trace:
                 attachments=self.attachments or {},
             )
 
-        if enabled:
+        if enabled is True:
             self.new_run.post()
+        if enabled:
             _TAGS.set(tags_)
             _METADATA.set(metadata)
             _PARENT_RUN_TREE.set(self.new_run)
@@ -976,7 +978,7 @@ class trace:
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
-            if enabled:
+            if enabled is True:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)
@@ -1220,7 +1222,7 @@ def _container_end(
     """End the run."""
     run_tree = container.get("new_run")
     if run_tree is None:
-        # Tracing enabled
+        # Tracing not enabled
         return
     outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
     error_ = None
@@ -1228,7 +1230,8 @@ def _container_end(
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
     run_tree.end(outputs=outputs_, error=error_)
-    run_tree.patch()
+    if utils.tracing_is_enabled() is True:
+        run_tree.patch()
     on_end = container.get("on_end")
     if on_end is not None and callable(on_end):
         try:
@@ -1330,7 +1333,8 @@ def _setup_run(
     id_ = langsmith_extra.get("run_id")
     if not parent_run_ and not utils.tracing_is_enabled():
         utils.log_once(
-            logging.DEBUG, "LangSmith tracing is enabled, returning original function."
+            logging.DEBUG,
+            "LangSmith tracing is not enabled, returning original function.",
         )
         return _TraceableContainer(
             new_run=None,
@@ -1412,10 +1416,11 @@ def _setup_run(
             client=client_,  # type: ignore
             attachments=attachments,
         )
-    try:
-        new_run.post()
-    except BaseException as e:
-        LOGGER.error(f"Failed to post run {new_run.id}: {e}")
+    if utils.tracing_is_enabled() is True:
+        try:
+            new_run.post()
+        except BaseException as e:
+            LOGGER.error(f"Failed to post run {new_run.id}: {e}")
     response_container = _TraceableContainer(
         new_run=new_run,
         project_name=selected_project,
@@ -1445,7 +1450,7 @@ def _handle_container_end(
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
 
 
-def _is_traceable_function(func: Callable) -> bool:
+def _is_traceable_function(func: Any) -> bool:
     return getattr(func, "__langsmith_traceable__", False)
 
 

@@ -1,5 +1,6 @@
 """LangSmith Client."""
 
+from importlib import metadata
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -21,15 +22,17 @@ if TYPE_CHECKING:
         ContextThreadPoolExecutor,
     )
 
+# Avoid calling into importlib on every call to __version__
+version = ""
+try:
+    version = metadata.version(__package__)
+except metadata.PackageNotFoundError:
+    pass
+
 
 def __getattr__(name: str) -> Any:
     if name == "__version__":
-        try:
-            from importlib import metadata
-
-            return metadata.version(__package__)
-        except metadata.PackageNotFoundError:
-            return ""
+        return version
     elif name == "Client":
         from langsmith.client import Client
 

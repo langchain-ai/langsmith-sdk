@@ -51,7 +51,7 @@ def test_run_evaluator_decorator(run_1: Run, example_1: Example):
     assert result.score == 1.0
 
 
-async def test_dynamie_comparison_run_evaluator():
+async def test_dynamic_comparison_run_evaluator():
     def foo(runs: list, example):
         return ComparisonEvaluationResult(key="bar", scores={uuid.uuid4(): 3.1})
 
@@ -321,8 +321,8 @@ async def test_run_evaluator_decorator_return_multi_evaluation_result_async(
     assert result["results"][1].score == 2.0
 
 
-@pytest.mark.parametrize("response", [None, {}, {"accuracy": 5}])
-async def test_evaluator_raises_for_null_ouput(response: Any):
+@pytest.mark.parametrize("response", [None, {}, []])
+async def test_evaluator_raises_for_null_output(response: Any):
     @run_evaluator  # type: ignore
     def bad_evaluator(run: schemas.Run, example: schemas.Example):
         return response
@@ -334,13 +334,36 @@ async def test_evaluator_raises_for_null_ouput(response: Any):
     fake_run = MagicMock()
     fake_example = MagicMock()
 
-    with pytest.raises(ValueError, match="Expected an EvaluationResult "):
+    with pytest.raises(ValueError, match="Expected a non-empty "):
         bad_evaluator.evaluate_run(fake_run, fake_example)
 
-    with pytest.raises(ValueError, match="Expected an EvaluationResult "):
+    with pytest.raises(ValueError, match="Expected a non-empty "):
         await bad_evaluator.aevaluate_run(fake_run, fake_example)
 
-    with pytest.raises(ValueError, match="Expected an EvaluationResult "):
+    with pytest.raises(ValueError, match="Expected a non-empty "):
+        await abad_evaluator.aevaluate_run(fake_run, fake_example)
+
+
+@pytest.mark.parametrize("response", [[5], {"accuracy": 5}])
+async def test_evaluator_raises_for_bad_output(response: Any):
+    @run_evaluator  # type: ignore
+    def bad_evaluator(run: schemas.Run, example: schemas.Example):
+        return response
+
+    @run_evaluator  # type: ignore
+    async def abad_evaluator(run: schemas.Run, example: schemas.Example):
+        return response
+
+    fake_run = MagicMock()
+    fake_example = MagicMock()
+
+    with pytest.raises(ValueError, match="Expected"):
+        bad_evaluator.evaluate_run(fake_run, fake_example)
+
+    with pytest.raises(ValueError, match="Expected"):
+        await bad_evaluator.aevaluate_run(fake_run, fake_example)
+
+    with pytest.raises(ValueError, match="Expected"):
         await abad_evaluator.aevaluate_run(fake_run, fake_example)
 
 

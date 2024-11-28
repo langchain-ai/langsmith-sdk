@@ -24,6 +24,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -40,7 +41,6 @@ from typing_extensions import ParamSpec
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
 from langsmith import schemas as ls_schemas
-from langsmith._internal import _patch as patch_urllib3
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class LangSmithMissingAPIKeyWarning(LangSmithWarning):
     """Warning for missing API key."""
 
 
-def tracing_is_enabled(ctx: Optional[dict] = None) -> bool:
+def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
     """Return True if tracing is enabled."""
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
@@ -494,6 +494,8 @@ def with_cache(
             'pip install -U "langsmith[vcr]"'
         )
     # Fix concurrency issue in vcrpy's patching
+    from langsmith._internal import _patch as patch_urllib3
+
     patch_urllib3.patch_urllib3()
 
     def _filter_request_headers(request: Any) -> Any:
