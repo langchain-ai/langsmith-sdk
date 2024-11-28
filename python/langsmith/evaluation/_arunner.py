@@ -90,7 +90,7 @@ async def aevaluate(
     upload_results: bool = True,
     **kwargs: Any,
 ) -> AsyncExperimentResults:
-    r"""Evaluate an async target system or function on a given dataset.
+    r"""Evaluate an async target system on a given dataset.
 
     Args:
         target (AsyncCallable[[dict], dict] | AsyncIterable[dict] | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
@@ -277,6 +277,13 @@ async def aevaluate(
             blocking=blocking,
             **kwargs,
         )
+    elif isinstance(target, tuple):
+        msg = (
+            "Running a comparison of two existing experiments asynchronously is not "
+            "currently supported. Please use the `evaluate()` method instead and make "
+            "sure that your evaluators are defined as synchronous functions."
+        )
+        raise ValueError(msg)
     elif kwargs:
         msg = (
             f"Received unsupported arguments {kwargs}. These arguments are not "
