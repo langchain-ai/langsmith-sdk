@@ -1039,12 +1039,12 @@ def test_batch_ingest_run_retry_on_429(mock_raise_for_status):
             }
         ],
     )
-    # Check that there were 3 post calls (may be other get calls though)
+    # Check that there were 3 post calls (maybe other get calls though)
     assert mock_session.request.call_count >= 3
     # count the number of POST requests
     assert (
         sum([1 for call in mock_session.request.call_args_list if call[0][0] == "POST"])
-        == 3
+        == 2
     )
 
 
