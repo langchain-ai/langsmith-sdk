@@ -346,6 +346,13 @@ def test_evaluate_results(
             assert r["evaluation_results"]["results"][0].score == 0.7
             assert r["run"].reference_example_id in dev_xample_ids
         assert not fake_request.should_fail
+        ex_results2 = evaluate(
+            fake_request.created_session["name"],
+            evaluators=[score_value],
+            client=client,
+            blocking=blocking,
+        )
+        assert ex_results2 == ex_results
 
     # Returning list of non-dicts not supported.
     def bad_eval_list(run, example):
@@ -816,3 +823,64 @@ def comparison_eval_unknown_positional_args(runs, example, foo):
 def test__normalize_comparison_evaluator_invalid(evaluator: Callable) -> None:
     with pytest.raises(ValueError, match="Invalid evaluator function."):
         _normalize_comparison_evaluator_func(evaluator)
+
+
+def test_invalid_evaluate_args() -> None:
+    for kwargs in [
+        {"num_repetitions": 2},
+        {"experiment": "foo"},
+        {"upload_results": False},
+        {"experiment_prefix": "foo"},
+    ]:
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Received invalid arguments. .* when target is an existing experiment."
+            ),
+        ):
+            evaluate("foo", data="data", **kwargs)
+
+    for kwargs in [
+        {"num_repetitions": 2},
+        {"experiment": "foo"},
+        {"upload_results": False},
+        {"summary_evaluators": [(lambda a, b: 2)]},
+    ]:
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Received invalid arguments. .* when target is two existing "
+                "experiments."
+            ),
+        ):
+            evaluate(("foo", "bar"), data="data", **kwargs)
+
+    with pytest.raises(
+        ValueError, match="Received invalid target. If a tuple is specified"
+    ):
+        evaluate(
+            ("foo", "bar", "baz"),
+            "data",
+        )
+
+    with pytest.raises(ValueError, match="Received unsupported arguments"):
+        evaluate((lambda x: x), data="data", load_nested=True)
+
+
+async def test_invalid_aevaluate_args() -> None:
+    for kwargs in [
+        {"num_repetitions": 2},
+        {"experiment": "foo"},
+        {"upload_results": False},
+        {"experiment_prefix": "foo"},
+    ]:
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Received invalid arguments. .* when target is an existing experiment."
+            ),
+        ):
+            await aevaluate("foo", data="data", **kwargs)
+
+    with pytest.raises(ValueError, match="Received unsupported arguments"):
+        await aevaluate((lambda x: x), data="data", load_nested=True)
