@@ -618,6 +618,13 @@ async def test_aevaluate_results(
             assert r["evaluation_results"]["results"][0].score == 0.7
             assert r["run"].reference_example_id in dev_xample_ids
         assert not fake_request.should_fail
+        ex_results2 = await aevaluate(
+            fake_request.created_session["name"],
+            evaluators=[score_value],
+            client=client,
+            blocking=blocking,
+        )
+        assert ex_results2 == ex_results
 
     # Returning list of non-dicts not supported.
     async def bad_eval_list(run, example):
