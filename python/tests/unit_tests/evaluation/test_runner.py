@@ -862,14 +862,12 @@ def test_invalid_evaluate_args() -> None:
                 "experiments."
             ),
         ):
-            evaluate(("foo", "bar"), data="data", **kwargs)
+            evaluate(("foo", "bar"), **kwargs)
 
     with pytest.raises(
         ValueError, match="Received invalid target. If a tuple is specified"
     ):
-        evaluate(
-            ("foo", "bar", "baz"),
-        )
+        evaluate(("foo", "bar", "baz"))
 
     with pytest.raises(ValueError, match="Received unsupported arguments"):
         evaluate((lambda x: x), data="data", load_nested=True)
