@@ -134,7 +134,7 @@ def evaluate(
 def evaluate(
     target: Union[TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
-    data: DATA_T,
+    data: Optional[DATA_T]=None,
     evaluators: Optional[
         Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
     ] = None,
@@ -324,6 +324,7 @@ def evaluate(
             "experiment": bool(experiment),
             "upload_results": not upload_results,
             "experiment_prefix": bool(experiment_prefix),
+            "data": bool(data),
         }
         if any(invalid_args.values()):
             msg = (
@@ -350,6 +351,7 @@ def evaluate(
             "experiment": bool(experiment),
             "upload_results": not upload_results,
             "summary_evaluators": bool(summary_evaluators),
+            "data": bool(data),
         }
         if len(target) != 2 or not all(
             isinstance(t, (str, uuid.UUID, schemas.TracerSession)) for t in target
@@ -388,27 +390,32 @@ def evaluate(
             f"supported when creating a new experiment."
         )
         raise ValueError(msg)
+    elif not data:
+        msg = "Must specify 'data' when running evaluations over a target function."
+        raise ValueError(msg)
+    elif callable(target) and rh.is_async(target):
+        msg =(
+            "Async functions are not supported by `evaluate`. "
+            "Please use `aevaluate` instead:\n\n"
+            "from langsmith import aevaluate\n\n"
+            "await aevaluate(\n"
+            "    async_target_function,\n"
+            "    data=data,\n"
+            "    evaluators=evaluators,\n"
+            "    # ... other parameters\n"
+            ")"
+        )
+        raise ValueError(msg)
+    elif experiment and experiment_prefix:
+        msg =(
+            "Expected at most one of 'experiment' or 'experiment_prefix',"
+            " but both were provided. "
+            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+        )
+        raise ValueError(msg)
     else:
         if not upload_results:
             _warn_once("'upload_results' parameter is in beta.")
-        if callable(target) and rh.is_async(target):
-            raise ValueError(
-                "Async functions are not supported by `evaluate`. "
-                "Please use `aevaluate` instead:\n\n"
-                "from langsmith import aevaluate\n\n"
-                "await aevaluate(\n"
-                "    async_target_function,\n"
-                "    data=data,\n"
-                "    evaluators=evaluators,\n"
-                "    # ... other parameters\n"
-                ")"
-            )
-        if experiment and experiment_prefix:
-            raise ValueError(
-                "Expected at most one of 'experiment' or 'experiment_prefix',"
-                " but both were provided. "
-                f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
-            )
         logger.debug(f"Running evaluation over target system {target}...")
         return _evaluate(
             target,

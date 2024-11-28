@@ -838,6 +838,7 @@ def test_invalid_evaluate_args() -> None:
         {"experiment": "foo"},
         {"upload_results": False},
         {"experiment_prefix": "foo"},
+        {"data": "data"}
     ]:
         with pytest.raises(
             ValueError,
@@ -845,13 +846,14 @@ def test_invalid_evaluate_args() -> None:
                 "Received invalid arguments. .* when target is an existing experiment."
             ),
         ):
-            evaluate("foo", data="data", **kwargs)
+            evaluate("foo", **kwargs)
 
     for kwargs in [
         {"num_repetitions": 2},
         {"experiment": "foo"},
         {"upload_results": False},
         {"summary_evaluators": [(lambda a, b: 2)]},
+        {"data": "data"}
     ]:
         with pytest.raises(
             ValueError,
@@ -865,10 +867,7 @@ def test_invalid_evaluate_args() -> None:
     with pytest.raises(
         ValueError, match="Received invalid target. If a tuple is specified"
     ):
-        evaluate(
-            ("foo", "bar", "baz"),
-            "data",
-        )
+        evaluate(("foo", "bar", "baz"),)
 
     with pytest.raises(ValueError, match="Received unsupported arguments"):
         evaluate((lambda x: x), data="data", load_nested=True)
@@ -880,6 +879,7 @@ async def test_invalid_aevaluate_args() -> None:
         {"experiment": "foo"},
         {"upload_results": False},
         {"experiment_prefix": "foo"},
+        {"data": "data"}
     ]:
         with pytest.raises(
             ValueError,
@@ -887,7 +887,7 @@ async def test_invalid_aevaluate_args() -> None:
                 "Received invalid arguments. .* when target is an existing experiment."
             ),
         ):
-            await aevaluate("foo", data="data", **kwargs)
+            await aevaluate("foo", **kwargs)
 
     with pytest.raises(ValueError, match="Received unsupported arguments"):
-        await aevaluate((lambda x: x), data="data", load_nested=True)
+        await aevaluate((lambda x: x), data='data', load_nested=True)

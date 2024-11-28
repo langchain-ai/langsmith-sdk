@@ -76,7 +76,7 @@ async def aevaluate(
         ATARGET_T, AsyncIterable[dict], Runnable, str, uuid.UUID, schemas.TracerSession
     ],
     /,
-    data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example]],
+    data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None] = None,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
@@ -259,6 +259,7 @@ async def aevaluate(
             "experiment": bool(experiment),
             "upload_results": not upload_results,
             "experiment_prefix": bool(experiment_prefix),
+            "data": bool(data),
         }
         if any(invalid_args.values()):
             msg = (
@@ -292,15 +293,19 @@ async def aevaluate(
             f"supported when creating a new experiment."
         )
         raise ValueError(msg)
+    elif not data:
+        msg = "Must specify 'data' when running evaluations over a target function."
+        raise ValueError(msg)
+    elif experiment and experiment_prefix:
+        msg =(
+            "Expected at most one of 'experiment' or 'experiment_prefix',"
+            " but both were provided. "
+            f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
+        )
+        raise ValueError(msg)
     else:
         if not upload_results:
             _warn_once("'upload_results' parameter is in beta.")
-        if experiment and experiment_prefix:
-            raise ValueError(
-                "Expected at most one of 'experiment' or 'experiment_prefix',"
-                " but both were provided. "
-                f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
-            )
         logger.debug(f"Running evaluation over target system {target}...")
         return await _aevaluate(
             target,
