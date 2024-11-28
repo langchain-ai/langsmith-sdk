@@ -267,6 +267,8 @@ async def aevaluate(
                 f"specified when target is an existing experiment."
             )
             raise ValueError(msg)
+        target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
+        logger.debug(f"Running evaluation over existing experiment {target_id}...")
         return await aevaluate_existing(
             target,
             evaluators=evaluators,
@@ -299,6 +301,7 @@ async def aevaluate(
                 " but both were provided. "
                 f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
             )
+        logger.debug(f"Running evaluation over target system {target}...")
         return await _aevaluate(
             target,
             data=data,

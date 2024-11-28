@@ -332,6 +332,8 @@ def evaluate(
                 f"specified when target is an existing experiment."
             )
             raise ValueError(msg)
+        target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
+        logger.debug(f"Running evaluation over existing experiment {target_id}...")
         return evaluate_existing(
             target,
             evaluators=cast(Optional[Sequence[EVALUATOR_T]], evaluators),
@@ -367,6 +369,10 @@ def evaluate(
             raise ValueError(msg)
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency
+        target_ids = [t if isinstance(t, (str, uuid.UUID)) else t.id for t in target]
+        logger.debug(
+            f"Running pairwise evaluation over existing experiments {target_ids}..."
+        )
         return evaluate_comparative(
             target,
             evaluators=cast(Sequence[COMPARATIVE_EVALUATOR_T], evaluators or ()),
@@ -403,6 +409,7 @@ def evaluate(
                 " but both were provided. "
                 f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
             )
+        logger.debug(f"Running evaluation over target system {target}...")
         return _evaluate(
             target,
             data=data,
