@@ -153,39 +153,46 @@ def evaluate(
     r"""Evaluate a target system on a given dataset.
 
     Args:
-        target (TARGET_T): The target system or function to evaluate.
+        target (TARGET_T | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+            The target system or experiment(s) to evaluate. Can be a function
+            that takes a dict and returns a dict, a langchain Runnable, an
+            existing experiment ID, or a two-tuple of experiment IDs.
         data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
             examples, or a generator of examples.
-        evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
-            on each example. Defaults to None.
-        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
-            evaluators to run on the entire dataset. Defaults to None.
-        metadata (Optional[dict]): Metadata to attach to the experiment.
+        evaluators (Sequence[EVALUATOR_T] | Sequence[COMPARATIVE_EVALUATOR_T] | None):
+            A list of evaluators to run on each example. The evaluator signature
+            depends on the target type. Default to None.
+        summary_evaluators (Sequence[SUMMARY_EVALUATOR_T] | None): A list of summary
+            evaluators to run on the entire dataset. Should not be specified if
+            comparing two existing experiments. Defaults to None.
+        metadata (dict | None): Metadata to attach to the experiment.
             Defaults to None.
-        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+        experiment_prefix (str | None): A prefix to provide for your experiment name.
             Defaults to None.
-        description (Optional[str]): A free-form text description for the experiment.
-        max_concurrency (Optional[int]): The maximum number of concurrent
+        description (str | None): A free-form text description for the experiment.
+        max_concurrency (int | None): The maximum number of concurrent
             evaluations to run. Defaults to None (max number of workers).
-        client (Optional[langsmith.Client]): The LangSmith client to use.
+        client (langsmith.Client | None): The LangSmith client to use.
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
-        experiment (Optional[schemas.TracerSession]): An existing experiment to
+        experiment (schemas.TracerSession | None): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
-            usage only.
+            usage only. Should not be specified if target is an existing experiment or
+            two-tuple fo experiments.
         load_nested (bool): Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs. Should only be specified
-            when evaluating existing experiments.
-        randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
-            Default is False. Should only be specified when comparing two experiments.
+            when target is an existing experiment or two-tuple of experiments.
+        randomize_order (bool): Whether to randomize the order of the outputs for each
+            evaluation. Default is False. Should only be specified when target is a
+            two-tuple of existing experiments.
 
     Returns:
-        Union[ExperimentResults, ComparativeExperimentResults]: The results of the
-            evaluation.
+        ExperimentResults: If target is a function, Runnable, or existing experiment.
+        ComparativeExperimentResults: If target is a two-tuple of existing experiments.
 
     Examples:
         Prepare the dataset:
@@ -312,8 +319,18 @@ def evaluate(
         View the evaluation results for experiment:...
     """  # noqa: E501
     if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
-        if num_repetitions > 1 or experiment or not upload_results:
-            msg = ""
+        invalid_args = {
+            "num_repetitions": num_repetitions > 1,
+            "experiment": bool(experiment),
+            "upload_results": not upload_results,
+            "experiment_prefix": bool(experiment_prefix),
+        }
+        if any(invalid_args.values()):
+            msg = (
+                f"Received invalid arguments. "
+                f"{tuple(k for k, v in invalid_args.items() if v)} should not be "
+                f"specified when target is an existing experiment."
+            )
             raise ValueError(msg)
         return evaluate_existing(
             target,
@@ -326,13 +343,27 @@ def evaluate(
             **kwargs,
         )
     elif isinstance(target, tuple):
-        if (
-            num_repetitions > 1
-            or experiment
-            or not upload_results
-            or summary_evaluators
+        invalid_args = {
+            "num_repetitions": num_repetitions > 1,
+            "experiment": bool(experiment),
+            "upload_results": not upload_results,
+            "summary_evaluators": bool(summary_evaluators),
+        }
+        if len(target) != 2 or not all(
+            isinstance(t, (str, uuid.UUID, schemas.TracerSession)) for t in target
         ):
-            msg = ""
+            msg = (
+                "Received invalid target. If a tuple is specified it must have length "
+                "2 and each element should by the ID or schemas.TracerSession of an "
+                f"existing experiment. Received {target=}"
+            )
+            raise ValueError(msg)
+        elif any(invalid_args.values()):
+            msg = (
+                f"Received invalid arguments. "
+                f"{tuple(k for k, v in invalid_args.items() if v)} should not be "
+                f"specified when target is two existing experiments."
+            )
             raise ValueError(msg)
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency
