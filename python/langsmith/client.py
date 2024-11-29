@@ -6262,6 +6262,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            *kwargs,
         )
 
 

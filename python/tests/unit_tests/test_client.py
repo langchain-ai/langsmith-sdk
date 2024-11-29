@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import gc
+import inspect
 import io
 import itertools
 import json
@@ -262,8 +263,8 @@ def test_async_methods() -> None:
     for async_method in async_methods:
         sync_method = async_method[1:]  # Remove the "a" from the beginning
         assert sync_method in sync_methods
-        sync_args = set(Client.__dict__[sync_method].__code__.co_varnames)
-        async_args = set(Client.__dict__[async_method].__code__.co_varnames)
+        sync_args = set(inspect.signature(Client.__dict__[sync_method]).parameters)
+        async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
         extra_args = sync_args - async_args
         assert not extra_args, (
             f"Extra args for {async_method} "
