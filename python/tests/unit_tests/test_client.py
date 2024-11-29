@@ -1966,11 +1966,6 @@ def test_pull_prompt(
 
 
 def test_evaluate_methods() -> None:
-    """For every method defined on the Client, if there is a
-
-    corresponding async method, then the async method args should be a
-    superset of the sync method args.
-    """
     client_args = set(inspect.signature(Client.evaluate).parameters).difference(
         {"self"}
     )
