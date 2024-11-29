@@ -95,7 +95,7 @@ EXPERIMENT_T = Union[str, uuid.UUID, schemas.TracerSession]
 def evaluate(
     target: Union[TARGET_T, Runnable, EXPERIMENT_T],
     /,
-    data: DATA_T,
+    data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
@@ -115,7 +115,7 @@ def evaluate(
 def evaluate(
     target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
-    data: DATA_T,
+    data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
