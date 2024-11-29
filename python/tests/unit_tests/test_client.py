@@ -31,7 +31,7 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
-from langsmith import AsyncClient, EvaluationResult, run_trees
+from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
@@ -1963,3 +1963,23 @@ def test_pull_prompt(
         assert isinstance(result, expected_prompt_type)
         if manifest_type != "structured":
             assert not isinstance(result, StructuredPrompt)
+
+
+def test_evaluate_methods() -> None:
+    """For every method defined on the Client, if there is a
+
+    corresponding async method, then the async method args should be a
+    superset of the sync method args.
+    """
+    client_args = set(inspect.signature(Client.evaluate).parameters).difference(
+        {"self"}
+    )
+    eval_args = set(inspect.signature(evaluate).parameters).difference({"client"})
+    assert client_args == eval_args
+
+    client_args = set(inspect.signature(Client.aevaluate).parameters).difference(
+        {"self"}
+    )
+    eval_args = set(inspect.signature(aevaluate).parameters).difference({"client"})
+    extra_args = client_args - eval_args
+    assert not extra_args
