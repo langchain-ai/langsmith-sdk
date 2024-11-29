@@ -60,6 +60,7 @@ from langsmith.evaluation.evaluator import (
 
 if TYPE_CHECKING:
     import pandas as pd
+    from langchain_core.runnables import Runnable
 
     DataFrame = pd.DataFrame
 else:
@@ -71,9 +72,13 @@ ATARGET_T = Callable[[dict], Awaitable[dict]]
 
 
 async def aevaluate(
-    target: Union[ATARGET_T, AsyncIterable[dict]],
+    target: Union[
+        ATARGET_T, AsyncIterable[dict], Runnable, str, uuid.UUID, schemas.TracerSession
+    ],
     /,
-    data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example]],
+    data: Union[
+        DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None
+    ] = None,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
@@ -85,11 +90,15 @@ async def aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    **kwargs: Any,
 ) -> AsyncExperimentResults:
-    r"""Evaluate an async target system or function on a given dataset.
+    r"""Evaluate an async target system on a given dataset.
 
     Args:
-        target (Union[AsyncCallable[[dict], dict], AsyncIterable[dict]]): The async target system or function to evaluate.
+        target (AsyncCallable[[dict], dict] | AsyncIterable[dict] | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+            The target system or experiment(s) to evaluate. Can be an async function
+            that takes a dict and returns a dict, a langchain Runnable, an
+            existing experiment ID, or a two-tuple of experiment IDs.
         data (Union[DATA_T, AsyncIterable[schemas.Example]]): The dataset to evaluate on. Can be a dataset name, a list of
             examples, an async generator of examples, or an async iterable of examples.
         evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
@@ -113,6 +122,9 @@ async def aevaluate(
         experiment (Optional[schemas.TracerSession]): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
             usage only.
+        load_nested: Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs. Should only be specified
+            when evaluating an existing experiment.
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
@@ -243,29 +255,75 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    if not upload_results:
-        _warn_once("'upload_results' parameter is in beta.")
-    if experiment and experiment_prefix:
-        raise ValueError(
+    if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
+        invalid_args = {
+            "num_repetitions": num_repetitions > 1,
+            "experiment": bool(experiment),
+            "upload_results": not upload_results,
+            "experiment_prefix": bool(experiment_prefix),
+            "data": bool(data),
+        }
+        if any(invalid_args.values()):
+            msg = (
+                f"Received invalid arguments. "
+                f"{tuple(k for k, v in invalid_args.items() if v)} should not be "
+                f"specified when target is an existing experiment."
+            )
+            raise ValueError(msg)
+        target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
+        logger.debug(f"Running evaluation over existing experiment {target_id}...")
+        return await aevaluate_existing(
+            target,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            **kwargs,
+        )
+    elif isinstance(target, tuple):
+        msg = (
+            "Running a comparison of two existing experiments asynchronously is not "
+            "currently supported. Please use the `evaluate()` method instead and make "
+            "sure that your evaluators are defined as synchronous functions."
+        )
+        raise ValueError(msg)
+    elif kwargs:
+        msg = (
+            f"Received unsupported arguments {kwargs}. These arguments are not "
+            f"supported when creating a new experiment."
+        )
+        raise ValueError(msg)
+    elif not data:
+        msg = "Must specify 'data' when running evaluations over a target function."
+        raise ValueError(msg)
+    elif experiment and experiment_prefix:
+        msg = (
             "Expected at most one of 'experiment' or 'experiment_prefix',"
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
         )
-    return await _aevaluate(
-        target,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        experiment_prefix=experiment_prefix,
-        description=description,
-        max_concurrency=max_concurrency,
-        num_repetitions=num_repetitions,
-        client=client,
-        blocking=blocking,
-        experiment=experiment,
-        upload_results=upload_results,
-    )
+        raise ValueError(msg)
+    else:
+        if not upload_results:
+            _warn_once("'upload_results' parameter is in beta.")
+        logger.debug(f"Running evaluation over target system {target}...")
+        return await _aevaluate(
+            target,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            experiment_prefix=experiment_prefix,
+            description=description,
+            max_concurrency=max_concurrency,
+            num_repetitions=num_repetitions,
+            client=client,
+            blocking=blocking,
+            experiment=experiment,
+            upload_results=upload_results,
+        )
 
 
 async def aevaluate_existing(
@@ -278,7 +336,7 @@ async def aevaluate_existing(
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
-) -> AsyncIterator[ExperimentResultRow]:
+) -> AsyncExperimentResults:
     r"""Evaluate existing experiment runs asynchronously.
 
     Args:
@@ -371,7 +429,7 @@ async def aevaluate_existing(
 
 
 async def _aevaluate(
-    target: Union[ATARGET_T, AsyncIterable[dict], Iterable[schemas.Run]],
+    target: Union[ATARGET_T, AsyncIterable[dict], Iterable[schemas.Run], Runnable],
     /,
     data: Union[DATA_T, AsyncIterable[schemas.Example]],
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
