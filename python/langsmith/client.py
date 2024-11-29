@@ -61,7 +61,7 @@ from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
 )
-from typing_extensions import TypeGuard
+from typing_extensions import TypeGuard, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
@@ -117,10 +117,13 @@ if TYPE_CHECKING:
         AsyncExperimentResults,
     )
     from langsmith.evaluation._runner import (
+        COMPARATIVE_EVALUATOR_T,
         DATA_T,
         EVALUATOR_T,
+        EXPERIMENT_T,
         SUMMARY_EVALUATOR_T,
         TARGET_T,
+        ComparativeExperimentResults,
         ExperimentResults,
     )
 
@@ -5814,11 +5817,12 @@ class Client:
         """Manually trigger cleanup of the background thread."""
         self._manual_cleanup = True
 
+    @overload
     def evaluate(
         self,
-        target: Union[TARGET_T, Runnable],
+        target: Union[TARGET_T, Runnable, EXPERIMENT_T],
         /,
-        data: DATA_T,
+        data: Optional[DATA_T] = None,
         evaluators: Optional[Sequence[EVALUATOR_T]] = None,
         summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
         metadata: Optional[dict] = None,
@@ -5827,37 +5831,94 @@ class Client:
         max_concurrency: Optional[int] = None,
         num_repetitions: int = 1,
         blocking: bool = True,
-        experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+        experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
-    ) -> ExperimentResults:
-        r"""Evaluate a target system or function on a given dataset.
+        **kwargs: Any,
+    ) -> ExperimentResults: ...
+
+    @overload
+    def evaluate(
+        self,
+        target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+        /,
+        data: Optional[DATA_T] = None,
+        evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
+        summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        max_concurrency: Optional[int] = None,
+        num_repetitions: int = 1,
+        blocking: bool = True,
+        experiment: Optional[EXPERIMENT_T] = None,
+        upload_results: bool = True,
+        **kwargs: Any,
+    ) -> ComparativeExperimentResults: ...
+
+    def evaluate(
+        self,
+        target: Union[
+            TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]
+        ],
+        /,
+        data: Optional[DATA_T] = None,
+        evaluators: Optional[
+            Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
+        ] = None,
+        summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        max_concurrency: Optional[int] = None,
+        num_repetitions: int = 1,
+        blocking: bool = True,
+        experiment: Optional[EXPERIMENT_T] = None,
+        upload_results: bool = True,
+        **kwargs: Any,
+    ) -> Union[ExperimentResults, ComparativeExperimentResults]:
+        r"""Evaluate a target system on a given dataset.
 
         Args:
-            target (TARGET_T): The target system or function to evaluate.
+            target (TARGET_T | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+                The target system or experiment(s) to evaluate. Can be a function
+                that takes a dict and returns a dict, a langchain Runnable, an
+                existing experiment ID, or a two-tuple of experiment IDs.
             data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
                 examples, or a generator of examples.
-            evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
-                on each example. Defaults to None.
-            summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
-                evaluators to run on the entire dataset. Defaults to None.
-            metadata (Optional[dict]): Metadata to attach to the experiment.
+            evaluators (Sequence[EVALUATOR_T] | Sequence[COMPARATIVE_EVALUATOR_T] | None):
+                A list of evaluators to run on each example. The evaluator signature
+                depends on the target type. Default to None.
+            summary_evaluators (Sequence[SUMMARY_EVALUATOR_T] | None): A list of summary
+                evaluators to run on the entire dataset. Should not be specified if
+                comparing two existing experiments. Defaults to None.
+            metadata (dict | None): Metadata to attach to the experiment.
                 Defaults to None.
-            experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+            experiment_prefix (str | None): A prefix to provide for your experiment name.
                 Defaults to None.
-            description (Optional[str]): A free-form text description for the experiment.
-            max_concurrency (Optional[int]): The maximum number of concurrent
+            description (str | None): A free-form text description for the experiment.
+            max_concurrency (int | None): The maximum number of concurrent
                 evaluations to run. Defaults to None (max number of workers).
+            client (langsmith.Client | None): The LangSmith client to use.
+                Defaults to None.
             blocking (bool): Whether to block until the evaluation is complete.
                 Defaults to True.
             num_repetitions (int): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.
-            experiment (Optional[schemas.TracerSession]): An existing experiment to
+            experiment (schemas.TracerSession | None): An existing experiment to
                 extend. If provided, experiment_prefix is ignored. For advanced
-                usage only.
+                usage only. Should not be specified if target is an existing experiment or
+                two-tuple fo experiments.
+            load_nested (bool): Whether to load all child runs for the experiment.
+                Default is to only load the top-level root runs. Should only be specified
+                when target is an existing experiment or two-tuple of experiments.
+            randomize_order (bool): Whether to randomize the order of the outputs for each
+                evaluation. Default is False. Should only be specified when target is a
+                two-tuple of existing experiments.
 
         Returns:
-            ExperimentResults: The results of the evaluation.
+            ExperimentResults: If target is a function, Runnable, or existing experiment.
+            ComparativeExperimentResults: If target is a two-tuple of existing experiments.
 
         Examples:
             Prepare the dataset:
@@ -5983,10 +6044,12 @@ class Client:
         """  # noqa: E501
         from langsmith.evaluation._runner import evaluate as evaluate_
 
-        return evaluate_(
-            target,
+        # Need to ignore because it fails when there are too many union types +
+        # overloads.
+        return evaluate_(  # type: ignore[misc]
+            target,  # type: ignore[arg-type]
             data=data,
-            evaluators=evaluators,
+            evaluators=evaluators,  # type: ignore[arg-type]
             summary_evaluators=summary_evaluators,
             metadata=metadata,
             experiment_prefix=experiment_prefix,
@@ -5997,13 +6060,23 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            **kwargs,
         )
 
     async def aevaluate(
         self,
-        target: Union[ATARGET_T, AsyncIterable[dict]],
+        target: Union[
+            ATARGET_T,
+            AsyncIterable[dict],
+            Runnable,
+            str,
+            uuid.UUID,
+            schemas.TracerSession,
+        ],
         /,
-        data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example]],
+        data: Union[
+            DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None
+        ] = None,
         evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
         summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
         metadata: Optional[dict] = None,
@@ -6015,11 +6088,15 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        **kwargs: Any,
     ) -> AsyncExperimentResults:
-        r"""Evaluate an async target system or function on a given dataset.
+        r"""Evaluate an async target system on a given dataset.
 
         Args:
-            target (Union[AsyncCallable[[dict], dict], AsyncIterable[dict]]): The async target system or function to evaluate.
+            target (AsyncCallable[[dict], dict] | AsyncIterable[dict] | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+                The target system or experiment(s) to evaluate. Can be an async function
+                that takes a dict and returns a dict, a langchain Runnable, an
+                existing experiment ID, or a two-tuple of experiment IDs.
             data (Union[DATA_T, AsyncIterable[schemas.Example]]): The dataset to evaluate on. Can be a dataset name, a list of
                 examples, an async generator of examples, or an async iterable of examples.
             evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
@@ -6036,11 +6113,16 @@ class Client:
             num_repetitions (int): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.
+            client (Optional[langsmith.Client]): The LangSmith client to use.
+                Defaults to None.
             blocking (bool): Whether to block until the evaluation is complete.
                 Defaults to True.
             experiment (Optional[schemas.TracerSession]): An existing experiment to
                 extend. If provided, experiment_prefix is ignored. For advanced
                 usage only.
+            load_nested: Whether to load all child runs for the experiment.
+                Default is to only load the top-level root runs. Should only be specified
+                when evaluating an existing experiment.
 
         Returns:
             AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
