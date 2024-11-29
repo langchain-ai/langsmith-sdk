@@ -352,8 +352,8 @@ def test_evaluate_results(
             client=client,
             blocking=blocking,
         )
-        assert [x["evaluation_results"]["results"] for x in ex_results2] == [
-            x["evaluation_results"]["results"] for x in ex_results
+        assert [x["evaluation_results"]["results"].score for x in ex_results2] == [
+            x["evaluation_results"]["results"].score for x in ex_results
         ]
 
     # Returning list of non-dicts not supported.
@@ -626,9 +626,9 @@ async def test_aevaluate_results(
             client=client,
             blocking=blocking,
         )
-        assert [x["evaluation_results"]["results"] async for x in ex_results2] == [
-            x["evaluation_results"]["results"] async for x in ex_results
-        ]
+        assert [
+            x["evaluation_results"]["results"].score async for x in ex_results2
+        ] == [x["evaluation_results"]["results"].score async for x in ex_results]
 
     # Returning list of non-dicts not supported.
     async def bad_eval_list(run, example):
