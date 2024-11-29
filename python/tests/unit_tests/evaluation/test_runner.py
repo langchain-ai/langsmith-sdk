@@ -628,7 +628,7 @@ async def test_aevaluate_results(
         )
         assert [
             x["evaluation_results"]["results"][0].score async for x in ex_results2
-        ] == [x["evaluation_results"]["results"][0].score async for x in all_results]
+        ] == [x["evaluation_results"]["results"][0].score for x in all_results]
 
     # Returning list of non-dicts not supported.
     async def bad_eval_list(run, example):
