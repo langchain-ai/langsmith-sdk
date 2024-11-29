@@ -5898,8 +5898,6 @@ class Client:
             description (str | None): A free-form text description for the experiment.
             max_concurrency (int | None): The maximum number of concurrent
                 evaluations to run. Defaults to None (max number of workers).
-            client (langsmith.Client | None): The LangSmith client to use.
-                Defaults to None.
             blocking (bool): Whether to block until the evaluation is complete.
                 Defaults to True.
             num_repetitions (int): The number of times to run the evaluation.
@@ -6084,7 +6082,6 @@ class Client:
         description: Optional[str] = None,
         max_concurrency: Optional[int] = None,
         num_repetitions: int = 1,
-        client: Optional[langsmith.Client] = None,
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
@@ -6113,8 +6110,6 @@ class Client:
             num_repetitions (int): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.
-            client (Optional[langsmith.Client]): The LangSmith client to use.
-                Defaults to None.
             blocking (bool): Whether to block until the evaluation is complete.
                 Defaults to True.
             experiment (Optional[schemas.TracerSession]): An existing experiment to
