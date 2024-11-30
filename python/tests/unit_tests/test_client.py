@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import gc
+import inspect
 import io
 import itertools
 import json
@@ -30,7 +31,7 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
-from langsmith import AsyncClient, EvaluationResult, run_trees
+from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
@@ -262,8 +263,8 @@ def test_async_methods() -> None:
     for async_method in async_methods:
         sync_method = async_method[1:]  # Remove the "a" from the beginning
         assert sync_method in sync_methods
-        sync_args = set(Client.__dict__[sync_method].__code__.co_varnames)
-        async_args = set(Client.__dict__[async_method].__code__.co_varnames)
+        sync_args = set(inspect.signature(Client.__dict__[sync_method]).parameters)
+        async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
         extra_args = sync_args - async_args
         assert not extra_args, (
             f"Extra args for {async_method} "
@@ -1962,3 +1963,18 @@ def test_pull_prompt(
         assert isinstance(result, expected_prompt_type)
         if manifest_type != "structured":
             assert not isinstance(result, StructuredPrompt)
+
+
+def test_evaluate_methods() -> None:
+    client_args = set(inspect.signature(Client.evaluate).parameters).difference(
+        {"self"}
+    )
+    eval_args = set(inspect.signature(evaluate).parameters).difference({"client"})
+    assert client_args == eval_args
+
+    client_args = set(inspect.signature(Client.aevaluate).parameters).difference(
+        {"self"}
+    )
+    eval_args = set(inspect.signature(aevaluate).parameters).difference({"client"})
+    extra_args = client_args - eval_args
+    assert not extra_args

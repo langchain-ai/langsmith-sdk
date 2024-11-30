@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.146"
+version = "0.1.147"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -34,6 +34,9 @@ requests = "^2"
 orjson = { version = "^3.9.14", markers = "platform_python_implementation != 'PyPy'" }
 httpx = ">=0.23.0,<1"
 requests-toolbelt = "^1.0.0"
+
+# Enabled via `langsmith_pyo3` extra: `pip install langsmith[langsmith_pyo3]`.
+langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -71,6 +74,7 @@ pytest-socket = "^0.7.0"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]
+langsmith_pyo3 = ["langsmith-pyo3"]
 
 [build-system]
 requires = ["poetry-core"]
