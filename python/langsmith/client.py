@@ -1130,7 +1130,6 @@ class Client:
         return ls_schemas.Dataset(
             **result,
             _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def _run_transform(
@@ -2843,7 +2842,6 @@ class Client:
         return ls_schemas.Dataset(
             **response.json(),
             _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def has_dataset(
@@ -2912,12 +2910,10 @@ class Client:
             return ls_schemas.Dataset(
                 **result[0],
                 _host_url=self._host_url,
-                _tenant_id=self._get_optional_tenant_id(),
             )
         return ls_schemas.Dataset(
             **result,
             _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def diff_dataset_versions(
@@ -3062,7 +3058,6 @@ class Client:
             yield ls_schemas.Dataset(
                 **dataset,
                 _host_url=self._host_url,
-                _tenant_id=self._get_optional_tenant_id(),
             )
             if limit is not None and i + 1 >= limit:
                 break
@@ -3599,7 +3594,6 @@ class Client:
         return ls_schemas.Example(
             **result,
             _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def read_example(
@@ -3623,7 +3617,6 @@ class Client:
         return ls_schemas.Example(
             **response.json(),
             _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
         )
 
     def list_examples(
@@ -3694,7 +3687,6 @@ class Client:
             yield ls_schemas.Example(
                 **example,
                 _host_url=self._host_url,
-                _tenant_id=self._get_optional_tenant_id(),
             )
             if limit is not None and i + 1 >= limit:
                 break
@@ -4102,7 +4094,6 @@ class Client:
             reference_example_ = ls_schemas.Example(
                 **example,
                 _host_url=self._host_url,
-                _tenant_id=self._get_optional_tenant_id(),
             )
         elif run.reference_example_id is not None:
             reference_example_ = self.read_example(run.reference_example_id)
