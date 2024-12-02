@@ -16,6 +16,7 @@ INSERT_STMT = '''
     VALUES (?, ?, ?, ?)
 '''
 NUM_THREADS = 1
+BATCH_SIZE = 1000  # Increased batch size for bulk operations
 
 def process_batch(cursor, compressor, last_processed_dotted_order, batch_size):
     """Process a single batch of runs and return the count and last processed order."""
@@ -58,7 +59,7 @@ def run_processor(db_file, stop_event):
     cursor = conn.cursor()
 
     compressor = zstd.ZstdCompressor(level=3)
-    BATCH_SIZE = 300
+    batch_size = 300
     last_processed_dotted_order = None
 
     try:
@@ -67,7 +68,7 @@ def run_processor(db_file, stop_event):
                 cursor,
                 compressor,
                 last_processed_dotted_order,
-                BATCH_SIZE
+                batch_size
             )
 
         # Drain remaining runs
@@ -76,7 +77,7 @@ def run_processor(db_file, stop_event):
                 cursor,
                 compressor,
                 last_processed_dotted_order,
-                BATCH_SIZE
+                batch_size
             )
             if run_count == 0:
                 break
@@ -84,9 +85,17 @@ def run_processor(db_file, stop_event):
     finally:
         conn.close()
 
+def generate_run_data(num_runs, inputs_blob, outputs_blob):
+    """Generator function to create run data for bulk insertion."""
+    for _ in range(num_runs):
+        run_id = str(uuid4())
+        start_time = datetime.now(timezone.utc)
+        dotted_order = f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}"
+        yield (run_id, dotted_order, inputs_blob, outputs_blob)
+
 @profile
 def benchmark_run_creation(json_size, num_runs) -> None:
-    """Benchmark the creation of runs."""
+    """Benchmark the creation of runs using executemany."""
     # Delete the existing database file
     if os.path.exists('runs.db'):
         os.remove('runs.db')
@@ -140,11 +149,11 @@ def benchmark_run_creation(json_size, num_runs) -> None:
     # Begin a transaction
     cursor.execute('BEGIN TRANSACTION;')
 
-    for _ in range(num_runs):
-        run_id = str(uuid4())
-        start_time = datetime.now(timezone.utc)
-        dotted_order = f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}"
-        cursor.execute(INSERT_STMT, (run_id, dotted_order, inputs_blob, outputs_blob))
+    # Use executemany with a generator for bulk insertion
+    cursor.executemany(
+        INSERT_STMT,
+        generate_run_data(num_runs, inputs_blob, outputs_blob)
+    )
 
     # Commit the transaction
     conn.commit()
