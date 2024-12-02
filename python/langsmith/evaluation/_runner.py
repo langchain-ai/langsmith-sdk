@@ -148,6 +148,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    verbose: bool = False,
     **kwargs: Any,
 ) -> Union[ExperimentResults, ComparativeExperimentResults]:
     r"""Evaluate a target system on a given dataset.
@@ -189,6 +190,8 @@ def evaluate(
         randomize_order (bool): Whether to randomize the order of the outputs for each
             evaluation. Default is False. Should only be specified when target is a
             two-tuple of existing experiments.
+        verbose (bool): Whether to print verbose output. Will print all DEBUG level
+            logs at the INFO level. Defaults to False.
 
     Returns:
         ExperimentResults: If target is a function, Runnable, or existing experiment.
@@ -334,7 +337,9 @@ def evaluate(
             )
             raise ValueError(msg)
         target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
-        logger.debug(f"Running evaluation over existing experiment {target_id}...")
+        ls_utils.debug(
+            verbose, f"Running evaluation over existing experiment {target_id}..."
+        )
         return evaluate_existing(
             target,
             evaluators=cast(Optional[Sequence[EVALUATOR_T]], evaluators),
@@ -372,8 +377,9 @@ def evaluate(
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency
         target_ids = [t if isinstance(t, (str, uuid.UUID)) else t.id for t in target]
-        logger.debug(
-            f"Running pairwise evaluation over existing experiments {target_ids}..."
+        ls_utils.debug(
+            verbose,
+            f"Running pairwise evaluation over existing experiments {target_ids}...",
         )
         return evaluate_comparative(
             target,
@@ -416,7 +422,7 @@ def evaluate(
     else:
         if not upload_results:
             _warn_once("'upload_results' parameter is in beta.")
-        logger.debug(f"Running evaluation over target system {target}...")
+        ls_utils.debug(verbose, f"Running evaluation over target system {target}...")
         return _evaluate(
             target,
             data=data,
@@ -431,6 +437,7 @@ def evaluate(
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            verbose=verbose,
         )
 
 
@@ -444,6 +451,7 @@ def evaluate_existing(
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
+    verbose: bool = False,
 ) -> ExperimentResults:
     r"""Evaluate existing experiment runs.
 
@@ -459,6 +467,7 @@ def evaluate_existing(
         load_nested: Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
         blocking (bool): Whether to block until evaluation is complete.
+        verbose (bool): Whether to print verbose output. Will print all DEBUG level logs at the INFO level.
 
     Returns:
         ExperimentResults: The evaluation results.
@@ -506,7 +515,9 @@ def evaluate_existing(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
+    client = client or rt.get_cached_client(
+        timeout_ms=(20_000, 90_001), verbose=verbose
+    )
     project = _load_experiment(experiment, client)
     runs = _load_traces(experiment, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
@@ -521,6 +532,7 @@ def evaluate_existing(
         client=client,
         blocking=blocking,
         experiment=project,
+        verbose=verbose,
     )
 
 
@@ -641,6 +653,7 @@ def evaluate_comparative(
     metadata: Optional[dict] = None,
     load_nested: bool = False,
     randomize_order: bool = False,
+    verbose: bool = False,
 ) -> ComparativeExperimentResults:
     r"""Evaluate existing experiment runs against each other.
 
@@ -665,6 +678,7 @@ def evaluate_comparative(
             Default is to only load the top-level root runs.
         randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
             Default is False.
+        verbose (bool): Whether to print verbose output. Will print all DEBUG level logs at the INFO level.
 
     Returns:
         ComparativeExperimentResults: The results of the comparative evaluation.
@@ -834,7 +848,7 @@ def evaluate_comparative(
         )
     if max_concurrency < 0:
         raise ValueError("max_concurrency must be a positive integer.")
-    client = client or rt.get_cached_client()
+    client = client or rt.get_cached_client(verbose=verbose)
 
     # TODO: Add information about comparison experiments
     projects = [_load_experiment(experiment, client) for experiment in experiments]
@@ -1036,9 +1050,10 @@ def _evaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    verbose: bool = False,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
-    client = client or rt.get_cached_client()
+    client = client or rt.get_cached_client(verbose=verbose)
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
     experiment_, runs = _resolve_experiment(
         experiment,
@@ -1057,6 +1072,7 @@ def _evaluate(
         runs=runs,
         # Create or resolve the experiment.
         upload_results=upload_results,
+        verbose=verbose,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
     cache_path = (
@@ -1164,8 +1180,9 @@ class _ExperimentManagerMixin:
         metadata: Optional[dict] = None,
         client: Optional[langsmith.Client] = None,
         description: Optional[str] = None,
+        verbose: bool = False,
     ):
-        self.client = client or rt.get_cached_client()
+        self.client = client or rt.get_cached_client(verbose=verbose)
         self._experiment: Optional[schemas.TracerSession] = None
         if experiment is None:
             self._experiment_name = _get_random_name()
@@ -1305,12 +1322,14 @@ class _ExperimentManager(_ExperimentManagerMixin):
         description: Optional[str] = None,
         num_repetitions: int = 1,
         upload_results: bool = True,
+        verbose: bool = False,
     ):
         super().__init__(
             experiment=experiment,
             metadata=metadata,
             client=client,
             description=description,
+            verbose=verbose,
         )
         self._data = data
         self._examples: Optional[Iterable[schemas.Example]] = None
@@ -1319,6 +1338,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
         self._upload_results = upload_results
+        self._verbose = verbose
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
@@ -1573,7 +1593,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
                                 error_response, run=run, _executor=executor
                             )
                     except Exception as e2:
-                        logger.debug(f"Error parsing feedback keys: {e2}")
+                        ls_utils.debug(
+                            self._verbose, f"Error parsing feedback keys: {e2}"
+                        )
                         pass
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"

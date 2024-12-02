@@ -226,7 +226,7 @@ def _default_retry_config() -> Retry:
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
-def close_session(session: requests.Session) -> None:
+def close_session(session: requests.Session, verbose: bool) -> None:
     """Close the session.
 
     Parameters
@@ -234,7 +234,7 @@ def close_session(session: requests.Session) -> None:
     session : Session
         The session to close.
     """
-    logger.debug("Closing Client.session")
+    ls_utils.debug(verbose, "Closing Client.session")
     session.close()
 
 
@@ -405,6 +405,7 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
+        verbose: bool = False,
     ) -> None:
         """Initialize a Client instance.
 
@@ -445,6 +446,9 @@ class Client:
             URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
             to all URLs in the dictionary. Feedback, sessions, datasets, examples,
             annotation queues and evaluation results are only written to the first.
+        verbose: bool, default=False
+            If verbose mode is enabled, then DEBUG logs will be printed at the INFO
+            log level. Useful for debugging connection and tracing issues.
 
         Raises:
         ------
@@ -465,6 +469,7 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
+        self.verbose = verbose
         self.tracing_sample_rate = _get_tracing_sampling_rate()
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
@@ -494,8 +499,8 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
-        weakref.finalize(self, close_session, self.session)
-        atexit.register(close_session, session_)
+        weakref.finalize(self, close_session, self.session, self.verbose)
+        atexit.register(close_session, session_, self.verbose)
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
@@ -781,7 +786,7 @@ class Client:
                     ls_utils.raise_for_status_with_text(response)
                     return response
                 except requests.exceptions.ReadTimeout as e:
-                    logger.debug("Passing on exception %s", e)
+                    ls_utils.debug(self.verbose, "Passing on exception %s", e)
                     if idx + 1 == stop_after_attempt:
                         raise
                     sleep_time = 2**idx + (random.random() * 0.5)
@@ -888,7 +893,7 @@ class Client:
                     ) from e
             except to_ignore_ as e:
                 if response is not None:
-                    logger.debug("Passing on exception %s", e)
+                    ls_utils.debug(self.verbose, "Passing on exception %s", e)
                     return response
             except ls_utils.LangSmithRateLimitError:
                 if idx + 1 == stop_after_attempt:
@@ -1161,11 +1166,15 @@ class Client:
             run_create["id"] = uuid.UUID(run_create["id"])
         if "inputs" in run_create and run_create["inputs"] is not None:
             if copy:
-                run_create["inputs"] = ls_utils.deepish_copy(run_create["inputs"])
+                run_create["inputs"] = ls_utils.deepish_copy(
+                    run_create["inputs"], verbose=self.verbose
+                )
             run_create["inputs"] = self._hide_run_inputs(run_create["inputs"])
         if "outputs" in run_create and run_create["outputs"] is not None:
             if copy:
-                run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
+                run_create["outputs"] = ls_utils.deepish_copy(
+                    run_create["outputs"], verbose=self.verbose
+                )
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
@@ -1749,7 +1758,7 @@ class Client:
             data["inputs"] = self._hide_run_inputs(inputs)
         if outputs is not None:
             if not use_multipart:
-                outputs = ls_utils.deepish_copy(outputs)
+                outputs = ls_utils.deepish_copy(outputs, verbose=self.verbose)
             data["outputs"] = self._hide_run_outputs(outputs)
         if events is not None:
             data["events"] = events
@@ -2516,8 +2525,11 @@ class Client:
                 self._tenant_id = tracer_session.tenant_id
                 return self._tenant_id
         except Exception as e:
-            logger.debug(
-                "Failed to get tenant ID from LangSmith: %s", repr(e), exc_info=True
+            ls_utils.debug(
+                self.verbose,
+                "Failed to get tenant ID from LangSmith: %s",
+                repr(e),
+                exc_info=True,
             )
         return None
 

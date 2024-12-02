@@ -21,6 +21,7 @@ from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
+from langsmith import utils as ls_utils
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -209,7 +210,7 @@ def _process_chat_completion(outputs: Any):
         )
         return rdict
     except BaseException as e:
-        logger.debug(f"Error processing chat completion: {e}")
+        ls_utils.debug(False, f"Error processing chat completion: {e}")
         return {"output": outputs}
 
 

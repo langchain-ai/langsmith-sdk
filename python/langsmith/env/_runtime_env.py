@@ -7,7 +7,7 @@ import platform
 import subprocess
 from typing import Dict, List, Optional, Union
 
-from langsmith.utils import get_docker_compose_command
+from langsmith.utils import get_docker_compose_command, debug
 from langsmith.env._git import exec_git
 
 try:
@@ -58,7 +58,7 @@ def get_system_metrics() -> Dict[str, Union[float, dict]]:
         # If psutil is installed but not compatible with the build,
         # we'll just cease further attempts to use it.
         _PSUTIL_AVAILABLE = False
-        logger.debug("Failed to get system metrics: %s", e)
+        debug(False, "Failed to get system metrics: %s", e)
         return {}
 
 

@@ -577,7 +577,7 @@ def _middle_copy(
     return val
 
 
-def deepish_copy(val: T) -> T:
+def deepish_copy(val: T, verbose: bool = False) -> T:
     """Deep copy a value with a compromise for uncopyable objects.
 
     Args:
@@ -594,7 +594,7 @@ def deepish_copy(val: T) -> T:
         # and raise a TypeError (mentioning pickling, since the dunder methods)
         # are re-used for copying. We'll try to do a compromise and copy
         # what we can
-        _LOGGER.debug("Failed to deepcopy input: %s", repr(e))
+        debug(verbose, "Failed to deepcopy input: %s", repr(e))
         return _middle_copy(val, memo)
 
 
@@ -777,6 +777,14 @@ def get_host_url(web_url: Optional[str], api_url: str):
     else:
         link = "https://smith.langchain.com"
     return link
+
+
+def debug(verbose: bool, *args, **kwargs):
+    """Set the logger level to DEBUG if verbose is True."""
+    if verbose:
+        _LOGGER.info(*args, **kwargs)
+    else:
+        _LOGGER.debug(*args, **kwargs)
 
 
 def _get_function_name(fn: Callable, depth: int = 0) -> str:

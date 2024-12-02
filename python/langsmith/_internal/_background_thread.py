@@ -14,6 +14,7 @@ from typing import (
 )
 
 from langsmith import schemas as ls_schemas
+from langsmith import utils as ls_utils
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -185,7 +186,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func,
-                args=(weakref.ref(client), use_multipart),
+                args=(weakref.ref(client), use_multipart, client.verbose),
             )
             sub_threads.append(new_thread)
             new_thread.start()
@@ -203,6 +204,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 def _tracing_sub_thread_func(
     client_ref: weakref.ref[Client],
     use_multipart: bool,
+    verbose: bool,
 ) -> None:
     client = client_ref()
     if client is None:
@@ -211,7 +213,7 @@ def _tracing_sub_thread_func(
         if not client.info:
             return
     except BaseException as e:
-        logger.debug("Error in tracing control thread: %s", e)
+        ls_utils.debug(verbose, "Error in tracing control thread: %s", e)
         return
     tracing_queue = client.tracing_queue
     assert tracing_queue is not None
