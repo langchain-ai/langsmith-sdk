@@ -1966,15 +1966,21 @@ def test_pull_prompt(
 
 
 def test_evaluate_methods() -> None:
+    # Non Async
     client_args = set(inspect.signature(Client.evaluate).parameters).difference(
         {"self"}
     )
-    eval_args = set(inspect.signature(evaluate).parameters).difference({"client"})
+    eval_args = set(inspect.signature(evaluate).parameters).difference(
+        {"client", "verbose"}
+    )
     assert client_args == eval_args
 
+    # Async
     client_args = set(inspect.signature(Client.aevaluate).parameters).difference(
         {"self"}
     )
-    eval_args = set(inspect.signature(aevaluate).parameters).difference({"client"})
+    eval_args = set(inspect.signature(aevaluate).parameters).difference(
+        {"client", "verbose"}
+    )
     extra_args = client_args - eval_args
     assert not extra_args

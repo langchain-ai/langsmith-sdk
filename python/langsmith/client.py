@@ -6071,6 +6071,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            verbose=self.verbose,
             **kwargs,
         )
 
@@ -6275,6 +6276,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            verbose=self.verbose,
             **kwargs,
         )
 
