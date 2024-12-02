@@ -22,9 +22,9 @@ from uuid import UUID
 from typing_extensions import NotRequired, TypedDict
 
 try:
-    from pydantic.v1 import (  # type: ignore[import]
+    from pydantic.v1 import (
         BaseModel,
-        Field,
+        Field,  # type: ignore[import]
         PrivateAttr,
         StrictBool,
         StrictFloat,
@@ -609,6 +609,8 @@ class TracerSession(BaseModel):
         """Initialize a Run object."""
         super().__init__(**kwargs)
         self._host_url = _host_url
+        if self.start_time.tzinfo is None:
+            self.start_time = self.start_time.replace(tzinfo=timezone.utc)
 
     @property
     def url(self) -> Optional[str]:
