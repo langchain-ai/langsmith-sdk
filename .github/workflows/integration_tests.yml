@@ -4,16 +4,10 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'python/**'
-      - 'js/**'
   pull_request:
     branches:
       - main
     types: [opened, synchronize, reopened, labeled, unlabeled]
-    paths:
-      - 'python/**'
-      - 'js/**'
   workflow_dispatch:
     inputs:
       run-python-tests:
