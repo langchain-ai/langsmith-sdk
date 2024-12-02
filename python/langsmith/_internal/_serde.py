@@ -43,7 +43,8 @@ def _simple_default(obj, verbose: bool = False) -> Any:
         elif isinstance(obj, datetime.timedelta):
             return obj.total_seconds()
         elif isinstance(obj, decimal.Decimal):
-            if obj.as_tuple().exponent >= 0:
+            exponent = obj.as_tuple().exponent
+            if isinstance(exponent, int) and exponent >= 0:
                 return int(obj)
             else:
                 return float(obj)
