@@ -1,5 +1,6 @@
-from bench.utils import create_large_json, create_run_data
+from bench.utils import create_large_json
 from uuid import uuid4
+from datetime import datetime, timezone
 import time
 import threading
 import sqlite3
@@ -15,117 +16,102 @@ INSERT_STMT = '''
     VALUES (?, ?, ?, ?)
 '''
 NUM_THREADS = 1
+BATCH_SIZE = 1000
 
-
-def insert_run_into_db(conn, run):
-    """Insert a run into the SQLite database."""
-    # Convert inputs and outputs to JSON strings and then to bytes (BLOBs)
-    cursor = conn.cursor()
-    inputs_blob = orjson.dumps(run['inputs'])
-    outputs_blob = orjson.dumps(run['outputs'])
-    run_id = run['id']
-    dotted_order = run['dotted_order']
-
-    start = time.perf_counter()
-    cursor.execute(INSERT_STMT, (run_id, dotted_order, inputs_blob, outputs_blob))
-    conn.commit()
-    end = time.perf_counter()
-    # print(f"Insertion time: {end - start:.6f} seconds")
-
-
-def process_batch(cursor, compressor, last_processed_dotted_order, batch_size):
+def process_batch(conn, compressor, last_processed_dotted_order, batch_size):
     """Process a single batch of runs and return the count and last processed order."""
-    start = time.perf_counter()
-    # Fetch runs after our last processed order
-    res = cursor.execute('''
+    # Fetch runs after our last processed order using connection directly
+    query_results = conn.execute('''
         SELECT run_id, inputs, outputs, dotted_order
         FROM runs 
         WHERE dotted_order > ?
         ORDER BY dotted_order 
         LIMIT ?;
     ''', (last_processed_dotted_order or '', batch_size))
-    print("Time taken to fetch runs: ", time.perf_counter() - start)
 
-    # Process runs one at a time using cursor iterator
+    # Process runs using iterator
     zstd_buffer = io.BytesIO()
     run_count = 0
     last_order = last_processed_dotted_order
 
-    start = time.perf_counter()
     with compressor.stream_writer(zstd_buffer) as compressor_stream:
-        for run_id, inputs_blob, outputs_blob, dotted_order in res:
+        for run_id, inputs_blob, outputs_blob, dotted_order in query_results:
             run_count += 1
+            # Decompress the inputs and outputs
+            inputs_blob = zstd.decompress(inputs_blob)
+            outputs_blob = zstd.decompress(outputs_blob)
             data = inputs_blob + b'\n' + outputs_blob + b'\n'
             compressor_stream.write(data)
             last_order = dotted_order
         compressed_size = zstd_buffer.tell()
 
     if compressed_size > 0:
-        print("Time taken to compress runs: ", time.perf_counter() - start)
-        # Sleep to simulate network latency
-        print("Sending compressed buffer of size: ", compressed_size)
+        # Simulate network latency
         time.sleep(0.150)
-        print(f"Processed {run_count} runs")
         global NUM_RUNS
         NUM_RUNS += run_count
 
     return run_count, last_order
 
-
 def run_processor(db_file, stop_event):
     """Background thread function to fetch runs and process them."""
     conn = sqlite3.connect(db_file, timeout=30)
-    cursor = conn.cursor()
-
     compressor = zstd.ZstdCompressor(level=3)
-    BATCH_SIZE = 300
+    batch_size = 300
     last_processed_dotted_order = None
 
     try:
         while not stop_event.is_set():
             run_count, last_processed_dotted_order = process_batch(
-                cursor,
+                conn,
                 compressor,
                 last_processed_dotted_order,
-                BATCH_SIZE
+                batch_size
             )
-
-            # if run_count == 0:
-            #     time.sleep(0.500)  # No runs found, wait before checking again
-            #     continue
 
         # Drain remaining runs
-        print("Stop event set, draining remaining runs...")
         while True:
             run_count, last_processed_dotted_order = process_batch(
-                cursor,
+                conn,
                 compressor,
                 last_processed_dotted_order,
-                BATCH_SIZE
+                batch_size
             )
             if run_count == 0:
-                print("Draining complete")
                 break
 
     finally:
         conn.close()
 
+def generate_run_data(num_runs, inputs_blob, outputs_blob):
+    """Generator function to create run data for bulk insertion."""
+    for _ in range(num_runs):
+        run_id = str(uuid4())
+        start_time = datetime.now(timezone.utc)
+        dotted_order = f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{run_id}"
+        yield (run_id, dotted_order, inputs_blob, outputs_blob)
+
 @profile
 def benchmark_run_creation(json_size, num_runs) -> None:
-    """Benchmark the creation of runs."""
-    # delete the existing database file
+    """Benchmark the creation of runs using executemany without cursors and with postponed indexing."""
+    # Delete the existing database file
     if os.path.exists('runs.db'):
         os.remove('runs.db')
 
     db_file = 'runs.db'
     # Initialize SQLite database
     conn = sqlite3.connect(db_file)
-    cursor = conn.cursor()
-    cursor.execute('PRAGMA journal_mode=WAL;')
-    cursor.execute('PRAGMA synchronous=OFF')
-    cursor.execute('PRAGMA journal_mode=MEMORY')
-    # Create table if it doesn't exist
-    cursor.execute('''
+
+    # Optimize PRAGMA settings
+    conn.execute('PRAGMA journal_mode=MEMORY;')
+    conn.execute('PRAGMA synchronous=OFF;')
+    conn.execute('PRAGMA temp_store=MEMORY;')
+    conn.execute('PRAGMA locking_mode=EXCLUSIVE;')
+    conn.execute('PRAGMA cache_size=-64000;')  # 64MB cache
+    conn.execute('PRAGMA mmap_size=268435456;')  # 256MB mmap
+
+    # Create table without indices
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS runs (
             run_id TEXT PRIMARY KEY,
             dotted_order TEXT,
@@ -133,16 +119,14 @@ def benchmark_run_creation(json_size, num_runs) -> None:
             outputs BLOB
         );
     ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_status_dotted_order 
-        ON runs(dotted_order);
-    ''')
     conn.commit()
 
     print("Creating runs...")
-    inputs, outputs = create_large_json(json_size), create_large_json(json_size)
-    runs = [create_run_data(str(uuid4()), inputs, outputs) for _ in range(num_runs)]
+    # Create and compress inputs and outputs once
+    inputs = create_large_json(json_size)
+    outputs = create_large_json(json_size)
+    inputs_blob = zstd.compress(orjson.dumps(inputs))
+    outputs_blob = zstd.compress(orjson.dumps(outputs))
     print("Runs created.")
 
     stop_event = threading.Event()
@@ -153,9 +137,40 @@ def benchmark_run_creation(json_size, num_runs) -> None:
         processor_threads.append(processor_thread)
 
     start = time.perf_counter()
+    insert_start = time.perf_counter()
 
-    for run in runs:
-        insert_run_into_db(conn, run)
+    # Begin a transaction for data insertion
+    conn.execute('BEGIN TRANSACTION;')
+
+    # Use executemany directly on the connection
+    conn.executemany(
+        INSERT_STMT,
+        generate_run_data(num_runs, inputs_blob, outputs_blob)
+    )
+
+    # Commit the insertion transaction
+    conn.commit()
+    
+    print(f"Time taken for insertions: {time.perf_counter() - insert_start:.2f} seconds")
+    
+    # Create indices after all data is inserted
+    index_start = time.perf_counter()
+    print("Creating indices...")
+    
+    # Begin a new transaction for index creation
+    conn.execute('BEGIN TRANSACTION;')
+    
+    conn.execute('''
+        CREATE INDEX IF NOT EXISTS idx_status_dotted_order 
+        ON runs(dotted_order);
+    ''')
+    
+    # Add any additional indices here if needed
+    
+    # Commit the index creation transaction
+    conn.commit()
+    
+    print(f"Time taken for index creation: {time.perf_counter() - index_start:.2f} seconds")
 
     # Close the main thread's database connection
     conn.close()
@@ -167,17 +182,15 @@ def benchmark_run_creation(json_size, num_runs) -> None:
     for processor_thread in processor_threads:
         processor_thread.join()
 
-    print("Time taken to insert runs: ", time.perf_counter() - start)
-    print("Total runs processed: ", NUM_RUNS)
-
+    print(f"Total time taken: {time.perf_counter() - start:.2f} seconds")
+    print(f"Total runs processed: {NUM_RUNS}")
 
 def main():
     """Run benchmarks with specified parameters."""
     json_size = 5_000
-    num_runs = 2_000
+    num_runs = 10_000
 
     benchmark_run_creation(json_size, num_runs)
-
 
 if __name__ == "__main__":
     main()
