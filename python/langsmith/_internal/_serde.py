@@ -108,7 +108,7 @@ def _serialize_json(obj: Any, verbose: bool = False) -> Any:
                     pass
         return _simple_default(obj, verbose=verbose)
     except BaseException as e:
-        debug(f"Failed to serialize {type(obj)} to JSON: {e}")
+        debug(verbose, f"Failed to serialize {type(obj)} to JSON: {e}")
         return str(obj)
 
 
