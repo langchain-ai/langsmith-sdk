@@ -34,7 +34,6 @@ jobs:
           files_yaml: |
             python:
               - 'python/**'
-              - '.github/**'
             js:
               - 'js/**'
 
