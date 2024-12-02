@@ -27,17 +27,23 @@ export type TargetT<TInput = any, TOutput = KVMap> =
 // Data format: dataset-name, dataset_id, or examples
 export type DataT = string | AsyncIterable<Example> | Example[];
 
-// Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
+/** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedSyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>
+) => EvaluationResult | EvaluationResults;
+
+/** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedAsyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>
+) => Promise<EvaluationResult | EvaluationResults>;
+
+// Summary evaluator runs over the whole dataset
 export type SummaryEvaluatorT =
-  | ((
-      runs: Array<Run>,
-      examples: Array<Example>
-    ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((
-      runs: Array<Run>,
-      examples: Array<Example>
-    ) => EvaluationResult | EvaluationResults)
+  | DeprecatedSyncSummaryEvaluator
+  | DeprecatedAsyncSummaryEvaluator
   | ((args: {
       runs?: Array<Run>;
       examples?: Array<Example>;
@@ -53,14 +59,26 @@ export type SummaryEvaluatorT =
       referenceOutputs?: Array<Record<string, any>>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedRunEvaluator = RunEvaluator;
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedFunctionEvaluator = (
+  run: Run,
+  example?: Example
+) => EvaluationResult | EvaluationResults;
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedAsyncFunctionEvaluator = (
+  run: Run,
+  example?: Example
+) => Promise<EvaluationResult | EvaluationResults>;
+
 // Row-level evaluator
 export type EvaluatorT =
-  | RunEvaluator
-  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
-  | ((
-      run: Run,
-      example?: Example
-    ) => Promise<EvaluationResult | EvaluationResults>)
+  | DeprecatedRunEvaluator
+  | DeprecatedFunctionEvaluator
+  | DeprecatedAsyncFunctionEvaluator
   | ((args: {
       run?: Run;
       example?: Example;
