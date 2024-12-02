@@ -685,17 +685,7 @@ export class _ExperimentManager {
 
       for (const evaluator of wrappedEvaluators) {
         try {
-          const inputs = examples.map((example) => example.inputs);
-          const outputs = runsArray.map((run) => run.outputs);
-          const referenceOutputs = examples.map((example) => example.outputs);
-
-          const summaryEvalResult = await evaluator({
-            runs: runsArray,
-            examples,
-            inputs,
-            outputs,
-            referenceOutputs,
-          });
+          const summaryEvalResult = await evaluator(runsArray, examples);
 
           const flattenedResults =
             this.client._selectEvalResults(summaryEvalResult);
@@ -1004,6 +994,31 @@ async function wrapSummaryEvaluators(
           _runs_: string,
           _examples_: string
         ): Promise<EvaluationResult | EvaluationResults> => {
+          // Check if the evaluator expects an object parameter
+          if (evaluator.length === 1) {
+            const inputs = examples.map((ex) => ex.inputs);
+            const outputs = runs.map((run) => run.outputs || {});
+            const referenceOutputs = examples.map((ex) => ex.outputs || {});
+
+            return Promise.resolve(
+              (
+                evaluator as (args: {
+                  runs?: Run[];
+                  examples?: Example[];
+                  inputs?: Record<string, any>[];
+                  outputs?: Record<string, any>[];
+                  referenceOutputs?: Record<string, any>[];
+                }) => EvaluationResult | EvaluationResults
+              )({
+                runs,
+                examples,
+                inputs,
+                outputs,
+                referenceOutputs,
+              })
+            );
+          }
+          // Otherwise use the traditional (runs, examples) signature
           return Promise.resolve(evaluator(runs, examples));
         },
         { ...optionsArray, name: evalName }

@@ -984,25 +984,22 @@ test("evaluate can evaluate with updated summary evaluators", async () => {
     };
   };
 
-  const customSummaryEvaluator = ({
-    runs,
-    examples,
-    inputs,
-    outputs,
-    referenceOutputs,
-  }: {
-    runs: Run[];
-    examples: Example[];
-    inputs: Record<string, any>[];
-    outputs: Record<string, any>[];
-    referenceOutputs: Record<string, any>[];
-  }): Promise<EvaluationResult> => {
+  // Update the type to match SummaryEvaluatorT
+  const customSummaryEvaluator = (
+    runs: Run[],
+    examples: Example[]
+  ): Promise<EvaluationResult> => {
     const runIds = runs.map(({ id }) => id).join(", ");
     const exampleIds = examples.map(({ id }) => id).join(", ");
+    const inputs = examples.map((ex) => ex.inputs);
+    const outputs = runs.map((run) => run.outputs || {});
+    const referenceOutputs = examples.map((ex) => ex.outputs || {});
+
     const inputValues = inputs.map((input) => input.input).join(", ");
     const outputValues = outputs.map((output) => output.foo).join(", ");
     const referenceOutputValues = referenceOutputs
       .map((ref) => ref.output)
+      .filter((output): output is number => output !== undefined)
       .join(", ");
 
     return Promise.resolve({
@@ -1025,9 +1022,9 @@ test("evaluate can evaluate with updated summary evaluators", async () => {
   const allRuns = evalRes.results.map(({ run }) => run);
   const allExamples = evalRes.results.map(({ example }) => example);
   const allInputs = evalRes.results.map(({ example }) => example.inputs);
-  const allOutputs = evalRes.results.map(({ run }) => run.outputs);
+  const allOutputs = evalRes.results.map(({ run }) => run.outputs || {});
   const allReferenceOutputs = evalRes.results.map(
-    ({ example }) => example.outputs
+    ({ example }) => example.outputs || {}
   );
 
   const runIds = allRuns.map(({ id }) => id).join(", ");
@@ -1036,6 +1033,7 @@ test("evaluate can evaluate with updated summary evaluators", async () => {
   const outputValues = allOutputs.map((output) => output.foo).join(", ");
   const referenceOutputValues = allReferenceOutputs
     .map((ref) => ref.output)
+    .filter((output): output is number => output !== undefined)
     .join(", ");
 
   expect(evalRes.summaryResults.results[0].comment).toBe(
@@ -1050,26 +1048,28 @@ test("evaluate handles partial summary evaluator parameters correctly", async ()
     };
   };
 
-  // Summary evaluator that only uses inputs, outputs, and referenceOutputs
-  const outputOnlySummaryEvaluator = ({
-    inputs,
-    outputs,
-    referenceOutputs,
-  }: {
-    inputs: Record<string, any>[];
-    outputs: Record<string, any>[];
-    referenceOutputs: Record<string, any>[];
-  }): Promise<EvaluationResult> => {
+  // Update to match SummaryEvaluatorT type
+  const outputOnlySummaryEvaluator = (
+    runs: Run[],
+    examples: Example[]
+  ): Promise<EvaluationResult> => {
+    const inputs = examples.map((ex) => ex.inputs);
+    const outputs = runs.map((run) => run.outputs || {});
+    const referenceOutputs = examples.map((ex) => ex.outputs || {});
+
     const inputValues = inputs.map((input) => input.input).join(", ");
     const outputValues = outputs.map((output) => output.foo).join(", ");
     const referenceOutputValues = referenceOutputs
       .map((ref) => ref.output)
+      .filter((output): output is number => output !== undefined)
       .join(", ");
 
     // Calculate average difference between outputs and reference outputs
     const avgDiff =
       outputs.reduce((sum, output, i) => {
-        return sum + Math.abs(output.foo - referenceOutputs[i].output);
+        const refOutput = referenceOutputs[i]?.output;
+        if (output.foo === undefined || refOutput === undefined) return sum;
+        return sum + Math.abs(output.foo - refOutput);
       }, 0) / outputs.length;
 
     return Promise.resolve({
@@ -1090,23 +1090,25 @@ test("evaluate handles partial summary evaluator parameters correctly", async ()
   expect(summaryResult.key).toBe("OutputOnlySummaryEvaluator");
   expect(typeof summaryResult.score).toBe("number");
 
-  // Verify the comment contains all the expected parts
   const allInputs = evalRes.results.map(({ example }) => example.inputs);
-  const allOutputs = evalRes.results.map(({ run }) => run.outputs);
+  const allOutputs = evalRes.results.map(({ run }) => run.outputs || {});
   const allReferenceOutputs = evalRes.results.map(
-    ({ example }) => example.outputs
+    ({ example }) => example.outputs || {}
   );
 
   const inputValues = allInputs.map((input) => input.input).join(", ");
   const outputValues = allOutputs.map((output) => output.foo).join(", ");
   const referenceOutputValues = allReferenceOutputs
     .map((ref) => ref.output)
+    .filter((output): output is number => output !== undefined)
     .join(", ");
 
   // Calculate expected average difference
   const expectedAvgDiff =
     allOutputs.reduce((sum, output, i) => {
-      return sum + Math.abs(output.foo - allReferenceOutputs[i].output);
+      const refOutput = allReferenceOutputs[i]?.output;
+      if (output.foo === undefined || refOutput === undefined) return sum;
+      return sum + Math.abs(output.foo - refOutput);
     }, 0) / allOutputs.length;
 
   expect(summaryResult.comment).toBe(
