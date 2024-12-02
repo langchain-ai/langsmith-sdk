@@ -37,7 +37,21 @@ export type SummaryEvaluatorT =
   | ((
       runs: Array<Run>,
       examples: Array<Example>
-    ) => EvaluationResult | EvaluationResults);
+    ) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      runs?: Array<Run>;
+      examples?: Array<Example>;
+      inputs?: Array<Record<string, any>>;
+      outputs?: Array<Record<string, any>>;
+      referenceOutputs?: Array<Record<string, any>>;
+    }) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      runs?: Array<Run>;
+      example?: Example;
+      inputs?: Record<string, any>;
+      outputs?: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => Promise<EvaluationResult | EvaluationResults>);
 
 // Row-level evaluator
 export type EvaluatorT =
@@ -671,7 +685,18 @@ export class _ExperimentManager {
 
       for (const evaluator of wrappedEvaluators) {
         try {
-          const summaryEvalResult = await evaluator(runsArray, examples);
+          const inputs = examples.map((example) => example.inputs);
+          const outputs = runsArray.map((run) => run.outputs);
+          const referenceOutputs = examples.map((example) => example.outputs);
+
+          const summaryEvalResult = await evaluator({
+            runs: runsArray,
+            examples,
+            inputs,
+            outputs,
+            referenceOutputs,
+          });
+
           const flattenedResults =
             this.client._selectEvalResults(summaryEvalResult);
           aggregateFeedback.push(...flattenedResults);

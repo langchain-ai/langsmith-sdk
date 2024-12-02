@@ -976,3 +976,126 @@ test("evaluate handles async object-style evaluators", async () => {
     expect(typeof evalResult.score).toBe("number");
   }
 });
+
+test("evaluate can evaluate with updated summary evaluators", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const customSummaryEvaluator = ({
+    runs,
+    examples,
+    inputs,
+    outputs,
+    referenceOutputs,
+  }: {
+    runs: Run[];
+    examples: Example[];
+    inputs: Record<string, any>[];
+    outputs: Record<string, any>[];
+    referenceOutputs: Record<string, any>[];
+  }): Promise<EvaluationResult> => {
+    const runIds = runs.map(({ id }) => id).join(", ");
+    const exampleIds = examples.map(({ id }) => id).join(", ");
+    const inputValues = inputs.map(input => input.input).join(", ");
+    const outputValues = outputs.map(output => output.foo).join(", ");
+    const referenceOutputValues = referenceOutputs.map(ref => ref.output).join(", ");
+    
+    return Promise.resolve({
+      key: "UpdatedSummaryEvaluator",
+      score: 1,
+      comment: `Runs: ${runIds} Examples: ${exampleIds} Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues}`,
+    });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    summaryEvaluators: [customSummaryEvaluator],
+    description: "evaluate can evaluate with updated summary evaluators",
+  });
+
+  expect(evalRes.summaryResults.results).toHaveLength(1);
+  expect(evalRes.summaryResults.results[0].key).toBe("UpdatedSummaryEvaluator");
+  expect(evalRes.summaryResults.results[0].score).toBe(1);
+
+  const allRuns = evalRes.results.map(({ run }) => run);
+  const allExamples = evalRes.results.map(({ example }) => example);
+  const allInputs = evalRes.results.map(({ example }) => example.inputs);
+  const allOutputs = evalRes.results.map(({ run }) => run.outputs);
+  const allReferenceOutputs = evalRes.results.map(({ example }) => example.outputs);
+
+  const runIds = allRuns.map(({ id }) => id).join(", ");
+  const exampleIds = allExamples.map(({ id }) => id).join(", ");
+  const inputValues = allInputs.map(input => input.input).join(", ");
+  const outputValues = allOutputs.map(output => output.foo).join(", ");
+  const referenceOutputValues = allReferenceOutputs.map(ref => ref.output).join(", ");
+
+  expect(evalRes.summaryResults.results[0].comment).toBe(
+    `Runs: ${runIds} Examples: ${exampleIds} Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues}`
+  );
+});
+
+test("evaluate handles partial summary evaluator parameters correctly", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  // Summary evaluator that only uses inputs, outputs, and referenceOutputs
+  const outputOnlySummaryEvaluator = ({
+    inputs,
+    outputs,
+    referenceOutputs,
+  }: {
+    inputs: Record<string, any>[];
+    outputs: Record<string, any>[];
+    referenceOutputs: Record<string, any>[];
+  }): Promise<EvaluationResult> => {
+    const inputValues = inputs.map(input => input.input).join(", ");
+    const outputValues = outputs.map(output => output.foo).join(", ");
+    const referenceOutputValues = referenceOutputs.map(ref => ref.output).join(", ");
+    
+    // Calculate average difference between outputs and reference outputs
+    const avgDiff = outputs.reduce((sum, output, i) => {
+      return sum + Math.abs(output.foo - referenceOutputs[i].output);
+    }, 0) / outputs.length;
+    
+    return Promise.resolve({
+      key: "OutputOnlySummaryEvaluator",
+      score: avgDiff === 0 ? 1 : 0,
+      comment: `Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues} AvgDiff: ${avgDiff}`,
+    });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    summaryEvaluators: [outputOnlySummaryEvaluator],
+    description: "evaluate handles partial summary evaluator parameters",
+  });
+
+  expect(evalRes.summaryResults.results).toHaveLength(1);
+  const summaryResult = evalRes.summaryResults.results[0];
+  expect(summaryResult.key).toBe("OutputOnlySummaryEvaluator");
+  expect(typeof summaryResult.score).toBe("number");
+
+  // Verify the comment contains all the expected parts
+  const allInputs = evalRes.results.map(({ example }) => example.inputs);
+  const allOutputs = evalRes.results.map(({ run }) => run.outputs);
+  const allReferenceOutputs = evalRes.results.map(({ example }) => example.outputs);
+
+  const inputValues = allInputs.map(input => input.input).join(", ");
+  const outputValues = allOutputs.map(output => output.foo).join(", ");
+  const referenceOutputValues = allReferenceOutputs.map(ref => ref.output).join(", ");
+
+  // Calculate expected average difference
+  const expectedAvgDiff = allOutputs.reduce((sum, output, i) => {
+    return sum + Math.abs(output.foo - allReferenceOutputs[i].output);
+  }, 0) / allOutputs.length;
+
+  expect(summaryResult.comment).toBe(
+    `Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues} AvgDiff: ${expectedAvgDiff}`
+  );
+});
