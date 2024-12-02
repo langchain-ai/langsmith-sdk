@@ -47,10 +47,10 @@ export type SummaryEvaluatorT =
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
       runs?: Array<Run>;
-      example?: Example;
-      inputs?: Record<string, any>;
-      outputs?: Record<string, any>;
-      referenceOutputs?: Record<string, any>;
+      examples?: Array<Example>;
+      inputs?: Array<Record<string, any>>;
+      outputs?: Array<Record<string, any>>;
+      referenceOutputs?: Array<Record<string, any>>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
 // Row-level evaluator

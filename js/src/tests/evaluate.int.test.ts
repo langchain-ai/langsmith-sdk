@@ -991,18 +991,18 @@ test("evaluate can evaluate with updated summary evaluators", async () => {
     outputs,
     referenceOutputs,
   }: {
-    runs: Run[];
-    examples: Example[];
-    inputs: Record<string, any>[];
-    outputs: Record<string, any>[];
-    referenceOutputs: Record<string, any>[];
+    runs?: Run[];
+    examples?: Example[];
+    inputs?: Record<string, any>[];
+    outputs?: Record<string, any>[];
+    referenceOutputs?: Record<string, any>[];
   }): Promise<EvaluationResult> => {
-    const runIds = runs.map(({ id }) => id).join(", ");
-    const exampleIds = examples.map(({ id }) => id).join(", ");
-    const inputValues = inputs.map((input) => input.input).join(", ");
-    const outputValues = outputs.map((output) => output.foo).join(", ");
+    const runIds = runs?.map(({ id }) => id).join(", ") || "";
+    const exampleIds = examples?.map(({ id }) => id).join(", ");
+    const inputValues = inputs?.map((input) => input.input).join(", ");
+    const outputValues = outputs?.map((output) => output.foo).join(", ");
     const referenceOutputValues = referenceOutputs
-      .map((ref) => ref.output)
+      ?.map((ref) => ref.output)
       .join(", ");
 
     return Promise.resolve({
@@ -1033,9 +1033,9 @@ test("evaluate can evaluate with updated summary evaluators", async () => {
   const runIds = allRuns.map(({ id }) => id).join(", ");
   const exampleIds = allExamples.map(({ id }) => id).join(", ");
   const inputValues = allInputs.map((input) => input.input).join(", ");
-  const outputValues = allOutputs.map((output) => output.foo).join(", ");
+  const outputValues = allOutputs.map((output) => output?.foo).join(", ");
   const referenceOutputValues = allReferenceOutputs
-    .map((ref) => ref.output)
+    .map((ref) => ref?.output)
     .join(", ");
 
   expect(evalRes.summaryResults.results[0].comment).toBe(
@@ -1056,21 +1056,21 @@ test("evaluate handles partial summary evaluator parameters correctly", async ()
     outputs,
     referenceOutputs,
   }: {
-    inputs: Record<string, any>[];
-    outputs: Record<string, any>[];
-    referenceOutputs: Record<string, any>[];
+    inputs?: Record<string, any>[];
+    outputs?: Record<string, any>[];
+    referenceOutputs?: Record<string, any>[];
   }): Promise<EvaluationResult> => {
-    const inputValues = inputs.map((input) => input.input).join(", ");
-    const outputValues = outputs.map((output) => output.foo).join(", ");
+    const inputValues = inputs?.map((input) => input.input).join(", ") || "";
+    const outputValues = outputs?.map((output) => output.foo).join(", ") || "";
     const referenceOutputValues = referenceOutputs
-      .map((ref) => ref.output)
+      ?.map((ref) => ref?.output)
       .join(", ");
 
     // Calculate average difference between outputs and reference outputs
     const avgDiff =
-      outputs.reduce((sum, output, i) => {
-        return sum + Math.abs(output.foo - referenceOutputs[i].output);
-      }, 0) / outputs.length;
+      outputs?.reduce((sum, output, i) => {
+        return sum + Math.abs(output?.foo - referenceOutputs?.[i]?.output);
+      }, 0) || 0;
 
     return Promise.resolve({
       key: "OutputOnlySummaryEvaluator",
@@ -1098,15 +1098,15 @@ test("evaluate handles partial summary evaluator parameters correctly", async ()
   );
 
   const inputValues = allInputs.map((input) => input.input).join(", ");
-  const outputValues = allOutputs.map((output) => output.foo).join(", ");
+  const outputValues = allOutputs.map((output) => output?.foo).join(", ");
   const referenceOutputValues = allReferenceOutputs
-    .map((ref) => ref.output)
+    .map((ref) => ref?.output)
     .join(", ");
 
   // Calculate expected average difference
   const expectedAvgDiff =
     allOutputs.reduce((sum, output, i) => {
-      return sum + Math.abs(output.foo - allReferenceOutputs[i].output);
+      return sum + Math.abs(output?.foo - allReferenceOutputs[i]?.output);
     }, 0) / allOutputs.length;
 
   expect(summaryResult.comment).toBe(
