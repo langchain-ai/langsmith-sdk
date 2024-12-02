@@ -7,7 +7,7 @@ import {
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
-import { ExampleUpsertWithAttachments } from "../schemas.js";
+import { ExampleUploadWithAttachments } from "../schemas.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1267,7 +1267,7 @@ test("annotationqueue crud", async () => {
   );
   // Create test examples
   const exampleId = uuidv4();
-  const example1: ExampleUpsertWithAttachments = {
+  const example1: ExampleUploadWithAttachments = {
     id: exampleId,
     dataset_id: dataset.id,
     inputs: { text: "hello world" },
@@ -1277,7 +1277,7 @@ test("annotationqueue crud", async () => {
     },
   };
 
-  const example2: ExampleUpsertWithAttachments = {
+  const example2: ExampleUploadWithAttachments = {
     dataset_id: dataset.id,
     inputs: { text: "foo bar" },
     outputs: { response: "baz" },
@@ -1287,7 +1287,7 @@ test("annotationqueue crud", async () => {
   };
 
   // Test creating examples
-  const createdExamples = await client.upsertExamplesMultipart([
+  const createdExamples = await client.uploadExamplesMultipart([
     example1,
     example2,
   ]);
@@ -1315,7 +1315,7 @@ test("annotationqueue crud", async () => {
   expect(allExamplesInDataset.length).toBe(2);
 
   // Test updating example
-  const example1Update: ExampleUpsertWithAttachments = {
+  const example1Update: ExampleUploadWithAttachments = {
     id: exampleId,
     dataset_id: dataset.id,
     inputs: { text: "bar baz" },
@@ -1325,7 +1325,7 @@ test("annotationqueue crud", async () => {
     },
   };
 
-  const updatedExamples = await client.upsertExamplesMultipart([
+  const updatedExamples = await client.uploadExamplesMultipart([
     example1Update,
   ]);
   expect(updatedExamples.count).toBe(1);
@@ -1338,7 +1338,7 @@ test("annotationqueue crud", async () => {
   expect(updatedExample.outputs?.["response"]).toBe("foo");
 
   // Test invalid example fails
-  const example3: ExampleUpsertWithAttachments = {
+  const example3: ExampleUploadWithAttachments = {
     dataset_id: uuidv4(), // not a real dataset
     inputs: { text: "foo bar" },
     outputs: { response: "baz" },
@@ -1347,7 +1347,7 @@ test("annotationqueue crud", async () => {
     },
   };
 
-  const errorResponse = await client.upsertExamplesMultipart([example3]);
+  const errorResponse = await client.uploadExamplesMultipart([example3]);
   expect(errorResponse).toHaveProperty("error");
 
   // Clean up

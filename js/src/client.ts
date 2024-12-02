@@ -35,8 +35,8 @@ import {
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
   Attachments,
-  ExampleUpsertWithAttachments,
-  UpsertExamplesResponse,
+  ExampleUploadWithAttachments,
+  UploadExamplesResponse,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -3839,17 +3839,16 @@ export class Client {
    * @param upserts List of ExampleUpsertWithAttachments objects to upsert
    * @returns Promise with the upsert response
    */
-  public async upsertExamplesMultipart(
-    upserts: ExampleUpsertWithAttachments[] = []
-  ): Promise<UpsertExamplesResponse> {
+  public async uploadExamplesMultipart(
+    uploads: ExampleUploadWithAttachments[] = []
+  ): Promise<UploadExamplesResponse> {
     const formData = new FormData();
 
-    for (const example of upserts) {
+    for (const example of uploads) {
       const exampleId = (example.id ?? uuid.v4()).toString();
 
       // Prepare the main example body
       const exampleBody = {
-        dataset_id: example.dataset_id,
         created_at: example.created_at,
         ...(example.metadata && { metadata: example.metadata }),
         ...(example.split && { split: example.split }),
@@ -3891,9 +3890,15 @@ export class Client {
       }
     }
 
+    const datasetIds = uploads.map((example) => example.dataset_id);
+    if (datasetIds.length > 1) {
+      throw new Error("Cannot upload examples to multiple datasets");
+    }
+    const datasetId = datasetIds[0];
+
     const response = await this.caller.call(
       _getFetchImplementation(),
-      `${this.apiUrl}/v1/platform/examples/multipart`,
+      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
       {
         method: "POST",
         headers: this.headers,

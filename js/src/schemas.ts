@@ -248,11 +248,11 @@ export interface ExampleCreate extends BaseExample {
   split?: string | string[];
 }
 
-export interface ExampleUpsertWithAttachments extends ExampleCreate {
+export interface ExampleUploadWithAttachments extends ExampleCreate {
   attachments?: Attachments;
 }
 
-export interface UpsertExamplesResponse {
+export interface UploadExamplesResponse {
   count: number;
   example_ids: string[];
 }
