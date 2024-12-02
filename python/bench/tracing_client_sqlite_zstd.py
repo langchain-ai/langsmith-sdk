@@ -16,12 +16,12 @@ INSERT_STMT = '''
     VALUES (?, ?, ?, ?)
 '''
 NUM_THREADS = 1
-BATCH_SIZE = 1000  # Increased batch size for bulk operations
+BATCH_SIZE = 1000
 
-def process_batch(cursor, compressor, last_processed_dotted_order, batch_size):
+def process_batch(conn, compressor, last_processed_dotted_order, batch_size):
     """Process a single batch of runs and return the count and last processed order."""
-    # Fetch runs after our last processed order
-    res = cursor.execute('''
+    # Fetch runs after our last processed order using connection directly
+    query_results = conn.execute('''
         SELECT run_id, inputs, outputs, dotted_order
         FROM runs 
         WHERE dotted_order > ?
@@ -29,13 +29,13 @@ def process_batch(cursor, compressor, last_processed_dotted_order, batch_size):
         LIMIT ?;
     ''', (last_processed_dotted_order or '', batch_size))
 
-    # Process runs one at a time using cursor iterator
+    # Process runs using iterator
     zstd_buffer = io.BytesIO()
     run_count = 0
     last_order = last_processed_dotted_order
 
     with compressor.stream_writer(zstd_buffer) as compressor_stream:
-        for run_id, inputs_blob, outputs_blob, dotted_order in res:
+        for run_id, inputs_blob, outputs_blob, dotted_order in query_results:
             run_count += 1
             # Decompress the inputs and outputs
             inputs_blob = zstd.decompress(inputs_blob)
@@ -56,8 +56,6 @@ def process_batch(cursor, compressor, last_processed_dotted_order, batch_size):
 def run_processor(db_file, stop_event):
     """Background thread function to fetch runs and process them."""
     conn = sqlite3.connect(db_file, timeout=30)
-    cursor = conn.cursor()
-
     compressor = zstd.ZstdCompressor(level=3)
     batch_size = 300
     last_processed_dotted_order = None
@@ -65,7 +63,7 @@ def run_processor(db_file, stop_event):
     try:
         while not stop_event.is_set():
             run_count, last_processed_dotted_order = process_batch(
-                cursor,
+                conn,
                 compressor,
                 last_processed_dotted_order,
                 batch_size
@@ -74,7 +72,7 @@ def run_processor(db_file, stop_event):
         # Drain remaining runs
         while True:
             run_count, last_processed_dotted_order = process_batch(
-                cursor,
+                conn,
                 compressor,
                 last_processed_dotted_order,
                 batch_size
@@ -95,7 +93,7 @@ def generate_run_data(num_runs, inputs_blob, outputs_blob):
 
 @profile
 def benchmark_run_creation(json_size, num_runs) -> None:
-    """Benchmark the creation of runs using executemany."""
+    """Benchmark the creation of runs using executemany without cursors and with postponed indexing."""
     # Delete the existing database file
     if os.path.exists('runs.db'):
         os.remove('runs.db')
@@ -103,29 +101,23 @@ def benchmark_run_creation(json_size, num_runs) -> None:
     db_file = 'runs.db'
     # Initialize SQLite database
     conn = sqlite3.connect(db_file)
-    cursor = conn.cursor()
 
     # Optimize PRAGMA settings
-    cursor.execute('PRAGMA journal_mode=MEMORY;')
-    cursor.execute('PRAGMA synchronous=OFF;')
-    cursor.execute('PRAGMA temp_store=MEMORY;')
-    cursor.execute('PRAGMA locking_mode=EXCLUSIVE;')
-    cursor.execute('PRAGMA cache_size=-64000;')  # 64MB cache
-    cursor.execute('PRAGMA mmap_size=268435456;')  # 256MB mmap
+    conn.execute('PRAGMA journal_mode=MEMORY;')
+    conn.execute('PRAGMA synchronous=OFF;')
+    conn.execute('PRAGMA temp_store=MEMORY;')
+    conn.execute('PRAGMA locking_mode=EXCLUSIVE;')
+    conn.execute('PRAGMA cache_size=-64000;')  # 64MB cache
+    conn.execute('PRAGMA mmap_size=268435456;')  # 256MB mmap
 
-    # Create table if it doesn't exist
-    cursor.execute('''
+    # Create table without indices
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS runs (
             run_id TEXT PRIMARY KEY,
             dotted_order TEXT,
             inputs BLOB,
             outputs BLOB
         );
-    ''')
-
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_status_dotted_order 
-        ON runs(dotted_order);
     ''')
     conn.commit()
 
@@ -145,18 +137,40 @@ def benchmark_run_creation(json_size, num_runs) -> None:
         processor_threads.append(processor_thread)
 
     start = time.perf_counter()
+    insert_start = time.perf_counter()
 
-    # Begin a transaction
-    cursor.execute('BEGIN TRANSACTION;')
+    # Begin a transaction for data insertion
+    conn.execute('BEGIN TRANSACTION;')
 
-    # Use executemany with a generator for bulk insertion
-    cursor.executemany(
+    # Use executemany directly on the connection
+    conn.executemany(
         INSERT_STMT,
         generate_run_data(num_runs, inputs_blob, outputs_blob)
     )
 
-    # Commit the transaction
+    # Commit the insertion transaction
     conn.commit()
+    
+    print(f"Time taken for insertions: {time.perf_counter() - insert_start:.2f} seconds")
+    
+    # Create indices after all data is inserted
+    index_start = time.perf_counter()
+    print("Creating indices...")
+    
+    # Begin a new transaction for index creation
+    conn.execute('BEGIN TRANSACTION;')
+    
+    conn.execute('''
+        CREATE INDEX IF NOT EXISTS idx_status_dotted_order 
+        ON runs(dotted_order);
+    ''')
+    
+    # Add any additional indices here if needed
+    
+    # Commit the index creation transaction
+    conn.commit()
+    
+    print(f"Time taken for index creation: {time.perf_counter() - index_start:.2f} seconds")
 
     # Close the main thread's database connection
     conn.close()
@@ -168,8 +182,8 @@ def benchmark_run_creation(json_size, num_runs) -> None:
     for processor_thread in processor_threads:
         processor_thread.join()
 
-    print("Time taken to insert runs: ", time.perf_counter() - start)
-    print("Total runs processed: ", NUM_RUNS)
+    print(f"Total time taken: {time.perf_counter() - start:.2f} seconds")
+    print(f"Total runs processed: {NUM_RUNS}")
 
 def main():
     """Run benchmarks with specified parameters."""
