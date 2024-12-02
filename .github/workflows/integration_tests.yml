@@ -4,10 +4,16 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'python/**'
+      - 'js/**'
   pull_request:
     branches:
       - main
     types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'python/**'
+      - 'js/**'
   workflow_dispatch:
     inputs:
       run-python-tests:
@@ -23,9 +29,12 @@ jobs:
   python_integration_test:
     name: Python Integration Test
     if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'release')) ||
-      (github.event_name == 'workflow_dispatch' && ${{ github.event.inputs.run-python-tests == 'true' }})
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.labels.*.name, 'release') ||
+        contains(github.event.changed_files.*.filename, 'python/')
+      )) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-tests == 'true')
     runs-on: ubuntu-20.04
     defaults:
       run:
@@ -55,9 +64,12 @@ jobs:
   js_integration_test:
     name: JS Integration Test
     if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'release')) ||
-      (github.event_name == 'workflow_dispatch' && ${{ github.event.inputs.run-js-tests == 'true' }})
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.labels.*.name, 'release') ||
+        contains(github.event.changed_files.*.filename, 'js/')
+      )) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-tests == 'true')
     runs-on: ubuntu-20.04
     defaults:
       run:
