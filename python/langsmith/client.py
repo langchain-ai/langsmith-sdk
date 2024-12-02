@@ -388,6 +388,7 @@ class Client:
         "_settings",
         "_manual_cleanup",
         "_pyo3_client",
+        "verbose",
     ]
 
     def __init__(
