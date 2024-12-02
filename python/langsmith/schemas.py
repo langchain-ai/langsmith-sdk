@@ -114,6 +114,12 @@ class ExampleUpsertWithAttachments(ExampleCreate):
     attachments: Optional[Attachments] = None
 
 
+class ExampleUploadWithAttachments(ExampleUpsertWithAttachments):
+    """Example upload with attachments."""
+
+    pass
+
+
 class Example(ExampleBase):
     """Example model."""
 

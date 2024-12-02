@@ -3375,27 +3375,24 @@ class Client:
             created_at=created_at,
         )
 
-    def upsert_examples_multipart(
+    def _prepate_multipart_data(
         self,
-        *,
-        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
-    ) -> ls_schemas.UpsertExamplesResponse:
-        """Upsert examples."""
-        if not (self.info.instance_flags or {}).get(
-                "examples_multipart_enabled", False
-            ):
-            raise ValueError("Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version.")
-        
+        examples: List[
+            ls_schemas.ExampleUploadWithAttachments
+            | ls_schemas.ExampleUpsertWithAttachments
+        ],
+        include_dataset_id: bool = False,
+    ) -> List[MultipartPart]:
         parts: List[MultipartPart] = []
 
-        for example in upserts:
+        for example in examples:
             if example.id is not None:
                 example_id = str(example.id)
             else:
                 example_id = str(uuid.uuid4())
 
             example_body = {
-                "dataset_id": example.dataset_id,
+                **({"dataset_id": example.dataset_id} if include_dataset_id else {}),
                 "created_at": example.created_at,
             }
             if example.metadata is not None:
@@ -3492,6 +3489,56 @@ class Client:
             data = encoder.to_string()
         else:
             data = encoder
+
+        return encoder, data
+
+    def upload_examples_multipart(
+        self,
+        *,
+        uploads: List[ls_schemas.ExampleUploadWithAttachments] = [],
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples."""
+        if not (self.info.instance_flags or {}).get(
+            "examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+            )
+
+        encoder, data = self._prepate_multipart_data(uploads, include_dataset_id=False)
+        dataset_ids = set([example.dataset_id for example in uploads])
+        if len(dataset_ids) > 1:
+            raise ValueError("All examples must be in the same dataset.")
+        dataset_id = list(dataset_ids)[0]
+
+        response = self.request_with_retries(
+            "POST",
+            f"/v1/platform/datasets/{dataset_id}/examples",
+            request_kwargs={
+                "data": data,
+                "headers": {
+                    **self._headers,
+                    "Content-Type": encoder.content_type,
+                },
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    def upsert_examples_multipart(
+        self,
+        *,
+        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upsert examples."""
+        if not (self.info.instance_flags or {}).get(
+            "examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+            )
+
+        encoder, data = self._prepate_multipart_data(upserts, include_dataset_id=True)
 
         response = self.request_with_retries(
             "POST",
