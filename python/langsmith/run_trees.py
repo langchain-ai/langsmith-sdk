@@ -44,6 +44,14 @@ def get_cached_client(**init_kwargs: Any) -> Client:
     if _CLIENT is None:
         if _CLIENT is None:
             _CLIENT = Client(**init_kwargs)
+    elif init_kwargs.get("verbose", False) != _CLIENT.verbose:
+        desired_verbosity = init_kwargs.get("verbose", False)
+        logger.warning(
+            "A LangSmith client has already been initialized on your process with "
+            + f"verbose={desired_verbosity}, which mismatches desired value of "
+            + f"verbose={_CLIENT.verbose}. Please explicitly create a client to avoid "
+            + "this warning."
+        )
     return _CLIENT
 
 

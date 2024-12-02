@@ -13,6 +13,7 @@ import uuid
 from typing import Any
 
 from langsmith._internal import _orjson
+from langsmith.utils import debug
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -25,7 +26,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def _simple_default(obj):
+def _simple_default(obj, verbose: bool = False) -> Any:
     try:
         # Only need to handle types that orjson doesn't serialize by default
         # https://github.com/ijl/orjson#serialize
@@ -65,7 +66,7 @@ def _simple_default(obj):
             return base64.b64encode(obj).decode()
         return str(obj)
     except BaseException as e:
-        logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
+        debug(verbose, f"Failed to serialize {type(obj)} to JSON: {e}")
     return str(obj)
 
 
@@ -79,7 +80,7 @@ _serialization_methods = [
 ]
 
 
-def _serialize_json(obj: Any) -> Any:
+def _serialize_json(obj: Any, verbose: bool = False) -> Any:
     try:
         if isinstance(obj, (set, tuple)):
             if hasattr(obj, "_asdict") and callable(obj._asdict):
@@ -105,9 +106,9 @@ def _serialize_json(obj: Any) -> Any:
                         f" JSON: {repr(e)}"
                     )
                     pass
-        return _simple_default(obj)
+        return _simple_default(obj, verbose=verbose)
     except BaseException as e:
-        logger.debug(f"Failed to serialize {type(obj)} to JSON: {e}")
+        debug(f"Failed to serialize {type(obj)} to JSON: {e}")
         return str(obj)
 
 
@@ -117,15 +118,15 @@ def _elide_surrogates(s: bytes) -> bytes:
     return result
 
 
-def dumps_json(obj: Any) -> bytes:
+def dumps_json(obj: Any, verbose: bool = False) -> bytes:
     """Serialize an object to a JSON formatted string.
 
     Parameters
     ----------
     obj : Any
         The object to serialize.
-    default : Callable[[Any], Any] or None, default=None
-        The default function to use for serialization.
+    verbose : bool, optional
+        Whether to log DEBUG messages at INFO level, by default False
 
     Returns:
     -------
@@ -135,7 +136,7 @@ def dumps_json(obj: Any) -> bytes:
     try:
         return _orjson.dumps(
             obj,
-            default=_serialize_json,
+            default=lambda x: _serialize_json(x, verbose=verbose),
             option=_orjson.OPT_SERIALIZE_NUMPY
             | _orjson.OPT_SERIALIZE_DATACLASS
             | _orjson.OPT_SERIALIZE_UUID
@@ -143,10 +144,10 @@ def dumps_json(obj: Any) -> bytes:
         )
     except TypeError as e:
         # Usually caused by UTF surrogate characters
-        logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
+        debug(verbose, f"Orjson serialization failed: {repr(e)}. Falling back to json.")
         result = json.dumps(
             obj,
-            default=_simple_default,
+            default=lambda x: _simple_default(x, verbose=verbose),
             ensure_ascii=True,
         ).encode("utf-8")
         try:

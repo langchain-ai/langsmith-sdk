@@ -1480,7 +1480,7 @@ def _get_inputs_safe(
     try:
         return _get_inputs(signature, *args, **kwargs)
     except BaseException as e:
-        LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
+        utils.debug(False, f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}
 
 
@@ -1515,7 +1515,7 @@ def _get_inputs_and_attachments_safe(
             return inputs, attachments
         return inferred, {}
     except BaseException as e:
-        LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
+        utils.debug(False, f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}, {}
 
 

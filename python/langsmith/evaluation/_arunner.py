@@ -90,6 +90,7 @@ async def aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    verbose: bool = False,
     **kwargs: Any,
 ) -> AsyncExperimentResults:
     r"""Evaluate an async target system on a given dataset.
@@ -125,6 +126,8 @@ async def aevaluate(
         load_nested: Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs. Should only be specified
             when evaluating an existing experiment.
+        verbose (bool): Whether to print verbose output. Will print all DEBUG level
+            logs at the INFO level. Defaults to False.
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
@@ -271,7 +274,9 @@ async def aevaluate(
             )
             raise ValueError(msg)
         target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
-        logger.debug(f"Running evaluation over existing experiment {target_id}...")
+        ls_utils.debug(
+            verbose, f"Running evaluation over existing experiment {target_id}..."
+        )
         return await aevaluate_existing(
             target,
             evaluators=evaluators,
@@ -308,7 +313,7 @@ async def aevaluate(
     else:
         if not upload_results:
             _warn_once("'upload_results' parameter is in beta.")
-        logger.debug(f"Running evaluation over target system {target}...")
+        ls_utils.debug(verbose, f"Running evaluation over target system {target}...")
         return await _aevaluate(
             target,
             data=data,
@@ -323,6 +328,7 @@ async def aevaluate(
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            verbose=verbose,
         )
 
 
@@ -336,6 +342,7 @@ async def aevaluate_existing(
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
+    verbose: bool = False,
 ) -> AsyncExperimentResults:
     r"""Evaluate existing experiment runs asynchronously.
 
@@ -404,7 +411,7 @@ async def aevaluate_existing(
 
 
     """  # noqa: E501
-    client = client or run_trees.get_cached_client()
+    client = client or run_trees.get_cached_client(verbose=verbose)
     project = (
         experiment
         if isinstance(experiment, schemas.TracerSession)
@@ -425,6 +432,7 @@ async def aevaluate_existing(
         client=client,
         blocking=blocking,
         experiment=project,
+        verbose=verbose,
     )
 
 
@@ -443,13 +451,14 @@ async def _aevaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    verbose: bool = False,
 ) -> AsyncExperimentResults:
     is_async_target = (
         asyncio.iscoroutinefunction(target)
         or (hasattr(target, "__aiter__") and asyncio.iscoroutine(target.__aiter__()))
         or _is_langchain_runnable(target)
     )
-    client = client or rt.get_cached_client()
+    client = client or rt.get_cached_client(verbose=verbose)
     runs = None if is_async_target else cast(Iterable[schemas.Run], target)
     experiment_, runs = await aitertools.aio_to_thread(
         _resolve_experiment,
@@ -466,6 +475,7 @@ async def _aevaluate(
         num_repetitions=num_repetitions,
         runs=runs,
         upload_results=upload_results,
+        verbose=verbose,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
     if cache_dir is not None:
@@ -527,12 +537,14 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         description: Optional[str] = None,
         num_repetitions: int = 1,
         upload_results: bool = True,
+        verbose: bool = False,
     ):
         super().__init__(
             experiment=experiment,
             metadata=metadata,
             client=client,
             description=description,
+            verbose=verbose,
         )
         self._data = data
         self._examples: Optional[AsyncIterable[schemas.Example]] = None
@@ -543,6 +555,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
         self._upload_results = upload_results
+        self._verbose = verbose
 
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
@@ -789,7 +802,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                                 error_response, run=run, _executor=executor
                             )
                     except Exception as e2:
-                        logger.debug(f"Error parsing feedback keys: {e2}")
+                        ls_utils.debug(
+                            self._verbose, f"Error parsing feedback keys: {e2}"
+                        )
                         pass
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
