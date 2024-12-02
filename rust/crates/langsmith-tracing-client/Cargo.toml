@@ -1,0 +1,33 @@
+[package]
+name = "langsmith-tracing-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+tokio-util = { workspace = true }
+tempfile = { workspace = true }
+futures = { workspace = true }
+rayon = { workspace = true }
+sonic-rs = { workspace = true }
+ureq = { workspace = true }
+flate2 = { workspace = true }
+
+[dev-dependencies]
+multipart = "0.18.0"
+mockito = "1.5.0"
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+
+[[bench]]
+name = "tracing_client_benchmark"
+harness = false
+
+[[bench]]
+name = "json_serialization_benchmark"
+harness = false

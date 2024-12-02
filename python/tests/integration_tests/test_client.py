@@ -21,7 +21,13 @@ from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.evaluation import aevaluate, evaluate
-from langsmith.schemas import DataType, Example, ExampleUpsertWithAttachments, Run
+from langsmith.schemas import (
+    DataType,
+    Example,
+    ExampleUploadWithAttachments,
+    ExampleUpsertWithAttachments,
+    Run,
+)
 from langsmith.utils import (
     LangSmithConnectionError,
     LangSmithError,
@@ -369,6 +375,111 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
     # expect connect error
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
+
+
+def test_upload_examples_multipart(langchain_client: Client):
+    """Test uploading examples with attachments via multipart endpoint."""
+    dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
+    if langchain_client.has_dataset(dataset_name=dataset_name):
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for multipart example upload",
+        data_type=DataType.kv,
+    )
+
+    # Test example with all fields
+    example_id = uuid4()
+    example_1 = ExampleUploadWithAttachments(
+        id=example_id,
+        dataset_id=dataset.id,
+        inputs={"text": "hello world"},
+        attachments={
+            "test_file": ("text/plain", b"test content"),
+        },
+    )
+
+    # Test example with minimum required fields
+    example_2 = ExampleUploadWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"text": "minimal example"},
+    )
+
+    # Test example with outputs and multiple attachments
+    example_3 = ExampleUploadWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"text": "example with outputs"},
+        outputs={"response": "test response"},
+        attachments={
+            "file1": ("text/plain", b"content 1"),
+            "file2": ("text/plain", b"content 2"),
+        },
+    )
+
+    # Test uploading multiple examples at once
+    created_examples = langchain_client.upload_examples_multipart(
+        uploads=[example_1, example_2, example_3]
+    )
+    assert created_examples["count"] == 3
+
+    created_example_1 = langchain_client.read_example(example_id)
+    assert created_example_1.inputs["text"] == "hello world"
+
+    # Verify the examples were created correctly
+    examples = [
+        ex
+        for ex in langchain_client.list_examples(
+            dataset_id=dataset.id,
+            include_attachments=True,
+        )
+    ]
+    assert len(examples) == 3
+
+    # Verify example with ID was created with correct ID
+    example_with_id = [ex for ex in examples if ex.id == example_id][0]
+    assert example_with_id.inputs["text"] == "hello world"
+    assert "test_file" in example_with_id.attachment_urls
+
+    # Verify example with outputs and multiple attachments
+    example_with_outputs = next(
+        ex
+        for ex in examples
+        if ex.outputs and ex.outputs.get("response") == "test response"
+    )
+    assert len(example_with_outputs.attachment_urls) == 2
+    assert "file1" in example_with_outputs.attachment_urls
+    assert "file2" in example_with_outputs.attachment_urls
+
+    # Test uploading to non-existent dataset fails
+    fake_id = uuid4()
+    with pytest.raises(LangSmithNotFoundError):
+        langchain_client.upload_examples_multipart(
+            uploads=[
+                ExampleUploadWithAttachments(
+                    dataset_id=fake_id,
+                    inputs={"text": "should fail"},
+                )
+            ]
+        )
+
+    # Test uploading examples to different datasets fails
+    with pytest.raises(ValueError, match="All examples must be in the same dataset"):
+        langchain_client.upload_examples_multipart(
+            uploads=[
+                ExampleUploadWithAttachments(
+                    dataset_id=dataset.id,
+                    inputs={"text": "example 1"},
+                ),
+                ExampleUploadWithAttachments(
+                    dataset_id=uuid4(),
+                    inputs={"text": "example 2"},
+                ),
+            ]
+        )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
 def test_upsert_examples_multipart(langchain_client: Client) -> None:
@@ -1160,6 +1271,7 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
+
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
@@ -1197,10 +1309,14 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         }
 
     results = evaluate(
-        target, data=dataset_name, evaluators=[evaluator], client=langchain_client
+        target,
+        data=dataset_name,
+        evaluators=[evaluator],
+        client=langchain_client,
+        num_repetitions=2,
     )
 
-    assert len(results) == 1
+    assert len(results) == 2
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
@@ -1253,7 +1369,6 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
-
 
 async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
@@ -1355,3 +1470,43 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
+    
+def test_examples_length_validation(langchain_client: Client) -> None:
+    """Test that mismatched lengths raise ValueError for create and update examples."""
+    dataset_name = "__test_examples_length_validation" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    # Test create_examples validation
+    inputs = [{"text": "hello"}, {"text": "world"}]
+    outputs = [{"response": "hi"}]  # One less than inputs
+    with pytest.raises(ValueError) as exc_info:
+        langchain_client.create_examples(
+            inputs=inputs, outputs=outputs, dataset_id=dataset.id
+        )
+    assert "Length of outputs (1) does not match length of inputs (2)" in str(
+        exc_info.value
+    )
+
+    # Create some valid examples for testing update
+    langchain_client.create_examples(
+        inputs=[{"text": "hello"}, {"text": "world"}],
+        outputs=[{"response": "hi"}, {"response": "earth"}],
+        dataset_id=dataset.id,
+    )
+    example_ids = [
+        example.id for example in langchain_client.list_examples(dataset_id=dataset.id)
+    ]
+
+    # Test update_examples validation
+    with pytest.raises(ValueError) as exc_info:
+        langchain_client.update_examples(
+            example_ids=example_ids,
+            inputs=[{"text": "new hello"}],  # One less than example_ids
+            outputs=[{"response": "new hi"}, {"response": "new earth"}],
+        )
+    assert "Length of inputs (1) does not match length of examples (2)" in str(
+        exc_info.value
+    )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
