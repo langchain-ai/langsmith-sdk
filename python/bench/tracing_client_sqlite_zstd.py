@@ -164,9 +164,7 @@ def benchmark_run_creation(json_size, num_runs) -> None:
         CREATE INDEX IF NOT EXISTS idx_status_dotted_order 
         ON runs(dotted_order);
     ''')
-    
-    # Add any additional indices here if needed
-    
+        
     # Commit the index creation transaction
     conn.commit()
     
