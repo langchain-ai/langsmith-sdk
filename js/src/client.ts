@@ -440,7 +440,7 @@ export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
 const SERVER_INFO_REQUEST_TIMEOUT = 1000;
 
-export class Client {
+export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
   private apiUrl: string;
@@ -1153,33 +1153,51 @@ export class Client {
 
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
-      const formData = new FormData();
+      // Create multipart form data manually using Blobs
+      const boundary =
+        "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
+      const chunks: Blob[] = [];
+
       for (const part of parts) {
-        formData.append(part.name, part.payload);
+        // Add field boundary
+        chunks.push(new Blob([`--${boundary}\r\n`]));
+        chunks.push(
+          new Blob([
+            `Content-Disposition: form-data; name="${part.name}"\r\n`,
+            `Content-Type: ${part.payload.type}\r\n\r\n`,
+          ])
+        );
+        chunks.push(part.payload);
+        chunks.push(new Blob(["\r\n"]));
       }
-      // Log the form data
-      await this.batchIngestCaller.call(
+
+      // Add final boundary
+      chunks.push(new Blob([`--${boundary}--\r\n`]));
+
+      // Combine all chunks into a single Blob
+      const body = new Blob(chunks);
+
+      // Convert Blob to ArrayBuffer for compatibility
+      const arrayBuffer = await body.arrayBuffer();
+
+      const res = await this.batchIngestCaller.call(
         _getFetchImplementation(),
         `${this.apiUrl}/runs/multipart`,
         {
           method: "POST",
           headers: {
             ...this.headers,
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
           },
-          body: formData,
+          body: arrayBuffer,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
       );
-    } catch (e) {
-      let errorMessage = "Failed to multipart ingest runs";
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      if (e instanceof Error) {
-        errorMessage += `: ${e.stack || e.message}`;
-      } else {
-        errorMessage += `: ${String(e)}`;
-      }
-      console.warn(`${errorMessage.trim()}\n\nContext: ${context}`);
+      await raiseForStatus(res, "ingest multipart runs", true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
 
@@ -4258,4 +4276,10 @@ export class Client {
       this.batchIngestCaller.queue.onIdle(),
     ]);
   }
+}
+
+export interface LangSmithTracingClientInterface {
+  createRun: (run: CreateRunParams) => Promise<void>;
+
+  updateRun: (runId: string, run: RunUpdate) => Promise<void>;
 }

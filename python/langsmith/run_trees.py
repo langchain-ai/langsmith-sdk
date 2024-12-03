@@ -301,6 +301,15 @@ class RunTree(ls_schemas.RunBase):
         """Post the run tree to the API asynchronously."""
         kwargs = self._get_dicts_safe()
         self.client.create_run(**kwargs)
+        if attachments := kwargs.get("attachments"):
+            keys = [str(name) for name in attachments]
+            self.events.append(
+                {
+                    "name": "uploaded_attachment",
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "message": set(keys),
+                }
+            )
         if not exclude_child_runs:
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
@@ -309,6 +318,26 @@ class RunTree(ls_schemas.RunBase):
         """Patch the run tree to the API in a background thread."""
         if not self.end_time:
             self.end()
+        attachments = self.attachments
+        try:
+            # Avoid loading the same attachment twice
+            if attachments:
+                uploaded = next(
+                    (
+                        ev
+                        for ev in self.events
+                        if ev.get("name") == "uploaded_attachment"
+                    ),
+                    None,
+                )
+                if uploaded:
+                    attachments = {
+                        a: v
+                        for a, v in attachments.items()
+                        if a not in uploaded["message"]
+                    }
+        except Exception as e:
+            logger.warning(f"Error filtering attachments to upload: {e}")
         self.client.update_run(
             name=self.name,
             run_id=self.id,
@@ -322,6 +351,7 @@ class RunTree(ls_schemas.RunBase):
             events=self.events,
             tags=self.tags,
             extra=self.extra,
+            attachments=attachments,
         )
 
     def wait(self) -> None:

@@ -36,7 +36,7 @@ from typing import (
     cast,
 )
 
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, overload
 
 import langsmith
 from langsmith import env as ls_env
@@ -44,13 +44,16 @@ from langsmith import run_helpers as rh
 from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation.evaluator import (
+    SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
     DynamicComparisonRunEvaluator,
     DynamicRunEvaluator,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
+    _normalize_summary_evaluator,
     comparison_evaluator,
     run_evaluator,
 )
@@ -70,16 +73,6 @@ TARGET_T = Callable[[dict], dict]
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example], schemas.Dataset]
 # Summary evaluator runs over the whole dataset
 # and reports aggregate metric(s)
-SUMMARY_EVALUATOR_T = Union[
-    Callable[
-        [Sequence[schemas.Run], Sequence[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-    Callable[
-        [List[schemas.Run], List[schemas.Example]],
-        Union[EvaluationResult, EvaluationResults],
-    ],
-]
 # Row-level evaluator
 EVALUATOR_T = Union[
     RunEvaluator,
@@ -95,12 +88,14 @@ AEVALUATOR_T = Union[
         Awaitable[Union[EvaluationResult, EvaluationResults]],
     ],
 ]
+EXPERIMENT_T = Union[str, uuid.UUID, schemas.TracerSession]
 
 
+@overload
 def evaluate(
-    target: Union[TARGET_T, Runnable],
+    target: Union[TARGET_T, Runnable, EXPERIMENT_T],
     /,
-    data: DATA_T,
+    data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
@@ -110,38 +105,94 @@ def evaluate(
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
-    experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
-) -> ExperimentResults:
-    r"""Evaluate a target system or function on a given dataset.
+    experiment: Optional[EXPERIMENT_T] = None,
+    upload_results: bool = True,
+    **kwargs: Any,
+) -> ExperimentResults: ...
+
+
+@overload
+def evaluate(
+    target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    /,
+    data: Optional[DATA_T] = None,
+    evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+    experiment: Optional[EXPERIMENT_T] = None,
+    upload_results: bool = True,
+    **kwargs: Any,
+) -> ComparativeExperimentResults: ...
+
+
+def evaluate(
+    target: Union[TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    /,
+    data: Optional[DATA_T] = None,
+    evaluators: Optional[
+        Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
+    ] = None,
+    summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    metadata: Optional[dict] = None,
+    experiment_prefix: Optional[str] = None,
+    description: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
+    num_repetitions: int = 1,
+    client: Optional[langsmith.Client] = None,
+    blocking: bool = True,
+    experiment: Optional[EXPERIMENT_T] = None,
+    upload_results: bool = True,
+    **kwargs: Any,
+) -> Union[ExperimentResults, ComparativeExperimentResults]:
+    r"""Evaluate a target system on a given dataset.
 
     Args:
-        target (TARGET_T): The target system or function to evaluate.
+        target (TARGET_T | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+            The target system or experiment(s) to evaluate. Can be a function
+            that takes a dict and returns a dict, a langchain Runnable, an
+            existing experiment ID, or a two-tuple of experiment IDs.
         data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
             examples, or a generator of examples.
-        evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
-            on each example. Defaults to None.
-        summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
-            evaluators to run on the entire dataset. Defaults to None.
-        metadata (Optional[dict]): Metadata to attach to the experiment.
+        evaluators (Sequence[EVALUATOR_T] | Sequence[COMPARATIVE_EVALUATOR_T] | None):
+            A list of evaluators to run on each example. The evaluator signature
+            depends on the target type. Default to None.
+        summary_evaluators (Sequence[SUMMARY_EVALUATOR_T] | None): A list of summary
+            evaluators to run on the entire dataset. Should not be specified if
+            comparing two existing experiments. Defaults to None.
+        metadata (dict | None): Metadata to attach to the experiment.
             Defaults to None.
-        experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+        experiment_prefix (str | None): A prefix to provide for your experiment name.
             Defaults to None.
-        description (Optional[str]): A free-form text description for the experiment.
-        max_concurrency (Optional[int]): The maximum number of concurrent
+        description (str | None): A free-form text description for the experiment.
+        max_concurrency (int | None): The maximum number of concurrent
             evaluations to run. Defaults to None (max number of workers).
-        client (Optional[langsmith.Client]): The LangSmith client to use.
+        client (langsmith.Client | None): The LangSmith client to use.
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
             Defaults to True.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
-        experiment (Optional[schemas.TracerSession]): An existing experiment to
+        experiment (schemas.TracerSession | None): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
-            usage only.
+            usage only. Should not be specified if target is an existing experiment or
+            two-tuple fo experiments.
+        load_nested (bool): Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs. Should only be specified
+            when target is an existing experiment or two-tuple of experiments.
+        randomize_order (bool): Whether to randomize the order of the outputs for each
+            evaluation. Default is False. Should only be specified when target is a
+            two-tuple of existing experiments.
 
     Returns:
-        ExperimentResults: The results of the evaluation.
+        ExperimentResults: If target is a function, Runnable, or existing experiment.
+        ComparativeExperimentResults: If target is a two-tuple of existing experiments.
 
     Examples:
         Prepare the dataset:
@@ -267,8 +318,83 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    if callable(target) and rh.is_async(target):
-        raise ValueError(
+    if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
+        invalid_args = {
+            "num_repetitions": num_repetitions > 1,
+            "experiment": bool(experiment),
+            "upload_results": not upload_results,
+            "experiment_prefix": bool(experiment_prefix),
+            "data": bool(data),
+        }
+        if any(invalid_args.values()):
+            msg = (
+                f"Received invalid arguments. "
+                f"{tuple(k for k, v in invalid_args.items() if v)} should not be "
+                f"specified when target is an existing experiment."
+            )
+            raise ValueError(msg)
+        target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
+        logger.debug(f"Running evaluation over existing experiment {target_id}...")
+        return evaluate_existing(
+            target,
+            evaluators=cast(Optional[Sequence[EVALUATOR_T]], evaluators),
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            **kwargs,
+        )
+    elif isinstance(target, tuple):
+        invalid_args = {
+            "num_repetitions": num_repetitions > 1,
+            "experiment": bool(experiment),
+            "upload_results": not upload_results,
+            "summary_evaluators": bool(summary_evaluators),
+            "data": bool(data),
+        }
+        if len(target) != 2 or not all(
+            isinstance(t, (str, uuid.UUID, schemas.TracerSession)) for t in target
+        ):
+            msg = (
+                "Received invalid target. If a tuple is specified it must have length "
+                "2 and each element should by the ID or schemas.TracerSession of an "
+                f"existing experiment. Received {target=}"
+            )
+            raise ValueError(msg)
+        elif any(invalid_args.values()):
+            msg = (
+                f"Received invalid arguments. "
+                f"{tuple(k for k, v in invalid_args.items() if v)} should not be "
+                f"specified when target is two existing experiments."
+            )
+            raise ValueError(msg)
+        if max_concurrency is not None:
+            kwargs["max_concurrency"] = max_concurrency
+        target_ids = [t if isinstance(t, (str, uuid.UUID)) else t.id for t in target]
+        logger.debug(
+            f"Running pairwise evaluation over existing experiments {target_ids}..."
+        )
+        return evaluate_comparative(
+            target,
+            evaluators=cast(Sequence[COMPARATIVE_EVALUATOR_T], evaluators or ()),
+            experiment_prefix=experiment_prefix,
+            description=description,
+            client=client,
+            metadata=metadata,
+            **kwargs,
+        )
+    elif kwargs:
+        msg = (
+            f"Received unsupported arguments {kwargs}. These arguments are not "
+            f"supported when creating a new experiment."
+        )
+        raise ValueError(msg)
+    elif not data:
+        msg = "Must specify 'data' when running evaluations over a target function."
+        raise ValueError(msg)
+    elif callable(target) and rh.is_async(target):
+        msg = (
             "Async functions are not supported by `evaluate`. "
             "Please use `aevaluate` instead:\n\n"
             "from langsmith import aevaluate\n\n"
@@ -279,26 +405,33 @@ def evaluate(
             "    # ... other parameters\n"
             ")"
         )
-    if experiment and experiment_prefix:
-        raise ValueError(
+        raise ValueError(msg)
+    elif experiment and experiment_prefix:
+        msg = (
             "Expected at most one of 'experiment' or 'experiment_prefix',"
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
         )
-    return _evaluate(
-        target,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        experiment_prefix=experiment_prefix,
-        description=description,
-        max_concurrency=max_concurrency,
-        num_repetitions=num_repetitions,
-        client=client,
-        blocking=blocking,
-        experiment=experiment,
-    )
+        raise ValueError(msg)
+    else:
+        if not upload_results:
+            _warn_once("'upload_results' parameter is in beta.")
+        logger.debug(f"Running evaluation over target system {target}...")
+        return _evaluate(
+            target,
+            data=data,
+            evaluators=cast(Optional[Sequence[EVALUATOR_T]], evaluators),
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            experiment_prefix=experiment_prefix,
+            description=description,
+            max_concurrency=max_concurrency,
+            num_repetitions=num_repetitions,
+            client=client,
+            blocking=blocking,
+            experiment=experiment,
+            upload_results=upload_results,
+        )
 
 
 def evaluate_existing(
@@ -374,11 +507,7 @@ def evaluate_existing(
         View the evaluation results for experiment:...
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
-    project = (
-        experiment
-        if isinstance(experiment, schemas.TracerSession)
-        else _load_experiment(experiment, client)
-    )
+    project = _load_experiment(experiment, client)
     runs = _load_traces(experiment, client, load_nested=load_nested)
     data_map = _load_examples_map(client, project)
     data = [data_map[cast(uuid.UUID, run.reference_example_id)] for run in runs]
@@ -502,7 +631,7 @@ COMPARATIVE_EVALUATOR_T = Callable[
 
 
 def evaluate_comparative(
-    experiments: Tuple[Union[str, uuid.UUID], Union[str, uuid.UUID]],
+    experiments: Tuple[EXPERIMENT_T, EXPERIMENT_T],
     /,
     evaluators: Sequence[COMPARATIVE_EVALUATOR_T],
     experiment_prefix: Optional[str] = None,
@@ -647,16 +776,20 @@ def evaluate_comparative(
         ...         },
         ...     )
         ...     tool_args = completion.choices[0].message.tool_calls[0].function.arguments
-        ...     preference = json.loads(tool_args)["preferred_option"]
+        ...     loaded_args = json.loads(tool_args)
+        ...     preference = loaded_args["preferred_option"]
+        ...     comment = loaded_args["reasoning"]
         ...     if preference == "A":
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 1, runs[1].id: 0},
+        ...             "comment": comment,
         ...         }
         ...     else:
         ...         return {
         ...             "key": "ranked_preference",
         ...             "scores": {runs[0].id: 0, runs[1].id: 1},
+        ...             "comment": comment,
         ...         }
         >>> def score_length_difference(runs: list, example: schemas.Example):
         ...     # Just return whichever response is longer.
@@ -781,12 +914,18 @@ def evaluate_comparative(
             result = comparator.compare_runs(runs_list, example)
             if client is None:
                 raise ValueError("Client is required to submit feedback.")
+        comments = (
+            {str(rid): result.comment for rid in result.scores}
+            if isinstance(result.comment, str)
+            else (result.comment or {})
+        )
         for run_id, score in result.scores.items():
             executor.submit(
                 client.create_feedback,
                 run_id=run_id,
                 key=result.key,
                 score=score,
+                comment=comments.get(str(run_id)),
                 comparative_experiment_id=comparative_experiment.id,
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
@@ -799,9 +938,7 @@ def evaluate_comparative(
     ) as executor:
         futures = []
         for example_id, runs_list in tqdm(runs_dict.items()):
-            results[example_id] = {
-                "runs": runs_list,
-            }
+            results[example_id] = {"runs": runs_list}
             for comparator in comparators:
                 if max_concurrency > 1:
                     future = executor.submit(
@@ -898,6 +1035,7 @@ def _evaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
@@ -918,6 +1056,7 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
+        upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
     cache_path = (
@@ -951,11 +1090,14 @@ def _is_uuid(value: str) -> bool:
 
 
 def _load_experiment(
-    project: Union[str, uuid.UUID], client: langsmith.Client
-) -> schemas.TracerSessionResult:
-    if isinstance(project, uuid.UUID) or _is_uuid(project):
+    project: EXPERIMENT_T, client: langsmith.Client
+) -> schemas.TracerSession:
+    if isinstance(project, schemas.TracerSession):
+        return project
+    elif isinstance(project, uuid.UUID) or _is_uuid(project):
         return client.read_project(project_id=project)
-    return client.read_project(project_name=project)
+    else:
+        return client.read_project(project_name=project)
 
 
 def _load_traces(
@@ -1104,9 +1246,9 @@ class _ExperimentManagerMixin:
         return project
 
     def _print_experiment_start(
-        self, project: schemas.TracerSession, first_example: schemas.Example
+        self, project: Optional[schemas.TracerSession], first_example: schemas.Example
     ) -> None:
-        if project.url:
+        if project and project.url:
             # TODO: Make this a public API
             project_url = project.url.split("?")[0]
             dataset_id = first_example.dataset_id
@@ -1162,6 +1304,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        upload_results: bool = True,
     ):
         super().__init__(
             experiment=experiment,
@@ -1175,6 +1318,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._upload_results = upload_results
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
@@ -1215,7 +1359,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
     def start(self) -> _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
-        project = self._get_project(first_example)
+        project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
@@ -1225,6 +1369,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            upload_results=self._upload_results,
         )
 
     def with_predictions(
@@ -1245,6 +1390,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             metadata=self._metadata,
             client=self.client,
             runs=(pred["run"] for pred in r2),
+            upload_results=self._upload_results,
             # TODO: Can't do multiple prediction rounds rn.
         )
 
@@ -1276,6 +1422,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
             summary_results=self._summary_results,
+            upload_results=self._upload_results,
         )
 
     def with_summary_evaluators(
@@ -1296,6 +1443,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=self.runs,
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            upload_results=self._upload_results,
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1332,7 +1480,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
-                    fn, example, self.experiment_name, self._metadata, self.client
+                    fn,
+                    example,
+                    self.experiment_name,
+                    self._metadata,
+                    self.client,
+                    self._upload_results,
                 )
 
         else:
@@ -1345,6 +1498,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
+                        self._upload_results,
                     )
                     for example in self.examples
                 ]
@@ -1373,7 +1527,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": True,
+                "enabled": "local" if not self._upload_results else True,
                 "client": self.client,
             }
         ):
@@ -1386,12 +1540,15 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         run=run,
                         example=example,
                     )
+
                     eval_results["results"].extend(
+                        self.client._select_eval_results(evaluator_response)
+                    )
+                    if self._upload_results:
                         # TODO: This is a hack
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run, _executor=executor
                         )
-                    )
                 except Exception as e:
                     try:
                         feedback_keys = _extract_feedback_keys(evaluator)
@@ -1408,17 +1565,19 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             ]
                         )
                         eval_results["results"].extend(
+                            self.client._select_eval_results(error_response)
+                        )
+                        if self._upload_results:
                             # TODO: This is a hack
                             self.client._log_evaluation_feedback(
                                 error_response, run=run, _executor=executor
                             )
-                        )
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")
                         pass
                     logger.error(
                         f"Error running evaluator {repr(evaluator)} on"
-                        f" run {run.id}: {repr(e)}",
+                        f" run {run.id if run else ''}: {repr(e)}",
                         exc_info=True,
                     )
             return ExperimentResultRow(
@@ -1447,7 +1606,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self._run_evaluators,
                         evaluators,
                         current_results,
-                        executor=executor,
+                        executor,
                     )
             else:
                 futures = set()
@@ -1457,7 +1616,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             self._run_evaluators,
                             evaluators,
                             current_results,
-                            executor=executor,
+                            executor,
                         )
                     )
                     try:
@@ -1481,7 +1640,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             examples.append(example)
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
-            project_id = self._get_experiment().id
+            project_id = self._get_experiment().id if self._upload_results else None
             current_context = rh.get_tracing_context()
             metadata = {
                 **(current_context["metadata"] or {}),
@@ -1496,7 +1655,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     "project_name": "evaluators",
                     "metadata": metadata,
                     "client": self.client,
-                    "enabled": True,
+                    "enabled": "local" if not self._upload_results else True,
                 }
             ):
                 for evaluator in summary_evaluators:
@@ -1508,16 +1667,17 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             fn_name=evaluator.__name__,
                         )
                         aggregate_feedback.extend(flattened_results)
-                        for result in flattened_results:
-                            feedback = result.dict(exclude={"target_run_id"})
-                            evaluator_info = feedback.pop("evaluator_info", None)
-                            executor.submit(
-                                self.client.create_feedback,
-                                **feedback,
-                                run_id=None,
-                                project_id=project_id,
-                                source_info=evaluator_info,
-                            )
+                        if self._upload_results:
+                            for result in flattened_results:
+                                feedback = result.dict(exclude={"target_run_id"})
+                                evaluator_info = feedback.pop("evaluator_info", None)
+                                executor.submit(
+                                    self.client.create_feedback,
+                                    **feedback,
+                                    run_id=None,
+                                    project_id=project_id,
+                                    source_info=evaluator_info,
+                                )
                     except Exception as e:
                         logger.error(
                             f"Error running summary evaluator {repr(evaluator)}: {e}",
@@ -1551,6 +1711,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
         return list(splits)
 
     def _end(self) -> None:
+        if not self._upload_results:
+            return
         experiment = self._experiment
         if experiment is None:
             raise ValueError("Experiment not started yet.")
@@ -1560,8 +1722,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         project_metadata["dataset_splits"] = self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
-            end_time=datetime.datetime.now(datetime.timezone.utc),
-            metadata=project_metadata,
+            end_time=experiment.end_time
+            or datetime.datetime.now(datetime.timezone.utc),
+            metadata={
+                **experiment.metadata,
+                **project_metadata,
+            },
         )
 
 
@@ -1584,6 +1750,7 @@ def _wrap_summary_evaluators(
 ) -> List[SUMMARY_EVALUATOR_T]:
     def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
+        evaluator = _normalize_summary_evaluator(evaluator)
 
         @functools.wraps(evaluator)
         def _wrapper_inner(
@@ -1618,6 +1785,7 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
+    upload_results: bool,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1625,33 +1793,26 @@ def _forward(
         nonlocal run
         run = r
 
-    with rh.tracing_context(enabled=True):
+    with rh.tracing_context(enabled="local" if not upload_results else True):
+        example_version = (
+            example.modified_at.isoformat()
+            if example.modified_at
+            else example.created_at.isoformat()
+        )
+        langsmith_extra = rh.LangSmithExtra(
+            reference_example_id=example.id,
+            on_end=_get_run,
+            project_name=experiment_name,
+            metadata={**metadata, "example_version": example_version},
+            client=client,
+        )
         try:
-            fn(
-                example.inputs,
-                langsmith_extra=rh.LangSmithExtra(
-                    reference_example_id=example.id,
-                    on_end=_get_run,
-                    project_name=experiment_name,
-                    metadata={
-                        **metadata,
-                        "example_version": (
-                            example.modified_at.isoformat()
-                            if example.modified_at
-                            else example.created_at.isoformat()
-                        ),
-                    },
-                    client=client,
-                ),
-            )
+            fn(example.inputs, langsmith_extra=langsmith_extra)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
             )
-        return _ForwardResults(
-            run=cast(schemas.Run, run),
-            example=example,
-        )
+        return _ForwardResults(run=cast(schemas.Run, run), example=example)
 
 
 def _resolve_data(

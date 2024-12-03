@@ -38,6 +38,7 @@ from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
+    AsyncIterable,
     Callable,
     DefaultDict,
     Dict,
@@ -55,13 +56,12 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-import orjson
 import requests
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
 )
-from typing_extensions import TypeGuard
+from typing_extensions import TypeGuard, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
 
@@ -69,6 +69,7 @@ import langsmith
 from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _orjson
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -106,8 +107,25 @@ except ImportError:
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
+    from langchain_core.runnables import Runnable
 
+    from langsmith import schemas
     from langsmith.evaluation import evaluator as ls_evaluator
+    from langsmith.evaluation._arunner import (
+        AEVALUATOR_T,
+        ATARGET_T,
+        AsyncExperimentResults,
+    )
+    from langsmith.evaluation._runner import (
+        COMPARATIVE_EVALUATOR_T,
+        DATA_T,
+        EVALUATOR_T,
+        EXPERIMENT_T,
+        SUMMARY_EVALUATOR_T,
+        TARGET_T,
+        ComparativeExperimentResults,
+        ExperimentResults,
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -368,6 +386,8 @@ class Client:
         "_info",
         "_write_api_urls",
         "_settings",
+        "_manual_cleanup",
+        "_pyo3_client",
     ]
 
     def __init__(
@@ -398,8 +418,9 @@ class Client:
             environment variable.
         retry_config : Retry or None, default=None
             Retry configuration for the HTTPAdapter.
-        timeout_ms : int or None, default=None
-            Timeout in milliseconds for the HTTPAdapter.
+        timeout_ms : int, tuple[int, int], or None, default=None
+            Timeout for the HTTPAdapter. Can also be a 2-tuple of
+            (connect timeout, read timeout) to set them separately.
         web_url : str or None, default=None
             URL for the LangSmith web app. Default is auto-inferred from
             the ENDPOINT.
@@ -514,7 +535,45 @@ class Client:
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
 
+        # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
+        self._pyo3_client = None
+        if ls_utils.get_env_var("USE_PYO3_CLIENT") is not None:
+            langsmith_pyo3 = None
+            try:
+                import langsmith_pyo3  # type: ignore[import-not-found, no-redef]
+            except ImportError as e:
+                logger.warning(
+                    "Failed to import `langsmith_pyo3` when PyO3 client was requested, "
+                    "falling back to Python impl: %s",
+                    repr(e),
+                )
+
+            if langsmith_pyo3:
+                # TODO: tweak these constants as needed
+                queue_capacity = 1_000_000
+                batch_size = 100
+                batch_timeout_millis = 1000
+                worker_threads = 1
+
+                try:
+                    self._pyo3_client = langsmith_pyo3.BlockingTracingClient(
+                        self.api_url,
+                        self.api_key,
+                        queue_capacity,
+                        batch_size,
+                        batch_timeout_millis,
+                        worker_threads,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to instantiate `langsmith_pyo3.BlockingTracingClient` "
+                        "when PyO3 client was requested, falling back to Python impl: %s",
+                        repr(e),
+                    )
+
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
+
+        self._manual_cleanup = False
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -1222,16 +1281,26 @@ class Client:
             copy=False,
         )
         self._insert_runtime_env([run_create])
+
         if (
-            self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
-            and run_create.get("trace_id") is not None
+            run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            serialized_op = serialize_run_dict("post", run_create)
-            self.tracing_queue.put(
-                TracingQueueItem(run_create["dotted_order"], serialized_op)
-            )
+            if self._pyo3_client is not None:
+                # `self._run_transform()` above turns the `id` key into a `UUID` object.
+                # We need to pass a string since `orjson` doesn't seem to serialize `UUID` objects.
+                run_create["id"] = str(run_create["id"])
+                self._pyo3_client.create_run(run_create)
+            elif self.tracing_queue is not None:
+                serialized_op = serialize_run_dict("post", run_create)
+                self.tracing_queue.put(
+                    TracingQueueItem(run_create["dotted_order"], serialized_op)
+                )
+            else:
+                # Neither Rust nor Python batch ingestion is configured,
+                # fall back to the non-batch approach.
+                self._create_run(run_create)
         else:
             self._create_run(run_create)
 
@@ -1252,7 +1321,7 @@ class Client:
         if self._hide_inputs is True:
             return {}
         if self._anonymizer:
-            json_inputs = orjson.loads(_dumps_json(inputs))
+            json_inputs = _orjson.loads(_dumps_json(inputs))
             return self._anonymizer(json_inputs)
         if self._hide_inputs is False:
             return inputs
@@ -1262,7 +1331,7 @@ class Client:
         if self._hide_outputs is True:
             return {}
         if self._anonymizer:
-            json_outputs = orjson.loads(_dumps_json(outputs))
+            json_outputs = _orjson.loads(_dumps_json(outputs))
             return self._anonymizer(json_outputs)
         if self._hide_outputs is False:
             return outputs
@@ -1282,20 +1351,20 @@ class Client:
         # form the partial body and ids
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                curr_dict = orjson.loads(op._none)
+                curr_dict = _orjson.loads(op._none)
                 if op.inputs:
-                    curr_dict["inputs"] = orjson.Fragment(op.inputs)
+                    curr_dict["inputs"] = _orjson.Fragment(op.inputs)
                 if op.outputs:
-                    curr_dict["outputs"] = orjson.Fragment(op.outputs)
+                    curr_dict["outputs"] = _orjson.Fragment(op.outputs)
                 if op.events:
-                    curr_dict["events"] = orjson.Fragment(op.events)
+                    curr_dict["events"] = _orjson.Fragment(op.events)
                 if op.attachments:
                     logger.warning(
                         "Attachments are not supported when use_multipart_endpoint "
                         "is False"
                     )
                 ids_and_partial_body[op.operation].append(
-                    (f"trace={op.trace_id},id={op.id}", orjson.dumps(curr_dict))
+                    (f"trace={op.trace_id},id={op.id}", _orjson.dumps(curr_dict))
                 )
             elif isinstance(op, SerializedFeedbackOperation):
                 logger.warning(
@@ -1321,7 +1390,7 @@ class Client:
                     and body_size + len(body_deque[0][1]) > size_limit_bytes
                 ):
                     self._post_batch_ingest_runs(
-                        orjson.dumps(body_chunks),
+                        _orjson.dumps(body_chunks),
                         _context=f"\n{key}: {'; '.join(context_ids[key])}",
                     )
                     body_size = 0
@@ -1329,12 +1398,12 @@ class Client:
                     context_ids.clear()
                 curr_id, curr_body = body_deque.popleft()
                 body_size += len(curr_body)
-                body_chunks[key].append(orjson.Fragment(curr_body))
+                body_chunks[key].append(_orjson.Fragment(curr_body))
                 context_ids[key].append(curr_id)
         if body_size:
             context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
             self._post_batch_ingest_runs(
-                orjson.dumps(body_chunks), _context="\n" + context
+                _orjson.dumps(body_chunks), _context="\n" + context
             )
 
     def batch_ingest_runs(
@@ -1616,6 +1685,9 @@ class Client:
         events: Optional[Sequence[dict]] = None,
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
+        attachments: Optional[
+            Dict[str, tuple[str, bytes] | ls_schemas.Attachment]
+        ] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1640,6 +1712,9 @@ class Client:
             The extra information for the run.
         tags : List[str] or None, default=None
             The tags for the run.
+        attachments: dict[str, ls_schemas.Attachment] or None, default=None
+            A dictionary of attachments to add to the run. The keys are the attachment names,
+            and the values are Attachment objects containing the data and mime type.
         **kwargs : Any
             Kwargs are ignored.
         """
@@ -1654,6 +1729,8 @@ class Client:
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
         }
+        if attachments:
+            data["attachments"] = attachments
         use_multipart = (
             self.tracing_queue is not None
             # batch ingest requires trace_id and dotted_order to be set
@@ -2759,7 +2836,7 @@ class Client:
             "POST",
             "/datasets",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=orjson.dumps(dataset),
+            data=_orjson.dumps(dataset),
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -3409,6 +3486,22 @@ class Client:
 
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
+
+        sequence_args = {
+            "outputs": outputs,
+            "metadata": metadata,
+            "splits": splits,
+            "ids": ids,
+            "source_run_ids": source_run_ids,
+        }
+        # Since inputs are required, we will check against them
+        input_len = len(inputs)
+        for arg_name, arg_value in sequence_args.items():
+            if arg_value is not None and len(arg_value) != input_len:
+                raise ValueError(
+                    f"Length of {arg_name} ({len(arg_value)}) does not match"
+                    f" length of inputs ({input_len})"
+                )
         examples = [
             {
                 "inputs": in_,
@@ -3812,6 +3905,21 @@ class Client:
         Dict[str, Any]
             The response from the server (specifies the number of examples updated).
         """
+        sequence_args = {
+            "inputs": inputs,
+            "outputs": outputs,
+            "metadata": metadata,
+            "splits": splits,
+            "dataset_ids": dataset_ids,
+        }
+        # Since inputs are required, we will check against them
+        examples_len = len(example_ids)
+        for arg_name, arg_value in sequence_args.items():
+            if arg_value is not None and len(arg_value) != examples_len:
+                raise ValueError(
+                    f"Length of {arg_name} ({len(arg_value)}) does not match"
+                    f" length of examples ({examples_len})"
+                )
         examples = [
             {
                 "id": id_,
@@ -5551,9 +5659,12 @@ class Client:
             Any: The prompt object in the specified format.
         """
         try:
+            from langchain_core.language_models.base import BaseLanguageModel
             from langchain_core.load.load import loads
+            from langchain_core.output_parsers import BaseOutputParser
             from langchain_core.prompts import BasePromptTemplate
-            from langchain_core.runnables.base import RunnableSequence
+            from langchain_core.prompts.structured import StructuredPrompt
+            from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
                 "The client.pull_prompt function requires the langchain_core"
@@ -5602,6 +5713,33 @@ class Client:
                     "lc_hub_commit_hash": prompt_object.commit_hash,
                 }
             )
+        if (
+            include_model
+            and isinstance(prompt, RunnableSequence)
+            and isinstance(prompt.first, StructuredPrompt)
+            # Make forward-compatible in case we let update the response type
+            and (
+                len(prompt.steps) == 2 and not isinstance(prompt.last, BaseOutputParser)
+            )
+        ):
+            if isinstance(prompt.last, RunnableBinding) and isinstance(
+                prompt.last.bound, BaseLanguageModel
+            ):
+                seq = cast(RunnableSequence, prompt.first | prompt.last.bound)
+                if len(seq.steps) == 3:  # prompt | bound llm | output parser
+                    rebound_llm = seq.steps[1]
+                    prompt = RunnableSequence(
+                        prompt.first,
+                        rebound_llm.bind(**{**prompt.last.kwargs}),
+                        seq.last,
+                    )
+                else:
+                    prompt = seq  # Not sure
+
+            elif isinstance(prompt.last, BaseLanguageModel):
+                prompt: RunnableSequence = prompt.first | prompt.last  # type: ignore[no-redef, assignment]
+            else:
+                pass
 
         return prompt
 
@@ -5674,6 +5812,458 @@ class Client:
             parent_commit_hash=parent_commit_hash,
         )
         return url
+
+    def cleanup(self) -> None:
+        """Manually trigger cleanup of the background thread."""
+        self._manual_cleanup = True
+
+    @overload
+    def evaluate(
+        self,
+        target: Union[TARGET_T, Runnable, EXPERIMENT_T],
+        /,
+        data: Optional[DATA_T] = None,
+        evaluators: Optional[Sequence[EVALUATOR_T]] = None,
+        summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        max_concurrency: Optional[int] = None,
+        num_repetitions: int = 1,
+        blocking: bool = True,
+        experiment: Optional[EXPERIMENT_T] = None,
+        upload_results: bool = True,
+        **kwargs: Any,
+    ) -> ExperimentResults: ...
+
+    @overload
+    def evaluate(
+        self,
+        target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+        /,
+        data: Optional[DATA_T] = None,
+        evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
+        summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        max_concurrency: Optional[int] = None,
+        num_repetitions: int = 1,
+        blocking: bool = True,
+        experiment: Optional[EXPERIMENT_T] = None,
+        upload_results: bool = True,
+        **kwargs: Any,
+    ) -> ComparativeExperimentResults: ...
+
+    def evaluate(
+        self,
+        target: Union[
+            TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]
+        ],
+        /,
+        data: Optional[DATA_T] = None,
+        evaluators: Optional[
+            Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
+        ] = None,
+        summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        max_concurrency: Optional[int] = None,
+        num_repetitions: int = 1,
+        blocking: bool = True,
+        experiment: Optional[EXPERIMENT_T] = None,
+        upload_results: bool = True,
+        **kwargs: Any,
+    ) -> Union[ExperimentResults, ComparativeExperimentResults]:
+        r"""Evaluate a target system on a given dataset.
+
+        Args:
+            target (TARGET_T | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+                The target system or experiment(s) to evaluate. Can be a function
+                that takes a dict and returns a dict, a langchain Runnable, an
+                existing experiment ID, or a two-tuple of experiment IDs.
+            data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
+                examples, or a generator of examples.
+            evaluators (Sequence[EVALUATOR_T] | Sequence[COMPARATIVE_EVALUATOR_T] | None):
+                A list of evaluators to run on each example. The evaluator signature
+                depends on the target type. Default to None.
+            summary_evaluators (Sequence[SUMMARY_EVALUATOR_T] | None): A list of summary
+                evaluators to run on the entire dataset. Should not be specified if
+                comparing two existing experiments. Defaults to None.
+            metadata (dict | None): Metadata to attach to the experiment.
+                Defaults to None.
+            experiment_prefix (str | None): A prefix to provide for your experiment name.
+                Defaults to None.
+            description (str | None): A free-form text description for the experiment.
+            max_concurrency (int | None): The maximum number of concurrent
+                evaluations to run. Defaults to None (max number of workers).
+            blocking (bool): Whether to block until the evaluation is complete.
+                Defaults to True.
+            num_repetitions (int): The number of times to run the evaluation.
+                Each item in the dataset will be run and evaluated this many times.
+                Defaults to 1.
+            experiment (schemas.TracerSession | None): An existing experiment to
+                extend. If provided, experiment_prefix is ignored. For advanced
+                usage only. Should not be specified if target is an existing experiment or
+                two-tuple fo experiments.
+            load_nested (bool): Whether to load all child runs for the experiment.
+                Default is to only load the top-level root runs. Should only be specified
+                when target is an existing experiment or two-tuple of experiments.
+            randomize_order (bool): Whether to randomize the order of the outputs for each
+                evaluation. Default is False. Should only be specified when target is a
+                two-tuple of existing experiments.
+
+        Returns:
+            ExperimentResults: If target is a function, Runnable, or existing experiment.
+            ComparativeExperimentResults: If target is a two-tuple of existing experiments.
+
+        Examples:
+            Prepare the dataset:
+
+            >>> from langsmith import Client
+            >>> client = Client()
+            >>> dataset = client.clone_public_dataset(
+            ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+            ... )
+            >>> dataset_name = "Evaluate Examples"
+
+            Basic usage:
+
+            >>> def accuracy(outputs: dict, reference_outputs: dict) -> dict:
+            ...     # Row-level evaluator for accuracy.
+            ...     pred = outputs["response"]
+            ...     expected = reference_outputs["answer"]
+            ...     return {"score": expected.lower() == pred.lower()}
+
+            >>> def precision(outputs: list[dict], reference_outputs: list[dict]) -> dict:
+            ...     # Experiment-level evaluator for precision.
+            ...     # TP / (TP + FP)
+            ...     predictions = [out["response"].lower() for out in outputs]
+            ...     expected = [ref["answer"].lower() for ref in reference_outputs]
+            ...     # yes and no are the only possible answers
+            ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+            ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+            ...     return {"score": tp / (tp + fp)}
+            >>> def predict(inputs: dict) -> dict:
+            ...     # This can be any function or just an API call to your app.
+            ...     return {"response": "Yes"}
+            >>> results = client.evaluate(
+            ...     predict,
+            ...     data=dataset_name,
+            ...     evaluators=[accuracy],
+            ...     summary_evaluators=[precision],
+            ...     experiment_prefix="My Experiment",
+            ...     description="Evaluating the accuracy of a simple prediction model.",
+            ...     metadata={
+            ...         "my-prompt-version": "abcd-1234",
+            ...     },
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+
+            Evaluating over only a subset of the examples
+
+            >>> experiment_name = results.experiment_name
+            >>> examples = client.list_examples(dataset_name=dataset_name, limit=5)
+            >>> results = client.evaluate(
+            ...     predict,
+            ...     data=examples,
+            ...     evaluators=[accuracy],
+            ...     summary_evaluators=[precision],
+            ...     experiment_prefix="My Experiment",
+            ...     description="Just testing a subset synchronously.",
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+
+            Streaming each prediction to more easily + eagerly debug.
+
+            >>> results = client.evaluate(
+            ...     predict,
+            ...     data=dataset_name,
+            ...     evaluators=[accuracy],
+            ...     summary_evaluators=[precision],
+            ...     description="I don't even have to block!",
+            ...     blocking=False,
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+            >>> for i, result in enumerate(results):  # doctest: +ELLIPSIS
+            ...     pass
+
+            Using the `evaluate` API with an off-the-shelf LangChain evaluator:
+
+            >>> from langsmith.evaluation import LangChainStringEvaluator
+            >>> from langchain.chat_models import init_chat_model
+            >>> def prepare_criteria_data(run: Run, example: Example):
+            ...     return {
+            ...         "prediction": run.outputs["output"],
+            ...         "reference": example.outputs["answer"],
+            ...         "input": str(example.inputs),
+            ...     }
+            >>> results = client.evaluate(
+            ...     predict,
+            ...     data=dataset_name,
+            ...     evaluators=[
+            ...         accuracy,
+            ...         LangChainStringEvaluator("embedding_distance"),
+            ...         LangChainStringEvaluator(
+            ...             "labeled_criteria",
+            ...             config={
+            ...                 "criteria": {
+            ...                     "usefulness": "The prediction is useful if it is correct"
+                                                      ...                     " and/or asks a useful followup question."
+            ...                 },
+            ...                 "llm": init_chat_model("gpt-4o"),
+            ...             },
+            ...             prepare_data=prepare_criteria_data,
+            ...         ),
+            ...     ],
+            ...     description="Evaluating with off-the-shelf LangChain evaluators.",
+            ...     summary_evaluators=[precision],
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+
+            Evaluating a LangChain object:
+
+            >>> from langchain_core.runnables import chain as as_runnable
+            >>> @as_runnable
+            ... def nested_predict(inputs):
+            ...     return {"response": "Yes"}
+            >>> @as_runnable
+            ... def lc_predict(inputs):
+            ...     return nested_predict.invoke(inputs)
+            >>> results = client.evaluate(
+            ...     lc_predict,
+            ...     data=dataset_name,
+            ...     evaluators=[accuracy],
+            ...     description="This time we're evaluating a LangChain object.",
+            ...     summary_evaluators=[precision],
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+        """  # noqa: E501
+        from langsmith.evaluation._runner import evaluate as evaluate_
+
+        # Need to ignore because it fails when there are too many union types +
+        # overloads.
+        return evaluate_(  # type: ignore[misc]
+            target,  # type: ignore[arg-type]
+            data=data,
+            evaluators=evaluators,  # type: ignore[arg-type]
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            experiment_prefix=experiment_prefix,
+            description=description,
+            max_concurrency=max_concurrency,
+            num_repetitions=num_repetitions,
+            client=self,
+            blocking=blocking,
+            experiment=experiment,
+            upload_results=upload_results,
+            **kwargs,
+        )
+
+    async def aevaluate(
+        self,
+        target: Union[
+            ATARGET_T,
+            AsyncIterable[dict],
+            Runnable,
+            str,
+            uuid.UUID,
+            schemas.TracerSession,
+        ],
+        /,
+        data: Union[
+            DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None
+        ] = None,
+        evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
+        summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        metadata: Optional[dict] = None,
+        experiment_prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        max_concurrency: Optional[int] = None,
+        num_repetitions: int = 1,
+        blocking: bool = True,
+        experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+        upload_results: bool = True,
+        **kwargs: Any,
+    ) -> AsyncExperimentResults:
+        r"""Evaluate an async target system on a given dataset.
+
+        Args:
+            target (AsyncCallable[[dict], dict] | AsyncIterable[dict] | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+                The target system or experiment(s) to evaluate. Can be an async function
+                that takes a dict and returns a dict, a langchain Runnable, an
+                existing experiment ID, or a two-tuple of experiment IDs.
+            data (Union[DATA_T, AsyncIterable[schemas.Example]]): The dataset to evaluate on. Can be a dataset name, a list of
+                examples, an async generator of examples, or an async iterable of examples.
+            evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
+                on each example. Defaults to None.
+            summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
+                evaluators to run on the entire dataset. Defaults to None.
+            metadata (Optional[dict]): Metadata to attach to the experiment.
+                Defaults to None.
+            experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
+                Defaults to None.
+            description (Optional[str]): A description of the experiment.
+            max_concurrency (Optional[int]): The maximum number of concurrent
+                evaluations to run. Defaults to None.
+            num_repetitions (int): The number of times to run the evaluation.
+                Each item in the dataset will be run and evaluated this many times.
+                Defaults to 1.
+            blocking (bool): Whether to block until the evaluation is complete.
+                Defaults to True.
+            experiment (Optional[schemas.TracerSession]): An existing experiment to
+                extend. If provided, experiment_prefix is ignored. For advanced
+                usage only.
+            load_nested: Whether to load all child runs for the experiment.
+                Default is to only load the top-level root runs. Should only be specified
+                when evaluating an existing experiment.
+
+        Returns:
+            AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
+
+        Environment:
+            - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to save time and
+                cost during testing. Recommended to commit the cache files to your repository
+                for faster CI/CD runs.
+                Requires the 'langsmith[vcr]' package to be installed.
+
+        Examples:
+            >>> import asyncio
+            >>> from langsmith import Client
+            >>> client = Client()
+            >>> dataset = client.clone_public_dataset(
+            ...     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+            ... )
+            >>> dataset_name = "Evaluate Examples"
+
+            Basic usage:
+
+            >>> def accuracy(outputs: dict, reference_outputs: dict) -> dict:
+            ...     # Row-level evaluator for accuracy.
+            ...     pred = outputs["resposen"]
+            ...     expected = reference_outputs["answer"]
+            ...     return {"score": expected.lower() == pred.lower()}
+
+            >>> def precision(outputs: list[dict], reference_outputs: list[dict]) -> dict:
+            ...     # Experiment-level evaluator for precision.
+            ...     # TP / (TP + FP)
+            ...     predictions = [out["response"].lower() for out in outputs]
+            ...     expected = [ref["answer"].lower() for ref in reference_outputs]
+            ...     # yes and no are the only possible answers
+            ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+            ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+            ...     return {"score": tp / (tp + fp)}
+
+            >>> async def apredict(inputs: dict) -> dict:
+            ...     # This can be any async function or just an API call to your app.
+            ...     await asyncio.sleep(0.1)
+            ...     return {"response": "Yes"}
+            >>> results = asyncio.run(
+            ...     client.aevaluate(
+            ...         apredict,
+            ...         data=dataset_name,
+            ...         evaluators=[accuracy],
+            ...         summary_evaluators=[precision],
+            ...         experiment_prefix="My Experiment",
+            ...         description="Evaluate the accuracy of the model asynchronously.",
+            ...         metadata={
+            ...             "my-prompt-version": "abcd-1234",
+            ...         },
+            ...     )
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+
+            Evaluating over only a subset of the examples using an async generator:
+
+            >>> async def example_generator():
+            ...     examples = client.list_examples(dataset_name=dataset_name, limit=5)
+            ...     for example in examples:
+            ...         yield example
+            >>> results = asyncio.run(
+            ...     client.aevaluate(
+            ...         apredict,
+            ...         data=example_generator(),
+            ...         evaluators=[accuracy],
+            ...         summary_evaluators=[precision],
+            ...         experiment_prefix="My Subset Experiment",
+            ...         description="Evaluate a subset of examples asynchronously.",
+            ...     )
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+
+            Streaming each prediction to more easily + eagerly debug.
+
+            >>> results = asyncio.run(
+            ...     client.aevaluate(
+            ...         apredict,
+            ...         data=dataset_name,
+            ...         evaluators=[accuracy],
+            ...         summary_evaluators=[precision],
+            ...         experiment_prefix="My Streaming Experiment",
+            ...         description="Streaming predictions for debugging.",
+            ...         blocking=False,
+            ...     )
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+
+            >>> async def aenumerate(iterable):
+            ...     async for elem in iterable:
+            ...         print(elem)
+            >>> asyncio.run(aenumerate(results))
+
+            Running without concurrency:
+
+            >>> results = asyncio.run(
+            ...     client.aevaluate(
+            ...         apredict,
+            ...         data=dataset_name,
+            ...         evaluators=[accuracy],
+            ...         summary_evaluators=[precision],
+            ...         experiment_prefix="My Experiment Without Concurrency",
+            ...         description="This was run without concurrency.",
+            ...         max_concurrency=0,
+            ...     )
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+
+            Using Async evaluators:
+
+            >>> async def helpfulness(outputs: dict) -> dict:
+            ...     # Row-level evaluator for helpfulness.
+            ...     await asyncio.sleep(5)  # Replace with your LLM API call
+            ...     return {"score": outputs["output"] == "Yes"}
+
+            >>> results = asyncio.run(
+            ...     client.aevaluate(
+            ...         apredict,
+            ...         data=dataset_name,
+            ...         evaluators=[helpfulness],
+            ...         summary_evaluators=[precision],
+            ...         experiment_prefix="My Helpful Experiment",
+            ...         description="Applying async evaluators example.",
+            ...     )
+            ... )  # doctest: +ELLIPSIS
+            View the evaluation results for experiment:...
+        """  # noqa: E501
+        from langsmith.evaluation._arunner import aevaluate as aevaluate_
+
+        return await aevaluate_(
+            target,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            experiment_prefix=experiment_prefix,
+            description=description,
+            max_concurrency=max_concurrency,
+            num_repetitions=num_repetitions,
+            client=self,
+            blocking=blocking,
+            experiment=experiment,
+            upload_results=upload_results,
+            **kwargs,
+        )
 
 
 def convert_prompt_to_openai_format(

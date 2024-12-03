@@ -1,0 +1,17 @@
+[package]
+name = "maturin-starter"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "maturin_starter"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { path = "../../", features = ["extension-module"] }
+
+[features]
+abi3 = ["pyo3/abi3-py37", "generate-import-lib"]
+generate-import-lib = ["pyo3/generate-import-lib"]
+
+[workspace]
