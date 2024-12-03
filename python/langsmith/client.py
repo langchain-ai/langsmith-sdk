@@ -2327,9 +2327,10 @@ class Client:
         share_token: str,
     ) -> ls_schemas.Dataset:
         """Get shared datasets."""
+        _, token_uuid = _parse_token_or_url(share_token, self.api_url)
         response = self.request_with_retries(
             "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/datasets",
+            f"/public/{token_uuid}/datasets",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -3283,6 +3284,8 @@ class Client:
                 dataset_name=dataset_name,
                 description=ds.description,
                 data_type=ds.data_type or ls_schemas.DataType.kv,
+                inputs_schema=ds.inputs_schema,
+                outputs_schema=ds.outputs_schema,
             )
             try:
                 self.create_examples(
