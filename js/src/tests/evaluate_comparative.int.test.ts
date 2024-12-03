@@ -1,7 +1,7 @@
 import { evaluate } from "../evaluation/_runner.js";
 import {
   evaluateComparative,
-  ComparativeEvaluatorNew,
+  _ComparativeEvaluator,
 } from "../evaluation/evaluate_comparative.js";
 import { Client } from "../index.js";
 import { Run } from "../schemas.js";
@@ -127,7 +127,7 @@ describe("evaluate comparative", () => {
     });
 
     test("new format evaluator", async () => {
-      const matchesSecondEvaluator: ComparativeEvaluatorNew = ({
+      const matchesSecondEvaluator: _ComparativeEvaluator = ({
         runs,
         inputs,
         outputs,
@@ -167,7 +167,7 @@ describe("evaluate comparative", () => {
     });
 
     test("mixed old and new format evaluators", async () => {
-      const matchesSecondEvaluator: ComparativeEvaluatorNew = ({
+      const matchesSecondEvaluator: _ComparativeEvaluator = ({
         runs,
         inputs,
         outputs,

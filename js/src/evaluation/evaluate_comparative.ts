@@ -70,7 +70,7 @@ async function loadTraces(
 }
 
 /** @deprecated Use ComparativeEvaluatorNew instead: (args: { runs, example, inputs, outputs, referenceOutputs }) => ... */
-type ComparativeEvaluatorOld = (
+export type _ComparativeEvaluatorLegacy = (
   runs: Run[],
   example: Example
 ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
@@ -84,7 +84,7 @@ export type ComparativeEvaluatorNew = (args: {
 }) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
 
 export type ComparativeEvaluator =
-  | ComparativeEvaluatorOld
+  | _ComparativeEvaluatorLegacy
   | ComparativeEvaluatorNew;
 
 export interface EvaluateComparativeOptions {
@@ -332,7 +332,7 @@ export async function evaluateComparative(
             outputs: runs.map((run) => run.outputs || {}),
             referenceOutputs: example.outputs || {},
           })
-        : await (evaluator as ComparativeEvaluatorOld)(runs, example);
+        : await (evaluator as _ComparativeEvaluatorLegacy)(runs, example);
 
     for (const [runId, score] of Object.entries(result.scores)) {
       // validate if the run id
