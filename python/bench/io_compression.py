@@ -406,6 +406,7 @@ def print_results(experiment_results: Dict):
         print(f"Compressed Size: {format_size(results['size'])}")
         print(f"Ratio: {results['ratio']:.3f}")
         print(f"Time: {results['time']*1000:.2f}ms")
+        print(f"Files Processed: {results['files_processed']}")
 
 def main():
     # Load data
