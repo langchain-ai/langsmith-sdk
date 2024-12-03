@@ -1,0 +1,65 @@
+[project]
+name = "orjson"
+repository = "https://github.com/ijl/orjson"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python",
+    "Programming Language :: Rust",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Documentation = "https://github.com/ijl/orjson"
+Changelog = "https://github.com/ijl/orjson/blob/master/CHANGELOG.md"
+
+[build-system]
+build-backend = "maturin"
+requires = ["maturin>=1,<2"]
+
+[tool.maturin]
+python-source = "pysrc"
+include = [
+    { format = "sdist", path = ".cargo/*" },
+    { format = "sdist", path = "build.rs" },
+    { format = "sdist", path = "Cargo.lock" },
+    { format = "sdist", path = "include/**/*" },
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "I",
+]
+ignore = [
+    "E501", # line too long
+    "F601", # Dictionary key literal ... repeated
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["orjson"]
+
+[tool.mypy]
+python_version = "3.8"
+
+[[tool.mypy.overrides]]
+module = ["dateutil", "pytz", "simplejson", "ujson"]
+ignore_missing_imports = true

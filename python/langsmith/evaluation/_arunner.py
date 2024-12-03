@@ -31,11 +31,11 @@ from langsmith import run_trees, schemas
 from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
+from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
     EVALUATOR_T,
-    SUMMARY_EVALUATOR_T,
     ExperimentResultRow,
     _ExperimentManagerMixin,
     _extract_feedback_keys,
@@ -52,6 +52,7 @@ from langsmith.evaluation._runner import (
     _wrap_summary_evaluators,
 )
 from langsmith.evaluation.evaluator import (
+    SUMMARY_EVALUATOR_T,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
@@ -59,6 +60,7 @@ from langsmith.evaluation.evaluator import (
 
 if TYPE_CHECKING:
     import pandas as pd
+    from langchain_core.runnables import Runnable
 
     DataFrame = pd.DataFrame
 else:
@@ -70,9 +72,13 @@ ATARGET_T = Callable[[dict], Awaitable[dict]]
 
 
 async def aevaluate(
-    target: Union[ATARGET_T, AsyncIterable[dict]],
+    target: Union[
+        ATARGET_T, AsyncIterable[dict], Runnable, str, uuid.UUID, schemas.TracerSession
+    ],
     /,
-    data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example]],
+    data: Union[
+        DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None
+    ] = None,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
@@ -83,11 +89,16 @@ async def aevaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
+    **kwargs: Any,
 ) -> AsyncExperimentResults:
-    r"""Evaluate an async target system or function on a given dataset.
+    r"""Evaluate an async target system on a given dataset.
 
     Args:
-        target (Union[AsyncCallable[[dict], dict], AsyncIterable[dict]]): The async target system or function to evaluate.
+        target (AsyncCallable[[dict], dict] | AsyncIterable[dict] | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+            The target system or experiment(s) to evaluate. Can be an async function
+            that takes a dict and returns a dict, a langchain Runnable, an
+            existing experiment ID, or a two-tuple of experiment IDs.
         data (Union[DATA_T, AsyncIterable[schemas.Example]]): The dataset to evaluate on. Can be a dataset name, a list of
             examples, an async generator of examples, or an async iterable of examples.
         evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
@@ -111,6 +122,9 @@ async def aevaluate(
         experiment (Optional[schemas.TracerSession]): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
             usage only.
+        load_nested: Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs. Should only be specified
+            when evaluating an existing experiment.
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
@@ -241,26 +255,75 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
     """  # noqa: E501
-    if experiment and experiment_prefix:
-        raise ValueError(
+    if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
+        invalid_args = {
+            "num_repetitions": num_repetitions > 1,
+            "experiment": bool(experiment),
+            "upload_results": not upload_results,
+            "experiment_prefix": bool(experiment_prefix),
+            "data": bool(data),
+        }
+        if any(invalid_args.values()):
+            msg = (
+                f"Received invalid arguments. "
+                f"{tuple(k for k, v in invalid_args.items() if v)} should not be "
+                f"specified when target is an existing experiment."
+            )
+            raise ValueError(msg)
+        target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
+        logger.debug(f"Running evaluation over existing experiment {target_id}...")
+        return await aevaluate_existing(
+            target,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            **kwargs,
+        )
+    elif isinstance(target, tuple):
+        msg = (
+            "Running a comparison of two existing experiments asynchronously is not "
+            "currently supported. Please use the `evaluate()` method instead and make "
+            "sure that your evaluators are defined as synchronous functions."
+        )
+        raise ValueError(msg)
+    elif kwargs:
+        msg = (
+            f"Received unsupported arguments {kwargs}. These arguments are not "
+            f"supported when creating a new experiment."
+        )
+        raise ValueError(msg)
+    elif not data:
+        msg = "Must specify 'data' when running evaluations over a target function."
+        raise ValueError(msg)
+    elif experiment and experiment_prefix:
+        msg = (
             "Expected at most one of 'experiment' or 'experiment_prefix',"
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
         )
-    return await _aevaluate(
-        target,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        experiment_prefix=experiment_prefix,
-        description=description,
-        max_concurrency=max_concurrency,
-        num_repetitions=num_repetitions,
-        client=client,
-        blocking=blocking,
-        experiment=experiment,
-    )
+        raise ValueError(msg)
+    else:
+        if not upload_results:
+            _warn_once("'upload_results' parameter is in beta.")
+        logger.debug(f"Running evaluation over target system {target}...")
+        return await _aevaluate(
+            target,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            experiment_prefix=experiment_prefix,
+            description=description,
+            max_concurrency=max_concurrency,
+            num_repetitions=num_repetitions,
+            client=client,
+            blocking=blocking,
+            experiment=experiment,
+            upload_results=upload_results,
+        )
 
 
 async def aevaluate_existing(
@@ -273,7 +336,7 @@ async def aevaluate_existing(
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
-) -> AsyncIterator[ExperimentResultRow]:
+) -> AsyncExperimentResults:
     r"""Evaluate existing experiment runs asynchronously.
 
     Args:
@@ -366,7 +429,7 @@ async def aevaluate_existing(
 
 
 async def _aevaluate(
-    target: Union[ATARGET_T, AsyncIterable[dict], Iterable[schemas.Run]],
+    target: Union[ATARGET_T, AsyncIterable[dict], Iterable[schemas.Run], Runnable],
     /,
     data: Union[DATA_T, AsyncIterable[schemas.Example]],
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
@@ -379,6 +442,7 @@ async def _aevaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
 ) -> AsyncExperimentResults:
     is_async_target = (
         asyncio.iscoroutinefunction(target)
@@ -401,6 +465,7 @@ async def _aevaluate(
         description=description,
         num_repetitions=num_repetitions,
         runs=runs,
+        upload_results=upload_results,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
     if cache_dir is not None:
@@ -461,6 +526,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        upload_results: bool = True,
     ):
         super().__init__(
             experiment=experiment,
@@ -476,6 +542,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._upload_results = upload_results
 
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
@@ -535,7 +602,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 "No examples found in the dataset."
                 "Please ensure the data provided to aevaluate is not empty."
             )
-        project = self._get_project(first_example)
+        project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
@@ -545,6 +612,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            upload_results=self._upload_results,
         )
 
     async def awith_predictions(
@@ -561,6 +629,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             metadata=self._metadata,
             client=self.client,
             runs=(pred["run"] async for pred in r2),
+            upload_results=self._upload_results,
         )
 
     async def awith_evaluators(
@@ -580,6 +649,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] async for result in r2),
             evaluation_results=(result["evaluation_results"] async for result in r3),
             summary_results=self._summary_results,
+            upload_results=self._upload_results,
         )
 
     async def awith_summary_evaluators(
@@ -596,6 +666,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs=self.aget_runs(),
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            upload_results=self._upload_results,
         )
 
     async def aget_results(self) -> AsyncIterator[ExperimentResultRow]:
@@ -675,7 +746,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": True,
+                "enabled": "local" if not self._upload_results else True,
                 "client": self.client,
             }
         ):
@@ -689,10 +760,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         example=example,
                     )
                     eval_results["results"].extend(
+                        self.client._select_eval_results(evaluator_response)
+                    )
+                    if self._upload_results:
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run, _executor=executor
                         )
-                    )
                 except Exception as e:
                     try:
                         feedback_keys = _extract_feedback_keys(evaluator)
@@ -709,11 +782,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                             ]
                         )
                         eval_results["results"].extend(
-                            # TODO: This is a hack
+                            self.client._select_eval_results(error_response)
+                        )
+                        if self._upload_results:
                             self.client._log_evaluation_feedback(
                                 error_response, run=run, _executor=executor
                             )
-                        )
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")
                         pass
@@ -744,7 +818,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs.append(run)
             examples.append(example)
         aggregate_feedback = []
-        project_id = self._get_experiment().id
+        project_id = self._get_experiment().id if self._upload_results else None
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),
@@ -758,7 +832,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": True,
+                "enabled": "local" if not self._upload_results else True,
                 "client": self.client,
             }
         ):
@@ -770,16 +844,17 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         fn_name=evaluator.__name__,
                     )
                     aggregate_feedback.extend(flattened_results)
-                    for result in flattened_results:
-                        feedback = result.dict(exclude={"target_run_id"})
-                        evaluator_info = feedback.pop("evaluator_info", None)
-                        await aitertools.aio_to_thread(
-                            self.client.create_feedback,
-                            **feedback,
-                            run_id=None,
-                            project_id=project_id,
-                            source_info=evaluator_info,
-                        )
+                    if self._upload_results:
+                        for result in flattened_results:
+                            feedback = result.dict(exclude={"target_run_id"})
+                            evaluator_info = feedback.pop("evaluator_info", None)
+                            await aitertools.aio_to_thread(
+                                self.client.create_feedback,
+                                **feedback,
+                                run_id=None,
+                                project_id=project_id,
+                                source_info=evaluator_info,
+                            )
                 except Exception as e:
                     logger.error(
                         f"Error running summary evaluator {repr(evaluator)}: {e}",
@@ -815,6 +890,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         return list(splits)
 
     async def _aend(self) -> None:
+        if not self._upload_results:
+            return
         experiment = self._experiment
         if experiment is None:
             raise ValueError("Experiment not started yet.")
@@ -824,8 +901,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         project_metadata["dataset_splits"] = await self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
-            end_time=datetime.datetime.now(datetime.timezone.utc),
-            metadata=project_metadata,
+            end_time=experiment.end_time
+            or datetime.datetime.now(datetime.timezone.utc),
+            metadata={
+                **experiment.metadata,
+                **project_metadata,
+            },
         )
 
 
