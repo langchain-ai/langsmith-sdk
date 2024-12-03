@@ -75,7 +75,7 @@ export type _ComparativeEvaluatorLegacy = (
   example: Example
 ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
 
-export type ComparativeEvaluatorNew = (args: {
+export type _ComparativeEvaluator = (args: {
   runs?: Run[];
   example?: Example;
   inputs?: Record<string, any>;
@@ -85,7 +85,7 @@ export type ComparativeEvaluatorNew = (args: {
 
 export type ComparativeEvaluator =
   | _ComparativeEvaluatorLegacy
-  | ComparativeEvaluatorNew;
+  | _ComparativeEvaluator;
 
 export interface EvaluateComparativeOptions {
   /**
@@ -325,7 +325,7 @@ export async function evaluateComparative(
     // Check if evaluator expects an object parameter
     const result =
       evaluator.length === 1
-        ? await (evaluator as ComparativeEvaluatorNew)({
+        ? await (evaluator as _ComparativeEvaluator)({
             runs: options.randomizeOrder ? shuffle(runs) : runs,
             example,
             inputs: example.inputs,
