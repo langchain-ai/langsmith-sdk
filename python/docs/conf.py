@@ -110,7 +110,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinxcontrib.autodoc_pydantic",
-    "IPython.sphinxext.ipython_console_highlighting",
+    # "IPython.sphinxext.ipython_console_highlighting",
     "myst_parser",
     "_extensions.gallery_directive",
     "sphinx_design",
@@ -222,6 +222,7 @@ html_theme_options = {
     ],
     "icon_links_label": "Quick Links",
     "external_links": [],
+    "sidebar_primary_title": "Your Custom Title Here",
 }
 
 
@@ -259,3 +260,4 @@ if os.environ.get("READTHEDOCS", "") == "True":
     html_context["READTHEDOCS"] = True
 
 master_doc = "index"
+templates_path = ["templates"]
