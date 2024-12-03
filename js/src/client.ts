@@ -35,8 +35,9 @@ import {
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
   Attachments,
+  ListExampleResponse,
   ExampleUploadWithAttachments,
-  UploadExamplesResponse,
+  UploadExamplesResponse
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -2734,6 +2735,7 @@ export class Client implements LangSmithTracingClientInterface {
     limit,
     offset,
     filter,
+    includeAttachments,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2745,6 +2747,7 @@ export class Client implements LangSmithTracingClientInterface {
     limit?: number;
     offset?: number;
     filter?: string;
+    includeAttachments?: boolean;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2791,13 +2794,39 @@ export class Client implements LangSmithTracingClientInterface {
     if (filter !== undefined) {
       params.append("filter", filter);
     }
+    if (includeAttachments === true) {
+      ["attachment_urls", "outputs", "metadata"].forEach(field => 
+        params.append("select", field)
+      );
+    }
     let i = 0;
-    for await (const examples of this._getPaginated<Example>(
+    for await (const examples of this._getPaginated<ListExampleResponse>(
       "/examples",
       params
     )) {
       for (const example of examples) {
-        yield example;
+        const attachments: Record<string, [string, () => Promise<Response>]> = {};
+        if (example.attachment_urls) {
+          for (const [key, value] of Object.entries(example.attachment_urls)) {
+            const createReader = () => {
+              return this.caller.call(
+                _getFetchImplementation(),
+                value.presigned_url,
+                {
+                  method: "GET",
+                  signal: AbortSignal.timeout(this.timeout_ms),
+                  ...this.fetchOptions,
+                }
+              );
+            };
+            attachments[key.split(".")[1]] = [value.presigned_url, createReader];
+          }
+        }
+        const { attachment_urls, ...exampleWithoutAttachments } = example;
+        yield {
+          ...exampleWithoutAttachments,
+          attachment_urls: attachments,
+        };
         i++;
       }
       if (limit !== undefined && i >= limit) {
@@ -3968,7 +3997,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "PATCH",
         body: JSON.stringify(payload),
-        headers: {
+      headers: {
           ...this.headers,
           "Content-Type": "application/json",
         },

@@ -61,6 +61,7 @@ export interface BaseExample {
   outputs?: KVMap;
   metadata?: KVMap;
   source_run_id?: string;
+  attachment_urls?: Record<string, [string, () => Promise<Response>]>;
 }
 
 export type AttachmentData = Uint8Array | ArrayBuffer;
@@ -260,9 +261,22 @@ export interface UploadExamplesResponse {
 export interface Example extends BaseExample {
   id: string;
   created_at: string;
-  modified_at: string;
+  modified_at?: string;
   source_run_id?: string;
-  runs: Run[];
+  runs?: Run[];
+}
+
+export interface ListExampleResponse {
+  id: string;
+  name: string;
+  inputs: KVMap;
+  outputs?: KVMap;
+  dataset_id: string;
+  source_run_id?: string;
+  metadata?: KVMap;
+  created_at: string;
+  modified_at?: string;
+  attachment_urls?: KVMap;
 }
 
 export interface ExampleUpdate {
