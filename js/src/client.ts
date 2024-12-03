@@ -2825,7 +2825,7 @@ export class Client implements LangSmithTracingClientInterface {
         const { attachment_urls, ...exampleWithoutAttachments } = example;
         yield {
           ...exampleWithoutAttachments,
-          attachments
+          attachment_urls: attachments,
         };
         i++;
       }

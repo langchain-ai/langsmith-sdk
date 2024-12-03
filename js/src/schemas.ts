@@ -61,7 +61,7 @@ export interface BaseExample {
   outputs?: KVMap;
   metadata?: KVMap;
   source_run_id?: string;
-  attachments?: Record<string, [string, () => Promise<Response>]>;
+  attachment_urls?: Record<string, [string, () => Promise<Response>]>;
 }
 
 export type AttachmentData = Uint8Array | ArrayBuffer;

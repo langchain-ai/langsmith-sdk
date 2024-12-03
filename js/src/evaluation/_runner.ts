@@ -716,7 +716,7 @@ export class _ExperimentManager {
 
     // Python might return microseconds, which we need
     // to account for when comparing dates.
-    const modifiedAtTime = modifiedAt.filter(date => date != undefined).map((date) => {
+    const modifiedAtTime = modifiedAt.filter(date => date !== undefined).map((date) => {
       function getMiliseconds(isoString: string) {
         const time = isoString.split("T").at(1);
         if (!time) return "";
@@ -851,6 +851,7 @@ async function _evaluate(
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
+    includeAttachments: _includeAttachments(target),
   }).start();
 
   if (_isCallable(target)) {
@@ -922,15 +923,15 @@ async function _forward(
     : traceable(fn, options);
 
   try {
-    if (includeAttachments && example.attachments) {
-      await wrappedFn({ ...example.inputs }, example.attachments);
+    if (includeAttachments && example.attachment_urls) {
+      await wrappedFn({ ...example.inputs }, example.attachment_urls);
       
       // Reset attachment streams after use
-      for (const [_, [__, reader]] of Object.entries(example.attachments)) {
+      for (const [_, [__, reader]] of Object.entries(example.attachment_urls)) {
         const response = await reader();
         const blob = await response.blob();
         // Create a new stream from the blob to reset position
-        example.attachments[_][1] = () => Promise.resolve(new Response(blob));
+        example.attachment_urls[_][1] = () => Promise.resolve(new Response(blob));
       }
     } else {
       await wrappedFn(example.inputs);
@@ -1084,4 +1085,18 @@ function _isCallable(target: TargetT | AsyncGenerator<Run>): target is TargetT {
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
   );
+}
+
+// TODO: THIS NEEDS TO BE IMPROVED
+export function _includeAttachments(
+  target: TargetT | AsyncGenerator<Run>
+): boolean {
+  // If target is a runnable or not callable, return false
+  if (!_isCallable(target) || "invoke" in target) {
+    return false;
+  }
+  const paramCount = target.length;
+
+  // In TypeScript, we can only check parameter count, not names
+  return paramCount === 2;
 }
