@@ -2715,7 +2715,7 @@ export class Client {
     limit,
     offset,
     filter,
-    getAttachments,
+    includeAttachments,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2727,7 +2727,7 @@ export class Client {
     limit?: number;
     offset?: number;
     filter?: string;
-    getAttachments?: boolean;
+    includeAttachments?: boolean;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2774,7 +2774,7 @@ export class Client {
     if (filter !== undefined) {
       params.append("filter", filter);
     }
-    if (getAttachments === true) {
+    if (includeAttachments === true) {
       ["attachment_urls", "outputs", "metadata"].forEach(field => 
         params.append("select", field)
       );
@@ -3902,7 +3902,7 @@ export class Client {
       {
         method: "PATCH",
         body: JSON.stringify(payload),
-        headers: {
+      headers: {
           ...this.headers,
           "Content-Type": "application/json",
         },

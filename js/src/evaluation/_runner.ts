@@ -18,13 +18,19 @@ import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TargetT<TInput = any, TOutput = KVMap, TAttachments = Record<string, [string, () => Response]>> =
-  | ((input: TInput, config?: KVMap) => Promise<TOutput>)
-  | ((input: TInput, config?: KVMap) => TOutput)
-  | ((input: TInput, attachments: TAttachments, config?: KVMap) => Promise<TOutput>)
-  | ((input: TInput, attachments: TAttachments, config?: KVMap) => TOutput)
-  | { invoke: (input: TInput, config?: KVMap) => TOutput }
-  | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
+export type TargetT<
+  TInput = any,
+  TOutput = KVMap,
+  TAttachments = Record<string, [string, () => Promise<Response>]>
+> =
+  | {
+      invoke: (
+        input: TInput,
+        config?: { callbacks?: any } | KVMap
+      ) => Promise<TOutput> | TOutput;
+    }
+  | ((input: TInput, config?: KVMap) => Promise<TOutput> | TOutput)
+  | ((input: TInput, attachments?: TAttachments, config?: KVMap) => Promise<TOutput> | TOutput);
 
 // Data format: dataset-name, dataset_id, or examples
 export type DataT = string | AsyncIterable<Example> | Example[];
@@ -70,6 +76,7 @@ interface _ExperimentManagerArgs {
   examples?: Example[];
   numRepetitions?: number;
   _runsArray?: Run[];
+  includeAttachments?: boolean;
 }
 
 export interface EvaluateOptions {
@@ -117,7 +124,7 @@ export interface EvaluateOptions {
    * will be run this many times.
    * @default 1
    */
-  numRepetitions?: number;
+  numRepetitions?: number;  
 }
 
 export function evaluate(
@@ -170,6 +177,8 @@ export class _ExperimentManager {
   _metadata: KVMap;
   _description?: string;
 
+  _includeAttachments?: boolean;
+
   get experimentName(): string {
     if (this._experimentName) {
       return this._experimentName;
@@ -185,7 +194,12 @@ export class _ExperimentManager {
       if (!this._data) {
         throw new Error("Data not provided in this experiment.");
       }
-      const unresolvedData = _resolveData(this._data, { client: this.client });
+      const unresolvedData = _resolveData(
+        this._data, 
+        { 
+          client: this.client,
+          includeAttachments: this._includeAttachments
+        });
       if (!this._examples) {
         this._examples = [];
       }
@@ -283,6 +297,7 @@ export class _ExperimentManager {
     this._evaluationResults = args.evaluationResults;
     this._summaryResults = args.summaryResults;
     this._numRepetitions = args.numRepetitions;
+    this._includeAttachments = args.includeAttachments;
   }
 
   _getExperiment(): TracerSession {
@@ -429,6 +444,7 @@ export class _ExperimentManager {
           }
         })(),
       summaryResults: this._summaryResults,
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -446,6 +462,7 @@ export class _ExperimentManager {
       _runsArray: this._runsArray,
       evaluationResults: this._evaluationResults,
       summaryResults: aggregateFeedbackGen,
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -517,7 +534,8 @@ export class _ExperimentManager {
           example,
           this.experimentName,
           this._metadata,
-          this.client
+          this.client,
+          this._includeAttachments
         );
       }
     } else {
@@ -535,7 +553,8 @@ export class _ExperimentManager {
             example,
             this.experimentName,
             this._metadata,
-            this.client
+            this.client,
+            this._includeAttachments
           )
         );
       }
@@ -859,7 +878,8 @@ async function _forward(
   example: Example,
   experimentName: string,
   metadata: KVMap,
-  client: Client
+  client: Client,
+  includeAttachments?: boolean
 ): Promise<_ForwardResults> {
   let run: BaseRun | null = null;
 
@@ -884,25 +904,37 @@ async function _forward(
   const wrappedFn =
     "invoke" in fn
       ? traceable(async (inputs) => {
-          let langChainCallbacks;
-          try {
-            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
-            const { getLangchainCallbacks } = await import("../langchain.js");
-            langChainCallbacks = await getLangchainCallbacks();
-          } catch {
-            // no-op
-          }
-          // Issue with retrieving LangChain callbacks, rely on interop
-          if (langChainCallbacks === undefined) {
-            return await fn.invoke(inputs);
-          } else {
-            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
-          }
-        }, options)
-      : traceable(fn, options);
+        let langChainCallbacks;
+        try {
+          // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+          const { getLangchainCallbacks } = await import("../langchain.js");
+          langChainCallbacks = await getLangchainCallbacks();
+        } catch {
+          // no-op
+        }
+        // Issue with retrieving LangChain callbacks, rely on interop
+        if (langChainCallbacks === undefined) {
+          return await fn.invoke(inputs);
+        } else {
+          return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+        }
+      }, options)
+    : traceable(fn, options);
 
   try {
-    await wrappedFn(example.inputs);
+    if (includeAttachments && example.attachments) {
+      await wrappedFn({ ...example.inputs }, example.attachments);
+      
+      // Reset attachment streams after use
+      for (const [_, [__, reader]] of Object.entries(example.attachments)) {
+        const response = await reader();
+        const blob = await response.blob();
+        // Create a new stream from the blob to reset position
+        example.attachments[_][1] = () => Promise.resolve(new Response(blob));
+      }
+    } else {
+      await wrappedFn(example.inputs);
+    }
   } catch (e) {
     console.error(`Error running target function: ${e}`);
     printErrorStackTrace(e);
@@ -924,6 +956,7 @@ function _resolveData(
   data: DataT,
   options: {
     client: Client;
+    includeAttachments?: boolean;
   }
 ): AsyncGenerator<Example> {
   let isUUID = false;
@@ -939,11 +972,13 @@ function _resolveData(
   if (typeof data === "string" && isUUID) {
     return options.client.listExamples({
       datasetId: data,
+      includeAttachments: options.includeAttachments,
     }) as AsyncGenerator<Example>;
   }
   if (typeof data === "string") {
     return options.client.listExamples({
       datasetName: data,
+      includeAttachments: options.includeAttachments,
     }) as AsyncGenerator<Example>;
   }
   return data as AsyncGenerator<Example>;
