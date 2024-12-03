@@ -36,6 +36,8 @@ import {
   RunWithAnnotationQueueInfo,
   Attachments,
   ListExampleResponse,
+  ExampleUploadWithAttachments,
+  UploadExamplesResponse
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -3859,6 +3861,81 @@ export class Client {
         result.commit_hash ? `:${result.commit_hash}` : ""
       }`
     );
+  }
+
+  /**
+   * Upsert examples with attachments using multipart form data.
+   * @param upserts List of ExampleUpsertWithAttachments objects to upsert
+   * @returns Promise with the upsert response
+   */
+  public async uploadExamplesMultipart(
+    uploads: ExampleUploadWithAttachments[] = []
+  ): Promise<UploadExamplesResponse> {
+    const formData = new FormData();
+
+    for (const example of uploads) {
+      const exampleId = (example.id ?? uuid.v4()).toString();
+
+      // Prepare the main example body
+      const exampleBody = {
+        created_at: example.created_at,
+        ...(example.metadata && { metadata: example.metadata }),
+        ...(example.split && { split: example.split }),
+      };
+
+      // Add main example data
+      const stringifiedExample = stringifyForTracing(exampleBody);
+      const exampleBlob = new Blob([stringifiedExample], {
+        type: "application/json",
+      });
+      formData.append(exampleId, exampleBlob);
+
+      // Add inputs
+      const stringifiedInputs = stringifyForTracing(example.inputs);
+      const inputsBlob = new Blob([stringifiedInputs], {
+        type: "application/json",
+      });
+      formData.append(`${exampleId}.inputs`, inputsBlob);
+
+      // Add outputs if present
+      if (example.outputs) {
+        const stringifiedOutputs = stringifyForTracing(example.outputs);
+        const outputsBlob = new Blob([stringifiedOutputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.outputs`, outputsBlob);
+      }
+
+      // Add attachments if present
+      if (example.attachments) {
+        for (const [name, [mimeType, data]] of Object.entries(
+          example.attachments
+        )) {
+          const attachmentBlob = new Blob([data], {
+            type: `${mimeType}; length=${data.byteLength}`,
+          });
+          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+        }
+      }
+    }
+
+    const datasetIds = uploads.map((example) => example.dataset_id);
+    if (datasetIds.length > 1) {
+      throw new Error("Cannot upload examples to multiple datasets");
+    }
+    const datasetId = datasetIds[0];
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: formData,
+      }
+    );
+    const result = await response.json();
+    return result;
   }
 
   public async updatePrompt(
