@@ -22,20 +22,20 @@ import {
   ComparativeEvaluator,
 } from "./evaluate_comparative.js";
 
-type StandardTarget<TInput = any, TOutput = KVMap> =
+type StandardTargetT<TInput = any, TOutput = KVMap> =
   | ((input: TInput, config?: KVMap) => Promise<TOutput>)
   | ((input: TInput, config?: KVMap) => TOutput)
   | { invoke: (input: TInput, config?: KVMap) => TOutput }
   | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
 
-type ComparativeTarget =
+type ComparativeTargetT =
   | Array<string>
   | Array<Promise<ExperimentResults> | ExperimentResults>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type TargetT<TInput = any, TOutput = KVMap> =
-  | StandardTarget<TInput, TOutput>
-  | ComparativeTarget;
+  | StandardTargetT<TInput, TOutput>
+  | ComparativeTargetT;
 
 // Data format: dataset-name, dataset_id, or examples
 export type DataT = string | AsyncIterable<Example> | Example[];
@@ -199,12 +199,12 @@ export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
 
 // Function overloads
 export function evaluate(
-  target: ComparativeTarget,
+  target: ComparativeTargetT,
   options: ComparativeEvaluateOptions
 ): Promise<ComparisonEvaluationResults>;
 
 export function evaluate(
-  target: StandardTarget,
+  target: StandardTargetT,
   options: EvaluateOptions
 ): Promise<ExperimentResults>;
 
@@ -469,7 +469,7 @@ export class _ExperimentManager {
   }
 
   async withPredictions(
-    target: StandardTarget,
+    target: StandardTargetT,
     options?: {
       maxConcurrency?: number;
     }
@@ -583,12 +583,12 @@ export class _ExperimentManager {
 
   /**
    * Run the target function or runnable on the examples.
-   * @param {StandardTarget} target The target function or runnable to evaluate.
+   * @param {StandardTargetT} target The target function or runnable to evaluate.
    * @param options
    * @returns {AsyncGenerator<_ForwardResults>} An async generator of the results.
    */
   async *_predict(
-    target: StandardTarget,
+    target: StandardTargetT,
     options?: {
       maxConcurrency?: number;
     }
@@ -966,7 +966,7 @@ async function _evaluate(
 }
 
 async function _forward(
-  fn: StandardTarget,
+  fn: StandardTargetT,
   example: Example,
   experimentName: string,
   metadata: KVMap,
@@ -1181,8 +1181,8 @@ async function _resolveExperiment(
 }
 
 function _isCallable(
-  target: StandardTarget | AsyncGenerator<Run>
-): target is StandardTarget {
+  target: StandardTargetT | AsyncGenerator<Run>
+): target is StandardTargetT {
   return Boolean(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
