@@ -16,13 +16,26 @@ import {
 } from "./evaluator.js";
 import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
+import {
+  evaluateComparative,
+  ComparisonEvaluationResults,
+  ComparativeEvaluator,
+} from "./evaluate_comparative.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TargetT<TInput = any, TOutput = KVMap> =
+type StandardTarget<TInput = any, TOutput = KVMap> =
   | ((input: TInput, config?: KVMap) => Promise<TOutput>)
   | ((input: TInput, config?: KVMap) => TOutput)
   | { invoke: (input: TInput, config?: KVMap) => TOutput }
   | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
+
+type ComparativeTarget =
+  | Array<string>
+  | Array<Promise<ExperimentResults> | ExperimentResults>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TargetT<TInput = any, TOutput = KVMap> =
+  | StandardTarget<TInput, TOutput>
+  | ComparativeTarget;
 
 // Data format: dataset-name, dataset_id, or examples
 export type DataT = string | AsyncIterable<Example> | Example[];
@@ -116,22 +129,12 @@ interface _ExperimentManagerArgs {
   _runsArray?: Run[];
 }
 
-export interface EvaluateOptions {
+type BaseEvaluateOptions = {
   /**
    * The dataset to evaluate on. Can be a dataset name, a list of
    * examples, or a generator of examples.
    */
   data: DataT;
-  /**
-   * A list of evaluators to run on each example.
-   * @default undefined
-   */
-  evaluators?: Array<EvaluatorT>;
-  /**
-   * A list of summary evaluators to run on the entire dataset.
-   * @default undefined
-   */
-  summaryEvaluators?: Array<SummaryEvaluatorT>;
   /**
    * Metadata to attach to the experiment.
    * @default undefined
@@ -162,15 +165,54 @@ export interface EvaluateOptions {
    * @default 1
    */
   numRepetitions?: number;
+};
+
+export interface EvaluateOptions extends BaseEvaluateOptions {
+  /**
+   * A list of evaluators to run on each example.
+   * @default undefined
+   */
+  evaluators?: Array<EvaluatorT>;
+  /**
+   * A list of summary evaluators to run on the entire dataset.
+   * @default undefined
+   */
+  summaryEvaluators?: Array<SummaryEvaluatorT>;
 }
 
-export function evaluate(
+export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
   /**
-   * The target system or function to evaluate.
+   * A list of evaluators to run on each example.
    */
-  target: TargetT,
+  evaluators: Array<ComparativeEvaluator>;
+  /**
+   * Whether to load all child runs for the experiment.
+   * @default false
+   */
+  loadNested?: boolean;
+  /**
+   * Randomize the order of outputs for each evaluation
+   * @default false
+   */
+  randomizeOrder?: boolean;
+}
+
+// Function overloads
+export function evaluate(
+  target: ComparativeTarget,
+  options: ComparativeEvaluateOptions
+): Promise<ComparisonEvaluationResults>;
+
+export function evaluate(
+  target: StandardTarget,
   options: EvaluateOptions
-): Promise<ExperimentResults> {
+): Promise<ExperimentResults>;
+
+// Implementation signature
+export function evaluate(
+  target: TargetT,
+  options: EvaluateOptions | ComparativeEvaluateOptions
+): Promise<ExperimentResults | ComparisonEvaluationResults> {
   return _evaluate(target, options);
 }
 
@@ -427,7 +469,7 @@ export class _ExperimentManager {
   }
 
   async withPredictions(
-    target: TargetT,
+    target: StandardTarget,
     options?: {
       maxConcurrency?: number;
     }
@@ -541,12 +583,12 @@ export class _ExperimentManager {
 
   /**
    * Run the target function or runnable on the examples.
-   * @param {TargetT} target The target function or runnable to evaluate.
+   * @param {StandardTarget} target The target function or runnable to evaluate.
    * @param options
    * @returns {AsyncGenerator<_ForwardResults>} An async generator of the results.
    */
   async *_predict(
-    target: TargetT,
+    target: StandardTarget,
     options?: {
       maxConcurrency?: number;
     }
@@ -859,10 +901,32 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
 
 async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
-  fields: EvaluateOptions & { experiment?: TracerSession }
-): Promise<ExperimentResults> {
+  fields: (EvaluateOptions | ComparativeEvaluateOptions) & {
+    experiment?: TracerSession;
+  }
+): Promise<ExperimentResults | ComparisonEvaluationResults> {
+  // Add check for comparative evaluation
+  if (Array.isArray(target)) {
+    const comparativeOptions = fields as ComparativeEvaluateOptions;
+    if (!comparativeOptions.evaluators) {
+      throw new Error("Evaluators are required for comparative evaluation");
+    }
+
+    return evaluateComparative(target, {
+      evaluators: comparativeOptions.evaluators,
+      client: comparativeOptions.client,
+      metadata: comparativeOptions.metadata,
+      experimentPrefix: comparativeOptions.experimentPrefix,
+      description: comparativeOptions.description,
+      maxConcurrency: comparativeOptions.maxConcurrency,
+      loadNested: comparativeOptions.loadNested ?? false,
+      randomizeOrder: comparativeOptions.randomizeOrder ?? false,
+    });
+  }
+
   const client = fields.client ?? new Client();
   const runs = _isCallable(target) ? null : (target as AsyncGenerator<Run>);
+  const standardFields = fields as EvaluateOptions;
   const [experiment_, newRuns] = await _resolveExperiment(
     fields.experiment ?? null,
     runs,
@@ -885,13 +949,15 @@ async function _evaluate(
     });
   }
 
-  if (fields.evaluators) {
-    manager = await manager.withEvaluators(fields.evaluators, {
+  if (standardFields.evaluators) {
+    manager = await manager.withEvaluators(standardFields.evaluators, {
       maxConcurrency: fields.maxConcurrency,
     });
   }
-  if (fields.summaryEvaluators) {
-    manager = await manager.withSummaryEvaluators(fields.summaryEvaluators);
+  if (standardFields.summaryEvaluators) {
+    manager = await manager.withSummaryEvaluators(
+      standardFields.summaryEvaluators
+    );
   }
   // Start consuming the results.
   const results = new ExperimentResults(manager);
@@ -900,7 +966,7 @@ async function _evaluate(
 }
 
 async function _forward(
-  fn: TargetT,
+  fn: StandardTarget,
   example: Example,
   experimentName: string,
   metadata: KVMap,
@@ -1114,7 +1180,9 @@ async function _resolveExperiment(
   return [undefined, undefined];
 }
 
-function _isCallable(target: TargetT | AsyncGenerator<Run>): target is TargetT {
+function _isCallable(
+  target: StandardTarget | AsyncGenerator<Run>
+): target is StandardTarget {
   return Boolean(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
