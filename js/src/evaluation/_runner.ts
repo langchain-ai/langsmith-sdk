@@ -27,26 +27,72 @@ export type TargetT<TInput = any, TOutput = KVMap> =
 // Data format: dataset-name, dataset_id, or examples
 export type DataT = string | AsyncIterable<Example> | Example[];
 
-// Summary evaluator runs over the whole dataset
 // and reports aggregate metric(s)
+/** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedSyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>
+) => EvaluationResult | EvaluationResults;
+
+/** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedAsyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>
+) => Promise<EvaluationResult | EvaluationResults>;
+
+// Summary evaluator runs over the whole dataset
 export type SummaryEvaluatorT =
-  | ((
-      runs: Array<Run>,
-      examples: Array<Example>
-    ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((
-      runs: Array<Run>,
-      examples: Array<Example>
-    ) => EvaluationResult | EvaluationResults);
+  | DeprecatedSyncSummaryEvaluator
+  | DeprecatedAsyncSummaryEvaluator
+  | ((args: {
+      runs?: Array<Run>;
+      examples?: Array<Example>;
+      inputs?: Array<Record<string, any>>;
+      outputs?: Array<Record<string, any>>;
+      referenceOutputs?: Array<Record<string, any>>;
+    }) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      runs?: Array<Run>;
+      examples?: Array<Example>;
+      inputs?: Array<Record<string, any>>;
+      outputs?: Array<Record<string, any>>;
+      referenceOutputs?: Array<Record<string, any>>;
+    }) => Promise<EvaluationResult | EvaluationResults>);
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedRunEvaluator = RunEvaluator;
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedFunctionEvaluator = (
+  run: Run,
+  example?: Example
+) => EvaluationResult | EvaluationResults;
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedAsyncFunctionEvaluator = (
+  run: Run,
+  example?: Example
+) => Promise<EvaluationResult | EvaluationResults>;
 
 // Row-level evaluator
 export type EvaluatorT =
-  | RunEvaluator
-  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
-  | ((
-      run: Run,
-      example?: Example
-    ) => Promise<EvaluationResult | EvaluationResults>);
+  | DeprecatedRunEvaluator
+  | DeprecatedFunctionEvaluator
+  | DeprecatedAsyncFunctionEvaluator
+  | ((args: {
+      run?: Run;
+      example?: Example;
+      inputs?: Record<string, any>;
+      outputs?: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      run?: Run;
+      example?: Example;
+      inputs?: Record<string, any>;
+      outputs?: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => Promise<EvaluationResult | EvaluationResults>);
 
 interface _ForwardResults {
   run: Run;
@@ -658,6 +704,7 @@ export class _ExperimentManager {
       for (const evaluator of wrappedEvaluators) {
         try {
           const summaryEvalResult = await evaluator(runsArray, examples);
+
           const flattenedResults =
             this.client._selectEvalResults(summaryEvalResult);
           aggregateFeedback.push(...flattenedResults);
@@ -965,6 +1012,31 @@ async function wrapSummaryEvaluators(
           _runs_: string,
           _examples_: string
         ): Promise<EvaluationResult | EvaluationResults> => {
+          // Check if the evaluator expects an object parameter
+          if (evaluator.length === 1) {
+            const inputs = examples.map((ex) => ex.inputs);
+            const outputs = runs.map((run) => run.outputs || {});
+            const referenceOutputs = examples.map((ex) => ex.outputs || {});
+
+            return Promise.resolve(
+              (
+                evaluator as (args: {
+                  runs?: Run[];
+                  examples?: Example[];
+                  inputs?: Record<string, any>[];
+                  outputs?: Record<string, any>[];
+                  referenceOutputs?: Record<string, any>[];
+                }) => EvaluationResult | EvaluationResults
+              )({
+                runs,
+                examples,
+                inputs,
+                outputs,
+                referenceOutputs,
+              })
+            );
+          }
+          // Otherwise use the traditional (runs, examples) signature
           return Promise.resolve(evaluator(runs, examples));
         },
         { ...optionsArray, name: evalName }
