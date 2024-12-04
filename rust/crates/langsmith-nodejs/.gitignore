@@ -1,0 +1,5 @@
+# Don't track dependency libraries.
+node_modules/
+
+# Don't track built artifacts.
+**/*.node
