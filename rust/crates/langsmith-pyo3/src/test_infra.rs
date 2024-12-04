@@ -16,7 +16,7 @@ static PYTHON_INTERPRETER: Mutex<()> = Mutex::new(());
 
 pub(crate) fn with_python_interpreter<F>(inner: F) -> Result<(), String>
 where
-    F: for<'py> FnOnce(Python<'py>) -> PyResult<()>
+    F: for<'py> FnOnce(Python<'py>) -> PyResult<()>,
 {
     let lock = PYTHON_INTERPRETER.lock().expect("lock was poisoned");
 
