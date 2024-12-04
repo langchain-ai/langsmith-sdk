@@ -118,10 +118,10 @@ impl FromPyObject<'_> for RunCreate {
 
         let run_type =
             value.get_item(pyo3::intern!(value.py(), "run_type"))?.extract::<String>()?;
-        let reference_example_id = extract_string_like_or_none(&get_optional_value_from_mapping(
+        let reference_example_id = extract_string_like_or_none(get_optional_value_from_mapping(
             value,
             pyo3::intern!(value.py(), "reference_example_id"),
-        ))?;
+        ).as_ref())?;
 
         Ok(Self(langsmith_tracing_client::client::RunCreate {
             common,
@@ -151,17 +151,17 @@ impl FromPyObject<'_> for RunCommon {
             extract_string_like(&value.get_item(pyo3::intern!(value.py(), "trace_id"))?)?;
 
         let dotted_order = value.get_item(pyo3::intern!(value.py(), "dotted_order"))?.extract()?;
-        let parent_run_id = extract_string_like_or_none(&get_optional_value_from_mapping(
+        let parent_run_id = extract_string_like_or_none(get_optional_value_from_mapping(
             value,
             pyo3::intern!(value.py(), "parent_run_id"),
-        ))?;
+        ).as_ref())?;
 
         let extra = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "extra"))?;
 
-        let error = extract_string_like_or_none(&get_optional_value_from_mapping(
+        let error = extract_string_like_or_none(get_optional_value_from_mapping(
             value,
             pyo3::intern!(value.py(), "error"),
-        ))?;
+        ).as_ref())?;
 
         let serialized =
             extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "serialized"))?;
@@ -169,14 +169,14 @@ impl FromPyObject<'_> for RunCommon {
             extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "events"))?;
         let tags = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "tags"))?;
 
-        let session_id = extract_string_like_or_none(&get_optional_value_from_mapping(
+        let session_id = extract_string_like_or_none(get_optional_value_from_mapping(
             value,
             pyo3::intern!(value.py(), "session_id"),
-        ))?;
-        let session_name = extract_string_like_or_none(&get_optional_value_from_mapping(
+        ).as_ref())?;
+        let session_name = extract_string_like_or_none(get_optional_value_from_mapping(
             value,
             pyo3::intern!(value.py(), "session_name"),
-        ))?;
+        ).as_ref())?;
 
         Ok(Self(langsmith_tracing_client::client::RunCommon {
             id,
@@ -195,7 +195,7 @@ impl FromPyObject<'_> for RunCommon {
 }
 
 /// Get an optional string from a Python `None`, string, or string-like object such as a UUID value.
-fn extract_string_like_or_none(value: &Option<Bound<'_, PyAny>>) -> PyResult<Option<String>> {
+fn extract_string_like_or_none(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<String>> {
     match value {
         None => Ok(None),
         Some(val) if val.is_none() => Ok(None),
@@ -276,7 +276,7 @@ fn serialize_optional_dict_value(
 fn extract_optional_value_from_mapping(
     mapping: &Bound<'_, PyAny>,
     key: &Bound<'_, PyString>,
-) -> PyResult<Option<sonic_rs::Value>> {
+) -> PyResult<Option<serde_json::Value>> {
     match mapping.get_item(key) {
         Ok(value) => {
             if value.is_none() {
@@ -288,45 +288,45 @@ fn extract_optional_value_from_mapping(
     }
 }
 
-fn extract_value(value: &Bound<'_, PyAny>) -> PyResult<sonic_rs::Value> {
+fn extract_value(value: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     if value.is_none() {
-        Ok(sonic_rs::Value::new())
+        Ok(serde_json::Value::Null)
     } else if let Ok(number) = value.extract::<i64>() {
         Ok(number.into())
     } else if let Ok(number) = value.extract::<u64>() {
         Ok(number.into())
     } else if let Ok(float) = value.extract::<f64>() {
-        Ok(sonic_rs::Number::try_from(float).map(sonic_rs::Value::from).unwrap_or_default())
+        Ok(serde_json::Number::from_f64(float).map(serde_json::Value::from).unwrap_or_default())
     } else if let Ok(string) = value.extract::<&str>() {
         Ok(string.into())
     } else if let Ok(bool) = value.extract::<bool>() {
         Ok(bool.into())
     } else if let Ok(sequence) = value.downcast::<PySequence>() {
-        let mut array = sonic_rs::Array::with_capacity(sequence.len()?);
+        let mut array = Vec::with_capacity(sequence.len()?);
 
         for elem in sequence.iter()? {
             array.push(extract_value(&elem?)?);
         }
 
-        Ok(array.into_value())
+        Ok(serde_json::Value::Array(array))
     } else if let Ok(mapping) = value.downcast::<PyMapping>() {
-        let mut dict = sonic_rs::Object::with_capacity(mapping.len()?);
+        let mut dict = serde_json::Map::with_capacity(mapping.len()?);
 
         for result in mapping.items()?.iter()? {
             let key_value_pair = result?;
 
-            // Sonic wants all object keys to be strings,
-            // so we'll error on non-string dict keys.
             let key_item = key_value_pair.get_item(0)?;
             let value = extract_value(&key_value_pair.get_item(1)?)?;
 
-            // sonic_rs 0.3.14 doesn't allow `K: ?Sized` for the `&K` key,
-            // so we can't extract `&str` and have to get a `String` instead.
-            let key = key_item.extract::<String>()?;
-            dict.insert(&key, value);
+            // We error on non-string-like keys here.
+            let key = extract_string_like(&key_item)?;
+            dict.insert(key, value);
         }
 
-        Ok(dict.into_value())
+        Ok(dict.into())
+    } else if let Ok(string_like) = extract_string_like(value) {
+        // This allows us to support Python `UUID` objects by serializing them to strings.
+        Ok(string_like.into())
     } else {
         unreachable!("failed to convert python data {value} to sonic_rs::Value")
     }

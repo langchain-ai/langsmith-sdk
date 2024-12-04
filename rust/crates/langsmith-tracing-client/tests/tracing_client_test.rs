@@ -6,7 +6,7 @@ use langsmith_tracing_client::client::{
 use mockito::Server;
 use multipart::server::Multipart;
 use reqwest::header::{HeaderMap, HeaderValue};
-use sonic_rs::{from_str, json, to_vec, Value};
+use serde_json::{from_str, json, to_vec, Value};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
