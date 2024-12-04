@@ -1,3 +1,5 @@
+use std::ffi::CStr;
+
 use langsmith_tracing_client::client::{Attachment, RunIO, TimeValue};
 use pyo3::{
     types::{
@@ -209,12 +211,21 @@ fn extract_string_like(
                 // `'SomeType' object cannot be converted to 'PyString'`
                 return Err(e);
             };
-            let content = String::from_utf8(buffer).expect("not a valid UTF-8 string, this should never happen");
 
-            // If the value didn't start or end with a quote, it wasn't string-like.
+            let content = CStr::from_bytes_until_nul(&buffer)
+                .expect("not a valid C string, this should never happen")
+                .to_str()
+                .expect("not a valid UTF-8 string, this should never happen");
+
+            // orjson serialized buffers are null-terminated, so strip the trailing
+            // If the remaining value didn't start or end with a quote, it wasn't string-like.
             // It might have been a number, dict, or list -- none of those are legal here.
             // Raise the original error again, for the same reason as above.
-            let string_content = content.strip_prefix('"').and_then(|s| s.strip_suffix('"')).ok_or(e)?.to_string();
+            let string_content = content
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .ok_or(e)?
+                .to_string();
             Ok(string_content)
         }
     }
@@ -313,5 +324,59 @@ fn extract_value(value: &Bound<'_, PyAny>) -> PyResult<sonic_rs::Value> {
         Ok(dict.into_value())
     } else {
         unreachable!("failed to convert python data {value} to sonic_rs::Value")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, types::PyDict};
+    use crate::test_infra::with_python_interpreter;
+
+    #[pyfunction]
+    fn extract_uuid(uuid_value: &Bound<'_, PyAny>, string_value: &str) {
+        let extracted = super::extract_string_like(uuid_value).expect("extraction failed");
+        assert_eq!(extracted.as_str(), string_value);
+    }
+
+    #[test]
+    fn test_uuid_value_extraction() {
+        fn inner(py: Python<'_>) -> PyResult<()> {
+            // This call only works correctly "the first time".
+            // We use `cargo-nextest` to ensure we run each test in its own process.
+            // Otherwise, tests will suffer unpredictable errors.
+            orjson::init_typerefs();
+
+            // Create a new test module.
+            let test_module = PyModule::new_bound(py, "test_module")?;
+            test_module.add_function(pyo3::wrap_pyfunction!(extract_uuid, &test_module)?)?;
+
+            // Get `sys.modules`, then insert our module into it.
+            let sys = PyModule::import_bound(py, "sys")?;
+            let py_modules: Bound<'_, PyDict> = sys.getattr("modules")?.downcast_into()?;
+            py_modules.set_item("test_module", test_module)?;
+
+            // Now we can import and run our python code.
+            let python_code = "\
+import uuid
+import test_module
+
+uuid_to_test = uuid.uuid4()
+
+test_module.extract_uuid(uuid_to_test, str(uuid_to_test))
+            ";
+            Python::run_bound(py, python_code, None, None)?;
+
+            Ok(())
+        }
+
+        with_python_interpreter(inner).expect("encountered an unexpected error")
+    }
+
+    /// Just to ensure that running multiple tests works fine.
+    /// If Python or orjson are initialized more than once per process,
+    /// either this test or another test will fail.
+    #[test]
+    fn other_test() {
+        test_uuid_value_extraction();
     }
 }

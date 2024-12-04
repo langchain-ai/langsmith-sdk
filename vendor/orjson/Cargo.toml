@@ -30,7 +30,8 @@ name = "orjson"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = []
+# Do not disable this in production! Only useful if you want to use orjson inside `cargo test`.
+default = ["extension-module"]
 
 # Use SIMD intrinsics. This requires Rust on the nightly channel.
 unstable-simd = []
@@ -55,6 +56,9 @@ inline_int = []
 intrinsics = []
 optimize = []
 
+# Exposed for testing purposes only, so it can be disabled during `cargo test`.
+extension-module = ["pyo3-ffi/extension-module"]
+
 [dependencies]
 associative-cache = { version = "2", default-features = false }
 bytecount = { version = "^0.6.7", default-features = false, features = ["runtime-dispatch-simd"] }
@@ -65,7 +69,7 @@ itoa = { version = "1", default-features = false }
 itoap = { version = "1", default-features = false, features = ["std", "simd"] }
 jiff = { version = "^0.1", default-features = false, features = ["alloc"] }
 once_cell = { version = "1", default-features = false, features = ["alloc", "race"] }
-pyo3-ffi = { path = "../pyo3/pyo3-ffi", default-features = false, features = ["extension-module"]}
+pyo3-ffi = { path = "../pyo3/pyo3-ffi", default-features = false}
 ryu = { version = "1", default-features = false }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false, features = ["std", "float_roundtrip"] }
