@@ -6007,7 +6007,7 @@ class Client:
             ...             config={
             ...                 "criteria": {
             ...                     "usefulness": "The prediction is useful if it is correct"
-                                                      ...                     " and/or asks a useful followup question."
+            ...                     " and/or asks a useful followup question."
             ...                 },
             ...                 "llm": init_chat_model("gpt-4o"),
             ...             },
