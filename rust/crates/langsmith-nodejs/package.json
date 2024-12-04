@@ -1,0 +1,25 @@
+{
+    "package": "langsmith-nodejs",
+    "version": "0.1.0",
+    "author": "LangChain",
+    "scripts": {
+        "build": "napi build --release",
+        "build:debug": "napi build",
+        "test": ""
+    },
+    "devDependencies": {
+        "@napi-rs/cli": "^1.0.0"
+    },
+    "napi": {
+        "name": "langsmith-nodejs"
+    },
+    "bugs": {
+        "url": "https://github.com/langchain-ai/langsmith-sdk/issues"
+    },
+    "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/langchain-ai/langsmith-sdk.git"
+    },
+    "license": "MIT"
+}
