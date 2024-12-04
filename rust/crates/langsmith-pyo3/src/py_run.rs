@@ -1,7 +1,7 @@
 use langsmith_tracing_client::client::{Attachment, RunIO, TimeValue};
 use pyo3::{
     types::{
-        PyAnyMethods as _, PyDateTime, PyMapping, PyMappingMethods, PySequence, PyString, PyTuple,
+        PyAnyMethods as _, PyDateTime, PyMapping, PyMappingMethods, PySequence, PyString, PyTuple
     },
     Bound, FromPyObject, PyAny, PyResult,
 };
@@ -116,8 +116,8 @@ impl FromPyObject<'_> for RunCreate {
 
         let run_type =
             value.get_item(pyo3::intern!(value.py(), "run_type"))?.extract::<String>()?;
-        let reference_example_id =
-            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "reference_example_id"))?;
+        let reference_example_id = extract_string_like_or_none(
+            &get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "reference_example_id")))?;
 
         Ok(Self(langsmith_tracing_client::client::RunCreate {
             common,
@@ -142,16 +142,16 @@ impl RunCommon {
 
 impl FromPyObject<'_> for RunCommon {
     fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let id = value.get_item(pyo3::intern!(value.py(), "id"))?.extract()?;
-        let trace_id = value.get_item(pyo3::intern!(value.py(), "trace_id"))?.extract()?;
+        let id = extract_string_like(&value.get_item(pyo3::intern!(value.py(), "id"))?)?;
+        let trace_id = extract_string_like(&value.get_item(pyo3::intern!(value.py(), "trace_id"))?)?;
 
         let dotted_order = value.get_item(pyo3::intern!(value.py(), "dotted_order"))?.extract()?;
         let parent_run_id =
-            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "parent_run_id"))?;
+            extract_string_like_or_none(&get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "parent_run_id")))?;
 
         let extra = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "extra"))?;
 
-        let error = extract_optional_mapping_key(value, pyo3::intern!(value.py(), "error"))?;
+        let error = extract_string_like_or_none(&get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "error")))?;
 
         let serialized =
             extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "serialized"))?;
@@ -160,9 +160,9 @@ impl FromPyObject<'_> for RunCommon {
         let tags = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "tags"))?;
 
         let session_id =
-            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "session_id"))?;
+            extract_string_like_or_none(&get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "session_id")))?;
         let session_name =
-            extract_optional_mapping_key(value, pyo3::intern!(value.py(), "session_name"))?;
+            extract_string_like_or_none(&get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "session_name")))?;
 
         Ok(Self(langsmith_tracing_client::client::RunCommon {
             id,
@@ -180,13 +180,43 @@ impl FromPyObject<'_> for RunCommon {
     }
 }
 
-fn extract_optional_mapping_key<'py, T: FromPyObject<'py>>(
-    mapping: &Bound<'py, PyAny>,
-    key: &Bound<'py, PyString>,
-) -> PyResult<Option<T>> {
-    match mapping.get_item(key) {
-        Ok(x) => Ok(Some(x.extract()?)),
-        Err(_) => Ok(None),
+/// Get an optional string from a Python `None`, string, or string-like object such as a UUID value.
+fn extract_string_like_or_none(
+    value: &Option<Bound<'_, PyAny>>,
+) -> PyResult<Option<String>> {
+    match value {
+        None => Ok(None),
+        Some(val) if val.is_none() => Ok(None),
+        Some(val) => extract_string_like(val).map(Option::Some)
+    }
+}
+
+/// Get a string from a Python string or string-like object, such as a UUID value.
+fn extract_string_like(
+    value: &Bound<'_, PyAny>,
+) -> PyResult<String> {
+    match value.extract::<String>() {
+        Ok(s) => Ok(s),
+        Err(e) => {
+            // PyO3 doesn't have a Rust-native representation of Python's UUID object yet.
+            // However, orjson supports serializing UUID objects, so the easiest way to get
+            // a Rust string from a Python UUID object is to serialize the UUID to a JSON string
+            // and then parse out the string.
+            let Ok(buffer) = self::serialization::dumps(value.as_ptr()) else {
+                // orjson failed to deserialize the object. The fact that orjson is involved
+                // is an internal implementation detail, so return the original error instead.
+                // It looks like this:
+                // `'SomeType' object cannot be converted to 'PyString'`
+                return Err(e);
+            };
+            let content = String::from_utf8(buffer).expect("not a valid UTF-8 string, this should never happen");
+
+            // If the value didn't start or end with a quote, it wasn't string-like.
+            // It might have been a number, dict, or list -- none of those are legal here.
+            // Raise the original error again, for the same reason as above.
+            let string_content = content.strip_prefix('"').and_then(|s| s.strip_suffix('"')).ok_or(e)?.to_string();
+            Ok(string_content)
+        }
     }
 }
 
@@ -199,6 +229,13 @@ fn extract_time_value(value: &Bound<'_, PyAny>) -> PyResult<TimeValue> {
     let isoformat =
         datetime.call_method0(pyo3::intern!(value.py(), "isoformat"))?.extract::<String>()?;
     Ok(TimeValue::String(isoformat))
+}
+
+fn get_optional_value_from_mapping<'py>(
+    mapping: &Bound<'py, PyAny>,
+    key: &Bound<'py, PyString>,
+) -> Option<Bound<'py, PyAny>> {
+    mapping.get_item(key).ok()
 }
 
 fn serialize_optional_dict_value(
