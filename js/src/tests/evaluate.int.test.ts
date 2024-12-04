@@ -1188,7 +1188,7 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
   }
 });
 
-test("evaluate enforces correct evaluator types for comparative evaluation", async () => {
+test("evaluate enforces correct evaluator types for comparative evaluation at runtime", async () => {
   const exp1 = await evaluate(
     (input: Record<string, any>) => ({ foo: input.input + 1 }),
     {
@@ -1203,18 +1203,20 @@ test("evaluate enforces correct evaluator types for comparative evaluation", asy
     }
   );
 
-  // This should type error if we try to use a standard evaluator in comparative evaluation
+  // Create a standard evaluator (wrong type)
   const standardEvaluator = (run: Run, example: Example) => ({
     key: "standard",
     score: run.outputs?.foo === example.outputs?.output ? 1 : 0,
   });
 
-  // @ts-expect-error - Should error because standardEvaluator is not a ComparativeEvaluator
-  await evaluate([exp1.experimentName, exp2.experimentName], {
-    data: TESTING_DATASET_NAME,
-    evaluators: [standardEvaluator],
-    description: "Should fail type checking",
-  });
+  await expect(
+    // @ts-expect-error - Should error because standardEvaluator is not a ComparativeEvaluator
+    evaluate([exp1.experimentName, exp2.experimentName], {
+      data: TESTING_DATASET_NAME,
+      evaluators: [standardEvaluator],
+      description: "Should fail at runtime",
+    })
+  ).rejects.toThrow(); // You might want to be more specific about the error message
 });
 
 test("evaluate comparative options includes comparative-specific fields", async () => {
