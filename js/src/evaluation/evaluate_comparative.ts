@@ -76,9 +76,9 @@ export type _ComparativeEvaluatorLegacy = (
 ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
 
 export type _ComparativeEvaluator = (args: {
-  runs?: Run[];
-  example?: Example;
-  inputs?: Record<string, any>;
+  runs: Run[];
+  example: Example;
+  inputs: Record<string, any>;
   outputs?: Record<string, any>[];
   referenceOutputs?: Record<string, any>;
 }) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
@@ -357,7 +357,16 @@ export async function evaluateComparative(
         example: Example
       ): Promise<ComparisonEvaluationResultRow> => {
         const evaluatorRun = getCurrentRunTree();
-        const result = await evaluator(runs, example);
+        const result =
+          evaluator.length === 1
+            ? await (evaluator as _ComparativeEvaluator)({
+                runs: options.randomizeOrder ? shuffle(runs) : runs,
+                example,
+                inputs: example.inputs,
+                outputs: runs.map((run) => run.outputs || {}),
+                referenceOutputs: example.outputs || {},
+              })
+            : await (evaluator as _ComparativeEvaluatorLegacy)(runs, example);
 
         // sanitise the payload before sending to LangSmith
         evaluatorRun.inputs = { runs: runs, example: example };
