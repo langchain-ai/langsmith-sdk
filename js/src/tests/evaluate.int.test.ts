@@ -1113,3 +1113,158 @@ test("evaluate handles partial summary evaluator parameters correctly", async ()
     `Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues} AvgDiff: ${expectedAvgDiff}`
   );
 });
+
+test("evaluate handles comparative target with ComparativeEvaluateOptions", async () => {
+  // First, create two experiments to compare
+  const targetFunc1 = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const targetFunc2 = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 2,
+    };
+  };
+
+  // Run initial experiments
+  const exp1 = await evaluate(targetFunc1, {
+    data: TESTING_DATASET_NAME,
+    description: "First experiment for comparison",
+  });
+
+  const exp2 = await evaluate(targetFunc2, {
+    data: TESTING_DATASET_NAME,
+    description: "Second experiment for comparison",
+  });
+
+  // Create comparative evaluator
+  const comparativeEvaluator = ({
+    runs,
+    example,
+  }: {
+    runs?: Run[];
+    example?: Example;
+  }) => {
+    if (!runs || !example) throw new Error("Missing required parameters");
+
+    // Compare outputs from both runs
+    const scores = Object.fromEntries(
+      runs.map((run) => [
+        run.id,
+        run.outputs?.foo === example.outputs?.output ? 1 : 0,
+      ])
+    );
+
+    return {
+      key: "comparative_score",
+      scores,
+    };
+  };
+
+  // Run comparative evaluation
+  const compareRes = await evaluate(
+    [exp1.experimentName, exp2.experimentName],
+    {
+      data: TESTING_DATASET_NAME,
+      evaluators: [comparativeEvaluator],
+      description: "Comparative evaluation test",
+      randomizeOrder: true,
+      loadNested: false,
+    }
+  );
+
+  // Verify we got ComparisonEvaluationResults
+  expect(compareRes.experimentName).toBeDefined();
+  expect(compareRes.results).toBeDefined();
+  expect(Array.isArray(compareRes.results)).toBe(true);
+
+  // Check structure of comparison results
+  for (const result of compareRes.results) {
+    expect(result.key).toBe("comparative_score");
+    expect(result.scores).toBeDefined();
+    expect(Object.keys(result.scores)).toHaveLength(2); // Should have scores for both experiments
+  }
+});
+
+test("evaluate enforces correct evaluator types for comparative evaluation at runtime", async () => {
+  const exp1 = await evaluate(
+    (input: Record<string, any>) => ({ foo: input.input + 1 }),
+    {
+      data: TESTING_DATASET_NAME,
+    }
+  );
+
+  const exp2 = await evaluate(
+    (input: Record<string, any>) => ({ foo: input.input + 2 }),
+    {
+      data: TESTING_DATASET_NAME,
+    }
+  );
+
+  // Create a standard evaluator (wrong type)
+  const standardEvaluator = (run: Run, example: Example) => ({
+    key: "standard",
+    score: run.outputs?.foo === example.outputs?.output ? 1 : 0,
+  });
+
+  await expect(
+    // @ts-expect-error - Should error because standardEvaluator is not a ComparativeEvaluator
+    evaluate([exp1.experimentName, exp2.experimentName], {
+      data: TESTING_DATASET_NAME,
+      evaluators: [standardEvaluator],
+      description: "Should fail at runtime",
+    })
+  ).rejects.toThrow(); // You might want to be more specific about the error message
+});
+
+test("evaluate comparative options includes comparative-specific fields", async () => {
+  const exp1 = await evaluate(
+    (input: Record<string, any>) => ({ foo: input.input + 1 }),
+    {
+      data: TESTING_DATASET_NAME,
+    }
+  );
+
+  const exp2 = await evaluate(
+    (input: Record<string, any>) => ({ foo: input.input + 2 }),
+    {
+      data: TESTING_DATASET_NAME,
+    }
+  );
+
+  const comparativeEvaluator = ({
+    runs,
+    example,
+  }: {
+    runs?: Run[];
+    example?: Example;
+  }) => {
+    if (!runs || !example) throw new Error("Missing required parameters");
+    return {
+      key: "comparative_score",
+      scores: Object.fromEntries(
+        runs.map((run) => [
+          run.id,
+          run.outputs?.foo === example.outputs?.output ? 1 : 0,
+        ])
+      ),
+    };
+  };
+
+  // Test that comparative-specific options work
+  const compareRes = await evaluate(
+    [exp1.experimentName, exp2.experimentName],
+    {
+      data: TESTING_DATASET_NAME,
+      evaluators: [comparativeEvaluator],
+      randomizeOrder: true, // Comparative-specific option
+      loadNested: true, // Comparative-specific option
+      description: "Testing comparative-specific options",
+    }
+  );
+
+  expect(compareRes.experimentName).toBeDefined();
+  expect(compareRes.results).toBeDefined();
+});
