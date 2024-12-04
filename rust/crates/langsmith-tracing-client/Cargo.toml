@@ -15,7 +15,6 @@ tokio-util = { workspace = true }
 tempfile = { workspace = true }
 futures = { workspace = true }
 rayon = { workspace = true }
-sonic-rs = { workspace = true }
 ureq = { workspace = true }
 flate2 = { workspace = true }
 
