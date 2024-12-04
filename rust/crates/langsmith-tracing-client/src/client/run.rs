@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sonic_rs::Value;
+use serde_json::Value;
 
 // Map attachment ref to tuple of filename, optional bytes
 #[derive(Debug)]

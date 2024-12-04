@@ -22,8 +22,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pyo3 = { path = "../../../vendor/pyo3" }
 pyo3-ffi = { path = "../../../vendor/pyo3/pyo3-ffi" }
-sonic-rs = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 langsmith-tracing-client = { path = "../langsmith-tracing-client" }
 orjson = { path = "../../../vendor/orjson", default-features = false }
 

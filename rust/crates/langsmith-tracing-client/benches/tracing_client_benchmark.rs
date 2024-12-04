@@ -7,7 +7,7 @@ use langsmith_tracing_client::client::{
     Attachment, EventType, RunCommon, RunCreate, RunCreateExtended, RunEventBytes, RunIO, TimeValue,
 };
 use mockito::Server;
-use sonic_rs::{json, Value};
+use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
