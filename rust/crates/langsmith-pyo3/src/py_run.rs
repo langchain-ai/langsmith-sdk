@@ -118,10 +118,13 @@ impl FromPyObject<'_> for RunCreate {
 
         let run_type =
             value.get_item(pyo3::intern!(value.py(), "run_type"))?.extract::<String>()?;
-        let reference_example_id = extract_string_like_or_none(get_optional_value_from_mapping(
-            value,
-            pyo3::intern!(value.py(), "reference_example_id"),
-        ).as_ref())?;
+        let reference_example_id = extract_string_like_or_none(
+            get_optional_value_from_mapping(
+                value,
+                pyo3::intern!(value.py(), "reference_example_id"),
+            )
+            .as_ref(),
+        )?;
 
         Ok(Self(langsmith_tracing_client::client::RunCreate {
             common,
@@ -151,17 +154,16 @@ impl FromPyObject<'_> for RunCommon {
             extract_string_like(&value.get_item(pyo3::intern!(value.py(), "trace_id"))?)?;
 
         let dotted_order = value.get_item(pyo3::intern!(value.py(), "dotted_order"))?.extract()?;
-        let parent_run_id = extract_string_like_or_none(get_optional_value_from_mapping(
-            value,
-            pyo3::intern!(value.py(), "parent_run_id"),
-        ).as_ref())?;
+        let parent_run_id = extract_string_like_or_none(
+            get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "parent_run_id"))
+                .as_ref(),
+        )?;
 
         let extra = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "extra"))?;
 
-        let error = extract_string_like_or_none(get_optional_value_from_mapping(
-            value,
-            pyo3::intern!(value.py(), "error"),
-        ).as_ref())?;
+        let error = extract_string_like_or_none(
+            get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "error")).as_ref(),
+        )?;
 
         let serialized =
             extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "serialized"))?;
@@ -169,14 +171,14 @@ impl FromPyObject<'_> for RunCommon {
             extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "events"))?;
         let tags = extract_optional_value_from_mapping(value, pyo3::intern!(value.py(), "tags"))?;
 
-        let session_id = extract_string_like_or_none(get_optional_value_from_mapping(
-            value,
-            pyo3::intern!(value.py(), "session_id"),
-        ).as_ref())?;
-        let session_name = extract_string_like_or_none(get_optional_value_from_mapping(
-            value,
-            pyo3::intern!(value.py(), "session_name"),
-        ).as_ref())?;
+        let session_id = extract_string_like_or_none(
+            get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "session_id"))
+                .as_ref(),
+        )?;
+        let session_name = extract_string_like_or_none(
+            get_optional_value_from_mapping(value, pyo3::intern!(value.py(), "session_name"))
+                .as_ref(),
+        )?;
 
         Ok(Self(langsmith_tracing_client::client::RunCommon {
             id,
