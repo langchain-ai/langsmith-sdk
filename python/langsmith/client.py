@@ -1288,9 +1288,6 @@ class Client:
             and run_create.get("dotted_order") is not None
         ):
             if self._pyo3_client is not None:
-                # `self._run_transform()` above turns the `id` key into a `UUID` object.
-                # We need to pass a string since `orjson` doesn't seem to serialize `UUID` objects.
-                run_create["id"] = str(run_create["id"])
                 self._pyo3_client.create_run(run_create)
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
@@ -6010,7 +6007,7 @@ class Client:
             ...             config={
             ...                 "criteria": {
             ...                     "usefulness": "The prediction is useful if it is correct"
-                                                      ...                     " and/or asks a useful followup question."
+            ...                     " and/or asks a useful followup question."
             ...                 },
             ...                 "llm": init_chat_model("gpt-4o"),
             ...             },
