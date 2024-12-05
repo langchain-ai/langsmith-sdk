@@ -1,7 +1,7 @@
 [package]
 name = "langsmith-nodejs"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 # "cdylib" is necessary to produce a shared library for Node.js to import from.
