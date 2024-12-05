@@ -1,8 +1,29 @@
 import orjson
 import zlib
+import uuid
 import zstandard as zstd
 import time
-from typing import List, Tuple, Dict
+import io
+from typing import List, Dict, Tuple, Any
+from requests_toolbelt.multipart import encoder as rqtb_multipart
+
+
+class MultipartPartsAndContext:
+    def __init__(self, parts: List[Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]], 
+                 context: str):
+        self.parts = parts
+        self.context = context
+
+class SerializedRunOperation:
+    def __init__(self, data: Dict[str, Any]):
+        self.operation = data["operation"]
+        self.id = data["id"]
+        self._none = orjson.dumps(data)
+        self.inputs = orjson.dumps(data.get("inputs")) if "inputs" in data else None
+        self.outputs = orjson.dumps(data.get("outputs")) if "outputs" in data else None
+        self.events = orjson.dumps(data.get("events")) if "events" in data else None
+        self.trace_id = data.get("trace_id")
+        self.attachments = {}  # Not implemented for multipart experiments
 
 
 def load_jsonl(filepath: str) -> List[dict]:
@@ -259,7 +280,106 @@ class CompressionExperiment:
         }
 
         return results
+    def run_multipart_streaming_experiment(self, run_ops_files: List[str]) -> Dict:
+        """
+        Experiment 5: Stream compress multipart forms from multiple run operation files.
+        Compresses operations in round-robin fashion across traces.
+        """
+        # Create a compressor and buffer
+        compressor = zstd.ZstdCompressor(level=3)
+        buffer = io.BytesIO()
+        
+        # Load all files and prepare iterators
+        file_handles = []
+        file_iterators = []
+        for filepath in run_ops_files:
+            fh = open(filepath, 'rb')
+            file_handles.append(fh)
+            file_iterators.append(iter(fh))
+        
+        original_size = 0
+        multipart_data_list = []
+        
+        # Serialization
+        serialize_start_time = time.perf_counter()
+        while file_iterators:
+            # Round robin through files
+            for i in range(len(file_iterators)-1, -1, -1):
+                try:
+                    # Read next line and parse run operation
+                    line = next(file_iterators[i])
+                    run_op = SerializedRunOperation(orjson.loads(line)) 
+                    # Convert to multipart form
+                    multipart_data = serialize_run_operation_to_multipart(run_op)
+                    multipart_data_list.append(multipart_data)
+                    original_size += len(multipart_data)
+                except StopIteration:
+                    # Remove exhausted iterators and close files
+                    file_handles[i].close()
+                    file_handles.pop(i)
+                    file_iterators.pop(i)
 
+        serialize_end_time = time.perf_counter()
+
+        # Compression
+        compression_start_time = time.perf_counter()
+        with compressor.stream_writer(buffer) as compressor_writer:
+            for multipart_data in multipart_data_list:
+                compressor_writer.write(multipart_data)
+            compressed_size = len(buffer.getvalue())
+        compression_end_time = time.perf_counter()
+        
+        return {
+            'zstd': {
+                'original_size': original_size,
+                'size': compressed_size,
+                'ratio': original_size / compressed_size if compressed_size > 0 else 0,
+                'time': compression_end_time - compression_start_time,
+                'serialize_time': serialize_end_time - serialize_start_time,
+                'files_processed': len(run_ops_files)
+            }
+        }
+
+def serialize_run_operation_to_multipart(op: SerializedRunOperation) -> bytes:
+    """Convert a run operation to multipart form data."""
+    BOUNDARY = uuid.uuid4().hex
+    acc_parts = []
+    
+    # Add main object
+    acc_parts.append(
+        (f"{op.operation}.{op.id}",
+         (None, op._none, "application/json", {"Content-Length": str(len(op._none))}))
+    )
+    
+    # Add parts
+    for key, value in [("inputs", op.inputs), ("outputs", op.outputs), ("events", op.events)]:
+        if value is not None:
+            acc_parts.append(
+                (f"{op.operation}.{op.id}.{key}",
+                 (None, value, "application/json", {"Content-Length": str(len(value))}))
+            )
+    
+    # Create multipart form
+    mp_encoder = rqtb_multipart.MultipartEncoder(fields=acc_parts, boundary=BOUNDARY)
+    if mp_encoder.len <= 20_000_000:  # ~20 MB
+        return mp_encoder.to_string()
+    else:
+        return mp_encoder
+
+def load_multiple_jsonl(base_filepath: str, num_files: int) -> List[List[dict]]:
+        """Load multiple JSONL files and return list of JSON objects for each file."""
+        import os
+        all_files = []
+        folder_path = f"./{base_filepath}"
+        
+        # Get all jsonl files in the directory
+        jsonl_files = [f for f in os.listdir(folder_path) if f.endswith('.jsonl')]
+        
+        for filename in jsonl_files:
+            filepath = os.path.join(folder_path, filename)
+            with open(filepath, 'rb') as f:
+                all_files.append([orjson.loads(line) for line in f])
+        return all_files
 
 def format_size(size: int) -> str:
     """Format size in bytes to a human-readable string."""
@@ -340,10 +460,24 @@ def print_results(experiment_results: Dict):
         print(f"Ratio: {results['ratio']:.3f}")
         print(f"Time: {results['time']*1000:.2f}ms")
 
+    print("\n=== Experiment 5: Multipart Form Streaming Compression ===")
+    print("\nZSTD:")
+    results = experiment_results['multipart']['zstd']
+    print(f"Original Size: {format_size(results['original_size'])}")
+    print(f"Compressed Size: {format_size(results['size'])}")
+    print(f"Ratio: {results['ratio']:.3f}")
+    print(f"Time: {results['time']*1000:.2f}ms")
+    print(f"Serialize Time: {results['serialize_time']*1000:.2f}ms")
+    print(f"Files Processed: {results['files_processed']}")
+
+
 def main():
     # Load data
     inputs = load_jsonl('inputs.jsonl')
     outputs = load_jsonl('outputs.jsonl')
+
+    import glob
+    run_ops_files = glob.glob('data/run_ops_*.jsonl')
 
     # Initialize and run experiments
     experiment = CompressionExperiment()
@@ -352,7 +486,8 @@ def main():
         'separate': experiment.run_separate_files_experiment(inputs, outputs),
         'combined': experiment.run_combined_files_experiment(inputs, outputs),
         'separate_objects': experiment.run_separate_objects_experiment(inputs, outputs),
-        'streaming': experiment.run_streaming_experiment(inputs, outputs)
+        'streaming': experiment.run_streaming_experiment(inputs, outputs),
+        'multipart': experiment.run_multipart_streaming_experiment(run_ops_files)
     }
 
     # Print results
