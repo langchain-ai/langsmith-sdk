@@ -84,7 +84,7 @@ async def aevaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 10,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -110,8 +110,8 @@ async def aevaluate(
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
             Defaults to None.
         description (Optional[str]): A description of the experiment.
-        max_concurrency (Optional[int]): The maximum number of concurrent
-            evaluations to run. Defaults to None.
+        max_concurrency (int | None): The maximum number of concurrent
+            evaluations to run. If None then no limit is set. Defaults to 10.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
@@ -332,7 +332,7 @@ async def aevaluate_existing(
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 10,
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,

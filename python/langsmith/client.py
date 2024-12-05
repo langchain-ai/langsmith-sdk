@@ -5825,7 +5825,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 10,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -5844,7 +5844,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 10,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -5866,7 +5866,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 10,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -5894,7 +5894,7 @@ class Client:
                 Defaults to None.
             description (str | None): A free-form text description for the experiment.
             max_concurrency (int | None): The maximum number of concurrent
-                evaluations to run. Defaults to None (max number of workers).
+                evaluations to run. Defaults to 10.
             blocking (bool): Whether to block until the evaluation is complete.
                 Defaults to True.
             num_repetitions (int): The number of times to run the evaluation.
@@ -6074,7 +6074,7 @@ class Client:
         ] = None,
         evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
         summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict] = 10,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
         max_concurrency: Optional[int] = None,
@@ -6103,7 +6103,7 @@ class Client:
                 Defaults to None.
             description (Optional[str]): A description of the experiment.
             max_concurrency (Optional[int]): The maximum number of concurrent
-                evaluations to run. Defaults to None.
+                evaluations to run. Defaults to 10.
             num_repetitions (int): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.

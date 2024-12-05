@@ -101,7 +101,7 @@ def evaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 10,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -121,7 +121,7 @@ def evaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 10,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -142,7 +142,7 @@ def evaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 10,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -171,7 +171,7 @@ def evaluate(
             Defaults to None.
         description (str | None): A free-form text description for the experiment.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. Defaults to None (max number of workers).
+            evaluations to run. If None then no limit is set. Defaults to 10.
         client (langsmith.Client | None): The LangSmith client to use.
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
@@ -440,7 +440,7 @@ def evaluate_existing(
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 10,
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
