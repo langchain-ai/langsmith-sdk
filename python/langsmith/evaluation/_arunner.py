@@ -255,6 +255,11 @@ async def aevaluate(
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+
+    .. versionchanged:: 0.2.0
+
+        'max_concurrency' default updated from None (no limit on concurrency)
+        to 0 (no concurrency at all).
     """  # noqa: E501
     if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
         invalid_args = {

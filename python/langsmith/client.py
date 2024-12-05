@@ -6054,6 +6054,8 @@ class Client:
             ...     summary_evaluators=[precision],
             ... )  # doctest: +ELLIPSIS
             View the evaluation results for experiment:...
+
+        .. versionadded:: 0.2.0
         """  # noqa: E501
         from langsmith.evaluation._runner import evaluate as evaluate_
 
@@ -6261,6 +6263,9 @@ class Client:
             ...     )
             ... )  # doctest: +ELLIPSIS
             View the evaluation results for experiment:...
+
+        .. versionadded:: 0.2.0
+
         """  # noqa: E501
         from langsmith.evaluation._arunner import aevaluate as aevaluate_
 
