@@ -58,10 +58,10 @@ export type SummaryEvaluatorT =
   | DeprecatedSyncSummaryEvaluator
   | DeprecatedAsyncSummaryEvaluator
   | ((args: {
-      runs?: Array<Run>;
-      examples?: Array<Example>;
-      inputs?: Array<Record<string, any>>;
-      outputs?: Array<Record<string, any>>;
+      runs: Array<Run>;
+      examples: Array<Example>;
+      inputs: Array<Record<string, any>>;
+      outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
@@ -93,17 +93,17 @@ export type EvaluatorT =
   | DeprecatedFunctionEvaluator
   | DeprecatedAsyncFunctionEvaluator
   | ((args: {
-      run?: Run;
-      example?: Example;
-      inputs?: Record<string, any>;
-      outputs?: Record<string, any>;
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
-      run?: Run;
-      example?: Example;
-      inputs?: Record<string, any>;
-      outputs?: Record<string, any>;
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
@@ -1063,10 +1063,12 @@ function _resolveData(
 async function wrapSummaryEvaluators(
   evaluators: SummaryEvaluatorT[],
   optionsArray?: Partial<RunTreeConfig>[]
-): Promise<SummaryEvaluatorT[]> {
+): Promise<
+  Array<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator>
+> {
   async function _wrap(
     evaluator: SummaryEvaluatorT
-  ): Promise<SummaryEvaluatorT> {
+  ): Promise<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator> {
     const evalName = evaluator.name || "BatchEvaluator";
 
     const wrapperInner = (
@@ -1087,10 +1089,10 @@ async function wrapSummaryEvaluators(
             return Promise.resolve(
               (
                 evaluator as (args: {
-                  runs?: Run[];
-                  examples?: Example[];
-                  inputs?: Record<string, any>[];
-                  outputs?: Record<string, any>[];
+                  runs: Run[];
+                  examples: Example[];
+                  inputs: Record<string, any>[];
+                  outputs: Record<string, any>[];
                   referenceOutputs?: Record<string, any>[];
                 }) => EvaluationResult | EvaluationResults
               )({
@@ -1103,7 +1105,9 @@ async function wrapSummaryEvaluators(
             );
           }
           // Otherwise use the traditional (runs, examples) signature
-          return Promise.resolve(evaluator(runs, examples));
+          return Promise.resolve(
+            (evaluator as DeprecatedSyncSummaryEvaluator)(runs, examples)
+          );
         },
         { ...optionsArray, name: evalName }
       );
@@ -1119,7 +1123,9 @@ async function wrapSummaryEvaluators(
     return wrapperInner;
   }
 
-  const results: SummaryEvaluatorT[] = [];
+  const results: Array<
+    DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator
+  > = [];
   for (let i = 0; i < evaluators.length; i++) {
     results.push(await _wrap(evaluators[i]));
   }
