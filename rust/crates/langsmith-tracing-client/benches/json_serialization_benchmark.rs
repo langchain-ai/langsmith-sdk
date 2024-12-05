@@ -93,7 +93,9 @@ fn benchmark_gzip_only_parallel(data: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
 
 // into par iter
 fn benchmark_json_only_parallel(data: &[Value]) -> Vec<Vec<u8>> {
-    data.par_iter().map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON")).collect()
+    data.par_iter()
+        .map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON"))
+        .collect()
 }
 
 fn json_benchmark_large_array(c: &mut Criterion) {
