@@ -7,6 +7,7 @@
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
     "prepublishOnly": "napi prepublish -t npm",
+    "test": "echo 'run tests here'",
     "version": "napi version"
   },
   "dependencies": {
