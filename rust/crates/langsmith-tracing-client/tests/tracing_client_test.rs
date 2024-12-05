@@ -28,9 +28,11 @@ async fn handle_request(body: Vec<u8>, content_type_str: String) -> Vec<Multipar
     assert!(content_type_str.starts_with("multipart/form-data"));
 
     let boundary = content_type_str.split("boundary=").nth(1).unwrap();
-    let stream = futures::stream::once(
-        async move { Ok::<_, Box<dyn Error + Send + Sync>>(multer::bytes::Bytes::copy_from_slice(body.as_slice())) }
-    );
+    let stream = futures::stream::once(async move {
+        Ok::<_, Box<dyn Error + Send + Sync>>(multer::bytes::Bytes::copy_from_slice(
+            body.as_slice(),
+        ))
+    });
     let mut mp = Multipart::new(stream, boundary);
 
     let mut fields = Vec::new();
@@ -40,9 +42,9 @@ async fn handle_request(body: Vec<u8>, content_type_str: String) -> Vec<Multipar
         let field_content_type = field.content_type().map(|ct| ct.to_string());
         let field_filename = field.file_name().map(String::from);
 
-        let content = String::from_utf8(
-            field.bytes().await.expect("failed to read field bytes").into(),
-        ).expect("failed to turn field data into string");
+        let content =
+            String::from_utf8(field.bytes().await.expect("failed to read field bytes").into())
+                .expect("failed to turn field data into string");
 
         let multipart_field = MultipartField {
             name: field_name,
