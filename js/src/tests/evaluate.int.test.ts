@@ -11,10 +11,6 @@ import { v4 as uuidv4 } from "uuid";
 const TESTING_DATASET_NAME = `test_dataset_js_evaluate_${uuidv4()}`;
 const TESTING_DATASET_NAME2 = `my_splits_ds_${uuidv4()}`;
 
-import { OpenAI } from "openai";
-import { traceable } from "../traceable.js";
-import { wrapOpenAI } from "../wrappers/openai.js";
-
 beforeAll(async () => {
   const client = new Client();
   if (!(await client.hasDataset({ datasetName: TESTING_DATASET_NAME }))) {
