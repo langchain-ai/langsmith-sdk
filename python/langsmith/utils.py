@@ -648,20 +648,6 @@ P = ParamSpec("P")
 class ContextThreadPoolExecutor(ThreadPoolExecutor):
     """ThreadPoolExecutor that copies the context to the child thread."""
 
-    def __init__(self, max_workers: Optional[int] = None, *args: Any, **kwargs: Any):
-        """Initialize the executor.
-
-        Args:
-            max_workers (Optional[int]): The maximum number of threads.
-                If 0, runs synchronously in the main thread.
-            *args (Any): Additional positional arguments for ThreadPoolExecutor
-            **kwargs (Any): Additional keyword arguments for ThreadPoolExecutor
-        """
-        self._synchronous = max_workers == 0
-        # If max_workers is 0, use 1 worker but run synchronously
-        max_workers = 1 if max_workers == 0 else max_workers
-        super().__init__(max_workers=max_workers, *args, **kwargs)  # type: ignore[call-overload]
-
     def submit(  # type: ignore[override]
         self,
         func: Callable[P, T],
@@ -678,16 +664,6 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
         Returns:
             Future[T]: The future for the function.
         """
-        if self._synchronous:
-            # Run synchronously in the current thread
-            future: Future[T] = Future()
-            try:
-                result = contextvars.copy_context().run(func, *args, **kwargs)
-                future.set_result(result)
-            except Exception as e:
-                future.set_exception(e)
-            return future
-
         return super().submit(
             cast(
                 Callable[..., T],
@@ -727,26 +703,17 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
                 before the given timeout.
             Exception: If fn(*args) raises for any values.
         """
-        if self._synchronous:
-            # Run synchronously in the current thread
-            contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
+        contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
 
-            def _wrapped_fn(*args: Any) -> T:
-                return contexts.pop().run(fn, *args)
+        def _wrapped_fn(*args: Any) -> T:
+            return contexts.pop().run(fn, *args)
 
-            return map(_wrapped_fn, *iterables)
-        else:
-            contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
-
-            def _wrapped_fn(*args: Any) -> T:
-                return contexts.pop().run(fn, *args)
-
-            return super().map(
-                _wrapped_fn,
-                *iterables,
-                timeout=timeout,
-                chunksize=chunksize,
-            )
+        return super().map(
+            _wrapped_fn,
+            *iterables,
+            timeout=timeout,
+            chunksize=chunksize,
+        )
 
 
 def get_api_url(api_url: Optional[str]) -> str:
