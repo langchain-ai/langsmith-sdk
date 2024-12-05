@@ -259,7 +259,69 @@ class CompressionExperiment:
         }
 
         return results
+    
+    def run_multifile_streaming_experiment(self, input_files: List[List[dict]], 
+                                        output_files: List[List[dict]]) -> Dict:
+        """
+        Experiment 5: Stream compress runs from multiple input and output trace files.
+        Compresses line N from all files before moving to line N+1.
+        """
+        start_time = time.perf_counter()
+        
+        # Create a compressor and buffer
+        import io
+        compressor = zstd.ZstdCompressor(level=3)
+        buffer = io.BytesIO()
+        
+        original_size = 0
+        with compressor.stream_writer(buffer) as compressor_writer:
+            min_entries = min(len(trace) for trace in input_files + output_files)
+            
+            for line_idx in range(min_entries):
+                # Process each file pair
+                for input_trace, output_trace in zip(input_files, output_files):
+                    # Only process if this file has an entry at this index
+                    if line_idx < len(input_trace):
+                        input_data = orjson.dumps(input_trace[line_idx]) + b'\n'
+                        original_size += len(input_data)
+                        compressor_writer.write(input_data)
+                    
+                    if line_idx < len(output_trace):
+                        output_data = orjson.dumps(output_trace[line_idx]) + b'\n'
+                        original_size += len(output_data)
+                        compressor_writer.write(output_data)
+                    
+            compressed_size = len(buffer.getvalue())
+        end_time = time.perf_counter()
+        
+        return {
+            'zstd': {
+                'original_size': original_size,
+                'size': compressed_size,
+                'ratio': original_size / compressed_size if compressed_size > 0 else 0,
+                'time': end_time - start_time,
+                'files_processed': len(input_files)
+            }
+        }
+    
+    def run_multipart_streaming_experiment(self, run_data_files: List[List[dict]]) -> Dict:
+        """Experiment 6: Stream compress multipart run forms from multiple trace files."""
+        
 
+def load_multiple_jsonl(base_filepath: str, num_files: int) -> List[List[dict]]:
+        """Load multiple JSONL files and return list of JSON objects for each file."""
+        import os
+        all_files = []
+        folder_path = f"./{base_filepath}"
+        
+        # Get all jsonl files in the directory
+        jsonl_files = [f for f in os.listdir(folder_path) if f.endswith('.jsonl')]
+        
+        for filename in jsonl_files:
+            filepath = os.path.join(folder_path, filename)
+            with open(filepath, 'rb') as f:
+                all_files.append([orjson.loads(line) for line in f])
+        return all_files
 
 def format_size(size: int) -> str:
     """Format size in bytes to a human-readable string."""
@@ -340,10 +402,23 @@ def print_results(experiment_results: Dict):
         print(f"Ratio: {results['ratio']:.3f}")
         print(f"Time: {results['time']*1000:.2f}ms")
 
+    print("\n=== Experiment 5: Multifile Streaming Compression ===")
+    for compressor in ['zstd']:
+        print(f"\n{compressor.upper()}:")
+        results = experiment_results['multifile'][compressor]
+        print(f"Original Size: {format_size(results['original_size'])}")
+        print(f"Compressed Size: {format_size(results['size'])}")
+        print(f"Ratio: {results['ratio']:.3f}")
+        print(f"Time: {results['time']*1000:.2f}ms")
+        print(f"Files Processed: {results['files_processed']}")
+
 def main():
     # Load data
     inputs = load_jsonl('inputs.jsonl')
     outputs = load_jsonl('outputs.jsonl')
+
+    input_files = load_multiple_jsonl("inputs", 10)
+    output_files = load_multiple_jsonl("outputs", 10)
 
     # Initialize and run experiments
     experiment = CompressionExperiment()
@@ -352,7 +427,8 @@ def main():
         'separate': experiment.run_separate_files_experiment(inputs, outputs),
         'combined': experiment.run_combined_files_experiment(inputs, outputs),
         'separate_objects': experiment.run_separate_objects_experiment(inputs, outputs),
-        'streaming': experiment.run_streaming_experiment(inputs, outputs)
+        'streaming': experiment.run_streaming_experiment(inputs, outputs),
+        'multifile': experiment.run_multifile_streaming_experiment(input_files, output_files)
     }
 
     # Print results
