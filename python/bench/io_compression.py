@@ -280,14 +280,11 @@ class CompressionExperiment:
         }
 
         return results
-
     def run_multipart_streaming_experiment(self, run_ops_files: List[str]) -> Dict:
         """
         Experiment 5: Stream compress multipart forms from multiple run operation files.
         Compresses operations in round-robin fashion across traces.
         """
-        start_time = time.perf_counter()
-        
         # Create a compressor and buffer
         compressor = zstd.ZstdCompressor(level=3)
         buffer = io.BytesIO()
@@ -301,36 +298,44 @@ class CompressionExperiment:
             file_iterators.append(iter(fh))
         
         original_size = 0
-        with compressor.stream_writer(buffer) as compressor_writer:
-            while file_iterators:
-                # Round robin through files
-                for i in range(len(file_iterators)-1, -1, -1):
-                    try:
-                        # Read next line and parse run operation
-                        line = next(file_iterators[i])
-                        run_op = SerializedRunOperation(orjson.loads(line)) 
-                        # Convert to multipart form
-                        multipart_data = serialize_run_operation_to_multipart(run_op)
-
-                        # Compress
-                        original_size += len(multipart_data)
-                        compressor_writer.write(multipart_data)
-                        
-                    except StopIteration:
-                        # Remove exhausted iterators and close files
-                        file_handles[i].close()
-                        file_handles.pop(i)
-                        file_iterators.pop(i)
+        multipart_data_list = []
         
+        # First collect all the data
+        serialize_start_time = time.perf_counter()
+        while file_iterators:
+            # Round robin through files
+            for i in range(len(file_iterators)-1, -1, -1):
+                try:
+                    # Read next line and parse run operation
+                    line = next(file_iterators[i])
+                    run_op = SerializedRunOperation(orjson.loads(line)) 
+                    # Convert to multipart form
+                    multipart_data = serialize_run_operation_to_multipart(run_op)
+                    multipart_data_list.append(multipart_data)
+                    original_size += len(multipart_data)
+                except StopIteration:
+                    # Remove exhausted iterators and close files
+                    file_handles[i].close()
+                    file_handles.pop(i)
+                    file_iterators.pop(i)
+
+        serialize_end_time = time.perf_counter()
+
+        # Now time just the compression
+        compression_start_time = time.perf_counter()
+        with compressor.stream_writer(buffer) as compressor_writer:
+            for multipart_data in multipart_data_list:
+                compressor_writer.write(multipart_data)
             compressed_size = len(buffer.getvalue())
-        end_time = time.perf_counter()
+        compression_end_time = time.perf_counter()
         
         return {
             'zstd': {
                 'original_size': original_size,
                 'size': compressed_size,
                 'ratio': original_size / compressed_size if compressed_size > 0 else 0,
-                'time': end_time - start_time,
+                'time': compression_end_time - compression_start_time,
+                'serialize_time': serialize_end_time - serialize_start_time,
                 'files_processed': len(run_ops_files)
             }
         }
@@ -462,6 +467,7 @@ def print_results(experiment_results: Dict):
     print(f"Compressed Size: {format_size(results['size'])}")
     print(f"Ratio: {results['ratio']:.3f}")
     print(f"Time: {results['time']*1000:.2f}ms")
+    print(f"Serialize Time: {results['serialize_time']*1000:.2f}ms")
     print(f"Files Processed: {results['files_processed']}")
 
 
