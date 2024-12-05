@@ -84,7 +84,7 @@ async def aevaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = 10,
+    max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -111,7 +111,8 @@ async def aevaluate(
             Defaults to None.
         description (Optional[str]): A description of the experiment.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. If None then no limit is set. Defaults to 10.
+            evaluations to run. If None then no limit is set. If 0 then no concurrency.
+            Defaults to 0.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
@@ -332,7 +333,7 @@ async def aevaluate_existing(
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    max_concurrency: Optional[int] = 10,
+    max_concurrency: Optional[int] = 0,
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
@@ -345,7 +346,9 @@ async def aevaluate_existing(
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
             to apply over the entire dataset.
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
-        max_concurrency (Optional[int]): Optional maximum number of concurrent evaluations.
+        max_concurrency (int | None): The maximum number of concurrent
+            evaluations to run. If None then no limit is set. If 0 then no concurrency.
+            Defaults to 0.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
         load_nested: Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
