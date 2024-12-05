@@ -659,9 +659,8 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
         """
         self._synchronous = max_workers == 0
         # If max_workers is 0, use 1 worker but run synchronously
-        super().__init__(
-            max_workers=1 if max_workers == 0 else max_workers, *args, **kwargs
-        )
+        max_workers = 1 if max_workers == 0 else max_workers
+        super().__init__(max_workers=max_workers, *args, **kwargs)  # type: ignore[call-overload]
 
     def submit(  # type: ignore[override]
         self,
@@ -736,18 +735,18 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
                 return contexts.pop().run(fn, *args)
 
             return map(_wrapped_fn, *iterables)
+        else:
+            contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
 
-        contexts = [contextvars.copy_context() for _ in range(len(iterables[0]))]  # type: ignore[arg-type]
+            def _wrapped_fn(*args: Any) -> T:
+                return contexts.pop().run(fn, *args)
 
-        def _wrapped_fn(*args: Any) -> T:
-            return contexts.pop().run(fn, *args)
-
-        return super().map(
-            _wrapped_fn,
-            *iterables,
-            timeout=timeout,
-            chunksize=chunksize,
-        )
+            return super().map(
+                _wrapped_fn,
+                *iterables,
+                timeout=timeout,
+                chunksize=chunksize,
+            )
 
 
 def get_api_url(api_url: Optional[str]) -> str:
