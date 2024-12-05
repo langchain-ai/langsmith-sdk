@@ -435,7 +435,7 @@ export class AutoBatchQueue {
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 1000;
+const SERVER_INFO_REQUEST_TIMEOUT = 2500;
 
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
