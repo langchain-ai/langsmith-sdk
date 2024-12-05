@@ -1,17 +1,20 @@
+use std::error::Error;
+use std::fs::File;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use mockito::Server;
+use multer::Multipart;
+use reqwest::header::{HeaderMap, HeaderValue};
+use serde_json::{from_str, json, to_vec, Value};
+use tempfile::TempDir;
+
 use langsmith_tracing_client::client::async_enabled::{ClientConfig, TracingClient};
 use langsmith_tracing_client::client::{
     Attachment, RunCommon, RunCreate, RunCreateExtended, RunIO, RunUpdate, RunUpdateExtended,
     TimeValue,
 };
-use mockito::Server;
-use multipart::server::Multipart;
-use reqwest::header::{HeaderMap, HeaderValue};
-use serde_json::{from_str, json, to_vec, Value};
-use std::fs::File;
-use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tempfile::TempDir;
 
 #[derive(Debug)]
 struct MultipartField {
@@ -21,21 +24,25 @@ struct MultipartField {
     data: String,
 }
 
-fn handle_request(body: Vec<u8>, content_type_str: String) -> Vec<MultipartField> {
+async fn handle_request(body: Vec<u8>, content_type_str: String) -> Vec<MultipartField> {
     assert!(content_type_str.starts_with("multipart/form-data"));
 
     let boundary = content_type_str.split("boundary=").nth(1).unwrap();
-    let mut mp = Multipart::with_body(body.as_slice(), boundary);
+    let stream = futures::stream::once(
+        async move { Ok::<_, Box<dyn Error + Send + Sync>>(multer::bytes::Bytes::copy_from_slice(body.as_slice())) }
+    );
+    let mut mp = Multipart::new(stream, boundary);
 
     let mut fields = Vec::new();
 
-    while let Some(mut field) = mp.read_entry().unwrap() {
-        let field_name = field.headers.name.to_string();
-        let field_content_type = field.headers.content_type.map(|ct| ct.to_string());
-        let field_filename = field.headers.filename.map(String::from);
+    while let Some(field) = mp.next_field().await.expect("reading failed") {
+        let field_name = field.name().expect("field had no name").to_string();
+        let field_content_type = field.content_type().map(|ct| ct.to_string());
+        let field_filename = field.file_name().map(String::from);
 
-        let mut content = String::new();
-        field.data.read_to_string(&mut content).unwrap();
+        let content = String::from_utf8(
+            field.bytes().await.expect("failed to read field bytes").into(),
+        ).expect("failed to turn field data into string");
 
         let multipart_field = MultipartField {
             name: field_name,
@@ -144,7 +151,7 @@ async fn test_tracing_client_submit_run_create() {
     m.assert_async().await;
 
     let req = captured_request.lock().unwrap().clone();
-    let fields = handle_request(req.0, req.1);
+    let fields = handle_request(req.0, req.1).await;
 
     assert_eq!(fields.len(), 5);
 
@@ -292,7 +299,7 @@ async fn test_tracing_client_submit_run_update() {
     m.assert_async().await;
 
     let req = captured_request.lock().unwrap().clone();
-    let fields = handle_request(req.0, req.1);
+    let fields = handle_request(req.0, req.1).await;
 
     assert_eq!(fields.len(), 4);
 
