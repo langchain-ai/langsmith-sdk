@@ -20,6 +20,7 @@ build:
     - . .venv/bin/activate
     - uv pip install -r python/docs/requirements.txt
     - . .venv/bin/activate && cd python/docs && make clobber generate-api-rst html && cd ../..
+    - cp python/docs/_build/html/reference.html python/docs/_build/html/index.html
     - cp -r python/docs/_build/html $READTHEDOCS_OUTPUT
 # Build documentation in the docs/ directory with Sphinx
 sphinx:

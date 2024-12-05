@@ -62,3 +62,13 @@ build:
 
 publish:
 	poetry publish --dry-run
+
+api_docs_build:
+	poetry run python docs/create_api_rst.py
+	cd docs && poetry run make html
+	poetry run python docs/scripts/custom_formatter.py docs/_build/html/
+	cp docs/_build/html/{reference,index}.html
+	open docs/_build/html/index.html
+
+api_docs_clean:
+	git clean -fd ./docs/
