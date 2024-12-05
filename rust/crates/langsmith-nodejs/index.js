@@ -8,4 +8,4 @@ const { loadBinding } = require('@node-rs/helper')
  * `loadBinding` helper will load `langsmith-nodejs.[PLATFORM].node` from `__dirname` first
  * If failed to load addon, it will fallback to load from `langsmith-nodejs-[PLATFORM]`
  */
-module.exports = loadBinding(__dirname, 'langsmith-nodejs', 'langsmith-nodejs')
+module.exports = loadBinding(__dirname, "langsmith-nodejs", "langsmith-nodejs");
