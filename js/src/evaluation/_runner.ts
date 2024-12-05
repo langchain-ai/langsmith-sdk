@@ -65,10 +65,10 @@ export type SummaryEvaluatorT =
       referenceOutputs?: Array<Record<string, any>>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
-      runs?: Array<Run>;
-      examples?: Array<Example>;
-      inputs?: Array<Record<string, any>>;
-      outputs?: Array<Record<string, any>>;
+      runs: Array<Run>;
+      examples: Array<Example>;
+      inputs: Array<Record<string, any>>;
+      outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 

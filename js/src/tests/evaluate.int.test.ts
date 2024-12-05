@@ -3,6 +3,7 @@ import {
   EvaluationResults,
 } from "../evaluation/evaluator.js";
 import { evaluate } from "../evaluation/_runner.js";
+import { evaluateComparative } from "../evaluation/evaluate_comparative.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
@@ -1144,8 +1145,8 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
     runs,
     example,
   }: {
-    runs?: Run[];
-    example?: Example;
+    runs: Run[];
+    example: Example;
   }) => {
     if (!runs || !example) throw new Error("Missing required parameters");
 
@@ -1164,6 +1165,15 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
   };
 
   // Run comparative evaluation
+  const compareRes1 = await evaluateComparative(
+    [exp1.experimentName, exp2.experimentName],
+    {
+      evaluators: [comparativeEvaluator],
+      description: "Comparative evaluation test",
+      randomizeOrder: true,
+      loadNested: false,
+    }
+  );
   const compareRes = await evaluate(
     [exp1.experimentName, exp2.experimentName],
     {
@@ -1175,6 +1185,7 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
   );
 
   // Verify we got ComparisonEvaluationResults
+  expect(compareRes1.experimentName).toBeDefined();
   expect(compareRes.experimentName).toBeDefined();
   expect(compareRes.results).toBeDefined();
   expect(Array.isArray(compareRes.results)).toBe(true);
