@@ -300,7 +300,7 @@ class CompressionExperiment:
         original_size = 0
         multipart_data_list = []
         
-        # First collect all the data
+        # Serialization
         serialize_start_time = time.perf_counter()
         while file_iterators:
             # Round robin through files
@@ -321,7 +321,7 @@ class CompressionExperiment:
 
         serialize_end_time = time.perf_counter()
 
-        # Now time just the compression
+        # Compression
         compression_start_time = time.perf_counter()
         with compressor.stream_writer(buffer) as compressor_writer:
             for multipart_data in multipart_data_list:
