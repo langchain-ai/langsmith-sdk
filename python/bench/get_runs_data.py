@@ -1,19 +1,20 @@
 from langsmith import Client
 import orjson
+import os
 
-# trace_ids = {"1efb1bff-10d5-6da0-98e2-1fca189219e1",
-#              "1efb1bfd-1be8-653b-8edc-0f4c94f2f6b3",
-#              "1efb1bfb-4e07-6398-b544-bd111c9a6996",
-#              "1efb1bf8-42d4-648a-81be-b7ba3342459e",
-#              "1efb1bf7-6a50-6431-9eb8-6ae7b2198b38",
-#              "1efb1bf5-64fd-6a08-90cb-f5c225bf6dd4",
-#              "1efb1bf3-4d7c-6e2a-97f3-02bb3afb6047",
-#              "1efb1bf2-0fda-6b60-8e4a-a10d684ac89a",
-#              "1efb1bf0-1b5a-673f-a1e3-a6f6a4f20e6a",
-#              "1efb1b8f-4b60-6140-a975-7ea154e8fc81",
-#              "1efb27a4-5264-6908-9ab5-23fc3c60ae2d"}
+trace_ids = {"1efb1bff-10d5-6da0-98e2-1fca189219e1",
+             "1efb1bfd-1be8-653b-8edc-0f4c94f2f6b3",
+             "1efb1bfb-4e07-6398-b544-bd111c9a6996",
+             "1efb1bf8-42d4-648a-81be-b7ba3342459e",
+             "1efb1bf7-6a50-6431-9eb8-6ae7b2198b38",
+             "1efb1bf5-64fd-6a08-90cb-f5c225bf6dd4",
+             "1efb1bf3-4d7c-6e2a-97f3-02bb3afb6047",
+             "1efb1bf2-0fda-6b60-8e4a-a10d684ac89a",
+             "1efb1bf0-1b5a-673f-a1e3-a6f6a4f20e6a",
+             "1efb1b8f-4b60-6140-a975-7ea154e8fc81",
+             "1efb27a4-5264-6908-9ab5-23fc3c60ae2d"}
 
-trace_ids = {"1efb27a4-5264-6908-9ab5-23fc3c60ae2d"}
+# trace_ids = {"1efb27a4-5264-6908-9ab5-23fc3c60ae2d"}
 
 def produce_inputs_outputs_jsonl_files():
     client = Client()
