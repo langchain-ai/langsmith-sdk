@@ -131,11 +131,6 @@ interface _ExperimentManagerArgs {
 
 type BaseEvaluateOptions = {
   /**
-   * The dataset to evaluate on. Can be a dataset name, a list of
-   * examples, or a generator of examples.
-   */
-  data: DataT;
-  /**
    * Metadata to attach to the experiment.
    * @default undefined
    */
@@ -178,6 +173,11 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * @default undefined
    */
   summaryEvaluators?: Array<SummaryEvaluatorT>;
+  /**
+   * The dataset to evaluate on. Can be a dataset name, a list of
+   * examples, or a generator of examples.
+   */
+  data: DataT;
 }
 
 export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
@@ -934,8 +934,10 @@ async function _evaluate(
   );
 
   let manager = await new _ExperimentManager({
-    data: Array.isArray(fields.data) ? undefined : fields.data,
-    examples: Array.isArray(fields.data) ? fields.data : undefined,
+    data: Array.isArray(standardFields.data) ? undefined : standardFields.data,
+    examples: Array.isArray(standardFields.data)
+      ? standardFields.data
+      : undefined,
     client,
     metadata: fields.metadata,
     experiment: experiment_ ?? fields.experimentPrefix,

@@ -1167,7 +1167,6 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
   const compareRes = await evaluate(
     [exp1.experimentName, exp2.experimentName],
     {
-      data: TESTING_DATASET_NAME,
       evaluators: [comparativeEvaluator],
       description: "Comparative evaluation test",
       randomizeOrder: true,
@@ -1212,7 +1211,6 @@ test("evaluate enforces correct evaluator types for comparative evaluation at ru
   await expect(
     // @ts-expect-error - Should error because standardEvaluator is not a ComparativeEvaluator
     evaluate([exp1.experimentName, exp2.experimentName], {
-      data: TESTING_DATASET_NAME,
       evaluators: [standardEvaluator],
       description: "Should fail at runtime",
     })
@@ -1257,7 +1255,6 @@ test("evaluate comparative options includes comparative-specific fields", async 
   const compareRes = await evaluate(
     [exp1.experimentName, exp2.experimentName],
     {
-      data: TESTING_DATASET_NAME,
       evaluators: [comparativeEvaluator],
       randomizeOrder: true, // Comparative-specific option
       loadNested: true, // Comparative-specific option
