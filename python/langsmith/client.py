@@ -2324,9 +2324,10 @@ class Client:
         share_token: str,
     ) -> ls_schemas.Dataset:
         """Get shared datasets."""
+        _, token_uuid = _parse_token_or_url(share_token, self.api_url)
         response = self.request_with_retries(
             "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/datasets",
+            f"/public/{token_uuid}/datasets",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2794,6 +2795,7 @@ class Client:
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
         inputs_schema: Optional[Dict[str, Any]] = None,
         outputs_schema: Optional[Dict[str, Any]] = None,
+        transformations: Optional[List[ls_schemas.DatasetTransformation]] = None,
         metadata: Optional[dict] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
@@ -2802,22 +2804,34 @@ class Client:
         ----------
         dataset_name : str
             The name of the dataset.
-        description : str or None, default=None
+        description : Optional[str], default=None
             The description of the dataset.
-        data_type : DataType or None, default=DataType.kv
+        data_type : ls_schemas.DataType, default=ls_schemas.DataType.kv
             The data type of the dataset.
-        metadata: dict or None, default=None
+        inputs_schema : Optional[Dict[str, Any]], default=None
+            The schema definition for the inputs of the dataset.
+        outputs_schema : Optional[Dict[str, Any]], default=None
+            The schema definition for the outputs of the dataset.
+        transformations : Optional[List[ls_schemas.DatasetTransformation]], default=None
+            A list of transformations to apply to the dataset.
+        metadata : Optional[dict], default=None
             Additional metadata to associate with the dataset.
 
         Returns:
         -------
-        Dataset
+        ls_schemas.Dataset
             The created dataset.
+
+        Raises:
+        ------
+        requests.HTTPError
+            If the request to create the dataset fails.
         """
         dataset: Dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
             "created_at": datetime.datetime.now().isoformat(),
+            "transformations": transformations,
             "extra": {"metadata": metadata} if metadata else None,
         }
         if description is not None:
@@ -3280,6 +3294,9 @@ class Client:
                 dataset_name=dataset_name,
                 description=ds.description,
                 data_type=ds.data_type or ls_schemas.DataType.kv,
+                inputs_schema=ds.inputs_schema,
+                outputs_schema=ds.outputs_schema,
+                transformations=ds.transformations,
             )
             try:
                 self.create_examples(
