@@ -142,7 +142,7 @@ jobs:
           path: "${{ env.RUST_WORKSPACE_PATH }}/${{ env.BINDINGS_RELATIVE_PATH }}/langsmith-nodejs.*.node"
 
   test-macos-windows-bindings:
-    name: "Test bindings ${{ matrix.settings.target }} - node@${{ matrix.node }}"
+    name: "test node@${{ matrix.node }} on ${{ matrix.settings.target }}"
     needs:
       - build
     strategy:
@@ -197,13 +197,13 @@ jobs:
         shell: bash
         run: |
           # List downloaded bindings
-          ls -R .
+          ls .
 
           # Run tests.
           yarn test
 
   test-linux-bindings:
-    name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
+    name: test node@${{ matrix.node }} on ${{ matrix.settings.target }}
     needs:
       - build
     strategy:
@@ -260,7 +260,7 @@ jobs:
         shell: bash
         run: |
           # List downloaded bindings
-          ls -R "$BINDINGS_RELATIVE_PATH"
+          ls "$BINDINGS_RELATIVE_PATH/"
 
           # Run tests.
           docker run \
