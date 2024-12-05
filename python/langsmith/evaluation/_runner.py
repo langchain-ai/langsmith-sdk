@@ -1600,7 +1600,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         (e.g. from a previous prediction step)
         """
         with ls_utils.ContextThreadPoolExecutor(
-            max_workers=max_concurrency
+            max_workers=max_concurrency or 1
         ) as executor:
             if max_concurrency == 0:
                 context = copy_context()
