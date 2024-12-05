@@ -79,7 +79,7 @@ export type _ComparativeEvaluator = (args: {
   runs: Run[];
   example: Example;
   inputs: Record<string, any>;
-  outputs?: Record<string, any>[];
+  outputs: Record<string, any>[];
   referenceOutputs?: Record<string, any>;
 }) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
 

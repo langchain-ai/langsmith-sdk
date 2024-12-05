@@ -5842,7 +5842,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -5861,7 +5861,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -5883,7 +5883,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -5911,7 +5911,8 @@ class Client:
                 Defaults to None.
             description (str | None): A free-form text description for the experiment.
             max_concurrency (int | None): The maximum number of concurrent
-                evaluations to run. Defaults to None (max number of workers).
+                evaluations to run. If None then no limit is set. If 0 then no concurrency.
+                Defaults to 0.
             blocking (bool): Whether to block until the evaluation is complete.
                 Defaults to True.
             num_repetitions (int): The number of times to run the evaluation.
@@ -6053,6 +6054,8 @@ class Client:
             ...     summary_evaluators=[precision],
             ... )  # doctest: +ELLIPSIS
             View the evaluation results for experiment:...
+
+        .. versionadded:: 0.2.0
         """  # noqa: E501
         from langsmith.evaluation._runner import evaluate as evaluate_
 
@@ -6094,7 +6097,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
@@ -6119,8 +6122,9 @@ class Client:
             experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
                 Defaults to None.
             description (Optional[str]): A description of the experiment.
-            max_concurrency (Optional[int]): The maximum number of concurrent
-                evaluations to run. Defaults to None.
+            max_concurrency (int | None): The maximum number of concurrent
+                evaluations to run. If None then no limit is set. If 0 then no concurrency.
+                Defaults to 0.
             num_repetitions (int): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.
@@ -6259,6 +6263,9 @@ class Client:
             ...     )
             ... )  # doctest: +ELLIPSIS
             View the evaluation results for experiment:...
+
+        .. versionadded:: 0.2.0
+
         """  # noqa: E501
         from langsmith.evaluation._arunner import aevaluate as aevaluate_
 

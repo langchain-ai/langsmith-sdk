@@ -474,7 +474,7 @@ async def test_aevaluate_good_error():
             data=ds_name,
         )
 
-    with pytest.raises(ValueError, match=match_val):
+    with pytest.raises(ValueError, match="Must specify 'data'"):
         await aevaluate(
             predict,
             data=[],

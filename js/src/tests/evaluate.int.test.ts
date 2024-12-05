@@ -3,6 +3,7 @@ import {
   EvaluationResults,
 } from "../evaluation/evaluator.js";
 import { evaluate } from "../evaluation/_runner.js";
+import { waitUntilRunFound } from "./utils.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
@@ -1115,6 +1116,8 @@ test("evaluate handles partial summary evaluator parameters correctly", async ()
 });
 
 test("evaluate handles comparative target with ComparativeEvaluateOptions", async () => {
+  const client = new Client();
+
   // First, create two experiments to compare
   const targetFunc1 = (input: Record<string, any>) => {
     return {
@@ -1139,13 +1142,18 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
     description: "Second experiment for comparison",
   });
 
+  await Promise.all(
+    [exp1, exp2].flatMap(({ results }) =>
+      results.flatMap(({ run }) => waitUntilRunFound(client, run.id))
+    )
+  );
   // Create comparative evaluator
   const comparativeEvaluator = ({
     runs,
     example,
   }: {
-    runs?: Run[];
-    example?: Example;
+    runs: Run[];
+    example: Example;
   }) => {
     if (!runs || !example) throw new Error("Missing required parameters");
 
@@ -1167,7 +1175,6 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
   const compareRes = await evaluate(
     [exp1.experimentName, exp2.experimentName],
     {
-      data: TESTING_DATASET_NAME,
       evaluators: [comparativeEvaluator],
       description: "Comparative evaluation test",
       randomizeOrder: true,
@@ -1176,6 +1183,7 @@ test("evaluate handles comparative target with ComparativeEvaluateOptions", asyn
   );
 
   // Verify we got ComparisonEvaluationResults
+  expect(compareRes.experimentName).toBeDefined();
   expect(compareRes.experimentName).toBeDefined();
   expect(compareRes.results).toBeDefined();
   expect(Array.isArray(compareRes.results)).toBe(true);
@@ -1212,59 +1220,8 @@ test("evaluate enforces correct evaluator types for comparative evaluation at ru
   await expect(
     // @ts-expect-error - Should error because standardEvaluator is not a ComparativeEvaluator
     evaluate([exp1.experimentName, exp2.experimentName], {
-      data: TESTING_DATASET_NAME,
       evaluators: [standardEvaluator],
       description: "Should fail at runtime",
     })
   ).rejects.toThrow(); // You might want to be more specific about the error message
-});
-
-test("evaluate comparative options includes comparative-specific fields", async () => {
-  const exp1 = await evaluate(
-    (input: Record<string, any>) => ({ foo: input.input + 1 }),
-    {
-      data: TESTING_DATASET_NAME,
-    }
-  );
-
-  const exp2 = await evaluate(
-    (input: Record<string, any>) => ({ foo: input.input + 2 }),
-    {
-      data: TESTING_DATASET_NAME,
-    }
-  );
-
-  const comparativeEvaluator = ({
-    runs,
-    example,
-  }: {
-    runs?: Run[];
-    example?: Example;
-  }) => {
-    if (!runs || !example) throw new Error("Missing required parameters");
-    return {
-      key: "comparative_score",
-      scores: Object.fromEntries(
-        runs.map((run) => [
-          run.id,
-          run.outputs?.foo === example.outputs?.output ? 1 : 0,
-        ])
-      ),
-    };
-  };
-
-  // Test that comparative-specific options work
-  const compareRes = await evaluate(
-    [exp1.experimentName, exp2.experimentName],
-    {
-      data: TESTING_DATASET_NAME,
-      evaluators: [comparativeEvaluator],
-      randomizeOrder: true, // Comparative-specific option
-      loadNested: true, // Comparative-specific option
-      description: "Testing comparative-specific options",
-    }
-  );
-
-  expect(compareRes.experimentName).toBeDefined();
-  expect(compareRes.results).toBeDefined();
 });

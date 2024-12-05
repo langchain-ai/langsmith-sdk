@@ -58,17 +58,17 @@ export type SummaryEvaluatorT =
   | DeprecatedSyncSummaryEvaluator
   | DeprecatedAsyncSummaryEvaluator
   | ((args: {
-      runs?: Array<Run>;
-      examples?: Array<Example>;
-      inputs?: Array<Record<string, any>>;
-      outputs?: Array<Record<string, any>>;
+      runs: Array<Run>;
+      examples: Array<Example>;
+      inputs: Array<Record<string, any>>;
+      outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
-      runs?: Array<Run>;
-      examples?: Array<Example>;
-      inputs?: Array<Record<string, any>>;
-      outputs?: Array<Record<string, any>>;
+      runs: Array<Run>;
+      examples: Array<Example>;
+      inputs: Array<Record<string, any>>;
+      outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
@@ -93,17 +93,17 @@ export type EvaluatorT =
   | DeprecatedFunctionEvaluator
   | DeprecatedAsyncFunctionEvaluator
   | ((args: {
-      run?: Run;
-      example?: Example;
-      inputs?: Record<string, any>;
-      outputs?: Record<string, any>;
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
-      run?: Run;
-      example?: Example;
-      inputs?: Record<string, any>;
-      outputs?: Record<string, any>;
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
@@ -130,11 +130,6 @@ interface _ExperimentManagerArgs {
 }
 
 type BaseEvaluateOptions = {
-  /**
-   * The dataset to evaluate on. Can be a dataset name, a list of
-   * examples, or a generator of examples.
-   */
-  data: DataT;
   /**
    * Metadata to attach to the experiment.
    * @default undefined
@@ -178,6 +173,11 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * @default undefined
    */
   summaryEvaluators?: Array<SummaryEvaluatorT>;
+  /**
+   * The dataset to evaluate on. Can be a dataset name, a list of
+   * examples, or a generator of examples.
+   */
+  data: DataT;
 }
 
 export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
@@ -934,8 +934,10 @@ async function _evaluate(
   );
 
   let manager = await new _ExperimentManager({
-    data: Array.isArray(fields.data) ? undefined : fields.data,
-    examples: Array.isArray(fields.data) ? fields.data : undefined,
+    data: Array.isArray(standardFields.data) ? undefined : standardFields.data,
+    examples: Array.isArray(standardFields.data)
+      ? standardFields.data
+      : undefined,
     client,
     metadata: fields.metadata,
     experiment: experiment_ ?? fields.experimentPrefix,
@@ -1063,10 +1065,12 @@ function _resolveData(
 async function wrapSummaryEvaluators(
   evaluators: SummaryEvaluatorT[],
   optionsArray?: Partial<RunTreeConfig>[]
-): Promise<SummaryEvaluatorT[]> {
+): Promise<
+  Array<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator>
+> {
   async function _wrap(
     evaluator: SummaryEvaluatorT
-  ): Promise<SummaryEvaluatorT> {
+  ): Promise<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator> {
     const evalName = evaluator.name || "BatchEvaluator";
 
     const wrapperInner = (
@@ -1087,10 +1091,10 @@ async function wrapSummaryEvaluators(
             return Promise.resolve(
               (
                 evaluator as (args: {
-                  runs?: Run[];
-                  examples?: Example[];
-                  inputs?: Record<string, any>[];
-                  outputs?: Record<string, any>[];
+                  runs: Run[];
+                  examples: Example[];
+                  inputs: Record<string, any>[];
+                  outputs: Record<string, any>[];
                   referenceOutputs?: Record<string, any>[];
                 }) => EvaluationResult | EvaluationResults
               )({
@@ -1103,7 +1107,9 @@ async function wrapSummaryEvaluators(
             );
           }
           // Otherwise use the traditional (runs, examples) signature
-          return Promise.resolve(evaluator(runs, examples));
+          return Promise.resolve(
+            (evaluator as DeprecatedSyncSummaryEvaluator)(runs, examples)
+          );
         },
         { ...optionsArray, name: evalName }
       );
@@ -1119,7 +1125,9 @@ async function wrapSummaryEvaluators(
     return wrapperInner;
   }
 
-  const results: SummaryEvaluatorT[] = [];
+  const results: Array<
+    DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator
+  > = [];
   for (let i = 0; i < evaluators.length; i++) {
     results.push(await _wrap(evaluators[i]));
   }
