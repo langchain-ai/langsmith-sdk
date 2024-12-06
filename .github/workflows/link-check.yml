@@ -21,5 +21,5 @@ jobs:
         uses: gaurav-nelson/github-action-markdown-link-check@v1
         with:
           # Do not check the `vendor/` directory.
-          folder-path: .github,js,openapi,python,rust
+          folder-path: .github,js/sdk,openapi,python,rust
           file-path: ./README.md
