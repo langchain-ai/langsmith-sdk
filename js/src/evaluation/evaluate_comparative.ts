@@ -69,16 +69,29 @@ async function loadTraces(
   return results;
 }
 
+/** @deprecated Use ComparativeEvaluatorNew instead: (args: { runs, example, inputs, outputs, referenceOutputs }) => ... */
+export type _ComparativeEvaluatorLegacy = (
+  runs: Run[],
+  example: Example
+) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
+
+export type _ComparativeEvaluator = (args: {
+  runs: Run[];
+  example: Example;
+  inputs: Record<string, any>;
+  outputs: Record<string, any>[];
+  referenceOutputs?: Record<string, any>;
+}) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>;
+
+export type ComparativeEvaluator =
+  | _ComparativeEvaluatorLegacy
+  | _ComparativeEvaluator;
+
 export interface EvaluateComparativeOptions {
   /**
    * A list of evaluators to use for comparative evaluation.
    */
-  evaluators: Array<
-    (
-      runs: Run[],
-      example: Example
-    ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>
-  >;
+  evaluators: Array<ComparativeEvaluator>;
   /**
    * Randomize the order of outputs for each evaluation
    * @default false
@@ -306,16 +319,20 @@ export async function evaluateComparative(
   async function evaluateAndSubmitFeedback(
     runs: Run[],
     example: Example,
-    evaluator: (
-      runs: Run[],
-      example: Example
-    ) => ComparisonEvaluationResultRow | Promise<ComparisonEvaluationResultRow>
+    evaluator: ComparativeEvaluator
   ) {
     const expectedRunIds = new Set(runs.map((r) => r.id));
-    const result = await evaluator(
-      options.randomizeOrder ? shuffle(runs) : runs,
-      example
-    );
+    // Check if evaluator expects an object parameter
+    const result =
+      evaluator.length === 1
+        ? await (evaluator as _ComparativeEvaluator)({
+            runs: options.randomizeOrder ? shuffle(runs) : runs,
+            example,
+            inputs: example.inputs,
+            outputs: runs.map((run) => run.outputs || {}),
+            referenceOutputs: example.outputs || {},
+          })
+        : await (evaluator as _ComparativeEvaluatorLegacy)(runs, example);
 
     for (const [runId, score] of Object.entries(result.scores)) {
       // validate if the run id
@@ -340,7 +357,16 @@ export async function evaluateComparative(
         example: Example
       ): Promise<ComparisonEvaluationResultRow> => {
         const evaluatorRun = getCurrentRunTree();
-        const result = await evaluator(runs, example);
+        const result =
+          evaluator.length === 1
+            ? await (evaluator as _ComparativeEvaluator)({
+                runs: options.randomizeOrder ? shuffle(runs) : runs,
+                example,
+                inputs: example.inputs,
+                outputs: runs.map((run) => run.outputs || {}),
+                referenceOutputs: example.outputs || {},
+              })
+            : await (evaluator as _ComparativeEvaluatorLegacy)(runs, example);
 
         // sanitise the payload before sending to LangSmith
         evaluatorRun.inputs = { runs: runs, example: example };

@@ -209,6 +209,22 @@ class DatasetBase(BaseModel):
         frozen = True
 
 
+DatasetTransformationType = Literal[
+    "remove_system_messages",
+    "convert_to_openai_message",
+    "convert_to_openai_tool",
+    "remove_extra_fields",
+    "extract_tools_from_run",
+]
+
+
+class DatasetTransformation(TypedDict, total=False):
+    """Schema for dataset transformations."""
+
+    path: List[str]
+    transformation_type: Union[DatasetTransformationType, str]
+
+
 class Dataset(DatasetBase):
     """Dataset ORM model."""
 
@@ -220,6 +236,7 @@ class Dataset(DatasetBase):
     last_session_start_time: Optional[datetime] = None
     inputs_schema: Optional[Dict[str, Any]] = None
     outputs_schema: Optional[Dict[str, Any]] = None
+    transformations: Optional[List[DatasetTransformation]] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
     _public_path: Optional[str] = PrivateAttr(default=None)

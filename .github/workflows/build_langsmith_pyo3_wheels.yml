@@ -40,7 +40,7 @@ env:
   # Building wheels for Python 3.13 on Windows is broken at the moment with a linking error,
   # so we build 3.13 wheels for other platforms explicitly instead of adding 3.13 here.
   # https://github.com/PyO3/maturin-action/issues/292
-  SUPPORTED_PYTHON_VERSIONS: 'python3.8 python3.9 python3.10 python3.11 python3.12'
+  SUPPORTED_PYTHON_VERSIONS: 'python3.9 python3.10 python3.11 python3.12'
   WORKING_DIRECTORY: rust/crates/langsmith-pyo3
 
 jobs:
