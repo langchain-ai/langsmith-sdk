@@ -101,7 +101,7 @@ def evaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -121,7 +121,7 @@ def evaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -142,7 +142,7 @@ def evaluate(
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
@@ -171,7 +171,8 @@ def evaluate(
             Defaults to None.
         description (str | None): A free-form text description for the experiment.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. Defaults to None (max number of workers).
+            evaluations to run. If None then no limit is set. If 0 then no concurrency.
+            Defaults to 0.
         client (langsmith.Client | None): The LangSmith client to use.
             Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
@@ -317,6 +318,11 @@ def evaluate(
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+
+    .. versionchanged:: 0.2.0
+
+        'max_concurrency' default updated from None (no limit on concurrency)
+        to 0 (no concurrency at all).
     """  # noqa: E501
     if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
         invalid_args = {
@@ -440,7 +446,7 @@ def evaluate_existing(
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 0,
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
@@ -454,7 +460,9 @@ def evaluate_existing(
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
             to apply over the entire dataset.
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
-        max_concurrency (Optional[int]): Optional maximum number of concurrent evaluations.
+        max_concurrency (int | None): The maximum number of concurrent
+            evaluations to run. If None then no limit is set. If 0 then no concurrency.
+            Defaults to 0.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
         load_nested: Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
@@ -1045,6 +1053,7 @@ def _evaluate(
         runs,
         client,
     )
+
     manager = _ExperimentManager(
         data,
         client=client,
@@ -1499,8 +1508,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self.experiment_name,
                     self._metadata,
                     self.client,
-                    self._include_attachments,
                     self._upload_results,
+                    self._include_attachments,
                 )
 
         else:
@@ -1513,8 +1522,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        self._include_attachments,
                         self._upload_results,
+                        self._include_attachments,
                     )
                     for example in self.examples
                 ]
@@ -1613,7 +1622,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         (e.g. from a previous prediction step)
         """
         with ls_utils.ContextThreadPoolExecutor(
-            max_workers=max_concurrency
+            max_workers=max_concurrency or 1
         ) as executor:
             if max_concurrency == 0:
                 context = copy_context()
@@ -1801,8 +1810,8 @@ def _forward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
-    include_attachments: bool = False,
     upload_results: bool,
+    include_attachments: bool = False,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1833,7 +1842,7 @@ def _forward(
                 *args,
                 langsmith_extra=langsmith_extra,
             )
-            if include_attachments:
+            if include_attachments and example.attachment_urls is not None:
                 for attachment in example.attachment_urls:
                     _, reader = example.attachment_urls[attachment]
                     reader.seek(0)
@@ -1844,6 +1853,14 @@ def _forward(
         return _ForwardResults(run=cast(schemas.Run, run), example=example)
 
 
+def _is_valid_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
 def _resolve_data(
     data: DATA_T,
     *,
@@ -1851,15 +1868,17 @@ def _resolve_data(
     include_attachments: bool = False,
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
-    # TODO: Find a smarter way of determining whether
-    # to get attachments (don't just default to true)
-    if isinstance(data, str):
-        return client.list_examples(
-            dataset_name=data, include_attachments=include_attachments
-        )
-    elif isinstance(data, uuid.UUID):
+    if isinstance(data, uuid.UUID):
         return client.list_examples(
             dataset_id=data, include_attachments=include_attachments
+        )
+    elif isinstance(data, str) and _is_valid_uuid(data):
+        return client.list_examples(
+            dataset_id=uuid.UUID(data), include_attachments=include_attachments
+        )
+    elif isinstance(data, str):
+        return client.list_examples(
+            dataset_name=data, include_attachments=include_attachments
         )
     elif isinstance(data, schemas.Dataset):
         return client.list_examples(

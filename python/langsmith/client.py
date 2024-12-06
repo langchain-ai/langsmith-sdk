@@ -1300,9 +1300,6 @@ class Client:
             and run_create.get("dotted_order") is not None
         ):
             if self._pyo3_client is not None:
-                # `self._run_transform()` above turns the `id` key into a `UUID` object.
-                # We need to pass a string since `orjson` doesn't seem to serialize `UUID` objects.
-                run_create["id"] = str(run_create["id"])
                 self._pyo3_client.create_run(run_create)
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
@@ -1697,9 +1694,7 @@ class Client:
         events: Optional[Sequence[dict]] = None,
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
-        attachments: Optional[
-            Dict[str, tuple[str, bytes] | ls_schemas.Attachment]
-        ] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -2339,9 +2334,10 @@ class Client:
         share_token: str,
     ) -> ls_schemas.Dataset:
         """Get shared datasets."""
+        _, token_uuid = _parse_token_or_url(share_token, self.api_url)
         response = self.request_with_retries(
             "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/datasets",
+            f"/public/{token_uuid}/datasets",
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
@@ -2809,6 +2805,7 @@ class Client:
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
         inputs_schema: Optional[Dict[str, Any]] = None,
         outputs_schema: Optional[Dict[str, Any]] = None,
+        transformations: Optional[List[ls_schemas.DatasetTransformation]] = None,
         metadata: Optional[dict] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
@@ -2817,22 +2814,34 @@ class Client:
         ----------
         dataset_name : str
             The name of the dataset.
-        description : str or None, default=None
+        description : Optional[str], default=None
             The description of the dataset.
-        data_type : DataType or None, default=DataType.kv
+        data_type : ls_schemas.DataType, default=ls_schemas.DataType.kv
             The data type of the dataset.
-        metadata: dict or None, default=None
+        inputs_schema : Optional[Dict[str, Any]], default=None
+            The schema definition for the inputs of the dataset.
+        outputs_schema : Optional[Dict[str, Any]], default=None
+            The schema definition for the outputs of the dataset.
+        transformations : Optional[List[ls_schemas.DatasetTransformation]], default=None
+            A list of transformations to apply to the dataset.
+        metadata : Optional[dict], default=None
             Additional metadata to associate with the dataset.
 
         Returns:
         -------
-        Dataset
+        ls_schemas.Dataset
             The created dataset.
+
+        Raises:
+        ------
+        requests.HTTPError
+            If the request to create the dataset fails.
         """
         dataset: Dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
             "created_at": datetime.datetime.now().isoformat(),
+            "transformations": transformations,
             "extra": {"metadata": metadata} if metadata else None,
         }
         if description is not None:
@@ -3295,6 +3304,9 @@ class Client:
                 dataset_name=dataset_name,
                 description=ds.description,
                 data_type=ds.data_type or ls_schemas.DataType.kv,
+                inputs_schema=ds.inputs_schema,
+                outputs_schema=ds.outputs_schema,
+                transformations=ds.transformations,
             )
             try:
                 self.create_examples(
@@ -3460,12 +3472,12 @@ class Client:
 
     def _prepate_multipart_data(
         self,
-        examples: List[
-            ls_schemas.ExampleUploadWithAttachments
-            | ls_schemas.ExampleUpsertWithAttachments
+        examples: Union[
+            List[ls_schemas.ExampleUploadWithAttachments]
+            | List[ls_schemas.ExampleUpsertWithAttachments]
         ],
         include_dataset_id: bool = False,
-    ) -> List[MultipartPart]:
+    ) -> Tuple[Any, bytes]:
         parts: List[MultipartPart] = []
 
         for example in examples:
@@ -3613,7 +3625,12 @@ class Client:
         *,
         upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
     ) -> ls_schemas.UpsertExamplesResponse:
-        """Upsert examples."""
+        """Upsert examples.
+
+        .. deprecated:: 0.1.0
+           This method is deprecated. Use :func:`langsmith.upload_examples_multipart` instead.
+
+        """  # noqa: E501
         if not (self.info.instance_flags or {}).get(
             "examples_multipart_enabled", False
         ):
@@ -5780,23 +5797,6 @@ class Client:
         owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
             prompt_identifier
         )
-        try:
-            use_optimization = ls_utils.is_version_greater_or_equal(
-                self.info.version, "0.5.23"
-            )
-        except ValueError:
-            logger.exception(
-                "Failed to parse LangSmith API version. Defaulting to using optimization."
-            )
-            use_optimization = True
-
-        if not use_optimization and commit_hash == "latest":
-            latest_commit_hash = self._get_latest_commit_hash(f"{owner}/{prompt_name}")
-            if latest_commit_hash is None:
-                raise ValueError("No commits found")
-            else:
-                commit_hash = latest_commit_hash
-
         response = self.request_with_retries(
             "GET",
             (
@@ -6050,7 +6050,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -6069,7 +6069,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -6091,7 +6091,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
@@ -6119,7 +6119,8 @@ class Client:
                 Defaults to None.
             description (str | None): A free-form text description for the experiment.
             max_concurrency (int | None): The maximum number of concurrent
-                evaluations to run. Defaults to None (max number of workers).
+                evaluations to run. If None then no limit is set. If 0 then no concurrency.
+                Defaults to 0.
             blocking (bool): Whether to block until the evaluation is complete.
                 Defaults to True.
             num_repetitions (int): The number of times to run the evaluation.
@@ -6232,7 +6233,7 @@ class Client:
             ...             config={
             ...                 "criteria": {
             ...                     "usefulness": "The prediction is useful if it is correct"
-                                                      ...                     " and/or asks a useful followup question."
+            ...                     " and/or asks a useful followup question."
             ...                 },
             ...                 "llm": init_chat_model("gpt-4o"),
             ...             },
@@ -6261,6 +6262,8 @@ class Client:
             ...     summary_evaluators=[precision],
             ... )  # doctest: +ELLIPSIS
             View the evaluation results for experiment:...
+
+        .. versionadded:: 0.2.0
         """  # noqa: E501
         from langsmith.evaluation._runner import evaluate as evaluate_
 
@@ -6302,7 +6305,7 @@ class Client:
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
-        max_concurrency: Optional[int] = None,
+        max_concurrency: Optional[int] = 0,
         num_repetitions: int = 1,
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
@@ -6327,8 +6330,9 @@ class Client:
             experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
                 Defaults to None.
             description (Optional[str]): A description of the experiment.
-            max_concurrency (Optional[int]): The maximum number of concurrent
-                evaluations to run. Defaults to None.
+            max_concurrency (int | None): The maximum number of concurrent
+                evaluations to run. If None then no limit is set. If 0 then no concurrency.
+                Defaults to 0.
             num_repetitions (int): The number of times to run the evaluation.
                 Each item in the dataset will be run and evaluated this many times.
                 Defaults to 1.
@@ -6467,6 +6471,9 @@ class Client:
             ...     )
             ... )  # doctest: +ELLIPSIS
             View the evaluation results for experiment:...
+
+        .. versionadded:: 0.2.0
+
         """  # noqa: E501
         from langsmith.evaluation._arunner import aevaluate as aevaluate_
 

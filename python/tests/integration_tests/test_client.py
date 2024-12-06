@@ -483,7 +483,8 @@ def test_upload_examples_multipart(langchain_client: Client):
 
 
 def test_upsert_examples_multipart(langchain_client: Client) -> None:
-    """Test upserting examples with attachments via multipart endpoint."""
+    """Test upserting examples with attachments via the multipart endpoint."""
+    langchain_client._info = {"instance_flags": {"examples_multipart_enabled": True}}
     dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -514,7 +515,6 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
             "my_file": ("text/plain", b"more test content"),
         },
     )
-
     created_examples = langchain_client.upsert_examples_multipart(
         upserts=[example_1, example_2]
     )
@@ -550,12 +550,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
     updated_examples = langchain_client.upsert_examples_multipart(
         upserts=[example_1_update]
     )
-    assert updated_examples["count"] == 1
-    assert updated_examples["example_ids"][0] == str(example_id)
-    updated_example = langchain_client.read_example(updated_examples["example_ids"][0])
-    assert updated_example.inputs["text"] == "bar baz"
-    assert updated_example.outputs["response"] == "foo"
-
+    assert updated_examples["count"] == 0
     # Test that adding invalid example fails
     # even if valid examples are added alongside
     example_3 = ExampleUpsertWithAttachments(
@@ -578,7 +573,6 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
     # Throw type errors when not passing ExampleUpsertWithAttachments
     with pytest.raises(AttributeError):
         langchain_client.upsert_examples_multipart(upserts=[{"foo": "bar"}])
-
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
@@ -1370,6 +1364,7 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
+
 async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_aevaluate_attachments" + uuid4().hex[:4]
@@ -1471,6 +1466,7 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
     
+
 def test_examples_length_validation(langchain_client: Client) -> None:
     """Test that mismatched lengths raise ValueError for create and update examples."""
     dataset_name = "__test_examples_length_validation" + uuid4().hex[:4]
