@@ -321,6 +321,17 @@ class StreamingMultipartCompressor:
             self.buffer.seek(0)
             self.buffer.truncate()
 
+    def _process_bytes(
+        self,
+        compressor: zstd.ZstdCompressor.stream_writer,
+        data: Union[bytes, bytearray],
+    ) -> Iterator[bytes]:
+        with memoryview(data) as view:
+            for i in range(0, len(view), self.blocksize):
+                chunk = view[i:i + self.blocksize]
+                compressor.write(chunk)
+                yield from self._yield_and_reset_buffer()
+
     def compress_multipart_stream(
         self,
         parts_and_contexts: MultipartPartsAndContext,
@@ -349,11 +360,7 @@ class StreamingMultipartCompressor:
 
                 # Write part data in chunks
                 if isinstance(data, (bytes, bytearray)):
-                    for i in range(0, len(data), self.blocksize):
-                        chunk = data[i:i + self.blocksize]
-                        compressor.write(chunk)
-                        # After writing each chunk, yield compressed data
-                        yield from self._yield_and_reset_buffer()
+                    yield from self._process_bytes(compressor, data)
                 else:
                     # Handle other data types
                     compressor.write(str(data).encode())
