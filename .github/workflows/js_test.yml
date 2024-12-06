@@ -7,10 +7,10 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "js/sdk/**"
+      - "js/**"
   pull_request:
     paths:
-      - "js/sdk/**"
+      - "js/**"
   workflow_dispatch:
     inputs:
       run_integration_tests:
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: "js/sdk"
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          cache-dependency-path: "yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
       - name: Check formatting
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: "js/sdk"
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -52,7 +52,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          cache-dependency-path: "yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable --mode=skip-build
       - name: Check linting
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: "js/sdk"
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -71,7 +71,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          cache-dependency-path: "yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable
       - name: Build and check types
@@ -82,7 +82,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [18.x, 19.x, 20.x]
+        node-version: [18.x, 20.x, "22.4.1"]
         # See Node.js release schedule at https://nodejs.org/en/about/releases/
         include:
           - os: windows-latest
@@ -92,7 +92,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: "js/sdk"
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js ${{ matrix.node-version }}

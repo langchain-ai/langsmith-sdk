@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "js/sdk/package.json"
+      - "js/package.json"
   workflow_dispatch:
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
       id-token: write
     defaults:
       run:
-        working-directory: "js/sdk"
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       # JS Build
@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 20.x
           cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
+          cache-dependency-path: "yarn.lock"
       - name: Install dependencies
         run: yarn install --immutable
       - name: Build
