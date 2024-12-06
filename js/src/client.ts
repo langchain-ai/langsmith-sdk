@@ -55,10 +55,7 @@ import {
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import {
-  isVersionGreaterOrEqual,
-  parsePromptIdentifier,
-} from "./utils/prompts.js";
+import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
@@ -435,7 +432,7 @@ export class AutoBatchQueue {
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 1000;
+const SERVER_INFO_REQUEST_TIMEOUT = 2500;
 
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
@@ -3938,28 +3935,9 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
       parsePromptIdentifier(promptIdentifier);
-    const serverInfo = await this._getServerInfo();
-    const useOptimization = isVersionGreaterOrEqual(
-      serverInfo.version,
-      "0.5.23"
-    );
-
-    let passedCommitHash = commitHash;
-
-    if (!useOptimization && commitHash === "latest") {
-      const latestCommitHash = await this._getLatestCommitHash(
-        `${owner}/${promptName}`
-      );
-      if (!latestCommitHash) {
-        throw new Error("No commits found");
-      } else {
-        passedCommitHash = latestCommitHash;
-      }
-    }
-
     const response = await this.caller.call(
       _getFetchImplementation(),
-      `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${
+      `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
         options?.includeModel ? "?include_model=true" : ""
       }`,
       {

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::blocking::multipart::{Form, Part};
-use sonic_rs::to_vec;
+use serde_json::to_vec;
 
 use super::tracing_client::ClientConfig;
 use crate::client::errors::TracingClientError;

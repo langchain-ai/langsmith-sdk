@@ -1,7 +1,7 @@
 use futures::stream::{FuturesUnordered, StreamExt};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::multipart::{Form, Part};
-use sonic_rs::to_vec;
+use serde_json::to_vec;
 use tokio::sync::mpsc::Receiver;
 use tokio::task;
 use tokio::time::{sleep, Instant};
