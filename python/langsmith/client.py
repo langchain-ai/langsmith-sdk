@@ -3603,7 +3603,12 @@ class Client:
         *,
         upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
     ) -> ls_schemas.UpsertExamplesResponse:
-        """Upsert examples."""
+        """Upsert examples.
+
+        .. deprecated:: 0.1.0
+           This method is deprecated. Use :func:`langsmith.upload_examples_multipart` instead.
+
+        """  # noqa: E501
         if not (self.info.instance_flags or {}).get(
             "examples_multipart_enabled", False
         ):
