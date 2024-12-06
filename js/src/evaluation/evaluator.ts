@@ -6,7 +6,7 @@ import {
   ValueType,
 } from "../schemas.js";
 import { v4 as uuidv4 } from "uuid";
-import { traceable, wrapFunctionAndEnsureTraceable } from "../traceable.js";
+import { TraceableFunction, traceable } from "../traceable.js";
 import { RunTreeConfig } from "../run_trees.js";
 
 /**
@@ -87,7 +87,7 @@ export interface RunEvaluator {
     run: Run,
     example?: Example,
     options?: Partial<RunTreeConfig>
-  ): Promise<EvaluationResult>;
+  ): Promise<EvaluationResult | EvaluationResults>;
 }
 
 export type RunEvaluatorLike =
@@ -95,7 +95,26 @@ export type RunEvaluatorLike =
       run: Run,
       example?: Example
     ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults);
+  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
+  | ((
+      run: Run,
+      example: Example
+    ) => Promise<EvaluationResult | EvaluationResults>)
+  | ((run: Run, example: Example) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => Promise<EvaluationResult | EvaluationResults>);
 
 /**
  * Wraps an evaluator function + implements the RunEvaluator interface.
@@ -106,19 +125,45 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
   func: Func;
 
   constructor(evaluator: Func) {
-    const wrappedFunc = (input: Record<string, any>) => {
-      const runAndExample = input.langSmithRunAndExample;
-      return evaluator(...Object.values(runAndExample));
-    };
-    this.func = wrappedFunc as Func;
+    this.func = ((input: {
+      langSmithRunAndExample: { run: Run; example: Example };
+    }) => {
+      const { run, example } = input.langSmithRunAndExample;
+
+      return evaluator(
+        {
+          ...run,
+          run,
+          example,
+          inputs: example?.inputs,
+          outputs: run?.outputs,
+          referenceOutputs: example?.outputs,
+        },
+        example
+      );
+    }) as Func;
+  }
+
+  private isEvaluationResults(x: unknown): x is EvaluationResults {
+    return (
+      typeof x === "object" &&
+      x != null &&
+      "results" in x &&
+      Array.isArray(x.results) &&
+      x.results.length > 0
+    );
   }
 
   private coerceEvaluationResults(
     results: Record<string, any> | EvaluationResults,
     sourceRunId: string
-  ): EvaluationResult {
-    if ("results" in results) {
-      throw new Error("EvaluationResults not supported yet.");
+  ): EvaluationResult | EvaluationResults {
+    if (this.isEvaluationResults(results)) {
+      return {
+        results: results.results.map((r) =>
+          this.coerceEvaluationResult(r, sourceRunId, false)
+        ),
+      };
     }
 
     return this.coerceEvaluationResult(
@@ -161,7 +206,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     run: Run,
     example?: Example,
     options?: Partial<RunTreeConfig>
-  ): Promise<EvaluationResult> {
+  ): Promise<EvaluationResult | EvaluationResults> {
     const sourceRunId = uuidv4();
     const metadata: Record<string, any> = {
       targetRunId: run.id,
@@ -169,24 +214,27 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     if ("session_id" in run) {
       metadata["experiment"] = run.session_id;
     }
-    const wrappedTraceableFunc: ReturnType<typeof traceable> =
-      wrapFunctionAndEnsureTraceable<Func>(
-        this.func,
-        options || {},
-        "evaluator"
-      );
-    // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
-    // inputs. This key is extracted in the wrapped function, with `run` and
-    // `example` passed to evaluator function as arguments.
-    const langSmithRunAndExample = {
-      run,
-      example,
-    };
-    const result = (await wrappedTraceableFunc(
-      { langSmithRunAndExample },
+
+    if (typeof this.func !== "function") {
+      throw new Error("Target must be runnable function");
+    }
+
+    const wrappedTraceableFunc: TraceableFunction<Func> = traceable<Func>(
+      this.func,
       {
-        metadata,
+        project_name: "evaluators",
+        name: "evaluator",
+        id: sourceRunId,
+        ...options,
       }
+    );
+
+    const result = (await wrappedTraceableFunc(
+      // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
+      // inputs. This key is extracted in the wrapped function, with `run` and
+      // `example` passed to evaluator function as arguments.
+      { langSmithRunAndExample: { run, example } },
+      { metadata }
     )) as EvaluationResults | Record<string, any>;
 
     // Check the one required property of EvaluationResult since 'instanceof' is not possible

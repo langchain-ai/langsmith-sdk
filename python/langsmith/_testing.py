@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import atexit
-import concurrent.futures
 import datetime
 import functools
 import inspect
@@ -13,18 +12,18 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
 
-import orjson
-import pytest
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import env as ls_env
 from langsmith import run_helpers as rh
+from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal import _orjson
 
 try:
-    import pytest
+    import pytest  # type: ignore
 
     SkipException = pytest.skip.Exception
 except ImportError:
@@ -41,13 +40,13 @@ U = TypeVar("U")
 
 
 @overload
-def unit(
+def test(
     func: Callable,
 ) -> Callable: ...
 
 
 @overload
-def unit(
+def test(
     *,
     id: Optional[uuid.UUID] = None,
     output_keys: Optional[Sequence[str]] = None,
@@ -56,8 +55,8 @@ def unit(
 ) -> Callable[[Callable], Callable]: ...
 
 
-def unit(*args: Any, **kwargs: Any) -> Callable:
-    """Create a unit test case in LangSmith.
+def test(*args: Any, **kwargs: Any) -> Callable:
+    """Create a test case in LangSmith.
 
     This decorator is used to mark a function as a test case for LangSmith. It ensures
     that the necessary example data is created and associated with the test function.
@@ -91,9 +90,9 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
              without re-executing the code. Requires the 'langsmith[vcr]' package.
 
     Example:
-        For basic usage, simply decorate a test function with `@unit`:
+        For basic usage, simply decorate a test function with `@test`:
 
-        >>> @unit
+        >>> @test
         ... def test_addition():
         ...     assert 3 + 4 == 7
 
@@ -107,7 +106,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ... def generate_numbers():
         ...     return 3, 4
 
-        >>> @unit
+        >>> @test
         ... def test_nested():
         ...     # Traced code will be included in the test case
         ...     a, b = generate_numbers()
@@ -129,7 +128,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         >>> import openai
         >>> from langsmith.wrappers import wrap_openai
         >>> oai_client = wrap_openai(openai.Client())
-        >>> @unit
+        >>> @test
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
         ...     response = oai_client.chat.completions.create(
@@ -145,7 +144,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         `expect` to score and make approximate assertions on your results.
 
         >>> from langsmith import expect
-        >>> @unit
+        >>> @test
         ... def test_output_semantically_close():
         ...     response = oai_client.chat.completions.create(
         ...         model="gpt-3.5-turbo",
@@ -169,7 +168,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ...         # And then log a pass/fail score to LangSmith
         ...     ).to_be_less_than(1.0)
 
-        The `@unit` decorator works natively with pytest fixtures.
+        The `@test` decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.
 
         >>> import pytest
@@ -177,7 +176,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         ... def some_input():
         ...     return "Some input"
         >>>
-        >>> @unit
+        >>> @test
         ... def test_with_fixture(some_input: str):
         ...     assert "input" in some_input
         >>>
@@ -185,7 +184,7 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         You can still use pytest.parametrize() as usual to run multiple test cases
         using the same test function.
 
-        >>> @unit(output_keys=["expected"])
+        >>> @test(output_keys=["expected"])
         ... @pytest.mark.parametrize(
         ...     "a, b, expected",
         ...     [
@@ -199,18 +198,18 @@ def unit(*args: Any, **kwargs: Any) -> Callable:
         By default, each test case will be assigned a consistent, unique identifier
         based on the function name and module. You can also provide a custom identifier
         using the `id` argument:
-        >>> @unit(id="1a77e4b5-1d38-4081-b829-b0442cf3f145")
+        >>> @test(id="1a77e4b5-1d38-4081-b829-b0442cf3f145")
         ... def test_multiplication():
         ...     assert 3 * 4 == 12
 
-        By default, all unit test inputs are saved as "inputs" to a dataset.
+        By default, all test test inputs are saved as "inputs" to a dataset.
         You can specify the `output_keys` argument to persist those keys
         within the dataset's "outputs" fields.
 
         >>> @pytest.fixture
         ... def expected_output():
         ...     return "input"
-        >>> @unit(output_keys=["expected_output"])
+        >>> @test(output_keys=["expected_output"])
         ... def test_with_expected_output(some_input: str, expected_output: str):
         ...     assert expected_output in some_input
 
@@ -300,7 +299,7 @@ def _get_test_suite(
         return client.read_dataset(dataset_name=test_suite_name)
     else:
         repo = ls_env.get_git_info().get("remote_url") or ""
-        description = "Unit test suite"
+        description = "Test suite"
         if repo:
             description += f" for {repo}"
         return client.create_dataset(
@@ -374,9 +373,8 @@ VT = TypeVar("VT", bound=Optional[dict])
 def _serde_example_values(values: VT) -> VT:
     if values is None:
         return values
-    # Don't try to magically serialize Python objects, just use their REPRs.
-    bts = ls_client._dumps_json(values, serialize_py=False)
-    return orjson.loads(bts)
+    bts = ls_client._dumps_json(values)
+    return _orjson.loads(bts)
 
 
 class _LangSmithTestSuite:
@@ -389,11 +387,11 @@ class _LangSmithTestSuite:
         experiment: ls_schemas.TracerSession,
         dataset: ls_schemas.Dataset,
     ):
-        self.client = client or ls_client.Client()
+        self.client = client or rt.get_cached_client()
         self._experiment = experiment
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
         atexit.register(_end_tests, self)
 
     @property
@@ -410,10 +408,13 @@ class _LangSmithTestSuite:
 
     @classmethod
     def from_test(
-        cls, client: Optional[ls_client.Client], func: Callable
+        cls,
+        client: Optional[ls_client.Client],
+        func: Callable,
+        test_suite_name: Optional[str] = None,
     ) -> _LangSmithTestSuite:
-        client = client or ls_client.Client()
-        test_suite_name = _get_test_suite_name(func)
+        client = client or rt.get_cached_client()
+        test_suite_name = test_suite_name or _get_test_suite_name(func)
         with cls._lock:
             if not cls._instances:
                 cls._instances = {}
@@ -497,6 +498,7 @@ class _LangSmithTestSuite:
                 outputs=outputs_,
                 dataset_id=self.id,
                 metadata=metadata,
+                created_at=self._experiment.start_time,
             )
         if example.modified_at:
             self.update_version(example.modified_at)
@@ -524,7 +526,7 @@ def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
 ) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
-    client = langtest_extra["client"] or ls_client.Client()
+    client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
     inputs: dict = rh._get_inputs_safe(signature, *args, **kwargs)
@@ -532,7 +534,9 @@ def _ensure_example(
     if output_keys:
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
-    test_suite = _LangSmithTestSuite.from_test(client, func)
+    test_suite = _LangSmithTestSuite.from_test(
+        client, func, langtest_extra.get("test_suite_name")
+    )
     example_id, example_name = _get_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id
     test_suite.sync_example(
@@ -670,3 +674,7 @@ async def _arun_test(
         cache_path, ignore_hosts=[test_suite.client.api_url]
     ):
         await _test()
+
+
+# For backwards compatibility
+unit = test

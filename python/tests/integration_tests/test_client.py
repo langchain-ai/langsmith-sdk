@@ -2,21 +2,32 @@
 
 import datetime
 import io
+import logging
 import os
 import random
 import string
 import sys
 import time
+import uuid
 from datetime import timedelta
-from typing import Any, Callable, Dict, cast
+from typing import Any, Callable, Dict
+from unittest import mock
 from uuid import uuid4
 
 import pytest
 from freezegun import freeze_time
+from pydantic import BaseModel
+from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 from langsmith.client import ID_TYPE, Client
 from langsmith.schemas import DataType
-from langsmith.utils import LangSmithConnectionError, LangSmithError
+from langsmith.utils import (
+    LangSmithConnectionError,
+    LangSmithError,
+    get_env_var,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def wait_for(
@@ -35,10 +46,8 @@ def wait_for(
 
 
 @pytest.fixture
-def langchain_client(monkeypatch: pytest.MonkeyPatch) -> Client:
-    # monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
+def langchain_client() -> Client:
+    get_env_var.cache_clear()
     return Client()
 
 
@@ -101,13 +110,218 @@ def test_datasets(langchain_client: Client) -> None:
     assert updated_example_value.outputs["col2"] == "updatedExampleCol2"
     assert (updated_example_value.metadata or {}).get("foo") == "bar"
 
+    new_example = langchain_client.create_example(
+        inputs={"col1": "newAddedExampleCol1"},
+        outputs={"col2": "newAddedExampleCol2"},
+        dataset_id=new_dataset.id,
+    )
+    example_value = langchain_client.read_example(new_example.id)
+    assert example_value.inputs is not None
+    assert example_value.inputs["col1"] == "newAddedExampleCol1"
+    assert example_value.outputs is not None
+    assert example_value.outputs["col2"] == "newAddedExampleCol2"
+
+    langchain_client.update_examples(
+        example_ids=[new_example.id, example.id],
+        inputs=[{"col1": "newUpdatedExampleCol1"}, {"col1": "newNewUpdatedExampleCol"}],
+        outputs=[
+            {"col2": "newUpdatedExampleCol2"},
+            {"col2": "newNewUpdatedExampleCol2"},
+        ],
+        metadata=[{"foo": "baz"}, {"foo": "qux"}],
+    )
+    updated_example = langchain_client.read_example(new_example.id)
+    assert updated_example.id == new_example.id
+    assert updated_example.inputs["col1"] == "newUpdatedExampleCol1"
+    assert updated_example.outputs is not None
+    assert updated_example.outputs["col2"] == "newUpdatedExampleCol2"
+    assert (updated_example.metadata or {}).get("foo") == "baz"
+
+    updated_example = langchain_client.read_example(example.id)
+    assert updated_example.id == example.id
+    assert updated_example.inputs["col1"] == "newNewUpdatedExampleCol"
+    assert updated_example.outputs is not None
+    assert updated_example.outputs["col2"] == "newNewUpdatedExampleCol2"
+    assert (updated_example.metadata or {}).get("foo") == "qux"
+
     langchain_client.delete_example(example.id)
     examples2 = list(
         langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
-    assert len(examples2) == 1
-
+    assert len(examples2) == 2
     langchain_client.delete_dataset(dataset_id=dataset_id)
+
+
+def test_list_examples(langchain_client: Client) -> None:
+    """Test list_examples."""
+    examples = [
+        ("Shut up, idiot", "Toxic", ["train", "validation"]),
+        ("You're a wonderful person", "Not toxic", "test"),
+        ("This is the worst thing ever", "Toxic", ["train"]),
+        ("I had a great day today", "Not toxic", "test"),
+        ("Nobody likes you", "Toxic", "train"),
+        ("This is unacceptable. I want to speak to the manager.", "Not toxic", None),
+    ]
+
+    dataset_name = "__test_list_examples" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+    inputs, outputs, splits = zip(
+        *[({"text": text}, {"label": label}, split) for text, label, split in examples]
+    )
+    langchain_client.create_examples(
+        inputs=inputs, outputs=outputs, splits=splits, dataset_id=dataset.id
+    )
+    example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
+    assert len(example_list) == len(examples)
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, offset=1, limit=2)
+    )
+    assert len(example_list) == 2
+
+    example_list = list(langchain_client.list_examples(dataset_id=dataset.id, offset=1))
+    assert len(example_list) == len(examples) - 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
+    )
+    assert len(example_list) == 3
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["validation"])
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
+    )
+    assert len(example_list) == 2
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train", "test"])
+    )
+    assert len(example_list) == 5
+
+    langchain_client.update_example(
+        example_id=[
+            example.id
+            for example in example_list
+            if example.metadata is not None
+            and "test" in example.metadata.get("dataset_split", [])
+        ][0],
+        split="train",
+    )
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
+    )
+    assert len(example_list) == 4
+
+    langchain_client.create_example(
+        inputs={"text": "What's up!"},
+        outputs={"label": "Not toxic"},
+        metadata={"foo": "bar", "baz": "qux"},
+        dataset_name=dataset_name,
+    )
+
+    example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
+    assert len(example_list) == len(examples) + 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, metadata={"foo": "bar"})
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(dataset_id=dataset.id, metadata={"baz": "qux"})
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, metadata={"foo": "bar", "baz": "qux"}
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, metadata={"foo": "bar", "baz": "quux"}
+        )
+    )
+    assert len(example_list) == 0
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='exists(metadata, "baz")'
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='has("metadata", \'{"foo": "bar"}\')'
+        )
+    )
+    assert len(example_list) == 1
+
+    example_list = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id, filter='exists(metadata, "bazzz")'
+        )
+    )
+    assert len(example_list) == 0
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+@pytest.mark.slow
+def test_similar_examples(langchain_client: Client) -> None:
+    inputs = [{"text": "how are you"}, {"text": "good bye"}, {"text": "see ya later"}]
+    outputs = [
+        {"response": "good how are you"},
+        {"response": "ta ta"},
+        {"response": "tootles"},
+    ]
+    dataset_name = "__test_similar_examples" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        inputs_schema={
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        outputs_schema={
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "response": {"type": "string"},
+            },
+            "required": ["response"],
+            "additionalProperties": False,
+        },
+    )
+    langchain_client.create_examples(
+        inputs=inputs, outputs=outputs, dataset_id=dataset.id
+    )
+    langchain_client.index_dataset(dataset_id=dataset.id)
+    # Need to wait for indexing to finish.
+    time.sleep(5)
+    similar_list = langchain_client.similar_examples(
+        {"text": "howdy"}, limit=2, dataset_id=dataset.id
+    )
+    assert len(similar_list) == 2
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
 @pytest.mark.skip(reason="This test is flaky")
@@ -133,9 +347,11 @@ def test_persist_update_run(langchain_client: Client) -> None:
         langchain_client.create_run(**run)
         run["outputs"] = {"output": ["Hi"]}
         run["extra"]["foo"] = "bar"
+        run["name"] = "test_run_updated"
         langchain_client.update_run(run["id"], **run)
         wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
         stored_run = langchain_client.read_run(run["id"])
+        assert stored_run.name == run["name"]
         assert stored_run.id == run["id"]
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
@@ -145,21 +361,15 @@ def test_persist_update_run(langchain_client: Client) -> None:
 
 
 @pytest.mark.parametrize("uri", ["http://localhost:1981", "http://api.langchain.minus"])
-def test_error_surfaced_invalid_uri(monkeypatch: pytest.MonkeyPatch, uri: str) -> None:
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", uri)
-    monkeypatch.setenv("LANGCHAIN_API_KEY", "test")
-    client = Client()
+def test_error_surfaced_invalid_uri(uri: str) -> None:
+    get_env_var.cache_clear()
+    client = Client(api_url=uri, api_key="test")
     # expect connect error
     with pytest.raises(LangSmithConnectionError):
         client.create_run("My Run", inputs={"text": "hello world"}, run_type="llm")
 
 
-def test_create_dataset(
-    monkeypatch: pytest.MonkeyPatch, langchain_client: Client
-) -> None:
-    """Test persisting runs and adding feedback."""
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://dev.api.smith.langchain.com")
-    monkeypatch.setenv("LANGCHAIN_API_KEY", "ls__29e47afc8ad24323aef27444617fb8db")
+def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -203,12 +413,67 @@ def test_create_dataset(
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+def test_dataset_schema_validation(langchain_client: Client) -> None:
+    dataset_name = "__test_create_dataset" + uuid4().hex[:4]
+    if langchain_client.has_dataset(dataset_name=dataset_name):
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    class InputSchema(BaseModel):
+        input: str
+
+    class OutputSchema(BaseModel):
+        output: str
+
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        data_type=DataType.kv,
+        inputs_schema=InputSchema.model_json_schema(),
+        outputs_schema=OutputSchema.model_json_schema(),
+    )
+
+    # confirm we store the schema from the create request
+    assert dataset.inputs_schema == InputSchema.model_json_schema()
+    assert dataset.outputs_schema == OutputSchema.model_json_schema()
+
+    # create an example that matches the schema, which should succeed
+    langchain_client.create_example(
+        inputs={"input": "hello world"},
+        outputs={"output": "hello"},
+        dataset_id=dataset.id,
+    )
+
+    # create an example that does not match the input schema
+    with pytest.raises(LangSmithError):
+        langchain_client.create_example(
+            inputs={"john": 1},
+            outputs={"output": "hello"},
+            dataset_id=dataset.id,
+        )
+
+    # create an example that does not match the output schema
+    with pytest.raises(LangSmithError):
+        langchain_client.create_example(
+            inputs={"input": "hello world"},
+            outputs={"john": 1},
+            dataset_id=dataset.id,
+        )
+
+    # assert read API includes the schema definition
+    read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
+    assert read_dataset.inputs_schema == InputSchema.model_json_schema()
+    assert read_dataset.outputs_schema == OutputSchema.model_json_schema()
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
 @freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
     ds1n = "__test_list_datasets1" + uuid4().hex[:4]
     ds2n = "__test_list_datasets2" + uuid4().hex[:4]
     try:
-        dataset1 = langchain_client.create_dataset(ds1n, data_type=DataType.llm)
+        dataset1 = langchain_client.create_dataset(
+            ds1n, data_type=DataType.llm, metadata={"foo": "barqux"}
+        )
         dataset2 = langchain_client.create_dataset(ds2n, data_type=DataType.kv)
         assert dataset1.url is not None
         assert dataset2.url is not None
@@ -228,6 +493,13 @@ def test_list_datasets(langchain_client: Client) -> None:
         datasets = list(
             langchain_client.list_datasets(
                 dataset_ids=[dataset1.id, dataset2.id], dataset_name=ds1n
+            )
+        )
+        assert len(datasets) == 1
+        # Sub-filter on metadata
+        datasets = list(
+            langchain_client.list_datasets(
+                dataset_ids=[dataset1.id, dataset2.id], metadata={"foo": "barqux"}
             )
         )
         assert len(datasets) == 1
@@ -347,9 +619,13 @@ def test_create_chat_example(
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_batch_ingest_runs(langchain_client: Client) -> None:
+@pytest.mark.parametrize("use_multipart_endpoint", [True, False])
+def test_batch_ingest_runs(
+    langchain_client: Client, use_multipart_endpoint: bool
+) -> None:
     _session = "__test_batch_ingest_runs"
     trace_id = uuid4()
+    trace_id_2 = uuid4()
     run_id_2 = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S%fZ"
@@ -357,6 +633,16 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
     later_time = (
         datetime.datetime.now(datetime.timezone.utc) + timedelta(seconds=1)
     ).strftime("%Y%m%dT%H%M%S%fZ")
+
+    """
+    Here we create:
+    - run 1: a top level trace with inputs and outputs
+    - run 3: a top level trace with an error with inputs and outputs
+    - run 2: a child of run 1 with inputs, no outputs
+    and we update:
+    - run 2 (the child): to add outputs
+    """
+
     runs_to_create = [
         {
             "id": str(trace_id),
@@ -367,6 +653,16 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             "trace_id": str(trace_id),
             "inputs": {"input1": 1, "input2": 2},
             "outputs": {"output1": 3, "output2": 4},
+        },
+        {
+            "id": str(trace_id_2),
+            "session_name": _session,
+            "name": "run 3",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_id_2)}",
+            "trace_id": str(trace_id_2),
+            "inputs": {"input1": 1, "input2": 2},
+            "error": "error",
         },
         {
             "id": str(run_id_2),
@@ -387,20 +683,24 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             f"{later_time}{str(run_id_2)}",
             "trace_id": str(trace_id),
             "parent_run_id": str(trace_id),
-            "outputs": {"output1": 7, "output2": 8},
+            "outputs": {"output1": 4, "output2": 5},
         },
     ]
-    langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
+    if use_multipart_endpoint:
+        langchain_client.multipart_ingest(create=runs_to_create, update=runs_to_update)
+    else:
+        langchain_client.batch_ingest_runs(create=runs_to_create, update=runs_to_update)
     runs = []
     wait = 4
     for _ in range(15):
         try:
             runs = list(
                 langchain_client.list_runs(
-                    project_name=_session, run_ids=[str(trace_id), str(run_id_2)]
+                    project_name=_session,
+                    run_ids=[str(trace_id), str(run_id_2), str(trace_id_2)],
                 )
             )
-            if len(runs) == 2:
+            if len(runs) == 3:
                 break
             raise LangSmithError("Runs not created yet")
         except LangSmithError:
@@ -408,22 +708,153 @@ def test_batch_ingest_runs(langchain_client: Client) -> None:
             wait += 1
     else:
         raise ValueError("Runs not created in time")
-    assert len(runs) == 2
+    assert len(runs) == 3
     # Write all the assertions here
-    runs = sorted(runs, key=lambda x: cast(str, x.dotted_order))
-    assert len(runs) == 2
+    assert len(runs) == 3
 
     # Assert inputs and outputs of run 1
-    run1 = runs[0]
+    run1 = next(run for run in runs if run.id == trace_id)
     assert run1.inputs == {"input1": 1, "input2": 2}
     assert run1.outputs == {"output1": 3, "output2": 4}
 
     # Assert inputs and outputs of run 2
-    run2 = runs[1]
+    run2 = next(run for run in runs if run.id == run_id_2)
     assert run2.inputs == {"input1": 5, "input2": 6}
-    assert run2.outputs == {"output1": 7, "output2": 8}
+    assert run2.outputs == {"output1": 4, "output2": 5}
 
-    langchain_client.delete_project(project_name=_session)
+    # Assert inputs and outputs of run 3
+    run3 = next(run for run in runs if run.id == trace_id_2)
+    assert run3.inputs == {"input1": 1, "input2": 2}
+    assert run3.error == "error"
+
+
+def test_multipart_ingest_empty(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    runs_to_create: list[dict] = []
+    runs_to_update: list[dict] = []
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=runs_to_update)
+
+        assert not caplog.records
+
+
+def test_multipart_ingest_create_then_update(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_create_then_update"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+
+        assert not caplog.records
+
+    runs_to_update: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "outputs": {"output1": 3, "output2": 4},
+        }
+    ]
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=[], update=runs_to_update)
+
+        assert not caplog.records
+
+
+def test_multipart_ingest_update_then_create(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_update_then_create"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_update: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "outputs": {"output1": 3, "output2": 4},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=[], update=runs_to_update)
+
+        assert not caplog.records
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+
+        assert not caplog.records
+
+
+def test_multipart_ingest_create_wrong_type(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_create_then_update"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "agent",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+
+        # this should 422
+        assert len(caplog.records) == 1, "Should get 1 warning for 422, not retried"
+        assert all("422" in record.message for record in caplog.records)
 
 
 @freeze_time("2023-01-01")
@@ -527,3 +958,104 @@ def test_surrogates():
         run_type="llm",
         end_time=datetime.datetime.now(datetime.timezone.utc),
     )
+
+
+def test_runs_stats():
+    langchain_client = Client()
+    # We always have stuff in the "default" project...
+    stats = langchain_client.get_run_stats(project_names=["default"], run_type="llm")
+    assert stats
+
+
+def test_slow_run_read_multipart(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+):
+    myobj = {f"key_{i}": f"val_{i}" for i in range(500)}
+    id_ = str(uuid.uuid4())
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+    run_to_create = {
+        "id": id_,
+        "session_name": "default",
+        "name": "trace a root",
+        "run_type": "chain",
+        "dotted_order": f"{current_time}{id_}",
+        "trace_id": id_,
+        "inputs": myobj,
+    }
+
+    class CB:
+        def __init__(self):
+            self.called = 0
+            self.start_time = None
+
+        def __call__(self, monitor: MultipartEncoderMonitor):
+            self.called += 1
+            if not self.start_time:
+                self.start_time = time.time()
+            logger.debug(
+                f"[{self.called}]: {monitor.bytes_read} bytes,"
+                f" {time.time() - self.start_time:.2f} seconds"
+                " elapsed",
+            )
+            if self.called == 1:
+                time.sleep(6)
+
+    def create_encoder(*args, **kwargs):
+        encoder = MultipartEncoder(*args, **kwargs)
+        encoder = MultipartEncoderMonitor(encoder, CB())
+        return encoder
+
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        with mock.patch(
+            "langsmith.client.rqtb_multipart.MultipartEncoder", create_encoder
+        ):
+            langchain_client.create_run(**run_to_create)
+            time.sleep(1)
+            start_time = time.time()
+            while time.time() - start_time < 8:
+                myobj["key_1"]
+
+        assert not caplog.records
+
+
+def test_examples_length_validation(langchain_client: Client) -> None:
+    """Test that mismatched lengths raise ValueError for create and update examples."""
+    dataset_name = "__test_examples_length_validation" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    # Test create_examples validation
+    inputs = [{"text": "hello"}, {"text": "world"}]
+    outputs = [{"response": "hi"}]  # One less than inputs
+    with pytest.raises(ValueError) as exc_info:
+        langchain_client.create_examples(
+            inputs=inputs, outputs=outputs, dataset_id=dataset.id
+        )
+    assert "Length of outputs (1) does not match length of inputs (2)" in str(
+        exc_info.value
+    )
+
+    # Create some valid examples for testing update
+    langchain_client.create_examples(
+        inputs=[{"text": "hello"}, {"text": "world"}],
+        outputs=[{"response": "hi"}, {"response": "earth"}],
+        dataset_id=dataset.id,
+    )
+    example_ids = [
+        example.id for example in langchain_client.list_examples(dataset_id=dataset.id)
+    ]
+
+    # Test update_examples validation
+    with pytest.raises(ValueError) as exc_info:
+        langchain_client.update_examples(
+            example_ids=example_ids,
+            inputs=[{"text": "new hello"}],  # One less than example_ids
+            outputs=[{"response": "new hi"}, {"response": "new earth"}],
+        )
+    assert "Length of inputs (1) does not match length of examples (2)" in str(
+        exc_info.value
+    )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)

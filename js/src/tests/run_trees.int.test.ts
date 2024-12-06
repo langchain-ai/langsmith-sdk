@@ -1,4 +1,5 @@
 import { Client } from "../client.js";
+import * as uuid from "uuid";
 import {
   RunTree,
   RunTreeConfig,
@@ -14,14 +15,8 @@ import {
 test.concurrent(
   "Test post and patch run",
   async () => {
-    const projectName = `__test_run_tree`;
-    const langchainClient = new Client({ timeout_ms: 30000 });
-    try {
-      await langchainClient.readProject({ projectName });
-      await langchainClient.deleteProject({ projectName });
-    } catch (e) {
-      // Pass
-    }
+    const projectName = `__test_run_tree_js ${uuid.v4()}`;
+    const langchainClient = new Client({ timeout_ms: 30_000 });
     const parentRunConfig: RunTreeConfig = {
       name: "parent_run",
       run_type: "chain",
@@ -38,7 +33,7 @@ test.concurrent(
     );
     await parent_run.postRun();
 
-    const child_llm_run = await parent_run.createChild({
+    const child_llm_run = parent_run.createChild({
       name: "child_run",
       run_type: "llm",
       inputs: { text: "hello world" },
@@ -46,7 +41,11 @@ test.concurrent(
     expect(child_llm_run.dotted_order).toEqual(
       parent_run.dotted_order +
         "." +
-        convertToDottedOrderFormat(child_llm_run.start_time, child_llm_run.id)
+        convertToDottedOrderFormat(
+          child_llm_run.start_time,
+          child_llm_run.id,
+          2
+        )
     );
     expect(child_llm_run.trace_id).toEqual(parent_run.trace_id);
     await child_llm_run.postRun();
@@ -109,6 +108,20 @@ test.concurrent(
       runMap.get("parent_run")?.id
     );
     expect(runMap.get("parent_run")?.parent_run_id).toBeNull();
+    await waitUntil(
+      async () => {
+        try {
+          const runs_ = await toArray(
+            langchainClient.listRuns({ traceId: runs[0].trace_id })
+          );
+          return runs_.length === 5;
+        } catch (e) {
+          return false;
+        }
+      },
+      30_000, // Wait up to 30 seconds
+      3000 // every 3 second
+    );
 
     const traceRunsIter = langchainClient.listRuns({
       traceId: runs[0].trace_id,
@@ -198,6 +211,35 @@ test.concurrent(
         }
       }
     }
+  },
+  120_000
+);
+
+test.concurrent(
+  "Test end() write to metadata",
+  async () => {
+    const runId = uuid.v4();
+    const projectName = `__test_end_metadata_run_tree_js ${runId}`;
+    const langchainClient = new Client({ timeout_ms: 30_000 });
+    const parentRunConfig: RunTreeConfig = {
+      name: "parent_run",
+      id: runId,
+      run_type: "chain",
+      project_name: projectName,
+      client: langchainClient,
+    };
+
+    const parentRun = new RunTree(parentRunConfig);
+    await parentRun.end({ output: ["Hi"] }, undefined, undefined, {
+      final_metadata: runId,
+    });
+    await parentRun.postRun();
+
+    await pollRunsUntilCount(langchainClient, projectName, 1);
+    const runs = await toArray(langchainClient.listRuns({ id: [runId] }));
+    expect(runs.length).toEqual(1);
+    expect(runs[0].extra);
+    await langchainClient.deleteProject({ projectName });
   },
   120_000
 );

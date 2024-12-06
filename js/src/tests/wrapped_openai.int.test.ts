@@ -4,6 +4,12 @@ import { jest } from "@jest/globals";
 import { OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { Client } from "../client.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { z } from "zod";
+import { UsageMetadata } from "../schemas.js";
+import fs from "fs";
 
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
@@ -59,7 +65,7 @@ test.concurrent("chat.completions", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: unknown[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
   }
@@ -72,7 +78,7 @@ test.concurrent("chat.completions", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -124,7 +130,7 @@ test.concurrent("chat.completions", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: unknown[] = [];
   for await (const chunk of patchedStreamWithMetadata) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -244,7 +250,7 @@ test.concurrent("chat completions with tool calling", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: any[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
   }
@@ -262,7 +268,7 @@ test.concurrent("chat completions with tool calling", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: any[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -303,7 +309,7 @@ test.concurrent("chat completions with tool calling", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: any[] = [];
   for await (const chunk of patchedStream2) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -320,6 +326,10 @@ test.concurrent("chat completions with tool calling", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
       thing1: "thing2",
+      ls_model_name: "gpt-3.5-turbo",
+      ls_model_type: "chat",
+      ls_provider: "openai",
+      ls_temperature: 0,
     });
   }
   callSpy.mockClear();
@@ -362,7 +372,7 @@ test.concurrent("completions", async () => {
     stream: true,
   });
 
-  const originalChoices = [];
+  const originalChoices: unknown[] = [];
   for await (const chunk of originalStream) {
     originalChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -378,7 +388,7 @@ test.concurrent("completions", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -409,7 +419,7 @@ test.concurrent("completions", async () => {
     }
   );
 
-  const patchedChoices2 = [];
+  const patchedChoices2: unknown[] = [];
   for await (const chunk of patchedStream2) {
     patchedChoices2.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -439,7 +449,7 @@ test.skip("with initialization time config", async () => {
     stream: true,
   });
 
-  const patchedChoices = [];
+  const patchedChoices: unknown[] = [];
   for await (const chunk of patchedStream) {
     patchedChoices.push(chunk.choices);
     // @ts-expect-error Should type check streamed output
@@ -461,4 +471,240 @@ test.skip("no tracing with env var unset", async () => {
   });
   expect(patched).toBeDefined();
   console.log(patched);
+});
+
+test("wrapping same instance", async () => {
+  const wrapped = wrapOpenAI(new OpenAI());
+  expect(() => wrapOpenAI(wrapped)).toThrowError(
+    "This instance of OpenAI client has been already wrapped once."
+  );
+});
+
+test("chat.concurrent extra name", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  await openai.chat.completions.create(
+    {
+      messages: [{ role: "user", content: `Say 'red'` }],
+      temperature: 0,
+      seed: 42,
+      model: "gpt-3.5-turbo",
+    },
+    { langsmithExtra: { name: "red", metadata: { customKey: "red" } } }
+  );
+
+  const stream = await openai.chat.completions.create(
+    {
+      messages: [{ role: "user", content: `Say 'green'` }],
+      temperature: 0,
+      seed: 42,
+      model: "gpt-3.5-turbo",
+      stream: true,
+    },
+    { langsmithExtra: { name: "green", metadata: { customKey: "green" } } }
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of stream) {
+    // pass
+  }
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["red:0", "green:1"],
+    edges: [],
+    data: {
+      "red:0": {
+        name: "red",
+        extra: { metadata: { customKey: "red" } },
+        outputs: {
+          choices: [
+            { index: 0, message: { role: "assistant", content: "Red" } },
+          ],
+        },
+      },
+      "green:1": {
+        name: "green",
+        extra: { metadata: { customKey: "green" } },
+        outputs: {
+          choices: [
+            { index: 0, message: { role: "assistant", content: "Green" } },
+          ],
+        },
+      },
+    },
+  });
+});
+
+test.concurrent("beta.chat.completions.parse", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  await openai.beta.chat.completions.parse({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      {
+        role: "user",
+        content: "I am Jacob",
+      },
+    ],
+    response_format: zodResponseFormat(
+      z.object({
+        name: z.string(),
+      }),
+      "name"
+    ),
+  });
+
+  for (const call of callSpy.mock.calls) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
+      ls_model_name: "gpt-4o-mini",
+      ls_model_type: "chat",
+      ls_provider: "openai",
+      ls_temperature: 0,
+    });
+  }
+  callSpy.mockClear();
+});
+
+const usageMetadataTestCases = [
+  {
+    description: "stream",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      stream: true,
+      stream_options: { include_usage: true },
+    },
+    expectUsageMetadata: true,
+  },
+  {
+    description: "stream no usage",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      stream: true,
+    },
+    expectUsageMetadata: false,
+  },
+  {
+    description: "default",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+    },
+    expectUsageMetadata: true,
+  },
+  {
+    description: "reasoning",
+    params: {
+      model: "o1-mini",
+      messages: [
+        {
+          role: "user",
+          content:
+            "Write a bash script that takes a matrix represented as a string with format '[1,2],[3,4],[5,6]' and prints the transpose in the same format.",
+        },
+      ],
+    },
+    expectUsageMetadata: true,
+    checkReasoningTokens: true,
+  },
+];
+
+describe("Usage Metadata Tests", () => {
+  usageMetadataTestCases.forEach(
+    ({ description, params, expectUsageMetadata, checkReasoningTokens }) => {
+      it(`should handle ${description}`, async () => {
+        const { client, callSpy } = mockClient();
+        const openai = wrapOpenAI(new OpenAI(), {
+          tracingEnabled: true,
+          client,
+        });
+
+        const requestParams = { ...params };
+
+        let oaiUsage: OpenAI.CompletionUsage | undefined;
+        if (requestParams.stream) {
+          const stream = await openai.chat.completions.create(
+            requestParams as OpenAI.ChatCompletionCreateParamsStreaming
+          );
+          for await (const chunk of stream) {
+            if (expectUsageMetadata && chunk.usage) {
+              oaiUsage = chunk.usage;
+            }
+          }
+        } else {
+          const res = await openai.chat.completions.create(
+            requestParams as OpenAI.ChatCompletionCreateParams
+          );
+          oaiUsage = (res as OpenAI.ChatCompletion).usage;
+        }
+
+        let usageMetadata: UsageMetadata | undefined;
+        const requestBodies: any = {};
+        for (const call of callSpy.mock.calls) {
+          const request = call[2] as any;
+          const requestBody = JSON.parse(request.body);
+          if (request.method === "POST") {
+            requestBodies["post"] = [requestBody];
+          }
+          if (request.method === "PATCH") {
+            requestBodies["patch"] = [requestBody];
+          }
+          if (requestBody.outputs && requestBody.outputs.usage_metadata) {
+            usageMetadata = requestBody.outputs.usage_metadata;
+            break;
+          }
+        }
+
+        if (expectUsageMetadata) {
+          expect(usageMetadata).not.toBeUndefined();
+          expect(usageMetadata).not.toBeNull();
+          expect(oaiUsage).not.toBeUndefined();
+          expect(oaiUsage).not.toBeNull();
+          expect(usageMetadata!.input_tokens).toEqual(oaiUsage!.prompt_tokens);
+          expect(usageMetadata!.output_tokens).toEqual(
+            oaiUsage!.completion_tokens
+          );
+          expect(usageMetadata!.total_tokens).toEqual(oaiUsage!.total_tokens);
+
+          if (checkReasoningTokens) {
+            expect(usageMetadata!.output_token_details).not.toBeUndefined();
+            expect(
+              usageMetadata!.output_token_details!.reasoning
+            ).not.toBeUndefined();
+            expect(usageMetadata!.output_token_details!.reasoning).toEqual(
+              oaiUsage!.completion_tokens_details?.reasoning_tokens
+            );
+          }
+        } else {
+          expect(usageMetadata).toBeUndefined();
+          expect(oaiUsage).toBeUndefined();
+        }
+
+        if (process.env.WRITE_TOKEN_COUNTING_TEST_DATA === "1") {
+          fs.writeFileSync(
+            `${__dirname}/test_data/langsmith_js_wrap_openai_${description.replace(
+              " ",
+              "_"
+            )}.json`,
+            JSON.stringify(requestBodies, null, 2)
+          );
+        }
+
+        callSpy.mockClear();
+      });
+    }
+  );
 });

@@ -1,5 +1,6 @@
 import pRetry from "p-retry";
 import PQueueMod from "p-queue";
+import { _getFetchImplementation } from "../singletons/fetch.js";
 
 const STATUS_NO_RETRY = [
   400, // Bad Request
@@ -54,7 +55,7 @@ export class AsyncCaller {
 
   protected maxRetries: AsyncCallerParams["maxRetries"];
 
-  private queue: typeof import("p-queue")["default"]["prototype"];
+  queue: typeof import("p-queue")["default"]["prototype"];
 
   private onFailedResponseHook?: ResponseCallback;
 
@@ -152,7 +153,10 @@ export class AsyncCaller {
 
   fetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
     return this.call(() =>
-      fetch(...args).then((res) => (res.ok ? res : Promise.reject(res)))
+      _getFetchImplementation()(...args).then(
+        (res: Awaited<ReturnType<typeof fetch>>) =>
+          res.ok ? res : Promise.reject(res)
+      )
     );
   }
 }

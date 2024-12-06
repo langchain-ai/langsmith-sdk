@@ -47,7 +47,7 @@ def get_git_info(remote: str = "origin") -> GitInfo:
             dirty=None,
             tags=None,
             repo_name=None,
-        ) 
+        )
 
     return {
         "remote_url": exec_git(["remote", "get-url", remote]),

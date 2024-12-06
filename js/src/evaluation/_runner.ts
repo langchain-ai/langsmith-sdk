@@ -6,6 +6,7 @@ import { assertUuid } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { atee } from "../utils/atee.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
+import { printErrorStackTrace } from "../utils/error.js";
 import { randomName } from "./_random_name.js";
 import {
   EvaluationResult,
@@ -13,39 +14,98 @@ import {
   RunEvaluator,
   runEvaluator,
 } from "./evaluator.js";
+import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
+import {
+  evaluateComparative,
+  ComparisonEvaluationResults,
+  ComparativeEvaluator,
+} from "./evaluate_comparative.js";
 
-type TargetT =
-  | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
-  | ((input: KVMap, config?: KVMap) => KVMap)
-  | {
-      invoke: (input: KVMap, config?: KVMap) => KVMap;
-    }
-  | {
-      invoke: (input: KVMap, config?: KVMap) => Promise<KVMap>;
-    };
+type StandardTargetT<TInput = any, TOutput = KVMap> =
+  | ((input: TInput, config?: KVMap) => Promise<TOutput>)
+  | ((input: TInput, config?: KVMap) => TOutput)
+  | { invoke: (input: TInput, config?: KVMap) => TOutput }
+  | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
 
-type TargetNoInvoke =
-  | ((input: KVMap, config?: KVMap) => Promise<KVMap>)
-  | ((input: KVMap, config?: KVMap) => KVMap);
+type ComparativeTargetT =
+  | Array<string>
+  | Array<Promise<ExperimentResults> | ExperimentResults>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TargetT<TInput = any, TOutput = KVMap> =
+  | StandardTargetT<TInput, TOutput>
+  | ComparativeTargetT;
+
 // Data format: dataset-name, dataset_id, or examples
-type DataT = string | AsyncIterable<Example> | Example[];
-// Summary evaluator runs over the whole dataset
+export type DataT = string | AsyncIterable<Example> | Example[];
+
 // and reports aggregate metric(s)
-type SummaryEvaluatorT =
-  | ((
-      runs: Array<Run>,
-      examples: Array<Example>
-    ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((
-      runs: Array<Run>,
-      examples: Array<Example>
-    ) => EvaluationResult | EvaluationResults);
+/** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedSyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>
+) => EvaluationResult | EvaluationResults;
+
+/** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedAsyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>
+) => Promise<EvaluationResult | EvaluationResults>;
+
+// Summary evaluator runs over the whole dataset
+export type SummaryEvaluatorT =
+  | DeprecatedSyncSummaryEvaluator
+  | DeprecatedAsyncSummaryEvaluator
+  | ((args: {
+      runs: Array<Run>;
+      examples: Array<Example>;
+      inputs: Array<Record<string, any>>;
+      outputs: Array<Record<string, any>>;
+      referenceOutputs?: Array<Record<string, any>>;
+    }) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      runs: Array<Run>;
+      examples: Array<Example>;
+      inputs: Array<Record<string, any>>;
+      outputs: Array<Record<string, any>>;
+      referenceOutputs?: Array<Record<string, any>>;
+    }) => Promise<EvaluationResult | EvaluationResults>);
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedRunEvaluator = RunEvaluator;
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedFunctionEvaluator = (
+  run: Run,
+  example?: Example
+) => EvaluationResult | EvaluationResults;
+
+/** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
+type DeprecatedAsyncFunctionEvaluator = (
+  run: Run,
+  example?: Example
+) => Promise<EvaluationResult | EvaluationResults>;
+
 // Row-level evaluator
-type EvaluatorT =
-  | RunEvaluator
-  | ((run: Run, example?: Example) => EvaluationResult)
-  | ((run: Run, example?: Example) => Promise<EvaluationResult>);
+export type EvaluatorT =
+  | DeprecatedRunEvaluator
+  | DeprecatedFunctionEvaluator
+  | DeprecatedAsyncFunctionEvaluator
+  | ((args: {
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => EvaluationResult | EvaluationResults)
+  | ((args: {
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => Promise<EvaluationResult | EvaluationResults>);
 
 interface _ForwardResults {
   run: Run;
@@ -65,25 +125,11 @@ interface _ExperimentManagerArgs {
     unknown
   >;
   examples?: Example[];
+  numRepetitions?: number;
   _runsArray?: Run[];
 }
 
-export interface EvaluateOptions {
-  /**
-   * The dataset to evaluate on. Can be a dataset name, a list of
-   * examples, or a generator of examples.
-   */
-  data: DataT;
-  /**
-   * A list of evaluators to run on each example.
-   * @default undefined
-   */
-  evaluators?: Array<EvaluatorT>;
-  /**
-   * A list of summary evaluators to run on the entire dataset.
-   * @default undefined
-   */
-  summaryEvaluators?: Array<SummaryEvaluatorT>;
+type BaseEvaluateOptions = {
   /**
    * Metadata to attach to the experiment.
    * @default undefined
@@ -95,6 +141,10 @@ export interface EvaluateOptions {
    */
   experimentPrefix?: string;
   /**
+   * A free-form description of the experiment.
+   */
+  description?: string;
+  /**
    * The maximum number of concurrent evaluations to run.
    * @default undefined
    */
@@ -104,19 +154,69 @@ export interface EvaluateOptions {
    * @default undefined
    */
   client?: Client;
+  /**
+   * The number of repetitions to perform. Each example
+   * will be run this many times.
+   * @default 1
+   */
+  numRepetitions?: number;
+};
+
+export interface EvaluateOptions extends BaseEvaluateOptions {
+  /**
+   * A list of evaluators to run on each example.
+   * @default undefined
+   */
+  evaluators?: Array<EvaluatorT>;
+  /**
+   * A list of summary evaluators to run on the entire dataset.
+   * @default undefined
+   */
+  summaryEvaluators?: Array<SummaryEvaluatorT>;
+  /**
+   * The dataset to evaluate on. Can be a dataset name, a list of
+   * examples, or a generator of examples.
+   */
+  data: DataT;
 }
 
-export function evaluate(
+export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
   /**
-   * The target system or function to evaluate.
+   * A list of evaluators to run on each example.
    */
-  target: TargetT,
+  evaluators: Array<ComparativeEvaluator>;
+  /**
+   * Whether to load all child runs for the experiment.
+   * @default false
+   */
+  loadNested?: boolean;
+  /**
+   * Randomize the order of outputs for each evaluation
+   * @default false
+   */
+  randomizeOrder?: boolean;
+}
+
+// Function overloads
+export function evaluate(
+  target: ComparativeTargetT,
+  options: ComparativeEvaluateOptions
+): Promise<ComparisonEvaluationResults>;
+
+export function evaluate(
+  target: StandardTargetT,
   options: EvaluateOptions
-): Promise<ExperimentResults> {
+): Promise<ExperimentResults>;
+
+// Implementation signature
+export function evaluate(
+  target: TargetT,
+  options: EvaluateOptions | ComparativeEvaluateOptions
+): Promise<ExperimentResults | ComparisonEvaluationResults> {
   return _evaluate(target, options);
 }
 
-interface ExperimentResultRow {
+export interface ExperimentResultRow {
   run: Run;
   example: Example;
   evaluationResults: EvaluationResults;
@@ -128,7 +228,7 @@ interface ExperimentResultRow {
  * Supports lazily running predictions and evaluations in parallel to facilitate
  * result streaming and early debugging.
  */
-class _ExperimentManager {
+export class _ExperimentManager {
   _data?: DataT;
 
   _runs?: AsyncGenerator<Run>;
@@ -143,6 +243,8 @@ class _ExperimentManager {
 
   _examples?: Example[];
 
+  _numRepetitions?: number;
+
   _runsArray?: Run[];
 
   client: Client;
@@ -152,6 +254,7 @@ class _ExperimentManager {
   _experimentName: string;
 
   _metadata: KVMap;
+  _description?: string;
 
   get experimentName(): string {
     if (this._experimentName) {
@@ -176,7 +279,15 @@ class _ExperimentManager {
       for await (const example of unresolvedData) {
         exs.push(example);
       }
-      this.setExamples(exs);
+      if (this._numRepetitions && this._numRepetitions > 0) {
+        const repeatedExamples = [];
+        for (let i = 0; i < this._numRepetitions; i++) {
+          repeatedExamples.push(...exs);
+        }
+        this.setExamples(repeatedExamples);
+      } else {
+        this.setExamples(exs);
+      }
     }
     return this._examples;
   }
@@ -257,6 +368,7 @@ class _ExperimentManager {
 
     this._evaluationResults = args.evaluationResults;
     this._summaryResults = args.summaryResults;
+    this._numRepetitions = args.numRepetitions;
   }
 
   _getExperiment(): TracerSession {
@@ -288,40 +400,64 @@ class _ExperimentManager {
     return projectMetadata;
   }
 
+  async _createProject(firstExample: Example, projectMetadata: KVMap) {
+    // Create the project, updating the experimentName until we find a unique one.
+    let project: TracerSession;
+    const originalExperimentName = this._experimentName;
+    for (let i = 0; i < 10; i++) {
+      try {
+        project = await this.client.createProject({
+          projectName: this._experimentName,
+          referenceDatasetId: firstExample.dataset_id,
+          metadata: projectMetadata,
+          description: this._description,
+        });
+        return project;
+      } catch (e) {
+        // Naming collision
+        if ((e as LangSmithConflictError)?.name === "LangSmithConflictError") {
+          const ent = uuidv4().slice(0, 6);
+          this._experimentName = `${originalExperimentName}-${ent}`;
+        } else {
+          throw e;
+        }
+      }
+    }
+    throw new Error(
+      "Could not generate a unique experiment name within 10 attempts." +
+        " Please try again with a different name."
+    );
+  }
+
   async _getProject(firstExample: Example): Promise<TracerSession> {
     let project: TracerSession;
     if (!this._experiment) {
-      try {
-        const projectMetadata = await this._getExperimentMetadata();
-        project = await this.client.createProject({
-          projectName: this.experimentName,
-          referenceDatasetId: firstExample.dataset_id,
-          metadata: projectMetadata,
-        });
-      } catch (e) {
-        if (String(e).includes("already exists")) {
-          throw e;
-        }
-        throw new Error(
-          `Experiment ${this._experimentName} already exists. Please use a different name.`
-        );
-      }
-    } else {
-      project = this._experiment;
+      const projectMetadata = await this._getExperimentMetadata();
+      project = await this._createProject(firstExample, projectMetadata);
+      this._experiment = project;
     }
-    return project;
+    return this._experiment;
   }
 
-  _printExperimentStart(): void {
-    // @TODO log with experiment URL
+  protected async _printExperimentStart(): Promise<void> {
     console.log(`Starting evaluation of experiment: ${this.experimentName}`);
+
+    const firstExample = this._examples?.[0];
+    const datasetId = firstExample?.dataset_id;
+    if (!datasetId || !this._experiment) return;
+
+    const datasetUrl = await this.client.getDatasetUrl({ datasetId });
+    const compareUrl = `${datasetUrl}/compare?selectedSessions=${this._experiment.id}`;
+
+    console.log(`View results at ${compareUrl}`);
   }
 
   async start(): Promise<_ExperimentManager> {
     const examples = await this.getExamples();
     const firstExample = examples[0];
     const project = await this._getProject(firstExample);
-    this._printExperimentStart();
+    await this._printExperimentStart();
+    this._metadata["num_repetitions"] = this._numRepetitions;
     return new _ExperimentManager({
       examples,
       experiment: project,
@@ -333,7 +469,7 @@ class _ExperimentManager {
   }
 
   async withPredictions(
-    target: TargetNoInvoke,
+    target: StandardTargetT,
     options?: {
       maxConcurrency?: number;
     }
@@ -446,13 +582,13 @@ class _ExperimentManager {
   // Private methods
 
   /**
-   * Run the target function on the examples.
-   * @param {TargetNoInvoke} target The target function to evaluate.
+   * Run the target function or runnable on the examples.
+   * @param {StandardTargetT} target The target function or runnable to evaluate.
    * @param options
    * @returns {AsyncGenerator<_ForwardResults>} An async generator of the results.
    */
   async *_predict(
-    target: TargetNoInvoke,
+    target: StandardTargetT,
     options?: {
       maxConcurrency?: number;
     }
@@ -503,7 +639,6 @@ class _ExperimentManager {
     evaluators: Array<RunEvaluator>,
     currentResults: ExperimentResultRow,
     fields: {
-      experimentName: string;
       client: Client;
     }
   ): Promise<ExperimentResultRow> {
@@ -512,13 +647,14 @@ class _ExperimentManager {
       try {
         const options = {
           reference_example_id: example.id,
-          project_name: fields.experimentName,
+          project_name: "evaluators",
           metadata: {
             example_version: example.modified_at
               ? new Date(example.modified_at).toISOString()
               : new Date(example.created_at).toISOString(),
           },
           client: fields.client,
+          tracingEnabled: true,
         };
         const evaluatorResponse = await evaluator.evaluateRun(
           run,
@@ -532,6 +668,7 @@ class _ExperimentManager {
         console.error(
           `Error running evaluator ${evaluator.evaluateRun.name} on run ${run.id}: ${e}`
         );
+        printErrorStackTrace(e);
       }
     }
 
@@ -560,7 +697,6 @@ class _ExperimentManager {
     if (maxConcurrency === 0) {
       for await (const currentResults of this.getResults()) {
         yield this._runEvaluators(evaluators, currentResults, {
-          experimentName: this.experimentName,
           client: this.client,
         });
       }
@@ -572,7 +708,6 @@ class _ExperimentManager {
       for await (const currentResults of this.getResults()) {
         futures.push(
           caller.call(this._runEvaluators, evaluators, currentResults, {
-            experimentName: this.experimentName,
             client: this.client,
           })
         );
@@ -611,15 +746,17 @@ class _ExperimentManager {
       for (const evaluator of wrappedEvaluators) {
         try {
           const summaryEvalResult = await evaluator(runsArray, examples);
+
           const flattenedResults =
             this.client._selectEvalResults(summaryEvalResult);
           aggregateFeedback.push(...flattenedResults);
           for (const result of flattenedResults) {
-            const { targetRunId, ...feedback } = result;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { targetRunId, key, ...feedback } = result;
             const evaluatorInfo = feedback.evaluatorInfo;
             delete feedback.evaluatorInfo;
 
-            await this.client.createFeedback(null, "key", {
+            await this.client.createFeedback(null, key, {
               ...feedback,
               projectId: projectId,
               sourceInfo: evaluatorInfo,
@@ -631,6 +768,7 @@ class _ExperimentManager {
               evaluator.name
             }: ${JSON.stringify(e, null, 2)}`
           );
+          printErrorStackTrace(e);
         }
       }
 
@@ -644,14 +782,54 @@ class _ExperimentManager {
     const examples = await this.getExamples();
     const modifiedAt = examples.map((ex) => ex.modified_at);
 
-    const maxModifiedAt =
-      modifiedAt.length > 0
-        ? new Date(
-            Math.max(...modifiedAt.map((date) => new Date(date).getTime()))
-          )
-        : undefined;
+    // Python might return microseconds, which we need
+    // to account for when comparing dates.
+    const modifiedAtTime = modifiedAt.map((date) => {
+      function getMiliseconds(isoString: string) {
+        const time = isoString.split("T").at(1);
+        if (!time) return "";
 
-    return maxModifiedAt?.toISOString();
+        const regex = /[0-9]{2}:[0-9]{2}:[0-9]{2}.([0-9]+)/;
+        const strMiliseconds = time.match(regex)?.[1];
+        return strMiliseconds ?? "";
+      }
+
+      const jsDate = new Date(date);
+
+      let source = getMiliseconds(date);
+      let parsed = getMiliseconds(jsDate.toISOString());
+
+      const length = Math.max(source.length, parsed.length);
+      source = source.padEnd(length, "0");
+      parsed = parsed.padEnd(length, "0");
+
+      const microseconds =
+        (Number.parseInt(source, 10) - Number.parseInt(parsed, 10)) / 1000;
+
+      const time = jsDate.getTime() + microseconds;
+      return { date, time };
+    });
+
+    if (modifiedAtTime.length === 0) return undefined;
+    return modifiedAtTime.reduce(
+      (max, current) => (current.time > max.time ? current : max),
+      modifiedAtTime[0]
+    ).date;
+  }
+
+  async _getDatasetSplits(): Promise<string[] | undefined> {
+    const examples = await this.getExamples();
+    const allSplits = examples.reduce((acc, ex) => {
+      if (ex.metadata && ex.metadata.dataset_split) {
+        if (Array.isArray(ex.metadata.dataset_split)) {
+          ex.metadata.dataset_split.forEach((split) => acc.add(split));
+        } else if (typeof ex.metadata.dataset_split === "string") {
+          acc.add(ex.metadata.dataset_split);
+        }
+      }
+      return acc;
+    }, new Set<string>());
+    return allSplits.size ? Array.from(allSplits) : undefined;
   }
 
   async _end(): Promise<void> {
@@ -661,6 +839,7 @@ class _ExperimentManager {
     }
     const projectMetadata = await this._getExperimentMetadata();
     projectMetadata["dataset_version"] = await this._getDatasetVersion();
+    projectMetadata["dataset_splits"] = await this._getDatasetSplits();
     // Update revision_id if not already set
     if (!projectMetadata["revision_id"]) {
       projectMetadata["revision_id"] = await getDefaultRevisionId();
@@ -720,21 +899,34 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   }
 }
 
-function convertInvokeToTopLevel(fn: TargetT): TargetNoInvoke {
-  if ("invoke" in fn) {
-    return fn.invoke.bind(fn);
-  }
-  return fn;
-}
-
 async function _evaluate(
   target: TargetT | AsyncGenerator<Run>,
-  fields: EvaluateOptions & {
+  fields: (EvaluateOptions | ComparativeEvaluateOptions) & {
     experiment?: TracerSession;
   }
-): Promise<ExperimentResults> {
+): Promise<ExperimentResults | ComparisonEvaluationResults> {
+  // Add check for comparative evaluation
+  if (Array.isArray(target)) {
+    const comparativeOptions = fields as ComparativeEvaluateOptions;
+    if (!comparativeOptions.evaluators) {
+      throw new Error("Evaluators are required for comparative evaluation");
+    }
+
+    return evaluateComparative(target, {
+      evaluators: comparativeOptions.evaluators,
+      client: comparativeOptions.client,
+      metadata: comparativeOptions.metadata,
+      experimentPrefix: comparativeOptions.experimentPrefix,
+      description: comparativeOptions.description,
+      maxConcurrency: comparativeOptions.maxConcurrency,
+      loadNested: comparativeOptions.loadNested ?? false,
+      randomizeOrder: comparativeOptions.randomizeOrder ?? false,
+    });
+  }
+
   const client = fields.client ?? new Client();
   const runs = _isCallable(target) ? null : (target as AsyncGenerator<Run>);
+  const standardFields = fields as EvaluateOptions;
   const [experiment_, newRuns] = await _resolveExperiment(
     fields.experiment ?? null,
     runs,
@@ -742,29 +934,32 @@ async function _evaluate(
   );
 
   let manager = await new _ExperimentManager({
-    data: Array.isArray(fields.data) ? undefined : fields.data,
-    examples: Array.isArray(fields.data) ? fields.data : undefined,
+    data: Array.isArray(standardFields.data) ? undefined : standardFields.data,
+    examples: Array.isArray(standardFields.data)
+      ? standardFields.data
+      : undefined,
     client,
     metadata: fields.metadata,
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
+    numRepetitions: fields.numRepetitions ?? 1,
   }).start();
 
   if (_isCallable(target)) {
-    manager = await manager.withPredictions(
-      convertInvokeToTopLevel(target as TargetT),
-      {
-        maxConcurrency: fields.maxConcurrency,
-      }
-    );
-  }
-  if (fields.evaluators) {
-    manager = await manager.withEvaluators(fields.evaluators, {
+    manager = await manager.withPredictions(target, {
       maxConcurrency: fields.maxConcurrency,
     });
   }
-  if (fields.summaryEvaluators) {
-    manager = await manager.withSummaryEvaluators(fields.summaryEvaluators);
+
+  if (standardFields.evaluators) {
+    manager = await manager.withEvaluators(standardFields.evaluators, {
+      maxConcurrency: fields.maxConcurrency,
+    });
+  }
+  if (standardFields.summaryEvaluators) {
+    manager = await manager.withSummaryEvaluators(
+      standardFields.summaryEvaluators
+    );
   }
   // Start consuming the results.
   const results = new ExperimentResults(manager);
@@ -772,10 +967,8 @@ async function _evaluate(
   return results;
 }
 
-type ForwardFn = ((...args: any[]) => Promise<any>) | ((...args: any[]) => any);
-
 async function _forward(
-  fn: ForwardFn,
+  fn: StandardTargetT,
   example: Example,
   experimentName: string,
   metadata: KVMap,
@@ -798,23 +991,40 @@ async function _forward(
         : new Date(example.created_at).toISOString(),
     },
     client,
+    tracingEnabled: true,
   };
 
-  const wrappedFn = traceable(fn, {
-    ...options,
-    tracingEnabled: true,
-  }) as ReturnType<typeof traceable>;
+  const wrappedFn =
+    "invoke" in fn
+      ? traceable(async (inputs) => {
+          let langChainCallbacks;
+          try {
+            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+            const { getLangchainCallbacks } = await import("../langchain.js");
+            langChainCallbacks = await getLangchainCallbacks();
+          } catch {
+            // no-op
+          }
+          // Issue with retrieving LangChain callbacks, rely on interop
+          if (langChainCallbacks === undefined) {
+            return await fn.invoke(inputs);
+          } else {
+            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          }
+        }, options)
+      : traceable(fn, options);
 
   try {
     await wrappedFn(example.inputs);
   } catch (e) {
     console.error(`Error running target function: ${e}`);
+    printErrorStackTrace(e);
   }
 
   if (!run) {
     throw new Error(`Run not created by target function.
 This is most likely due to tracing not being enabled.\n
-Try setting "LANGCHAIN_TRACING_V2=true" in your environment.`);
+Try setting "LANGSMITH_TRACING=true" in your environment.`);
   }
 
   return {
@@ -855,10 +1065,12 @@ function _resolveData(
 async function wrapSummaryEvaluators(
   evaluators: SummaryEvaluatorT[],
   optionsArray?: Partial<RunTreeConfig>[]
-): Promise<SummaryEvaluatorT[]> {
+): Promise<
+  Array<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator>
+> {
   async function _wrap(
     evaluator: SummaryEvaluatorT
-  ): Promise<SummaryEvaluatorT> {
+  ): Promise<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator> {
     const evalName = evaluator.name || "BatchEvaluator";
 
     const wrapperInner = (
@@ -870,7 +1082,34 @@ async function wrapSummaryEvaluators(
           _runs_: string,
           _examples_: string
         ): Promise<EvaluationResult | EvaluationResults> => {
-          return Promise.resolve(evaluator(runs, examples));
+          // Check if the evaluator expects an object parameter
+          if (evaluator.length === 1) {
+            const inputs = examples.map((ex) => ex.inputs);
+            const outputs = runs.map((run) => run.outputs || {});
+            const referenceOutputs = examples.map((ex) => ex.outputs || {});
+
+            return Promise.resolve(
+              (
+                evaluator as (args: {
+                  runs: Run[];
+                  examples: Example[];
+                  inputs: Record<string, any>[];
+                  outputs: Record<string, any>[];
+                  referenceOutputs?: Record<string, any>[];
+                }) => EvaluationResult | EvaluationResults
+              )({
+                runs,
+                examples,
+                inputs,
+                outputs,
+                referenceOutputs,
+              })
+            );
+          }
+          // Otherwise use the traditional (runs, examples) signature
+          return Promise.resolve(
+            (evaluator as DeprecatedSyncSummaryEvaluator)(runs, examples)
+          );
         },
         { ...optionsArray, name: evalName }
       );
@@ -886,7 +1125,9 @@ async function wrapSummaryEvaluators(
     return wrapperInner;
   }
 
-  const results: SummaryEvaluatorT[] = [];
+  const results: Array<
+    DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator
+  > = [];
   for (let i = 0; i < evaluators.length; i++) {
     results.push(await _wrap(evaluators[i]));
   }
@@ -947,7 +1188,9 @@ async function _resolveExperiment(
   return [undefined, undefined];
 }
 
-function _isCallable(target: TargetT | AsyncGenerator<Run>): boolean {
+function _isCallable(
+  target: StandardTargetT | AsyncGenerator<Run>
+): target is StandardTargetT {
   return Boolean(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")

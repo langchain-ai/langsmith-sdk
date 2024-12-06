@@ -1,4 +1,5 @@
 """Environment information."""
+
 import functools
 import logging
 import os
@@ -77,6 +78,7 @@ def get_runtime_environment() -> dict:
         "py_implementation": platform.python_implementation(),
         "runtime_version": platform.python_version(),
         "langchain_version": get_langchain_environment(),
+        "langchain_core_version": get_langchain_core_version(),
         **shas,
     }
 
@@ -88,6 +90,16 @@ def get_langchain_environment() -> Optional[str]:
 
         return langchain.__version__
     except:  # noqa
+        return None
+
+
+@functools.lru_cache(maxsize=1)
+def get_langchain_core_version() -> Optional[str]:
+    try:
+        import langchain_core  # type: ignore
+
+        return langchain_core.__version__
+    except ImportError:
         return None
 
 
@@ -138,9 +150,9 @@ def get_docker_environment() -> dict:
     compose_command = _get_compose_command()
     return {
         "docker_version": get_docker_version(),
-        "docker_compose_command": " ".join(compose_command)
-        if compose_command is not None
-        else None,
+        "docker_compose_command": (
+            " ".join(compose_command) if compose_command is not None else None
+        ),
         "docker_compose_version": get_docker_compose_version(),
     }
 
@@ -164,6 +176,7 @@ def get_langchain_env_var_metadata() -> dict:
         "LANGCHAIN_TRACING_V2",
         "LANGCHAIN_PROJECT",
         "LANGCHAIN_SESSION",
+        "LANGSMITH_RUNS_ENDPOINTS",
     }
     langchain_metadata = {
         k: v
@@ -187,7 +200,7 @@ def get_langchain_env_var_metadata() -> dict:
 def _get_default_revision_id() -> Optional[str]:
     """Get the default revision ID based on `git describe`."""
     try:
-        return exec_git(["describe", "--tags", "--dirty"])
+        return exec_git(["describe", "--tags", "--always", "--dirty"])
     except BaseException:
         return None
 

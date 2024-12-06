@@ -1,6 +1,11 @@
 name: JS Release
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "js/package.json"
   workflow_dispatch:
 
 jobs:
@@ -11,33 +16,34 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    defaults:
+      run:
+        working-directory: "js"
     steps:
       - uses: actions/checkout@v3
       # JS Build
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
-        run: cd js && yarn install --immutable
+        run: yarn install --immutable
       - name: Build
-        run: cd js && yarn run build
+        run: yarn run build
       - name: Check version
-        run: cd js && yarn run check-version
+        run: yarn run check-version
       - name: Check NPM version
         id: check_npm_version
         run: |
-          cd js
           if yarn run check-npm-version; then
-            echo "::set-output name=should_publish::true"
+            echo "should_publish=true" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=should_publish::false"
+            echo "should_publish=false" >> $GITHUB_OUTPUT
           fi
       - name: Publish package to NPM
         if: steps.check_npm_version.outputs.should_publish == 'true'
         run: |
-          cd js
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           yarn publish --non-interactive

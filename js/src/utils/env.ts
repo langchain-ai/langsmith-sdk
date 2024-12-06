@@ -69,7 +69,7 @@ export type RuntimeEnvironment = {
 
 let runtimeEnvironment: RuntimeEnvironment | undefined;
 
-export async function getRuntimeEnvironment(): Promise<RuntimeEnvironment> {
+export function getRuntimeEnvironment(): RuntimeEnvironment {
   if (runtimeEnvironment === undefined) {
     const env = getEnv();
     const releaseEnv = getShas();
@@ -132,11 +132,16 @@ export function getLangChainEnvVarsMetadata(): Record<string, string> {
     "LANGCHAIN_TRACING_V2",
     "LANGCHAIN_PROJECT",
     "LANGCHAIN_SESSION",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_ENDPOINT",
+    "LANGSMITH_TRACING_V2",
+    "LANGSMITH_PROJECT",
+    "LANGSMITH_SESSION",
   ];
 
   for (const [key, value] of Object.entries(allEnvVars)) {
     if (
-      key.startsWith("LANGCHAIN_") &&
+      (key.startsWith("LANGCHAIN_") || key.startsWith("LANGSMITH_")) &&
       typeof value === "string" &&
       !excluded.includes(key) &&
       !key.toLowerCase().includes("key") &&
@@ -198,6 +203,15 @@ export function getEnvironmentVariable(name: string): string | undefined {
   } catch (e) {
     return undefined;
   }
+}
+
+export function getLangSmithEnvironmentVariable(
+  name: string
+): string | undefined {
+  return (
+    getEnvironmentVariable(`LANGSMITH_${name}`) ||
+    getEnvironmentVariable(`LANGCHAIN_${name}`)
+  );
 }
 
 export function setEnvironmentVariable(name: string, value: string): void {

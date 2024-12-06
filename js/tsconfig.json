@@ -17,6 +17,7 @@
     "noUnusedParameters": true,
     "useDefineForClassFields": true,
     "strictPropertyInitialization": false,
+    "stripInternal": true,
     "allowJs": true,
     "strict": true,
     "outDir": "dist"
@@ -36,9 +37,15 @@
       "src/run_trees.ts",
       "src/traceable.ts",
       "src/evaluation/index.ts",
+      "src/evaluation/langchain.ts",
       "src/schemas.ts",
+      "src/langchain.ts",
+      "src/vercel.ts",
       "src/wrappers/index.ts",
-      "src/wrappers/openai.ts"
+      "src/anonymizer/index.ts",
+      "src/wrappers/openai.ts",
+      "src/wrappers/vercel.ts",
+      "src/singletons/traceable.ts"
     ]
   }
 }

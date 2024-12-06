@@ -8,7 +8,7 @@ from anthropic import AsyncAnthropic  # type: ignore
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-from langsmith import unit
+from langsmith import test
 
 
 class Models(str, Enum):
@@ -58,7 +58,7 @@ d = list(product(clients, data))
 
 
 @pytest.mark.asyncio_cooperative
-@unit()
+@test()
 @pytest.mark.parametrize("client, data", d[:3])
 async def test_classification(client, data):
     input, expected = data

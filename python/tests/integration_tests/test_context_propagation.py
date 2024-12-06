@@ -54,6 +54,7 @@ async def test_tracing_fake_server(fake_server):
         langsmith_extra={
             "metadata": {"some-cool-value": 42},
             "tags": ["did-propagate"],
+            "project_name": "distributed-tracing",
         },
     )
     assert result["message"] == "Fake route response"

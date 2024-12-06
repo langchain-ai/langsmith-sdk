@@ -6,6 +6,8 @@ MIT License
 """
 
 import asyncio
+import contextvars
+import functools
 import inspect
 from collections import deque
 from typing import (
@@ -251,13 +253,20 @@ def ensure_async_iterator(
 
 
 def aiter_with_concurrency(
-    n: Optional[int], generator: AsyncIterator[Coroutine[None, None, T]]
+    n: Optional[int],
+    generator: AsyncIterator[Coroutine[None, None, T]],
+    *,
+    _eager_consumption_timeout: float = 0,
 ) -> AsyncGenerator[T, None]:
     """Process async generator with max parallelism.
 
     Args:
         n: The number of tasks to run concurrently.
         generator: The async generator to process.
+        _eager_consumption_timeout: If set, check for completed tasks after
+            each iteration and yield their results. This can be used to
+            consume the generator eagerly while still respecting the concurrency
+            limit.
 
     Yields:
         The processed items yielded by the async generator.
@@ -269,27 +278,50 @@ def aiter_with_concurrency(
                 yield await item
 
         return consume()
-    semaphore = asyncio.Semaphore(n) if n is not None else NoLock()
+    semaphore = cast(
+        asyncio.Semaphore, asyncio.Semaphore(n) if n is not None else NoLock()
+    )
 
-    async def process_item(item):
+    async def process_item(ix: int, item):
         async with semaphore:
-            return await item
+            res = await item
+            return (ix, res)
 
     async def process_generator():
-        tasks = []
+        tasks = {}
+        accepts_context = asyncio_accepts_context()
+        ix = 0
         async for item in generator:
-            task = asyncio.create_task(process_item(item))
-            tasks.append(task)
+            if accepts_context:
+                context = contextvars.copy_context()
+                task = asyncio.create_task(process_item(ix, item), context=context)
+            else:
+                task = asyncio.create_task(process_item(ix, item))
+            tasks[ix] = task
+            ix += 1
+            if _eager_consumption_timeout > 0:
+                try:
+                    for _fut in asyncio.as_completed(
+                        tasks.values(),
+                        timeout=_eager_consumption_timeout,
+                    ):
+                        task_idx, res = await _fut
+                        yield res
+                        del tasks[task_idx]
+                except asyncio.TimeoutError:
+                    pass
             if n is not None and len(tasks) >= n:
-                done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
+                done, _ = await asyncio.wait(
+                    tasks.values(), return_when=asyncio.FIRST_COMPLETED
                 )
-                tasks = list(pending)
                 for task in done:
-                    yield task.result()
+                    task_idx, res = task.result()
+                    yield res
+                    del tasks[task_idx]
 
-        for task in asyncio.as_completed(tasks):
-            yield await task
+        for task in asyncio.as_completed(tasks.values()):
+            _, res = await task
+            yield res
 
     return process_generator()
 
@@ -300,3 +332,28 @@ def accepts_context(callable: Callable[..., Any]) -> bool:
         return inspect.signature(callable).parameters.get("context") is not None
     except ValueError:
         return False
+
+
+# Ported from Python 3.9+ to support Python 3.8
+async def aio_to_thread(
+    func, /, *args, __ctx: Optional[contextvars.Context] = None, **kwargs
+):
+    """Asynchronously run function *func* in a separate thread.
+
+    Any *args and **kwargs supplied for this function are directly passed
+    to *func*. Also, the current :class:`contextvars.Context` is propagated,
+    allowing context variables from the main thread to be accessed in the
+    separate thread.
+
+    Return a coroutine that can be awaited to get the eventual result of *func*.
+    """
+    loop = asyncio.get_running_loop()
+    ctx = __ctx or contextvars.copy_context()
+    func_call = functools.partial(ctx.run, func, *args, **kwargs)
+    return await loop.run_in_executor(None, func_call)
+
+
+@functools.lru_cache(maxsize=1)
+def asyncio_accepts_context():
+    """Check if the current asyncio event loop accepts a context argument."""
+    return accepts_context(asyncio.create_task)

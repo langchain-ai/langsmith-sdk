@@ -1,0 +1,5 @@
+error: expected one of: `name`, `crate`, `module`, `submodule`, `gil_used`
+ --> tests/ui/invalid_pymodule_args.rs:3:12
+  |
+3 | #[pymodule(some_arg)]
+  |            ^^^^^^^^

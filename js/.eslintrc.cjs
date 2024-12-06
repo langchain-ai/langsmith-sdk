@@ -14,6 +14,7 @@ module.exports = {
   ignorePatterns: [
     ".eslintrc.cjs",
     "scripts",
+    "src/utils/lodash/*",
     "node_modules",
     "dist",
     "dist-cjs",
@@ -29,7 +30,18 @@ module.exports = {
     "@typescript-eslint/no-shadow": 0,
     "@typescript-eslint/no-empty-interface": 0,
     "@typescript-eslint/no-use-before-define": ["error", "nofunc"],
-    "@typescript-eslint/no-unused-vars": ["warn", { args: "none" }],
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        args: "none",
+        argsIgnorePattern: "^_",
+        caughtErrors: "all",
+        caughtErrorsIgnorePattern: "^_",
+        destructuredArrayIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        ignoreRestSiblings: true,
+      },
+    ],
     "@typescript-eslint/no-floating-promises": "error",
     "@typescript-eslint/no-misused-promises": "error",
     camelcase: 0,

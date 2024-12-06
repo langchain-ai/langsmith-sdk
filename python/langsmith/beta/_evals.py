@@ -4,15 +4,15 @@ These functions may change in the future.
 """
 
 import collections
-import concurrent.futures
 import datetime
 import itertools
 import uuid
 from typing import DefaultDict, List, Optional, Sequence, Tuple, TypeVar
 
-import langsmith.beta._utils as beta_utils
+import langsmith.run_trees as rt
 import langsmith.schemas as ls_schemas
 from langsmith import evaluation as ls_eval
+from langsmith._internal._beta_decorator import warn_beta
 from langsmith.client import Client
 
 
@@ -66,7 +66,7 @@ def _convert_root_run(root: ls_schemas.Run, run_to_example_map: dict) -> List[di
     return result
 
 
-@beta_utils.warn_beta
+@warn_beta
 def convert_runs_to_test(
     runs: Sequence[ls_schemas.Run],
     *,
@@ -122,7 +122,7 @@ def convert_runs_to_test(
     """
     if not runs:
         raise ValueError(f"""Expected a non-empty sequence of runs. Received: {runs}""")
-    client = client or Client()
+    client = client or rt.get_cached_client()
     ds = client.create_dataset(dataset_name=dataset_name)
     outputs = [r.outputs for r in runs] if include_outputs else None
     client.create_examples(
@@ -197,7 +197,7 @@ def _outer_product(list1: List[T], list2: List[U]) -> List[Tuple[T, U]]:
     return list(itertools.product(list1, list2))
 
 
-@beta_utils.warn_beta
+@warn_beta
 def compute_test_metrics(
     project_name: str,
     *,
@@ -218,6 +218,8 @@ def compute_test_metrics(
     Returns:
         None: This function does not return any value.
     """
+    from langsmith import ContextThreadPoolExecutor
+
     evaluators_: List[ls_eval.RunEvaluator] = []
     for func in evaluators:
         if isinstance(func, ls_eval.RunEvaluator):
@@ -228,9 +230,9 @@ def compute_test_metrics(
             raise NotImplementedError(
                 f"Evaluation not yet implemented for evaluator of type {type(func)}"
             )
-    client = client or Client()
+    client = client or rt.get_cached_client()
     traces = _load_nested_traces(project_name, client)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+    with ContextThreadPoolExecutor(max_workers=max_concurrency) as executor:
         results = executor.map(
             client.evaluate_run, *zip(*_outer_product(traces, evaluators_))
         )

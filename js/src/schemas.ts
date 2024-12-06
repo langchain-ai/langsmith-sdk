@@ -60,7 +60,11 @@ export interface BaseExample {
   inputs: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  source_run_id?: string;
 }
+
+export type AttachmentData = Uint8Array | ArrayBuffer;
+export type Attachments = Record<string, [string, AttachmentData]>;
 
 /**
  * A run can represent either a trace (root run)
@@ -125,6 +129,12 @@ export interface BaseRun {
    *   - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
    */
   dotted_order?: string;
+
+  /**
+   * Attachments associated with the run.
+   * Each entry is a tuple of [mime_type, bytes]
+   */
+  attachments?: Attachments;
 }
 
 type S3URL = {
@@ -224,11 +234,18 @@ export interface RunUpdate {
    *   - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
    */
   dotted_order?: string;
+
+  /**
+   * Attachments associated with the run.
+   * Each entry is a tuple of [mime_type, bytes]
+   */
+  attachments?: Attachments;
 }
 
 export interface ExampleCreate extends BaseExample {
   id?: string;
   created_at?: string;
+  split?: string | string[];
 }
 
 export interface Example extends BaseExample {
@@ -244,12 +261,24 @@ export interface ExampleUpdate {
   inputs?: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
+  split?: string | string[];
 }
+
+export interface ExampleUpdateWithId extends ExampleUpdate {
+  id: string;
+}
+
+export interface ExampleSearch extends BaseExample {
+  id: string;
+}
+
 export interface BaseDataset {
   name: string;
   description: string;
   tenant_id: string;
   data_type?: DataType;
+  inputs_schema_definition?: KVMap;
+  outputs_schema_definition?: KVMap;
 }
 
 export interface Dataset extends BaseDataset {
@@ -361,3 +390,209 @@ export interface DatasetDiffInfo {
   examples_added: string[];
   examples_removed: string[];
 }
+
+export interface ComparisonEvaluationResult {
+  key: string;
+  scores: Record<string, ScoreType>;
+  source_run_id?: string;
+}
+
+export interface ComparativeExperiment {
+  id: string;
+  name: string;
+  description: string;
+  tenant_id: string;
+  created_at: string;
+  modified_at: string;
+  reference_dataset_id: string;
+  extra?: Record<string, unknown>;
+  experiments_info?: Array<Record<string, unknown>>;
+  feedback_stats?: Record<string, unknown>;
+}
+
+/**
+ * Represents the expected output schema returned by traceable
+ * or by run tree output for LangSmith to correctly display
+ * documents in the UI
+ */
+export type RetrieverOutput = Array<{
+  page_content: string;
+  type: "Document";
+  metadata?: KVMap;
+}>;
+
+export interface InvocationParamsSchema {
+  ls_provider?: string;
+  ls_model_name?: string;
+  ls_model_type: "chat" | "llm";
+  ls_temperature?: number;
+  ls_max_tokens?: number;
+  ls_stop?: string[];
+}
+
+export interface PromptCommit {
+  owner: string;
+  repo: string;
+  commit_hash: string;
+  manifest: Record<string, any>;
+  examples: Array<Record<any, any>>;
+}
+
+export interface Prompt {
+  repo_handle: string;
+  description?: string;
+  readme?: string;
+  id: string;
+  tenant_id: string;
+  created_at: string;
+  updated_at: string;
+  is_public: boolean;
+  is_archived: boolean;
+  tags: string[];
+  original_repo_id?: string;
+  upstream_repo_id?: string;
+  owner?: string;
+  full_name: string;
+  num_likes: number;
+  num_downloads: number;
+  num_views: number;
+  liked_by_auth_user: boolean;
+  last_commit_hash?: string;
+  num_commits: number;
+  original_repo_full_name?: string;
+  upstream_repo_full_name?: string;
+}
+
+export interface ListPromptsResponse {
+  repos: Prompt[];
+  total: number;
+}
+
+export interface ListCommitsResponse {
+  commits: PromptCommit[];
+  total: number;
+}
+
+export type PromptSortField =
+  | "num_downloads"
+  | "num_views"
+  | "updated_at"
+  | "num_likes";
+
+export interface LikePromptResponse {
+  likes: number;
+}
+
+export interface LangSmithSettings {
+  id: string;
+  display_name: string;
+  created_at: string;
+  tenant_handle?: string;
+}
+
+export interface AnnotationQueue {
+  /** The unique identifier of the annotation queue. */
+  id: string;
+
+  /** The name of the annotation queue. */
+  name: string;
+
+  /** An optional description of the annotation queue. */
+  description?: string;
+
+  /** The timestamp when the annotation queue was created. */
+  created_at: string;
+
+  /** The timestamp when the annotation queue was last updated. */
+  updated_at: string;
+
+  /** The ID of the tenant associated with the annotation queue. */
+  tenant_id: string;
+}
+
+export interface RunWithAnnotationQueueInfo extends BaseRun {
+  /** The last time this run was reviewed. */
+  last_reviewed_time?: string;
+
+  /** The time this run was added to the queue. */
+  added_at?: string;
+}
+
+/**
+ * Breakdown of input token counts.
+ *
+ * Does not *need* to sum to full input token count. Does *not* need to have all keys.
+ */
+export type InputTokenDetails = {
+  /**
+   * Audio input tokens.
+   */
+  audio?: number;
+
+  /**
+   * Input tokens that were cached and there was a cache hit.
+   *
+   * Since there was a cache hit, the tokens were read from the cache.
+   * More precisely, the model state given these tokens was read from the cache.
+   */
+  cache_read?: number;
+
+  /**
+   * Input tokens that were cached and there was a cache miss.
+   *
+   * Since there was a cache miss, the cache was created from these tokens.
+   */
+  cache_creation?: number;
+};
+
+/**
+ * Breakdown of output token counts.
+ *
+ * Does *not* need to sum to full output token count. Does *not* need to have all keys.
+ */
+export type OutputTokenDetails = {
+  /**
+   * Audio output tokens
+   */
+  audio?: number;
+
+  /**
+   * Reasoning output tokens.
+   *
+   * Tokens generated by the model in a chain of thought process (i.e. by
+   * OpenAI's o1 models) that are not returned as part of model output.
+   */
+  reasoning?: number;
+};
+
+/**
+ * Usage metadata for a message, such as token counts.
+ */
+export type UsageMetadata = {
+  /**
+   * Count of input (or prompt) tokens. Sum of all input token types.
+   */
+  input_tokens: number;
+  /**
+   * Count of output (or completion) tokens. Sum of all output token types.
+   */
+  output_tokens: number;
+  /**
+   * Total token count. Sum of input_tokens + output_tokens.
+   */
+  total_tokens: number;
+
+  /**
+   * Breakdown of input token counts.
+   *
+   * Does *not* need to sum to full input token count. Does *not* need to have all keys.
+   */
+  input_token_details?: InputTokenDetails;
+
+  /**
+   * Breakdown of output token counts.
+   *
+   * Does *not* need to sum to full output token count. Does *not* need to have all keys.
+   */
+  output_token_details?: OutputTokenDetails;
+};

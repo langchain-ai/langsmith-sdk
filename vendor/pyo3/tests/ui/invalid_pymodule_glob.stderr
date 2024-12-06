@@ -1,0 +1,5 @@
+error: #[pymodule] cannot import glob statements
+  --> tests/ui/invalid_pymodule_glob.rs:13:16
+   |
+13 |     use super::*;
+   |                ^

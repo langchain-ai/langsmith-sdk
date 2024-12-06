@@ -1,0 +1,62 @@
+name: debug
+on: push
+jobs:
+
+  debug:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [
+          { rust: "1.72", features: "" },
+          { rust: "1.72", features: "--features=yyjson" },
+          { rust: "nightly-2024-09-25", features: "--features=yyjson,unstable-simd" },
+          { rust: "nightly-2024-09-25", features: "--features=avx512,yyjson,unstable-simd" },
+        ]
+        python: [
+          { version: '3.13' },
+          { version: '3.12' },
+          { version: '3.8' },
+        ]
+    env:
+      CC: "gcc"
+      CFLAGS: "-Os -fstrict-aliasing"
+      LDFLAGS: "-Wl,--as-needed"
+      CARGO_UNSTABLE_SPARSE_REGISTRY: "true"
+      UNSAFE_PYO3_SKIP_VERSION_CHECK: "1"
+    steps:
+    - run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain ${{ matrix.profile.rust }} --profile minimal -y
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '${{ matrix.python.version }}'
+
+    - run: python -m pip install --user --upgrade pip "maturin>=1,<2" wheel
+
+    - uses: actions/checkout@v4
+
+    - name: build
+      run: |
+        PATH="$HOME/.cargo/bin:$PATH" maturin build --release \
+          --out=dist \
+          --profile=dev \
+          --interpreter python${{ matrix.python.version }} \
+          --target=x86_64-unknown-linux-gnu ${{ matrix.profile.features }}
+
+    - run: python -m pip install --user dist/orjson*.whl
+    - run: python -m pip install --user -r test/requirements.txt -r integration/requirements.txt
+
+    - run: pytest -s -rxX -v test
+      timeout-minutes: 4
+      env:
+        PYTHONMALLOC: "debug"
+
+    - run: ./integration/run thread
+      timeout-minutes: 2
+
+    - run: ./integration/run http
+      if: matrix.python.version != '3.13'  # alpha 5 httpx type issue
+      timeout-minutes: 2
+
+    - run: ./integration/run init
+      timeout-minutes: 2

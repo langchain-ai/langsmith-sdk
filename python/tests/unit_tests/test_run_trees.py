@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -7,6 +8,7 @@ import pytest
 
 from langsmith import run_trees
 from langsmith.client import Client
+from langsmith.run_trees import RunTree
 
 
 def test_run_tree_accepts_tpe() -> None:
@@ -15,8 +17,42 @@ def test_run_tree_accepts_tpe() -> None:
         name="My Chat Bot",
         inputs={"text": "Summarize this morning's meetings."},
         client=mock_client,
-        executor=ThreadPoolExecutor(),
+        executor=ThreadPoolExecutor(),  # type: ignore
     )
+
+
+def test_lazy_rt() -> None:
+    run_tree = RunTree(name="foo")
+    assert run_tree.ls_client is None
+    assert run_tree._client is None
+    assert isinstance(run_tree.client, Client)
+    client = Client(api_key="foo")
+    run_tree._client = client
+    assert run_tree._client == client
+
+    assert RunTree(name="foo", client=client).client == client
+    assert RunTree(name="foo", ls_client=client).client == client
+
+
+def test_json_serializable():
+    run_tree = RunTree(name="foo")
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    assert isinstance(run_tree.client, Client)
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    d = json.loads(run_tree.json())
+    assert not d.get("client") and not d.get("ls_client")
+    run_tree = RunTree(name="foo", ls_client=Client())
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    d = json.loads(run_tree.json())
+    assert not d.get("client") and not d.get("ls_client")
+    run_tree = RunTree(name="foo", client=Client())
+    d = run_tree.dict()
+    assert not d.get("client") and not d.get("ls_client")
+    d = json.loads(run_tree.json())
+    assert not d.get("client") and not d.get("ls_client")
 
 
 @pytest.mark.parametrize(
@@ -59,3 +95,58 @@ def test_run_tree_accepts_tpe() -> None:
 )
 def test_parse_dotted_order(inputs, expected):
     assert run_trees._parse_dotted_order(inputs) == expected
+
+
+def test_run_tree_events_not_null():
+    mock_client = MagicMock(spec=Client)
+    run_tree = run_trees.RunTree(
+        name="My Chat Bot",
+        inputs={"text": "Summarize this morning's meetings."},
+        client=mock_client,
+        events=None,
+    )
+    assert run_tree.events == []
+
+
+def test_nested_run_trees_from_dotted_order():
+    grandparent = run_trees.RunTree(
+        name="Grandparent",
+        inputs={"text": "Summarize this morning's meetings."},
+        client=MagicMock(spec=Client),
+    )
+    parent = grandparent.create_child(
+        name="Parent",
+    )
+    child = parent.create_child(
+        name="Child",
+    )
+    # Check child
+    clone = run_trees.RunTree.from_dotted_order(
+        dotted_order=child.dotted_order,
+        name="Clone",
+        client=MagicMock(spec=Client),
+    )
+
+    assert clone.id == child.id
+    assert clone.parent_run_id == child.parent_run_id
+    assert clone.dotted_order == child.dotted_order
+
+    # Check parent
+    parent_clone = run_trees.RunTree.from_dotted_order(
+        dotted_order=parent.dotted_order,
+        name="Parent Clone",
+        client=MagicMock(spec=Client),
+    )
+    assert parent_clone.id == parent.id
+    assert parent_clone.parent_run_id == parent.parent_run_id
+    assert parent_clone.dotted_order == parent.dotted_order
+
+    # Check grandparent
+    grandparent_clone = run_trees.RunTree.from_dotted_order(
+        dotted_order=grandparent.dotted_order,
+        name="Grandparent Clone",
+        client=MagicMock(spec=Client),
+    )
+    assert grandparent_clone.id == grandparent.id
+    assert grandparent_clone.parent_run_id is None
+    assert grandparent_clone.dotted_order == grandparent.dotted_order

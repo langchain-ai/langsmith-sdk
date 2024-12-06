@@ -4,7 +4,7 @@ inputs:
   node-version:
     description: "Node version"
     required: true
-  langchain-api-key:
+  langchain-api-key-beta:
     description: "Langchain"
     required: true
   openai-api-key:
@@ -34,5 +34,6 @@ runs:
       working-directory: js
       env:
         LANGCHAIN_TRACING_V2: "true"
-        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key }}
+        LANGCHAIN_ENDPOINT: https://beta.api.smith.langchain.com
+        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key-beta }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}

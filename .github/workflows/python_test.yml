@@ -19,7 +19,8 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.8"
+          - "3.9"
+          - "3.10"
           - "3.11"
           - "3.12"
     defaults:
@@ -27,22 +28,16 @@ jobs:
         working-directory: python
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v5
-        name: Setup python ${{ matrix.python-version }}
-        id: setup-python
+      - name: Set up Python ${{ matrix.python-version }} + Poetry ${{ env.POETRY_VERSION }}
+        uses: "./.github/actions/poetry_setup"
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "pip"
-      - name: Install poetry
-        shell: bash
-        env:
-          PYTHON_VERSION: ${{ matrix.python-version }}
-        # Install poetry using the python version installed by setup-python step.
-        run: pipx install "poetry==$POETRY_VERSION" --python '${{ steps.setup-python.outputs.python-path }}' --verbose
+          poetry-version: ${{ env.POETRY_VERSION }}
+          cache-key: build-and-test
       - name: Install dependencies
         run: |
           poetry install --with dev,lint
-          poetry run pip install -U langchain
+          poetry run pip install -U langchain langchain-core langchain_anthropic langchain_openai
       - name: Build ${{ matrix.python-version }}
         run: poetry build
       - name: Lint ${{ matrix.python-version }}

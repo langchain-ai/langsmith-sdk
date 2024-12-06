@@ -1,4 +1,8 @@
 import { Client } from "../client.js";
+import { v4 as uuidv4 } from "uuid";
+// eslint-disable-next-line import/no-extraneous-dependencies
+import { faker } from "@faker-js/faker";
+import { RunCreate } from "../schemas.js";
 
 export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
@@ -11,7 +15,8 @@ export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
 export async function waitUntil(
   condition: () => Promise<boolean>,
   timeout: number,
-  interval: number
+  interval: number,
+  prefix?: string
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeout) {
@@ -25,7 +30,9 @@ export async function waitUntil(
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
   const elapsed = Date.now() - start;
-  throw new Error(`Timeout after ${elapsed / 1000}s`);
+  throw new Error(
+    [prefix, `Timeout after ${elapsed / 1000}s`].filter(Boolean).join(": ")
+  );
 }
 
 export async function pollRunsUntilCount(
@@ -93,7 +100,27 @@ export async function waitUntilRunFound(
       }
     },
     30_000,
-    5_000
+    5_000,
+    `Waiting for run "${runId}"`
+  );
+}
+
+export async function waitUntilProjectFound(
+  client: Client,
+  projectName: string
+) {
+  return waitUntil(
+    async () => {
+      try {
+        await client.readProject({ projectName });
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+    10_000,
+    5_000,
+    `Waiting for project "${projectName}"`
   );
 }
 
@@ -111,4 +138,27 @@ export function sanitizePresignedUrls(payload: unknown) {
     }
     return value;
   });
+}
+
+/**
+ * Factory which returns a list of `RunCreate` objects.
+ * @param {number} count Number of runs to create (default: 10)
+ * @returns {Array<RunCreate>} List of `RunCreate` objects
+ */
+export function createRunsFactory(
+  projectName: string,
+  count = 10
+): Array<RunCreate> {
+  return Array.from({ length: count }).map((_, idx) => ({
+    id: uuidv4(),
+    name: `${idx}-${faker.lorem.words()}`,
+    run_type: faker.helpers.arrayElement(["tool", "chain", "llm", "retriever"]),
+    inputs: {
+      question: faker.lorem.sentence(),
+    },
+    outputs: {
+      answer: faker.lorem.sentence(),
+    },
+    project_name: projectName,
+  }));
 }

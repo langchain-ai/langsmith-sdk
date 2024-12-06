@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "async_hooks";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
   RunTree,
@@ -7,119 +7,314 @@ import {
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
-import { KVMap } from "./schemas.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { Attachments, InvocationParamsSchema, KVMap } from "./schemas.js";
+import { isTracingEnabled } from "./env.js";
+import {
+  ROOT,
+  AsyncLocalStorageProviderSingleton,
+} from "./singletons/traceable.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
+import { TraceableFunction } from "./singletons/types.js";
+import {
+  isKVMap,
+  isReadableStream,
+  isAsyncIterable,
+  isIteratorLike,
+  isThenable,
+  isGenerator,
+  isPromiseMethod,
+} from "./utils/asserts.js";
 
-function isPromiseMethod(
-  x: string | symbol
-): x is "then" | "catch" | "finally" {
-  if (x === "then" || x === "catch" || x === "finally") {
-    return true;
+AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
+  new AsyncLocalStorage<RunTree | undefined>()
+);
+
+const runInputsToMap = (rawInputs: unknown[]) => {
+  const firstInput = rawInputs[0];
+  let inputs: KVMap;
+
+  if (firstInput == null) {
+    inputs = {};
+  } else if (rawInputs.length > 1) {
+    inputs = { args: rawInputs };
+  } else if (isKVMap(firstInput)) {
+    inputs = firstInput;
+  } else {
+    inputs = { input: firstInput };
   }
-  return false;
-}
-
-const asyncLocalStorage = new AsyncLocalStorage<RunTree | undefined>();
-
-export type RunTreeLike = RunTree;
-
-type SmartPromise<T> = T extends AsyncGenerator
-  ? T
-  : T extends Promise<unknown>
-  ? T
-  : Promise<T>;
-
-type WrapArgReturnPair<Pair> = Pair extends [
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  infer Args extends any[],
-  infer Return
-]
-  ? {
-      (...args: Args): SmartPromise<Return>;
-      (...args: [runTree: RunTreeLike, ...rest: Args]): SmartPromise<Return>;
-      (
-        ...args: [config: RunnableConfigLike, ...rest: Args]
-      ): SmartPromise<Return>;
-    }
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (
-  x: infer I
-) => void
-  ? I
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TraceableFunction<Func extends (...args: any[]) => any> =
-  // function overloads are represented as intersections rather than unions
-  // matches the behavior introduced in https://github.com/microsoft/TypeScript/pull/54448
-  Func extends {
-    (...args: infer A1): infer R1;
-    (...args: infer A2): infer R2;
-    (...args: infer A3): infer R3;
-    (...args: infer A4): infer R4;
-    (...args: infer A5): infer R5;
-  }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4] | [A5, R5]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-        (...args: infer A4): infer R4;
-      }
-    ? UnionToIntersection<
-        WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3] | [A4, R4]>
-      >
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-        (...args: infer A3): infer R3;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2] | [A3, R3]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-        (...args: infer A2): infer R2;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1] | [A2, R2]>>
-    : Func extends {
-        (...args: infer A1): infer R1;
-      }
-    ? UnionToIntersection<WrapArgReturnPair<[A1, R1]>>
-    : never;
-
-const isAsyncIterable = (x: unknown): x is AsyncIterable<unknown> =>
-  x != null &&
-  typeof x === "object" &&
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  typeof (x as any)[Symbol.asyncIterator] === "function";
-
-const tracingIsEnabled = (tracingEnabled?: boolean): boolean => {
-  if (tracingEnabled !== undefined) {
-    return tracingEnabled;
-  }
-  const envVars = [
-    "LANGSMITH_TRACING_V2",
-    "LANGCHAIN_TRACING_V2",
-    "LANGSMITH_TRACING",
-    "LANGCHAIN_TRACING",
-  ];
-  return Boolean(
-    envVars.find((envVar) => getEnvironmentVariable(envVar) === "true")
-  );
+  return inputs;
 };
 
-const getTracingRunTree = (
+const handleRunInputs = (
+  inputs: KVMap,
+  processInputs: (inputs: Readonly<KVMap>) => KVMap
+): KVMap => {
+  try {
+    return processInputs(inputs);
+  } catch (e) {
+    console.error(
+      "Error occurred during processInputs. Sending raw inputs:",
+      e
+    );
+    return inputs;
+  }
+};
+
+const handleRunOutputs = (
+  rawOutputs: unknown,
+  processOutputs: (outputs: Readonly<KVMap>) => KVMap
+): KVMap => {
+  let outputs: KVMap;
+
+  if (isKVMap(rawOutputs)) {
+    outputs = rawOutputs;
+  } else {
+    outputs = { outputs: rawOutputs };
+  }
+
+  try {
+    return processOutputs(outputs);
+  } catch (e) {
+    console.error(
+      "Error occurred during processOutputs. Sending raw outputs:",
+      e
+    );
+    return outputs;
+  }
+};
+const handleRunAttachments = (
+  rawInputs: unknown[],
+  extractAttachments?: (
+    ...args: unknown[]
+  ) => [Attachments | undefined, unknown[]]
+): [Attachments | undefined, unknown[]] => {
+  if (!extractAttachments) {
+    return [undefined, rawInputs];
+  }
+
+  try {
+    const [attachments, remainingArgs] = extractAttachments(...rawInputs);
+    return [attachments, remainingArgs];
+  } catch (e) {
+    console.error("Error occurred during extractAttachments:", e);
+    return [undefined, rawInputs];
+  }
+};
+
+const getTracingRunTree = <Args extends unknown[]>(
   runTree: RunTree,
-  tracingEnabled?: boolean
+  inputs: Args,
+  getInvocationParams:
+    | ((...args: Args) => InvocationParamsSchema | undefined)
+    | undefined,
+  processInputs: (inputs: Readonly<KVMap>) => KVMap,
+  extractAttachments:
+    | ((...args: Args) => [Attachments | undefined, KVMap])
+    | undefined
 ): RunTree | undefined => {
-  const tracingEnabled_ = tracingIsEnabled(tracingEnabled);
-  if (!tracingEnabled_) {
+  if (!isTracingEnabled(runTree.tracingEnabled)) {
     return undefined;
   }
+
+  const [attached, args] = handleRunAttachments(
+    inputs,
+    extractAttachments as
+      | ((...args: unknown[]) => [Attachments | undefined, unknown[]])
+      | undefined
+  );
+  runTree.attachments = attached;
+  runTree.inputs = handleRunInputs(args, processInputs);
+
+  const invocationParams = getInvocationParams?.(...inputs);
+  if (invocationParams != null) {
+    runTree.extra ??= {};
+    runTree.extra.metadata = {
+      ...invocationParams,
+      ...runTree.extra.metadata,
+    };
+  }
+
   return runTree;
+};
+
+// idea: store the state of the promise outside
+// but only when the promise is "consumed"
+const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
+  const proxyState: {
+    current: ["resolve", unknown] | ["reject", unknown] | undefined;
+  } = { current: undefined };
+
+  const promiseProxy = new Proxy(arg, {
+    get(target, prop, receiver) {
+      if (prop === "then") {
+        const boundThen = arg[prop].bind(arg);
+        return (
+          resolve: (value: unknown) => unknown,
+          reject: (error: unknown) => unknown = (x) => {
+            throw x;
+          }
+        ) => {
+          return boundThen(
+            (value) => {
+              proxyState.current = ["resolve", value];
+              return resolve(value);
+            },
+            (error) => {
+              proxyState.current = ["reject", error];
+              return reject(error);
+            }
+          );
+        };
+      }
+
+      if (prop === "catch") {
+        const boundCatch = arg[prop].bind(arg);
+        return (reject: (error: unknown) => unknown) => {
+          return boundCatch((error) => {
+            proxyState.current = ["reject", error];
+            return reject(error);
+          });
+        };
+      }
+
+      if (prop === "toJSON") {
+        return () => {
+          if (!proxyState.current) return undefined;
+          const [type, value] = proxyState.current ?? [];
+          if (type === "resolve") return value;
+          return { error: value };
+        };
+      }
+
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+
+  return promiseProxy as Promise<T> & { toJSON: () => unknown };
+};
+
+const convertSerializableArg = (arg: unknown): unknown => {
+  if (isReadableStream(arg)) {
+    const proxyState: unknown[] = [];
+    const transform = new TransformStream({
+      start: () => void 0,
+      transform: (chunk, controller) => {
+        proxyState.push(chunk);
+        controller.enqueue(chunk);
+      },
+      flush: () => void 0,
+    });
+
+    const pipeThrough = arg.pipeThrough(transform);
+    Object.assign(pipeThrough, { toJSON: () => proxyState });
+    return pipeThrough;
+  }
+
+  if (isAsyncIterable(arg)) {
+    const proxyState: {
+      current: (Promise<IteratorResult<unknown>> & {
+        toJSON: () => unknown;
+      })[];
+    } = { current: [] };
+
+    return new Proxy(arg, {
+      get(target, prop, receiver) {
+        if (prop === Symbol.asyncIterator) {
+          return () => {
+            const boundIterator = arg[Symbol.asyncIterator].bind(arg);
+            const iterator = boundIterator();
+
+            return new Proxy(iterator, {
+              get(target, prop, receiver) {
+                if (prop === "next" || prop === "return" || prop === "throw") {
+                  const bound = iterator.next.bind(iterator);
+
+                  return (
+                    ...args: Parameters<
+                      Exclude<
+                        AsyncIterator<unknown>["next" | "return" | "throw"],
+                        undefined
+                      >
+                    >
+                  ) => {
+                    // @ts-expect-error TS cannot infer the argument types for the bound function
+                    const wrapped = getSerializablePromise(bound(...args));
+                    proxyState.current.push(wrapped);
+                    return wrapped;
+                  };
+                }
+
+                if (prop === "return" || prop === "throw") {
+                  return iterator.next.bind(iterator);
+                }
+
+                return Reflect.get(target, prop, receiver);
+              },
+            });
+          };
+        }
+
+        if (prop === "toJSON") {
+          return () => {
+            const onlyNexts = proxyState.current;
+            const serialized = onlyNexts.map(
+              (next) => next.toJSON() as IteratorResult<unknown> | undefined
+            );
+
+            const chunks = serialized.reduce<unknown[]>((memo, next) => {
+              if (next?.value) memo.push(next.value);
+              return memo;
+            }, []);
+
+            return chunks;
+          };
+        }
+
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+
+  if (!Array.isArray(arg) && isIteratorLike(arg)) {
+    const proxyState: Array<IteratorResult<unknown>> = [];
+
+    return new Proxy(arg, {
+      get(target, prop, receiver) {
+        if (prop === "next" || prop === "return" || prop === "throw") {
+          const bound = arg[prop]?.bind(arg);
+          return (
+            ...args: Parameters<
+              Exclude<Iterator<unknown>["next" | "return" | "throw"], undefined>
+            >
+          ) => {
+            // @ts-expect-error TS cannot infer the argument types for the bound function
+            const next = bound?.(...args);
+            if (next != null) proxyState.push(next);
+            return next;
+          };
+        }
+
+        if (prop === "toJSON") {
+          return () => {
+            const chunks = proxyState.reduce<unknown[]>((memo, next) => {
+              if (next.value) memo.push(next.value);
+              return memo;
+            }, []);
+
+            return chunks;
+          };
+        }
+
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+
+  if (isThenable(arg)) {
+    return getSerializablePromise(arg);
+  }
+
+  return arg;
 };
 
 /**
@@ -143,20 +338,69 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
-    tracingEnabled?: boolean;
+    __finalTracedIteratorKey?: string;
+
+    /**
+     * Extract attachments from args and return remaining args.
+     * @param args Arguments of the traced function
+     * @returns Tuple of [Attachments, remaining args]
+     */
+    extractAttachments?: (
+      ...args: Parameters<Func>
+    ) => [Attachments | undefined, KVMap];
+
+    /**
+     * Extract invocation parameters from the arguments of the traced function.
+     * This is useful for LangSmith to properly track common metadata like
+     * provider, model name and temperature.
+     *
+     * @param args Arguments of the traced function
+     * @returns Key-value map of the invocation parameters, which will be merged with the existing metadata
+     */
+    getInvocationParams?: (
+      ...args: Parameters<Func>
+    ) => InvocationParamsSchema | undefined;
+
+    /**
+     * Apply transformations to the inputs before logging.
+     * This function should NOT mutate the inputs.
+     * `processInputs` is not inherited by nested traceable functions.
+     *
+     * @param inputs Key-value map of the function inputs.
+     * @returns Transformed key-value map
+     */
+    processInputs?: (inputs: Readonly<KVMap>) => KVMap;
+
+    /**
+     * Apply transformations to the outputs before logging.
+     * This function should NOT mutate the outputs.
+     * `processOutputs` is not inherited by nested traceable functions.
+     *
+     * @param outputs Key-value map of the function outputs
+     * @returns Transformed key-value map
+     */
+    processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
   }
 ) {
   type Inputs = Parameters<Func>;
-  type Output = ReturnType<Func>;
-  const { aggregator, argsConfigPath, tracingEnabled, ...runTreeConfig } =
-    config ?? {};
+  const {
+    aggregator,
+    argsConfigPath,
+    __finalTracedIteratorKey,
+    processInputs,
+    processOutputs,
+    extractAttachments,
+    ...runTreeConfig
+  } = config ?? {};
+
+  const processInputsFn = processInputs ?? ((x) => x);
+  const processOutputsFn = processOutputs ?? ((x) => x);
+  const extractAttachmentsFn =
+    extractAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
 
   const traceableFunc = (
-    ...args: Inputs | [RunTreeLike, ...Inputs] | [RunnableConfigLike, ...Inputs]
+    ...args: Inputs | [RunTree, ...Inputs] | [RunnableConfigLike, ...Inputs]
   ) => {
-    let currentRunTree: RunTree | undefined;
-    let rawInputs: Inputs;
-
     let ensuredConfig: RunTreeConfig;
     try {
       let runtimeConfig: Partial<RunTreeConfig> | undefined;
@@ -208,42 +452,221 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
     }
 
-    const previousRunTree = asyncLocalStorage.getStore();
-    if (isRunTree(args[0])) {
-      currentRunTree = args[0];
-      rawInputs = args.slice(1) as Inputs;
-    } else if (isRunnableConfigLike(args[0])) {
-      currentRunTree = RunTree.fromRunnableConfig(args[0], ensuredConfig);
-      rawInputs = args.slice(1) as Inputs;
-    } else if (previousRunTree !== undefined) {
-      currentRunTree = previousRunTree.createChild(ensuredConfig);
-      rawInputs = args as Inputs;
-    } else {
-      currentRunTree = new RunTree(ensuredConfig);
-      rawInputs = args as Inputs;
+    const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
+
+    // TODO: deal with possible nested promises and async iterables
+    const processedArgs = args as unknown as Inputs;
+    for (let i = 0; i < processedArgs.length; i++) {
+      processedArgs[i] = convertSerializableArg(processedArgs[i]);
     }
 
-    currentRunTree = getTracingRunTree(currentRunTree, tracingEnabled);
-    let inputs: KVMap;
-    const firstInput = rawInputs[0];
-    if (firstInput == null) {
-      inputs = {};
-    } else if (rawInputs.length > 1) {
-      inputs = { args: rawInputs };
-    } else if (isKVMap(firstInput)) {
-      inputs = firstInput;
-    } else {
-      inputs = { input: firstInput };
-    }
+    const [currentRunTree, rawInputs] = ((): [RunTree | undefined, Inputs] => {
+      const [firstArg, ...restArgs] = processedArgs;
 
-    if (currentRunTree) {
-      currentRunTree.inputs = inputs;
-    }
+      // used for handoff between LangChain.JS and traceable functions
+      if (isRunnableConfigLike(firstArg)) {
+        return [
+          getTracingRunTree(
+            RunTree.fromRunnableConfig(firstArg, ensuredConfig),
+            restArgs as Inputs,
+            config?.getInvocationParams,
+            processInputsFn,
+            extractAttachmentsFn
+          ),
+          restArgs as Inputs,
+        ];
+      }
+
+      // deprecated: legacy CallbackManagerRunTree used in runOnDataset
+      // override ALS and do not pass-through the run tree
+      if (
+        isRunTree(firstArg) &&
+        "callbackManager" in firstArg &&
+        firstArg.callbackManager != null
+      ) {
+        return [firstArg, restArgs as Inputs];
+      }
+
+      // when ALS is unreliable, users can manually
+      // pass in the run tree
+      if (firstArg === ROOT || isRunTree(firstArg)) {
+        const currentRunTree = getTracingRunTree(
+          firstArg === ROOT
+            ? new RunTree(ensuredConfig)
+            : firstArg.createChild(ensuredConfig),
+          restArgs as Inputs,
+          config?.getInvocationParams,
+          processInputsFn,
+          extractAttachmentsFn
+        );
+
+        return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
+      }
+
+      // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
+      // to allow storing context
+      const prevRunFromStore = asyncLocalStorage.getStore();
+      if (isRunTree(prevRunFromStore)) {
+        return [
+          getTracingRunTree(
+            prevRunFromStore.createChild(ensuredConfig),
+            processedArgs,
+            config?.getInvocationParams,
+            processInputsFn,
+            extractAttachmentsFn
+          ),
+          processedArgs as Inputs,
+        ];
+      }
+
+      const currentRunTree = getTracingRunTree(
+        new RunTree(ensuredConfig),
+        processedArgs,
+        config?.getInvocationParams,
+        processInputsFn,
+        extractAttachmentsFn
+      );
+      // If a context var is set by LangChain outside of a traceable,
+      // it will be an object with a single property and we should copy
+      // context vars over into the new run tree.
+      if (
+        prevRunFromStore !== undefined &&
+        _LC_CONTEXT_VARIABLES_KEY in prevRunFromStore
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (currentRunTree as any)[_LC_CONTEXT_VARIABLES_KEY] =
+          prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
+      }
+      return [currentRunTree, processedArgs as Inputs];
+    })();
 
     return asyncLocalStorage.run(currentRunTree, () => {
       const postRunPromise = currentRunTree?.postRun();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let returnValue: any;
+
+      async function handleChunks(chunks: unknown[]) {
+        if (aggregator !== undefined) {
+          try {
+            return await aggregator(chunks);
+          } catch (e) {
+            console.error(`[ERROR]: LangSmith aggregation failed: `, e);
+          }
+        }
+
+        return chunks;
+      }
+
+      function tapReadableStreamForTracing(
+        stream: ReadableStream<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        const reader = stream.getReader();
+        let finished = false;
+        const chunks: unknown[] = [];
+
+        const tappedStream = new ReadableStream({
+          async start(controller) {
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+              const result = await (snapshot
+                ? snapshot(() => reader.read())
+                : reader.read());
+              if (result.done) {
+                finished = true;
+                await currentRunTree?.end(
+                  handleRunOutputs(await handleChunks(chunks), processOutputsFn)
+                );
+                await handleEnd();
+                controller.close();
+                break;
+              }
+              chunks.push(result.value);
+              controller.enqueue(result.value);
+            }
+          },
+          async cancel(reason) {
+            if (!finished) await currentRunTree?.end(undefined, "Cancelled");
+            await currentRunTree?.end(
+              handleRunOutputs(await handleChunks(chunks), processOutputsFn)
+            );
+            await handleEnd();
+            return reader.cancel(reason);
+          },
+        });
+
+        return tappedStream;
+      }
+
+      async function* wrapAsyncIteratorForTracing(
+        iterator: AsyncIterator<unknown, unknown, undefined>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        let finished = false;
+        const chunks: unknown[] = [];
+        try {
+          while (true) {
+            const { value, done } = await (snapshot
+              ? snapshot(() => iterator.next())
+              : iterator.next());
+            if (done) {
+              finished = true;
+              break;
+            }
+            chunks.push(value);
+            yield value;
+          }
+        } catch (e) {
+          await currentRunTree?.end(undefined, String(e));
+          throw e;
+        } finally {
+          if (!finished) await currentRunTree?.end(undefined, "Cancelled");
+          await currentRunTree?.end(
+            handleRunOutputs(await handleChunks(chunks), processOutputsFn)
+          );
+          await handleEnd();
+        }
+      }
+
+      function wrapAsyncGeneratorForTracing(
+        iterable: AsyncIterable<unknown>,
+        snapshot: ReturnType<typeof AsyncLocalStorage.snapshot> | undefined
+      ) {
+        if (isReadableStream(iterable)) {
+          return tapReadableStreamForTracing(iterable, snapshot);
+        }
+        const iterator = iterable[Symbol.asyncIterator]();
+        const wrappedIterator = wrapAsyncIteratorForTracing(iterator, snapshot);
+        iterable[Symbol.asyncIterator] = () => wrappedIterator;
+        return iterable;
+      }
+
+      async function handleEnd() {
+        const onEnd = config?.on_end;
+        if (onEnd) {
+          if (!currentRunTree) {
+            console.warn(
+              "Can not call 'on_end' if currentRunTree is undefined"
+            );
+          } else {
+            onEnd(currentRunTree);
+          }
+        }
+        await postRunPromise;
+        await currentRunTree?.patchRun();
+      }
+
+      function gatherAll(iterator: Iterator<unknown>) {
+        const chunks: IteratorResult<unknown>[] = [];
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const next = iterator.next();
+          chunks.push(next);
+          if (next.done) break;
+        }
+
+        return chunks;
+      }
+
+      let returnValue: unknown;
       try {
         returnValue = wrappedFunc(...rawInputs);
       } catch (err: unknown) {
@@ -251,158 +674,105 @@ export function traceable<Func extends (...args: any[]) => any>(
       }
 
       if (isAsyncIterable(returnValue)) {
-        // eslint-disable-next-line no-inner-declarations
-        async function* wrapOutputForTracing() {
-          let finished = false;
-          const chunks: unknown[] = [];
-          try {
-            for await (const chunk of returnValue) {
-              chunks.push(chunk);
-              yield chunk;
-            }
-            finished = true;
-          } catch (e) {
-            await currentRunTree?.end(undefined, String(e));
-            throw e;
-          } finally {
-            if (!finished) {
-              await currentRunTree?.end(undefined, "Cancelled");
-            }
-            let finalOutputs;
-            if (aggregator !== undefined) {
-              try {
-                finalOutputs = await aggregator(chunks);
-              } catch (e) {
-                console.error(`[ERROR]: LangSmith aggregation failed: `, e);
-                finalOutputs = chunks;
-              }
-            } else {
-              finalOutputs = chunks;
-            }
-            if (
-              typeof finalOutputs === "object" &&
-              !Array.isArray(finalOutputs)
-            ) {
-              await currentRunTree?.end(finalOutputs);
-            } else {
-              await currentRunTree?.end({ outputs: finalOutputs });
-            }
-            const onEnd = config?.on_end;
-            if (onEnd) {
-              if (!currentRunTree) {
-                console.warn(
-                  "Can not call 'on_end' if currentRunTree is undefined"
-                );
-              } else {
-                onEnd(currentRunTree);
-              }
-            }
-            await postRunPromise;
-            await currentRunTree?.patchRun();
-          }
-        }
-        return wrapOutputForTracing();
+        const snapshot = AsyncLocalStorage.snapshot();
+        return wrapAsyncGeneratorForTracing(returnValue, snapshot);
       }
 
-      const tracedPromise = new Promise<Output>((resolve, reject) => {
+      if (
+        !Array.isArray(returnValue) &&
+        typeof returnValue === "object" &&
+        returnValue != null &&
+        __finalTracedIteratorKey !== undefined &&
+        isAsyncIterable(
+          (returnValue as Record<string, any>)[__finalTracedIteratorKey]
+        )
+      ) {
+        const snapshot = AsyncLocalStorage.snapshot();
+        return {
+          ...returnValue,
+          [__finalTracedIteratorKey]: wrapAsyncGeneratorForTracing(
+            (returnValue as Record<string, any>)[__finalTracedIteratorKey],
+            snapshot
+          ),
+        };
+      }
+
+      const tracedPromise = new Promise<unknown>((resolve, reject) => {
         Promise.resolve(returnValue)
           .then(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            async (rawOutput: any) => {
+            async (rawOutput) => {
               if (isAsyncIterable(rawOutput)) {
-                // eslint-disable-next-line no-inner-declarations
-                async function* wrapOutputForTracing() {
-                  let finished = false;
-                  const chunks: unknown[] = [];
-                  try {
-                    // TypeScript thinks this is unsafe
-                    for await (const chunk of rawOutput as AsyncIterable<unknown>) {
-                      chunks.push(chunk);
-                      yield chunk;
-                    }
-                    finished = true;
-                  } catch (e) {
-                    await currentRunTree?.end(undefined, String(e));
-                    throw e;
-                  } finally {
-                    if (!finished) {
-                      await currentRunTree?.end(undefined, "Cancelled");
-                    }
-                    let finalOutputs;
-                    if (aggregator !== undefined) {
-                      try {
-                        finalOutputs = await aggregator(chunks);
-                      } catch (e) {
-                        console.error(
-                          `[ERROR]: LangSmith aggregation failed: `,
-                          e
-                        );
-                        finalOutputs = chunks;
-                      }
-                    } else {
-                      finalOutputs = chunks;
-                    }
-                    if (
-                      typeof finalOutputs === "object" &&
-                      !Array.isArray(finalOutputs)
-                    ) {
-                      await currentRunTree?.end(finalOutputs);
-                    } else {
-                      await currentRunTree?.end({ outputs: finalOutputs });
-                    }
-                    const onEnd = config?.on_end;
-                    if (onEnd) {
-                      if (!currentRunTree) {
-                        console.warn(
-                          "Can not call 'on_end' if currentRunTree is undefined"
-                        );
-                      } else {
-                        onEnd(currentRunTree);
-                      }
-                    }
-                    await postRunPromise;
-                    await currentRunTree?.patchRun();
-                  }
-                }
-                return resolve(wrapOutputForTracing() as Output);
-              } else {
+                const snapshot = AsyncLocalStorage.snapshot();
+                return resolve(
+                  wrapAsyncGeneratorForTracing(rawOutput, snapshot)
+                );
+              }
+
+              if (
+                !Array.isArray(rawOutput) &&
+                typeof rawOutput === "object" &&
+                rawOutput != null &&
+                __finalTracedIteratorKey !== undefined &&
+                isAsyncIterable(
+                  (rawOutput as Record<string, any>)[__finalTracedIteratorKey]
+                )
+              ) {
+                const snapshot = AsyncLocalStorage.snapshot();
+                return {
+                  ...rawOutput,
+                  [__finalTracedIteratorKey]: wrapAsyncGeneratorForTracing(
+                    (rawOutput as Record<string, any>)[
+                      __finalTracedIteratorKey
+                    ],
+                    snapshot
+                  ),
+                };
+              }
+
+              if (isGenerator(wrappedFunc) && isIteratorLike(rawOutput)) {
+                const chunks = gatherAll(rawOutput);
+
                 try {
                   await currentRunTree?.end(
-                    isKVMap(rawOutput) ? rawOutput : { outputs: rawOutput }
+                    handleRunOutputs(
+                      await handleChunks(
+                        chunks.reduce<unknown[]>((memo, { value, done }) => {
+                          if (!done || typeof value !== "undefined") {
+                            memo.push(value);
+                          }
+
+                          return memo;
+                        }, [])
+                      ),
+                      processOutputsFn
+                    )
                   );
-                  const onEnd = config?.on_end;
-                  if (onEnd) {
-                    if (!currentRunTree) {
-                      console.warn(
-                        "Can not call 'on_end' if currentRunTree is undefined"
-                      );
-                    } else {
-                      onEnd(currentRunTree);
-                    }
-                  }
-                  await postRunPromise;
-                  await currentRunTree?.patchRun();
-                } finally {
-                  // eslint-disable-next-line no-unsafe-finally
-                  return rawOutput;
+                  await handleEnd();
+                } catch (e) {
+                  console.error("Error occurred during handleEnd:", e);
                 }
+
+                return (function* () {
+                  for (const ret of chunks) {
+                    if (ret.done) return ret.value;
+                    yield ret.value;
+                  }
+                })();
+              }
+
+              try {
+                await currentRunTree?.end(
+                  handleRunOutputs(rawOutput, processOutputsFn)
+                );
+                await handleEnd();
+              } finally {
+                // eslint-disable-next-line no-unsafe-finally
+                return rawOutput;
               }
             },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            async (error: any) => {
+            async (error: unknown) => {
               await currentRunTree?.end(undefined, String(error));
-              const onEnd = config?.on_end;
-              if (onEnd) {
-                if (!currentRunTree) {
-                  console.warn(
-                    "Can not call 'on_end' if currentRunTree is undefined"
-                  );
-                } else {
-                  onEnd(currentRunTree);
-                }
-              }
-              await postRunPromise;
-              await currentRunTree?.patchRun();
+              await handleEnd();
               throw error;
             }
           )
@@ -431,51 +801,11 @@ export function traceable<Func extends (...args: any[]) => any>(
   return traceableFunc as TraceableFunction<Func>;
 }
 
-/**
- * Return the current run tree from within a traceable-wrapped function.
- * Will throw an error if called outside of a traceable function.
- *
- * @returns The run tree for the given context.
- */
-export function getCurrentRunTree(): RunTree {
-  const runTree = asyncLocalStorage.getStore();
-  if (runTree === undefined) {
-    throw new Error(
-      [
-        "Could not get the current run tree.",
-        "",
-        "Please make sure you are calling this method within a traceable function.",
-      ].join("\n")
-    );
-  }
-  return runTree;
-}
+export {
+  getCurrentRunTree,
+  isTraceableFunction,
+  withRunTree,
+  ROOT,
+} from "./singletons/traceable.js";
 
-export function isTraceableFunction(
-  x: unknown
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): x is TraceableFunction<any> {
-  return typeof x === "function" && "langsmith:traceable" in x;
-}
-
-function isKVMap(x: unknown): x is Record<string, unknown> {
-  return (
-    typeof x === "object" &&
-    x != null &&
-    !Array.isArray(x) &&
-    // eslint-disable-next-line no-instanceof/no-instanceof
-    !(x instanceof Date)
-  );
-}
-
-export function wrapFunctionAndEnsureTraceable<
-  Func extends (...args: any[]) => any
->(target: Func, options: Partial<RunTreeConfig>, name = "target") {
-  if (typeof target === "function") {
-    return traceable<Func>(target, {
-      ...options,
-      name,
-    });
-  }
-  throw new Error("Target must be runnable function");
-}
+export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";

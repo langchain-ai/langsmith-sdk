@@ -1,0 +1,36 @@
+# Read the Docs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+
+# Required
+version: 2
+
+formats:
+  - pdf
+
+# Set the version of Python and other tools you might need
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.11"
+  commands:
+    - mkdir -p $READTHEDOCS_OUTPUT
+    - echo "Building docs"
+    - pip install -U uv
+    - uv venv
+    - . .venv/bin/activate
+    - uv pip install -r python/docs/requirements.txt
+    - . .venv/bin/activate && cd python/docs && make clobber generate-api-rst html && cd ../..
+    - cp python/docs/_build/html/reference.html python/docs/_build/html/index.html
+    - cp -r python/docs/_build/html $READTHEDOCS_OUTPUT
+# Build documentation in the docs/ directory with Sphinx
+sphinx:
+  configuration: python/docs/conf.py
+
+# If using Sphinx, optionally build your docs in additional formats such as PDF
+# formats:
+#    - pdf
+
+# Optionally declare the Python requirements required to build your docs
+python:
+  install:
+    - requirements: python/docs/requirements.txt
