@@ -21,15 +21,15 @@ jobs:
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
-        run: cd js && yarn install --immutable
+        run: cd js/sdk && yarn install --immutable
       - name: Build
-        run: cd js && yarn run build
+        run: cd js/sdk && yarn run build
       - name: Check version
-        run: cd js && yarn run check-version
+        run: cd js/sdk && yarn run check-version
       - name: Check NPM version
         id: check_npm_version
         run: |
-          cd js
+          cd js/sdk
           if yarn run check-npm-version; then
             echo "::set-output name=should_publish::true"
           else
@@ -38,6 +38,6 @@ jobs:
       - name: Publish package to NPM
         if: steps.check_npm_version.outputs.should_publish == 'true'
         run: |
-          cd js
+          cd js/sdk
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           yarn publish --non-interactive

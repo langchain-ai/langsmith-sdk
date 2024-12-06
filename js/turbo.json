@@ -1,0 +1,20 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["**/dist/**"],
+      "inputs": ["**/src/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "inputs": ["**/src/**"],
+      "outputLogs": ["**/.eslintcache"]
+    },
+    "format": {
+      "dependsOn": ["^format"],
+      "inputs": ["**/src/**"]
+    }
+  }
+}
