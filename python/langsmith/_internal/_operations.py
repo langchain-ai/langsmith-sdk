@@ -323,47 +323,45 @@ class StreamingMultipartCompressor:
 
     def compress_multipart_stream(
         self,
-        parts_and_contexts: Iterator[MultipartPartsAndContext],
+        parts_and_contexts: MultipartPartsAndContext,
     ) -> Iterator[bytes]:
         # Create a streaming compressor context
         compressor = self.compressor.stream_writer(self.buffer)
 
         try:
-            for pc in parts_and_contexts:
-                # Process each part in the current MultipartPartsAndContext
-                for part_name, (filename, data, content_type, headers) in pc.parts:
-                    # Write part headers
-                    part_header = (
-                        f'--{self.boundary}\r\n'
-                        f'Content-Disposition: form-data; name="{part_name}"'
-                    )
-                    if filename:
-                        part_header += f'; filename="{filename}"'
-                    part_header += f'\r\nContent-Type: {content_type}\r\n'
+            for part_name, (filename, data, content_type, headers) in parts_and_contexts.parts:
+                # Write part headers
+                part_header = (
+                    f'--{self.boundary}\r\n'
+                    f'Content-Disposition: form-data; name="{part_name}"'
+                )
+                if filename:
+                    part_header += f'; filename="{filename}"'
+                part_header += f'\r\nContent-Type: {content_type}\r\n'
 
-                    for header_name, header_value in headers.items():
-                        part_header += f'{header_name}: {header_value}\r\n'
+                for header_name, header_value in headers.items():
+                    part_header += f'{header_name}: {header_value}\r\n'
 
-                    part_header += '\r\n'
-                    compressor.write(part_header.encode())
-                    # Yield compressed data to keep memory footprint small
-                    yield from self._yield_and_reset_buffer()
+                part_header += '\r\n'
+                compressor.write(part_header.encode())
+                # Yield compressed data to keep memory footprint small
+                yield from self._yield_and_reset_buffer()
 
-                    # Write part data in chunks
-                    if isinstance(data, (bytes, bytearray)):
-                        for i in range(0, len(data), self.blocksize):
-                            chunk = data[i:i + self.blocksize]
-                            compressor.write(chunk)
-                            # After writing each chunk, yield compressed data
-                            yield from self._yield_and_reset_buffer()
-                    else:
-                        # Handle other data types
-                        compressor.write(str(data).encode())
+                # Write part data in chunks
+                if isinstance(data, (bytes, bytearray)):
+                    for i in range(0, len(data), self.blocksize):
+                        chunk = data[i:i + self.blocksize]
+                        compressor.write(chunk)
+                        # After writing each chunk, yield compressed data
                         yield from self._yield_and_reset_buffer()
-
-                    # End of this part
-                    compressor.write(b'\r\n')
+                else:
+                    # Handle other data types
+                    compressor.write(str(data).encode())
                     yield from self._yield_and_reset_buffer()
+
+                # End of this part
+                compressor.write(b'\r\n')
+                yield from self._yield_and_reset_buffer()
 
             # Write final boundary
             compressor.write(f'--{self.boundary}--\r\n'.encode())
