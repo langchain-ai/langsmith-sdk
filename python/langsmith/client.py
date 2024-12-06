@@ -1684,9 +1684,7 @@ class Client:
         events: Optional[Sequence[dict]] = None,
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
-        attachments: Optional[
-            Dict[str, tuple[str, bytes] | ls_schemas.Attachment]
-        ] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -3464,12 +3462,12 @@ class Client:
 
     def _prepate_multipart_data(
         self,
-        examples: List[
-            ls_schemas.ExampleUploadWithAttachments
-            | ls_schemas.ExampleUpsertWithAttachments
+        examples: Union[
+            List[ls_schemas.ExampleUploadWithAttachments]
+            | List[ls_schemas.ExampleUpsertWithAttachments]
         ],
         include_dataset_id: bool = False,
-    ) -> List[MultipartPart]:
+    ) -> Tuple[Any, bytes]:
         parts: List[MultipartPart] = []
 
         for example in examples:

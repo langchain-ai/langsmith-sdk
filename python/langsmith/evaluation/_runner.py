@@ -1841,7 +1841,7 @@ def _forward(
                 *args,
                 langsmith_extra=langsmith_extra,
             )
-            if include_attachments:
+            if include_attachments and example.attachment_urls is not None:
                 for attachment in example.attachment_urls:
                     _, reader = example.attachment_urls[attachment]
                     reader.seek(0)

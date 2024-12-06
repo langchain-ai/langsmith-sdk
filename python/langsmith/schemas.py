@@ -81,6 +81,10 @@ class BinaryIOLike(Protocol):
         """Write function."""
         ...
 
+    def seek(self, offset: int, whence: int = 0) -> int:
+        """Seek function."""
+        ...
+
 
 class ExampleBase(BaseModel):
     """Example base model."""

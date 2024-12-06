@@ -1055,7 +1055,7 @@ async def _aforward(
 
 
 def _include_attachments(
-    target: Union[ATARGET_T, Iterable[schemas.Run], AsyncIterable[dict]],
+    target: Union[ATARGET_T, Iterable[schemas.Run], AsyncIterable[dict], Runnable],
 ) -> bool:
     """Whether the target function accepts attachments."""
     if _is_langchain_runnable(target) or not callable(target):
