@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 from langchain_core.runnables import chain as as_runnable
 
-from langsmith import Client, aevaluate, evaluate, evaluate_existing, aevaluate_existing
+from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.evaluation._arunner import (
     _include_attachments as a_include_attachments,
