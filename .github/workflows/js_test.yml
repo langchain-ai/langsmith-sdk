@@ -7,15 +7,16 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "js/**"
+      - "js/sdk/**"
   pull_request:
     paths:
-      - "js/**"
+      - "js/sdk/**"
   workflow_dispatch:
     inputs:
       run_integration_tests:
         description: "Run integration tests"
         default: "false"
+        type: choice
         options: ["true", "false"]
 
 jobs:
@@ -24,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: "js"
+        working-directory: "js/sdk"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -43,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: "js"
+        working-directory: "js/sdk"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -62,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: "js"
+        working-directory: "js/sdk"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js 18.x
@@ -91,7 +92,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: "js"
+        working-directory: "js/sdk"
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js ${{ matrix.node-version }}

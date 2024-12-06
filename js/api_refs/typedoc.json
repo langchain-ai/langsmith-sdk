@@ -9,9 +9,10 @@
     "alphabetical"
   ],
   "plugin": [
-    "./typedoc_plugins/hide_underscore_lc.js"
+    "./typedoc_plugins/hide_underscore_lc.js",
+    "typedoc-plugin-expand-object-like-types"
   ],
-  "tsconfig": "../../js/tsconfig.json",
+  "tsconfig": "../../js/sdk/tsconfig.json",
   "readme": "none",
   "excludePrivate": true,
   "excludeInternal": true,

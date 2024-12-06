@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "js/package.json"
+      - "js/sdk/package.json"
   workflow_dispatch:
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
       id-token: write
     defaults:
       run:
-        working-directory: "js"
+        working-directory: "js/sdk"
     steps:
       - uses: actions/checkout@v3
       # JS Build
