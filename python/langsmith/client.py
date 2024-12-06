@@ -1625,14 +1625,9 @@ class Client:
         self._multipart_ingest_ops(serialized_ops)
 
     def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
-        _context = acc.context
-        
-
         compressor = StreamingMultipartCompressor(compression_level=3, blocksize=65536, boundary=BOUNDARY)
 
-        multipart_iter = iter([acc])
-
-        compressed_data_iter = compressor.compress_multipart_stream(multipart_iter)
+        compressed_data_iter = compressor.compress_multipart_stream(acc)
         
         headers = {
             **self._headers,
@@ -1653,7 +1648,7 @@ class Client:
                             "headers": headers,
                         },
                         stop_after_attempt=1,
-                        _context=_context,
+                        _context=acc.context,
                     )
                     break
                 except ls_utils.LangSmithConflictError:
