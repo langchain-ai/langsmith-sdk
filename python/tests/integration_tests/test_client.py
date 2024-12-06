@@ -484,6 +484,7 @@ def test_upload_examples_multipart(langchain_client: Client):
 
 def test_upsert_examples_multipart(langchain_client: Client) -> None:
     """Test upserting examples with attachments via multipart endpoint."""
+    langchain_client._info = {"instance_flags": {"examples_multipart_enabled": True}}
     dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)

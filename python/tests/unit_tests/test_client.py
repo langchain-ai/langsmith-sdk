@@ -426,7 +426,11 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     mock_session.request.return_value = mock_response
     mock_session_cls.return_value = mock_session
 
-    client = Client(api_url="http://localhost:1984", api_key="123")
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={"instance_flags": {"examples_multipart_enabled": True}},
+    )
 
     # Create test data
     example_id = uuid.uuid4()
@@ -451,7 +455,7 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     client.upsert_examples_multipart(upserts=[example])
 
     # Verify the request
-    assert mock_session.request.call_count == 2  # we always make a call to /info
+    assert mock_session.request.call_count == 1
     call_args = mock_session.request.call_args
 
     assert call_args[0][0] == "POST"
