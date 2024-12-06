@@ -306,6 +306,7 @@ class StreamingMultipartCompressor:
         *,
         compression_level: int = 3,
         blocksize: int = 16384,
+        boundary: str = BOUNDARY,
     ):
         self.compressor = zstd.ZstdCompressor(level=compression_level)
         self.buffer = io.BytesIO()
@@ -332,7 +333,7 @@ class StreamingMultipartCompressor:
                 for part_name, (filename, data, content_type, headers) in pc.parts:
                     # Write part headers
                     part_header = (
-                        f'--{BOUNDARY}\r\n'
+                        f'--{self.boundary}\r\n'
                         f'Content-Disposition: form-data; name="{part_name}"'
                     )
                     if filename:
@@ -364,7 +365,7 @@ class StreamingMultipartCompressor:
                     yield from self._yield_and_reset_buffer()
 
             # Write final boundary
-            compressor.write(f'--{BOUNDARY}--\r\n'.encode())
+            compressor.write(f'--{self.boundary}--\r\n'.encode())
             yield from self._yield_and_reset_buffer()
 
         finally:
