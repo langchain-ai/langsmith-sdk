@@ -653,7 +653,6 @@ async def test_aevaluate_results(
     async for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
-
     # test invalid evaluators
     # args need to be positional
     async def eval1(*, inputs, outputs):
@@ -911,7 +910,7 @@ def test_normalize_evaluator_func_invalid(func, is_async):
             )
         else:
             evaluate(target, data=ds_examples, evaluators=[func], client=client)
-            
+
 
 def summary_eval_runs_examples(runs_, examples_):
     return {"score": len(runs_[0].dotted_order)}

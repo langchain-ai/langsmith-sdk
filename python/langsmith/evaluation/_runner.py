@@ -1064,7 +1064,8 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
-        include_attachments=_include_attachments(target),
+        include_attachments=_include_attachments(target)
+        or _evaluators_include_attachments(evaluators),
         upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -1911,6 +1912,17 @@ def _ensure_traceable(
             target = target.invoke  # type: ignore[union-attr]
         fn = rh.traceable(name="Target")(cast(Callable, target))
     return fn
+
+
+def _evaluators_include_attachments(evaluators: Sequence[EVALUATOR_T]) -> bool:
+    return any(
+        any(
+            p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            and p.name == "attachments"
+            for p in inspect.signature(e.__call__).parameters.values()
+        )
+        for e in evaluators
+    )
 
 
 def _include_attachments(

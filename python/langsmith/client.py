@@ -140,16 +140,6 @@ BOUNDARY = uuid.uuid4().hex
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
-class AutoSeekBytesIO(io.BytesIO):
-    """BytesIO class that resets on read."""
-
-    def read(self, *args, **kwargs):
-        """Reset on read."""
-        data = super().read(*args, **kwargs)
-        self.seek(0)
-        return data
-
-
 def _parse_token_or_url(
     url_or_token: Union[str, uuid.UUID],
     api_url: str,
@@ -3835,7 +3825,7 @@ class Client:
             for key, value in example["attachment_urls"].items():
                 response = requests.get(value["presigned_url"], stream=True)
                 response.raise_for_status()
-                reader = AutoSeekBytesIO(response.content)
+                reader = io.BytesIO(response.content)
                 attachment_urls[key.split(".")[1]] = (
                     value["presigned_url"],
                     reader,
@@ -3922,7 +3912,7 @@ class Client:
                 for key, value in example["attachment_urls"].items():
                     response = requests.get(value["presigned_url"], stream=True)
                     response.raise_for_status()
-                    reader = AutoSeekBytesIO(response.content)
+                    reader = io.BytesIO(response.content)
                     attachment_urls[key.split(".")[1]] = (
                         value["presigned_url"],
                         reader,

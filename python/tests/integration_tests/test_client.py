@@ -1265,14 +1265,13 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
-
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
         data_type=DataType.kv,
     )
 
-    example = ExampleUpsertWithAttachments(
+    example = ExampleUploadWithAttachments(
         dataset_id=dataset.id,
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
@@ -1281,7 +1280,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         },
     )
 
-    langchain_client.upsert_examples_multipart(upserts=[example])
+    langchain_client.upload_examples_multipart(uploads=[example])
 
     def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
         # Verify we receive the attachment data
@@ -1302,11 +1301,60 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
             )
         }
 
-    results = evaluate(
+    results = langchain_client.evaluate(
         target,
         data=dataset_name,
         evaluators=[evaluator],
-        client=langchain_client,
+        num_repetitions=2,
+    )
+
+    assert len(results) == 2
+    for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
+def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> None:
+    """Test evaluating examples with attachments."""
+    dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for evals with attachments",
+        data_type=DataType.kv,
+    )
+
+    example = ExampleUploadWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"question": "What is shown in the image?"},
+        outputs={"answer": "test image"},
+        attachments={
+            "image": ("image/png", b"fake image data for testing"),
+        },
+    )
+
+    langchain_client.upload_examples_multipart(uploads=[example])
+
+    def target(inputs: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        return {"answer": "test image"}
+
+    def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        image_url, image_data = attachments["image"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = langchain_client.evaluate(
+        target,
+        data=dataset_name,
+        evaluators=[evaluator],
         num_repetitions=2,
     )
 
@@ -1406,11 +1454,60 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
             )
         }
 
-    results = await aevaluate(
-        target, data=dataset_name, evaluators=[evaluator], client=langchain_client
+    results = await langchain_client.aevaluate(
+        target, data=dataset_name, evaluators=[evaluator], num_repetitions=2
     )
 
-    assert len(results) == 1
+    assert len(results) == 2
+    async for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
+async def test_aevaluate_with_attachments_not_in_target(
+    langchain_client: Client,
+) -> None:
+    """Test evaluating examples with attachments."""
+    dataset_name = "__test_aevaluate_attachments" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for evals with attachments",
+        data_type=DataType.kv,
+    )
+
+    example = ExampleUpsertWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"question": "What is shown in the image?"},
+        outputs={"answer": "test image"},
+        attachments={
+            "image": ("image/png", b"fake image data for testing"),
+        },
+    )
+
+    langchain_client.upsert_examples_multipart(upserts=[example])
+
+    async def target(inputs: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        return {"answer": "test image"}
+
+    async def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        image_url, image_data = attachments["image"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = await langchain_client.aevaluate(
+        target, data=dataset_name, evaluators=[evaluator], num_repetitions=2
+    )
+
+    assert len(results) == 2
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
@@ -1465,7 +1562,7 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
-    
+
 
 def test_examples_length_validation(langchain_client: Client) -> None:
     """Test that mismatched lengths raise ValueError for create and update examples."""
