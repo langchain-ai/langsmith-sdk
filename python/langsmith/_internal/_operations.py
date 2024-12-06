@@ -311,6 +311,7 @@ class StreamingMultipartCompressor:
         self.compressor = zstd.ZstdCompressor(level=compression_level)
         self.buffer = io.BytesIO()
         self.blocksize = blocksize
+        self.boundary = boundary
 
     def _yield_and_reset_buffer(self) -> Iterator[bytes]:
         # Yield the current compressed data and reset the buffer.

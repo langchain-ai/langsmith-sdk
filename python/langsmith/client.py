@@ -1628,7 +1628,7 @@ class Client:
         _context = acc.context
         
 
-        compressor = StreamingMultipartCompressor(compression_level=3, boundary=BOUNDARY)
+        compressor = StreamingMultipartCompressor(compression_level=3, blocksize=65536, boundary=BOUNDARY)
 
         multipart_iter = iter([acc])
 
