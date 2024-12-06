@@ -58,9 +58,6 @@ from urllib import parse as urllib_parse
 
 import requests
 from requests import adapters as requests_adapters
-from requests_toolbelt import (  # type: ignore[import-untyped]
-    multipart as rqtb_multipart,
-)
 from typing_extensions import TypeGuard, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
@@ -88,8 +85,8 @@ from langsmith._internal._multipart import (
 )
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
-    StreamingMultipartCompressor,
     SerializedRunOperation,
+    StreamingMultipartCompressor,
     combine_serialized_queue_operations,
     serialize_feedback_dict,
     serialize_run_dict,

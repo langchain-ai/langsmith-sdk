@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import io
 import itertools
 import logging
 import uuid
-from typing import Literal, Optional, Union, cast, Iterator, Sequence
+from typing import Iterator, Literal, Optional, Sequence, Union, cast
+
+import zstandard as zstd
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
-import zstandard as zstd
-import io
 
 logger = logging.getLogger(__name__)
 
@@ -340,7 +341,9 @@ class StreamingMultipartCompressor:
         compressor = self.compressor.stream_writer(self.buffer)
 
         try:
-            for part_name, (filename, data, content_type, headers) in parts_and_contexts.parts:
+            for part_name, (filename, data, content_type, headers) in (
+                parts_and_contexts.parts
+            ):
                 # Write part headers
                 part_header = (
                     f'--{self.boundary}\r\n'
@@ -398,7 +401,8 @@ class StreamingMultipartCompressor:
             Compressed chunks of the multipart form data
         """
         def chunk_ops(ops: Sequence[SerializedRunOperation], 
-                     size: Optional[int] = None) -> Iterator[Sequence[SerializedRunOperation]]:
+                     size: Optional[int] = None,
+                     ) -> Iterator[Sequence[SerializedRunOperation]]:
             if size is None:
                 yield ops
                 return
@@ -406,13 +410,17 @@ class StreamingMultipartCompressor:
             for i in range(0, len(ops), size):
                 yield ops[i:i + size]
 
-        def get_multipart_parts(batch: Sequence[SerializedRunOperation]) -> MultipartPartsAndContext:
+        def get_multipart_parts(
+            batch: Sequence[SerializedRunOperation]
+        ) -> MultipartPartsAndContext:
             parts_and_contexts = []
             for op in batch:
                 parts_and_contexts.append(
                     serialized_run_operation_to_multipart_parts_and_context(op)
                 )
-            return combine_multipart_parts_and_context_for_compression(parts_and_contexts)
+            return combine_multipart_parts_and_context_for_compression(
+                parts_and_contexts
+            )
 
         # Process operations in batches
         for batch in chunk_ops(ops, batch_size):
