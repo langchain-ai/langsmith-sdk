@@ -1053,6 +1053,7 @@ def _evaluate(
         runs,
         client,
     )
+
     manager = _ExperimentManager(
         data,
         client=client,
@@ -1507,8 +1508,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self.experiment_name,
                     self._metadata,
                     self.client,
-                    self._include_attachments,
                     self._upload_results,
+                    self._include_attachments,
                 )
 
         else:
@@ -1521,8 +1522,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.experiment_name,
                         self._metadata,
                         self.client,
-                        self._include_attachments,
                         self._upload_results,
+                        self._include_attachments,
                     )
                     for example in self.examples
                 ]
