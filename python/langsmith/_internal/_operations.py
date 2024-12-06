@@ -324,7 +324,7 @@ class StreamingMultipartCompressor:
         self,
         parts_and_contexts: Iterator[MultipartPartsAndContext],
     ) -> Iterator[bytes]:
-        # Create a streaming compressor context that writes into self.buffer
+        # Create a streaming compressor context
         compressor = self.compressor.stream_writer(self.buffer)
 
         try:
@@ -356,7 +356,7 @@ class StreamingMultipartCompressor:
                             # After writing each chunk, yield compressed data
                             yield from self._yield_and_reset_buffer()
                     else:
-                        # Handle other data types if needed
+                        # Handle other data types
                         compressor.write(str(data).encode())
                         yield from self._yield_and_reset_buffer()
 
