@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -63,8 +64,26 @@ class Attachment(NamedTuple):
     data: bytes
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
-"""Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
+"""Attachments associated with the run. 
+Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
+
+
+@runtime_checkable
+class BinaryIOLike(Protocol):
+    """Protocol for binary IO-like objects."""
+
+    def read(self, size: int = -1) -> bytes:
+        """Read function."""
+        ...
+
+    def write(self, b: bytes) -> int:
+        """Write function."""
+        ...
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        """Seek function."""
+        ...
 
 
 class ExampleBase(BaseModel):
@@ -74,11 +93,15 @@ class ExampleBase(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
+    attachment_urls: Optional[Dict[str, Tuple[str, BinaryIOLike]]] = Field(default=None)
+    """Dictionary with attachment names as keys and a tuple of the S3 url
+    and a reader of the data for the file."""
 
     class Config:
         """Configuration class for the schema."""
 
         frozen = True
+        arbitrary_types_allowed = True
 
 
 class ExampleCreate(ExampleBase):
@@ -87,6 +110,18 @@ class ExampleCreate(ExampleBase):
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     split: Optional[Union[str, List[str]]] = None
+
+
+class ExampleUpsertWithAttachments(ExampleCreate):
+    """Example create with attachments."""
+
+    attachments: Optional[Attachments] = None
+
+
+class ExampleUploadWithAttachments(ExampleUpsertWithAttachments):
+    """Example upload with attachments."""
+
+    pass
 
 
 class Example(ExampleBase):
@@ -148,6 +183,13 @@ class ExampleUpdate(BaseModel):
         """Configuration class for the schema."""
 
         frozen = True
+
+
+class ExampleUpdateWithAttachments(ExampleUpdate):
+    """Example update with attachments."""
+
+    id: UUID
+    attachments: Optional[Attachments] = None
 
 
 class DataType(str, Enum):
@@ -718,6 +760,8 @@ class LangSmithInfo(BaseModel):
     license_expiration_time: Optional[datetime] = None
     """The time the license will expire."""
     batch_ingest_config: Optional[BatchIngestConfig] = None
+    """The instance flags."""
+    instance_flags: Optional[Dict[str, Any]] = None
 
 
 Example.update_forward_refs()
@@ -1003,3 +1047,12 @@ class UsageMetadata(TypedDict):
 
     Does *not* need to sum to full output token count. Does *not* need to have all keys.
     """
+
+
+class UpsertExamplesResponse(TypedDict):
+    """Response object returned from the upsert_examples_multipart method."""
+
+    count: int
+    """The number of examples that were upserted."""
+    example_ids: List[str]
+    """The ids of the examples that were upserted."""
