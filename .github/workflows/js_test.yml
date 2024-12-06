@@ -82,7 +82,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [18.x, 20.x, "22.4.1"]
+        node-version: [18.x, 19.x, 20.x]
         # See Node.js release schedule at https://nodejs.org/en/about/releases/
         include:
           - os: windows-latest

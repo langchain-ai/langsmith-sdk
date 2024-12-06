@@ -4,17 +4,16 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["**/dist/**"],
-      "inputs": ["**/src/**"]
+      "inputs": ["js/src/**", "js-api-refs/scripts/**", "js-api-refs/typedoc_plugins/*"],
+      "outputs": ["js/dist/**", "js-api-refs/public/**"]
     },
     "lint": {
       "dependsOn": ["^lint"],
-      "inputs": ["**/src/**"],
-      "outputLogs": ["**/.eslintcache"]
+      "inputs": ["js/src/**"]
     },
     "format": {
       "dependsOn": ["^format"],
-      "inputs": ["**/src/**"]
+      "inputs": ["js/src/**"]
     }
   }
 }

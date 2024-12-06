@@ -9,7 +9,7 @@ const {
 const fs = require("fs");
 const path = require("path");
 
-const PATH_TO_LANGCHAIN_PKG_JSON = "../../js/package.json";
+const PATH_TO_LANGCHAIN_PKG_JSON = "../js/package.json";
 const BASE_OUTPUT_DIR = "./public";
 const SCRIPT_HTML = `<script>
   document.addEventListener('keydown', (e) => {
