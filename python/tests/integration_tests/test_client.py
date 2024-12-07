@@ -26,7 +26,9 @@ from langsmith.schemas import (
     Example,
     ExampleUploadWithAttachments,
     ExampleUpsertWithAttachments,
+    ExampleUpdateWithAttachments,
     Run,
+    AttachmentsOperations,
 )
 from langsmith.utils import (
     LangSmithConnectionError,
@@ -1415,3 +1417,292 @@ def test_examples_length_validation(langchain_client: Client) -> None:
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_update_example_with_attachments_operations(langchain_client: Client) -> None:
+    """Test updating an example with attachment operations."""
+    dataset_name = "__test_update_example_attachments" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for updating example attachments",
+    )
+
+    # Create example with attachments
+    example = ExampleUploadWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image"},
+        attachments={
+            "image1": ("image/png", b"fake image data 1"),
+            "image2": ("image/png", b"fake image data 2"),
+        },
+    )
+    created_example = langchain_client.upload_examples_multipart(
+        uploads=[example]
+    )
+
+    # Update example with attachment operations to rename and retain specific attachments
+    attachments_operations = AttachmentsOperations(
+        rename={"image1": "renamed_image"},
+        retain=["image2"]  # Only keep the renamed image1, drop image2
+    )
+    
+    updated_example = langchain_client.update_example(
+        example_id=created_example.id,
+        attachments_operations=attachments_operations,
+    )
+
+    # Verify the update
+    retrieved_example = langchain_client.read_example(
+            example_id=created_example.id,
+        )
+    
+    # Check that only the renamed attachment exists
+    assert len(retrieved_example.attachment_urls) == 2
+    assert "renamed_image" in retrieved_example.attachment_urls
+    assert "image2" in retrieved_example.attachment_urls
+    assert "image1" not in retrieved_example.attachment_urls
+    assert retrieved_example.attachment_urls["image2"][1].read() == b"fake image data 2"
+    assert retrieved_example.attachment_urls["renamed_image"][1].read() == b"fake image data 1"
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+
+def test_bulk_update_examples_with_attachments_operations(langchain_client: Client) -> None:
+    """Test bulk updating examples with attachment operations."""
+    dataset_name = "__test_bulk_update_attachments" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for bulk updating example attachments",
+    )
+
+    # Create two examples with attachments
+    example1 = ExampleUploadWithAttachments(
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image 1"},
+        attachments={
+            "image1": ("image/png", b"fake image data 1"),
+            "extra": ("text/plain", b"extra data"),
+        },
+    )
+    example2 = ExampleUploadWithAttachments(
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image 2"},
+        attachments={
+            "image2": ("image/png", b"fake image data 2"),
+            "extra": ("text/plain", b"extra data"),
+        },
+    )
+    
+    created_examples = langchain_client.upload_examples_multipart(
+        uploads=[example1, example2],
+    )
+    example_ids = [ex.id for ex in created_examples]
+
+    # Update both examples with different attachment operations
+    attachments_operations = [
+        AttachmentsOperations(
+            rename={"image1": "renamed_image1"},
+        ),
+        AttachmentsOperations(
+            retain=["extra"]
+        ),
+    ]
+    
+    langchain_client.update_examples(
+        example_ids=example_ids,
+        attachments_operations=attachments_operations,
+    )
+
+    # Verify the updates
+    updated_examples = list(
+        langchain_client.list_examples(
+            dataset_id=dataset.id,
+            example_ids=example_ids,
+            include_attachments=True,
+        )
+    )
+    
+    # Check first example
+    assert len(updated_examples[0].attachments) == 1
+    assert "renamed_image1" in updated_examples[0].attachments
+    assert "extra" not in updated_examples[0].attachments
+
+    # Check second example
+    assert len(updated_examples[1].attachments) == 1
+    assert "extra" in updated_examples[1].attachments
+    assert "image2" not in updated_examples[1].attachments
+
+    # Check attachment data
+    assert updated_examples[0].attachments["renamed_image1"][1].read() == b"fake image data 1"
+    assert updated_examples[1].attachments["extra"][1].read() == b"extra data"
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_update_examples_multipart(langchain_client: Client) -> None:
+    """Test updating examples with attachments via multipart endpoint."""
+    dataset_name = "__test_update_examples_multipart" + uuid4().hex[:4]
+    if langchain_client.has_dataset(dataset_name=dataset_name):
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for multipart example updates",
+        data_type=DataType.kv,
+    )
+
+    # First create some examples with attachments
+    example_1 = ExampleUploadWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"text": "hello world"},
+        attachments={
+            "file1": ("text/plain", b"original content 1"),
+            "file2": ("text/plain", b"original content 2"),
+        },
+    )
+
+    example_2 = ExampleUploadWithAttachments(
+        dataset_id=dataset.id,
+        inputs={"text": "second example"},
+        attachments={
+            "file3": ("text/plain", b"original content 3"),
+            "file4": ("text/plain", b"original content 4"),
+        },
+    )
+
+    created_examples = langchain_client.upload_examples_multipart(
+        uploads=[example_1, example_2]
+    )
+    assert created_examples["count"] == 2
+
+    examples = list(langchain_client.list_examples(dataset_id=dataset.id))
+    example_ids = [ex.id for ex in examples]
+
+    # Now create update operations
+    update_1 = ExampleUpdateWithAttachments(
+        id=example_ids[0],
+        dataset_id=dataset.id,
+        inputs={"text": "updated hello world"},
+        attachments={
+            "new_file1": ("text/plain", b"new content 1"),
+        },
+        attachments_operations=AttachmentsOperations(
+            rename={"file1": "renamed_file1"},
+        )
+    )
+
+    update_2 = ExampleUpdateWithAttachments(
+        id=example_ids[1],
+        dataset_id=dataset.id,
+        inputs={"text": "updated second example"},
+        attachments={
+            "new_file2": ("text/plain", b"new content 2"),
+        },
+        attachments_operations=AttachmentsOperations(
+            retain=["file3"]
+        )
+    )
+
+    # Test updating multiple examples at once
+    updated_examples = langchain_client.update_examples_multipart(
+        updates=[update_1, update_2]
+    )
+    assert updated_examples["count"] == 2
+
+    # Verify the updates
+    updated = list(langchain_client.list_examples(
+        dataset_id=dataset.id,
+        include_attachments=True,
+    ))
+    
+    # Verify first example updates
+    example_1_updated = next(ex for ex in updated if ex.id == example_ids[0])
+    assert example_1_updated.inputs["text"] == "updated hello world"
+    assert "renamed_file1" in example_1_updated.attachment_urls
+    assert "new_file1" in example_1_updated.attachment_urls
+    assert "file2" not in example_1_updated.attachment_urls
+    assert example_1_updated.attachment_urls["renamed_file1"][1].read() == b"original content 1"
+    assert example_1_updated.attachment_urls["new_file1"][1].read() == b"new content 1"
+
+    # Verify second example updates
+    example_2_updated = next(ex for ex in updated if ex.id == example_ids[1])
+    assert example_2_updated.inputs["text"] == "updated second example"
+    assert "file3" in example_2_updated.attachment_urls
+    assert "new_file2" in example_2_updated.attachment_urls
+    assert "file4" not in example_2_updated.attachment_urls
+    assert example_2_updated.attachment_urls["file3"][1].read() == b"original content 3"
+    assert example_2_updated.attachment_urls["new_file2"][1].read() == b"new content 2"
+
+    # Test updating examples in different datasets fails
+    other_dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name + "_other",
+        description="Other test dataset",
+    )
+    with pytest.raises(ValueError, match="All examples must be in the same dataset"):
+        langchain_client.update_examples_multipart(
+            updates=[
+                ExampleUpsertWithAttachments(
+                    id=example_ids[0],
+                    dataset_id=dataset.id,
+                    inputs={"text": "update 1"},
+                ),
+                ExampleUpsertWithAttachments(
+                    id=uuid4(),
+                    dataset_id=other_dataset.id,
+                    inputs={"text": "update 2"},
+                ),
+            ]
+        )
+
+    # Test updating non-existent example fails
+    with pytest.raises(LangSmithNotFoundError):
+        langchain_client.update_examples_multipart(
+            updates=[
+                ExampleUpsertWithAttachments(
+                    id=uuid4(),
+                    dataset_id=dataset.id,
+                    inputs={"text": "should fail"},
+                )
+            ]
+        )
+
+    # Test updating with mismatch named attachments fails
+    with pytest.raises(ValueError):
+        langchain_client.update_examples_multipart(
+            updates=[
+                ExampleUpdateWithAttachments(
+                    id=example_ids[0],
+                    dataset_id=dataset.id,
+                    attachments={
+                        "renamed_file1": ("text/plain", b"new content 1"),
+                    },
+                    attachments_operations=AttachmentsOperations(
+                        retain=["renamed_file1"],
+                    )
+                )
+            ]
+        )
+
+    with pytest.raises(ValueError):
+        langchain_client.update_examples_multipart(
+            updates=[
+                ExampleUpdateWithAttachments(
+                    id=example_ids[0],
+                    dataset_id=dataset.id,
+                    attachments={
+                        "foo": ("text/plain", b"new content 1"),
+                    },
+                    attachments_operations=AttachmentsOperations(
+                        rename={"renamed_file1":"foo"},
+                    )
+                )
+            ]
+        )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+    langchain_client.delete_dataset(dataset_id=other_dataset.id)

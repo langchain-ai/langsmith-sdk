@@ -3465,6 +3465,7 @@ class Client:
         examples: Union[
             List[ls_schemas.ExampleUploadWithAttachments]
             | List[ls_schemas.ExampleUpsertWithAttachments]
+            | List[ls_schemas.ExampleUpdateWithAttachments],
         ],
         include_dataset_id: bool = False,
     ) -> Tuple[Any, bytes]:
@@ -3568,6 +3569,20 @@ class Client:
                                 ),
                             )
                         )
+            
+            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments) and example.attachments_operations:
+                attachments_operationsb = _dumps_json(example.attachments_operations)
+                parts.append(
+                    (
+                        f"{example_id}.attachments_operations",
+                        (
+                            None,
+                            attachments_operationsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
+                )
 
         encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
         if encoder.len <= 20_000_000:  # ~20 MB
@@ -3576,6 +3591,39 @@ class Client:
             data = encoder
 
         return encoder, data
+
+    def update_examples_multipart(
+        self,
+        *,
+        updates: List[ls_schemas.ExampleUpdateWithAttachments] = [],
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples."""
+        if not (self.info.instance_flags or {}).get(
+            "examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+            )
+
+        encoder, data = self._prepate_multipart_data(updates, include_dataset_id=False)
+        dataset_ids = set([example.dataset_id for example in updates])
+        if len(dataset_ids) > 1:
+            raise ValueError("All examples must be in the same dataset.")
+        dataset_id = list(dataset_ids)[0]
+
+        response = self.request_with_retries(
+            "PATCH",
+            f"/v1/platform/datasets/{dataset_id}/examples",
+            request_kwargs={
+                "data": data,
+                "headers": {
+                    **self._headers,
+                    "Content-Type": encoder.content_type,
+                },
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
 
     def upload_examples_multipart(
         self,
@@ -4061,6 +4109,7 @@ class Client:
         metadata: Optional[Dict] = None,
         split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
+        attachments_operations: Optional[AttachmentsOperations] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
 
@@ -4091,6 +4140,7 @@ class Client:
             dataset_id=dataset_id,
             metadata=metadata,
             split=split,
+            attachments_operations=attachments_operations,
         )
         response = self.request_with_retries(
             "PATCH",
@@ -4110,6 +4160,9 @@ class Client:
         metadata: Optional[Sequence[Optional[Dict]]] = None,
         splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
+        attachments_operations: Optional[
+            Sequence[Optional[AttachmentsOperations]]
+        ] = None,
     ) -> Dict[str, Any]:
         """Update multiple examples.
 
@@ -4140,6 +4193,7 @@ class Client:
             "metadata": metadata,
             "splits": splits,
             "dataset_ids": dataset_ids,
+            "attachments_operations": attachments_operations,
         }
         # Since inputs are required, we will check against them
         examples_len = len(example_ids)
@@ -4157,8 +4211,9 @@ class Client:
                 "dataset_id": dataset_id_,
                 "metadata": metadata_,
                 "split": split_,
+                "attachments_operations": attachments_operations_,
             }
-            for id_, in_, out_, metadata_, split_, dataset_id_ in zip(
+            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_operations_ in zip(
                 example_ids,
                 inputs or [None] * len(example_ids),
                 outputs or [None] * len(example_ids),
