@@ -259,6 +259,7 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
+
     .. versionchanged:: 0.2.0
 
         'max_concurrency' default updated from None (no limit on concurrency)
@@ -476,7 +477,8 @@ async def _aevaluate(
         description=description,
         num_repetitions=num_repetitions,
         runs=runs,
-        include_attachments=_include_attachments(target),
+        include_attachments=_include_attachments(target)
+        or _evaluators_include_attachments(evaluators),
         upload_results=upload_results,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -1052,6 +1054,27 @@ async def _aforward(
             run=cast(schemas.Run, run),
             example=example,
         )
+
+
+def _evaluators_include_attachments(
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
+) -> bool:
+    if evaluators is None:
+        return False
+    return any(
+        any(
+            p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            and p.name == "attachments"
+            for p in (
+                inspect.signature(
+                    e.__call__ if hasattr(e, "__call__") else e
+                ).parameters.values()
+                if callable(e) or hasattr(e, "__call__")
+                else []
+            )
+        )
+        for e in evaluators
+    )
 
 
 def _include_attachments(
