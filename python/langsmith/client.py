@@ -58,9 +58,6 @@ from urllib import parse as urllib_parse
 
 import requests
 from requests import adapters as requests_adapters
-from requests_toolbelt import (  # type: ignore[import-untyped]
-    multipart as rqtb_multipart,
-)
 from typing_extensions import TypeGuard, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
 from urllib3.util import Retry  # type: ignore[import-untyped]
@@ -89,6 +86,7 @@ from langsmith._internal._multipart import (
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
+    StreamingMultipartCompressor,
     combine_serialized_queue_operations,
     serialize_feedback_dict,
     serialize_run_dict,
@@ -1624,29 +1622,30 @@ class Client:
         self._multipart_ingest_ops(serialized_ops)
 
     def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
-        parts = acc.parts
-        _context = acc.context
+        compressor = StreamingMultipartCompressor(compression_level=3, blocksize=65536, boundary=BOUNDARY)
+
+        compressed_data_iter = compressor.compress_multipart_stream(acc)
+        
+        headers = {
+            **self._headers,
+            X_API_KEY: None,  # Set inside the loop for each api_url
+            "Content-Type": f"multipart/form-data; boundary={BOUNDARY}",
+            "Content-Encoding": "zstd",
+        }
+
         for api_url, api_key in self._write_api_urls.items():
+            headers[X_API_KEY] = api_key
             for idx in range(1, attempts + 1):
                 try:
-                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
-                    if encoder.len <= 20_000_000:  # ~20 MB
-                        data = encoder.to_string()
-                    else:
-                        data = encoder
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
                         request_kwargs={
-                            "data": data,
-                            "headers": {
-                                **self._headers,
-                                X_API_KEY: api_key,
-                                "Content-Type": encoder.content_type,
-                            },
+                            "data": compressed_data_iter,
+                            "headers": headers,
                         },
                         stop_after_attempt=1,
-                        _context=_context,
+                        _context=acc.context,
                     )
                     break
                 except ls_utils.LangSmithConflictError:

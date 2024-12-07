@@ -37,6 +37,7 @@ requests-toolbelt = "^1.0.0"
 
 # Enabled via `langsmith_pyo3` extra: `pip install langsmith[langsmith_pyo3]`.
 langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
+zstandard = ">=0.21.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -75,6 +76,7 @@ pytest-socket = "^0.7.0"
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
+compression = ["zstandard"]
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
 import itertools
 import logging
 import uuid
-from typing import Literal, Optional, Union, cast
+from typing import Iterator, Literal, Optional, Sequence, Union, cast
+
+import zstandard as zstd
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
@@ -12,7 +15,7 @@ from langsmith._internal._serde import dumps_json as _dumps_json
 
 logger = logging.getLogger(__name__)
 
-
+BOUNDARY = uuid.uuid4().hex
 class SerializedRunOperation:
     operation: Literal["post", "patch"]
     id: uuid.UUID
@@ -271,3 +274,155 @@ def serialized_run_operation_to_multipart_parts_and_context(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",
     )
+
+
+def combine_multipart_parts_and_context_for_compression(
+    parts_and_contexts: Sequence[MultipartPartsAndContext],
+) -> MultipartPartsAndContext:
+    """Combine multiple MultipartPartsAndContext objects for streaming compression.
+    
+    Args:
+        parts_and_contexts: Sequence of MultipartPartsAndContext objects to combine
+        
+    Returns:
+        Combined MultipartPartsAndContext with all parts and contexts
+    """
+    all_parts = []
+    contexts = []
+    
+    for pc in parts_and_contexts:
+        all_parts.extend(pc.parts)
+        contexts.append(pc.context)
+        
+    return MultipartPartsAndContext(
+        all_parts,
+        ";".join(contexts)
+    )
+
+class StreamingMultipartCompressor:
+    """Incrementally compress multipart form data from multiple traces."""
+
+    def __init__(
+        self,
+        *,
+        compression_level: int = 3,
+        blocksize: int = 65536,
+        boundary: str = BOUNDARY,
+    ):
+        self.compressor = zstd.ZstdCompressor(level=compression_level)
+        self.buffer = io.BytesIO()
+        self.blocksize = blocksize
+        self.boundary = boundary
+
+    def _yield_and_reset_buffer(self) -> Iterator[bytes]:
+        # Yield the current compressed data and reset the buffer.
+        compressed_data = self.buffer.getvalue()
+        if compressed_data:
+            yield compressed_data
+            self.buffer.seek(0)
+            self.buffer.truncate()
+
+    def _process_bytes(
+        self,
+        compressor: zstd.ZstdCompressionWriter,
+        data: Union[bytes, bytearray],
+    ) -> Iterator[bytes]:
+        with memoryview(data) as view:
+            for i in range(0, len(view), self.blocksize):
+                chunk = view[i:i + self.blocksize]
+                compressor.write(chunk)
+                yield from self._yield_and_reset_buffer()
+
+    def compress_multipart_stream(
+        self,
+        parts_and_contexts: MultipartPartsAndContext,
+    ) -> Iterator[bytes]:
+        # Create a streaming compressor context
+        compressor = self.compressor.stream_writer(self.buffer)
+
+        try:
+            for part_name, (filename, data, content_type, headers) in (
+                parts_and_contexts.parts
+            ):
+                # Write part headers
+                part_header = (
+                    f'--{self.boundary}\r\n'
+                    f'Content-Disposition: form-data; name="{part_name}"'
+                )
+                if filename:
+                    part_header += f'; filename="{filename}"'
+                part_header += f'\r\nContent-Type: {content_type}\r\n'
+
+                for header_name, header_value in headers.items():
+                    part_header += f'{header_name}: {header_value}\r\n'
+
+                part_header += '\r\n'
+                compressor.write(part_header.encode())
+                # Yield compressed data to keep memory footprint small
+                yield from self._yield_and_reset_buffer()
+
+                # Write part data in chunks
+                if isinstance(data, (bytes, bytearray)):
+                    yield from self._process_bytes(compressor, data)
+                else:
+                    # Handle other data types
+                    compressor.write(str(data).encode())
+                    yield from self._yield_and_reset_buffer()
+
+                # End of this part
+                compressor.write(b'\r\n')
+                yield from self._yield_and_reset_buffer()
+
+            # Write final boundary
+            compressor.write(f'--{self.boundary}--\r\n'.encode())
+            yield from self._yield_and_reset_buffer()
+
+        finally:
+            # Close the compressor to flush any remaining data
+            compressor.close()
+            # Yield any final compressed data
+            yield from self._yield_and_reset_buffer()
+            # Close the buffer
+            self.buffer.close()
+
+    def compress_operations(
+        self,
+        ops: Sequence[SerializedRunOperation],
+        *,
+        batch_size: Optional[int] = None,
+    ) -> Iterator[bytes]:
+        """Compress a sequence of operations into multipart form data.
+        
+        Args:
+            ops: Sequence of operations to compress
+            batch_size: Optional batch size for processing operations
+            
+        Yields:
+            Compressed chunks of the multipart form data
+        """
+        def chunk_ops(ops: Sequence[SerializedRunOperation], 
+                     size: Optional[int] = None,
+                     ) -> Iterator[Sequence[SerializedRunOperation]]:
+            if size is None:
+                yield ops
+                return
+            
+            for i in range(0, len(ops), size):
+                yield ops[i:i + size]
+
+        def get_multipart_parts(
+            batch: Sequence[SerializedRunOperation]
+        ) -> MultipartPartsAndContext:
+            parts_and_contexts = []
+            for op in batch:
+                parts_and_contexts.append(
+                    serialized_run_operation_to_multipart_parts_and_context(op)
+                )
+            return combine_multipart_parts_and_context_for_compression(
+                parts_and_contexts
+            )
+
+        # Process operations in batches
+        for batch in chunk_ops(ops, batch_size):
+            multipart_data = get_multipart_parts(batch)
+            yield from self.compress_multipart_stream(multipart_data)
