@@ -259,6 +259,7 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
+
     .. versionchanged:: 0.2.0
 
         'max_concurrency' default updated from None (no limit on concurrency)
@@ -1056,13 +1057,21 @@ async def _aforward(
 
 
 def _evaluators_include_attachments(
-    evaluators: Sequence[Union[EVALUATOR_T, AEVALUATOR_T]],
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
 ) -> bool:
+    if evaluators is None:
+        return False
     return any(
         any(
             p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
             and p.name == "attachments"
-            for p in inspect.signature(e.__call__).parameters.values()
+            for p in (
+                inspect.signature(
+                    e.__call__ if hasattr(e, "__call__") else e
+                ).parameters.values()
+                if callable(e) or hasattr(e, "__call__")
+                else []
+            )
         )
         for e in evaluators
     )
