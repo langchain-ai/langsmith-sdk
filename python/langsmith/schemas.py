@@ -169,6 +169,16 @@ class ExampleSearch(ExampleBase):
 
     id: UUID
 
+class AttachmentsOperations(BaseModel):
+     rename: Dict[str, str] = Field(
+         default_factory=dict, description="Mapping of old attachment names to new names"
+
+
+     )
+     retain: List[str] = Field(
+         default_factory=list, description="List of attachment names to keep"
+     )
+
 
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
@@ -176,6 +186,7 @@ class ExampleUpdate(BaseModel):
     dataset_id: Optional[UUID] = None
     inputs: Optional[Dict[str, Any]] = None
     outputs: Optional[Dict[str, Any]] = None
+    attachments_operations: Optional[AttachmentsOperations] = None
     metadata: Optional[Dict[str, Any]] = None
     split: Optional[Union[str, List[str]]] = None
 
