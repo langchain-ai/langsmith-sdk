@@ -324,7 +324,7 @@ class StreamingMultipartCompressor:
 
     def _process_bytes(
         self,
-        compressor: zstd.ZstdCompressor.stream_writer,
+        compressor: zstd.ZstdCompressionWriter,
         data: Union[bytes, bytearray],
     ) -> Iterator[bytes]:
         with memoryview(data) as view:
@@ -425,4 +425,4 @@ class StreamingMultipartCompressor:
         # Process operations in batches
         for batch in chunk_ops(ops, batch_size):
             multipart_data = get_multipart_parts(batch)
-            yield from self.compress_multipart_stream([multipart_data])
+            yield from self.compress_multipart_stream(multipart_data)
