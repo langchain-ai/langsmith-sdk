@@ -306,7 +306,7 @@ class StreamingMultipartCompressor:
         self,
         *,
         compression_level: int = 3,
-        blocksize: int = 16384,
+        blocksize: int = 65536,
         boundary: str = BOUNDARY,
     ):
         self.compressor = zstd.ZstdCompressor(level=compression_level)
