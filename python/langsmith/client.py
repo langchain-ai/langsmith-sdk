@@ -3470,6 +3470,13 @@ class Client:
         include_dataset_id: bool = False,
     ) -> Tuple[Any, bytes]:
         parts: List[MultipartPart] = []
+        if include_dataset_id:
+            if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
+                raise ValueError(
+                    "The examples must be of type ExampleUpsertWithAttachments"
+                    " if include_dataset_id is True"
+                )
+            dataset_id = examples[0].dataset_id
 
         for example in examples:
             if example.id is not None:
@@ -3478,7 +3485,7 @@ class Client:
                 example_id = str(uuid.uuid4())
 
             example_body = {
-                **({"dataset_id": example.dataset_id} if include_dataset_id else {}),
+                **({"dataset_id": dataset_id} if include_dataset_id else {}),
                 "created_at": example.created_at,
             }
             if example.metadata is not None:
@@ -3628,7 +3635,8 @@ class Client:
     def upload_examples_multipart(
         self,
         *,
-        uploads: List[ls_schemas.ExampleUploadWithAttachments] = [],
+        dataset_id: ID_TYPE,
+        uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3637,12 +3645,9 @@ class Client:
             raise ValueError(
                 "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
             )
-
+        if uploads is None:
+            uploads = []
         encoder, data = self._prepate_multipart_data(uploads, include_dataset_id=False)
-        dataset_ids = set([example.dataset_id for example in uploads])
-        if len(dataset_ids) > 1:
-            raise ValueError("All examples must be in the same dataset.")
-        dataset_id = list(dataset_ids)[0]
 
         response = self.request_with_retries(
             "POST",
@@ -3661,7 +3666,7 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
+        upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
@@ -3675,6 +3680,8 @@ class Client:
             raise ValueError(
                 "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
             )
+        if upserts is None:
+            upserts = []
 
         encoder, data = self._prepate_multipart_data(upserts, include_dataset_id=True)
 
@@ -3868,21 +3875,21 @@ class Client:
         )
 
         example = response.json()
-        attachment_urls = {}
+        attachments_info = {}
         if example["attachment_urls"]:
             for key, value in example["attachment_urls"].items():
                 response = requests.get(value["presigned_url"], stream=True)
                 response.raise_for_status()
                 reader = io.BytesIO(response.content)
-                attachment_urls[key.split(".")[1]] = (
-                    value["presigned_url"],
-                    reader,
-                )
+                attachments_info[key.split(".")[1]] = {
+                    "presigned_url": value["presigned_url"],
+                    "reader": reader,
+                }
         del example["attachment_urls"]
 
         return ls_schemas.Example(
             **example,
-            attachment_urls=attachment_urls,
+            attachments_info=attachments_info,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -3955,21 +3962,21 @@ class Client:
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachment_urls = {}
+            attachments_info = {}
             if example["attachment_urls"]:
                 for key, value in example["attachment_urls"].items():
                     response = requests.get(value["presigned_url"], stream=True)
                     response.raise_for_status()
                     reader = io.BytesIO(response.content)
-                    attachment_urls[key.split(".")[1]] = (
-                        value["presigned_url"],
-                        reader,
-                    )
+                    attachments_info[key.split(".")[1]] = {
+                        "presigned_url": value["presigned_url"],
+                        "reader": reader,
+                    }
             del example["attachment_urls"]
 
             yield ls_schemas.Example(
                 **example,
-                attachment_urls=attachment_urls,
+                attachments_info=attachments_info,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
