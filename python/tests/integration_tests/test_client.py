@@ -379,6 +379,9 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
 
 def test_upload_examples_multipart(langchain_client: Client):
     """Test uploading examples with attachments via multipart endpoint."""
+    langchain_client._info = {
+        "instance_flags": {"dataset_examples_multipart_enabled": True}
+    }
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -436,7 +439,7 @@ def test_upload_examples_multipart(langchain_client: Client):
     # Verify example with ID was created with correct ID
     example_with_id = [ex for ex in examples if ex.id == example_id][0]
     assert example_with_id.inputs["text"] == "hello world"
-    assert "test_file" in example_with_id.attachment_urls
+    assert "test_file" in example_with_id.attachments
 
     # Verify example with outputs and multiple attachments
     example_with_outputs = next(
@@ -444,9 +447,9 @@ def test_upload_examples_multipart(langchain_client: Client):
         for ex in examples
         if ex.outputs and ex.outputs.get("response") == "test response"
     )
-    assert len(example_with_outputs.attachment_urls) == 2
-    assert "file1" in example_with_outputs.attachment_urls
-    assert "file2" in example_with_outputs.attachment_urls
+    assert len(example_with_outputs.attachments) == 2
+    assert "file1" in example_with_outputs.attachments
+    assert "file2" in example_with_outputs.attachments
 
     # Test uploading to non-existent dataset fails
     fake_id = uuid4()
@@ -1244,6 +1247,9 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
+    langchain_client._info = {
+        "instance_flags": {"dataset_examples_multipart_enabled": True}
+    }
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
 
     # 1. Create dataset
@@ -1352,6 +1358,9 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
 
 def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     """Test evaluating examples without attachments using a target with attachments."""
+    langchain_client._info = {
+        "instance_flags": {"dataset_examples_multipart_enabled": True}
+    }
     dataset_name = "__test_evaluate_no_attachments" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(
         dataset_name,

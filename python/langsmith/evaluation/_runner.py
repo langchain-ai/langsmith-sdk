@@ -1835,7 +1835,7 @@ def _forward(
         )
         try:
             args = (
-                (example.inputs, example.attachment_urls)
+                (example.inputs, example.attachments)
                 if include_attachments
                 else (example.inputs,)
             )
@@ -1843,9 +1843,9 @@ def _forward(
                 *args,
                 langsmith_extra=langsmith_extra,
             )
-            if include_attachments and example.attachment_urls is not None:
-                for attachment in example.attachment_urls:
-                    reader = example.attachment_urls[attachment]["reader"]
+            if include_attachments and example.attachments is not None:
+                for attachment in example.attachments:
+                    reader = example.attachments[attachment]["reader"]
                     reader.seek(0)
         except Exception as e:
             logger.error(
