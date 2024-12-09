@@ -1253,10 +1253,6 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_key="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",
-        api_url="https://dev.api.smith.langchain.com",
-    )
     # 1. Create dataset
     dataset = langchain_client.create_dataset(
         dataset_name,

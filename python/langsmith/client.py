@@ -948,7 +948,6 @@ class Client:
                 params=params_,
             )
             items = response.json()
-
             if not items:
                 break
             yield from items
