@@ -3576,8 +3576,11 @@ class Client:
                                 ),
                             )
                         )
-            
-            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments) and example.attachments_operations:
+
+            if (
+                isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                and example.attachments_operations
+            ):
                 attachments_operationsb = _dumps_json(example.attachments_operations)
                 parts.append(
                     (
@@ -3602,7 +3605,8 @@ class Client:
     def update_examples_multipart(
         self,
         *,
-        updates: List[ls_schemas.ExampleUpdateWithAttachments] = [],
+        dataset_id: ID_TYPE,
+        updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3611,12 +3615,10 @@ class Client:
             raise ValueError(
                 "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
             )
+        if updates is None:
+            updates = []
 
         encoder, data = self._prepate_multipart_data(updates, include_dataset_id=False)
-        dataset_ids = set([example.dataset_id for example in updates])
-        if len(dataset_ids) > 1:
-            raise ValueError("All examples must be in the same dataset.")
-        dataset_id = list(dataset_ids)[0]
 
         response = self.request_with_retries(
             "PATCH",
@@ -4116,7 +4118,7 @@ class Client:
         metadata: Optional[Dict] = None,
         split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
-        attachments_operations: Optional[AttachmentsOperations] = None,
+        attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
 
@@ -4168,7 +4170,7 @@ class Client:
         splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
         attachments_operations: Optional[
-            Sequence[Optional[AttachmentsOperations]]
+            Sequence[Optional[ls_schemas.AttachmentsOperations]]
         ] = None,
     ) -> Dict[str, Any]:
         """Update multiple examples.

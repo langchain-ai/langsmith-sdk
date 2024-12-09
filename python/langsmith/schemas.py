@@ -183,15 +183,16 @@ class ExampleSearch(ExampleBase):
 
     id: UUID
 
+
 class AttachmentsOperations(BaseModel):
-     rename: Dict[str, str] = Field(
-         default_factory=dict, description="Mapping of old attachment names to new names"
+    """Operations to perform on attachments."""
 
-
-     )
-     retain: List[str] = Field(
-         default_factory=list, description="List of attachment names to keep"
-     )
+    rename: Dict[str, str] = Field(
+        default_factory=dict, description="Mapping of old attachment names to new names"
+    )
+    retain: List[str] = Field(
+        default_factory=list, description="List of attachment names to keep"
+    )
 
 
 class ExampleUpdate(BaseModel):
@@ -214,7 +215,12 @@ class ExampleUpdateWithAttachments(ExampleUpdate):
     """Example update with attachments."""
 
     id: UUID
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, List[str]]] = None
     attachments: Optional[Attachments] = None
+    attachments_operations: Optional[AttachmentsOperations] = None
 
 
 class DataType(str, Enum):
