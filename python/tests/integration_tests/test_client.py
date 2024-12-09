@@ -504,14 +504,12 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
     )
     assert created_examples["count"] == 2
 
-    created_example_1 = langchain_client.read_example(
-        created_examples["example_ids"][0]
-    )
+    created_example_1 = langchain_client.read_example(example_id)
     assert created_example_1.inputs["text"] == "hello world"
     assert created_example_1.outputs is None
 
     created_example_2 = langchain_client.read_example(
-        created_examples["example_ids"][1]
+        [id_ for id_ in created_examples["example_ids"] if id_ != example_id][0]
     )
     assert created_example_2.inputs["text"] == "foo bar"
     assert created_example_2.outputs["response"] == "baz"
