@@ -666,7 +666,7 @@ def _normalize_evaluator_func(
                     "example": example,
                     "inputs": example.inputs if example else {},
                     "outputs": run.outputs or {},
-                    "attachments": example.attachment_urls or {} if example else {},
+                    "attachments": example.attachments or {} if example else {},
                     "reference_outputs": example.outputs or {} if example else {},
                 }
                 args = (arg_map[arg] for arg in positional_args)
@@ -687,7 +687,7 @@ def _normalize_evaluator_func(
                     "example": example,
                     "inputs": example.inputs if example else {},
                     "outputs": run.outputs or {},
-                    "attachments": example.attachment_urls or {},
+                    "attachments": example.attachments or {},
                     "reference_outputs": example.outputs or {} if example else {},
                 }
                 args = (arg_map[arg] for arg in positional_args)
