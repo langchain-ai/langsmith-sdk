@@ -4217,7 +4217,7 @@ class Client:
         Dict[str, Any]
             The response from the server (specifies the number of examples updated).
         """
-if attachments_operations is not None:
+        if attachments_operations is not None:
             if not (self.info.instance_flags or {}).get(
                 "dataset_examples_multipart_enabled", False
             ):
