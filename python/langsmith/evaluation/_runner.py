@@ -1959,26 +1959,16 @@ def _include_attachments(
             "Target function must accept at most two "
             "arguments without default values: (inputs, attachments)."
         )
-    else:
-        mismatches = []
-        num_args = 0
-        for i, (p, expected) in enumerate(
-            zip(positional_params, ("inputs", "attachments"))
-        ):
-            if p.name != expected:
-                mismatches.append((i, p.name))
-            else:
-                num_args += 1
-
-        if mismatches:
-            msg = (
-                "Target function is expected to have a first positional argument "
-                "'inputs' and optionally a second positional argument 'attachments'. "
-                "Received: " + ", ".join(f"'{p}' at index {i}" for i, p in mismatches)
+    elif len(positional_no_default) == 2:
+        if [p.name for p in positional_no_default] != ["inputs", "attachments"]:
+            raise ValueError(
+                "When passing 2 positional arguments, they must be named "
+                "'inputs' and 'attachments', respectively. Received: "
+                f"{[p.name for p in positional_no_default]}"
             )
-            raise ValueError(msg)
-
-    return num_args == 2
+        return True
+    else:
+        return [p.name for p in positional_params[:2]] == ["inputs", "attachments"]
 
 
 def _resolve_experiment(

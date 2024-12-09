@@ -20,9 +20,6 @@ from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
-from langsmith.evaluation._arunner import (
-    _include_attachments as a_include_attachments,
-)
 from langsmith.evaluation._runner import _include_attachments
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
@@ -757,17 +754,19 @@ async def async_extra_args(inputs, attachments, foo="bar"):
         (
             lambda x, y: None,
             None,
-            "When target function has two positional arguments, they must be named "
-            "'inputs' and 'attachments', respectively. Received: 'x' at index 0,'y' "
-            "at index 1",
+            re.escape(
+                "When passing 2 positional arguments, they must be named 'inputs' and "
+                "'attachments', respectively. Received: ['x', 'y']"
+            ),
             False,
         ),
         (
             lambda input, attachment: None,
             None,
-            "When target function has two positional arguments, they must be named "
-            "'inputs' and 'attachments', respectively. Received: 'input' at index 0,"
-            "'attachment' at index 1",
+            re.escape(
+                "When passing 2 positional arguments, they must be named 'inputs' and "
+                "'attachments', respectively. Received: ['input', 'attachment']"
+            ),
             False,
         ),
         # Too many parameters
@@ -775,8 +774,8 @@ async def async_extra_args(inputs, attachments, foo="bar"):
             lambda inputs, attachments, extra: None,
             None,
             re.escape(
-                "Target function must accept at most two positional arguments "
-                "(inputs, attachments)"
+                "Target function must accept at most two arguments without "
+                "default values: (inputs, attachments)."
             ),
             False,
         ),
@@ -815,12 +814,11 @@ def test_include_attachments(target, expected, error_msg, is_async):
         expected = False
         error_msg = None
 
-    func = _include_attachments if not is_async else a_include_attachments
     if error_msg is not None:
         with pytest.raises(ValueError, match=error_msg):
-            func(target)
+            _include_attachments(target)
     else:
-        result = func(target)
+        result = _include_attachments(target)
         assert result == expected
 
 
