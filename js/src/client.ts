@@ -900,79 +900,85 @@ export class Client implements LangSmithTracingClientInterface {
       ...run,
       start_time: run.start_time ?? Date.now(),
     });
+
     if (
-      this.autoBatchTracing &&
       runCreate.trace_id !== undefined &&
       runCreate.dotted_order !== undefined
     ) {
-      void this.processRunOperation({
-        action: "create",
-        item: runCreate,
-      }).catch(console.error);
-      return;
-    }
-    const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
+      if (this._rustClient) {
+        const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
 
-    if (this._rustClient) {
-      // We need to massage the data shape into what Rust expects and will accept,
-      // and we also need to take care of possible cyclic data structures.
-      //
-      // TODO: Clean up and/or move more of this logic into Rust. This is just an MVP for testing.
-      //       But be careful of cyclic data structures with serde! They might not work properly.
+        // We need to massage the data shape into what Rust expects and will accept,
+        // and we also need to take care of possible cyclic data structures.
+        //
+        // TODO: Clean up and/or move more of this logic into Rust. This is just an MVP for testing.
+        //       But be careful of cyclic data structures with serde! They might not work properly.
 
-      // Corresponds to a Rust `Vec<Attachment>` value.
-      const attachments = Object.entries(
-        mergedRunCreateParam.attachments ?? {}
-      ).map(([filename, [mimeType, contents]]) => {
-        const attachment = {
-          filename,
-          ref_name: filename,
-          data: contents,
-          content_type: mimeType,
+        // Corresponds to a Rust `Vec<Attachment>` value.
+        const attachments = Object.entries(
+          mergedRunCreateParam.attachments ?? {}
+        ).map(([filename, [mimeType, contents]]) => {
+          const attachment = {
+            filename,
+            ref_name: filename,
+            data: contents,
+            content_type: mimeType,
+          };
+          return attachment;
+        });
+
+        // Corresponds to Rust's `RunIO` struct.
+        const io = {
+          inputs: mergedRunCreateParam.inputs
+            ? stringifyForTracing(mergedRunCreateParam.inputs)
+            : null,
+          outputs: mergedRunCreateParam.outputs
+            ? stringifyForTracing(mergedRunCreateParam.outputs)
+            : null,
         };
-        return attachment;
-      });
 
-      // Corresponds to Rust's `RunIO` struct.
-      const io = {
-        inputs: mergedRunCreateParam.inputs
-          ? stringifyForTracing(mergedRunCreateParam.inputs)
-          : null,
-        outputs: mergedRunCreateParam.outputs
-          ? stringifyForTracing(mergedRunCreateParam.outputs)
-          : null,
-      };
+        // TODO: Use a concrete TS type here for type safety. We don't currently have a TS definition
+        //       because the type comes from a different crate than the Node.js bindings,
+        //       so the binding generator isn't generating an entry for it in the .d.ts file.
+        //       This corresponds to Rust's `RunCreateExtended` type.
+        const data = {
+          run_create: mergedRunCreateParam,
+          io,
+          attachments: mergedRunCreateParam.attachments ? attachments : null,
+        };
 
-      // TODO: Use a concrete TS type here for type safety. We don't currently have a TS definition
-      //       because the type comes from a different crate than the Node.js bindings,
-      //       so the binding generator isn't generating an entry for it in the .d.ts file.
-      //       This corresponds to Rust's `RunCreateExtended` type.
-      const data = {
-        run_create: mergedRunCreateParam,
-        io,
-        attachments: mergedRunCreateParam.attachments ? attachments : null,
-      };
-
-      this._rustClient.createRun(data);
-
-      // TODO: The Rust code currently offers no way to track what happened to the submitted data.
-      //       It's completely "fire and forget." The JS code path will instead raise errors
-      //       if submitting data fails. Is that something we want to mirror in Rust?
-      //       It's possible but will require significant refactoring of the Rust APIs.
-    } else {
-      const response = await this.caller.call(
-        _getFetchImplementation(),
-        `${this.apiUrl}/runs`,
-        {
-          method: "POST",
-          headers,
-          body: stringifyForTracing(mergedRunCreateParam),
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
+        // TODO: The Rust code currently offers no way to track what happened to the submitted data.
+        //       It's completely "fire and forget." The JS code path will instead raise errors
+        //       if submitting data fails. Is that something we want to mirror in Rust?
+        //       It's possible but will require significant refactoring of the Rust APIs.
+        try {
+          this._rustClient.createRun(data);
+        } catch (e) {
+          console.error(e);
         }
-      );
-      await raiseForStatus(response, "create run", true);
+        return;
+      } else if (this.autoBatchTracing) {
+        void this.processRunOperation({
+          action: "create",
+          item: runCreate,
+        }).catch(console.error);
+        return;
+      }
     }
+
+    const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/runs`,
+      {
+        method: "POST",
+        headers,
+        body: stringifyForTracing(mergedRunCreateParam),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "create run", true);
   }
 
   /**
