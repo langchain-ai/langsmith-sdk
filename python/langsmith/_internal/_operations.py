@@ -3,7 +3,6 @@ from __future__ import annotations
 import itertools
 import logging
 import uuid
-from pathlib import Path
 from typing import Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
@@ -214,7 +213,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
 ) -> MultipartPartsAndContext:
     acc_parts: list[MultipartPart] = []
-    valb: Union[bytes, Path]
+
     # this is main object, minus inputs/outputs/events/attachments
     acc_parts.append(
         (
@@ -257,22 +256,17 @@ def serialized_run_operation_to_multipart_parts_and_context(
                 )
                 continue
 
-            if isinstance(valb, Path):
-                # TODO: actually deal with this case
-                # This is just for speed of getting something out
-                continue
-            else:
-                acc_parts.append(
+            acc_parts.append(
+                (
+                    f"attachment.{op.id}.{n}",
                     (
-                        f"attachment.{op.id}.{n}",
-                        (
-                            None,
-                            valb,
-                            content_type,
-                            {"Content-Length": str(len(valb))},
-                        ),
-                    )
+                        None,
+                        valb,
+                        content_type,
+                        {"Content-Length": str(len(valb))},
+                    ),
                 )
+            )
     return MultipartPartsAndContext(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",

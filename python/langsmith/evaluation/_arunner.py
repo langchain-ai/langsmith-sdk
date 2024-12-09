@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures as cf
 import datetime
-import inspect
 import logging
 import pathlib
 import uuid
@@ -41,6 +40,7 @@ from langsmith.evaluation._runner import (
     _ExperimentManagerMixin,
     _extract_feedback_keys,
     _ForwardResults,
+    _include_attachments,
     _is_langchain_runnable,
     _load_examples_map,
     _load_experiment,
@@ -1122,6 +1122,7 @@ def _include_attachments(
             )
 
     return len(positional_params) == 2
+
 
 
 def _ensure_async_traceable(

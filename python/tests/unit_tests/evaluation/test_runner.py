@@ -11,7 +11,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Callable, List
+from typing import Any, Callable, Dict, List, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -53,7 +53,9 @@ class FakeRequest:
                 return res
             elif endpoint == "http://localhost:1984/examples":
                 res = MagicMock()
-                res.json.return_value = [e.dict() for e in self.ds_examples]
+                res.json.return_value = [
+                    e.dict() if not isinstance(e, dict) else e for e in self.ds_examples
+                ]
                 return res
             elif endpoint == "http://localhost:1984/sessions":
                 res = {}  # type: ignore
@@ -143,14 +145,23 @@ def _wait_until(condition: Callable, timeout: int = 8):
     raise TimeoutError("Condition not met")
 
 
-def _create_example(idx: int) -> ls_schemas.Example:
+def _create_example(idx: int) -> Tuple[ls_schemas.Example, Dict[str, Any]]:
+    _id = uuid.uuid4()
+    _created_at = datetime.now(timezone.utc)
     return ls_schemas.Example(
-        id=uuid.uuid4(),
+        id=_id,
         inputs={"in": idx},
         outputs={"answer": idx + 1},
         dataset_id="00886375-eb2a-4038-9032-efff60309896",
-        created_at=datetime.now(timezone.utc),
-    )
+        created_at=_created_at,
+    ), {
+        "id": _id,
+        "dataset_id": "00886375-eb2a-4038-9032-efff60309896",
+        "created_at": _created_at,
+        "inputs": {"in": idx},
+        "outputs": {"answer": idx + 1},
+        "attachment_urls": None,
+    }
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
@@ -166,10 +177,13 @@ def test_evaluate_results(
 
     SPLIT_SIZE = 3
     NUM_REPETITIONS = 4
-    ds_examples = [_create_example(i) for i in range(10)]
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
     dev_split = random.sample(ds_examples, SPLIT_SIZE)
     tenant_id = str(uuid.uuid4())
-    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
     session.request = fake_request.request
     client = Client(
         api_url="http://localhost:1984",
@@ -386,6 +400,29 @@ def test_evaluate_results(
     for r in results:
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
+    # test invalid evaluators
+    # args need to be positional
+    def eval1(*, inputs, outputs):
+        pass
+
+    # if more than 2 positional args, they must all have default arg names
+    # (run, example, ...)
+    def eval2(x, y, inputs):
+        pass
+
+    evaluators = [eval1, eval2]
+
+    for eval_ in evaluators:
+        with pytest.raises(ValueError, match="Invalid evaluator function."):
+            _normalize_evaluator_func(eval_)
+
+        with pytest.raises(ValueError, match="Invalid evaluator function."):
+            evaluate(
+                (lambda inputs: inputs),
+                data=ds_examples,
+                evaluators=[eval_],
+                client=client,
+            )
 
 def test_evaluate_raises_for_async():
     async def my_func(inputs: dict):
@@ -428,10 +465,13 @@ async def test_aevaluate_results(
 
     SPLIT_SIZE = 3
     NUM_REPETITIONS = 4
-    ds_examples = [_create_example(i) for i in range(10)]
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
     dev_split = random.sample(ds_examples, SPLIT_SIZE)
     tenant_id = str(uuid.uuid4())
-    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
     session.request = fake_request.request
     client = Client(
         api_url="http://localhost:1984",
@@ -665,8 +705,8 @@ async def test_aevaluate_results(
 
     evaluators = [eval1, eval2]
 
-    async def atarget(x):
-        return x
+    async def atarget(inputs):
+        return inputs
 
     for eval_ in evaluators:
         with pytest.raises(ValueError, match="Invalid evaluator function."):
