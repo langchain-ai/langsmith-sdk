@@ -371,7 +371,7 @@ class StreamingMultipartCompressor:
         *,
         batch_size: Optional[int] = None,
     ) -> Iterator[bytes]:
-        """Compress a sequence of operations into multipart form data.
+        """Compress a sequence of operations into multipart form data. Used for batch run ingestion.
         
         Args:
             ops: Sequence of operations to compress
