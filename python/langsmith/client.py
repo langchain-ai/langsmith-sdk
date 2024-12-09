@@ -3624,7 +3624,7 @@ class Client:
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
-            "examples_multipart_enabled", False
+            "dataset_examples_multipart_enabled", False
         ):
             raise ValueError(
                 "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
@@ -4157,6 +4157,13 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
+        if attachments_operations is not None:
+            if not (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                raise ValueError(
+                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                )
         example = dict(
             inputs=inputs,
             outputs=outputs,
@@ -4210,6 +4217,13 @@ class Client:
         Dict[str, Any]
             The response from the server (specifies the number of examples updated).
         """
+if attachments_operations is not None:
+            if not (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                raise ValueError(
+                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                )
         sequence_args = {
             "inputs": inputs,
             "outputs": outputs,
