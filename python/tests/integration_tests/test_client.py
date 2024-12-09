@@ -509,7 +509,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
     assert created_example_1.outputs is None
 
     created_example_2 = langchain_client.read_example(
-        [id_ for id_ in created_examples["example_ids"] if id_ != example_id][0]
+        [id_ for id_ in created_examples["example_ids"] if id_ != str(example_id)][0]
     )
     assert created_example_2.inputs["text"] == "foo bar"
     assert created_example_2.outputs["response"] == "baz"
@@ -553,7 +553,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
     assert len(all_examples_in_dataset) == 2
 
     # Throw type errors when not passing ExampleUpsertWithAttachments
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValueError):
         langchain_client.upsert_examples_multipart(upserts=[{"foo": "bar"}])
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
