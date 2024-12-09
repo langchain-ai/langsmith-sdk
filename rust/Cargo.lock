@@ -940,9 +940,12 @@ dependencies = [
 name = "langsmith-nodejs"
 version = "0.1.0"
 dependencies = [
+ "langsmith-tracing-client",
  "napi",
  "napi-build",
  "napi-derive",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

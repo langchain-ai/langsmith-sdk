@@ -1,5 +1,7 @@
 import * as uuid from "uuid";
 
+import * as bindings from "langsmith-nodejs";
+
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   ComparativeExperiment,
@@ -42,6 +44,7 @@ import {
 } from "./utils/messages.js";
 import {
   getEnvironmentVariable,
+  getLangChainEnvVars,
   getLangChainEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
@@ -484,6 +487,9 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _rustClient: bindings.TracingClient | null;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -521,6 +527,27 @@ export class Client implements LangSmithTracingClientInterface {
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
+
+    // TODO: Do we care about syncing up the env var names between the JS and Python bindings?
+    //       The Python bindings use `LANGSMITH_USE_PYO3_CLIENT` as an env var,
+    //       but JS seems to prefer the `LANGCHAIN` prefix instead.
+    if ("LANGCHAIN_USE_RUST_CLIENT" in getLangChainEnvVars()) {
+      // TODO: tweak these constants as needed -- these are the defaults that Python uses
+      const queueCapacity = 1000000;
+      const batchSize = 100;
+      const batchTimeoutMillis = 1000;
+      const workerThreads = 1;
+      this._rustClient = new bindings.TracingClient(
+        `${this.apiUrl}/runs`,
+        this.apiKey || "", // TODO: the Rust code *requires* an API key, is that inappropriate?
+        queueCapacity,
+        batchSize,
+        batchTimeoutMillis,
+        workerThreads
+      );
+    } else {
+      this._rustClient = null;
+    }
   }
 
   public static getDefaultClientConfig(): {
@@ -887,18 +914,66 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs`,
-      {
-        method: "POST",
-        headers,
-        body: stringifyForTracing(mergedRunCreateParam),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "create run", true);
+    if (this._rustClient) {
+      // We need to massage the data shape into what Rust expects and will accept,
+      // and we also need to take care of possible cyclic data structures.
+      //
+      // TODO: Clean up and/or move more of this logic into Rust. This is just an MVP for testing.
+      //       But be careful of cyclic data structures with serde! They might not work properly.
+
+      // Corresponds to a Rust `Vec<Attachment>` value.
+      const attachments = Object.entries(
+        mergedRunCreateParam.attachments ?? {}
+      ).map(([filename, [mimeType, contents]]) => {
+        const attachment = {
+          filename,
+          ref_name: filename,
+          data: contents,
+          content_type: mimeType,
+        };
+        return attachment;
+      });
+
+      // Corresponds to Rust's `RunIO` struct.
+      const io = {
+        inputs: mergedRunCreateParam.inputs
+          ? stringifyForTracing(mergedRunCreateParam.inputs)
+          : null,
+        outputs: mergedRunCreateParam.outputs
+          ? stringifyForTracing(mergedRunCreateParam.outputs)
+          : null,
+      };
+
+      // TODO: Use a concrete TS type here for type safety. We don't currently have a TS definition
+      //       because the type comes from a different crate than the Node.js bindings,
+      //       so the binding generator isn't generating an entry for it in the .d.ts file.
+      //       This corresponds to Rust's `RunCreateExtended` type.
+      const data = {
+        run_create: mergedRunCreateParam,
+        io,
+        attachments: mergedRunCreateParam.attachments ? attachments : null,
+      };
+
+      this._rustClient.createRun(data);
+
+      // TODO: The Rust code currently offers no way to track what happened to the submitted data.
+      //       It's completely "fire and forget." The JS code path will instead raise errors
+      //       if submitting data fails. Is that something we want to mirror in Rust?
+      //       It's possible but will require significant refactoring of the Rust APIs.
+    } else {
+      const response = await this.caller.call(
+        _getFetchImplementation(),
+        `${this.apiUrl}/runs`,
+        {
+          method: "POST",
+          headers,
+          body: stringifyForTracing(mergedRunCreateParam),
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(response, "create run", true);
+    }
   }
 
   /**
@@ -3769,7 +3844,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.isPublic && !settings.tenant_handle) {
       throw new Error(
         `Cannot create a public prompt without first\n
-        creating a LangChain Hub handle. 
+        creating a LangChain Hub handle.
         You can add a handle by creating a public prompt at:\n
         https://smith.langchain.com/prompts`
       );
@@ -4043,8 +4118,8 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Clone a public dataset to your own langsmith tenant. 
-   * This operation is idempotent. If you already have a dataset with the given name, 
+   * Clone a public dataset to your own langsmith tenant.
+   * This operation is idempotent. If you already have a dataset with the given name,
    * this function will do nothing.
 
    * @param {string} tokenOrUrl The token of the public dataset to clone.
