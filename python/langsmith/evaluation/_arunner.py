@@ -1023,7 +1023,7 @@ async def _aforward(
     with rh.tracing_context(enabled=True):
         try:
             args = (
-                (example.inputs, example.attachments_info)
+                (example.inputs, example.attachment_urls)
                 if include_attachments
                 else (example.inputs,)
             )
@@ -1044,9 +1044,9 @@ async def _aforward(
                     client=client,
                 ),
             )
-            if include_attachments and example.attachments_info is not None:
-                for attachment in example.attachments_info:
-                    reader = example.attachments_info[attachment]["reader"]
+            if include_attachments and example.attachment_urls is not None:
+                for attachment in example.attachment_urls:
+                    reader = example.attachment_urls[attachment]["reader"]
                     reader.seek(0)
         except Exception as e:
             logger.error(
