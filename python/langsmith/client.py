@@ -3478,9 +3478,11 @@ class Client:
             dataset_id = examples[0].dataset_id
 
         for example in examples:
-            if not isinstance(
-                example, ls_schemas.ExampleUploadWithAttachments
-            ) and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments):
+            if (
+                not isinstance(example, ls_schemas.ExampleUploadWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+            ):
                 raise ValueError(
                     "The examples must be of type ExampleUploadWithAttachments"
                     " or ExampleUpsertWithAttachments"
