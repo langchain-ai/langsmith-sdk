@@ -1936,8 +1936,11 @@ def _include_attachments(target: Any) -> bool:
         )
     elif len(positional_no_default) == 2:
         if [p.name for p in positional_no_default] != ["inputs", "attachments"]:
-            msg = ""
-            raise ValueError(msg)
+            raise ValueError(
+                "When passing 2 positional arguments, they must be named "
+                "'inputs' and 'attachments', respectively. Received: "
+                f"{[p.name for p in positional_no_default]}"
+            )
         return True
     else:
         return [p.name for p in positional_params[:2]] == ["inputs", "attachments"]
