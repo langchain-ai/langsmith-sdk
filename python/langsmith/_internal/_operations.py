@@ -382,8 +382,12 @@ class StreamingMultipartCompressor:
             compressor.close()
             # Yield any final compressed data
             yield from self._yield_and_reset_buffer()
-            # Close the buffer
-            # self.buffer.close()
+
+    def close(self):
+        """Clean up resources after compression is complete."""
+        if self.buffer:
+            self.buffer.close()
+            self.buffer = None
 
     def compress_operations(
         self,
