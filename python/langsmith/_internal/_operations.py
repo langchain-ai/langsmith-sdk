@@ -338,7 +338,7 @@ class StreamingMultipartCompressor:
         parts_and_contexts: MultipartPartsAndContext,
     ) -> Iterator[bytes]:
         # Create a streaming compressor context
-        compressor = self.compressor.stream_writer(self.buffer)
+        compressor = self.compressor.stream_writer(self.buffer, closefd=False)
 
         try:
             for part_name, (filename, data, content_type, headers) in (
@@ -383,7 +383,7 @@ class StreamingMultipartCompressor:
             # Yield any final compressed data
             yield from self._yield_and_reset_buffer()
             # Close the buffer
-            self.buffer.close()
+            # self.buffer.close()
 
     def compress_operations(
         self,
