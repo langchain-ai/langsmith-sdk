@@ -6,13 +6,13 @@ use std::time::Instant;
 use criterion::{criterion_group, criterion_main, Criterion};
 use mockito::Server;
 use reqwest::blocking::multipart::{Form, Part};
-use sonic_rs::Value;
+use serde_json::Value;
 use uuid::Uuid;
 
 fn create_json_with_large_array(len: usize) -> Value {
     let large_array: Vec<Value> = (0..len)
         .map(|i| {
-            sonic_rs::json!({
+            serde_json::json!({
                 "index": i,
                 "data": format!("This is element number {}", i),
                 "nested": {
@@ -23,7 +23,7 @@ fn create_json_with_large_array(len: usize) -> Value {
         })
         .collect();
 
-    sonic_rs::json!({
+    serde_json::json!({
         "name": "Huge JSON",
         "description": "This is a very large JSON object for benchmarking purposes.",
         "array": large_array,
@@ -37,7 +37,7 @@ fn create_json_with_large_array(len: usize) -> Value {
 
 fn create_json_with_large_strings(len: usize) -> Value {
     let large_string = "a".repeat(len);
-    sonic_rs::json!({
+    serde_json::json!({
         "name": "Huge JSON",
         "description": "This is a very large JSON object for benchmarking purposes.",
         "key1": large_string.clone(),
@@ -55,7 +55,7 @@ fn create_json_with_large_strings(len: usize) -> Value {
 fn benchmark_sequential(data: &[Value]) -> Vec<Vec<u8>> {
     data.iter()
         .map(|json| {
-            let data = sonic_rs::to_vec(json).expect("Failed to serialize JSON");
+            let data = serde_json::to_vec(json).expect("Failed to serialize JSON");
             // gzip the data using flate2
             let mut encoder =
                 flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
@@ -69,7 +69,7 @@ fn benchmark_sequential(data: &[Value]) -> Vec<Vec<u8>> {
 fn benchmark_parallel(data: &[Value]) -> Vec<Vec<u8>> {
     data.par_iter()
         .map(|json| {
-            let data = sonic_rs::to_vec(json).expect("Failed to serialize JSON");
+            let data = serde_json::to_vec(json).expect("Failed to serialize JSON");
             // gzip the data using flate2
             let mut encoder =
                 flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
@@ -93,7 +93,9 @@ fn benchmark_gzip_only_parallel(data: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
 
 // into par iter
 fn benchmark_json_only_parallel(data: &[Value]) -> Vec<Vec<u8>> {
-    data.par_iter().map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON")).collect()
+    data.par_iter()
+        .map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON"))
+        .collect()
 }
 
 fn json_benchmark_large_array(c: &mut Criterion) {
@@ -155,7 +157,7 @@ fn hitting_mock_server_benchmark(c: &mut Criterion) {
             let bytes: Vec<Part> = data
                 .par_iter()
                 .map(|json| {
-                    let data = sonic_rs::to_vec(json).expect("Failed to serialize JSON");
+                    let data = serde_json::to_vec(json).expect("Failed to serialize JSON");
                     Part::bytes(data)
                         .file_name("part".to_string())
                         .mime_str("application/json")
@@ -191,7 +193,7 @@ fn hitting_mock_server_benchmark(c: &mut Criterion) {
 
             let bytes: Vec<Vec<u8>> = data
                 .par_iter()
-                .map(|json| sonic_rs::to_vec(json).expect("Failed to serialize JSON"))
+                .map(|json| serde_json::to_vec(json).expect("Failed to serialize JSON"))
                 .collect();
 
             let mut multipart_body = Vec::new();

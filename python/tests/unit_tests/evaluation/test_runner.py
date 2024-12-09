@@ -16,11 +16,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from langsmith import evaluate
+from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
-from langsmith.client import Client
-from langsmith.evaluation._arunner import aevaluate, aevaluate_existing
-from langsmith.evaluation._runner import evaluate_existing
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
@@ -276,6 +273,7 @@ def test_evaluate_results(
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
         upload_results=upload_results,
+        max_concurrency=None,
     )
     if not blocking:
         deltas = []
@@ -327,7 +325,7 @@ def test_evaluate_results(
         def score_value(run, example):
             return {"score": 0.7}
 
-        ex_results = evaluate_existing(
+        ex_results = evaluate(
             fake_request.created_session["name"],
             evaluators=[score_value],
             client=client,
@@ -549,6 +547,7 @@ async def test_aevaluate_results(
         num_repetitions=NUM_REPETITIONS,
         blocking=blocking,
         upload_results=upload_results,
+        max_concurrency=None,
     )
     if not blocking:
         deltas = []
@@ -606,7 +605,7 @@ async def test_aevaluate_results(
         return {"score": 0.7}
 
     if upload_results:
-        ex_results = await aevaluate_existing(
+        ex_results = await aevaluate(
             fake_request.created_session["name"],
             evaluators=[score_value],
             client=client,

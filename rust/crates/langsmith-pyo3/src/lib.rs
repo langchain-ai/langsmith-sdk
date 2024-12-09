@@ -16,3 +16,6 @@ fn langsmith_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     errors::register(py, m)?;
     Ok(())
 }
+
+#[cfg(test)]
+pub(crate) mod test_infra;
