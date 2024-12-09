@@ -487,7 +487,6 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _rustClient: bindings.TracingClient | null;
 
   constructor(config: ClientConfig = {}) {
