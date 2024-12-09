@@ -213,7 +213,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
 ) -> MultipartPartsAndContext:
     acc_parts: list[MultipartPart] = []
-    
+
     # this is main object, minus inputs/outputs/events/attachments
     acc_parts.append(
         (
