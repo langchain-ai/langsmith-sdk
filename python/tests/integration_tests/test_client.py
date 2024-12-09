@@ -438,7 +438,7 @@ def test_upload_examples_multipart(langchain_client: Client):
     # Verify example with ID was created with correct ID
     example_with_id = [ex for ex in examples if ex.id == example_id][0]
     assert example_with_id.inputs["text"] == "hello world"
-    assert "test_file" in example_with_id.attachments_info
+    assert "test_file" in example_with_id.attachment_urls
 
     # Verify example with outputs and multiple attachments
     example_with_outputs = next(
@@ -446,9 +446,9 @@ def test_upload_examples_multipart(langchain_client: Client):
         for ex in examples
         if ex.outputs and ex.outputs.get("response") == "test response"
     )
-    assert len(example_with_outputs.attachments_info) == 2
-    assert "file1" in example_with_outputs.attachments_info
-    assert "file2" in example_with_outputs.attachments_info
+    assert len(example_with_outputs.attachment_urls) == 2
+    assert "file1" in example_with_outputs.attachment_urls
+    assert "file2" in example_with_outputs.attachment_urls
 
     # Test uploading to non-existent dataset fails
     fake_id = uuid4()
@@ -1255,10 +1255,6 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_key="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",
-        api_url="https://dev.api.smith.langchain.com",
-    )
     # 1. Create dataset
     dataset = langchain_client.create_dataset(
         dataset_name,
