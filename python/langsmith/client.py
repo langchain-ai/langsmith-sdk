@@ -3469,6 +3469,13 @@ class Client:
         include_dataset_id: bool = False,
     ) -> Tuple[Any, bytes]:
         parts: List[MultipartPart] = []
+        if include_dataset_id:
+            if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
+                raise ValueError(
+                    "The examples must be of type ExampleUpsertWithAttachments"
+                    " if include_dataset_id is True"
+                )
+            dataset_id = examples[0].dataset_id
 
         for example in examples:
             if example.id is not None:
@@ -3477,7 +3484,7 @@ class Client:
                 example_id = str(uuid.uuid4())
 
             example_body = {
-                **({"dataset_id": example.dataset_id} if include_dataset_id else {}),
+                **({"dataset_id": dataset_id} if include_dataset_id else {}),
                 "created_at": example.created_at,
             }
             if example.metadata is not None:
@@ -3581,7 +3588,7 @@ class Client:
         self,
         *,
         dataset_id: ID_TYPE,
-        uploads: List[ls_schemas.ExampleUploadWithAttachments] = None,
+        uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3611,7 +3618,7 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = None,
+        upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
