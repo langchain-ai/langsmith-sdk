@@ -18,10 +18,10 @@ class SerializedRunOperation:
     def __init__(self, data: Dict[str, Any]):
         self.operation = data["operation"]
         self.id = data["id"]
+        self.inputs = orjson.dumps(data.pop("inputs")) if "inputs" in data else None
+        self.outputs = orjson.dumps(data.pop("outputs")) if "outputs" in data else None 
+        self.events = orjson.dumps(data.pop("events")) if "events" in data else None
         self._none = orjson.dumps(data)
-        self.inputs = orjson.dumps(data.get("inputs")) if "inputs" in data else None
-        self.outputs = orjson.dumps(data.get("outputs")) if "outputs" in data else None
-        self.events = orjson.dumps(data.get("events")) if "events" in data else None
         self.trace_id = data.get("trace_id")
         self.attachments = {}  # Not implemented for multipart experiments
 
