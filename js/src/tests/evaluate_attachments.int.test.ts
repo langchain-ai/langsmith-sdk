@@ -42,15 +42,13 @@ test("evaluate can handle examples with attachments", async () => {
     return { answer: "test image" };
   };
 
-  const customEvaluator = async (run: Run, example?: Example) => {
-    return Promise.resolve({
+  const customEvaluator = ({ attachments }: {attachments?: any}) => {
+    expect(attachments).toBeDefined();
+    expect(attachments.image).toBeDefined();
+    return {
       key: "key",
       score: 1,
-      comment: `Run: ${run.id} Example: ${example?.id}`,
-    });
-  };
-  const evaluator = {
-    evaluateRun: customEvaluator,
+    };
   };
 
   // Run evaluation
@@ -58,8 +56,9 @@ test("evaluate can handle examples with attachments", async () => {
     data: datasetName,
     description: "Testing attachment handling in evaluation",
     client: client,
-    evaluators: [evaluator],
+    evaluators: [customEvaluator],
     numRepetitions: 2,
+    includeAttachments: true
   });
 
   // Verify results

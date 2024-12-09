@@ -25,10 +25,10 @@ import {
 type StandardTargetT<TInput = any, TOutput = KVMap, TAttachments = any> =
   | ((input: TInput, config?: KVMap) => Promise<TOutput>)
   | ((input: TInput, config?: KVMap) => TOutput)
-  | ((input: TInput, attachments?: TAttachments, config?: KVMap) => Promise<TOutput>)
-  | ((input: TInput, attachments?: TAttachments, config?: KVMap) => TOutput)
   | { invoke: (input: TInput, config?: KVMap) => TOutput }
   | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> }
+  | ((input: TInput, attachments?: TAttachments, config?: KVMap) => Promise<TOutput>)
+  | ((input: TInput, attachments?: TAttachments, config?: KVMap) => TOutput)
   | { invoke: (input: TInput, attachments?: TAttachments, config?: KVMap) => TOutput }
   | { invoke: (input: TInput, attachments?: TAttachments, config?: KVMap) => Promise<TOutput> };
 
@@ -102,6 +102,7 @@ export type EvaluatorT =
       inputs: Record<string, any>;
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
+      attachments?: Record<string, any>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
       run: Run;
@@ -109,6 +110,7 @@ export type EvaluatorT =
       inputs: Record<string, any>;
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
+      attachments?: Record<string, any>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
 interface _ForwardResults {
@@ -183,6 +185,11 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * examples, or a generator of examples.
    */
   data: DataT;
+  /**
+   * Whether to use attachments for the experiment.
+   * @default false
+   */
+  includeAttachments: boolean;
 }
 
 export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
@@ -963,7 +970,7 @@ async function _evaluate(
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
-    includeAttachments: _includeAttachments(target),
+    includeAttachments: standardFields.includeAttachments,
   }).start();
 
   if (_isCallable(target)) {
@@ -1232,18 +1239,4 @@ function _isCallable(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
   );
-}
-
-// TODO: THIS NEEDS TO BE IMPROVED
-export function _includeAttachments(
-  target: TargetT | AsyncGenerator<Run>
-): boolean {
-  // If target is a runnable or not callable, return false
-  if (!_isCallable(target) || "invoke" in target) {
-    return false;
-  }
-  const paramCount = target.length;
-
-  // In TypeScript, we can only check parameter count, not names
-  return paramCount === 2;
 }
