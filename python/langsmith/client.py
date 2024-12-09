@@ -3483,9 +3483,14 @@ class Client:
             else:
                 example_id = str(uuid.uuid4())
 
+            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments):
+                created_at = None
+            else:
+                created_at = example.created_at
+
             example_body = {
                 **({"dataset_id": dataset_id} if include_dataset_id else {}),
-                "created_at": example.created_at,
+                **({"created_at": created_at} if created_at is not None else {}),
             }
             if example.metadata is not None:
                 example_body["metadata"] = example.metadata
