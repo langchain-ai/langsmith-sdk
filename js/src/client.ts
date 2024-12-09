@@ -2805,7 +2805,8 @@ export class Client implements LangSmithTracingClientInterface {
       params
     )) {
       for (const example of examples) {
-        const attachments: Record<string, [string, () => Promise<Response>]> = {};
+        const attachments: Record<string, { presigned_url: string; reader: () => Promise<Response> }> = {};
+        
         if (example.attachment_urls) {
           for (const [key, value] of Object.entries(example.attachment_urls)) {
             const createReader = () => {
@@ -2819,7 +2820,7 @@ export class Client implements LangSmithTracingClientInterface {
                 }
               );
             };
-            attachments[key.split(".")[1]] = [value.presigned_url, createReader];
+            attachments[key.split(".")[1]] = { presigned_url: value.presigned_url, reader: createReader };
           }
         }
         const { attachment_urls, ...exampleWithoutAttachments } = example;
@@ -3887,6 +3888,7 @@ export class Client implements LangSmithTracingClientInterface {
    * @returns Promise with the upsert response
    */
   public async uploadExamplesMultipart(
+    datasetId: string,
     uploads: ExampleUploadWithAttachments[] = []
   ): Promise<UploadExamplesResponse> {
     const formData = new FormData();
@@ -3936,12 +3938,6 @@ export class Client implements LangSmithTracingClientInterface {
         }
       }
     }
-
-    const datasetIds = uploads.map((example) => example.dataset_id);
-    if (datasetIds.length > 1) {
-      throw new Error("Cannot upload examples to multiple datasets");
-    }
-    const datasetId = datasetIds[0];
 
     const response = await this.caller.call(
       _getFetchImplementation(),

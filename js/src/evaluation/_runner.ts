@@ -21,7 +21,7 @@ import { v4 as uuidv4 } from "uuid";
 export type TargetT<
   TInput = any,
   TOutput = KVMap,
-  TAttachments = Record<string, [string, () => Promise<Response>]>
+  TAttachments = Record<string, { presigned_url: string; reader: () => Promise<Response> }>
 > =
   | {
       invoke: (
@@ -394,6 +394,7 @@ export class _ExperimentManager {
       client: this.client,
       evaluationResults: this._evaluationResults,
       summaryResults: this._summaryResults,
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -414,6 +415,7 @@ export class _ExperimentManager {
           yield pred.run;
         }
       })(),
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -843,6 +845,7 @@ async function _evaluate(
     client
   );
 
+
   let manager = await new _ExperimentManager({
     data: Array.isArray(fields.data) ? undefined : fields.data,
     examples: Array.isArray(fields.data) ? fields.data : undefined,
@@ -927,11 +930,11 @@ async function _forward(
       await wrappedFn({ ...example.inputs }, example.attachment_urls);
       
       // Reset attachment streams after use
-      for (const [_, [__, reader]] of Object.entries(example.attachment_urls)) {
+      for (const [_, { presigned_url, reader }] of Object.entries(example.attachment_urls)) {
         const response = await reader();
         const blob = await response.blob();
         // Create a new stream from the blob to reset position
-        example.attachment_urls[_][1] = () => Promise.resolve(new Response(blob));
+        example.attachment_urls[_] = { presigned_url, reader: () => Promise.resolve(new Response(blob)) };
       }
     } else {
       await wrappedFn(example.inputs);
