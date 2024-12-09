@@ -3833,13 +3833,13 @@ class Client:
         )
 
         example = response.json()
-        attachment_urls = {}
+        attachments = {}
         if example["attachment_urls"]:
             for key, value in example["attachment_urls"].items():
                 response = requests.get(value["presigned_url"], stream=True)
                 response.raise_for_status()
                 reader = io.BytesIO(response.content)
-                attachment_urls[key.split(".")[1]] = {
+                attachments[key.split(".")[1]] = {
                     "presigned_url": value["presigned_url"],
                     "reader": reader,
                 }
@@ -3847,7 +3847,7 @@ class Client:
 
         return ls_schemas.Example(
             **example,
-            attachment_urls=attachment_urls,
+            attachments=attachments,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -3920,13 +3920,13 @@ class Client:
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachment_urls = {}
+            attachments = {}
             if example["attachment_urls"]:
                 for key, value in example["attachment_urls"].items():
                     response = requests.get(value["presigned_url"], stream=True)
                     response.raise_for_status()
                     reader = io.BytesIO(response.content)
-                    attachment_urls[key.split(".")[1]] = {
+                    attachments[key.split(".")[1]] = {
                         "presigned_url": value["presigned_url"],
                         "reader": reader,
                     }
@@ -3934,7 +3934,7 @@ class Client:
 
             yield ls_schemas.Example(
                 **example,
-                attachment_urls=attachment_urls,
+                attachments=attachments,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )

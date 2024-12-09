@@ -439,7 +439,7 @@ def test_upload_examples_multipart(langchain_client: Client):
     # Verify example with ID was created with correct ID
     example_with_id = [ex for ex in examples if ex.id == example_id][0]
     assert example_with_id.inputs["text"] == "hello world"
-    assert "test_file" in example_with_id.attachment_urls
+    assert "test_file" in example_with_id.attachments
 
     # Verify example with outputs and multiple attachments
     example_with_outputs = next(
@@ -447,9 +447,9 @@ def test_upload_examples_multipart(langchain_client: Client):
         for ex in examples
         if ex.outputs and ex.outputs.get("response") == "test response"
     )
-    assert len(example_with_outputs.attachment_urls) == 2
-    assert "file1" in example_with_outputs.attachment_urls
-    assert "file2" in example_with_outputs.attachment_urls
+    assert len(example_with_outputs.attachments) == 2
+    assert "file1" in example_with_outputs.attachments
+    assert "file2" in example_with_outputs.attachments
 
     # Test uploading to non-existent dataset fails
     fake_id = uuid4()
