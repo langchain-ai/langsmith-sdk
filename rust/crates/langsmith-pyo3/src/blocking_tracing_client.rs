@@ -47,8 +47,7 @@ impl BlockingTracingClient {
         Ok(Self { client: Arc::from(client) })
     }
 
-    // N.B.: We use `Py<Self>` so that we don't hold the GIL while running this method.
-    //       `slf.get()` below is only valid if the `Self` type is `Sync` and `pyclass(frozen)`,
+    // N.B.: `slf.get()` below is only valid if the `Self` type is `Sync` and `pyclass(frozen)`,
     //       which is enforced at compile-time.
     pub fn create_run(
         slf: &Bound<'_, Self>,
@@ -56,6 +55,17 @@ impl BlockingTracingClient {
     ) -> PyResult<()> {
         let unpacked = slf.get();
         Python::allow_threads(slf.py(), || unpacked.client.submit_run_create(run.into_inner()))
+            .map_err(|e| into_py_err(slf.py(), e))
+    }
+
+    // N.B.: `slf.get()` below is only valid if the `Self` type is `Sync` and `pyclass(frozen)`,
+    //       which is enforced at compile-time.
+    pub fn update_run(
+        slf: &Bound<'_, Self>,
+        run: super::py_run::RunUpdateExtended,
+    ) -> PyResult<()> {
+        let unpacked = slf.get();
+        Python::allow_threads(slf.py(), || unpacked.client.submit_run_update(run.into_inner()))
             .map_err(|e| into_py_err(slf.py(), e))
     }
 
