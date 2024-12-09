@@ -33,6 +33,7 @@ import typing
 import uuid
 import warnings
 import weakref
+import zstandard as zstd
 from inspect import signature
 from queue import PriorityQueue
 from typing import (
@@ -1621,53 +1622,134 @@ class Client:
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
 
-    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
-        compressor = StreamingMultipartCompressor(compression_level=3, blocksize=65536, boundary=BOUNDARY)
-
-        compressed_data_iter = compressor.compress_multipart_stream(acc)
+    # def decompress_multipart_stream(self, compressed_stream: Iterator[bytes], boundary: str = BOUNDARY) -> Iterator[tuple[str, bytes]]:
+    #     """Decompress and parse a multipart form data stream.
         
-        headers = {
-            **self._headers,
-            X_API_KEY: None,  # Set inside the loop for each api_url
-            "Content-Type": f"multipart/form-data; boundary={BOUNDARY}",
-            "Content-Encoding": "zstd",
-        }
+    #     Args:
+    #         compressed_stream: Iterator of compressed bytes
+    #         boundary: Multipart form boundary string
+            
+    #     Yields:
+    #         Tuples of (part_name, part_data)
+    #     """
+    #     dctx = zstd.ZstdDecompressor()
+        
+    #     # Concatenate all compressed chunks and decompress
+    #     compressed_data = b''.join(compressed_stream)
+    #     stream_reader = dctx.stream_reader(compressed_data)
+    #     decompressed_data = stream_reader.read()
+        
+    #     boundary_bytes = f'--{boundary}'.encode('utf-8')
+    #     parts = decompressed_data.split(boundary_bytes)
+    #     stream_reader.close()
+        
+    #     for part in parts:
+    #         if not part or part.startswith(b'--\r\n'):
+    #             continue
+                
+    #         # Split headers from content
+    #         try:
+    #             headers_raw, content = part.split(b'\r\n\r\n', 1)
+    #             headers_text = headers_raw.decode('utf-8')
+                
+    #             # Extract part name from Content-Disposition
+    #             content_disp = next(
+    #                 line for line in headers_text.split('\r\n')
+    #                 if line.startswith('Content-Disposition:')
+    #             )
+    #             part_name = content_disp.split('name="')[1].split('"')[0]
+                
+    #             # Remove trailing \r\n
+    #             if content.endswith(b'\r\n'):
+    #                 content = content[:-2]
+                    
+    #             yield part_name, content
+                
+    #         except Exception as e:
+    #             logger.warning(f"Failed to parse multipart form part: {e}")
+    #             continue
 
-        for api_url, api_key in self._write_api_urls.items():
-            headers[X_API_KEY] = api_key
-            for idx in range(1, attempts + 1):
-                try:
-                    self.request_with_retries(
-                        "POST",
-                        f"{api_url}/runs/multipart",
-                        request_kwargs={
-                            "data": compressed_data_iter,
-                            "headers": headers,
-                        },
-                        stop_after_attempt=1,
-                        _context=acc.context,
-                    )
-                    break
-                except ls_utils.LangSmithConflictError:
-                    break
-                except (
-                    ls_utils.LangSmithConnectionError,
-                    ls_utils.LangSmithRequestTimeout,
-                    ls_utils.LangSmithAPIError,
-                ) as exc:
-                    if idx == attempts:
-                        logger.warning(f"Failed to multipart ingest runs: {exc}")
-                    else:
-                        continue
-                except Exception as e:
+    # def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+    #     """Test function that decompresses and validates the data locally"""
+    #     compressor = StreamingMultipartCompressor(compression_level=3, blocksize=65536, boundary=BOUNDARY)
+        
+    #     compressed_data_iter = compressor.compress_multipart_stream(acc)
+        
+    #     # decompress and validate locally
+    #     try:
+    #         print("Decompressing and validating multipart data...")
+    #         for part_name, content in self.decompress_multipart_stream(compressed_data_iter):
+    #             print(f"Received part: {part_name}")
+    #             print(f"Content length: {len(content)} bytes")
+                
+    #             # Validate JSON content if applicable
+    #             if part_name.endswith('.json'):
+    #                 try:
+    #                     json_content = _orjson.loads(content)
+    #                     print(f"Valid JSON content for {part_name}")
+    #                 except Exception as e:
+    #                     print(f"Invalid JSON content for {part_name}: {e}")
+    #                     raise
+                        
+    #         print("Successfully validated all multipart data")
+    #         return True
+            
+    #     except Exception as e:
+    #         print(f"Failed to validate multipart data: {e}")
+    #         raise
+    #     finally:
+    #         compressor.close()
+
+    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+        try:
+            compressor = StreamingMultipartCompressor(compression_level=3, blocksize=65536, boundary=BOUNDARY)
+
+            compressed_data_iter = compressor.compress_multipart_stream(acc)
+            
+            headers = {
+                **self._headers,
+                X_API_KEY: None,  # Set inside the loop for each api_url
+                "Content-Type": f"multipart/form-data; boundary={BOUNDARY}",
+                "Content-Encoding": "zstd",
+            }
+
+            for api_url, api_key in self._write_api_urls.items():
+                headers[X_API_KEY] = api_key
+                for idx in range(1, attempts + 1):
                     try:
-                        exc_desc_lines = traceback.format_exception_only(type(e), e)
-                        exc_desc = "".join(exc_desc_lines).rstrip()
-                        logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
-                    except Exception:
-                        logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
-                    # do not retry by default
-                    return
+                        self.request_with_retries(
+                            "POST",
+                            f"{api_url}/runs/multipart",
+                            request_kwargs={
+                                "data": compressed_data_iter,
+                                "headers": headers,
+                            },
+                            stop_after_attempt=1,
+                            _context=acc.context,
+                        )
+                        break
+                    except ls_utils.LangSmithConflictError:
+                        break
+                    except (
+                        ls_utils.LangSmithConnectionError,
+                        ls_utils.LangSmithRequestTimeout,
+                        ls_utils.LangSmithAPIError,
+                    ) as exc:
+                        if idx == attempts:
+                            logger.warning(f"Failed to multipart ingest runs: {exc}")
+                        else:
+                            continue
+                    except Exception as e:
+                        try:
+                            exc_desc_lines = traceback.format_exception_only(type(e), e)
+                            exc_desc = "".join(exc_desc_lines).rstrip()
+                            logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
+                        except Exception:
+                            logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
+                        # do not retry by default
+                        return
+        finally:
+            compressor.close()
 
     def update_run(
         self,
