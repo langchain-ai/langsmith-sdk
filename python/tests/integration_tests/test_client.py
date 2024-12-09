@@ -1262,12 +1262,12 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         },
     )
 
-
     langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
 
     def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
         # Verify we receive the attachment data
         assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
         assert image_data.read() == b"fake image data for testing"
         return {"answer": "test image"}
@@ -1276,7 +1276,8 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         outputs: dict, reference_outputs: dict, attachments: dict
     ) -> Dict[str, Any]:
         assert "image" in attachments
-        image_url, image_data = attachments["image"]
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
         assert image_data.read() == b"fake image data for testing"
         return {
             "score": float(
@@ -1326,7 +1327,8 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
         outputs: dict, reference_outputs: dict, attachments: dict
     ) -> Dict[str, Any]:
         assert "image" in attachments
-        image_url, image_data = attachments["image"]
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
         assert image_data.read() == b"fake image data for testing"
         return {
             "score": float(
@@ -1404,8 +1406,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         data_type=DataType.kv,
     )
 
-    example = ExampleUpsertWithAttachments(
-        dataset_id=dataset.id,
+    example = ExampleUploadWithAttachments(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1413,14 +1414,15 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         },
     )
 
-    langchain_client.upsert_examples_multipart(upserts=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
     ) -> Dict[str, Any]:
         # Verify we receive the attachment data
         assert "image" in attachments
-        image_url, image_data = attachments["image"]
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
         assert image_data.read() == b"fake image data for testing"
         return {"answer": "test image"}
 
@@ -1428,7 +1430,8 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         outputs: dict, reference_outputs: dict, attachments: dict
     ) -> Dict[str, Any]:
         assert "image" in attachments
-        image_url, image_data = attachments["image"]
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
         assert image_data.read() == b"fake image data for testing"
         return {
             "score": float(
@@ -1458,8 +1461,7 @@ async def test_aevaluate_with_attachments_not_in_target(
         data_type=DataType.kv,
     )
 
-    example = ExampleUpsertWithAttachments(
-        dataset_id=dataset.id,
+    example = ExampleUploadWithAttachments(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1467,7 +1469,7 @@ async def test_aevaluate_with_attachments_not_in_target(
         },
     )
 
-    langchain_client.upsert_examples_multipart(upserts=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
 
     async def target(inputs: Dict[str, Any]) -> Dict[str, Any]:
         # Verify we receive the attachment data
@@ -1477,7 +1479,8 @@ async def test_aevaluate_with_attachments_not_in_target(
         outputs: dict, reference_outputs: dict, attachments: dict
     ) -> Dict[str, Any]:
         assert "image" in attachments
-        image_url, image_data = attachments["image"]
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
         assert image_data.read() == b"fake image data for testing"
         return {
             "score": float(
@@ -1513,12 +1516,11 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
     )
 
     # Verify we can create example the new way without attachments
-    example = ExampleUpsertWithAttachments(
-        dataset_id=dataset.id,
+    example = ExampleUploadWithAttachments(
         inputs={"question": "What is 3+1?"},
         outputs={"answer": "4"},
     )
-    langchain_client.upsert_examples_multipart(upserts=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
