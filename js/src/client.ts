@@ -3855,6 +3855,7 @@ export class Client implements LangSmithTracingClientInterface {
    * @returns Promise with the upsert response
    */
   public async uploadExamplesMultipart(
+    datasetId: string,
     uploads: ExampleUploadWithAttachments[] = []
   ): Promise<UploadExamplesResponse> {
     const formData = new FormData();
@@ -3904,12 +3905,6 @@ export class Client implements LangSmithTracingClientInterface {
         }
       }
     }
-
-    const datasetIds = uploads.map((example) => example.dataset_id);
-    if (datasetIds.length > 1) {
-      throw new Error("Cannot upload examples to multiple datasets");
-    }
-    const datasetId = datasetIds[0];
 
     const response = await this.caller.call(
       _getFetchImplementation(),
