@@ -229,7 +229,13 @@ jobs:
             echo "Expected ref name: ${EXPECTED_REF}"
             echo "Actual ref name:   ${REF_NAME}"
             echo ''
-            echo 'Something is wrong, so refusing to publish.'
+            echo 'Proceeding here would tag one version, then publish a different one.'
+            echo "We don't want that, so we'll exit and refuse to publish instead."
+            echo ''
+            echo "Please make sure you've updated the version inside the pyo3 project's Cargo.toml"
+            echo 'to match the tag you pushed. Ensure that Cargo.toml contains a version number'
+            echo 'that follows Rust formatting rules (e.g. "0.1.2-rc3"), and that the tag follows'
+            echo 'Python version formatting rules (e.g. "0.1.2rc3").'
             exit 1
           fi
       - name: Generate artifact attestation
