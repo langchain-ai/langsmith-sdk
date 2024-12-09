@@ -3486,6 +3486,7 @@ class Client:
                 raise ValueError(
                     "The examples must be of type ExampleUploadWithAttachments"
                     " or ExampleUpsertWithAttachments"
+                    " or ExampleUpdateWithAttachments"
                 )
             if example.id is not None:
                 example_id = str(example.id)
