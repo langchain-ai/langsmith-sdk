@@ -60,14 +60,17 @@ impl FromPyObject<'_> for RunUpdateExtended {
     fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let run_update = value.extract::<RunUpdate>()?.into_inner();
 
-        let attachments = {
-            if let Ok(attachments_value) = value.get_item(pyo3::intern!(value.py(), "attachments"))
-            {
-                extract_attachments(&attachments_value)?
-            } else {
-                None
-            }
-        };
+        // TODO: attachments are WIP at the moment, ignore them here for now.
+        //
+        // let attachments = {
+        //     if let Ok(attachments_value) = value.get_item(pyo3::intern!(value.py(), "attachments"))
+        //     {
+        //         extract_attachments(&attachments_value)?
+        //     } else {
+        //         None
+        //     }
+        // };
+        let attachments = None;
 
         let io = RunIO {
             inputs: serialize_optional_dict_value(value, pyo3::intern!(value.py(), "inputs"))?,
