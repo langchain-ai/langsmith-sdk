@@ -489,6 +489,7 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
+        self.compress_traces = os.getenv("LANGSMITH_COMPRESS_TRACES") == "true"
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -496,8 +497,17 @@ class Client:
         )
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
+        if auto_batch_tracing and self.compress_traces:
+            self.tracing_queue = io.BytesIO()
+
+            threading.Thread(
+                target=_tracing_control_thread_func_compress,  # TODO: implement
+                # arg must be a weakref to self to avoid the Thread object
+                # preventing garbage collection of the Client object
+                args=(weakref.ref(self),),
+            ).start()
         # Initialize auto batching
-        if auto_batch_tracing:
+        elif auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
@@ -1752,6 +1762,7 @@ class Client:
             data["events"] = events
         if data["extra"]:
             self._insert_runtime_env([data])
+        if use_multipart and 
         if use_multipart and self.tracing_queue is not None:
             # not collecting attachments currently, use empty dict
             serialized_op = serialize_run_dict(operation="patch", payload=data)
