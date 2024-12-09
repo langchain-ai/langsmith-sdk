@@ -10,7 +10,7 @@ import zstandard as zstd
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
-from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
+from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext, join_multipart_parts_and_context
 from langsmith._internal._serde import dumps_json as _dumps_json
 
 logger = logging.getLogger(__name__)
@@ -275,30 +275,6 @@ def serialized_run_operation_to_multipart_parts_and_context(
         f"trace={op.trace_id},id={op.id}",
     )
 
-
-def combine_multipart_parts_and_context_for_compression(
-    parts_and_contexts: Sequence[MultipartPartsAndContext],
-) -> MultipartPartsAndContext:
-    """Combine multiple MultipartPartsAndContext objects for streaming compression.
-    
-    Args:
-        parts_and_contexts: Sequence of MultipartPartsAndContext objects to combine
-        
-    Returns:
-        Combined MultipartPartsAndContext with all parts and contexts
-    """
-    all_parts = []
-    contexts = []
-    
-    for pc in parts_and_contexts:
-        all_parts.extend(pc.parts)
-        contexts.append(pc.context)
-        
-    return MultipartPartsAndContext(
-        all_parts,
-        ";".join(contexts)
-    )
-
 class StreamingMultipartCompressor:
     """Incrementally compress multipart form data from multiple traces."""
 
@@ -422,7 +398,7 @@ class StreamingMultipartCompressor:
                 parts_and_contexts.append(
                     serialized_run_operation_to_multipart_parts_and_context(op)
                 )
-            return combine_multipart_parts_and_context_for_compression(
+            return join_multipart_parts_and_context(
                 parts_and_contexts
             )
 
