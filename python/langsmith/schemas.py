@@ -93,9 +93,6 @@ class ExampleBase(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
-    attachment_urls: Optional[Dict[str, Tuple[str, BinaryIOLike]]] = Field(default=None)
-    """Dictionary with attachment names as keys and a tuple of the S3 url
-    and a reader of the data for the file."""
 
     class Config:
         """Configuration class for the schema."""
@@ -112,16 +109,30 @@ class ExampleCreate(ExampleBase):
     split: Optional[Union[str, List[str]]] = None
 
 
-class ExampleUpsertWithAttachments(ExampleCreate):
-    """Example create with attachments."""
+class ExampleUploadWithAttachments(BaseModel):
+    """Example upload with attachments."""
 
+    id: Optional[UUID]
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, List[str]]] = None
     attachments: Optional[Attachments] = None
 
 
-class ExampleUploadWithAttachments(ExampleUpsertWithAttachments):
-    """Example upload with attachments."""
+class ExampleUpsertWithAttachments(ExampleUploadWithAttachments):
+    """Example create with attachments."""
 
-    pass
+    dataset_id: UUID
+
+
+class AttachmentInfo(TypedDict):
+    """Info for an attachment."""
+
+    presigned_url: str
+    reader: BinaryIOLike
+    # TODO: add mime type
 
 
 class Example(ExampleBase):
@@ -135,6 +146,9 @@ class Example(ExampleBase):
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
+    attachments_info: Optional[Dict[str, AttachmentInfo]] = Field(default=None)
+    """Dictionary with attachment names as keys and a tuple of the S3 url
+    and a reader of the data for the file."""
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
 

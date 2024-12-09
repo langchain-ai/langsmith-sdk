@@ -393,7 +393,6 @@ def test_upload_examples_multipart(langchain_client: Client):
     example_id = uuid4()
     example_1 = ExampleUploadWithAttachments(
         id=example_id,
-        dataset_id=dataset.id,
         inputs={"text": "hello world"},
         attachments={
             "test_file": ("text/plain", b"test content"),
@@ -402,13 +401,11 @@ def test_upload_examples_multipart(langchain_client: Client):
 
     # Test example with minimum required fields
     example_2 = ExampleUploadWithAttachments(
-        dataset_id=dataset.id,
         inputs={"text": "minimal example"},
     )
 
     # Test example with outputs and multiple attachments
     example_3 = ExampleUploadWithAttachments(
-        dataset_id=dataset.id,
         inputs={"text": "example with outputs"},
         outputs={"response": "test response"},
         attachments={
@@ -419,7 +416,7 @@ def test_upload_examples_multipart(langchain_client: Client):
 
     # Test uploading multiple examples at once
     created_examples = langchain_client.upload_examples_multipart(
-        uploads=[example_1, example_2, example_3]
+        dataset_id=dataset.id, uploads=[example_1, example_2, example_3]
     )
     assert created_examples["count"] == 3
 
@@ -439,7 +436,7 @@ def test_upload_examples_multipart(langchain_client: Client):
     # Verify example with ID was created with correct ID
     example_with_id = [ex for ex in examples if ex.id == example_id][0]
     assert example_with_id.inputs["text"] == "hello world"
-    assert "test_file" in example_with_id.attachment_urls
+    assert "test_file" in example_with_id.attachments_info
 
     # Verify example with outputs and multiple attachments
     example_with_outputs = next(
@@ -447,35 +444,20 @@ def test_upload_examples_multipart(langchain_client: Client):
         for ex in examples
         if ex.outputs and ex.outputs.get("response") == "test response"
     )
-    assert len(example_with_outputs.attachment_urls) == 2
-    assert "file1" in example_with_outputs.attachment_urls
-    assert "file2" in example_with_outputs.attachment_urls
+    assert len(example_with_outputs.attachments_info) == 2
+    assert "file1" in example_with_outputs.attachments_info
+    assert "file2" in example_with_outputs.attachments_info
 
     # Test uploading to non-existent dataset fails
     fake_id = uuid4()
     with pytest.raises(LangSmithNotFoundError):
         langchain_client.upload_examples_multipart(
+            dataset_id=fake_id,
             uploads=[
                 ExampleUploadWithAttachments(
-                    dataset_id=fake_id,
                     inputs={"text": "should fail"},
                 )
-            ]
-        )
-
-    # Test uploading examples to different datasets fails
-    with pytest.raises(ValueError, match="All examples must be in the same dataset"):
-        langchain_client.upload_examples_multipart(
-            uploads=[
-                ExampleUploadWithAttachments(
-                    dataset_id=dataset.id,
-                    inputs={"text": "example 1"},
-                ),
-                ExampleUploadWithAttachments(
-                    dataset_id=uuid4(),
-                    inputs={"text": "example 2"},
-                ),
-            ]
+            ],
         )
 
     # Clean up
@@ -1271,8 +1253,8 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         data_type=DataType.kv,
     )
 
+    # 2. Create example with attachments
     example = ExampleUploadWithAttachments(
-        dataset_id=dataset.id,
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1280,12 +1262,13 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
         },
     )
 
-    langchain_client.upload_examples_multipart(uploads=[example])
+
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
 
     def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
         # Verify we receive the attachment data
         assert "image" in attachments
-        image_url, image_data = attachments["image"]
+        image_data = attachments["image"]["reader"]
         assert image_data.read() == b"fake image data for testing"
         return {"answer": "test image"}
 
@@ -1382,12 +1365,11 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     )
 
     # Verify we can create example the new way without attachments
-    example = ExampleUpsertWithAttachments(
-        dataset_id=dataset.id,
+    example = ExampleUploadWithAttachments(
         inputs={"question": "What is 3+1?"},
         outputs={"answer": "4"},
     )
-    langchain_client.upsert_examples_multipart(upserts=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
 
     def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
         # Verify we receive an empty attachments dict
