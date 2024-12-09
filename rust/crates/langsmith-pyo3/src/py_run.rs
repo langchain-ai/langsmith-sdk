@@ -46,43 +46,40 @@ impl FromPyObject<'_> for RunCreateExtended {
     }
 }
 
-fn extract_attachments(value: &Bound<'_, PyAny>) -> PyResult<Option<Vec<Attachment>>> {
-    if value.is_none() {
-        return Ok(None);
+#[derive(Debug)]
+pub struct RunUpdateExtended(langsmith_tracing_client::client::RunUpdateExtended);
+
+impl RunUpdateExtended {
+    #[inline]
+    pub(crate) fn into_inner(self) -> langsmith_tracing_client::client::RunUpdateExtended {
+        self.0
     }
+}
 
-    let mapping = value.downcast::<PyMapping>()?;
+impl FromPyObject<'_> for RunUpdateExtended {
+    fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let run_update = value.extract::<RunUpdate>()?.into_inner();
 
-    let size = mapping.len()?;
-    if size == 0 {
-        return Ok(None);
+        let attachments = {
+            if let Ok(attachments_value) = value.get_item(pyo3::intern!(value.py(), "attachments"))
+            {
+                extract_attachments(&attachments_value)?
+            } else {
+                None
+            }
+        };
+
+        let io = RunIO {
+            inputs: serialize_optional_dict_value(value, pyo3::intern!(value.py(), "inputs"))?,
+            outputs: serialize_optional_dict_value(value, pyo3::intern!(value.py(), "outputs"))?,
+        };
+
+        Ok(Self(langsmith_tracing_client::client::RunUpdateExtended {
+            run_update,
+            io,
+            attachments,
+        }))
     }
-
-    let mut attachments = Vec::with_capacity(size);
-
-    for result in mapping.items()?.iter()? {
-        let key_value_pair = result?;
-
-        let key_item = key_value_pair.get_item(0)?;
-        let key = key_item.extract::<&str>()?;
-
-        // Each value in the attachments dict is a (mime_type, bytes) tuple.
-        let value = key_value_pair.get_item(1)?;
-        let value_tuple = value.downcast_exact::<PyTuple>()?;
-        let mime_type_value = value_tuple.get_item(0)?;
-        let bytes_value = value_tuple.get_item(1)?;
-
-        attachments.push(Attachment {
-            // TODO: It's unclear whether the key in the attachments dict is
-            //       the `filename`` or the `ref_name`, and where the other one is coming from.
-            ref_name: key.to_string(),
-            filename: key.to_string(),
-            data: bytes_value.extract()?,
-            content_type: mime_type_value.extract()?,
-        });
-    }
-
-    Ok(Some(attachments))
 }
 
 #[derive(Debug)]
@@ -134,6 +131,26 @@ impl FromPyObject<'_> for RunCreate {
             run_type,
             reference_example_id,
         }))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct RunUpdate(langsmith_tracing_client::client::RunUpdate);
+
+impl FromPyObject<'_> for RunUpdate {
+    fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let common = RunCommon::extract_bound(value)?.into_inner();
+
+        let end_time = extract_time_value(&value.get_item(pyo3::intern!(value.py(), "end_time"))?)?;
+
+        Ok(Self(langsmith_tracing_client::client::RunUpdate { common, end_time }))
+    }
+}
+
+impl RunUpdate {
+    #[inline]
+    pub(crate) fn into_inner(self) -> langsmith_tracing_client::client::RunUpdate {
+        self.0
     }
 }
 
@@ -194,6 +211,45 @@ impl FromPyObject<'_> for RunCommon {
             session_name,
         }))
     }
+}
+
+fn extract_attachments(value: &Bound<'_, PyAny>) -> PyResult<Option<Vec<Attachment>>> {
+    if value.is_none() {
+        return Ok(None);
+    }
+
+    let mapping = value.downcast::<PyMapping>()?;
+
+    let size = mapping.len()?;
+    if size == 0 {
+        return Ok(None);
+    }
+
+    let mut attachments = Vec::with_capacity(size);
+
+    for result in mapping.items()?.iter()? {
+        let key_value_pair = result?;
+
+        let key_item = key_value_pair.get_item(0)?;
+        let key = key_item.extract::<&str>()?;
+
+        // Each value in the attachments dict is a (mime_type, bytes) tuple.
+        let value = key_value_pair.get_item(1)?;
+        let value_tuple = value.downcast_exact::<PyTuple>()?;
+        let mime_type_value = value_tuple.get_item(0)?;
+        let bytes_value = value_tuple.get_item(1)?;
+
+        attachments.push(Attachment {
+            // TODO: It's unclear whether the key in the attachments dict is
+            //       the `filename`` or the `ref_name`, and where the other one is coming from.
+            ref_name: key.to_string(),
+            filename: key.to_string(),
+            data: bytes_value.extract()?,
+            content_type: mime_type_value.extract()?,
+        });
+    }
+
+    Ok(Some(attachments))
 }
 
 /// Get an optional string from a Python `None`, string, or string-like object such as a UUID value.
