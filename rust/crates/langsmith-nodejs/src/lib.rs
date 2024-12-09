@@ -46,13 +46,11 @@ impl TracingClient {
         // TODO: this is for debugging only, remove it before publishing
         println!("Rust bindings received run: {run:?}");
 
-        self.client
-            .submit_run_create(run.into_inner())
-            .map_err(|e| {
-                // TODO: this is for debugging only, remove it before publishing
-                println!("Submitting run failed with error: {e:?}");
+        self.client.submit_run_create(run.into_inner()).map_err(|e| {
+            // TODO: this is for debugging only, remove it before publishing
+            println!("Submitting run failed with error: {e:?}");
 
-                napi::Error::from_reason(format!("{e}"))
-            })
+            napi::Error::from_reason(format!("{e}"))
+        })
     }
 }
