@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures as cf
 import datetime
-import inspect
 import logging
 import pathlib
 import uuid
@@ -41,6 +40,7 @@ from langsmith.evaluation._runner import (
     _ExperimentManagerMixin,
     _extract_feedback_keys,
     _ForwardResults,
+    _include_attachments,
     _is_langchain_runnable,
     _load_examples_map,
     _load_experiment,
@@ -1056,49 +1056,6 @@ async def _aforward(
             run=cast(schemas.Run, run),
             example=example,
         )
-
-
-def _include_attachments(
-    target: Union[ATARGET_T, Iterable[schemas.Run], AsyncIterable[dict], Runnable],
-) -> bool:
-    """Whether the target function accepts attachments."""
-    if _is_langchain_runnable(target) or not callable(target):
-        return False
-    # Check function signature
-    sig = inspect.signature(target)
-    params = list(sig.parameters.values())
-    positional_params = [
-        p
-        for p in params
-        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        and p.default is p.empty
-    ]
-
-    if len(positional_params) == 0:
-        raise ValueError(
-            "Target function must accept at least one positional argument (inputs)"
-        )
-    elif len(positional_params) > 2:
-        raise ValueError(
-            "Target function must accept at most two positional "
-            "arguments (inputs, attachments)"
-        )
-    elif len(positional_params) == 2:
-        mismatches = []
-        for i, (p, expected) in enumerate(
-            zip(positional_params, ("inputs", "attachments"))
-        ):
-            if p.name != expected:
-                mismatches.append((i, p.name))
-
-        if mismatches:
-            raise ValueError(
-                "When target function has two positional arguments, they must be named "
-                "'inputs' and 'attachments', respectively. Received: "
-                + ",".join(f"'{p}' at index {i}" for i, p in mismatches)
-            )
-
-    return len(positional_params) == 2
 
 
 def _ensure_async_traceable(

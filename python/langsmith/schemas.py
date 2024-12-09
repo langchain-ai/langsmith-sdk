@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
-from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -64,7 +63,7 @@ class Attachment(NamedTuple):
     data: bytes
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
 

@@ -1913,9 +1913,7 @@ def _ensure_traceable(
     return fn
 
 
-def _include_attachments(
-    target: Union[TARGET_T, Iterable[schemas.Run], Runnable],
-) -> bool:
+def _include_attachments(target: Any) -> bool:
     """Whether the target function accepts attachments."""
     if _is_langchain_runnable(target) or not callable(target):
         return False
@@ -1923,37 +1921,29 @@ def _include_attachments(
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
     positional_params = [
-        p
-        for p in params
-        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        and p.default is p.empty
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
     ]
+    positional_no_default = [p for p in positional_params if p.default is p.empty]
 
     if len(positional_params) == 0:
         raise ValueError(
-            "Target function must accept at least one positional argument (inputs)"
+            "Target function must accept at least one positional argument (inputs)."
         )
-    elif len(positional_params) > 2:
+    elif len(positional_no_default) > 2:
         raise ValueError(
-            "Target function must accept at most two positional "
-            "arguments (inputs, attachments)"
+            "Target function must accept at most two "
+            "arguments without default values: (inputs, attachments)."
         )
-    elif len(positional_params) == 2:
-        mismatches = []
-        for i, (p, expected) in enumerate(
-            zip(positional_params, ("inputs", "attachments"))
-        ):
-            if p.name != expected:
-                mismatches.append((i, p.name))
-
-        if mismatches:
+    elif len(positional_no_default) == 2:
+        if [p.name for p in positional_no_default] != ["inputs", "attachments"]:
             raise ValueError(
-                "When target function has two positional arguments, they must be named "
+                "When passing 2 positional arguments, they must be named "
                 "'inputs' and 'attachments', respectively. Received: "
-                + ",".join(f"'{p}' at index {i}" for i, p in mismatches)
+                f"{[p.name for p in positional_no_default]}"
             )
-
-    return len(positional_params) == 2
+        return True
+    else:
+        return [p.name for p in positional_params[:2]] == ["inputs", "attachments"]
 
 
 def _resolve_experiment(

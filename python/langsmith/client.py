@@ -3901,10 +3901,9 @@ class Client:
                     "presigned_url": value["presigned_url"],
                     "reader": reader,
                 }
-        del example["attachment_urls"]
 
         return ls_schemas.Example(
-            **example,
+            **{k: v for k, v in example.items() if k != "attachment_urls"},
             attachments=attachments,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
@@ -3988,10 +3987,9 @@ class Client:
                         "presigned_url": value["presigned_url"],
                         "reader": reader,
                     }
-            del example["attachment_urls"]
 
             yield ls_schemas.Example(
-                **example,
+                **{k: v for k, v in example.items() if k != "attachment_urls"},
                 attachments=attachments,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
