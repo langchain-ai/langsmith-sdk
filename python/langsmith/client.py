@@ -3580,7 +3580,7 @@ class Client:
     def upload_examples_multipart(
         self,
         *,
-        uploads: List[ls_schemas.ExampleUploadWithAttachments] = [],
+        uploads: List[ls_schemas.ExampleUploadWithAttachments] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3589,7 +3589,8 @@ class Client:
             raise ValueError(
                 "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
             )
-
+        if uploads is None:
+            uploads = []
         encoder, data = self._prepate_multipart_data(uploads, include_dataset_id=False)
         dataset_ids = set([example.dataset_id for example in uploads])
         if len(dataset_ids) > 1:
@@ -3613,7 +3614,7 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = [],
+        upserts: List[ls_schemas.ExampleUpsertWithAttachments] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
@@ -3627,6 +3628,8 @@ class Client:
             raise ValueError(
                 "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
             )
+        if upserts is None:
+            upserts = []
 
         encoder, data = self._prepate_multipart_data(upserts, include_dataset_id=True)
 
