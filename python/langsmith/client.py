@@ -494,10 +494,13 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
+        self.compressed_multipart_buffer = ...
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         # Initialize auto batching
-        if auto_batch_tracing:
+        if auto_batch_tracing and _compression_enabled:
+            ...
+        elif auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
@@ -1295,6 +1298,10 @@ class Client:
                 self.tracing_queue.put(
                     TracingQueueItem(run_create["dotted_order"], serialized_op)
                 )
+            elif os.environ["COMP"]:
+                # Do something different
+                # Use existing serialized_run_dict
+
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
