@@ -146,7 +146,7 @@ class Example(ExampleBase):
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
-    attachment_urls: Optional[Dict[str, AttachmentInfo]] = Field(default=None)
+    attachments: Optional[Dict[str, AttachmentInfo]] = Field(default=None)
     """Dictionary with attachment names as keys and a tuple of the S3 url
     and a reader of the data for the file."""
     _host_url: Optional[str] = PrivateAttr(default=None)
