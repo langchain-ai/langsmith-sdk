@@ -1,6 +1,6 @@
 [package]
 name = "langsmith-pyo3"
-version = "0.1.0-rc2"
+version = "0.1.0-rc3"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -20,6 +20,14 @@ name = "langsmith_pyo3"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+pyo3 = { path = "../../../vendor/pyo3" }
+pyo3-ffi = { path = "../../../vendor/pyo3/pyo3-ffi" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+langsmith-tracing-client = { path = "../langsmith-tracing-client" }
+orjson = { path = "../../../vendor/orjson", default-features = false }
+
+[features]
 # The `extension-module` feature is necessary to produce a "manylinux" portable Python library.
 # Otherwise PyO3 will link to its own Python interpreter and run our code inside it,
 # which will make the library only work with *that specific* Python build and no other.
@@ -27,9 +35,11 @@ crate-type = ["cdylib", "rlib"]
 # More info:
 # - https://pyo3.rs/v0.22.5/building-and-distribution#the-extension-module-feature
 # - https://peps.python.org/pep-0513/
-pyo3 = { path = "../../../vendor/pyo3", features = ["extension-module"] }
-pyo3-ffi = { path = "../../../vendor/pyo3/pyo3-ffi", features = ["extension-module"] }
-sonic-rs = { workspace = true }
-serde = { workspace = true }
-langsmith-tracing-client = { path = "../langsmith-tracing-client" }
-orjson = { path = "../../../vendor/orjson" }
+#
+# However, it makes `cargo test` fail with linker errors since Python symbols are missing,
+# since the test binary isn't run as part of a Python binary:
+# https://pyo3.rs/v0.13.2/faq#i-cant-run-cargo-test-im-having-linker-issues-like-symbol-not-found-or-undefined-reference-to-_pyexc_systemerror
+#
+# PyO3's recommended workaround is to run tests with `--no-default-features`.
+extension-module = ["pyo3/extension-module", "pyo3-ffi/extension-module", "orjson/extension-module"]
+default = ["extension-module"]
