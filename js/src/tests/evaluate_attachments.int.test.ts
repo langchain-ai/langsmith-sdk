@@ -1,5 +1,5 @@
-import { evaluate } from "../evaluation/_runner.js";
-import { AttachmentInfo, ExampleUploadWithAttachments } from "../schemas.js";
+import { evaluate, TargetConfigT } from "../evaluation/_runner.js";
+import { ExampleUploadWithAttachments } from "../schemas.js";
 import { Client } from "../index.js";
 import { IterableReadableStream } from "../utils/stream.js";
 import { v4 as uuidv4 } from "uuid";
@@ -44,13 +44,13 @@ test("evaluate can handle examples with attachments", async () => {
   // Define target function that processes attachments
   const targetFunc = async (
     _inputs: Record<string, any>,
-    attachments?: Record<string, AttachmentInfo>
+    config?: TargetConfigT
   ) => {
     // Verify we receive the attachment data
-    if (!attachments?.image) {
+    if (!config?.attachments?.image) {
       throw new Error("Image attachment not found");
     }
-    const {reader} = attachments.image;
+    const {reader} = config.attachments.image;
     const expectedData = new Uint8Array(Buffer.from("fake image data for testing"));
     const response = await readFromStream(reader);
     if (!arraysEqual(response, expectedData)) {

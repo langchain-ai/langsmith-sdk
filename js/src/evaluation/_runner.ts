@@ -1,5 +1,5 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
-import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
+import { AttachmentInfo, BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
@@ -21,16 +21,14 @@ import {
   ComparisonEvaluationResults,
   ComparativeEvaluator,
 } from "./evaluate_comparative.js";
+import { IterableReadableStream } from "../utils/stream.js";
 
-type StandardTargetT<TInput = any, TOutput = KVMap, TAttachments = any> =
-  | ((input: TInput, config?: KVMap) => Promise<TOutput>)
-  | ((input: TInput, config?: KVMap) => TOutput)
-  | { invoke: (input: TInput, config?: KVMap) => TOutput }
-  | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> }
-  | ((input: TInput, attachments?: TAttachments, config?: KVMap) => Promise<TOutput>)
-  | ((input: TInput, attachments?: TAttachments, config?: KVMap) => TOutput)
-  | { invoke: (input: TInput, attachments?: TAttachments, config?: KVMap) => TOutput }
-  | { invoke: (input: TInput, attachments?: TAttachments, config?: KVMap) => Promise<TOutput> };
+export type TargetConfigT = KVMap & { attachments?: Record<string, AttachmentInfo>, callbacks?: any }
+type StandardTargetT<TInput = any, TOutput = KVMap> =
+  | ((input: TInput, config?: TargetConfigT) => Promise<TOutput>)
+  | ((input: TInput, config?: TargetConfigT) => TOutput)
+  | { invoke: (input: TInput, config?: TargetConfigT) => TOutput }
+  | { invoke: (input: TInput, config?: TargetConfigT) => Promise<TOutput> };
 
 type ComparativeTargetT =
   | Array<string>
@@ -189,7 +187,7 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * Whether to use attachments for the experiment.
    * @default false
    */
-  includeAttachments: boolean;
+  includeAttachments?: boolean;
 }
 
 export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
@@ -810,7 +808,7 @@ export class _ExperimentManager {
 
     // Python might return microseconds, which we need
     // to account for when comparing dates.
-    const modifiedAtTime = modifiedAt.filter(date => date !== undefined).map((date) => {
+    const modifiedAtTime = modifiedAt.map((date) => {
       function getMiliseconds(isoString: string) {
         const time = isoString.split("T").at(1);
         if (!time) return "";
@@ -820,9 +818,9 @@ export class _ExperimentManager {
         return strMiliseconds ?? "";
       }
 
-      const jsDate = new Date(date);
+      const jsDate = new Date(date!);
 
-      let source = getMiliseconds(date);
+      let source = getMiliseconds(date!);
       let parsed = getMiliseconds(jsDate.toISOString());
 
       const length = Math.max(source.length, parsed.length);
@@ -1001,7 +999,7 @@ async function _forward(
   experimentName: string,
   metadata: KVMap,
   client: Client,
-  includeAttachments?: boolean
+  includeAttachments?: boolean,
 ): Promise<_ForwardResults> {
   let run: BaseRun | null = null;
 
@@ -1035,27 +1033,41 @@ async function _forward(
           // no-op
         }
         // Issue with retrieving LangChain callbacks, rely on interop
-        if (langChainCallbacks === undefined) {
+        if (langChainCallbacks === undefined && !includeAttachments) {
           return await fn.invoke(inputs);
-        } else {
+        } else if (langChainCallbacks === undefined && includeAttachments) {
+          return await fn.invoke(inputs, {
+            attachments: example.attachments,
+          });
+        } else if (!includeAttachments) {
           return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+        } else {
+          return await fn.invoke(inputs, { 
+            attachments: example.attachments, 
+            callbacks: langChainCallbacks 
+          });
         }
       }, options)
     : traceable(fn, options);
 
   try {
-    if (includeAttachments && example.attachments) {
-      await wrappedFn({ ...example.inputs }, example.attachments);
-      
-      // Reset attachment streams after use
-      for (const [_, { presigned_url }] of Object.entries(example.attachments)) {
-        // Create a new stream from the url to reset position
-        example.attachments[_] = { presigned_url, reader: await fetch(presigned_url).then(
-          (response) => response.body
-        ) ?? new ReadableStream() };
-      }
-    } else {
-      await wrappedFn(example.inputs);
+    const readersForLater: any = {};
+    for (const [key, value] of Object.entries(example.attachments!)) {
+      const [streamForTarget, streamForLater] = value.reader.tee();
+      example.attachments![key] = {
+        presigned_url: value.presigned_url,
+        reader: IterableReadableStream.fromReadableStream(streamForTarget),
+      };
+      readersForLater[key] = streamForLater;
+    }
+    await wrappedFn(example.inputs);
+
+    for (const [key, value] of Object.entries(example.attachments!)) {
+      const reader = readersForLater[key];
+      example.attachments![key] = {
+        presigned_url: value.presigned_url,
+        reader: IterableReadableStream.fromReadableStream(reader),
+      };
     }
   } catch (e) {
     console.error(`Error running target function: ${e}`);

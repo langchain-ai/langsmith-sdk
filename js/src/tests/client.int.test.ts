@@ -594,7 +594,7 @@ test.concurrent(
     expect(examplesList2.length).toEqual(3);
     const datasetDiff = await client.diffDatasetVersions({
       datasetId: dataset.id,
-      fromVersion: initialVersion,
+      fromVersion: initialVersion!,
       toVersion: "latest",
     });
     expect(datasetDiff.examples_added.length).toEqual(3);
