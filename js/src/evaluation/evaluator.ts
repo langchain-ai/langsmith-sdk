@@ -138,6 +138,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
           inputs: example?.inputs,
           outputs: run?.outputs,
           referenceOutputs: example?.outputs,
+          attachments: example?.attachment_urls,
         },
         example
       );

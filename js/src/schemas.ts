@@ -250,12 +250,12 @@ export interface ExampleCreate extends BaseExample {
 
 export interface ExampleUploadWithAttachments {
   id?: string;
-  created_at?: string;
   inputs: KVMap;
   outputs?: KVMap;
   metadata?: KVMap;
   split?: string | string[];
   attachments?: Attachments;
+  created_at?: string;
 }
 
 export interface UploadExamplesResponse {
@@ -266,9 +266,23 @@ export interface UploadExamplesResponse {
 export interface Example extends BaseExample {
   id: string;
   created_at: string;
-  modified_at: string;
+  modified_at?: string;
   source_run_id?: string;
-  runs: Run[];
+  runs?: Run[];
+  attachment_urls?: Record<string, { presigned_url: string; reader: () => Promise<Response> }>;
+}
+
+export interface ListExampleResponse {
+  id: string;
+  name: string;
+  inputs: KVMap;
+  outputs?: KVMap;
+  dataset_id: string;
+  source_run_id?: string;
+  metadata?: KVMap;
+  created_at: string;
+  modified_at?: string;
+  attachment_urls?: KVMap;
 }
 
 export interface ExampleUpdate {
