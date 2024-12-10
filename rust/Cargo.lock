@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "langsmith-pyo3"
-version = "0.1.0-rc2"
+version = "0.1.0-rc4"
 dependencies = [
  "langsmith-tracing-client",
  "orjson",
