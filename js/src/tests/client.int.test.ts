@@ -1336,6 +1336,30 @@ test("upload examples multipart", async () => {
   await client.deleteDataset({ datasetName });
 });
 
+async function readFromStream(reader: ReadableStream<Uint8Array>) {
+  const streamReader = reader.getReader();
+  const chunks: Uint8Array[] = [];
+
+  let done = false;
+  while (!done) {
+    const { done: doneInner, value } = await streamReader.read();
+    done = doneInner;
+    if (value) chunks.push(value);
+  }
+
+  // Combine chunks into a single Uint8Array if needed
+  const fullData = new Uint8Array(
+    chunks.reduce((acc, chunk) => acc + chunk.length, 0)
+  );
+  let offset = 0;
+  for (const chunk of chunks) {
+    fullData.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return fullData;
+}
+
 test("update examples multipart", async () => {
   const client = new Client({
     apiKey: "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",
@@ -1417,14 +1441,14 @@ test("update examples multipart", async () => {
     ["bar", "test_file"].sort()
   );
   expect(updatedExample.metadata).toEqual({ bar: "foo" });
-  let attachmentData = new TextDecoder().decode(
-    await updatedExample.attachments?.test_file.reader
-  );
-  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
-  attachmentData = new TextDecoder().decode(
-    await updatedExample.attachments?.bar.reader
-  );
-  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
+  let attachmentData: Uint8Array | undefined =
+    updatedExample.attachments?.test_file.reader &&
+    (await readFromStream(updatedExample.attachments?.test_file.reader));
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+  attachmentData =
+    updatedExample.attachments?.bar.reader &&
+    (await readFromStream(updatedExample.attachments?.bar.reader));
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
 
   const exampleUpdate4: ExampleUpdateWithAttachments = {
     id: exampleId,
@@ -1438,10 +1462,10 @@ test("update examples multipart", async () => {
   updatedExample = await client.readExample(exampleId);
   expect(updatedExample.metadata).toEqual({ foo: "bar" });
   expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file2"]);
-  attachmentData = new TextDecoder().decode(
-    await updatedExample.attachments?.test_file2.reader
-  );
-  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
+  attachmentData =
+    updatedExample.attachments?.test_file2.reader &&
+    (await readFromStream(updatedExample.attachments?.test_file2.reader));
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
 
   const exampleUpdate5: ExampleUpdateWithAttachments = {
     id: exampleId,
@@ -1457,10 +1481,10 @@ test("update examples multipart", async () => {
   expect(updatedExample.metadata).toEqual({ foo: "bar" });
   expect(updatedExample.split).toEqual(["foo", "bar"]);
   expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file"]);
-  attachmentData = new TextDecoder().decode(
-    await updatedExample.attachments?.test_file.reader
-  );
-  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
+  attachmentData =
+    updatedExample.attachments?.test_file.reader &&
+    (await readFromStream(updatedExample.attachments?.test_file.reader));
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
 
   // Clean up
   await client.deleteDataset({ datasetName });

@@ -65,7 +65,7 @@ export interface BaseExample {
 
 export interface AttachmentInfo {
   presigned_url: string;
-  reader: Uint8Array | ArrayBuffer;
+  reader: ReadableStream<Uint8Array>;
 }
 
 export type AttachmentData = Uint8Array | ArrayBuffer;
