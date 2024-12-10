@@ -1329,6 +1329,8 @@ class Client:
                 multipart_form = serialized_run_operation_to_multipart_parts_and_context(
                     serialized_op)
                 with self._buffer_lock:
+                    print("create_run")
+                    print(multipart_form.parts)
                     compress_multipart_parts_and_context(
                         multipart_form, self.compressor_writer, self.boundary)
                     self._run_count += 1
@@ -1804,9 +1806,9 @@ class Client:
         if self.compressed_runs_buffer is not None:
             multipart_form = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
             with self._buffer_lock:
+                print("update_run")
                 compress_multipart_parts_and_context(
                     multipart_form, self.compressor_writer, self.boundary)
-                self._run_count += 1
         elif self.tracing_queue is not None:
             self.tracing_queue.put(
                 TracingQueueItem(data["dotted_order"], serialized_op)

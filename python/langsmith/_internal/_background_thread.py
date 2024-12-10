@@ -105,11 +105,15 @@ def _tracing_thread_drain_compressed_buffer(
         current_size = client.compressed_runs_buffer.tell()
 
         # Check if we should send now
+        print("current_size", current_size)
+        print("run_count", client._run_count)
         if not (client._run_count >= size_limit or current_size >= size_limit_bytes):
+            print("not sending")
             return None
 
         # Write final boundary and close compression stream
         client.compressor_writer.write(f'--{client.boundary}--\r\n'.encode())
+        client.compressor_writer.flush()
         client.compressor_writer.close()
 
         filled_buffer = client.compressed_runs_buffer
@@ -128,8 +132,10 @@ def _tracing_thread_drain_compressed_buffer(
 
         # Attempt decompression only if we have data
         try:
-            decompressor = zstd.ZstdDecompressor()
-            decompressed_data = decompressor.decompress(filled_data)
+            dctx = zstd.ZstdDecompressor()
+            with dctx.stream_reader(filled_data) as reader:
+                decompressed_data = reader.read()
+
         except zstd.ZstdError as e:
             logger.warning(
                 "Error decompressing final drain data: %s. Possibly empty or incomplete frame.",
@@ -137,7 +143,7 @@ def _tracing_thread_drain_compressed_buffer(
             )
             # Reinitialize for next batch and return
             client.compressed_runs_buffer = io.BytesIO()
-            client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
+            client.compressor_writer = zstd.ZstdCompressor(level=3, write_checksum=True, write_content_size=True).stream_writer(
                 client.compressed_runs_buffer, closefd=False
             )
             client._run_count = 0
@@ -145,10 +151,12 @@ def _tracing_thread_drain_compressed_buffer(
 
         # Parse the multipart form-data if decompression succeeded
         boundary = client.boundary
+        print(decompressed_data)
         content_type = f"multipart/form-data; boundary={boundary}"
         decoder = MultipartDecoder(decompressed_data, content_type)
 
         # Iterate over the parts and write them to files
+        print("decoder.parts", decoder.parts)
         for part in decoder.parts:
             content_disp = part.headers.get(b'Content-Disposition', b'').decode('utf-8', errors='replace')
             name_match = re.search(r'name="([^"]+)"', content_disp)
@@ -308,6 +316,7 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
 
     while keep_thread_active():
         try:
+            print("drain_compressed_buffer")
             data_stream = _tracing_thread_drain_compressed_buffer(
                 client, size_limit, size_limit_bytes)
             if data_stream is not None:
@@ -321,6 +330,7 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
 
     # Drain the buffer on exit
     try:
+        print("final_data_stream")
         final_data_stream = _tracing_thread_drain_compressed_buffer(
             client, size_limit=1, size_limit_bytes=1)  # Force final drain
         if final_data_stream is not None:
