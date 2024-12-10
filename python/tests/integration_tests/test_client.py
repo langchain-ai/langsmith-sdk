@@ -59,6 +59,7 @@ def wait_for(
 def langchain_client() -> Client:
     get_env_var.cache_clear()
     return Client(
+        api_key="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",
         info={
             "instance_flags": {
                 "dataset_examples_multipart_enabled": True,
@@ -1780,7 +1781,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
             "new_file1": ("text/plain", b"new content 1"),
         },
         attachments_operations=AttachmentsOperations(
-            rename={"file1": "renamed_file1"},
+            retain=["file1"],
         ),
     )
 
@@ -1810,21 +1811,24 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     # Verify first example updates
     example_1_updated = next(ex for ex in updated if ex.id == example_ids[0])
     assert example_1_updated.inputs["text"] == "updated hello world"
-    assert "renamed_file1" in example_1_updated.attachments
+    assert "file1" in example_1_updated.attachments
     assert "new_file1" in example_1_updated.attachments
     assert "file2" not in example_1_updated.attachments
     assert (
-        example_1_updated.attachments["renamed_file1"]["reader"].read()
-        == b"original content 1"
-    )
-    assert (
         example_1_updated.attachments["new_file1"]["reader"].read()
         == b"new content 1"
+    )
+    assert (
+        example_1_updated.attachments["file1"]["reader"].read()
+        == b"original content 1"
     )
 
     # Verify second example updates
     example_2_updated = next(ex for ex in updated if ex.id == example_ids[1])
     assert example_2_updated.inputs["text"] == "updated second example"
+    assert "file3" in example_2_updated.attachments
+    assert "new_file2" in example_2_updated.attachments
+    assert "file4" not in example_2_updated.attachments
     assert "file3" in example_2_updated.attachments
     assert "new_file2" in example_2_updated.attachments
     assert "file4" not in example_2_updated.attachments
