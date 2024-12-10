@@ -66,6 +66,7 @@ import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
 import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
+import { IterableReadableStream } from "./utils/stream.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -2727,13 +2728,15 @@ export class Client implements LangSmithTracingClientInterface {
     if (attachment_urls) {
       const attachmentsArray = await Promise.all(
         Object.entries(attachment_urls).map(async ([key, value]) => {
+          async function* fetchReader() {
+            const response = await fetch(value.presigned_url);
+            yield *IterableReadableStream.fromReadableStream(response.body!);
+          }
           return {
             key,
             value: {
               presigned_url: value.presigned_url,
-              reader: await fetch(value.presigned_url).then(
-                (response) => response.body
-              ),
+              reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
             },
           };
         })
@@ -2835,13 +2838,15 @@ export class Client implements LangSmithTracingClientInterface {
         if (attachment_urls) {
           const attachmentsArray = await Promise.all(
             Object.entries(attachment_urls).map(async ([key, value]) => {
+              async function* fetchReader() {
+                const response = await fetch(value.presigned_url);
+                yield *IterableReadableStream.fromReadableStream(response.body!);
+              }
               return {
                 key,
                 value: {
                   presigned_url: value.presigned_url,
-                  reader: await fetch(value.presigned_url).then(
-                    (response) => response.body
-                  ),
+                  reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
                 },
               };
             })
