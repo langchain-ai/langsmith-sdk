@@ -1929,17 +1929,14 @@ def _evaluators_include_attachments(
         return False
 
     def evaluator_has_attachments(evaluator: Any) -> bool:
-        try:
-            sig = inspect.signature(evaluator)
-            params = list(sig.parameters.values())
-            positional_params = [
-                p
-                for p in params
-                if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-            ]
-            return any(p.name == "attachments" for p in positional_params)
-        except Exception:
+        if not callable(evaluator):
             return False
+        sig = inspect.signature(evaluator)
+        params = list(sig.parameters.values())
+        positional_params = [
+            p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        return any(p.name == "attachments" for p in positional_params)
 
     return any(evaluator_has_attachments(e) for e in evaluators)
 
