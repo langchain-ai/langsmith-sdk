@@ -3462,7 +3462,7 @@ class Client:
             created_at=created_at,
         )
 
-    def _prepate_multipart_data(
+    def _prepare_multipart_data(
         self,
         examples: Union[
             List[ls_schemas.ExampleUploadWithAttachments]
@@ -3635,7 +3635,7 @@ class Client:
         if updates is None:
             updates = []
 
-        encoder, data = self._prepate_multipart_data(updates, include_dataset_id=False)
+        encoder, data = self._prepare_multipart_data(updates, include_dataset_id=False)
 
         response = self.request_with_retries(
             "PATCH",
@@ -3666,7 +3666,7 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data = self._prepate_multipart_data(uploads, include_dataset_id=False)
+        encoder, data = self._prepare_multipart_data(uploads, include_dataset_id=False)
 
         response = self.request_with_retries(
             "POST",
@@ -3702,7 +3702,7 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data = self._prepate_multipart_data(upserts, include_dataset_id=True)
+        encoder, data = self._prepare_multipart_data(upserts, include_dataset_id=True)
 
         response = self.request_with_retries(
             "POST",
