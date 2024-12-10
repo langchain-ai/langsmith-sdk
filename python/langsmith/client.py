@@ -4258,6 +4258,7 @@ class Client:
                 metadata or [None] * len(example_ids),
                 splits or [None] * len(example_ids),
                 dataset_ids or [None] * len(example_ids),
+                attachments_operations or [None] * len(example_ids),
             )
         ]
         response = self.request_with_retries(
