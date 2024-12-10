@@ -1790,20 +1790,21 @@ class Client:
             data["events"] = events
         if data["extra"]:
             self._insert_runtime_env([data])
-        if use_multipart:
-            serialized_op = serialize_run_dict(operation="patch", payload=data)
-            if self.compressed_runs_buffer is not None:
-                multipart_form = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
-                with self._buffer_lock:
-                    compress_multipart_parts_and_context(
-                        multipart_form, self.compressor_writer, self.boundary)
-                    self._run_count += 1
-            elif self.tracing_queue is not None:
-                self.tracing_queue.put(
-                    TracingQueueItem(data["dotted_order"], serialized_op)
-                )
-            else:
-                self._update_run(data)
+        if not use_multipart:
+            self._update_run(data)
+            return
+
+        serialized_op = serialize_run_dict(operation="patch", payload=data)
+        if self.compressed_runs_buffer is not None:
+            multipart_form = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
+            with self._buffer_lock:
+                compress_multipart_parts_and_context(
+                    multipart_form, self.compressor_writer, self.boundary)
+                self._run_count += 1
+        elif self.tracing_queue is not None:
+            self.tracing_queue.put(
+                TracingQueueItem(data["dotted_order"], serialized_op)
+            )
         else:
             self._update_run(data)
 
