@@ -240,13 +240,39 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes: int | None = batch_ingest_config["size_limit_bytes"]
     
-    while True:
-        result = _tracing_thread_drain_compressed_buffer(
-            client, size_limit, size_limit_bytes)
-        if result is not None:
-            time.sleep(0.150)  # Simulate call to backend
-        else:
-            time.sleep(0.1)  # Avoid busy-waiting if no data ready
+    def keep_thread_active() -> bool:
+        # if `client.cleanup()` was called, stop thread
+        if not client or (
+            hasattr(client, "_manual_cleanup")
+            and client._manual_cleanup
+        ):
+            return False
+        if not threading.main_thread().is_alive():
+            # main thread is dead. should not be active
+            return False
+        return True
+
+    while keep_thread_active():
+        try:
+            result = _tracing_thread_drain_compressed_buffer(
+                client, size_limit, size_limit_bytes)
+            if result is not None:
+                # Simulating backend call
+                time.sleep(0.25)
+            else:
+                time.sleep(0.05)
+        except Exception:
+            logger.error("Error in tracing compression thread", exc_info=True)
+            time.sleep(0.1)  # Wait before retrying on error
+
+    # Drain the buffer on exit
+    try:
+        final_result = _tracing_thread_drain_compressed_buffer(
+            client, size_limit=1, size_limit_bytes=1)  # Force final drain
+        if final_result is not None:
+            time.sleep(0.25)  # backend call simulation
+    except Exception:
+        logger.error("Error in final buffer drain", exc_info=True)
 
 
 
