@@ -37,6 +37,7 @@ from langsmith.evaluation._runner import (
     DATA_T,
     EVALUATOR_T,
     ExperimentResultRow,
+    _evaluators_include_attachments,
     _ExperimentManagerMixin,
     _extract_feedback_keys,
     _ForwardResults,
@@ -259,6 +260,7 @@ async def aevaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
+
     .. versionchanged:: 0.2.0
 
         'max_concurrency' default updated from None (no limit on concurrency)
@@ -476,7 +478,8 @@ async def _aevaluate(
         description=description,
         num_repetitions=num_repetitions,
         runs=runs,
-        include_attachments=_include_attachments(target),
+        include_attachments=_include_attachments(target)
+        or _evaluators_include_attachments(evaluators),
         upload_results=upload_results,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)

@@ -1064,7 +1064,8 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
-        include_attachments=_include_attachments(target),
+        include_attachments=_include_attachments(target)
+        or _evaluators_include_attachments(evaluators),
         upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -1913,7 +1914,30 @@ def _ensure_traceable(
     return fn
 
 
-def _include_attachments(target: Any) -> bool:
+def _evaluators_include_attachments(
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
+) -> bool:
+    if evaluators is None:
+        return False
+    return any(
+        any(
+            p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            and p.name == "attachments"
+            for p in (
+                inspect.signature(
+                    e.__call__ if hasattr(e, "__call__") else e
+                ).parameters.values()
+                if callable(e) or hasattr(e, "__call__")
+                else []
+            )
+        )
+        for e in evaluators
+    )
+
+
+def _include_attachments(
+    target: Any,
+) -> bool:
     """Whether the target function accepts attachments."""
     if _is_langchain_runnable(target) or not callable(target):
         return False
