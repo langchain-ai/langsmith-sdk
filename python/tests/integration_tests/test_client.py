@@ -56,7 +56,14 @@ def wait_for(
 @pytest.fixture
 def langchain_client() -> Client:
     get_env_var.cache_clear()
-    return Client()
+    return Client(
+        info={
+            "instance_flags": {
+                "dataset_examples_multipart_enabled": True,
+                "examples_multipart_enabled": True,
+            }
+        }
+    )
 
 
 def test_datasets(langchain_client: Client) -> None:
@@ -379,9 +386,6 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
 
 def test_upload_examples_multipart(langchain_client: Client):
     """Test uploading examples with attachments via multipart endpoint."""
-    langchain_client._info = {
-        "instance_flags": {"dataset_examples_multipart_enabled": True}
-    }
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -469,7 +473,6 @@ def test_upload_examples_multipart(langchain_client: Client):
 
 def test_upsert_examples_multipart(langchain_client: Client) -> None:
     """Test upserting examples with attachments via the multipart endpoint."""
-    langchain_client._info = {"instance_flags": {"examples_multipart_enabled": True}}
     dataset_name = "__test_upsert_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -1247,9 +1250,6 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
-    langchain_client._info = {
-        "instance_flags": {"dataset_examples_multipart_enabled": True}
-    }
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
 
     # 1. Create dataset
@@ -1358,9 +1358,6 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
 
 def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     """Test evaluating examples without attachments using a target with attachments."""
-    langchain_client._info = {
-        "instance_flags": {"dataset_examples_multipart_enabled": True}
-    }
     dataset_name = "__test_evaluate_no_attachments" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(
         dataset_name,
