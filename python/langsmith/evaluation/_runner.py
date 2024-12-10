@@ -1928,7 +1928,7 @@ def _evaluators_include_attachments(
     if evaluators is None:
         return False
 
-    def evaluator_has_attachments(evaluator: Union[EVALUATOR_T, AEVALUATOR_T]) -> bool:
+    def evaluator_has_attachments(evaluator: Any) -> bool:
         sig = inspect.signature(evaluator)
         params = list(sig.parameters.values())
         positional_params = [
