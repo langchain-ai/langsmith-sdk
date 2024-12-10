@@ -1665,6 +1665,7 @@ class Client:
     def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
         parts = acc.parts
         _context = acc.context
+        print(f"Sending multipart request with context: {_context}")
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:
@@ -1707,6 +1708,55 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     # do not retry by default
+                    return
+                    
+        
+    def _send_compressed_multipart_req(self, data_stream, *, attempts: int = 3):
+        """Send a zstd-compressed multipart form data stream to the backend using similar retry logic
+        as _send_multipart_req."""
+
+        _context = {}
+        
+        for api_url, api_key in self._write_api_urls.items():
+            for idx in range(1, attempts + 1):
+                try:
+                    headers = {
+                        **self._headers,
+                        "X-API-KEY": api_key,
+                        "Content-Type": f"multipart/form-data; boundary={self.boundary}",
+                        "Content-Encoding": "zstd",
+                    }
+
+                    self.request_with_retries(
+                        "POST",
+                        f"{api_url}/runs/multipart",
+                        request_kwargs={
+                            "data": data_stream,
+                            "headers": headers,
+                        },
+                        stop_after_attempt=1,
+                        _context=_context,
+                    )
+                    break
+                except ls_utils.LangSmithConflictError:
+                    break
+                except (
+                    ls_utils.LangSmithConnectionError,
+                    ls_utils.LangSmithRequestTimeout,
+                    ls_utils.LangSmithAPIError,
+                ) as exc:
+                    if idx == attempts:
+                        logger.warning(f"Failed to send compressed multipart ingest: {exc}")
+                    else:
+                        continue
+                except Exception as e:
+                    try:
+                        exc_desc_lines = traceback.format_exception_only(type(e), e)
+                        exc_desc = "".join(exc_desc_lines).rstrip()
+                        logger.warning(f"Failed to send compressed multipart ingest: {exc_desc}")
+                    except Exception:
+                        logger.warning(f"Failed to send compressed multipart ingest: {repr(e)}")
+                    # Do not retry by default after unknown exceptions
                     return
 
     def update_run(

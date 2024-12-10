@@ -268,8 +268,7 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
             data_stream = _tracing_thread_drain_compressed_buffer(
                 client, size_limit, size_limit_bytes)
             if data_stream is not None:
-                for chunk in data_stream:
-                    time.sleep(0.150)  # Backend call simulation
+                client._send_compressed_multipart_req(data_stream)
             else:
                 time.sleep(0.05)
         except Exception:
@@ -281,8 +280,7 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
         final_data_stream = _tracing_thread_drain_compressed_buffer(
             client, size_limit=1, size_limit_bytes=1)  # Force final drain
         if final_data_stream is not None:
-            for chunk in final_data_stream:
-                time.sleep(0.150)  # Final backend calls
+            client._send_compressed_multipart_req(final_data_stream)
     except Exception:
         logger.error("Error in final buffer drain", exc_info=True)
 
