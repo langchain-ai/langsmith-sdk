@@ -494,6 +494,7 @@ class Client:
         self.session = session_
         self.compress_traces = os.getenv("LANGSMITH_COMPRESS_TRACES") == "true"
         if self.compress_traces:
+            self.boundary = BOUNDARY
             self.compressor = zstandard.ZstdCompressor()
             self.compressor_writer = self.compressor.stream_writer(
                 self.tracing_queue, closefd=False)
