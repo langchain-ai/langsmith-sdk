@@ -258,10 +258,22 @@ export interface ExampleUploadWithAttachments {
   attachments?: Attachments;
 }
 
+export interface ExampleUpdateWithAttachments {
+  id: string;
+  inputs?: KVMap;
+  outputs?: KVMap;
+  metadata?: KVMap;
+  split?: string | string[];
+  attachments?: Attachments;
+  attachments_operations?: KVMap;
+}
+
 export interface UploadExamplesResponse {
   count: number;
   example_ids: string[];
 }
+
+export interface UpdateExamplesResponse extends UploadExamplesResponse {}
 
 export interface Example extends BaseExample {
   id: string;
@@ -269,6 +281,7 @@ export interface Example extends BaseExample {
   modified_at: string;
   source_run_id?: string;
   runs: Run[];
+  attachments?: Attachments;
 }
 
 export interface ExampleUpdate {

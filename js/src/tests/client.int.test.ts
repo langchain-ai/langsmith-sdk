@@ -1,4 +1,4 @@
-import { Dataset, Example, Run, TracerSession } from "../schemas.js";
+import { Dataset, Example, ExampleUpdateWithAttachments, Run, TracerSession } from "../schemas.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -1325,6 +1325,110 @@ test("upload examples multipart", async () => {
     example3,
   ]);
   expect(errorResponse).toHaveProperty("error");
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("update examples multipart", async () => {
+  const client = new Client();
+  const datasetName = `__test_update_examples_multipart${uuidv4().slice(0, 4)}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleUploadWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    // check that passing no outputs works fine
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+      foo: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  // Create examples
+  await client.uploadExamplesMultipart(dataset.id, [
+    example
+  ]);
+
+  const exampleUpdate1: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  let response = await client.updateExamplesMultipart(dataset.id, [
+    exampleUpdate1
+  ]);
+  expect(response).toHaveProperty("error");
+
+  const exampleUpdate2: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { foo: "test_file" },
+    },
+  };
+
+  response = await client.updateExamplesMultipart(dataset.id, [
+    exampleUpdate2
+  ]);
+  expect(response).toHaveProperty("error");
+
+  const exampleUpdate3: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { test_file: "test_file2" },
+    },
+  };
+
+  response = await client.updateExamplesMultipart(dataset.id, [
+    exampleUpdate3
+  ]);
+  expect(response).toHaveProperty("error");
+
+  const exampleUpdate4: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world2" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { foo: "bar" },
+    },
+  };
+
+  await client.updateExamplesMultipart(dataset.id, [
+    exampleUpdate4
+  ]);
+  
+  let updatedExample = await client.readExample(
+    exampleId
+  );
+  expect(updatedExample.inputs.text).toEqual("hello world2");
+  expect(updatedExample.attachments?.test_file2).toBeDefined();
+  expect(updatedExample.attachments?.test_file).toBeUndefined();
+  expect(updatedExample.attachments?.foo).toBeUndefined();
+  expect(updatedExample.attachments?.bar).toBeDefined();
 
   // Clean up
   await client.deleteDataset({ datasetName });
