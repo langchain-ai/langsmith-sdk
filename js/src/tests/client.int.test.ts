@@ -1,4 +1,10 @@
-import { Dataset, Example, Run, TracerSession } from "../schemas.js";
+import {
+  Dataset,
+  Example,
+  ExampleUpdateWithAttachments,
+  Run,
+  TracerSession,
+} from "../schemas.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -1325,6 +1331,136 @@ test("upload examples multipart", async () => {
     example3,
   ]);
   expect(errorResponse).toHaveProperty("error");
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("update examples multipart", async () => {
+  const client = new Client({
+    apiKey: "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",
+  });
+  const datasetName = `__test_update_examples_multipart${uuidv4().slice(0, 4)}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleUploadWithAttachments = {
+    id: exampleId,
+    metadata: { bar: "foo" },
+    inputs: { text: "hello world" },
+    // check that passing no outputs works fine
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+      foo: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  // Create examples
+  await client.uploadExamplesMultipart(dataset.id, [example]);
+
+  const exampleUpdate1: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { foo: "test_file" },
+    },
+  };
+
+  let response = await client.updateExamplesMultipart(dataset.id, [
+    exampleUpdate1,
+  ]);
+  expect(response).toHaveProperty("error");
+
+  const exampleUpdate2: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { test_file: "test_file2" },
+    },
+  };
+
+  response = await client.updateExamplesMultipart(dataset.id, [exampleUpdate2]);
+  expect(response).toHaveProperty("error");
+
+  const exampleUpdate3: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world2" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { foo: "bar" },
+    },
+  };
+
+  await client.updateExamplesMultipart(dataset.id, [exampleUpdate3]);
+
+  let updatedExample = await client.readExample(exampleId);
+  expect(updatedExample.inputs.text).toEqual("hello world2");
+  expect(Object.keys(updatedExample.attachments ?? {}).sort()).toEqual(
+    ["bar", "test_file"].sort()
+  );
+  expect(updatedExample.metadata).toEqual({ bar: "foo" });
+  let attachmentData = new TextDecoder().decode(
+    await updatedExample.attachments?.test_file.reader
+  );
+  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
+  attachmentData = new TextDecoder().decode(
+    await updatedExample.attachments?.bar.reader
+  );
+  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
+
+  const exampleUpdate4: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    metadata: { foo: "bar" },
+    attachments: {
+      test_file2: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  await client.updateExamplesMultipart(dataset.id, [exampleUpdate4]);
+  updatedExample = await client.readExample(exampleId);
+  expect(updatedExample.metadata).toEqual({ foo: "bar" });
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file2"]);
+  attachmentData = new TextDecoder().decode(
+    await updatedExample.attachments?.test_file2.reader
+  );
+  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
+
+  const exampleUpdate5: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    split: ["foo", "bar"],
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  await client.updateExamplesMultipart(dataset.id, [exampleUpdate5]);
+
+  updatedExample = await client.readExample(exampleId);
+  expect(updatedExample.metadata).toEqual({ foo: "bar" });
+  expect(updatedExample.split).toEqual(["foo", "bar"]);
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file"]);
+  attachmentData = new TextDecoder().decode(
+    await updatedExample.attachments?.test_file.reader
+  );
+  expect(attachmentData).toEqual(fs.readFileSync(pathname).toString());
 
   // Clean up
   await client.deleteDataset({ datasetName });

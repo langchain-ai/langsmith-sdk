@@ -37,6 +37,10 @@ import {
   Attachments,
   ExampleUploadWithAttachments,
   UploadExamplesResponse,
+  ExampleUpdateWithAttachments,
+  UpdateExamplesResponse,
+  RawExample,
+  AttachmentInfo,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -2717,7 +2721,34 @@ export class Client implements LangSmithTracingClientInterface {
   public async readExample(exampleId: string): Promise<Example> {
     assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
-    return await this._get<Example>(path);
+    const rawExample: RawExample = await this._get(path);
+    const { attachment_urls, ...rest } = rawExample;
+    const example: Example = rest;
+    if (attachment_urls) {
+      const attachmentsArray = await Promise.all(
+        Object.entries(attachment_urls).map(async ([key, value]) => {
+          return {
+            key,
+            value: {
+              presigned_url: value.presigned_url,
+              reader: await fetch(value.presigned_url).then((response) =>
+                response.arrayBuffer()
+              ),
+            },
+          };
+        })
+      );
+      example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
+        acc[key.startsWith("attachment.") ? key.slice(11) : key] = value;
+        return acc;
+      }, {} as Record<string, AttachmentInfo>);
+    }
+    if (rawExample.metadata?.dataset_split) {
+      const { dataset_split, ...metadata } = rawExample.metadata;
+      example.split = dataset_split;
+      example.metadata = metadata;
+    }
+    return example;
   }
 
   public async *listExamples({
@@ -2789,11 +2820,40 @@ export class Client implements LangSmithTracingClientInterface {
       params.append("filter", filter);
     }
     let i = 0;
-    for await (const examples of this._getPaginated<Example>(
+    for await (const rawExamples of this._getPaginated<RawExample>(
       "/examples",
       params
     )) {
-      for (const example of examples) {
+      for (const rawExample of rawExamples) {
+        const { attachment_urls, ...rest } = rawExample;
+        const example: Example = rest;
+        if (attachment_urls) {
+          const attachmentsArray = await Promise.all(
+            Object.entries(attachment_urls).map(async ([key, value]) => {
+              return {
+                key,
+                value: {
+                  presigned_url: value.presigned_url,
+                  reader: await fetch(value.presigned_url).then((response) =>
+                    response.arrayBuffer()
+                  ),
+                },
+              };
+            })
+          );
+          example.attachments = attachmentsArray.reduce(
+            (acc, { key, value }) => {
+              acc[key.startsWith("attachment.") ? key.slice(11) : key] = value;
+              return acc;
+            },
+            {} as Record<string, AttachmentInfo>
+          );
+        }
+        if (rawExample.metadata?.dataset_split) {
+          const { dataset_split, ...metadata } = rawExample.metadata;
+          example.split = dataset_split;
+          example.metadata = metadata;
+        }
         yield example;
         i++;
       }
@@ -3847,6 +3907,93 @@ export class Client implements LangSmithTracingClientInterface {
         result.commit_hash ? `:${result.commit_hash}` : ""
       }`
     );
+  }
+
+  /**
+   * Update examples with attachments using multipart form data.
+   * @param updates List of ExampleUpdateWithAttachments objects to upsert
+   * @returns Promise with the update response
+   */
+  public async updateExamplesMultipart(
+    datasetId: string,
+    updates: ExampleUpdateWithAttachments[] = []
+  ): Promise<UpdateExamplesResponse> {
+    const formData = new FormData();
+
+    for (const example of updates) {
+      const exampleId = example.id;
+
+      // Prepare the main example body
+      const exampleBody = {
+        ...(example.metadata && { metadata: example.metadata }),
+        ...(example.split && { split: example.split }),
+      };
+
+      // Add main example data
+      const stringifiedExample = stringifyForTracing(exampleBody);
+      const exampleBlob = new Blob([stringifiedExample], {
+        type: "application/json",
+      });
+      formData.append(exampleId, exampleBlob);
+
+      // Add inputs
+      if (example.inputs) {
+        const stringifiedInputs = stringifyForTracing(example.inputs);
+        const inputsBlob = new Blob([stringifiedInputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.inputs`, inputsBlob);
+      }
+
+      // Add outputs if present
+      if (example.outputs) {
+        const stringifiedOutputs = stringifyForTracing(example.outputs);
+        const outputsBlob = new Blob([stringifiedOutputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.outputs`, outputsBlob);
+      }
+
+      // Add attachments if present
+      if (example.attachments) {
+        for (const [name, [mimeType, data]] of Object.entries(
+          example.attachments
+        )) {
+          const attachmentBlob = new Blob([data], {
+            type: `${mimeType}; length=${data.byteLength}`,
+          });
+          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+        }
+      }
+
+      if (example.attachments_operations) {
+        const stringifiedAttachmentsOperations = stringifyForTracing(
+          example.attachments_operations
+        );
+        const attachmentsOperationsBlob = new Blob(
+          [stringifiedAttachmentsOperations],
+          {
+            type: "application/json",
+          }
+        );
+        formData.append(
+          `${exampleId}.attachments_operations`,
+          attachmentsOperationsBlob
+        );
+      }
+    }
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
+      {
+        method: "PATCH",
+        headers: this.headers,
+        body: formData,
+      }
+    );
+    const result = await response.json();
+    return result;
   }
 
   /**
