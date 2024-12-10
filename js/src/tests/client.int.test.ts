@@ -1,4 +1,10 @@
-import { Dataset, Example, ExampleUpdateWithAttachments, Run, TracerSession } from "../schemas.js";
+import {
+  Dataset,
+  Example,
+  ExampleUpdateWithAttachments,
+  Run,
+  TracerSession,
+} from "../schemas.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -1363,9 +1369,7 @@ test("update examples multipart", async () => {
   };
 
   // Create examples
-  await client.uploadExamplesMultipart(dataset.id, [
-    example
-  ]);
+  await client.uploadExamplesMultipart(dataset.id, [example]);
 
   const exampleUpdate1: ExampleUpdateWithAttachments = {
     id: exampleId,
@@ -1376,7 +1380,7 @@ test("update examples multipart", async () => {
   };
 
   let response = await client.updateExamplesMultipart(dataset.id, [
-    exampleUpdate1
+    exampleUpdate1,
   ]);
   expect(response).toHaveProperty("error");
 
@@ -1389,9 +1393,7 @@ test("update examples multipart", async () => {
     },
   };
 
-  response = await client.updateExamplesMultipart(dataset.id, [
-    exampleUpdate2
-  ]);
+  response = await client.updateExamplesMultipart(dataset.id, [exampleUpdate2]);
   expect(response).toHaveProperty("error");
 
   const exampleUpdate3: ExampleUpdateWithAttachments = {
@@ -1403,9 +1405,7 @@ test("update examples multipart", async () => {
     },
   };
 
-  response = await client.updateExamplesMultipart(dataset.id, [
-    exampleUpdate3
-  ]);
+  response = await client.updateExamplesMultipart(dataset.id, [exampleUpdate3]);
   expect(response).toHaveProperty("error");
 
   const exampleUpdate4: ExampleUpdateWithAttachments = {
@@ -1417,13 +1417,9 @@ test("update examples multipart", async () => {
     },
   };
 
-  await client.updateExamplesMultipart(dataset.id, [
-    exampleUpdate4
-  ]);
-  
-  let updatedExample = await client.readExample(
-    exampleId
-  );
+  await client.updateExamplesMultipart(dataset.id, [exampleUpdate4]);
+
+  const updatedExample = await client.readExample(exampleId);
   expect(updatedExample.inputs.text).toEqual("hello world2");
   expect(updatedExample.attachments?.test_file2).toBeDefined();
   expect(updatedExample.attachments?.test_file).toBeUndefined();

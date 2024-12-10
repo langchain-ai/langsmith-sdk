@@ -3918,7 +3918,10 @@ export class Client implements LangSmithTracingClientInterface {
             type: "application/json",
           }
         );
-        formData.append(`${exampleId}.attachments_operations`, attachmentsOperationsBlob);
+        formData.append(
+          `${exampleId}.attachments_operations`,
+          attachmentsOperationsBlob
+        );
       }
     }
 
