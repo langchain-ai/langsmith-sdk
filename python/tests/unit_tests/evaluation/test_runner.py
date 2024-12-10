@@ -910,9 +910,12 @@ def test_normalize_evaluator_func_valid(func, is_async):
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
 
-    ds_examples = [_create_example(i) for i in range(10)]
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
     tenant_id = str(uuid.uuid4())
-    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
     client._tenant_id = tenant_id  # type: ignore
@@ -935,9 +938,12 @@ def test_normalize_evaluator_func_invalid(func, is_async):
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
 
-    ds_examples = [_create_example(i) for i in range(10)]
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
     tenant_id = str(uuid.uuid4())
-    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
     session.request = fake_request.request
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
     client._tenant_id = tenant_id  # type: ignore
