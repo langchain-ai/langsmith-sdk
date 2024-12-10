@@ -399,6 +399,7 @@ class Client:
         "compressor_writer",
         "_run_count",
         "_buffer_lock",
+        "compressed_runs_buffer",
     ]
 
     def __init__(
@@ -504,9 +505,9 @@ class Client:
         if self.compress_traces:
             self.boundary = BOUNDARY
             self.compressor: zstandard.ZstdCompressor = zstandard.ZstdCompressor()
-            self.tracing_queue: io.BytesIO = io.BytesIO()
+            self.compressed_runs_buffer: io.BytesIO = io.BytesIO()
             self.compressor_writer: zstandard.ZstdCompressionWriter = self.compressor.stream_writer(
-                self.tracing_queue, closefd=False)
+                self.compressed_runs_buffer, closefd=False)
             self._buffer_lock: threading.Lock = threading.Lock()
             self._run_count: int = 0
             
@@ -1317,19 +1318,19 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
+            if self.compressed_runs_buffer is not None:
+                serialized_op = serialize_run_dict("post", run_create)
+                multipart_form = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op)
+                with self._buffer_lock:
+                    compress_multipart_parts_and_context(
+                        multipart_form, self.compressor_writer, self.boundary)
+                    self._run_count += 1
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
-                if self.compress_traces:
-                    multipart_form = serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op)
-                    with self._buffer_lock:
-                        compress_multipart_parts_and_context(
-                            multipart_form, self.compressor_writer, self.boundary)
-                        self._run_count += 1
-                else:
-                    self.tracing_queue.put(
-                        TracingQueueItem(run_create["dotted_order"], serialized_op)
-                    )
+                self.tracing_queue.put(
+                    TracingQueueItem(run_create["dotted_order"], serialized_op)
+                )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
@@ -1766,6 +1767,7 @@ class Client:
             data["attachments"] = attachments
         use_multipart = (
             self.tracing_queue is not None
+            or self.compressed_runs_buffer is not None
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
@@ -1788,19 +1790,20 @@ class Client:
             data["events"] = events
         if data["extra"]:
             self._insert_runtime_env([data])
-        if use_multipart and self.tracing_queue is not None:
-            # not collecting attachments currently, use empty dict
+        if use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
-            if self.compress_traces:
+            if self.compressed_runs_buffer is not None:
                 multipart_form = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
                 with self._buffer_lock:
                     compress_multipart_parts_and_context(
                         multipart_form, self.compressor_writer, self.boundary)
                     self._run_count += 1
-            else:
+            elif self.tracing_queue is not None:
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)
                 )
+            else:
+                self._update_run(data)
         else:
             self._update_run(data)
 
