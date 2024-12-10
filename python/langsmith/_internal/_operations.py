@@ -293,11 +293,14 @@ def compress_multipart_parts_and_context(
             part_header += f'{header_name}: {header_value}\r\n'
         
         part_header += '\r\n'
+        print(part_header)
         compressor_writer.write(part_header.encode())
         
         if isinstance(data, (bytes, bytearray)):
+            print(data)
             compressor_writer.write(data)
         else:
+            print(str(data))
             compressor_writer.write(str(data).encode())
         
         # Write part terminator
