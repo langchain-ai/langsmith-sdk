@@ -1,7 +1,32 @@
 import { evaluate } from "../evaluation/_runner.js";
-import { Example, ExampleUploadWithAttachments, Run } from "../schemas.js";
+import { AttachmentInfo, ExampleUploadWithAttachments } from "../schemas.js";
 import { Client } from "../index.js";
 import { v4 as uuidv4 } from "uuid";
+
+
+async function readFromStream(reader: ReadableStream<Uint8Array>) {
+  const streamReader = reader.getReader();
+  const chunks: Uint8Array[] = [];
+
+  let done = false;
+  while (!done) {
+    const { done: doneInner, value } = await streamReader.read();
+    done = doneInner;
+    if (value) chunks.push(value);
+  }
+
+  // Combine chunks into a single Uint8Array if needed
+  const fullData = new Uint8Array(
+    chunks.reduce((acc, chunk) => acc + chunk.length, 0)
+  );
+  let offset = 0;
+  for (const chunk of chunks) {
+    fullData.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return fullData;
+}
 
 test("evaluate can handle examples with attachments", async () => {
   //const client = new Client();
@@ -26,25 +51,30 @@ test("evaluate can handle examples with attachments", async () => {
   // Define target function that processes attachments
   const targetFunc = async (
     _inputs: Record<string, any>,
-    attachments?: Record<string, { presigned_url: string; reader: () => Promise<Response> }>
+    attachments?: Record<string, AttachmentInfo>
   ) => {
     // Verify we receive the attachment data
     if (!attachments?.image) {
       throw new Error("Image attachment not found");
     }
     const {reader} = attachments.image;
-    const expectedData = Buffer.from("fake image data for testing");
-    const response = await reader();
-    const responseData = await response.arrayBuffer();
-    if (!Buffer.from(responseData).equals(expectedData)) {
+    const expectedData = new Uint8Array(Buffer.from("fake image data for testing"));
+    const response = await readFromStream(reader);
+    if (!Buffer.from(response).equals(expectedData)) {
       throw new Error("Image data does not match expected data");
     }
     return { answer: "test image" };
   };
 
-  const customEvaluator = ({ attachments }: {attachments?: any}) => {
+  const customEvaluator = async ({ attachments }: {attachments?: any}) => {
     expect(attachments).toBeDefined();
     expect(attachments.image).toBeDefined();
+    const {reader} = attachments.image;
+    const expectedData = new Uint8Array(Buffer.from("fake image data for testing"));
+    const response = await readFromStream(reader);
+    if (!Buffer.from(response).equals(expectedData)) {
+      throw new Error("Image data does not match expected data");
+    }
     return {
       key: "key",
       score: 1,

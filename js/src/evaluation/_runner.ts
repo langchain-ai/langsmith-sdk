@@ -1048,11 +1048,11 @@ async function _forward(
       await wrappedFn({ ...example.inputs }, example.attachments);
       
       // Reset attachment streams after use
-      for (const [_, { presigned_url, reader }] of Object.entries(example.attachments)) {
-        const response = await reader();
-        const blob = await response.blob();
-        // Create a new stream from the blob to reset position
-        example.attachment_urls[_] = { presigned_url, reader: () => Promise.resolve(new Response(blob)) };
+      for (const [_, { presigned_url }] of Object.entries(example.attachments)) {
+        // Create a new stream from the url to reset position
+        example.attachments[_] = { presigned_url, reader: await fetch(presigned_url).then(
+          (response) => response.body
+        ) ?? new ReadableStream() };
       }
     } else {
       await wrappedFn(example.inputs);

@@ -35,7 +35,6 @@ import {
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
   Attachments,
-  ListExampleResponse,
   ExampleUploadWithAttachments,
   UploadExamplesResponse,
   ExampleUpdateWithAttachments,

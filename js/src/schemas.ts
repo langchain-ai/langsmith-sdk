@@ -290,22 +290,6 @@ export interface Example extends BaseExample {
   split?: string | string[];
 }
 
-export interface ListExampleResponse {
-  id: string;
-  name: string;
-  inputs: KVMap;
-  outputs?: KVMap;
-  dataset_id: string;
-  source_run_id?: string;
-  metadata?: KVMap;
-  created_at: string;
-  modified_at?: string;
-  attachment_urls?: KVMap;
-  runs: Run[];
-  attachments?: Record<string, AttachmentInfo>;
-  split?: string | string[];
-}
-
 interface RawAttachmentInfo {
   presigned_url: string;
   s3_url: string;
