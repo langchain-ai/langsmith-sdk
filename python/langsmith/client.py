@@ -391,6 +391,13 @@ class Client:
         "_settings",
         "_manual_cleanup",
         "_pyo3_client",
+        "compress_traces",
+        "boundary",
+        "compressor",
+        "compressor_writer",
+        "tracing_queue",
+        "_run_count",
+        "_buffer_lock",
     ]
 
     def __init__(
