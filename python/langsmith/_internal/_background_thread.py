@@ -7,7 +7,6 @@ import sys
 import threading
 import time
 import weakref
-import zstandard as zstd
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
@@ -16,6 +15,8 @@ from typing import (
     Union,
     cast,
 )
+
+import zstandard as zstd
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal._constants import (
@@ -240,7 +241,8 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
     size_limit_bytes: int = batch_ingest_config["size_limit_bytes"]
     
     while True:
-        result = _tracing_thread_drain_compressed_buffer(client, size_limit, size_limit_bytes)
+        result = _tracing_thread_drain_compressed_buffer(
+            client, size_limit, size_limit_bytes)
         if result is not None:
             time.sleep(0.150)  # Simulate call to backend
         else:

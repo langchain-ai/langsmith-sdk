@@ -3,9 +3,9 @@ from __future__ import annotations
 import itertools
 import logging
 import uuid
-import io
-import zstandard
 from typing import Literal, Optional, Union, cast
+
+import zstandard
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
