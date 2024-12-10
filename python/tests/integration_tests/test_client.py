@@ -1608,9 +1608,10 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
         dataset_name=dataset_name,
         description="Test dataset for updating example attachments",
     )
-
+    example_id = uuid4()
     # Create example with attachments
     example = ExampleUploadWithAttachments(
+        id=example_id,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image"},
         attachments={
@@ -1618,7 +1619,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
             "image2": ("image/png", b"fake image data 2"),
         },
     )
-    created_example = langchain_client.upload_examples_multipart(
+    langchain_client.upload_examples_multipart(
         dataset_id=dataset.id, uploads=[example]
     )
 
@@ -1629,26 +1630,26 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
     )
 
     langchain_client.update_example(
-        example_id=created_example.id,
+        example_id=example_id,
         attachments_operations=attachments_operations,
     )
 
     # Verify the update
     retrieved_example = langchain_client.read_example(
-        example_id=created_example.id,
+        example_id=example_id,
     )
 
     # Check that only the renamed attachment exists
-    assert len(retrieved_example.attachments_info) == 2
-    assert "renamed_image" in retrieved_example.attachments_info
-    assert "image2" in retrieved_example.attachments_info
-    assert "image1" not in retrieved_example.attachments_info
+    assert len(retrieved_example.attachments) == 2
+    assert "renamed_image" in retrieved_example.attachments
+    assert "image2" in retrieved_example.attachments
+    assert "image1" not in retrieved_example.attachments
     assert (
-        retrieved_example.attachments_info["image2"]["reader"].read()
+        retrieved_example.attachments["image2"]["reader"].read()
         == b"fake image data 2"
     )
     assert (
-        retrieved_example.attachments_info["renamed_image"]["reader"].read()
+        retrieved_example.attachments["renamed_image"]["reader"].read()
         == b"fake image data 1"
     )
 
