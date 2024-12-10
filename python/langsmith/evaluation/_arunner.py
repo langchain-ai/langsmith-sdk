@@ -47,6 +47,7 @@ from langsmith.evaluation._runner import (
     _load_experiment,
     _load_tqdm,
     _load_traces,
+    _make_fresh_examples,
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
@@ -569,8 +570,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 include_attachments=self._include_attachments,
             )
             if self._num_repetitions > 1:
+                examples_list = [example async for example in self._examples]
                 self._examples = async_chain_from_iterable(
-                    aitertools.atee(self._examples, self._num_repetitions)
+                    [
+                        async_iter_from_list(_make_fresh_examples(examples_list))
+                        for _ in range(self._num_repetitions)
+                    ]
                 )
 
         self._examples, examples_iter = aitertools.atee(
@@ -1115,3 +1120,11 @@ async def async_chain_from_iterable(
     for sub_iterable in iterable:
         async for item in sub_iterable:
             yield item
+
+
+async def async_iter_from_list(
+    examples: List[schemas.Example],
+) -> AsyncIterable[schemas.Example]:
+    """Convert a list of examples to an async iterable."""
+    for example in examples:
+        yield example

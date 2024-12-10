@@ -8,6 +8,7 @@ import concurrent.futures as cf
 import datetime
 import functools
 import inspect
+import io
 import itertools
 import logging
 import pathlib
@@ -36,6 +37,7 @@ from typing import (
     cast,
 )
 
+import requests
 from typing_extensions import TypedDict, overload
 
 import langsmith
@@ -1341,8 +1343,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 include_attachments=self._include_attachments,
             )
             if self._num_repetitions > 1:
+                examples_list = list(self._examples)
                 self._examples = itertools.chain.from_iterable(
-                    itertools.tee(self._examples, self._num_repetitions)
+                    _make_fresh_examples(examples_list)
+                    for _ in range(self._num_repetitions)
                 )
         self._examples, examples_iter = itertools.tee(self._examples)
         return examples_iter
@@ -2221,3 +2225,42 @@ def _import_langchain_runnable() -> Optional[type]:
 
 def _is_langchain_runnable(o: Any) -> bool:
     return bool((Runnable := _import_langchain_runnable()) and isinstance(o, Runnable))
+
+
+def _reset_example_attachments(example: schemas.Example) -> schemas.Example:
+    """Reset attachment readers for an example."""
+    if not hasattr(example, "attachments") or not example.attachments:
+        return example
+
+    new_attachments = {}
+    for key, attachment in example.attachments.items():
+        response = requests.get(attachment["presigned_url"], stream=True)
+        response.raise_for_status()
+        reader = io.BytesIO(response.content)
+        new_attachments[key] = {
+            "presigned_url": attachment["presigned_url"],
+            "reader": reader,
+        }
+
+    # Create a new Example instance with the updated attachments
+    return schemas.Example(
+        id=example.id,
+        created_at=example.created_at,
+        dataset_id=example.dataset_id,
+        inputs=example.inputs,
+        outputs=example.outputs,
+        metadata=example.metadata,
+        modified_at=example.modified_at,
+        runs=example.runs,
+        source_run_id=example.source_run_id,
+        attachments=new_attachments,
+        _host_url=example._host_url,
+        _tenant_id=example._tenant_id,
+    )
+
+
+def _make_fresh_examples(
+    _original_examples: List[schemas.Example],
+) -> List[schemas.Example]:
+    """Create fresh copies of examples with reset readers."""
+    return [_reset_example_attachments(example) for example in _original_examples]
