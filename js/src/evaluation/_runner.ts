@@ -1044,11 +1044,11 @@ async function _forward(
     : traceable(fn, options);
 
   try {
-    if (includeAttachments && example.attachment_urls) {
-      await wrappedFn({ ...example.inputs }, example.attachment_urls);
+    if (includeAttachments && example.attachments) {
+      await wrappedFn({ ...example.inputs }, example.attachments);
       
       // Reset attachment streams after use
-      for (const [_, { presigned_url, reader }] of Object.entries(example.attachment_urls)) {
+      for (const [_, { presigned_url, reader }] of Object.entries(example.attachments)) {
         const response = await reader();
         const blob = await response.blob();
         // Create a new stream from the blob to reset position
