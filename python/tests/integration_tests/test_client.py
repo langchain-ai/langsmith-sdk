@@ -64,7 +64,7 @@ def langchain_client() -> Client:
                 "dataset_examples_multipart_enabled": True,
                 "examples_multipart_enabled": True,
             }
-        }
+        },
     )
 
 
@@ -1230,7 +1230,7 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
                     "test_file": ("text/plain", b"test content"),
                 },
             )
-        ]
+        ],
     )
 
     # Get examples with attachments
@@ -1744,9 +1744,11 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
         description="Test dataset for multipart example updates",
         data_type=DataType.kv,
     )
+    example_ids = [uuid4() for _ in range(2)]
 
     # First create some examples with attachments
     example_1 = ExampleUploadWithAttachments(
+        id=example_ids[0],
         inputs={"text": "hello world"},
         attachments={
             "file1": ("text/plain", b"original content 1"),
@@ -1755,6 +1757,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     )
 
     example_2 = ExampleUploadWithAttachments(
+        id=example_ids[1],
         inputs={"text": "second example"},
         attachments={
             "file3": ("text/plain", b"original content 3"),
@@ -1768,7 +1771,6 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert created_examples["count"] == 2
 
     examples = list(langchain_client.list_examples(dataset_id=dataset.id))
-    example_ids = [ex.id for ex in examples]
 
     # Now create update operations
     update_1 = ExampleUpdateWithAttachments(
@@ -1808,98 +1810,86 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     # Verify first example updates
     example_1_updated = next(ex for ex in updated if ex.id == example_ids[0])
     assert example_1_updated.inputs["text"] == "updated hello world"
-    assert "renamed_file1" in example_1_updated.attachments_info
-    assert "new_file1" in example_1_updated.attachments_info
-    assert "file2" not in example_1_updated.attachments_info
+    assert "renamed_file1" in example_1_updated.attachments
+    assert "new_file1" in example_1_updated.attachments
+    assert "file2" not in example_1_updated.attachments
     assert (
-        example_1_updated.attachments_info["renamed_file1"]["reader"].read()
+        example_1_updated.attachments["renamed_file1"]["reader"].read()
         == b"original content 1"
     )
     assert (
-        example_1_updated.attachments_info["new_file1"]["reader"].read()
+        example_1_updated.attachments["new_file1"]["reader"].read()
         == b"new content 1"
     )
 
     # Verify second example updates
     example_2_updated = next(ex for ex in updated if ex.id == example_ids[1])
     assert example_2_updated.inputs["text"] == "updated second example"
-    assert "file3" in example_2_updated.attachments_info
-    assert "new_file2" in example_2_updated.attachments_info
-    assert "file4" not in example_2_updated.attachments_info
+    assert "file3" in example_2_updated.attachments
+    assert "new_file2" in example_2_updated.attachments
+    assert "file4" not in example_2_updated.attachments
     assert (
-        example_2_updated.attachments_info["file3"]["reader"].read()
+        example_2_updated.attachments["file3"]["reader"].read()
         == b"original content 3"
     )
     assert (
-        example_2_updated.attachments_info["new_file2"]["reader"].read()
+        example_2_updated.attachments["new_file2"]["reader"].read()
         == b"new content 2"
     )
 
-    # Test updating examples in different datasets fails
-    other_dataset = langchain_client.create_dataset(
-        dataset_name=dataset_name + "_other",
-        description="Other test dataset",
+    # Test updating non-existent example doesn't do anything
+    response = langchain_client.update_examples_multipart(
+        dataset_id=dataset.id,
+        updates=[
+            ExampleUpdateWithAttachments(
+                id=uuid4(),
+                inputs={"text": "should fail"},
+            )
+        ],
     )
-    with pytest.raises(ValueError, match="All examples must be in the same dataset"):
-        langchain_client.update_examples_multipart(
-            dataset_id=dataset.id,
-            updates=[
-                ExampleUpsertWithAttachments(
-                    id=example_ids[0],
-                    inputs={"text": "update 1"},
+    assert response["count"] == 0
+
+    # Test new attachments have priority
+    response = langchain_client.update_examples_multipart(
+        dataset_id=dataset.id,
+        updates=[
+            ExampleUpdateWithAttachments(
+                id=example_ids[0],
+                attachments={
+                    "renamed_file1": ("text/plain", b"new content 1"),
+                },
+                attachments_operations=AttachmentsOperations(
+                    retain=["renamed_file1"],
                 ),
-                ExampleUpsertWithAttachments(
-                    id=uuid4(),
-                    inputs={"text": "update 2"},
+            )
+        ],
+    )
+    assert response["count"] == 1
+    example_1_updated = langchain_client.read_example(example_ids[0])
+    assert list(example_1_updated.attachments.keys()) == ["renamed_file1"]
+    assert (
+        example_1_updated.attachments["renamed_file1"]["reader"].read()
+        == b"new content 1"
+    )
+
+    # Test new attachments have priority
+    response = langchain_client.update_examples_multipart(
+        dataset_id=dataset.id,
+        updates=[
+            ExampleUpdateWithAttachments(
+                id=example_ids[0],
+                attachments={
+                    "foo": ("text/plain", b"new content 1"),
+                },
+                attachments_operations=AttachmentsOperations(
+                    rename={"renamed_file1": "foo"},
                 ),
-            ],
-        )
-
-    # Test updating non-existent example fails
-    with pytest.raises(LangSmithNotFoundError):
-        langchain_client.update_examples_multipart(
-            dataset_id=dataset.id,
-            updates=[
-                ExampleUpsertWithAttachments(
-                    id=uuid4(),
-                    inputs={"text": "should fail"},
-                )
-            ],
-        )
-
-    # Test updating with mismatch named attachments fails
-    with pytest.raises(ValueError):
-        langchain_client.update_examples_multipart(
-            dataset_id=dataset.id,
-            updates=[
-                ExampleUpdateWithAttachments(
-                    id=example_ids[0],
-                    attachments={
-                        "renamed_file1": ("text/plain", b"new content 1"),
-                    },
-                    attachments_operations=AttachmentsOperations(
-                        retain=["renamed_file1"],
-                    ),
-                )
-            ],
-        )
-
-    with pytest.raises(ValueError):
-        langchain_client.update_examples_multipart(
-            dataset_id=dataset.id,
-            updates=[
-                ExampleUpdateWithAttachments(
-                    id=example_ids[0],
-                    attachments={
-                        "foo": ("text/plain", b"new content 1"),
-                    },
-                    attachments_operations=AttachmentsOperations(
-                        rename={"renamed_file1": "foo"},
-                    ),
-                )
-            ],
-        )
+            )
+        ],
+    )
+    assert response["count"] == 1
+    example_1_updated = langchain_client.read_example(example_ids[0])
+    assert list(example_1_updated.attachments.keys()) == ["foo"]
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
-    langchain_client.delete_dataset(dataset_id=other_dataset.id)
