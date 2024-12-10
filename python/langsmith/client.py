@@ -3464,6 +3464,7 @@ class Client:
         examples: Union[
             List[ls_schemas.ExampleUploadWithAttachments]
             | List[ls_schemas.ExampleUpsertWithAttachments]
+            | List[ls_schemas.ExampleUpdateWithAttachments],
         ],
         include_dataset_id: bool = False,
     ) -> Tuple[Any, bytes]:
@@ -3477,21 +3478,29 @@ class Client:
             dataset_id = examples[0].dataset_id
 
         for example in examples:
-            if not isinstance(
-                example, ls_schemas.ExampleUploadWithAttachments
-            ) and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments):
+            if (
+                not isinstance(example, ls_schemas.ExampleUploadWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+            ):
                 raise ValueError(
                     "The examples must be of type ExampleUploadWithAttachments"
                     " or ExampleUpsertWithAttachments"
+                    " or ExampleUpdateWithAttachments"
                 )
             if example.id is not None:
                 example_id = str(example.id)
             else:
                 example_id = str(uuid.uuid4())
 
+            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments):
+                created_at = None
+            else:
+                created_at = example.created_at
+
             example_body = {
                 **({"dataset_id": dataset_id} if include_dataset_id else {}),
-                "created_at": example.created_at,
+                **({"created_at": created_at} if created_at is not None else {}),
             }
             if example.metadata is not None:
                 example_body["metadata"] = example.metadata
@@ -3582,6 +3591,23 @@ class Client:
                             )
                         )
 
+            if (
+                isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                and example.attachments_operations
+            ):
+                attachments_operationsb = _dumps_json(example.attachments_operations)
+                parts.append(
+                    (
+                        f"{example_id}.attachments_operations",
+                        (
+                            None,
+                            attachments_operationsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
+                )
+
         encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
         if encoder.len <= 20_000_000:  # ~20 MB
             data = encoder.to_string()
@@ -3589,6 +3615,38 @@ class Client:
             data = encoder
 
         return encoder, data
+
+    def update_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples."""
+        if not (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+            )
+        if updates is None:
+            updates = []
+
+        encoder, data = self._prepate_multipart_data(updates, include_dataset_id=False)
+
+        response = self.request_with_retries(
+            "PATCH",
+            f"/v1/platform/datasets/{dataset_id}/examples",
+            request_kwargs={
+                "data": data,
+                "headers": {
+                    **self._headers,
+                    "Content-Type": encoder.content_type,
+                },
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
 
     def upload_examples_multipart(
         self,
@@ -4072,6 +4130,7 @@ class Client:
         metadata: Optional[Dict] = None,
         split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
+        attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
 
@@ -4096,12 +4155,20 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
+        if attachments_operations is not None:
+            if not (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                raise ValueError(
+                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                )
         example = dict(
             inputs=inputs,
             outputs=outputs,
             dataset_id=dataset_id,
             metadata=metadata,
             split=split,
+            attachments_operations=attachments_operations,
         )
         response = self.request_with_retries(
             "PATCH",
@@ -4121,6 +4188,9 @@ class Client:
         metadata: Optional[Sequence[Optional[Dict]]] = None,
         splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
+        attachments_operations: Optional[
+            Sequence[Optional[ls_schemas.AttachmentsOperations]]
+        ] = None,
     ) -> Dict[str, Any]:
         """Update multiple examples.
 
@@ -4145,12 +4215,20 @@ class Client:
         Dict[str, Any]
             The response from the server (specifies the number of examples updated).
         """
+        if attachments_operations is not None:
+            if not (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                raise ValueError(
+                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                )
         sequence_args = {
             "inputs": inputs,
             "outputs": outputs,
             "metadata": metadata,
             "splits": splits,
             "dataset_ids": dataset_ids,
+            "attachments_operations": attachments_operations,
         }
         # Since inputs are required, we will check against them
         examples_len = len(example_ids)
@@ -4168,8 +4246,9 @@ class Client:
                 "dataset_id": dataset_id_,
                 "metadata": metadata_,
                 "split": split_,
+                "attachments_operations": attachments_operations_,
             }
-            for id_, in_, out_, metadata_, split_, dataset_id_ in zip(
+            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_operations_ in zip(
                 example_ids,
                 inputs or [None] * len(example_ids),
                 outputs or [None] * len(example_ids),
