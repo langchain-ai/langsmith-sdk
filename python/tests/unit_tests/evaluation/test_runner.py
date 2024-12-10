@@ -5,19 +5,22 @@ import functools
 import itertools
 import json
 import random
+import re
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Callable, List
+from typing import Any, Callable, Dict, List, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
+from langsmith.evaluation._runner import _include_attachments
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
@@ -47,7 +50,9 @@ class FakeRequest:
                 return res
             elif endpoint == "http://localhost:1984/examples":
                 res = MagicMock()
-                res.json.return_value = [e.dict() for e in self.ds_examples]
+                res.json.return_value = [
+                    e.dict() if not isinstance(e, dict) else e for e in self.ds_examples
+                ]
                 return res
             elif endpoint == "http://localhost:1984/sessions":
                 res = {}  # type: ignore
@@ -137,14 +142,23 @@ def _wait_until(condition: Callable, timeout: int = 8):
     raise TimeoutError("Condition not met")
 
 
-def _create_example(idx: int) -> ls_schemas.Example:
+def _create_example(idx: int) -> Tuple[ls_schemas.Example, Dict[str, Any]]:
+    _id = uuid.uuid4()
+    _created_at = datetime.now(timezone.utc)
     return ls_schemas.Example(
-        id=uuid.uuid4(),
+        id=_id,
         inputs={"in": idx},
         outputs={"answer": idx + 1},
         dataset_id="00886375-eb2a-4038-9032-efff60309896",
-        created_at=datetime.now(timezone.utc),
-    )
+        created_at=_created_at,
+    ), {
+        "id": _id,
+        "dataset_id": "00886375-eb2a-4038-9032-efff60309896",
+        "created_at": _created_at,
+        "inputs": {"in": idx},
+        "outputs": {"answer": idx + 1},
+        "attachment_urls": None,
+    }
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
@@ -160,10 +174,13 @@ def test_evaluate_results(
 
     SPLIT_SIZE = 3
     NUM_REPETITIONS = 4
-    ds_examples = [_create_example(i) for i in range(10)]
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
     dev_split = random.sample(ds_examples, SPLIT_SIZE)
     tenant_id = str(uuid.uuid4())
-    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
     session.request = fake_request.request
     client = Client(
         api_url="http://localhost:1984",
@@ -225,6 +242,14 @@ def test_evaluate_results(
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
 
+    def score_unpacked_inputs_outputs_attachments(inputs, outputs, attachments):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
+    def score_unpacked_outputs(outputs):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
     def eval_float(run, example):
         ordering_of_stuff.append("evaluate")
         return 0.2
@@ -253,6 +278,8 @@ def test_evaluate_results(
         score_value_first,
         score_unpacked_inputs_outputs,
         score_unpacked_inputs_outputs_reference,
+        score_unpacked_inputs_outputs_attachments,
+        score_unpacked_outputs,
         eval_float,
         eval_str,
         eval_list,
@@ -387,7 +414,12 @@ def test_evaluate_results(
             _normalize_evaluator_func(eval_)
 
         with pytest.raises(ValueError, match="Invalid evaluator function."):
-            evaluate((lambda x: x), data=ds_examples, evaluators=[eval_], client=client)
+            evaluate(
+                (lambda inputs: inputs),
+                data=ds_examples,
+                evaluators=[eval_],
+                client=client,
+            )
 
 
 def test_evaluate_raises_for_async():
@@ -431,10 +463,13 @@ async def test_aevaluate_results(
 
     SPLIT_SIZE = 3
     NUM_REPETITIONS = 4
-    ds_examples = [_create_example(i) for i in range(10)]
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
     dev_split = random.sample(ds_examples, SPLIT_SIZE)
     tenant_id = str(uuid.uuid4())
-    fake_request = FakeRequest(ds_id, ds_name, ds_examples, tenant_id)
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
     session.request = fake_request.request
     client = Client(
         api_url="http://localhost:1984",
@@ -499,6 +534,14 @@ async def test_aevaluate_results(
         ordering_of_stuff.append("evaluate")
         return {"score": reference_outputs["answer"]}
 
+    async def score_unpacked_inputs_outputs_attachments(inputs, outputs, attachments):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
+    async def score_unpacked_outputs(outputs):
+        ordering_of_stuff.append("evaluate")
+        return {"score": outputs["output"]}
+
     async def eval_float(run, example):
         ordering_of_stuff.append("evaluate")
         return 0.2
@@ -527,6 +570,8 @@ async def test_aevaluate_results(
         score_value_first,
         score_unpacked_inputs_outputs,
         score_unpacked_inputs_outputs_reference,
+        score_unpacked_inputs_outputs_attachments,
+        score_unpacked_outputs,
         eval_float,
         eval_str,
         eval_list,
@@ -658,8 +703,8 @@ async def test_aevaluate_results(
 
     evaluators = [eval1, eval2]
 
-    async def atarget(x):
-        return x
+    async def atarget(inputs):
+        return inputs
 
     for eval_ in evaluators:
         with pytest.raises(ValueError, match="Invalid evaluator function."):
@@ -674,6 +719,242 @@ async def test_aevaluate_results(
                 upload_results=upload_results,
                 blocking=blocking,
             )
+
+
+@as_runnable
+def nested_predict(inputs):
+    return {"output": "Yes"}
+
+
+@as_runnable
+def lc_predict(inputs):
+    return nested_predict.invoke(inputs)
+
+
+async def async_just_inputs(inputs):
+    return None
+
+
+async def async_just_inputs_with_attachments(inputs, attachments):
+    return None
+
+
+async def async_extra_args(inputs, attachments, foo="bar"):
+    return None
+
+
+@pytest.mark.parametrize(
+    "target,expected,error_msg,is_async",
+    [
+        # Valid cases
+        (lambda inputs: None, False, None, False),
+        (lambda inputs, attachments: None, True, None, False),
+        (async_just_inputs, False, None, True),
+        (async_just_inputs_with_attachments, True, None, True),
+        # Invalid parameter names
+        (
+            lambda x, y: None,
+            None,
+            re.escape(
+                "When passing 2 positional arguments, they must be named 'inputs' and "
+                "'attachments', respectively. Received: ['x', 'y']"
+            ),
+            False,
+        ),
+        (
+            lambda input, attachment: None,
+            None,
+            re.escape(
+                "When passing 2 positional arguments, they must be named 'inputs' and "
+                "'attachments', respectively. Received: ['input', 'attachment']"
+            ),
+            False,
+        ),
+        # Too many parameters
+        (
+            lambda inputs, attachments, extra: None,
+            None,
+            re.escape(
+                "Target function must accept at most two arguments without "
+                "default values: (inputs, attachments)."
+            ),
+            False,
+        ),
+        # No positional parameters
+        (
+            lambda *, foo="bar": None,
+            None,
+            re.escape(
+                "Target function must accept at least one positional argument (inputs)"
+            ),
+            False,
+        ),
+        # Mixed positional and keyword
+        (lambda inputs, *, optional=None: None, False, None, False),
+        (lambda inputs, attachments, *, optional=None: None, True, None, False),
+        # Non-callable
+        ("not_a_function", False, None, False),
+        # Runnable
+        (lc_predict.invoke, False, None, False),
+        # Positional args with defaults
+        (lambda inputs, attachments, foo="bar": None, True, None, False),
+        (async_extra_args, True, None, True),
+    ],
+)
+def test_include_attachments(target, expected, error_msg, is_async):
+    """Test the _include_attachments function with various input cases."""
+    try:
+        from langchain_core.runnables import RunnableLambda
+    except ImportError:
+        if target == "runnable":
+            pytest.skip("langchain-core not installed")
+            return
+
+    if target == "runnable":
+        target = RunnableLambda(lambda x: x)
+        expected = False
+        error_msg = None
+
+    if error_msg is not None:
+        with pytest.raises(ValueError, match=error_msg):
+            _include_attachments(target)
+    else:
+        result = _include_attachments(target)
+        assert result == expected
+
+
+def valid_single_supported(inputs, *, optional=None):
+    return {"score": 1}
+
+
+async def valid_single_supported_async(inputs, *, optional=None):
+    return {"score": 1}
+
+
+def valid_two_arbitrary(foo, bar, *, optional=None):
+    return {"score": 1}
+
+
+async def valid_two_arbitrary_async(foo, bar, *, optional=None):
+    return {"score": 1}
+
+
+def valid_multiple_supported(inputs, outputs, reference_outputs, *, optional=None):
+    return {"score": 1}
+
+
+async def valid_multiple_supported_async(
+    inputs, outputs, reference_outputs, *, optional=None
+):
+    return {"score": 1}
+
+
+def invalid_single_unsupported(foo, *, optional=None):
+    return {"score": 1}
+
+
+async def invalid_single_unsupported_async(foo, *, optional=None):
+    return {"score": 1}
+
+
+def invalid_three_args(inputs, outputs, foo, *, optional=None):
+    return {"score": 1}
+
+
+async def invalid_three_args_async(inputs, outputs, foo, *, optional=None):
+    return {"score": 1}
+
+
+def invalid_no_positional(*, inputs, outputs, optional=None):
+    return {"score": 1}
+
+
+async def invalid_no_positional_async(*, inputs, outputs, optional=None):
+    return {"score": 1}
+
+
+# Test cases that should succeed
+VALID_EVALUATOR_CASES = [
+    (valid_single_supported, False),
+    (valid_single_supported_async, True),
+    (valid_two_arbitrary, False),
+    (valid_two_arbitrary_async, True),
+    (valid_multiple_supported, False),
+    (valid_multiple_supported_async, True),
+]
+
+# Test cases that should raise ValueError
+INVALID_EVALUATOR_CASES = [
+    (invalid_single_unsupported, False),
+    (invalid_single_unsupported_async, True),
+    (invalid_three_args, False),
+    (invalid_three_args_async, True),
+    (invalid_no_positional, False),
+    (invalid_no_positional_async, True),
+]
+
+
+def target(inputs, attachments):
+    return {"foo": "bar"}
+
+
+async def atarget(inputs, attachments):
+    return {"foo": "bar"}
+
+
+@pytest.mark.parametrize("func,is_async", VALID_EVALUATOR_CASES)
+def test_normalize_evaluator_func_valid(func, is_async):
+    """Test _normalize_evaluator_func succeeds."""
+    func = _normalize_evaluator_func(func)
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    client._tenant_id = tenant_id  # type: ignore
+
+    if is_async:
+        asyncio.run(
+            aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
+        )
+    else:
+        evaluate(target, data=ds_examples, evaluators=[func], client=client)
+
+
+@pytest.mark.parametrize("func,is_async", INVALID_EVALUATOR_CASES)
+def test_normalize_evaluator_func_invalid(func, is_async):
+    """Test _normalize_evaluator_func fails correctly."""
+    with pytest.raises(ValueError, match="Invalid evaluator function"):
+        _normalize_evaluator_func(func)
+
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    client._tenant_id = tenant_id  # type: ignore
+
+    with pytest.raises(ValueError, match="Invalid evaluator function"):
+        if is_async:
+            asyncio.run(
+                aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
+            )
+        else:
+            evaluate(target, data=ds_examples, evaluators=[func], client=client)
 
 
 def summary_eval_runs_examples(runs_, examples_):
