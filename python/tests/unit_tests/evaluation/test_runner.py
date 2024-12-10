@@ -421,6 +421,7 @@ def test_evaluate_results(
                 client=client,
             )
 
+
 def test_evaluate_raises_for_async():
     async def my_func(inputs: dict):
         pass

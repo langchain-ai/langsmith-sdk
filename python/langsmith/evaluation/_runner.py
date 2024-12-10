@@ -1914,9 +1914,8 @@ def _ensure_traceable(
     return fn
 
 
-
 def _evaluators_include_attachments(
-    evaluators: Optional[Sequence[EVALUATOR_T]],
+    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
 ) -> bool:
     if evaluators is None:
         return False
@@ -1937,7 +1936,7 @@ def _evaluators_include_attachments(
 
 
 def _include_attachments(
-    target: Union[TARGET_T, Iterable[schemas.Run], Runnable],
+    target: Any,
 ) -> bool:
     """Whether the target function accepts attachments."""
     if _is_langchain_runnable(target) or not callable(target):
