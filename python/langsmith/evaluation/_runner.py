@@ -68,7 +68,7 @@ else:
     DataFrame = Any
 logger = logging.getLogger(__name__)
 
-TARGET_T = Callable[[dict], dict]
+TARGET_T = Union[Callable[[dict], dict], Callable[[dict, dict], dict]]
 # Data format: dataset-name, dataset_id, or examples
 DATA_T = Union[str, uuid.UUID, Iterable[schemas.Example], schemas.Dataset]
 # Summary evaluator runs over the whole dataset
@@ -1064,6 +1064,7 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
+        include_attachments=_include_attachments(target),
         upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -1312,6 +1313,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[Iterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        include_attachments: bool = False,
         upload_results: bool = True,
     ):
         super().__init__(
@@ -1326,12 +1328,17 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._include_attachments = include_attachments
         self._upload_results = upload_results
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
-            self._examples = _resolve_data(self._data, client=self.client)
+            self._examples = _resolve_data(
+                self._data,
+                client=self.client,
+                include_attachments=self._include_attachments,
+            )
             if self._num_repetitions > 1:
                 self._examples = itertools.chain.from_iterable(
                     itertools.tee(self._examples, self._num_repetitions)
@@ -1377,6 +1384,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            include_attachments=self._include_attachments,
             upload_results=self._upload_results,
         )
 
@@ -1400,6 +1408,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=(pred["run"] for pred in r2),
             upload_results=self._upload_results,
             # TODO: Can't do multiple prediction rounds rn.
+            include_attachments=self._include_attachments,
         )
 
     def with_evaluators(
@@ -1430,6 +1439,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
             summary_results=self._summary_results,
+            include_attachments=self._include_attachments,
             upload_results=self._upload_results,
         )
 
@@ -1451,6 +1461,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=self.runs,
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            include_attachments=self._include_attachments,
             upload_results=self._upload_results,
         )
 
@@ -1481,10 +1492,14 @@ class _ExperimentManager(_ExperimentManagerMixin):
     # Private methods
 
     def _predict(
-        self, target: TARGET_T, /, max_concurrency: Optional[int] = None
+        self,
+        target: TARGET_T,
+        /,
+        max_concurrency: Optional[int] = None,
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
+
         if max_concurrency == 0:
             for example in self.examples:
                 yield _forward(
@@ -1494,6 +1509,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self._metadata,
                     self.client,
                     self._upload_results,
+                    self._include_attachments,
                 )
 
         else:
@@ -1507,6 +1523,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self._metadata,
                         self.client,
                         self._upload_results,
+                        self._include_attachments,
                     )
                     for example in self.examples
                 ]
@@ -1794,6 +1811,7 @@ def _forward(
     metadata: dict,
     client: langsmith.Client,
     upload_results: bool,
+    include_attachments: bool = False,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1815,7 +1833,19 @@ def _forward(
             client=client,
         )
         try:
-            fn(example.inputs, langsmith_extra=langsmith_extra)
+            args = (
+                (example.inputs, example.attachments)
+                if include_attachments
+                else (example.inputs,)
+            )
+            fn(
+                *args,
+                langsmith_extra=langsmith_extra,
+            )
+            if include_attachments and example.attachments is not None:
+                for attachment in example.attachments:
+                    reader = example.attachments[attachment]["reader"]
+                    reader.seek(0)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
@@ -1832,17 +1862,28 @@ def _is_valid_uuid(value: str) -> bool:
 
 
 def _resolve_data(
-    data: DATA_T, *, client: langsmith.Client
+    data: DATA_T,
+    *,
+    client: langsmith.Client,
+    include_attachments: bool = False,
 ) -> Iterable[schemas.Example]:
     """Return the examples for the given dataset."""
     if isinstance(data, uuid.UUID):
-        return client.list_examples(dataset_id=data)
+        return client.list_examples(
+            dataset_id=data, include_attachments=include_attachments
+        )
     elif isinstance(data, str) and _is_valid_uuid(data):
-        return client.list_examples(dataset_id=uuid.UUID(data))
+        return client.list_examples(
+            dataset_id=uuid.UUID(data), include_attachments=include_attachments
+        )
     elif isinstance(data, str):
-        return client.list_examples(dataset_name=data)
+        return client.list_examples(
+            dataset_name=data, include_attachments=include_attachments
+        )
     elif isinstance(data, schemas.Dataset):
-        return client.list_examples(dataset_id=data.id)
+        return client.list_examples(
+            dataset_id=data.id, include_attachments=include_attachments
+        )
     return data
 
 
@@ -1862,6 +1903,7 @@ def _ensure_traceable(
             "    ...\n"
             ")"
         )
+
     if rh.is_traceable_function(target):
         fn: rh.SupportsLangsmithExtra[[dict], dict] = target
     else:
@@ -1869,6 +1911,39 @@ def _ensure_traceable(
             target = target.invoke  # type: ignore[union-attr]
         fn = rh.traceable(name="Target")(cast(Callable, target))
     return fn
+
+
+def _include_attachments(target: Any) -> bool:
+    """Whether the target function accepts attachments."""
+    if _is_langchain_runnable(target) or not callable(target):
+        return False
+    # Check function signature
+    sig = inspect.signature(target)
+    params = list(sig.parameters.values())
+    positional_params = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    positional_no_default = [p for p in positional_params if p.default is p.empty]
+
+    if len(positional_params) == 0:
+        raise ValueError(
+            "Target function must accept at least one positional argument (inputs)."
+        )
+    elif len(positional_no_default) > 2:
+        raise ValueError(
+            "Target function must accept at most two "
+            "arguments without default values: (inputs, attachments)."
+        )
+    elif len(positional_no_default) == 2:
+        if [p.name for p in positional_no_default] != ["inputs", "attachments"]:
+            raise ValueError(
+                "When passing 2 positional arguments, they must be named "
+                "'inputs' and 'attachments', respectively. Received: "
+                f"{[p.name for p in positional_no_default]}"
+            )
+        return True
+    else:
+        return [p.name for p in positional_params[:2]] == ["inputs", "attachments"]
 
 
 def _resolve_experiment(
