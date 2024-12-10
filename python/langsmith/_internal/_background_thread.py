@@ -100,7 +100,7 @@ def _tracing_thread_drain_compressed_buffer(
     size_limit_bytes: int = 50 * 1024 * 1024
 ) -> Optional[Iterable[bytes]]:
     with client._buffer_lock:
-        current_size = client.tracing_queue.tell()
+        current_size = client.compressed_runs_buffer.tell()
 
         # Check if we should send now
         if not (client._run_count >= size_limit or current_size >= size_limit_bytes):
@@ -111,21 +111,21 @@ def _tracing_thread_drain_compressed_buffer(
         client.compressor_writer.flush()
         client.compressor_writer.close()
 
-        client.tracing_queue.seek(0)
+        client.compressed_runs_buffer.seek(0)
 
         def data_stream() -> Iterable[bytes]:
             chunk_size = 65536
             while True:
-                chunk = client.tracing_queue.read(chunk_size)
+                chunk = client.compressed_runs_buffer.read(chunk_size)
                 if not chunk:
                     break
                 yield chunk
 
         # Reinitialize for next batch
-        client.tracing_queue = io.BytesIO()
+        client.compressed_runs_buffer = io.BytesIO()
         client.compressor = zstd.ZstdCompressor()
         client.compressor_writer = client.compressor.stream_writer(
-            client.tracing_queue, closefd=False)
+            client.compressed_runs_buffer, closefd=False)
         client._run_count = 0
 
         return data_stream()
@@ -247,7 +247,9 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
         return
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
-    size_limit_bytes: int | None = batch_ingest_config["size_limit_bytes"]
+    size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 50 * 1024 * 1024)
+    assert size_limit_bytes is not None
+
     
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
