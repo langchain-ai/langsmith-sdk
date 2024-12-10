@@ -1402,7 +1402,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
         """Lazily apply the target function to the experiment."""
         context = copy_context()
         _experiment_results = context.run(
-            self._predict, target, max_concurrency=max_concurrency
+            self._predict,
+            target,
+            max_concurrency=max_concurrency,
+            include_attachments=_include_attachments(target),
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
         return _ExperimentManager(
@@ -1501,6 +1504,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         target: TARGET_T,
         /,
         max_concurrency: Optional[int] = None,
+        include_attachments: bool = False,
     ) -> Generator[_ForwardResults, None, None]:
         """Run the target function on the examples."""
         fn = _ensure_traceable(target)
@@ -1514,7 +1518,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self._metadata,
                     self.client,
                     self._upload_results,
-                    self._include_attachments,
+                    include_attachments,
                 )
 
         else:
@@ -1528,7 +1532,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self._metadata,
                         self.client,
                         self._upload_results,
-                        self._include_attachments,
+                        include_attachments,
                     )
                     for example in self.examples
                 ]
@@ -1923,20 +1927,16 @@ def _evaluators_include_attachments(
 ) -> bool:
     if evaluators is None:
         return False
-    return any(
-        any(
-            p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-            and p.name == "attachments"
-            for p in (
-                inspect.signature(
-                    e.__call__ if hasattr(e, "__call__") else e
-                ).parameters.values()
-                if callable(e) or hasattr(e, "__call__")
-                else []
-            )
-        )
-        for e in evaluators
-    )
+
+    def evaluator_has_attachments(evaluator: Union[EVALUATOR_T, AEVALUATOR_T]) -> bool:
+        sig = inspect.signature(evaluator)
+        params = list(sig.parameters.values())
+        positional_params = [
+            p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        return any(p.name == "attachments" for p in positional_params)
+
+    return any(evaluator_has_attachments(e) for e in evaluators)
 
 
 def _include_attachments(

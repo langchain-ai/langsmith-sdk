@@ -648,7 +648,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         /,
         max_concurrency: Optional[int] = None,
     ) -> _AsyncExperimentManager:
-        _experiment_results = self._apredict(target, max_concurrency=max_concurrency)
+        _experiment_results = self._apredict(
+            target,
+            max_concurrency=max_concurrency,
+            include_attachments=_include_attachments(target),
+        )
         r1, r2 = aitertools.atee(_experiment_results, 2, lock=asyncio.Lock())
         return _AsyncExperimentManager(
             (pred["example"] async for pred in r1),
@@ -723,7 +727,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
     ## Private methods
 
     async def _apredict(
-        self, target: ATARGET_T, /, max_concurrency: Optional[int] = None
+        self,
+        target: ATARGET_T,
+        /,
+        max_concurrency: Optional[int] = None,
+        include_attachments: bool = False,
     ) -> AsyncIterator[_ForwardResults]:
         fn = _ensure_async_traceable(target)
 
@@ -736,7 +744,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     self.experiment_name,
                     self._metadata,
                     self.client,
-                    include_attachments=self._include_attachments,
+                    include_attachments,
                 )
 
         async for result in aitertools.aiter_with_concurrency(
