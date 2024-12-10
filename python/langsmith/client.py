@@ -1754,6 +1754,8 @@ class Client:
         if data["extra"]:
             self._insert_runtime_env([data])
 
+        print("UPDATE_RUN", data)
+
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
         elif use_multipart and self.tracing_queue is not None:
