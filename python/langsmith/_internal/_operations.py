@@ -277,7 +277,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
 
 def compress_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext, 
-    compressor_writer: zstandard.ZstdCompressorWriter,
+    compressor_writer: zstandard.ZstdCompressionWriter,
     boundary: str
 ) -> None:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
