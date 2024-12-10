@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import functools
+import io
 import logging
 import sys
 import threading
+import time
 import weakref
+import zstandard as zstd
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
     List,
+    Optional,
     Union,
     cast,
 )
@@ -87,6 +91,34 @@ def _tracing_thread_drain_queue(
         pass
     return next_batch
 
+
+def _tracing_thread_drain_compressed_buffer(
+    client: Client,
+    runs_limit: int = 100,
+    max_buffer_size: int = 50 * 1024 * 1024
+) -> Optional[bytes]:
+    with client._buffer_lock:
+        current_size = client.tracing_queue.tell()
+
+        # Check if we should send now
+        if not (client._run_count >= runs_limit or current_size >= max_buffer_size):
+            return None
+
+        # Write final boundary and close compression stream
+        client.compressor_writer.write(f'--{client.boundary}--\r\n'.encode())
+        client.compressor_writer.flush()
+        client.compressor_writer.close()
+
+        client.tracing_queue.seek(0)
+        data = client.tracing_queue.getvalue()
+
+        # Reinitialize for next batch
+        client.tracing_queue = io.BytesIO()
+        client.compressor = zstd.ZstdCompressor()
+        client.compressor_writer = client.compressor.stream_writer(
+            client.tracing_queue, closefd=False)
+        client._run_count = 0
+        return data
 
 def _tracing_thread_handle_batch(
     client: Client,
@@ -198,6 +230,19 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         tracing_queue, limit=size_limit, block=False
     ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
+
+def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> None:
+    client = client_ref()
+    if client is None:
+        return
+
+    while True:
+        result = _tracing_thread_drain_compressed_buffer(client)
+        if result is not None:
+            time.sleep(0.150)  # Simulate call to backend
+        else:
+            time.sleep(0.1)  # Avoid busy-waiting if no data ready
+
 
 
 def _tracing_sub_thread_func(
