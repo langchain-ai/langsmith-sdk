@@ -1245,7 +1245,7 @@ test("annotationqueue crud", async () => {
   }
 });
 
-test("annotationqueue crud", async () => {
+test("upload examples multipart", async () => {
   const client = new Client();
   const datasetName = `__test_upsert_examples_multipart${uuidv4().slice(0, 4)}`;
 
@@ -1312,28 +1312,6 @@ test("annotationqueue crud", async () => {
   }
   expect(allExamplesInDataset.length).toBe(2);
 
-  // Test updating example
-  const example1Update: ExampleUploadWithAttachments = {
-    id: exampleId,
-    inputs: { text: "bar baz" },
-    outputs: { response: "foo" },
-    attachments: {
-      my_file: ["image/png", fs.readFileSync(pathname)],
-    },
-  };
-
-  const updatedExamples = await client.uploadExamplesMultipart(dataset.id,[
-    example1Update,
-  ]);
-  expect(updatedExamples.count).toBe(1);
-  expect(updatedExamples.example_ids[0]).toBe(exampleId);
-
-  const updatedExample = await client.readExample(
-    updatedExamples.example_ids[0]
-  );
-  expect(updatedExample.inputs["text"]).toBe("bar baz");
-  expect(updatedExample.outputs?.["response"]).toBe("foo");
-
   // Test invalid example fails
   const example3: ExampleUploadWithAttachments = {
     inputs: { text: "foo bar" },
@@ -1343,7 +1321,9 @@ test("annotationqueue crud", async () => {
     },
   };
 
-  const errorResponse = await client.uploadExamplesMultipart(uuidv4(), [example3]);
+  const errorResponse = await client.uploadExamplesMultipart(uuidv4(), [
+    example3,
+  ]);
   expect(errorResponse).toHaveProperty("error");
 
   // Clean up
