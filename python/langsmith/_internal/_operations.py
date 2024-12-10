@@ -3,6 +3,8 @@ from __future__ import annotations
 import itertools
 import logging
 import uuid
+import io
+import zstandard
 from typing import Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
@@ -271,3 +273,35 @@ def serialized_run_operation_to_multipart_parts_and_context(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",
     )
+
+
+def write_multipart_parts_to_compressor(
+    parts_and_context: MultipartPartsAndContext,
+    compressor_writer: zstandard.ZstdCompressorWriter,
+    boundary: str
+) -> None:
+    compressor_writer.write(f'--{boundary}\r\n'.encode())
+
+    for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
+        part_header = f'Content-Disposition: form-data; name="{part_name}"'
+        if filename:
+            part_header += f'; filename="{filename}"'
+        part_header += f'\r\nContent-Type: {content_type}\r\n'
+
+        for header_name, header_value in headers.items():
+            part_header += f'{header_name}: {header_value}\r\n'
+
+        part_header += '\r\n'
+        compressor_writer.write(part_header.encode())
+
+        if isinstance(data, (bytes, bytearray)):
+            with memoryview(data) as view:
+                chunk_size = 1024 * 1024  # 1MB chunks
+                for i in range(0, len(view), chunk_size):
+                    chunk = view[i:i + chunk_size]
+                    compressor_writer.write(chunk)
+        else:
+            compressor_writer.write(str(data).encode())
+
+        compressor_writer.write(b'\r\n')
+

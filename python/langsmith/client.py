@@ -33,6 +33,7 @@ import typing
 import uuid
 import warnings
 import weakref
+import zstandard
 from inspect import signature
 from queue import PriorityQueue
 from typing import (
@@ -75,6 +76,7 @@ from langsmith._internal._background_thread import (
 )
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
+    tracing_control_thread_func_compress as _tracing_control_thread_func_compress
 )
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._constants import (
@@ -94,6 +96,7 @@ from langsmith._internal._operations import (
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
+    write_multipart_parts_to_compressor,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -489,6 +492,15 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
+        self.compress_traces = os.getenv("LANGSMITH_COMPRESS_TRACES") == "true"
+        if self.compress_traces:
+            self.compressor = zstandard.ZstdCompressor()
+            self.compressor_writer = self.compressor.stream_writer(
+                self.tracing_queue, closefd=False)
+            self.tracing_queue = io.BytesIO()
+            self._buffer_lock = threading.Lock()
+            self._run_count = 0
+            
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -497,7 +509,14 @@ class Client:
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         # Initialize auto batching
-        if auto_batch_tracing:
+        if auto_batch_tracing and self.compress_traces:
+            threading.Thread(
+                target=_tracing_control_thread_func_compress,
+                # arg must be a weakref to self to avoid the Thread object
+                # preventing garbage collection of the Client object
+                args=(weakref.ref(self),),
+            ).start()
+        elif auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
@@ -1291,9 +1310,17 @@ class Client:
                 self._pyo3_client.create_run(run_create)
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
-                self.tracing_queue.put(
-                    TracingQueueItem(run_create["dotted_order"], serialized_op)
-                )
+                if self.compress_traces:
+                    multipart_form = self.serialized_run_operation_to_multipart_parts_and_context(
+                        serialized_op)
+                    with self._buffer_lock:
+                        write_multipart_parts_to_compressor(
+                            multipart_form, self.compressor_writer, self.boundary)
+                        self._run_count += 1
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(run_create["dotted_order"], serialized_op)
+                    )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
@@ -1755,9 +1782,16 @@ class Client:
         if use_multipart and self.tracing_queue is not None:
             # not collecting attachments currently, use empty dict
             serialized_op = serialize_run_dict(operation="patch", payload=data)
-            self.tracing_queue.put(
-                TracingQueueItem(data["dotted_order"], serialized_op)
-            )
+            if self.compress_traces:
+                multipart_form = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
+                with self._buffer_lock:
+                    write_multipart_parts_to_compressor(
+                        multipart_form, self.compressor_writer, self.boundary)
+                    self._run_count += 1
+            else:
+                self.tracing_queue.put(
+                    TracingQueueItem(data["dotted_order"], serialized_op)
+                )
         else:
             self._update_run(data)
 
