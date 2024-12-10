@@ -94,14 +94,14 @@ def _tracing_thread_drain_queue(
 
 def _tracing_thread_drain_compressed_buffer(
     client: Client,
-    runs_limit: int = 100,
-    max_buffer_size: int = 50 * 1024 * 1024
+    size_limit: int = 100,
+    size_limit_bytes: int = 50 * 1024 * 1024
 ) -> Optional[bytes]:
     with client._buffer_lock:
         current_size = client.tracing_queue.tell()
 
         # Check if we should send now
-        if not (client._run_count >= runs_limit or current_size >= max_buffer_size):
+        if not (client._run_count >= size_limit or current_size >= size_limit_bytes):
             return None
 
         # Write final boundary and close compression stream
@@ -155,7 +155,7 @@ def _ensure_ingest_config(
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
         use_multipart_endpoint=False,
-        size_limit_bytes=None,  # Note this field is not used here
+        size_limit_bytes=50 * 1024 * 1024,
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
         scale_up_qsize_trigger=_AUTO_SCALE_UP_QSIZE_TRIGGER,
@@ -235,9 +235,12 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
     client = client_ref()
     if client is None:
         return
-
+    batch_ingest_config = _ensure_ingest_config(client.info)
+    size_limit: int = batch_ingest_config["size_limit"]
+    size_limit_bytes: int = batch_ingest_config["size_limit_bytes"]
+    
     while True:
-        result = _tracing_thread_drain_compressed_buffer(client)
+        result = _tracing_thread_drain_compressed_buffer(client, size_limit, size_limit_bytes)
         if result is not None:
             time.sleep(0.150)  # Simulate call to backend
         else:
