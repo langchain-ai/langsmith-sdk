@@ -2731,15 +2731,20 @@ export class Client implements LangSmithTracingClientInterface {
             key,
             value: {
               presigned_url: value.presigned_url,
-              reader: await fetch(value.presigned_url).then((response) =>
-                response.arrayBuffer()
+              reader: await fetch(value.presigned_url).then(
+                (response) => response.body
               ),
             },
           };
         })
       );
       example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
-        acc[key.startsWith("attachment.") ? key.slice(11) : key] = value;
+        if (value.reader != null) {
+          acc[key.startsWith("attachment.") ? key.slice(11) : key] = {
+            ...value,
+            reader: value.reader,
+          };
+        }
         return acc;
       }, {} as Record<string, AttachmentInfo>);
     }
@@ -2834,8 +2839,8 @@ export class Client implements LangSmithTracingClientInterface {
                 key,
                 value: {
                   presigned_url: value.presigned_url,
-                  reader: await fetch(value.presigned_url).then((response) =>
-                    response.arrayBuffer()
+                  reader: await fetch(value.presigned_url).then(
+                    (response) => response.body
                   ),
                 },
               };
@@ -2843,7 +2848,12 @@ export class Client implements LangSmithTracingClientInterface {
           );
           example.attachments = attachmentsArray.reduce(
             (acc, { key, value }) => {
-              acc[key.startsWith("attachment.") ? key.slice(11) : key] = value;
+              if (value.reader != null) {
+                acc[key.startsWith("attachment.") ? key.slice(11) : key] = {
+                  ...value,
+                  reader: value.reader,
+                };
+              }
               return acc;
             },
             {} as Record<string, AttachmentInfo>
