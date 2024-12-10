@@ -33,7 +33,6 @@ import typing
 import uuid
 import warnings
 import weakref
-import zstandard
 from inspect import signature
 from queue import PriorityQueue
 from typing import (
@@ -58,6 +57,7 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import requests
+import zstandard
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
@@ -76,7 +76,9 @@ from langsmith._internal._background_thread import (
 )
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
-    tracing_control_thread_func_compress as _tracing_control_thread_func_compress
+)
+from langsmith._internal._background_thread import (
+    tracing_control_thread_func_compress as _tracing_control_thread_func_compress,
 )
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._constants import (
@@ -92,11 +94,11 @@ from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
     combine_serialized_queue_operations,
+    compress_multipart_parts_and_context,
     serialize_feedback_dict,
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
-    compress_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 
