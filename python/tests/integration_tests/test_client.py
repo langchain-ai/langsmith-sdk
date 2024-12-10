@@ -1220,13 +1220,17 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     dataset_name = "__test_list_examples_attachments" + uuid4().hex[:4]
     dataset = langchain_client.create_dataset(dataset_name=dataset_name)
 
-    langchain_client.create_example(
-        inputs={"text": "hello world"},
-        outputs={"response": "hi there"},
+    langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
-        attachments={
-            "test_file": ("text/plain", b"test content"),
-        },
+        uploads=[
+            ExampleUploadWithAttachments(
+                inputs={"text": "hello world"},
+                outputs={"response": "hi there"},
+                attachments={
+                    "test_file": ("text/plain", b"test content"),
+                },
+            )
+        ]
     )
 
     # Get examples with attachments
