@@ -95,7 +95,7 @@ def _tracing_thread_drain_queue(
 
 
 def _tracing_thread_drain_compressed_buffer(
-    client: "Client",
+    client: Client,
     size_limit: int = 100,
     size_limit_bytes: int = 50 * 1024 * 1024
 ) -> Optional[Iterable[bytes]]:
