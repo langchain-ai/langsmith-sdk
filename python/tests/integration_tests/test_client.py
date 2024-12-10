@@ -59,7 +59,6 @@ def wait_for(
 def langchain_client() -> Client:
     get_env_var.cache_clear()
     return Client(
-        api_key="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",
         info={
             "instance_flags": {
                 "dataset_examples_multipart_enabled": True,
