@@ -57,7 +57,7 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import requests
-import zstandard
+import zstandard as zstd
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
@@ -501,12 +501,11 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
-        self.compress_traces = os.getenv("LANGSMITH_COMPRESS_TRACES") == "true"
+        self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
         if self.compress_traces:
             self.boundary = BOUNDARY
-            self.compressor: zstandard.ZstdCompressor = zstandard.ZstdCompressor()
             self.compressed_runs_buffer: io.BytesIO = io.BytesIO()
-            self.compressor_writer: zstandard.ZstdCompressionWriter = self.compressor.stream_writer(
+            self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor().stream_writer(
                 self.compressed_runs_buffer, closefd=False)
             self._buffer_lock: threading.Lock = threading.Lock()
             self._run_count: int = 0

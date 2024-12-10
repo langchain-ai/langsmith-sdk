@@ -111,24 +111,24 @@ def _tracing_thread_drain_compressed_buffer(
         client.compressor_writer.flush()
         client.compressor_writer.close()
 
-        client.compressed_runs_buffer.seek(0)
-
-        def data_stream() -> Iterable[bytes]:
-            chunk_size = 65536
-            while True:
-                chunk = client.compressed_runs_buffer.read(chunk_size)
-                if not chunk:
-                    break
-                yield chunk
+        filled_buffer = client.compressed_runs_buffer
 
         # Reinitialize for next batch
         client.compressed_runs_buffer = io.BytesIO()
-        client.compressor = zstd.ZstdCompressor()
-        client.compressor_writer = client.compressor.stream_writer(
+        client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
             client.compressed_runs_buffer, closefd=False)
         client._run_count = 0
 
-        return data_stream()
+    filled_buffer.seek(0)
+    def data_stream() -> Iterable[bytes]:
+        chunk_size = 65536
+        while True:
+            chunk = filled_buffer.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
+    return data_stream()
 
 def _tracing_thread_handle_batch(
     client: Client,
