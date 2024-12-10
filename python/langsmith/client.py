@@ -504,13 +504,17 @@ class Client:
         self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
         if self.compress_traces:
             self.boundary = BOUNDARY
-            self.compressed_runs_buffer: io.BytesIO = io.BytesIO()
-            self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor().stream_writer(
-                self.compressed_runs_buffer, closefd=False)
-            self._buffer_lock: threading.Lock = threading.Lock()
-            self._run_count: int = 0
+            self._buffer_lock = threading.Lock()
+            self._run_count = 0
+            self.compressed_runs_buffer = io.BytesIO()
+            self.compressor_writer = zstd.ZstdCompressor(
+                level=3,
+                write_checksum=True,
+                write_content_size=True,
+            ).stream_writer(self.compressed_runs_buffer, closefd=False)
         else:
             self.compressed_runs_buffer = None
+            self.compressor_writer = None
             
         self._info = (
             info
