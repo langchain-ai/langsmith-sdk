@@ -34,6 +34,7 @@ import uuid
 import warnings
 import weakref
 from inspect import signature
+from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
@@ -83,6 +84,7 @@ from langsmith._internal._constants import (
     _SIZE_LIMIT_BYTES,
 )
 from langsmith._internal._multipart import (
+    MultipartPart,
     MultipartPartsAndContext,
     join_multipart_parts_and_context,
 )
@@ -946,7 +948,6 @@ class Client:
                 params=params_,
             )
             items = response.json()
-
             if not items:
                 break
             yield from items
@@ -1682,9 +1683,7 @@ class Client:
         events: Optional[Sequence[dict]] = None,
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
-        attachments: Optional[
-            Dict[str, tuple[str, bytes] | ls_schemas.Attachment]
-        ] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -3463,6 +3462,262 @@ class Client:
             created_at=created_at,
         )
 
+    def _prepare_multipart_data(
+        self,
+        examples: Union[
+            List[ls_schemas.ExampleUploadWithAttachments]
+            | List[ls_schemas.ExampleUpsertWithAttachments]
+            | List[ls_schemas.ExampleUpdateWithAttachments],
+        ],
+        include_dataset_id: bool = False,
+    ) -> Tuple[Any, bytes]:
+        parts: List[MultipartPart] = []
+        if include_dataset_id:
+            if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
+                raise ValueError(
+                    "The examples must be of type ExampleUpsertWithAttachments"
+                    " if include_dataset_id is True"
+                )
+            dataset_id = examples[0].dataset_id
+
+        for example in examples:
+            if (
+                not isinstance(example, ls_schemas.ExampleUploadWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+            ):
+                raise ValueError(
+                    "The examples must be of type ExampleUploadWithAttachments"
+                    " or ExampleUpsertWithAttachments"
+                    " or ExampleUpdateWithAttachments"
+                )
+            if example.id is not None:
+                example_id = str(example.id)
+            else:
+                example_id = str(uuid.uuid4())
+
+            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments):
+                created_at = None
+            else:
+                created_at = example.created_at
+
+            example_body = {
+                **({"dataset_id": dataset_id} if include_dataset_id else {}),
+                **({"created_at": created_at} if created_at is not None else {}),
+            }
+            if example.metadata is not None:
+                example_body["metadata"] = example.metadata
+            if example.split is not None:
+                example_body["split"] = example.split
+            valb = _dumps_json(example_body)
+
+            parts.append(
+                (
+                    f"{example_id}",
+                    (
+                        None,
+                        valb,
+                        "application/json",
+                        {},
+                    ),
+                )
+            )
+
+            inputsb = _dumps_json(example.inputs)
+
+            parts.append(
+                (
+                    f"{example_id}.inputs",
+                    (
+                        None,
+                        inputsb,
+                        "application/json",
+                        {},
+                    ),
+                )
+            )
+
+            if example.outputs:
+                outputsb = _dumps_json(example.outputs)
+                parts.append(
+                    (
+                        f"{example_id}.outputs",
+                        (
+                            None,
+                            outputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
+                )
+
+            if example.attachments:
+                for name, attachment in example.attachments.items():
+                    if isinstance(attachment, tuple):
+                        if isinstance(attachment[1], Path):
+                            mime_type, file_path = attachment
+                            file_size = os.path.getsize(file_path)
+                            parts.append(
+                                (
+                                    f"{example_id}.attachment.{name}",
+                                    (
+                                        None,
+                                        open(file_path, "rb"),  # type: ignore[arg-type]
+                                        f"{mime_type}; length={file_size}",
+                                        {},
+                                    ),
+                                )
+                            )
+                        else:
+                            mime_type, data = attachment
+                            parts.append(
+                                (
+                                    f"{example_id}.attachment.{name}",
+                                    (
+                                        None,
+                                        data,
+                                        f"{mime_type}; length={len(data)}",
+                                        {},
+                                    ),
+                                )
+                            )
+                    else:
+                        parts.append(
+                            (
+                                f"{example_id}.attachment.{name}",
+                                (
+                                    None,
+                                    attachment.data,
+                                    f"{attachment.mime_type}; length={len(attachment.data)}",
+                                    {},
+                                ),
+                            )
+                        )
+
+            if (
+                isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                and example.attachments_operations
+            ):
+                attachments_operationsb = _dumps_json(example.attachments_operations)
+                parts.append(
+                    (
+                        f"{example_id}.attachments_operations",
+                        (
+                            None,
+                            attachments_operationsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
+                )
+
+        encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
+        if encoder.len <= 20_000_000:  # ~20 MB
+            data = encoder.to_string()
+        else:
+            data = encoder
+
+        return encoder, data
+
+    def update_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples."""
+        if not (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+            )
+        if updates is None:
+            updates = []
+
+        encoder, data = self._prepare_multipart_data(updates, include_dataset_id=False)
+
+        response = self.request_with_retries(
+            "PATCH",
+            f"/v1/platform/datasets/{dataset_id}/examples",
+            request_kwargs={
+                "data": data,
+                "headers": {
+                    **self._headers,
+                    "Content-Type": encoder.content_type,
+                },
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    def upload_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples."""
+        if not (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+            )
+        if uploads is None:
+            uploads = []
+        encoder, data = self._prepare_multipart_data(uploads, include_dataset_id=False)
+
+        response = self.request_with_retries(
+            "POST",
+            f"/v1/platform/datasets/{dataset_id}/examples",
+            request_kwargs={
+                "data": data,
+                "headers": {
+                    **self._headers,
+                    "Content-Type": encoder.content_type,
+                },
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
+    def upsert_examples_multipart(
+        self,
+        *,
+        upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upsert examples.
+
+        .. deprecated:: 0.1.0
+           This method is deprecated. Use :func:`langsmith.upload_examples_multipart` instead.
+
+        """  # noqa: E501
+        if not (self.info.instance_flags or {}).get(
+            "examples_multipart_enabled", False
+        ):
+            raise ValueError(
+                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+            )
+        if upserts is None:
+            upserts = []
+
+        encoder, data = self._prepare_multipart_data(upserts, include_dataset_id=True)
+
+        response = self.request_with_retries(
+            "POST",
+            "/v1/platform/examples/multipart",
+            request_kwargs={
+                "data": data,
+                "headers": {
+                    **self._headers,
+                    "Content-Type": encoder.content_type,
+                },
+            },
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return response.json()
+
     def create_examples(
         self,
         *,
@@ -3637,8 +3892,22 @@ class Client:
                 "as_of": as_of.isoformat() if as_of else None,
             },
         )
+
+        example = response.json()
+        attachments = {}
+        if example["attachment_urls"]:
+            for key, value in example["attachment_urls"].items():
+                response = requests.get(value["presigned_url"], stream=True)
+                response.raise_for_status()
+                reader = io.BytesIO(response.content)
+                attachments[key.split(".")[1]] = {
+                    "presigned_url": value["presigned_url"],
+                    "reader": reader,
+                }
+
         return ls_schemas.Example(
-            **response.json(),
+            **{k: v for k, v in example.items() if k != "attachment_urls"},
+            attachments=attachments,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -3656,6 +3925,7 @@ class Client:
         limit: Optional[int] = None,
         metadata: Optional[dict] = None,
         filter: Optional[str] = None,
+        include_attachments: bool = False,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
         """Retrieve the example rows of the specified dataset.
@@ -3705,11 +3975,25 @@ class Client:
             params["dataset"] = dataset_id
         else:
             pass
+        if include_attachments:
+            params["select"] = ["attachment_urls", "outputs", "metadata"]
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
+            attachments = {}
+            if example["attachment_urls"]:
+                for key, value in example["attachment_urls"].items():
+                    response = requests.get(value["presigned_url"], stream=True)
+                    response.raise_for_status()
+                    reader = io.BytesIO(response.content)
+                    attachments[key.split(".")[1]] = {
+                        "presigned_url": value["presigned_url"],
+                        "reader": reader,
+                    }
+
             yield ls_schemas.Example(
-                **example,
+                **{k: v for k, v in example.items() if k != "attachment_urls"},
+                attachments=attachments,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
@@ -3849,6 +4133,7 @@ class Client:
         metadata: Optional[Dict] = None,
         split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
+        attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
 
@@ -3873,12 +4158,20 @@ class Client:
         Dict[str, Any]
             The updated example.
         """
+        if attachments_operations is not None:
+            if not (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                raise ValueError(
+                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                )
         example = dict(
             inputs=inputs,
             outputs=outputs,
             dataset_id=dataset_id,
             metadata=metadata,
             split=split,
+            attachments_operations=attachments_operations,
         )
         response = self.request_with_retries(
             "PATCH",
@@ -3898,6 +4191,9 @@ class Client:
         metadata: Optional[Sequence[Optional[Dict]]] = None,
         splits: Optional[Sequence[Optional[str | List[str]]]] = None,
         dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
+        attachments_operations: Optional[
+            Sequence[Optional[ls_schemas.AttachmentsOperations]]
+        ] = None,
     ) -> Dict[str, Any]:
         """Update multiple examples.
 
@@ -3922,12 +4218,20 @@ class Client:
         Dict[str, Any]
             The response from the server (specifies the number of examples updated).
         """
+        if attachments_operations is not None:
+            if not (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                raise ValueError(
+                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                )
         sequence_args = {
             "inputs": inputs,
             "outputs": outputs,
             "metadata": metadata,
             "splits": splits,
             "dataset_ids": dataset_ids,
+            "attachments_operations": attachments_operations,
         }
         # Since inputs are required, we will check against them
         examples_len = len(example_ids)
@@ -3945,14 +4249,16 @@ class Client:
                 "dataset_id": dataset_id_,
                 "metadata": metadata_,
                 "split": split_,
+                "attachments_operations": attachments_operations_,
             }
-            for id_, in_, out_, metadata_, split_, dataset_id_ in zip(
+            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_operations_ in zip(
                 example_ids,
                 inputs or [None] * len(example_ids),
                 outputs or [None] * len(example_ids),
                 metadata or [None] * len(example_ids),
                 splits or [None] * len(example_ids),
                 dataset_ids or [None] * len(example_ids),
+                attachments_operations or [None] * len(example_ids),
             )
         ]
         response = self.request_with_retries(

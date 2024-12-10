@@ -64,7 +64,25 @@ class Attachment(NamedTuple):
 
 
 Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
-"""Attachments associated with the run. Each entry is a tuple of (mime_type, bytes)."""
+"""Attachments associated with the run. 
+Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
+
+
+@runtime_checkable
+class BinaryIOLike(Protocol):
+    """Protocol for binary IO-like objects."""
+
+    def read(self, size: int = -1) -> bytes:
+        """Read function."""
+        ...
+
+    def write(self, b: bytes) -> int:
+        """Write function."""
+        ...
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        """Seek function."""
+        ...
 
 
 class ExampleBase(BaseModel):
@@ -79,6 +97,7 @@ class ExampleBase(BaseModel):
         """Configuration class for the schema."""
 
         frozen = True
+        arbitrary_types_allowed = True
 
 
 class ExampleCreate(ExampleBase):
@@ -87,6 +106,32 @@ class ExampleCreate(ExampleBase):
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     split: Optional[Union[str, List[str]]] = None
+
+
+class ExampleUploadWithAttachments(BaseModel):
+    """Example upload with attachments."""
+
+    id: Optional[UUID]
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, List[str]]] = None
+    attachments: Optional[Attachments] = None
+
+
+class ExampleUpsertWithAttachments(ExampleUploadWithAttachments):
+    """Example create with attachments."""
+
+    dataset_id: UUID
+
+
+class AttachmentInfo(TypedDict):
+    """Info for an attachment."""
+
+    presigned_url: str
+    reader: BinaryIOLike
+    # TODO: add mime type
 
 
 class Example(ExampleBase):
@@ -100,6 +145,9 @@ class Example(ExampleBase):
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
+    attachments: Optional[Dict[str, AttachmentInfo]] = Field(default=None)
+    """Dictionary with attachment names as keys and a tuple of the S3 url
+    and a reader of the data for the file."""
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
 
@@ -135,12 +183,24 @@ class ExampleSearch(ExampleBase):
     id: UUID
 
 
+class AttachmentsOperations(BaseModel):
+    """Operations to perform on attachments."""
+
+    rename: Dict[str, str] = Field(
+        default_factory=dict, description="Mapping of old attachment names to new names"
+    )
+    retain: List[str] = Field(
+        default_factory=list, description="List of attachment names to keep"
+    )
+
+
 class ExampleUpdate(BaseModel):
     """Update class for Example."""
 
     dataset_id: Optional[UUID] = None
     inputs: Optional[Dict[str, Any]] = None
     outputs: Optional[Dict[str, Any]] = None
+    attachments_operations: Optional[AttachmentsOperations] = None
     metadata: Optional[Dict[str, Any]] = None
     split: Optional[Union[str, List[str]]] = None
 
@@ -148,6 +208,18 @@ class ExampleUpdate(BaseModel):
         """Configuration class for the schema."""
 
         frozen = True
+
+
+class ExampleUpdateWithAttachments(ExampleUpdate):
+    """Example update with attachments."""
+
+    id: UUID
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, List[str]]] = None
+    attachments: Optional[Attachments] = None
+    attachments_operations: Optional[AttachmentsOperations] = None
 
 
 class DataType(str, Enum):
@@ -718,6 +790,8 @@ class LangSmithInfo(BaseModel):
     license_expiration_time: Optional[datetime] = None
     """The time the license will expire."""
     batch_ingest_config: Optional[BatchIngestConfig] = None
+    """The instance flags."""
+    instance_flags: Optional[Dict[str, Any]] = None
 
 
 Example.update_forward_refs()
@@ -1003,3 +1077,12 @@ class UsageMetadata(TypedDict):
 
     Does *not* need to sum to full output token count. Does *not* need to have all keys.
     """
+
+
+class UpsertExamplesResponse(TypedDict):
+    """Response object returned from the upsert_examples_multipart method."""
+
+    count: int
+    """The number of examples that were upserted."""
+    example_ids: List[str]
+    """The ids of the examples that were upserted."""
