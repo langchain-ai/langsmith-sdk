@@ -1619,9 +1619,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
             "image2": ("image/png", b"fake image data 2"),
         },
     )
-    langchain_client.upload_examples_multipart(
-        dataset_id=dataset.id, uploads=[example]
-    )
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
 
     # Update example with attachment operations to rename and retain attachments
     attachments_operations = AttachmentsOperations(
@@ -1645,8 +1643,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
     assert "image2" in retrieved_example.attachments
     assert "image1" not in retrieved_example.attachments
     assert (
-        retrieved_example.attachments["image2"]["reader"].read()
-        == b"fake image data 2"
+        retrieved_example.attachments["image2"]["reader"].read() == b"fake image data 2"
     )
     assert (
         retrieved_example.attachments["renamed_image"]["reader"].read()
@@ -1778,8 +1775,6 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     )
     assert created_examples["count"] == 2
 
-    examples = list(langchain_client.list_examples(dataset_id=dataset.id))
-
     # Now create update operations
     update_1 = ExampleUpdateWithAttachments(
         id=example_ids[0],
@@ -1822,12 +1817,10 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert "new_file1" in example_1_updated.attachments
     assert "file2" not in example_1_updated.attachments
     assert (
-        example_1_updated.attachments["new_file1"]["reader"].read()
-        == b"new content 1"
+        example_1_updated.attachments["new_file1"]["reader"].read() == b"new content 1"
     )
     assert (
-        example_1_updated.attachments["file1"]["reader"].read()
-        == b"original content 1"
+        example_1_updated.attachments["file1"]["reader"].read() == b"original content 1"
     )
 
     # Verify second example updates
@@ -1840,12 +1833,10 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert "new_file2" in example_2_updated.attachments
     assert "file4" not in example_2_updated.attachments
     assert (
-        example_2_updated.attachments["file3"]["reader"].read()
-        == b"original content 3"
+        example_2_updated.attachments["file3"]["reader"].read() == b"original content 3"
     )
     assert (
-        example_2_updated.attachments["new_file2"]["reader"].read()
-        == b"new content 2"
+        example_2_updated.attachments["new_file2"]["reader"].read() == b"new content 2"
     )
 
     # Test updating non-existent example doesn't do anything
