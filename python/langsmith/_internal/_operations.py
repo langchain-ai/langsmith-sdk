@@ -296,11 +296,7 @@ def compress_multipart_parts_and_context(
         compressor_writer.write(part_header.encode())
         
         if isinstance(data, (bytes, bytearray)):
-            with memoryview(data) as view:
-                chunk_size = 1024 * 1024  # 1MB chunks
-                for i in range(0, len(view), chunk_size):
-                    chunk = view[i:i + chunk_size]
-                    compressor_writer.write(chunk)
+            compressor_writer.write(data)
         else:
             compressor_writer.write(str(data).encode())
         
