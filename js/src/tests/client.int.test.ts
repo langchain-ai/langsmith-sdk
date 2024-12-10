@@ -1247,7 +1247,7 @@ test("annotationqueue crud", async () => {
 
 test("upload examples multipart", async () => {
   const client = new Client();
-  const datasetName = `__test_upsert_examples_multipart${uuidv4().slice(0, 4)}`;
+  const datasetName = `__test_upload_examples_multipart${uuidv4().slice(0, 4)}`;
 
   // Clean up existing dataset if it exists
   if (await client.hasDataset({ datasetName })) {
