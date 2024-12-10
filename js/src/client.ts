@@ -3852,9 +3852,9 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Upsert examples with attachments using multipart form data.
+   * Update examples with attachments using multipart form data.
    * @param updates List of ExampleUpdateWithAttachments objects to upsert
-   * @returns Promise with the upsert response
+   * @returns Promise with the update response
    */
   public async updateExamplesMultipart(
     datasetId: string,
@@ -3936,9 +3936,9 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Upsert examples with attachments using multipart form data.
-   * @param upserts List of ExampleUpsertWithAttachments objects to upsert
-   * @returns Promise with the upsert response
+   * Upload examples with attachments using multipart form data.
+   * @param uploads List of ExampleUploadWithAttachments objects to upload
+   * @returns Promise with the upload response
    */
   public async uploadExamplesMultipart(
     datasetId: string,
