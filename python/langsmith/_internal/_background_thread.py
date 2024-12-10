@@ -238,7 +238,7 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
         return
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
-    size_limit_bytes: int = batch_ingest_config["size_limit_bytes"]
+    size_limit_bytes: int | None = batch_ingest_config["size_limit_bytes"]
     
     while True:
         result = _tracing_thread_drain_compressed_buffer(

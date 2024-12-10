@@ -397,7 +397,6 @@ class Client:
         "boundary",
         "compressor",
         "compressor_writer",
-        "tracing_queue",
         "_run_count",
         "_buffer_lock",
     ]
@@ -504,12 +503,12 @@ class Client:
         self.compress_traces = os.getenv("LANGSMITH_COMPRESS_TRACES") == "true"
         if self.compress_traces:
             self.boundary = BOUNDARY
-            self.compressor = zstandard.ZstdCompressor()
-            self.compressor_writer = self.compressor.stream_writer(
+            self.compressor: zstandard.ZstdCompressor = zstandard.ZstdCompressor()
+            self.tracing_queue: io.BytesIO = io.BytesIO()
+            self.compressor_writer: zstandard.ZstdCompressionWriter = self.compressor.stream_writer(
                 self.tracing_queue, closefd=False)
-            self.tracing_queue = io.BytesIO()
-            self._buffer_lock = threading.Lock()
-            self._run_count = 0
+            self._buffer_lock: threading.Lock = threading.Lock()
+            self._run_count: int = 0
             
         self._info = (
             info
@@ -1321,7 +1320,7 @@ class Client:
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 if self.compress_traces:
-                    multipart_form = self.serialized_run_operation_to_multipart_parts_and_context(
+                    multipart_form = serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op)
                     with self._buffer_lock:
                         compress_multipart_parts_and_context(
