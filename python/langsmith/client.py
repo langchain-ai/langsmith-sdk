@@ -509,6 +509,8 @@ class Client:
                 self.compressed_runs_buffer, closefd=False)
             self._buffer_lock: threading.Lock = threading.Lock()
             self._run_count: int = 0
+        else:
+            self.compressed_runs_buffer = None
             
         self._info = (
             info
@@ -519,6 +521,7 @@ class Client:
         atexit.register(close_session, session_)
         # Initialize auto batching
         if auto_batch_tracing and self.compress_traces:
+            self.tracing_queue = None
             threading.Thread(
                 target=_tracing_control_thread_func_compress,
                 # arg must be a weakref to self to avoid the Thread object
