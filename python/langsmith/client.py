@@ -96,7 +96,7 @@ from langsmith._internal._operations import (
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
-    write_multipart_parts_to_compressor,
+    compress_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -1314,7 +1314,7 @@ class Client:
                     multipart_form = self.serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op)
                     with self._buffer_lock:
-                        write_multipart_parts_to_compressor(
+                        compress_multipart_parts_and_context(
                             multipart_form, self.compressor_writer, self.boundary)
                         self._run_count += 1
                 else:
@@ -1785,7 +1785,7 @@ class Client:
             if self.compress_traces:
                 multipart_form = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
                 with self._buffer_lock:
-                    write_multipart_parts_to_compressor(
+                    compress_multipart_parts_and_context(
                         multipart_form, self.compressor_writer, self.boundary)
                     self._run_count += 1
             else:
