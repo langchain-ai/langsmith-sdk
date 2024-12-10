@@ -248,6 +248,21 @@ export interface ExampleCreate extends BaseExample {
   split?: string | string[];
 }
 
+export interface ExampleUploadWithAttachments {
+  id?: string;
+  created_at?: string;
+  inputs: KVMap;
+  outputs?: KVMap;
+  metadata?: KVMap;
+  split?: string | string[];
+  attachments?: Attachments;
+}
+
+export interface UploadExamplesResponse {
+  count: number;
+  example_ids: string[];
+}
+
 export interface Example extends BaseExample {
   id: string;
   created_at: string;

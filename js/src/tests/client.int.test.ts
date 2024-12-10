@@ -7,6 +7,10 @@ import {
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
+import { ExampleUploadWithAttachments } from "../schemas.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createRunsFactory,
   deleteDataset,
@@ -1239,4 +1243,89 @@ test("annotationqueue crud", async () => {
       await client.deleteProject({ projectName });
     }
   }
+});
+
+test("upload examples multipart", async () => {
+  const client = new Client();
+  const datasetName = `__test_upload_examples_multipart${uuidv4().slice(0, 4)}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+  // Create test examples
+  const exampleId = uuidv4();
+  const example1: ExampleUploadWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    // check that passing no outputs works fine
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  const example2: ExampleUploadWithAttachments = {
+    inputs: { text: "foo bar" },
+    outputs: { response: "baz" },
+    attachments: {
+      my_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  // Test creating examples
+  const createdExamples = await client.uploadExamplesMultipart(dataset.id, [
+    example1,
+    example2,
+  ]);
+
+  expect(createdExamples.count).toBe(2);
+
+  const createdExample1 = await client.readExample(
+    createdExamples.example_ids[0]
+  );
+  expect(createdExample1.inputs["text"]).toBe("hello world");
+
+  const createdExample2 = await client.readExample(
+    createdExamples.example_ids[1]
+  );
+  expect(createdExample2.inputs["text"]).toBe("foo bar");
+  expect(createdExample2.outputs?.["response"]).toBe("baz");
+
+  // Test examples were sent to correct dataset
+  const allExamplesInDataset = [];
+  for await (const example of client.listExamples({
+    datasetId: dataset.id,
+  })) {
+    allExamplesInDataset.push(example);
+  }
+  expect(allExamplesInDataset.length).toBe(2);
+
+  // Test invalid example fails
+  const example3: ExampleUploadWithAttachments = {
+    inputs: { text: "foo bar" },
+    outputs: { response: "baz" },
+    attachments: {
+      my_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  const errorResponse = await client.uploadExamplesMultipart(uuidv4(), [
+    example3,
+  ]);
+  expect(errorResponse).toHaveProperty("error");
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
 });
