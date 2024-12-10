@@ -19,6 +19,9 @@ from typing import (
 
 import zstandard as zstd
 
+import re
+from requests_toolbelt.multipart.decoder import MultipartDecoder
+
 from langsmith import schemas as ls_schemas
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
@@ -93,7 +96,6 @@ def _tracing_thread_drain_queue(
         pass
     return next_batch
 
-
 def _tracing_thread_drain_compressed_buffer(
     client: Client,
     size_limit: int = 100,
@@ -112,23 +114,65 @@ def _tracing_thread_drain_compressed_buffer(
         client.compressor_writer.close()
 
         filled_buffer = client.compressed_runs_buffer
+        filled_data = filled_buffer.getvalue()
 
-        # Reinitialize for next batch
+        # If there's no data, just reinitialize and return
+        if len(filled_data) == 0:
+            logger.debug("No data to decompress in final drain.")
+            # Reinitialize for next batch
+            client.compressed_runs_buffer = io.BytesIO()
+            client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
+                client.compressed_runs_buffer, closefd=False
+            )
+            client._run_count = 0
+            return []
+
+        # Attempt decompression only if we have data
+        try:
+            decompressor = zstd.ZstdDecompressor()
+            decompressed_data = decompressor.decompress(filled_data)
+        except zstd.ZstdError as e:
+            logger.warning(
+                "Error decompressing final drain data: %s. Possibly empty or incomplete frame.",
+                e
+            )
+            # Reinitialize for next batch and return
+            client.compressed_runs_buffer = io.BytesIO()
+            client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
+                client.compressed_runs_buffer, closefd=False
+            )
+            client._run_count = 0
+            return []
+
+        # Parse the multipart form-data if decompression succeeded
+        boundary = client.boundary
+        content_type = f"multipart/form-data; boundary={boundary}"
+        decoder = MultipartDecoder(decompressed_data, content_type)
+
+        # Iterate over the parts and write them to files
+        for part in decoder.parts:
+            content_disp = part.headers.get(b'Content-Disposition', b'').decode('utf-8', errors='replace')
+            name_match = re.search(r'name="([^"]+)"', content_disp)
+            filename_match = re.search(r'filename="([^"]+)"', content_disp)
+
+            # Determine filename
+            if filename_match:
+                file_name = filename_match.group(1)
+            elif name_match:
+                file_name = name_match.group(1)
+            else:
+                file_name = f"unnamed_part_{threading.get_ident()}"
+
+            with open(file_name, 'wb') as f:
+                f.write(part.content)
+
+        # Reinitialize for the next batch
         client.compressed_runs_buffer = io.BytesIO()
         client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
             client.compressed_runs_buffer, closefd=False)
         client._run_count = 0
 
-    filled_buffer.seek(0)
-    def data_stream() -> Iterable[bytes]:
-        chunk_size = 65536
-        while True:
-            chunk = filled_buffer.read(chunk_size)
-            if not chunk:
-                break
-            yield chunk
-
-    return data_stream()
+        return []
 
 def _tracing_thread_handle_batch(
     client: Client,
