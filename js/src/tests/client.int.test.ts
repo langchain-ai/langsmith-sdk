@@ -1346,9 +1346,7 @@ async function readFromStream(reader: IterableReadableStream<Uint8Array>) {
 }
 
 test("update examples multipart", async () => {
-  const client = new Client({
-    apiKey: "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",
-  });
+  const client = new Client();
   const datasetName = `__test_update_examples_multipart${uuidv4().slice(0, 4)}`;
 
   // Clean up existing dataset if it exists

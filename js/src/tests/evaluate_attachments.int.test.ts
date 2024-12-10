@@ -1,31 +1,24 @@
 import { evaluate } from "../evaluation/_runner.js";
 import { AttachmentInfo, ExampleUploadWithAttachments } from "../schemas.js";
 import { Client } from "../index.js";
+import { IterableReadableStream } from "../utils/stream.js";
 import { v4 as uuidv4 } from "uuid";
 
 
-async function readFromStream(reader: ReadableStream<Uint8Array>) {
-  const streamReader = reader.getReader();
+async function readFromStream(reader: IterableReadableStream<Uint8Array>) {
   const chunks: Uint8Array[] = [];
-
-  let done = false;
-  while (!done) {
-    const { done: doneInner, value } = await streamReader.read();
-    done = doneInner;
-    if (value) chunks.push(value);
+  for await (const chunk of reader) {
+    chunks.push(chunk);
   }
+  return new Uint8Array(Buffer.concat(chunks));
+}
 
-  // Combine chunks into a single Uint8Array if needed
-  const fullData = new Uint8Array(
-    chunks.reduce((acc, chunk) => acc + chunk.length, 0)
-  );
-  let offset = 0;
-  for (const chunk of chunks) {
-    fullData.set(chunk, offset);
-    offset += chunk.length;
+function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
   }
-
-  return fullData;
+  return true;
 }
 
 test("evaluate can handle examples with attachments", async () => {
@@ -60,7 +53,7 @@ test("evaluate can handle examples with attachments", async () => {
     const {reader} = attachments.image;
     const expectedData = new Uint8Array(Buffer.from("fake image data for testing"));
     const response = await readFromStream(reader);
-    if (!Buffer.from(response).equals(expectedData)) {
+    if (!arraysEqual(response, expectedData)) {
       throw new Error("Image data does not match expected data");
     }
     return { answer: "test image" };
@@ -72,7 +65,7 @@ test("evaluate can handle examples with attachments", async () => {
     const {reader} = attachments.image;
     const expectedData = new Uint8Array(Buffer.from("fake image data for testing"));
     const response = await readFromStream(reader);
-    if (!Buffer.from(response).equals(expectedData)) {
+    if (!arraysEqual(response, expectedData)) {
       throw new Error("Image data does not match expected data");
     }
     return {
