@@ -29,6 +29,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { RunnableSequence } from "@langchain/core/runnables";
 import { load } from "langchain/load";
 import { _getFetchImplementation } from "../singletons/fetch.js";
+import { IterableReadableStream } from "../utils/stream.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -1336,28 +1337,12 @@ test("upload examples multipart", async () => {
   await client.deleteDataset({ datasetName });
 });
 
-async function readFromStream(reader: ReadableStream<Uint8Array>) {
-  const streamReader = reader.getReader();
+async function readFromStream(reader: IterableReadableStream<Uint8Array>) {
   const chunks: Uint8Array[] = [];
-
-  let done = false;
-  while (!done) {
-    const { done: doneInner, value } = await streamReader.read();
-    done = doneInner;
-    if (value) chunks.push(value);
+  for await (const chunk of reader) {
+    chunks.push(chunk);
   }
-
-  // Combine chunks into a single Uint8Array if needed
-  const fullData = new Uint8Array(
-    chunks.reduce((acc, chunk) => acc + chunk.length, 0)
-  );
-  let offset = 0;
-  for (const chunk of chunks) {
-    fullData.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return fullData;
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
 test("update examples multipart", async () => {
