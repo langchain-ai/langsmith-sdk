@@ -1663,8 +1663,10 @@ def test_bulk_update_examples_with_attachments_operations(
         description="Test dataset for bulk updating example attachments",
     )
 
+    example_id1, example_id2 = uuid4(), uuid4()
     # Create two examples with attachments
     example1 = ExampleUploadWithAttachments(
+        id=example_id1,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image 1"},
         attachments={
@@ -1673,6 +1675,7 @@ def test_bulk_update_examples_with_attachments_operations(
         },
     )
     example2 = ExampleUploadWithAttachments(
+        id=example_id2,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image 2"},
         attachments={
@@ -1685,7 +1688,9 @@ def test_bulk_update_examples_with_attachments_operations(
         dataset_id=dataset.id,
         uploads=[example1, example2],
     )
-    example_ids = [ex.id for ex in created_examples]
+    assert len(created_examples["example_ids"]) == 2
+    assert str(example_id1) in created_examples["example_ids"]
+    assert str(example_id2) in created_examples["example_ids"]
 
     # Update both examples with different attachment operations
     attachments_operations = [
@@ -1696,7 +1701,7 @@ def test_bulk_update_examples_with_attachments_operations(
     ]
 
     langchain_client.update_examples(
-        example_ids=example_ids,
+        example_ids=[example_id1, example_id2],
         attachments_operations=attachments_operations,
     )
 
@@ -1704,27 +1709,29 @@ def test_bulk_update_examples_with_attachments_operations(
     updated_examples = list(
         langchain_client.list_examples(
             dataset_id=dataset.id,
-            example_ids=example_ids,
+            example_ids=[example_id1, example_id2],
             include_attachments=True,
         )
     )
 
+    updated_example_1 = next(ex for ex in updated_examples if ex.id == example_id1)
+    updated_example_2 = next(ex for ex in updated_examples if ex.id == example_id2)
     # Check first example
-    assert len(updated_examples[0].attachments) == 1
-    assert "renamed_image1" in updated_examples[0].attachments
-    assert "extra" not in updated_examples[0].attachments
+    assert len(updated_example_1.attachments) == 1
+    assert "renamed_image1" in updated_example_1.attachments
+    assert "extra" not in updated_example_1.attachments
 
     # Check second example
-    assert len(updated_examples[1].attachments) == 1
-    assert "extra" in updated_examples[1].attachments
-    assert "image2" not in updated_examples[1].attachments
+    assert len(updated_example_2.attachments) == 1
+    assert "extra" in updated_example_2.attachments
+    assert "image2" not in updated_example_2.attachments
 
     # Check attachment data
     assert (
-        updated_examples[0].attachments["renamed_image1"][1].read()
+        updated_example_1.attachments["renamed_image1"]["reader"].read()
         == b"fake image data 1"
     )
-    assert updated_examples[1].attachments["extra"][1].read() == b"extra data"
+    assert updated_example_2.attachments["extra"]["reader"].read() == b"extra data"
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
