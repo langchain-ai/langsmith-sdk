@@ -1712,9 +1712,10 @@ class Client:
                     
         
     def _send_compressed_multipart_req(self, data_stream, *, attempts: int = 3):
-        """Send a zstd-compressed multipart form data stream to the backend using similar retry logic
-        as _send_multipart_req."""
+        """Send a zstd-compressed multipart form data stream to the backend.
 
+        Uses similar retry logic as _send_multipart_req.
+        """
         _context = {}
         
         for api_url, api_key in self._write_api_urls.items():

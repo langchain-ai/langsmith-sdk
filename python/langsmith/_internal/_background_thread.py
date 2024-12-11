@@ -10,7 +10,6 @@ import weakref
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    Iterable,
     List,
     Optional,
     Union,
