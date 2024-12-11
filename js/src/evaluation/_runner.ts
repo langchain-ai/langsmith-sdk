@@ -21,7 +21,6 @@ import {
   ComparisonEvaluationResults,
   ComparativeEvaluator,
 } from "./evaluate_comparative.js";
-import { IterableReadableStream } from "../utils/stream.js";
 
 export type TargetConfigT = KVMap & { attachments?: Record<string, AttachmentInfo>, callbacks?: any }
 type StandardTargetT<TInput = any, TOutput = KVMap> =
@@ -298,11 +297,8 @@ export class _ExperimentManager {
       }
       if (this._numRepetitions && this._numRepetitions > 0) {
         const repeatedExamples = [];
-        let readersForNextTime;
         for (let i = 0; i < this._numRepetitions; i++) {
-          const shallowCopy = exs.map((example) => ({ ...example }));
-          readersForNextTime = _refreshReaders(shallowCopy, readersForNextTime);
-          repeatedExamples.push(...shallowCopy);
+          repeatedExamples.push(...exs);
         }
         this.setExamples(repeatedExamples);
       } else {
@@ -1054,28 +1050,10 @@ async function _forward(
     : traceable(fn, options);
 
   try {
-    const readersForLater: any = {};
-    for (const [key, value] of Object.entries(example.attachments!)) {
-      const [streamForTarget, streamForLater] = value.reader.tee();
-      example.attachments![key] = {
-        presigned_url: value.presigned_url,
-        reader: IterableReadableStream.fromReadableStream(streamForTarget),
-      };
-      readersForLater[key] = streamForLater;
-    }
-
     if (includeAttachments && !("invoke" in fn)) {
       await wrappedFn(example.inputs, { attachments: example.attachments });
     } else {
       await wrappedFn(example.inputs);
-    }
-
-    for (const [key, value] of Object.entries(example.attachments!)) {
-      const reader = readersForLater[key];
-      example.attachments![key] = {
-        presigned_url: value.presigned_url,
-        reader: IterableReadableStream.fromReadableStream(reader),
-      };
     }
   } catch (e) {
     console.error(`Error running target function: ${e}`);
@@ -1259,19 +1237,4 @@ function _isCallable(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
   );
-}
-
-function _refreshReaders(examples: Example[], readers?: any): any {
-  const readersForNextTime = {} as { [key: string]: any };
-  for (const example of examples) {
-    for (const [key, value] of Object.entries(example.attachments!)) {
-      const [streamForNow, streamForLater] = (readers && readers[`${example.id}.${key}`]) ? readers[`${example.id}.${key}`].tee() : value.reader.tee();
-      example.attachments![key] = {
-        presigned_url: value.presigned_url,
-        reader: IterableReadableStream.fromReadableStream(streamForNow),
-      };
-      readersForNextTime[`${example.id}.${key}`] = IterableReadableStream.fromReadableStream(streamForLater);
-    }
-  }
-  return readersForNextTime;
 }
