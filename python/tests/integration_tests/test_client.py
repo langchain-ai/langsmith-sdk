@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Callable, Dict
 from unittest import mock
 from uuid import uuid4
@@ -1803,6 +1804,92 @@ def test_bulk_update_examples_with_attachments_operations(
         == b"fake image data 1"
     )
     assert updated_example_2.attachments["extra"]["reader"].read() == b"extra data"
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
+    """Test uploading examples with attachments via multipart endpoint."""
+    langchain_client = Client(
+        api_key="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"
+    )
+    dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
+    if langchain_client.has_dataset(dataset_name=dataset_name):
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for multipart example uploads",
+        data_type=DataType.kv,
+    )
+
+    example_id = uuid4()
+    example = ExampleUploadWithAttachments(
+        id=example_id,
+        inputs={"text": "hello world"},
+        attachments={
+            "file1": ("text/plain", b"original content 1"),
+            "file2": ("image/png", Path(__file__).parent / "test_data/parrot-icon.png"),
+        },
+    )
+
+    created_examples = langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id, uploads=[example]
+    )
+    assert created_examples["count"] == 1
+
+    # Verify the upload
+    retrieved = langchain_client.read_example(example_id)
+
+    assert len(retrieved.attachments) == 2
+    assert "file1" in retrieved.attachments
+    assert "file2" in retrieved.attachments
+    assert retrieved.attachments["file1"]["reader"].read() == b"original content 1"
+    assert (
+        retrieved.attachments["file2"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
+
+    example_update = ExampleUpdateWithAttachments(
+        id=example_id,
+        attachments={
+            "new_file1": (
+                "image/png",
+                Path(__file__).parent / "test_data/parrot-icon.png",
+            ),
+        },
+    )
+
+    langchain_client.update_examples_multipart(
+        dataset_id=dataset.id, updates=[example_update]
+    )
+
+    retrieved = langchain_client.read_example(example_id)
+
+    assert len(retrieved.attachments) == 1
+    assert "new_file1" in retrieved.attachments
+    assert (
+        retrieved.attachments["new_file1"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
+
+    example_wrong_path = ExampleUploadWithAttachments(
+        id=example_id,
+        inputs={"text": "hello world"},
+        attachments={
+            "file1": (
+                "text/plain",
+                Path(__file__).parent / "test_data/not-a-real-file.txt",
+            ),
+        },
+    )
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        langchain_client.upload_examples_multipart(
+            dataset_id=dataset.id, uploads=[example_wrong_path]
+        )
+    assert "test_data/not-a-real-file.txt" in str(exc_info.value)
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
