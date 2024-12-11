@@ -2,7 +2,7 @@ import { evaluate, TargetConfigT } from "../evaluation/_runner.js";
 import { ExampleUploadWithAttachments } from "../schemas.js";
 import { Client } from "../index.js";
 import { v4 as uuidv4 } from "uuid";
-import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
+import { RunnableLambda } from "@langchain/core/runnables";
 
 function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
