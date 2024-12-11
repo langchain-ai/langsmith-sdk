@@ -94,9 +94,7 @@ def _tracing_thread_drain_queue(
 
 
 def _tracing_thread_drain_compressed_buffer(
-    client: Client,
-    size_limit: int = 100,
-    size_limit_bytes: int = 50 * 1024 * 1024
+    client: Client, size_limit: int = 100, size_limit_bytes: int = 50 * 1024 * 1024
 ) -> Optional[io.BytesIO]:
     assert client.compressed_runs_buffer is not None
     assert client.compressor_writer is not None
@@ -107,18 +105,20 @@ def _tracing_thread_drain_compressed_buffer(
             return None
 
         # Write final boundary and close compression stream
-        client.compressor_writer.write(f'--{client.boundary}--\r\n'.encode())
+        client.compressor_writer.write(f"--{client.boundary}--\r\n".encode())
         client.compressor_writer.close()
 
         filled_buffer = client.compressed_runs_buffer
 
         client.compressed_runs_buffer = io.BytesIO()
         client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
-            client.compressed_runs_buffer, closefd=False)
+            client.compressed_runs_buffer, closefd=False
+        )
         client._run_count = 0
 
     filled_buffer.seek(0)
     return filled_buffer
+
 
 def _tracing_thread_handle_batch(
     client: Client,
@@ -231,6 +231,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
 
+
 def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> None:
     client = client_ref()
     if client is None:
@@ -240,12 +241,10 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 50 * 1024 * 1024)
     assert size_limit_bytes is not None
 
-    
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
         if not client or (
-            hasattr(client, "_manual_cleanup")
-            and client._manual_cleanup
+            hasattr(client, "_manual_cleanup") and client._manual_cleanup
         ):
             return False
         if not threading.main_thread().is_alive():
@@ -256,7 +255,8 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
     while keep_thread_active():
         try:
             data_stream = _tracing_thread_drain_compressed_buffer(
-                client, size_limit, size_limit_bytes)
+                client, size_limit, size_limit_bytes
+            )
             if data_stream is not None:
                 client._send_compressed_multipart_req(data_stream)
             else:
@@ -268,12 +268,12 @@ def tracing_control_thread_func_compress(client_ref: weakref.ref[Client]) -> Non
     # Drain the buffer on exit
     try:
         final_data_stream = _tracing_thread_drain_compressed_buffer(
-            client, size_limit=1, size_limit_bytes=1)  # Force final drain
+            client, size_limit=1, size_limit_bytes=1
+        )  # Force final drain
         if final_data_stream is not None:
             client._send_compressed_multipart_req(final_data_stream)
     except Exception:
         logger.error("Error in final buffer drain", exc_info=True)
-
 
 
 def _tracing_sub_thread_func(

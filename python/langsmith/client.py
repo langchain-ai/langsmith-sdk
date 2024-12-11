@@ -507,13 +507,14 @@ class Client:
         if self.compress_traces:
             self.boundary = BOUNDARY
             self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
-            self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(level=3).stream_writer(
-                self.compressed_runs_buffer, closefd=False)
+            self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(
+                level=3
+            ).stream_writer(self.compressed_runs_buffer, closefd=False)
             self._buffer_lock: threading.Lock = threading.Lock()
             self._run_count: int = 0
         else:
             self.compressed_runs_buffer = None
-            
+
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -1323,11 +1324,15 @@ class Client:
                 self._pyo3_client.create_run(run_create)
             if self.compressed_runs_buffer is not None:
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form = serialized_run_operation_to_multipart_parts_and_context(
-                    serialized_op)
+                multipart_form = (
+                    serialized_run_operation_to_multipart_parts_and_context(
+                        serialized_op
+                    )
+                )
                 with self._buffer_lock:
                     compress_multipart_parts_and_context(
-                        multipart_form, self.compressor_writer, self.boundary)
+                        multipart_form, self.compressor_writer, self.boundary
+                    )
                     self._run_count += 1
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
@@ -1709,15 +1714,14 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     # do not retry by default
                     return
-                    
-        
+
     def _send_compressed_multipart_req(self, data_stream, *, attempts: int = 3):
         """Send a zstd-compressed multipart form data stream to the backend.
 
         Uses similar retry logic as _send_multipart_req.
         """
         _context: str = ""
-        
+
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:
@@ -1747,16 +1751,22 @@ class Client:
                     ls_utils.LangSmithAPIError,
                 ) as exc:
                     if idx == attempts:
-                        logger.warning(f"Failed to send compressed multipart ingest: {exc}")
+                        logger.warning(
+                            f"Failed to send compressed multipart ingest: {exc}"
+                        )
                     else:
                         continue
                 except Exception as e:
                     try:
                         exc_desc_lines = traceback.format_exception_only(type(e), e)
                         exc_desc = "".join(exc_desc_lines).rstrip()
-                        logger.warning(f"Failed to send compressed multipart ingest: {exc_desc}")
+                        logger.warning(
+                            f"Failed to send compressed multipart ingest: {exc_desc}"
+                        )
                     except Exception:
-                        logger.warning(f"Failed to send compressed multipart ingest: {repr(e)}")
+                        logger.warning(
+                            f"Failed to send compressed multipart ingest: {repr(e)}"
+                        )
                     # Do not retry by default after unknown exceptions
                     return
 
@@ -1847,10 +1857,15 @@ class Client:
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             if self.compressed_runs_buffer is not None:
-                multipart_form = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
+                multipart_form = (
+                    serialized_run_operation_to_multipart_parts_and_context(
+                        serialized_op
+                    )
+                )
                 with self._buffer_lock:
                     compress_multipart_parts_and_context(
-                        multipart_form, self.compressor_writer, self.boundary)
+                        multipart_form, self.compressor_writer, self.boundary
+                    )
                     self._run_count += 1
             elif self.tracing_queue is not None:
                 self.tracing_queue.put(
