@@ -2757,6 +2757,7 @@ export class Client implements LangSmithTracingClientInterface {
     limit,
     offset,
     filter,
+    includeAttachments,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2768,6 +2769,7 @@ export class Client implements LangSmithTracingClientInterface {
     limit?: number;
     offset?: number;
     filter?: string;
+    includeAttachments?: boolean;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2813,6 +2815,11 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (filter !== undefined) {
       params.append("filter", filter);
+    }
+    if (includeAttachments === true) {
+      ["attachment_urls", "outputs", "metadata"].forEach((field) =>
+        params.append("select", field)
+      );
     }
     let i = 0;
     for await (const rawExamples of this._getPaginated<RawExample>(

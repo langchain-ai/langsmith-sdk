@@ -1,5 +1,12 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
-import { BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
+import {
+  AttachmentInfo,
+  BaseRun,
+  Example,
+  KVMap,
+  Run,
+  TracerSession,
+} from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
@@ -22,11 +29,15 @@ import {
   ComparativeEvaluator,
 } from "./evaluate_comparative.js";
 
+export type TargetConfigT = KVMap & {
+  attachments?: Record<string, AttachmentInfo>;
+  callbacks?: any;
+};
 type StandardTargetT<TInput = any, TOutput = KVMap> =
-  | ((input: TInput, config?: KVMap) => Promise<TOutput>)
-  | ((input: TInput, config?: KVMap) => TOutput)
-  | { invoke: (input: TInput, config?: KVMap) => TOutput }
-  | { invoke: (input: TInput, config?: KVMap) => Promise<TOutput> };
+  | ((input: TInput, config?: TargetConfigT) => Promise<TOutput>)
+  | ((input: TInput, config?: TargetConfigT) => TOutput)
+  | { invoke: (input: TInput, config?: TargetConfigT) => TOutput }
+  | { invoke: (input: TInput, config?: TargetConfigT) => Promise<TOutput> };
 
 type ComparativeTargetT =
   | Array<string>
@@ -98,6 +109,7 @@ export type EvaluatorT =
       inputs: Record<string, any>;
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
+      attachments?: Record<string, any>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
       run: Run;
@@ -105,6 +117,7 @@ export type EvaluatorT =
       inputs: Record<string, any>;
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
+      attachments?: Record<string, any>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
 interface _ForwardResults {
@@ -127,6 +140,7 @@ interface _ExperimentManagerArgs {
   examples?: Example[];
   numRepetitions?: number;
   _runsArray?: Run[];
+  includeAttachments?: boolean;
 }
 
 type BaseEvaluateOptions = {
@@ -178,6 +192,11 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * examples, or a generator of examples.
    */
   data: DataT;
+  /**
+   * Whether to use attachments for the experiment.
+   * @default false
+   */
+  includeAttachments?: boolean;
 }
 
 export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
@@ -256,6 +275,8 @@ export class _ExperimentManager {
   _metadata: KVMap;
   _description?: string;
 
+  _includeAttachments?: boolean;
+
   get experimentName(): string {
     if (this._experimentName) {
       return this._experimentName;
@@ -271,7 +292,10 @@ export class _ExperimentManager {
       if (!this._data) {
         throw new Error("Data not provided in this experiment.");
       }
-      const unresolvedData = _resolveData(this._data, { client: this.client });
+      const unresolvedData = _resolveData(this._data, {
+        client: this.client,
+        includeAttachments: this._includeAttachments,
+      });
       if (!this._examples) {
         this._examples = [];
       }
@@ -369,6 +393,7 @@ export class _ExperimentManager {
     this._evaluationResults = args.evaluationResults;
     this._summaryResults = args.summaryResults;
     this._numRepetitions = args.numRepetitions;
+    this._includeAttachments = args.includeAttachments;
   }
 
   _getExperiment(): TracerSession {
@@ -465,6 +490,7 @@ export class _ExperimentManager {
       client: this.client,
       evaluationResults: this._evaluationResults,
       summaryResults: this._summaryResults,
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -485,6 +511,7 @@ export class _ExperimentManager {
           yield pred.run;
         }
       })(),
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -515,6 +542,7 @@ export class _ExperimentManager {
           }
         })(),
       summaryResults: this._summaryResults,
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -532,6 +560,7 @@ export class _ExperimentManager {
       _runsArray: this._runsArray,
       evaluationResults: this._evaluationResults,
       summaryResults: aggregateFeedbackGen,
+      includeAttachments: this._includeAttachments,
     });
   }
 
@@ -603,7 +632,8 @@ export class _ExperimentManager {
           example,
           this.experimentName,
           this._metadata,
-          this.client
+          this.client,
+          this._includeAttachments
         );
       }
     } else {
@@ -621,7 +651,8 @@ export class _ExperimentManager {
             example,
             this.experimentName,
             this._metadata,
-            this.client
+            this.client,
+            this._includeAttachments
           )
         );
       }
@@ -794,9 +825,9 @@ export class _ExperimentManager {
         return strMiliseconds ?? "";
       }
 
-      const jsDate = new Date(date);
+      const jsDate = new Date(date!);
 
-      let source = getMiliseconds(date);
+      let source = getMiliseconds(date!);
       let parsed = getMiliseconds(jsDate.toISOString());
 
       const length = Math.max(source.length, parsed.length);
@@ -943,6 +974,7 @@ async function _evaluate(
     experiment: experiment_ ?? fields.experimentPrefix,
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
+    includeAttachments: standardFields.includeAttachments,
   }).start();
 
   if (_isCallable(target)) {
@@ -972,7 +1004,8 @@ async function _forward(
   example: Example,
   experimentName: string,
   metadata: KVMap,
-  client: Client
+  client: Client,
+  includeAttachments?: boolean
 ): Promise<_ForwardResults> {
   let run: BaseRun | null = null;
 
@@ -1006,16 +1039,29 @@ async function _forward(
             // no-op
           }
           // Issue with retrieving LangChain callbacks, rely on interop
-          if (langChainCallbacks === undefined) {
+          if (langChainCallbacks === undefined && !includeAttachments) {
             return await fn.invoke(inputs);
-          } else {
+          } else if (langChainCallbacks === undefined && includeAttachments) {
+            return await fn.invoke(inputs, {
+              attachments: example.attachments,
+            });
+          } else if (!includeAttachments) {
             return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          } else {
+            return await fn.invoke(inputs, {
+              attachments: example.attachments,
+              callbacks: langChainCallbacks,
+            });
           }
         }, options)
       : traceable(fn, options);
 
   try {
-    await wrappedFn(example.inputs);
+    if (includeAttachments && !("invoke" in fn)) {
+      await wrappedFn(example.inputs, { attachments: example.attachments });
+    } else {
+      await wrappedFn(example.inputs);
+    }
   } catch (e) {
     console.error(`Error running target function: ${e}`);
     printErrorStackTrace(e);
@@ -1037,6 +1083,7 @@ function _resolveData(
   data: DataT,
   options: {
     client: Client;
+    includeAttachments?: boolean;
   }
 ): AsyncGenerator<Example> {
   let isUUID = false;
@@ -1052,11 +1099,13 @@ function _resolveData(
   if (typeof data === "string" && isUUID) {
     return options.client.listExamples({
       datasetId: data,
+      includeAttachments: options.includeAttachments,
     }) as AsyncGenerator<Example>;
   }
   if (typeof data === "string") {
     return options.client.listExamples({
       datasetName: data,
+      includeAttachments: options.includeAttachments,
     }) as AsyncGenerator<Example>;
   }
   return data as AsyncGenerator<Example>;
