@@ -35,6 +35,12 @@ import {
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
   Attachments,
+  ExampleUploadWithAttachments,
+  UploadExamplesResponse,
+  ExampleUpdateWithAttachments,
+  UpdateExamplesResponse,
+  RawExample,
+  AttachmentInfo,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -757,6 +763,13 @@ export class Client implements LangSmithTracingClientInterface {
       this.batchSizeBytesLimit ??
       serverInfo.batch_ingest_config?.size_limit_bytes ??
       DEFAULT_BATCH_SIZE_LIMIT_BYTES
+    );
+  }
+
+  private async _getMultiPartSupport(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return (
+      serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false
     );
   }
 
@@ -2715,7 +2728,22 @@ export class Client implements LangSmithTracingClientInterface {
   public async readExample(exampleId: string): Promise<Example> {
     assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
-    return await this._get<Example>(path);
+    const rawExample: RawExample = await this._get(path);
+    const { attachment_urls, ...rest } = rawExample;
+    const example: Example = rest;
+    if (attachment_urls) {
+      // add attachments back to the example
+      example.attachments = Object.entries(attachment_urls).reduce(
+        (acc, [key, value]) => {
+          acc[key] = {
+            presigned_url: value.presigned_url,
+          };
+          return acc;
+        },
+        {} as Record<string, AttachmentInfo>
+      );
+    }
+    return example;
   }
 
   public async *listExamples({
@@ -2729,6 +2757,7 @@ export class Client implements LangSmithTracingClientInterface {
     limit,
     offset,
     filter,
+    includeAttachments,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2740,6 +2769,7 @@ export class Client implements LangSmithTracingClientInterface {
     limit?: number;
     offset?: number;
     filter?: string;
+    includeAttachments?: boolean;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2786,12 +2816,30 @@ export class Client implements LangSmithTracingClientInterface {
     if (filter !== undefined) {
       params.append("filter", filter);
     }
+    if (includeAttachments === true) {
+      ["attachment_urls", "outputs", "metadata"].forEach((field) =>
+        params.append("select", field)
+      );
+    }
     let i = 0;
-    for await (const examples of this._getPaginated<Example>(
+    for await (const rawExamples of this._getPaginated<RawExample>(
       "/examples",
       params
     )) {
-      for (const example of examples) {
+      for (const rawExample of rawExamples) {
+        const { attachment_urls, ...rest } = rawExample;
+        const example: Example = rest;
+        if (attachment_urls) {
+          example.attachments = Object.entries(attachment_urls).reduce(
+            (acc, [key, value]) => {
+              acc[key] = {
+                presigned_url: value.presigned_url,
+              };
+              return acc;
+            },
+            {} as Record<string, AttachmentInfo>
+          );
+        }
         yield example;
         i++;
       }
@@ -3845,6 +3893,173 @@ export class Client implements LangSmithTracingClientInterface {
         result.commit_hash ? `:${result.commit_hash}` : ""
       }`
     );
+  }
+
+  /**
+   * Update examples with attachments using multipart form data.
+   * @param updates List of ExampleUpdateWithAttachments objects to upsert
+   * @returns Promise with the update response
+   */
+  public async updateExamplesMultipart(
+    datasetId: string,
+    updates: ExampleUpdateWithAttachments[] = []
+  ): Promise<UpdateExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
+    const formData = new FormData();
+
+    for (const example of updates) {
+      const exampleId = example.id;
+
+      // Prepare the main example body
+      const exampleBody = {
+        ...(example.metadata && { metadata: example.metadata }),
+        ...(example.split && { split: example.split }),
+      };
+
+      // Add main example data
+      const stringifiedExample = stringifyForTracing(exampleBody);
+      const exampleBlob = new Blob([stringifiedExample], {
+        type: "application/json",
+      });
+      formData.append(exampleId, exampleBlob);
+
+      // Add inputs
+      if (example.inputs) {
+        const stringifiedInputs = stringifyForTracing(example.inputs);
+        const inputsBlob = new Blob([stringifiedInputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.inputs`, inputsBlob);
+      }
+
+      // Add outputs if present
+      if (example.outputs) {
+        const stringifiedOutputs = stringifyForTracing(example.outputs);
+        const outputsBlob = new Blob([stringifiedOutputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.outputs`, outputsBlob);
+      }
+
+      // Add attachments if present
+      if (example.attachments) {
+        for (const [name, [mimeType, data]] of Object.entries(
+          example.attachments
+        )) {
+          const attachmentBlob = new Blob([data], {
+            type: `${mimeType}; length=${data.byteLength}`,
+          });
+          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+        }
+      }
+
+      if (example.attachments_operations) {
+        const stringifiedAttachmentsOperations = stringifyForTracing(
+          example.attachments_operations
+        );
+        const attachmentsOperationsBlob = new Blob(
+          [stringifiedAttachmentsOperations],
+          {
+            type: "application/json",
+          }
+        );
+        formData.append(
+          `${exampleId}.attachments_operations`,
+          attachmentsOperationsBlob
+        );
+      }
+    }
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
+      {
+        method: "PATCH",
+        headers: this.headers,
+        body: formData,
+      }
+    );
+    const result = await response.json();
+    return result;
+  }
+
+  /**
+   * Upload examples with attachments using multipart form data.
+   * @param uploads List of ExampleUploadWithAttachments objects to upload
+   * @returns Promise with the upload response
+   */
+  public async uploadExamplesMultipart(
+    datasetId: string,
+    uploads: ExampleUploadWithAttachments[] = []
+  ): Promise<UploadExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
+    const formData = new FormData();
+
+    for (const example of uploads) {
+      const exampleId = (example.id ?? uuid.v4()).toString();
+
+      // Prepare the main example body
+      const exampleBody = {
+        created_at: example.created_at,
+        ...(example.metadata && { metadata: example.metadata }),
+        ...(example.split && { split: example.split }),
+      };
+
+      // Add main example data
+      const stringifiedExample = stringifyForTracing(exampleBody);
+      const exampleBlob = new Blob([stringifiedExample], {
+        type: "application/json",
+      });
+      formData.append(exampleId, exampleBlob);
+
+      // Add inputs
+      const stringifiedInputs = stringifyForTracing(example.inputs);
+      const inputsBlob = new Blob([stringifiedInputs], {
+        type: "application/json",
+      });
+      formData.append(`${exampleId}.inputs`, inputsBlob);
+
+      // Add outputs if present
+      if (example.outputs) {
+        const stringifiedOutputs = stringifyForTracing(example.outputs);
+        const outputsBlob = new Blob([stringifiedOutputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.outputs`, outputsBlob);
+      }
+
+      // Add attachments if present
+      if (example.attachments) {
+        for (const [name, [mimeType, data]] of Object.entries(
+          example.attachments
+        )) {
+          const attachmentBlob = new Blob([data], {
+            type: `${mimeType}; length=${data.byteLength}`,
+          });
+          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+        }
+      }
+    }
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: formData,
+      }
+    );
+    const result = await response.json();
+    return result;
   }
 
   public async updatePrompt(
