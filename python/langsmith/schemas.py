@@ -39,8 +39,6 @@ except ImportError:
         StrictInt,
     )
 
-from pathlib import Path
-
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
@@ -65,7 +63,7 @@ class Attachment(NamedTuple):
     data: bytes
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
 
