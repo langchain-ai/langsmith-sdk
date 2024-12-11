@@ -59,7 +59,7 @@ import {
   RunEvaluator,
 } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
-import { assertUuid } from "./utils/_uuid.js";
+import { assertUuid } from "./utils/uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
@@ -2751,11 +2751,6 @@ export class Client implements LangSmithTracingClientInterface {
         return acc;
       }, {} as Record<string, AttachmentInfo>);
     }
-    if (rawExample.metadata?.dataset_split) {
-      const { dataset_split, ...metadata } = rawExample.metadata;
-      example.split = dataset_split;
-      example.metadata = metadata;
-    }
     return example;
   }
 
@@ -2863,11 +2858,6 @@ export class Client implements LangSmithTracingClientInterface {
             },
             {} as Record<string, AttachmentInfo>
           );
-        }
-        if (rawExample.metadata?.dataset_split) {
-          const { dataset_split, ...metadata } = rawExample.metadata;
-          example.split = dataset_split;
-          example.metadata = metadata;
         }
         yield example;
         i++;
