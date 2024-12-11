@@ -298,8 +298,11 @@ export class _ExperimentManager {
       }
       if (this._numRepetitions && this._numRepetitions > 0) {
         const repeatedExamples = [];
+        let readersForNextTime;
         for (let i = 0; i < this._numRepetitions; i++) {
-          repeatedExamples.push(...exs);
+          const shallowCopy = exs.map((example) => ({ ...example }));
+          readersForNextTime = _refreshReaders(shallowCopy, readersForNextTime);
+          repeatedExamples.push(...shallowCopy);
         }
         this.setExamples(repeatedExamples);
       } else {
@@ -1060,7 +1063,12 @@ async function _forward(
       };
       readersForLater[key] = streamForLater;
     }
-    await wrappedFn(example.inputs);
+
+    if (includeAttachments && !("invoke" in fn)) {
+      await wrappedFn(example.inputs, { attachments: example.attachments });
+    } else {
+      await wrappedFn(example.inputs);
+    }
 
     for (const [key, value] of Object.entries(example.attachments!)) {
       const reader = readersForLater[key];
@@ -1251,4 +1259,19 @@ function _isCallable(
     typeof target === "function" ||
       ("invoke" in target && typeof target.invoke === "function")
   );
+}
+
+function _refreshReaders(examples: Example[], readers?: any): any {
+  const readersForNextTime = {} as { [key: string]: any };
+  for (const example of examples) {
+    for (const [key, value] of Object.entries(example.attachments!)) {
+      const [streamForNow, streamForLater] = (readers && readers[`${example.id}.${key}`]) ? readers[`${example.id}.${key}`].tee() : value.reader.tee();
+      example.attachments![key] = {
+        presigned_url: value.presigned_url,
+        reader: IterableReadableStream.fromReadableStream(streamForNow),
+      };
+      readersForNextTime[`${example.id}.${key}`] = IterableReadableStream.fromReadableStream(streamForLater);
+    }
+  }
+  return readersForNextTime;
 }
