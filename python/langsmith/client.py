@@ -1665,7 +1665,6 @@ class Client:
     def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
         parts = acc.parts
         _context = acc.context
-        print(f"Sending multipart request with context: {_context}")
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:
