@@ -3900,7 +3900,7 @@ class Client:
                 response = requests.get(value["presigned_url"], stream=True)
                 response.raise_for_status()
                 reader = io.BytesIO(response.content)
-                attachments[key.split(".")[1]] = {
+                attachments[key.removeprefix("attachment.")] = {
                     "presigned_url": value["presigned_url"],
                     "reader": reader,
                 }
@@ -3986,7 +3986,7 @@ class Client:
                     response = requests.get(value["presigned_url"], stream=True)
                     response.raise_for_status()
                     reader = io.BytesIO(response.content)
-                    attachments[key.split(".")[1]] = {
+                    attachments[key.removeprefix("attachment.")] = {
                         "presigned_url": value["presigned_url"],
                         "reader": reader,
                     }
