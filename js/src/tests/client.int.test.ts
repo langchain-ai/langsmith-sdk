@@ -1461,7 +1461,10 @@ test("update examples multipart", async () => {
   await client.updateExamplesMultipart(dataset.id, [exampleUpdate5]);
 
   updatedExample = await client.readExample(exampleId);
-  expect(updatedExample.metadata).toEqual({ foo: "bar", dataset_split: ["foo", "bar"] });
+  expect(updatedExample.metadata).toEqual({
+    foo: "bar",
+    dataset_split: ["foo", "bar"],
+  });
   expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file"]);
   attachmentData =
     updatedExample.attachments?.test_file.reader &&

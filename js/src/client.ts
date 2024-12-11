@@ -59,7 +59,7 @@ import {
   RunEvaluator,
 } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
-import { assertUuid } from "./utils/uuid.js";
+import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
@@ -2730,7 +2730,7 @@ export class Client implements LangSmithTracingClientInterface {
         Object.entries(attachment_urls).map(async ([key, value]) => {
           async function* fetchReader() {
             const response = await fetch(value.presigned_url);
-            yield *IterableReadableStream.fromReadableStream(response.body!);
+            yield* IterableReadableStream.fromReadableStream(response.body!);
           }
           return {
             key,
@@ -2835,13 +2835,17 @@ export class Client implements LangSmithTracingClientInterface {
             Object.entries(attachment_urls).map(async ([key, value]) => {
               async function* fetchReader() {
                 const response = await fetch(value.presigned_url);
-                yield *IterableReadableStream.fromReadableStream(response.body!);
+                yield* IterableReadableStream.fromReadableStream(
+                  response.body!
+                );
               }
               return {
                 key,
                 value: {
                   presigned_url: value.presigned_url,
-                  reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
+                  reader: IterableReadableStream.fromAsyncGenerator(
+                    fetchReader()
+                  ),
                 },
               };
             })

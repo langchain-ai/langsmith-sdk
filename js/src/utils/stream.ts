@@ -1,4 +1,4 @@
-import type { IterableReadableStreamInterface } from "../types/stream.js"
+import type { IterableReadableStreamInterface } from "../types/stream.js";
 
 // Re-exported for backwards compatibility
 // Do NOT import this type from this file inside the project. Instead, always import from `types/stream.js`
