@@ -1811,9 +1811,6 @@ def test_bulk_update_examples_with_attachments_operations(
 
 def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     """Test uploading examples with attachments via multipart endpoint."""
-    langchain_client = Client(
-        api_key="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"
-    )
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
