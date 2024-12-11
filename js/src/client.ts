@@ -769,7 +769,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _getMultiPartSupport(): Promise<boolean> {
     const serverInfo = await this._ensureServerInfo();
-    return serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false;
+    return (
+      serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false
+    );
   }
 
   private drainAutoBatchQueue(batchSizeLimit: number) {
@@ -2731,7 +2733,8 @@ export class Client implements LangSmithTracingClientInterface {
     const { attachment_urls, ...rest } = rawExample;
     const example: Example = rest;
     if (attachment_urls) {
-      const attachmentsArray = Object.entries(attachment_urls).map(([key, value]) => {
+      const attachmentsArray = Object.entries(attachment_urls).map(
+        ([key, value]) => {
           async function* fetchReader() {
             const response = await fetch(value.presigned_url);
             yield* IterableReadableStream.fromReadableStream(response.body!);
@@ -2743,7 +2746,8 @@ export class Client implements LangSmithTracingClientInterface {
               reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
             },
           };
-        });
+        }
+      );
       // add attachments back to the example
       example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
         if (value.reader != null) {
@@ -2839,7 +2843,8 @@ export class Client implements LangSmithTracingClientInterface {
         const { attachment_urls, ...rest } = rawExample;
         const example: Example = rest;
         if (attachment_urls) {
-          const attachmentsArray = Object.entries(attachment_urls).map(([key, value]) => {
+          const attachmentsArray = Object.entries(attachment_urls).map(
+            ([key, value]) => {
               async function* fetchReader() {
                 const response = await fetch(value.presigned_url);
                 yield* IterableReadableStream.fromReadableStream(
@@ -2855,7 +2860,8 @@ export class Client implements LangSmithTracingClientInterface {
                   ),
                 },
               };
-            });
+            }
+          );
           // add attachments back to the example
           example.attachments = attachmentsArray.reduce(
             (acc, { key, value }) => {
