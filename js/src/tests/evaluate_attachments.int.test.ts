@@ -34,19 +34,19 @@ test("evaluate can handle examples with attachments", async () => {
     config?: TargetConfigT
   ) => {
     // Verify we receive the attachment data
-    if (!config?.attachments?.["attachment.image"]) {
+    if (!config?.attachments?.["image"]) {
       throw new Error("Image attachment not found");
     }
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
     const attachmentData: Uint8Array | undefined = config?.attachments?.[
-      "attachment.image"
+      "image"
     ].presigned_url
       ? new Uint8Array(
-          (await fetch(
-            config?.attachments?.["attachment.image"].presigned_url
-          ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          (await fetch(config?.attachments?.["image"].presigned_url).then(
+            (res) => res.arrayBuffer()
+          )) as ArrayBuffer
         )
       : undefined;
     if (!arraysEqual(attachmentData ?? new Uint8Array(), expectedData)) {
@@ -57,16 +57,15 @@ test("evaluate can handle examples with attachments", async () => {
 
   const customEvaluator = async ({ attachments }: { attachments?: any }) => {
     expect(attachments).toBeDefined();
-    expect(attachments?.["attachment.image"]).toBeDefined();
+    expect(attachments?.["image"]).toBeDefined();
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
-    const attachmentData: Uint8Array | undefined = attachments?.[
-      "attachment.image"
-    ].presigned_url
+    const attachmentData: Uint8Array | undefined = attachments?.["image"]
+      .presigned_url
       ? new Uint8Array(
-          (await fetch(attachments?.["attachment.image"].presigned_url).then(
-            (res) => res.arrayBuffer()
+          (await fetch(attachments?.["image"].presigned_url).then((res) =>
+            res.arrayBuffer()
           )) as ArrayBuffer
         )
       : undefined;
@@ -135,16 +134,15 @@ test("evaluate with attachments not in target function", async () => {
 
   const customEvaluator = async ({ attachments }: { attachments?: any }) => {
     expect(attachments).toBeDefined();
-    expect(attachments?.["attachment.image"]).toBeDefined();
+    expect(attachments?.["image"]).toBeDefined();
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
-    const attachmentData: Uint8Array | undefined = attachments?.[
-      "attachment.image"
-    ].presigned_url
+    const attachmentData: Uint8Array | undefined = attachments?.["image"]
+      .presigned_url
       ? new Uint8Array(
-          (await fetch(attachments?.["attachment.image"].presigned_url).then(
-            (res) => res.arrayBuffer()
+          (await fetch(attachments?.["image"].presigned_url).then((res) =>
+            res.arrayBuffer()
           )) as ArrayBuffer
         )
       : undefined;
@@ -212,19 +210,19 @@ test("multiple evaluators with attachments", async () => {
     config?: TargetConfigT
   ) => {
     // Verify we receive the attachment data
-    if (!config?.attachments?.["attachment.image"]) {
+    if (!config?.attachments?.["image"]) {
       throw new Error("Image attachment not found");
     }
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
     const attachmentData: Uint8Array | undefined = config?.attachments?.[
-      "attachment.image"
+      "image"
     ].presigned_url
       ? new Uint8Array(
-          (await fetch(
-            config?.attachments?.["attachment.image"].presigned_url
-          ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          (await fetch(config?.attachments?.["image"].presigned_url).then(
+            (res) => res.arrayBuffer()
+          )) as ArrayBuffer
         )
       : undefined;
     if (!arraysEqual(attachmentData ?? new Uint8Array(), expectedData)) {
@@ -235,16 +233,15 @@ test("multiple evaluators with attachments", async () => {
 
   const customEvaluatorOne = async ({ attachments }: { attachments?: any }) => {
     expect(attachments).toBeDefined();
-    expect(attachments?.["attachment.image"]).toBeDefined();
+    expect(attachments?.["image"]).toBeDefined();
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
-    const attachmentData: Uint8Array | undefined = attachments?.[
-      "attachment.image"
-    ].presigned_url
+    const attachmentData: Uint8Array | undefined = attachments?.["image"]
+      .presigned_url
       ? new Uint8Array(
-          (await fetch(attachments?.["attachment.image"].presigned_url).then(
-            (res) => res.arrayBuffer()
+          (await fetch(attachments?.["image"].presigned_url).then((res) =>
+            res.arrayBuffer()
           )) as ArrayBuffer
         )
       : undefined;
@@ -259,16 +256,15 @@ test("multiple evaluators with attachments", async () => {
 
   const customEvaluatorTwo = async ({ attachments }: { attachments?: any }) => {
     expect(attachments).toBeDefined();
-    expect(attachments?.["attachment.image"]).toBeDefined();
+    expect(attachments?.["image"]).toBeDefined();
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
-    const attachmentData: Uint8Array | undefined = attachments?.[
-      "attachment.image"
-    ].presigned_url
+    const attachmentData: Uint8Array | undefined = attachments?.["image"]
+      .presigned_url
       ? new Uint8Array(
-          (await fetch(attachments?.["attachment.image"].presigned_url).then(
-            (res) => res.arrayBuffer()
+          (await fetch(attachments?.["image"].presigned_url).then((res) =>
+            res.arrayBuffer()
           )) as ArrayBuffer
         )
       : undefined;
@@ -333,19 +329,19 @@ test("evaluate with attachments runnable target function", async () => {
   await client.uploadExamplesMultipart(dataset.id, [example]);
 
   const myFunction = async (_input: any, config?: any) => {
-    if (!config?.attachments?.["attachment.image"]) {
+    if (!config?.attachments?.["image"]) {
       throw new Error("Image attachment not found");
     }
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
     const attachmentData: Uint8Array | undefined = config?.attachments?.[
-      "attachment.image"
+      "image"
     ].presigned_url
       ? new Uint8Array(
-          (await fetch(
-            config?.attachments?.["attachment.image"].presigned_url
-          ).then((res) => res.arrayBuffer())) as ArrayBuffer
+          (await fetch(config?.attachments?.["image"].presigned_url).then(
+            (res) => res.arrayBuffer()
+          )) as ArrayBuffer
         )
       : undefined;
     if (!arraysEqual(attachmentData ?? new Uint8Array(), expectedData)) {
@@ -359,16 +355,15 @@ test("evaluate with attachments runnable target function", async () => {
 
   const customEvaluator = async ({ attachments }: { attachments?: any }) => {
     expect(attachments).toBeDefined();
-    expect(attachments?.["attachment.image"]).toBeDefined();
+    expect(attachments?.["image"]).toBeDefined();
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
-    const attachmentData: Uint8Array | undefined = attachments?.[
-      "attachment.image"
-    ].presigned_url
+    const attachmentData: Uint8Array | undefined = attachments?.["image"]
+      .presigned_url
       ? new Uint8Array(
-          (await fetch(attachments?.["attachment.image"].presigned_url).then(
-            (res) => res.arrayBuffer()
+          (await fetch(attachments?.["image"].presigned_url).then((res) =>
+            res.arrayBuffer()
           )) as ArrayBuffer
         )
       : undefined;
