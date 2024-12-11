@@ -98,7 +98,7 @@ def _tracing_thread_drain_compressed_buffer(
     client: Client,
     size_limit: int = 100,
     size_limit_bytes: int = 50 * 1024 * 1024
-) -> Optional[Iterable[bytes]]:
+) -> Optional[bytes]:
     with client._buffer_lock:
         current_size = client.compressed_runs_buffer.tell()
 
@@ -117,15 +117,7 @@ def _tracing_thread_drain_compressed_buffer(
         client._run_count = 0
 
     filled_buffer.seek(0)
-    def data_stream() -> Iterable[bytes]:
-        chunk_size = 65536
-        while True:
-            chunk = filled_buffer.read(chunk_size)
-            if not chunk:
-                break
-            yield chunk
-
-    return data_stream()
+    return filled_buffer
 
 def _tracing_thread_handle_batch(
     client: Client,
