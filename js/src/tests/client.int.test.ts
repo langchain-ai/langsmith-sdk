@@ -1425,9 +1425,9 @@ test("update examples multipart", async () => {
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
   attachmentData = updatedExample.attachments?.["bar"].presigned_url
     ? new Uint8Array(
-        (await fetch(
-          updatedExample.attachments?.["bar"].presigned_url
-        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+        (await fetch(updatedExample.attachments?.["bar"].presigned_url).then(
+          (res) => res.arrayBuffer()
+        )) as ArrayBuffer
       )
     : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
@@ -1443,11 +1443,8 @@ test("update examples multipart", async () => {
   await client.updateExamplesMultipart(dataset.id, [exampleUpdate4]);
   updatedExample = await client.readExample(exampleId);
   expect(updatedExample.metadata).toEqual({ foo: "bar" });
-  expect(Object.keys(updatedExample.attachments ?? {})).toEqual([
-    "test_file2",
-  ]);
-  attachmentData = updatedExample.attachments?.["test_file2"]
-    .presigned_url
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file2"]);
+  attachmentData = updatedExample.attachments?.["test_file2"].presigned_url
     ? new Uint8Array(
         (await fetch(
           updatedExample.attachments?.["test_file2"].presigned_url
@@ -1471,11 +1468,8 @@ test("update examples multipart", async () => {
     foo: "bar",
     dataset_split: ["foo", "bar"],
   });
-  expect(Object.keys(updatedExample.attachments ?? {})).toEqual([
-    "test_file",
-  ]);
-  attachmentData = updatedExample.attachments?.["test_file"]
-    .presigned_url
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file"]);
+  attachmentData = updatedExample.attachments?.["test_file"].presigned_url
     ? new Uint8Array(
         (await fetch(
           updatedExample.attachments?.["test_file"].presigned_url
