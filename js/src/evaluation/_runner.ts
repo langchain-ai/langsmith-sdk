@@ -1,5 +1,12 @@
 import { Client, RunTree, RunTreeConfig } from "../index.js";
-import { AttachmentInfo, BaseRun, Example, KVMap, Run, TracerSession } from "../schemas.js";
+import {
+  AttachmentInfo,
+  BaseRun,
+  Example,
+  KVMap,
+  Run,
+  TracerSession,
+} from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
@@ -22,7 +29,10 @@ import {
   ComparativeEvaluator,
 } from "./evaluate_comparative.js";
 
-export type TargetConfigT = KVMap & { attachments?: Record<string, AttachmentInfo>, callbacks?: any }
+export type TargetConfigT = KVMap & {
+  attachments?: Record<string, AttachmentInfo>;
+  callbacks?: any;
+};
 type StandardTargetT<TInput = any, TOutput = KVMap> =
   | ((input: TInput, config?: TargetConfigT) => Promise<TOutput>)
   | ((input: TInput, config?: TargetConfigT) => TOutput)
@@ -282,12 +292,10 @@ export class _ExperimentManager {
       if (!this._data) {
         throw new Error("Data not provided in this experiment.");
       }
-      const unresolvedData = _resolveData(
-        this._data, 
-        { 
-          client: this.client,
-          includeAttachments: this._includeAttachments
-        });
+      const unresolvedData = _resolveData(this._data, {
+        client: this.client,
+        includeAttachments: this._includeAttachments,
+      });
       if (!this._examples) {
         this._examples = [];
       }
@@ -956,7 +964,6 @@ async function _evaluate(
     client
   );
 
-
   let manager = await new _ExperimentManager({
     data: Array.isArray(standardFields.data) ? undefined : standardFields.data,
     examples: Array.isArray(standardFields.data)
@@ -998,7 +1005,7 @@ async function _forward(
   experimentName: string,
   metadata: KVMap,
   client: Client,
-  includeAttachments?: boolean,
+  includeAttachments?: boolean
 ): Promise<_ForwardResults> {
   let run: BaseRun | null = null;
 
@@ -1023,31 +1030,31 @@ async function _forward(
   const wrappedFn =
     "invoke" in fn
       ? traceable(async (inputs) => {
-        let langChainCallbacks;
-        try {
-          // TODO: Deprecate this and rely on interop on 0.2 minor bump.
-          const { getLangchainCallbacks } = await import("../langchain.js");
-          langChainCallbacks = await getLangchainCallbacks();
-        } catch {
-          // no-op
-        }
-        // Issue with retrieving LangChain callbacks, rely on interop
-        if (langChainCallbacks === undefined && !includeAttachments) {
-          return await fn.invoke(inputs);
-        } else if (langChainCallbacks === undefined && includeAttachments) {
-          return await fn.invoke(inputs, {
-            attachments: example.attachments,
-          });
-        } else if (!includeAttachments) {
-          return await fn.invoke(inputs, { callbacks: langChainCallbacks });
-        } else {
-          return await fn.invoke(inputs, { 
-            attachments: example.attachments, 
-            callbacks: langChainCallbacks 
-          });
-        }
-      }, options)
-    : traceable(fn, options);
+          let langChainCallbacks;
+          try {
+            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+            const { getLangchainCallbacks } = await import("../langchain.js");
+            langChainCallbacks = await getLangchainCallbacks();
+          } catch {
+            // no-op
+          }
+          // Issue with retrieving LangChain callbacks, rely on interop
+          if (langChainCallbacks === undefined && !includeAttachments) {
+            return await fn.invoke(inputs);
+          } else if (langChainCallbacks === undefined && includeAttachments) {
+            return await fn.invoke(inputs, {
+              attachments: example.attachments,
+            });
+          } else if (!includeAttachments) {
+            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          } else {
+            return await fn.invoke(inputs, {
+              attachments: example.attachments,
+              callbacks: langChainCallbacks,
+            });
+          }
+        }, options)
+      : traceable(fn, options);
 
   try {
     if (includeAttachments && !("invoke" in fn)) {

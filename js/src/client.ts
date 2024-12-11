@@ -40,7 +40,7 @@ import {
   ExampleUpdateWithAttachments,
   UpdateExamplesResponse,
   RawExample,
-  AttachmentInfo
+  AttachmentInfo,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -2817,7 +2817,7 @@ export class Client implements LangSmithTracingClientInterface {
       params.append("filter", filter);
     }
     if (includeAttachments === true) {
-      ["attachment_urls", "outputs", "metadata"].forEach(field => 
+      ["attachment_urls", "outputs", "metadata"].forEach((field) =>
         params.append("select", field)
       );
     }
@@ -4103,7 +4103,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "PATCH",
         body: JSON.stringify(payload),
-      headers: {
+        headers: {
           ...this.headers,
           "Content-Type": "application/json",
         },
