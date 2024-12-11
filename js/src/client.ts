@@ -767,6 +767,11 @@ export class Client implements LangSmithTracingClientInterface {
     );
   }
 
+  private async _getMultiPartSupport(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false;
+  }
+
   private drainAutoBatchQueue(batchSizeLimit: number) {
     while (this.autoBatchQueue.items.length > 0) {
       const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
@@ -2726,8 +2731,7 @@ export class Client implements LangSmithTracingClientInterface {
     const { attachment_urls, ...rest } = rawExample;
     const example: Example = rest;
     if (attachment_urls) {
-      const attachmentsArray = await Promise.all(
-        Object.entries(attachment_urls).map(async ([key, value]) => {
+      const attachmentsArray = Object.entries(attachment_urls).map(([key, value]) => {
           async function* fetchReader() {
             const response = await fetch(value.presigned_url);
             yield* IterableReadableStream.fromReadableStream(response.body!);
@@ -2739,8 +2743,8 @@ export class Client implements LangSmithTracingClientInterface {
               reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
             },
           };
-        })
-      );
+        });
+      // add attachments back to the example
       example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
         if (value.reader != null) {
           acc[
@@ -2835,8 +2839,7 @@ export class Client implements LangSmithTracingClientInterface {
         const { attachment_urls, ...rest } = rawExample;
         const example: Example = rest;
         if (attachment_urls) {
-          const attachmentsArray = await Promise.all(
-            Object.entries(attachment_urls).map(async ([key, value]) => {
+          const attachmentsArray = Object.entries(attachment_urls).map(([key, value]) => {
               async function* fetchReader() {
                 const response = await fetch(value.presigned_url);
                 yield* IterableReadableStream.fromReadableStream(
@@ -2852,8 +2855,8 @@ export class Client implements LangSmithTracingClientInterface {
                   ),
                 },
               };
-            })
-          );
+            });
+          // add attachments back to the example
           example.attachments = attachmentsArray.reduce(
             (acc, { key, value }) => {
               if (value.reader != null) {
@@ -3935,6 +3938,11 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     updates: ExampleUpdateWithAttachments[] = []
   ): Promise<UpdateExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
     const formData = new FormData();
 
     for (const example of updates) {
@@ -4022,6 +4030,11 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     uploads: ExampleUploadWithAttachments[] = []
   ): Promise<UploadExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
     const formData = new FormData();
 
     for (const example of uploads) {
