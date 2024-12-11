@@ -63,6 +63,10 @@ export interface BaseExample {
   source_run_id?: string;
 }
 
+export interface AttachmentInfo {
+  presigned_url: string;
+}
+
 export type AttachmentData = Uint8Array | ArrayBuffer;
 export type Attachments = Record<string, [string, AttachmentData]>;
 
@@ -248,12 +252,54 @@ export interface ExampleCreate extends BaseExample {
   split?: string | string[];
 }
 
+export interface ExampleUploadWithAttachments {
+  id?: string;
+  inputs: KVMap;
+  outputs?: KVMap;
+  metadata?: KVMap;
+  split?: string | string[];
+  attachments?: Attachments;
+  created_at?: string;
+}
+
+export interface ExampleUpdateWithAttachments {
+  id: string;
+  inputs?: KVMap;
+  outputs?: KVMap;
+  metadata?: KVMap;
+  split?: string | string[];
+  attachments?: Attachments;
+  attachments_operations?: KVMap;
+}
+
+export interface UploadExamplesResponse {
+  count: number;
+  example_ids: string[];
+}
+
+export interface UpdateExamplesResponse extends UploadExamplesResponse {}
+
 export interface Example extends BaseExample {
+  id: string;
+  created_at: string;
+  modified_at?: string;
+  source_run_id?: string;
+  runs: Run[];
+  attachments?: Record<string, AttachmentInfo>;
+  split?: string | string[];
+}
+
+interface RawAttachmentInfo {
+  presigned_url: string;
+  s3_url: string;
+}
+export interface RawExample extends BaseExample {
   id: string;
   created_at: string;
   modified_at: string;
   source_run_id?: string;
   runs: Run[];
+  attachment_urls?: Record<string, RawAttachmentInfo>;
 }
 
 export interface ExampleUpdate {
