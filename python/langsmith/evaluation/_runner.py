@@ -1614,6 +1614,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         f" run {run.id if run else ''}: {repr(e)}",
                         exc_info=True,
                     )
+                if example.attachments is not None:
+                    for attachment in example.attachments:
+                        reader = example.attachments[attachment]["reader"]
+                        reader.seek(0)
+
             return ExperimentResultRow(
                 run=run,
                 example=example,

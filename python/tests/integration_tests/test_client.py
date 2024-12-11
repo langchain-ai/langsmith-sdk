@@ -1254,6 +1254,78 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+def test_evaluate_with_attachments_multiple_evaluators(
+    langchain_client: Client,
+) -> None:
+    """Test evaluating examples with attachments and multiple evaluators."""
+    dataset_name = "__test_evaluate_attachments_multiple" + uuid4().hex[:4]
+
+    # 1. Create dataset
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for evals with attachments",
+        data_type=DataType.kv,
+    )
+
+    # 2. Create example with attachments
+    example = ExampleUploadWithAttachments(
+        inputs={"question": "What is shown in the image?"},
+        outputs={"answer": "test image"},
+        attachments={
+            "image": ("image/png", b"fake image data for testing"),
+        },
+    )
+
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+
+    def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {"answer": "test image"}
+
+    def evaluator_1(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    def evaluator_2(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = langchain_client.evaluate(
+        target,
+        data=dataset_name,
+        evaluators=[evaluator_1, evaluator_2],
+        num_repetitions=2,
+    )
+
+    for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+        assert result["evaluation_results"]["results"][1].score == 1.0
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
