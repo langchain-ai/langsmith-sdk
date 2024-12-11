@@ -671,6 +671,10 @@ test.concurrent(
     const testAttachment2 = new Uint8Array([5, 6, 7, 8]);
     const testAttachment3 = new ArrayBuffer(4);
     new Uint8Array(testAttachment3).set([13, 14, 15, 16]);
+    const testAttachment4Content = new Blob(["Hello world!"]);
+    const testAttachment4 = new Blob([testAttachment4Content], {
+      type: `text/plain; length=${testAttachment4Content.size}`,
+    });
 
     const traceableWithAttachmentsAndInputs = traceable(
       (
@@ -696,6 +700,7 @@ test.concurrent(
           {
             test1bin: ["application/octet-stream", testAttachment1],
             test2bin: ["application/octet-stream", testAttachment2],
+            test3bin: ["application/octet-stream", testAttachment4],
             inputbin: ["application/octet-stream", attachment],
             input2bin: [
               "application/octet-stream",
@@ -748,6 +753,10 @@ test.concurrent(
     expect(runCreate?.attachments?.["test2bin"]).toEqual([
       "application/octet-stream",
       testAttachment2,
+    ]);
+    expect(runCreate?.attachments?.["test3bin"]).toEqual([
+      "application/octet-stream",
+      testAttachment4,
     ]);
     expect(runCreate?.attachments?.["inputbin"]).toEqual([
       "application/octet-stream",
