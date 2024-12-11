@@ -506,7 +506,7 @@ class Client:
         self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
         if self.compress_traces:
             self.boundary = BOUNDARY
-            self.compressed_runs_buffer: io.BytesIO = io.BytesIO()
+            self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
             self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(level=3).stream_writer(
                 self.compressed_runs_buffer, closefd=False)
             self._buffer_lock: threading.Lock = threading.Lock()
@@ -523,7 +523,7 @@ class Client:
         atexit.register(close_session, session_)
         # Initialize auto batching
         if auto_batch_tracing and self.compress_traces:
-            self.tracing_queue = None
+            self.tracing_queue: Optional[PriorityQueue] = None
             threading.Thread(
                 target=_tracing_control_thread_func_compress,
                 # arg must be a weakref to self to avoid the Thread object
@@ -531,7 +531,7 @@ class Client:
                 args=(weakref.ref(self),),
             ).start()
         elif auto_batch_tracing:
-            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
+            self.tracing_queue = PriorityQueue()
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -1716,7 +1716,7 @@ class Client:
 
         Uses similar retry logic as _send_multipart_req.
         """
-        _context = {}
+        _context: str = ""
         
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):

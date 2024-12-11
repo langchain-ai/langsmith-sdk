@@ -97,7 +97,9 @@ def _tracing_thread_drain_compressed_buffer(
     client: Client,
     size_limit: int = 100,
     size_limit_bytes: int = 50 * 1024 * 1024
-) -> Optional[bytes]:
+) -> Optional[io.BytesIO]:
+    assert client.compressed_runs_buffer is not None
+    assert client.compressor_writer is not None
     with client._buffer_lock:
         current_size = client.compressed_runs_buffer.tell()
 
