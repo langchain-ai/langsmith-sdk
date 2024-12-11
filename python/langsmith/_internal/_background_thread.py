@@ -102,7 +102,6 @@ def _tracing_thread_drain_compressed_buffer(
     with client._buffer_lock:
         current_size = client.compressed_runs_buffer.tell()
 
-        # Check if we should send now
         if not (client._run_count >= size_limit or current_size >= size_limit_bytes):
             return None
 
@@ -112,7 +111,6 @@ def _tracing_thread_drain_compressed_buffer(
 
         filled_buffer = client.compressed_runs_buffer
 
-        # Reinitialize for next batch
         client.compressed_runs_buffer = io.BytesIO()
         client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
             client.compressed_runs_buffer, closefd=False)
