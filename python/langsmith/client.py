@@ -508,7 +508,7 @@ class Client:
             self.boundary = BOUNDARY
             self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
             self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(
-                level=3
+                level=3, threads=-1
             ).stream_writer(self.compressed_runs_buffer, closefd=False)
             self._buffer_lock: threading.Lock = threading.Lock()
             self._run_count: int = 0

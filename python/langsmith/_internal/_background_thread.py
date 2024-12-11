@@ -111,7 +111,7 @@ def _tracing_thread_drain_compressed_buffer(
         filled_buffer = client.compressed_runs_buffer
 
         client.compressed_runs_buffer = io.BytesIO()
-        client.compressor_writer = zstd.ZstdCompressor(level=3).stream_writer(
+        client.compressor_writer = zstd.ZstdCompressor(level=3, threads=-1).stream_writer(
             client.compressed_runs_buffer, closefd=False
         )
         client._run_count = 0
