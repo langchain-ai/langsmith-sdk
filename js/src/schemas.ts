@@ -1,5 +1,3 @@
-import { IterableReadableStream } from "./utils/stream.js";
-
 export interface TracerSession {
   // The ID of the tenant, or organization
   tenant_id: string;
@@ -67,7 +65,6 @@ export interface BaseExample {
 
 export interface AttachmentInfo {
   presigned_url: string;
-  reader: IterableReadableStream<Uint8Array>;
 }
 
 export type AttachmentData = Uint8Array | ArrayBuffer;

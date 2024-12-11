@@ -66,7 +66,6 @@ import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
 import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
-import { IterableReadableStream } from "./utils/stream.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -2733,35 +2732,16 @@ export class Client implements LangSmithTracingClientInterface {
     const { attachment_urls, ...rest } = rawExample;
     const example: Example = rest;
     if (attachment_urls) {
-      const attachmentsArray = Object.entries(attachment_urls).map(
-        ([key, value]) => {
-          async function* fetchReader() {
-            const response = await fetch(value.presigned_url);
-            yield* IterableReadableStream.fromReadableStream(response.body!);
-          }
-          return {
-            key,
-            value: {
-              presigned_url: value.presigned_url,
-              reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
-            },
-          };
-        }
-      );
       // add attachments back to the example
-      example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
-        if (value.reader != null) {
-          acc[
-            key.startsWith("attachment.")
-              ? key.slice("attachment.".length)
-              : key
-          ] = {
-            ...value,
-            reader: value.reader,
+      example.attachments = Object.entries(attachment_urls).reduce(
+        (acc, [key, value]) => {
+          acc[key] = {
+            presigned_url: value.presigned_url,
           };
-        }
-        return acc;
-      }, {} as Record<string, AttachmentInfo>);
+          return acc;
+        },
+        {} as Record<string, AttachmentInfo>
+      );
     }
     return example;
   }
@@ -2843,38 +2823,11 @@ export class Client implements LangSmithTracingClientInterface {
         const { attachment_urls, ...rest } = rawExample;
         const example: Example = rest;
         if (attachment_urls) {
-          const attachmentsArray = Object.entries(attachment_urls).map(
-            ([key, value]) => {
-              async function* fetchReader() {
-                const response = await fetch(value.presigned_url);
-                yield* IterableReadableStream.fromReadableStream(
-                  response.body!
-                );
-              }
-              return {
-                key,
-                value: {
-                  presigned_url: value.presigned_url,
-                  reader: IterableReadableStream.fromAsyncGenerator(
-                    fetchReader()
-                  ),
-                },
+          example.attachments = Object.entries(attachment_urls).reduce(
+            (acc, [key, value]) => {
+              acc[key] = {
+                presigned_url: value.presigned_url,
               };
-            }
-          );
-          // add attachments back to the example
-          example.attachments = attachmentsArray.reduce(
-            (acc, { key, value }) => {
-              if (value.reader != null) {
-                acc[
-                  key.startsWith("attachment.")
-                    ? key.slice("attachment.".length)
-                    : key
-                ] = {
-                  ...value,
-                  reader: value.reader,
-                };
-              }
               return acc;
             },
             {} as Record<string, AttachmentInfo>
