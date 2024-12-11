@@ -2743,7 +2743,11 @@ export class Client implements LangSmithTracingClientInterface {
       );
       example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
         if (value.reader != null) {
-          acc[key.startsWith("attachment.") ? key.slice("attachment.".length) : key] = {
+          acc[
+            key.startsWith("attachment.")
+              ? key.slice("attachment.".length)
+              : key
+          ] = {
             ...value,
             reader: value.reader,
           };
@@ -2853,7 +2857,11 @@ export class Client implements LangSmithTracingClientInterface {
           example.attachments = attachmentsArray.reduce(
             (acc, { key, value }) => {
               if (value.reader != null) {
-                acc[key.startsWith("attachment.") ? key.slice("attachment.".length) : key] = {
+                acc[
+                  key.startsWith("attachment.")
+                    ? key.slice("attachment.".length)
+                    : key
+                ] = {
                   ...value,
                   reader: value.reader,
                 };
