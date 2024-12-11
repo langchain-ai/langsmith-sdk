@@ -66,7 +66,6 @@ import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
 import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
-import { IterableReadableStream } from "./utils/stream.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -764,6 +763,13 @@ export class Client implements LangSmithTracingClientInterface {
       this.batchSizeBytesLimit ??
       serverInfo.batch_ingest_config?.size_limit_bytes ??
       DEFAULT_BATCH_SIZE_LIMIT_BYTES
+    );
+  }
+
+  private async _getMultiPartSupport(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return (
+      serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false
     );
   }
 
@@ -2726,34 +2732,16 @@ export class Client implements LangSmithTracingClientInterface {
     const { attachment_urls, ...rest } = rawExample;
     const example: Example = rest;
     if (attachment_urls) {
-      const attachmentsArray = await Promise.all(
-        Object.entries(attachment_urls).map(async ([key, value]) => {
-          async function* fetchReader() {
-            const response = await fetch(value.presigned_url);
-            yield* IterableReadableStream.fromReadableStream(response.body!);
-          }
-          return {
-            key,
-            value: {
-              presigned_url: value.presigned_url,
-              reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
-            },
+      // add attachments back to the example
+      example.attachments = Object.entries(attachment_urls).reduce(
+        (acc, [key, value]) => {
+          acc[key] = {
+            presigned_url: value.presigned_url,
           };
-        })
+          return acc;
+        },
+        {} as Record<string, AttachmentInfo>
       );
-      example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
-        if (value.reader != null) {
-          acc[
-            key.startsWith("attachment.")
-              ? key.slice("attachment.".length)
-              : key
-          ] = {
-            ...value,
-            reader: value.reader,
-          };
-        }
-        return acc;
-      }, {} as Record<string, AttachmentInfo>);
     }
     return example;
   }
@@ -2842,37 +2830,11 @@ export class Client implements LangSmithTracingClientInterface {
         const { attachment_urls, ...rest } = rawExample;
         const example: Example = rest;
         if (attachment_urls) {
-          const attachmentsArray = await Promise.all(
-            Object.entries(attachment_urls).map(async ([key, value]) => {
-              async function* fetchReader() {
-                const response = await fetch(value.presigned_url);
-                yield* IterableReadableStream.fromReadableStream(
-                  response.body!
-                );
-              }
-              return {
-                key,
-                value: {
-                  presigned_url: value.presigned_url,
-                  reader: IterableReadableStream.fromAsyncGenerator(
-                    fetchReader()
-                  ),
-                },
+          example.attachments = Object.entries(attachment_urls).reduce(
+            (acc, [key, value]) => {
+              acc[key] = {
+                presigned_url: value.presigned_url,
               };
-            })
-          );
-          example.attachments = attachmentsArray.reduce(
-            (acc, { key, value }) => {
-              if (value.reader != null) {
-                acc[
-                  key.startsWith("attachment.")
-                    ? key.slice("attachment.".length)
-                    : key
-                ] = {
-                  ...value,
-                  reader: value.reader,
-                };
-              }
               return acc;
             },
             {} as Record<string, AttachmentInfo>
@@ -3942,6 +3904,11 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     updates: ExampleUpdateWithAttachments[] = []
   ): Promise<UpdateExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
     const formData = new FormData();
 
     for (const example of updates) {
@@ -4029,6 +3996,11 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     uploads: ExampleUploadWithAttachments[] = []
   ): Promise<UploadExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
     const formData = new FormData();
 
     for (const example of uploads) {

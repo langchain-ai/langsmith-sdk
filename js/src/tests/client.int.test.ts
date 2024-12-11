@@ -29,7 +29,6 @@ import { ChatOpenAI } from "@langchain/openai";
 import { RunnableSequence } from "@langchain/core/runnables";
 import { load } from "langchain/load";
 import { _getFetchImplementation } from "../singletons/fetch.js";
-import { IterableReadableStream } from "../utils/stream.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -1337,14 +1336,6 @@ test("upload examples multipart", async () => {
   await client.deleteDataset({ datasetName });
 });
 
-async function readFromStream(reader: IterableReadableStream<Uint8Array>) {
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of reader) {
-    chunks.push(chunk);
-  }
-  return new Uint8Array(Buffer.concat(chunks));
-}
-
 test("update examples multipart", async () => {
   const client = new Client();
   const datasetName = `__test_update_examples_multipart${uuidv4().slice(0, 4)}`;
@@ -1421,16 +1412,26 @@ test("update examples multipart", async () => {
   let updatedExample = await client.readExample(exampleId);
   expect(updatedExample.inputs.text).toEqual("hello world2");
   expect(Object.keys(updatedExample.attachments ?? {}).sort()).toEqual(
-    ["bar", "test_file"].sort()
+    ["attachment.bar", "attachment.test_file"].sort()
   );
   expect(updatedExample.metadata).toEqual({ bar: "foo" });
-  let attachmentData: Uint8Array | undefined =
-    updatedExample.attachments?.test_file.reader &&
-    (await readFromStream(updatedExample.attachments?.test_file.reader));
+  let attachmentData: Uint8Array | undefined = updatedExample.attachments?.[
+    "attachment.test_file"
+  ].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          updatedExample.attachments?.["attachment.test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
-  attachmentData =
-    updatedExample.attachments?.bar.reader &&
-    (await readFromStream(updatedExample.attachments?.bar.reader));
+  attachmentData = updatedExample.attachments?.["attachment.bar"].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          updatedExample.attachments?.["attachment.bar"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
 
   const exampleUpdate4: ExampleUpdateWithAttachments = {
@@ -1444,10 +1445,17 @@ test("update examples multipart", async () => {
   await client.updateExamplesMultipart(dataset.id, [exampleUpdate4]);
   updatedExample = await client.readExample(exampleId);
   expect(updatedExample.metadata).toEqual({ foo: "bar" });
-  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file2"]);
-  attachmentData =
-    updatedExample.attachments?.test_file2.reader &&
-    (await readFromStream(updatedExample.attachments?.test_file2.reader));
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual([
+    "attachment.test_file2",
+  ]);
+  attachmentData = updatedExample.attachments?.["attachment.test_file2"]
+    .presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          updatedExample.attachments?.["attachment.test_file2"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
 
   const exampleUpdate5: ExampleUpdateWithAttachments = {
@@ -1465,10 +1473,17 @@ test("update examples multipart", async () => {
     foo: "bar",
     dataset_split: ["foo", "bar"],
   });
-  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file"]);
-  attachmentData =
-    updatedExample.attachments?.test_file.reader &&
-    (await readFromStream(updatedExample.attachments?.test_file.reader));
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual([
+    "attachment.test_file",
+  ]);
+  attachmentData = updatedExample.attachments?.["attachment.test_file"]
+    .presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          updatedExample.attachments?.["attachment.test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
   expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
 
   // Clean up
