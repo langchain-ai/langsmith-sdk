@@ -2735,7 +2735,7 @@ export class Client implements LangSmithTracingClientInterface {
       // add attachments back to the example
       example.attachments = Object.entries(attachment_urls).reduce(
         (acc, [key, value]) => {
-          acc[key] = {
+          acc[key.slice("attachment.".length)] = {
             presigned_url: value.presigned_url,
           };
           return acc;
@@ -2832,7 +2832,7 @@ export class Client implements LangSmithTracingClientInterface {
         if (attachment_urls) {
           example.attachments = Object.entries(attachment_urls).reduce(
             (acc, [key, value]) => {
-              acc[key] = {
+              acc[key.slice("attachment.".length)] = {
                 presigned_url: value.presigned_url,
               };
               return acc;
