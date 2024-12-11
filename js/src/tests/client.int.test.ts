@@ -1251,7 +1251,7 @@ test("annotationqueue crud", async () => {
   }
 });
 
-test.only("upload examples multipart", async () => {
+test("upload examples multipart", async () => {
   const client = new Client();
   const datasetName = `__test_upload_examples_multipart${uuidv4().slice(0, 4)}`;
 
