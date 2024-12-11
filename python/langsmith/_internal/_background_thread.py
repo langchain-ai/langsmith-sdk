@@ -108,7 +108,6 @@ def _tracing_thread_drain_compressed_buffer(
 
         # Write final boundary and close compression stream
         client.compressor_writer.write(f'--{client.boundary}--\r\n'.encode())
-        client.compressor_writer.flush()
         client.compressor_writer.close()
 
         filled_buffer = client.compressed_runs_buffer
