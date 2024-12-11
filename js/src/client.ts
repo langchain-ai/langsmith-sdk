@@ -2730,7 +2730,7 @@ export class Client implements LangSmithTracingClientInterface {
         Object.entries(attachment_urls).map(async ([key, value]) => {
           async function* fetchReader() {
             const response = await fetch(value.presigned_url);
-            yield *IterableReadableStream.fromReadableStream(response.body!);
+            yield* IterableReadableStream.fromReadableStream(response.body!);
           }
           return {
             key,
@@ -2743,18 +2743,17 @@ export class Client implements LangSmithTracingClientInterface {
       );
       example.attachments = attachmentsArray.reduce((acc, { key, value }) => {
         if (value.reader != null) {
-          acc[key.startsWith("attachment.") ? key.slice(11) : key] = {
+          acc[
+            key.startsWith("attachment.")
+              ? key.slice("attachment.".length)
+              : key
+          ] = {
             ...value,
             reader: value.reader,
           };
         }
         return acc;
       }, {} as Record<string, AttachmentInfo>);
-    }
-    if (rawExample.metadata?.dataset_split) {
-      const { dataset_split, ...metadata } = rawExample.metadata;
-      example.split = dataset_split;
-      example.metadata = metadata;
     }
     return example;
   }
@@ -2847,13 +2846,17 @@ export class Client implements LangSmithTracingClientInterface {
             Object.entries(attachment_urls).map(async ([key, value]) => {
               async function* fetchReader() {
                 const response = await fetch(value.presigned_url);
-                yield *IterableReadableStream.fromReadableStream(response.body!);
+                yield* IterableReadableStream.fromReadableStream(
+                  response.body!
+                );
               }
               return {
                 key,
                 value: {
                   presigned_url: value.presigned_url,
-                  reader: IterableReadableStream.fromAsyncGenerator(fetchReader()),
+                  reader: IterableReadableStream.fromAsyncGenerator(
+                    fetchReader()
+                  ),
                 },
               };
             })
@@ -2861,7 +2864,11 @@ export class Client implements LangSmithTracingClientInterface {
           example.attachments = attachmentsArray.reduce(
             (acc, { key, value }) => {
               if (value.reader != null) {
-                acc[key.startsWith("attachment.") ? key.slice(11) : key] = {
+                acc[
+                  key.startsWith("attachment.")
+                    ? key.slice("attachment.".length)
+                    : key
+                ] = {
                   ...value,
                   reader: value.reader,
                 };
@@ -2870,11 +2877,6 @@ export class Client implements LangSmithTracingClientInterface {
             },
             {} as Record<string, AttachmentInfo>
           );
-        }
-        if (rawExample.metadata?.dataset_split) {
-          const { dataset_split, ...metadata } = rawExample.metadata;
-          example.split = dataset_split;
-          example.metadata = metadata;
         }
         yield example;
         i++;
