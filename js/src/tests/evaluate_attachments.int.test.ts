@@ -93,8 +93,7 @@ test("evaluate can handle examples with attachments", async () => {
   expect(evalRes.results).toHaveLength(2);
 
   for (const result of evalRes.results) {
-    // NOTE: THIS DOES NOT WORK YET BECAUSE THE ATTACHMENTS ARE NOT TRACED CORRECTLY
-    // THIS SHOULD BE FIXED ASAP
+    // TODO: Uncomment when attachments are traced correctly
     // expect(result.run.attachments).toBeDefined();
     expect(result.run).toBeDefined();
     expect(result.example).toBeDefined();
@@ -172,8 +171,7 @@ test("evaluate with attachments not in target function", async () => {
   expect(evalRes.results).toHaveLength(2);
 
   for (const result of evalRes.results) {
-    // NOTE: THIS DOES NOT WORK YET BECAUSE THE ATTACHMENTS ARE NOT TRACED CORRECTLY
-    // THIS SHOULD BE FIXED ASAP
+    // TODO: Uncomment when attachments are traced correctly
     // expect(result.run.attachments).toBeDefined();
     expect(result.run).toBeDefined();
     expect(result.example).toBeDefined();
@@ -297,8 +295,7 @@ test("multiple evaluators with attachments", async () => {
   expect(evalRes.results).toHaveLength(2);
 
   for (const result of evalRes.results) {
-    // NOTE: THIS DOES NOT WORK YET BECAUSE THE ATTACHMENTS ARE NOT TRACED CORRECTLY
-    // THIS SHOULD BE FIXED ASAP
+    // TODO: Uncomment when attachments are traced correctly
     // expect(result.run.attachments).toBeDefined();
     expect(result.run).toBeDefined();
     expect(result.example).toBeDefined();
@@ -398,8 +395,7 @@ test("evaluate with attachments runnable target function", async () => {
   expect(evalRes.results).toHaveLength(2);
 
   for (const result of evalRes.results) {
-    // NOTE: THIS DOES NOT WORK YET BECAUSE THE ATTACHMENTS ARE NOT TRACED CORRECTLY
-    // THIS SHOULD BE FIXED ASAP
+    // TODO: Uncomment when attachments are traced correctly
     // expect(result.run.attachments).toBeDefined();
     expect(result.run).toBeDefined();
     expect(result.example).toBeDefined();
