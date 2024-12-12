@@ -372,7 +372,7 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Attachments = Field(default_factory=dict)
+    attachments: Attachments | Dict[str, AttachmentInfo] = Field(default_factory=dict)
     """Attachments associated with the run.
     Each entry is a tuple of (mime_type, bytes)."""
 
@@ -391,6 +391,11 @@ class RunBase(BaseModel):
     def __repr__(self):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
+
+    class Config:
+        """Configuration class for the schema."""
+
+        arbitrary_types_allowed = True
 
 
 class Run(RunBase):

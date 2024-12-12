@@ -318,7 +318,9 @@ class RunTree(ls_schemas.RunBase):
         """Patch the run tree to the API in a background thread."""
         if not self.end_time:
             self.end()
-        attachments = self.attachments
+        attachments = {
+            a: v for a, v in self.attachments.items() if isinstance(v, tuple)
+        }
         try:
             # Avoid loading the same attachment twice
             if attachments:

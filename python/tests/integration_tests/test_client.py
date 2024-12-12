@@ -937,6 +937,118 @@ def test_multipart_ingest_empty(
         assert not caplog.records
 
 
+def test_multipart_ingest_create_with_attachments(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_create_with_attachments"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+            "attachments": {
+                "foo": ("text/plain", b"bar"),
+                "bar": (
+                    "image/png",
+                    Path(__file__).parent / "test_data/parrot-icon.png",
+                ),
+            },
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+
+        assert not caplog.records
+        time.sleep(3)
+        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        assert created_run.attachments
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        assert (
+            created_run.attachments["bar"]["reader"].read()
+            == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+        )
+
+        created_run = next(langchain_client.list_runs(run_ids=[str(trace_a_id)]))
+        assert created_run.attachments
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        assert (
+            created_run.attachments["bar"]["reader"].read()
+            == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+        )
+
+
+def test_multipart_ingest_update_with_attachments(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_update_with_attachments"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+
+        assert not caplog.records
+
+    runs_to_update: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "outputs": {"output1": 3, "output2": 4},
+            "attachments": {
+                "foo": ("text/plain", b"bar"),
+                "bar": (
+                    "image/png",
+                    Path(__file__).parent / "test_data/parrot-icon.png",
+                ),
+            },
+        }
+    ]
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=[], update=runs_to_update)
+
+        assert not caplog.records
+        time.sleep(3)
+        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        assert created_run.attachments
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        assert (
+            created_run.attachments["bar"]["reader"].read()
+            == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+        )
+
+
 def test_multipart_ingest_create_then_update(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:

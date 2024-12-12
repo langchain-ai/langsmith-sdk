@@ -1835,7 +1835,12 @@ class Client:
         response = self.request_with_retries(
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
-        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            response.json(), "s3_urls"
+        )
+        run = ls_schemas.Run(
+            attachments=attachments, **response.json(), _host_url=self._host_url
+        )
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
@@ -2031,7 +2036,13 @@ class Client:
         for i, run in enumerate(
             self._get_cursor_paginated_list("/runs/query", body=body_query)
         ):
-            yield ls_schemas.Run(**run, _host_url=self._host_url)
+            # Should this be behind a flag?
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                run, "s3_urls"
+            )
+            yield ls_schemas.Run(
+                attachments=attachments, **run, _host_url=self._host_url
+            )
             if limit is not None and i + 1 >= limit:
                 break
 
@@ -3894,16 +3905,9 @@ class Client:
         )
 
         example = response.json()
-        attachments = {}
-        if example["attachment_urls"]:
-            for key, value in example["attachment_urls"].items():
-                response = requests.get(value["presigned_url"], stream=True)
-                response.raise_for_status()
-                reader = io.BytesIO(response.content)
-                attachments[key.removeprefix("attachment.")] = {
-                    "presigned_url": value["presigned_url"],
-                    "reader": reader,
-                }
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            example, "attachment_urls"
+        )
 
         return ls_schemas.Example(
             **{k: v for k, v in example.items() if k != "attachment_urls"},
@@ -3980,17 +3984,9 @@ class Client:
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachments = {}
-            if example["attachment_urls"]:
-                for key, value in example["attachment_urls"].items():
-                    response = requests.get(value["presigned_url"], stream=True)
-                    response.raise_for_status()
-                    reader = io.BytesIO(response.content)
-                    attachments[key.removeprefix("attachment.")] = {
-                        "presigned_url": value["presigned_url"],
-                        "reader": reader,
-                    }
-
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                example, "attachment_urls"
+            )
             yield ls_schemas.Example(
                 **{k: v for k, v in example.items() if k != "attachment_urls"},
                 attachments=attachments,
@@ -6657,3 +6653,17 @@ def convert_prompt_to_anthropic_format(
         return anthropic._get_request_payload(messages, stop=stop)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
+
+
+def _convert_stored_attachments_to_attachments_dict(data, attachments_key):
+    attachments_dict = {}
+    if attachments_key in data and data[attachments_key]:
+        for key, value in data[attachments_key].items():
+            response = requests.get(value["presigned_url"], stream=True)
+            response.raise_for_status()
+            reader = io.BytesIO(response.content)
+            attachments_dict[key.removeprefix("attachment.")] = {
+                "presigned_url": value["presigned_url"],
+                "reader": reader,
+            }
+    return attachments_dict
