@@ -1824,8 +1824,8 @@ class Client:
         if attachments:
             data["attachments"] = attachments
         use_multipart = (
-            self.tracing_queue is not None
-            or self.compressed_runs_buffer is not None
+            (self.tracing_queue is not None
+            or self.compressed_runs_buffer is not None)
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
