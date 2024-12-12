@@ -247,6 +247,7 @@ def tracing_control_thread_func_compress_parallel(
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
     assert size_limit_bytes is not None
+    num_known_refs = 3
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
@@ -257,7 +258,19 @@ def tracing_control_thread_func_compress_parallel(
         if not threading.main_thread().is_alive():
             # main thread is dead. should not be active
             return False
-        return True
+        if hasattr(sys, "getrefcount"):
+            # check if client refs count indicates we're the only remaining
+            # reference to the client
+            
+            # Count active threads
+            thread_pool = HTTP_REQUEST_THREAD_POOL._threads
+            active_count = sum(1 for thread in thread_pool if thread is not None and thread.is_alive())
+
+            return sys.getrefcount(client) > num_known_refs + active_count
+        else:
+            # in PyPy, there is no sys.getrefcount attribute
+            # for now, keep thread alive
+            return True
 
     while keep_thread_active():
         try:
@@ -269,7 +282,6 @@ def tracing_control_thread_func_compress_parallel(
                     HTTP_REQUEST_THREAD_POOL.submit(
                         client._send_compressed_multipart_req, data_stream
                     )
-                    print("submitted request")
                 except RuntimeError:
                     client._send_compressed_multipart_req(data_stream)
             else:
