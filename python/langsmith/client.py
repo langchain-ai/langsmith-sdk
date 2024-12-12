@@ -79,7 +79,7 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._background_thread import (
-    tracing_control_thread_func_compress as _tracing_control_thread_func_compress,
+    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
 )
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._constants import (
@@ -526,7 +526,7 @@ class Client:
         if auto_batch_tracing and self.compress_traces:
             self.tracing_queue: Optional[PriorityQueue] = None
             threading.Thread(
-                target=_tracing_control_thread_func_compress,
+                target=_tracing_control_thread_func_compress_parallel,
                 # arg must be a weakref to self to avoid the Thread object
                 # preventing garbage collection of the Client object
                 args=(weakref.ref(self),),
@@ -1716,10 +1716,7 @@ class Client:
                     return
 
     def _send_compressed_multipart_req(self, data_stream, *, attempts: int = 3):
-        """Send a zstd-compressed multipart form data stream to the backend.
-
-        Uses similar retry logic as _send_multipart_req.
-        """
+        """Send a zstd-compressed multipart form data stream to the backend."""
         _context: str = ""
 
         for api_url, api_key in self._write_api_urls.items():
