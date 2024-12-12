@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import functools
+import io
 import logging
+import os
 import sys
 import threading
+import time
 import weakref
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
     List,
+    Optional,
     Union,
     cast,
 )
+
+import zstandard as zstd
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal._constants import (
@@ -86,6 +92,33 @@ def _tracing_thread_drain_queue(
     except Empty:
         pass
     return next_batch
+
+
+def _tracing_thread_drain_compressed_buffer(
+    client: Client, size_limit: int = 100, size_limit_bytes: int = 65_536
+) -> Optional[io.BytesIO]:
+    assert client.compressed_runs_buffer is not None
+    assert client.compressor_writer is not None
+    with client._buffer_lock:
+        current_size = client.compressed_runs_buffer.tell()
+
+        if not (client._run_count >= size_limit or current_size >= size_limit_bytes):
+            return None
+
+        # Write final boundary and close compression stream
+        client.compressor_writer.write(f"--{client.boundary}--\r\n".encode())
+        client.compressor_writer.close()
+
+        filled_buffer = client.compressed_runs_buffer
+
+        client.compressed_runs_buffer = io.BytesIO()
+        client.compressor_writer = zstd.ZstdCompressor(
+            level=3, threads=-1
+        ).stream_writer(client.compressed_runs_buffer, closefd=False)
+        client._run_count = 0
+
+    filled_buffer.seek(0)
+    return filled_buffer
 
 
 def _tracing_thread_handle_batch(
@@ -198,6 +231,89 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         tracing_queue, limit=size_limit, block=False
     ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
+
+
+def _worker_thread_func(client: Client, request_queue: Queue) -> None:
+    while True:
+        try:
+            data_stream = request_queue.get()
+
+            if data_stream is None:
+                break
+
+            client._send_compressed_multipart_req(data_stream)
+
+        except Exception:
+            logger.error("Error in worker thread processing request", exc_info=True)
+        finally:
+            request_queue.task_done()
+
+
+def tracing_control_thread_func_compress_parallel(
+    client_ref: weakref.ref[Client],
+) -> None:
+    client = client_ref()
+    if client is None:
+        return
+
+    batch_ingest_config = _ensure_ingest_config(client.info)
+    size_limit: int = batch_ingest_config["size_limit"]
+    size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 65_536)
+    assert size_limit_bytes is not None
+
+    num_workers = min(4, os.cpu_count() or 1)
+    request_queue: Queue = Queue(maxsize=num_workers * 2)
+    workers = []
+
+    for _ in range(num_workers):
+        worker = threading.Thread(
+            target=_worker_thread_func,
+            args=(client, request_queue),
+        )
+        worker.start()
+        workers.append(worker)
+
+    def keep_thread_active() -> bool:
+        # if `client.cleanup()` was called, stop thread
+        if not client or (
+            hasattr(client, "_manual_cleanup") and client._manual_cleanup
+        ):
+            return False
+        if not threading.main_thread().is_alive():
+            # main thread is dead. should not be active
+            return False
+        return True
+
+    while keep_thread_active():
+        try:
+            data_stream = _tracing_thread_drain_compressed_buffer(
+                client, size_limit, size_limit_bytes
+            )
+            if data_stream is not None:
+                request_queue.put(data_stream)
+            else:
+                time.sleep(0.05)
+        except Exception:
+            logger.error("Error in tracing compression thread", exc_info=True)
+            time.sleep(0.1)  # Wait before retrying on error
+
+    # Drain the buffer on exit
+    try:
+        final_data_stream = _tracing_thread_drain_compressed_buffer(
+            client, size_limit=1, size_limit_bytes=1
+        )  # Force final drain
+        if final_data_stream is not None:
+            request_queue.put(final_data_stream)
+
+        request_queue.join()
+
+        for _ in workers:
+            request_queue.put(None)
+        for worker in workers:
+            worker.join()
+
+    except Exception:
+        logger.error("Error in final cleanup", exc_info=True)
 
 
 def _tracing_sub_thread_func(
