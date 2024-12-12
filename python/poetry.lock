@@ -2107,4 +2107,4 @@ vcr = []
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "d8f0d4a97b9e1131e51c992dba0ee0d0d34dcb03b5965cca249950d0bdaea1f2"
+content-hash = "2a72dff2f1cc3dfea3f5f7406b3be7bd45c9978fbbb0b3e7e9e927c2e46223ca"

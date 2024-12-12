@@ -1,6 +1,7 @@
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::io::Read as _;
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::blocking::multipart::{Form, Part};
@@ -120,11 +121,13 @@ impl RunProcessor {
                         to_vec(&run_create).unwrap(), // TODO: get rid of unwrap
                     ));
 
-                    if let Some(inputs) = io.inputs {
+                    if let Some(mut inputs) = io.inputs {
+                        assert_eq!(inputs.pop(), Some(0));
                         json_data.push((format!("post.{}.inputs", run_id), inputs));
                     }
 
-                    if let Some(outputs) = io.outputs {
+                    if let Some(mut outputs) = io.outputs {
+                        assert_eq!(outputs.pop(), Some(0));
                         json_data.push((format!("post.{}.outputs", run_id), outputs));
                     }
 
@@ -153,7 +156,8 @@ impl RunProcessor {
                         to_vec(&run_update).unwrap(), // TODO: get rid of unwrap
                     ));
 
-                    if let Some(outputs) = io.outputs {
+                    if let Some(mut outputs) = io.outputs {
+                        assert_eq!(outputs.pop(), Some(0));
                         json_data.push((format!("patch.{}.outputs", run_id), outputs));
                     }
 
@@ -191,31 +195,41 @@ impl RunProcessor {
             .into_par_iter()
             .map(|(part_name, data_bytes)| {
                 let part_size = data_bytes.len() as u64;
+                let part2 = Part::bytes(data_bytes.clone())
+                    .mime_str(&format!("application/json; length={}", part_size))?;
                 let part = Part::bytes(data_bytes)
                     .mime_str(&format!("application/json; length={}", part_size))?;
-                Ok::<(String, Part), TracingClientError>((part_name, part))
+                Ok::<(String, Part, Part), TracingClientError>((part_name, part, part2))
             })
             .collect::<Result<Vec<_>, TracingClientError>>()?;
         // println!("JSON processing took {:?}", start.elapsed());
 
+        let mut form2 = Form::new();
         let mut form = Form::new();
-        for (part_name, part) in json_parts.into_iter().chain(attachment_parts) {
+        for (part_name, part, part2) in json_parts.into_iter() {
+            form2 = form2.part(part_name.clone(), part2);
             form = form.part(part_name, part);
         }
 
+        let mut reader = form2.reader();
+        let mut buf = String::new();
+        reader.read_to_string(&mut buf).expect("error reading multipart form");
+        dbg!(buf);
+
         // send the multipart POST request
         let start_send_batch = Instant::now();
-        let response = self
+        let request = dbg!(self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
             .multipart(form)
-            .headers(self.config.headers.as_ref().cloned().unwrap_or_default())
-            .send()?;
+            .headers(self.config.headers.as_ref().cloned().unwrap_or_default()));
+        let response = dbg!(request.send())?;
         // println!("Sending batch took {:?}", start_send_batch.elapsed());
 
         if response.status().is_success() {
             Ok(())
         } else {
+            eprintln!("tracing error: {response:?}");
             Err(TracingClientError::HttpError(response.status()))
         }
     }
