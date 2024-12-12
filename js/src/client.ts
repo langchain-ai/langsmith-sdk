@@ -41,7 +41,6 @@ import {
   UpdateExamplesResponse,
   RawExample,
   AttachmentInfo,
-  AttachmentDescription,
   AttachmentData,
 } from "./schemas.js";
 import {
