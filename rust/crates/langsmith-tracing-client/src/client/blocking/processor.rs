@@ -117,11 +117,19 @@ impl RunProcessor {
                         to_vec(&run_create).unwrap(), // TODO: get rid of unwrap
                     ));
 
-                    if let Some(inputs) = io.inputs {
+                    // Ensure that pre-formatted JSON data represented as bytes
+                    // doesn't end in trailing null bytes, since we'll be pasting it verbatim
+                    // into an HTTP multipart request which carries an explicit length header.
+                    if let Some(mut inputs) = io.inputs {
+                        if inputs.last() == Some(&0) {
+                            inputs.pop().expect("popping trailing null byte failed");
+                        }
                         json_data.push((format!("post.{}.inputs", run_id), inputs));
                     }
-
-                    if let Some(outputs) = io.outputs {
+                    if let Some(mut outputs) = io.outputs {
+                        if outputs.last() == Some(&0) {
+                            outputs.pop().expect("popping trailing null byte failed");
+                        }
                         json_data.push((format!("post.{}.outputs", run_id), outputs));
                     }
 
@@ -150,7 +158,13 @@ impl RunProcessor {
                         to_vec(&run_update).unwrap(), // TODO: get rid of unwrap
                     ));
 
-                    if let Some(outputs) = io.outputs {
+                    // Ensure that pre-formatted JSON data represented as bytes
+                    // doesn't end in trailing null bytes, since we'll be pasting it verbatim
+                    // into an HTTP multipart request which carries an explicit length header.
+                    if let Some(mut outputs) = io.outputs {
+                        if outputs.last() == Some(&0) {
+                            outputs.pop().expect("popping trailing null byte failed");
+                        }
                         json_data.push((format!("patch.{}.outputs", run_id), outputs));
                     }
 
