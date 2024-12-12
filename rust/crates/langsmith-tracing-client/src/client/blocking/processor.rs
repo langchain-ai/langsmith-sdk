@@ -57,13 +57,7 @@ impl RunProcessor {
                         }
 
                         self.drain_sender.send(()).expect("drain_sender should never fail");
-
-                        // Put this thread to sleep, so we know the remaining `Drain` messages
-                        // are almost certainly answered by other worker threads.
-                        //
-                        // HACK: This is very hacky!
-                        //       Drain should only be used for benchmarking.
-                        std::thread::sleep(Duration::from_secs(120));
+                        break;
                     }
                     _ => {
                         buffer.push(queued_run);

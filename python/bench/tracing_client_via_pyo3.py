@@ -75,7 +75,7 @@ def benchmark_run_creation(json_size, num_runs) -> None:
 
     if client._pyo3_client:
         # Wait for the queue to drain.
-        client._pyo3_client.drain()
+        del client
     else:
         client.tracing_queue.join()
 
