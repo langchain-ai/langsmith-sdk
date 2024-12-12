@@ -1289,6 +1289,7 @@ class Client:
             and run_create.get("dotted_order") is not None
         ):
             if self._pyo3_client is not None:
+                print("RUN_CREATE", run_create)
                 self._pyo3_client.create_run(run_create)
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
@@ -1752,9 +1753,11 @@ class Client:
         if data["extra"]:
             self._insert_runtime_env([data])
 
-        if self._pyo3_client is not None:
-            self._pyo3_client.update_run(data)
-        elif use_multipart and self.tracing_queue is not None:
+        print("UPDATE_RUN", data)
+
+        # if self._pyo3_client is not None:
+        #     self._pyo3_client.update_run(data)
+        if use_multipart and self.tracing_queue is not None:
             # not collecting attachments currently, use empty dict
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             self.tracing_queue.put(
