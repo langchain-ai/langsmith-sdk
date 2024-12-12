@@ -41,6 +41,7 @@ import {
   UpdateExamplesResponse,
   RawExample,
   AttachmentInfo,
+  AttachmentData,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -1129,9 +1130,17 @@ export class Client implements LangSmithTracingClientInterface {
           const attachments = allAttachments[payload.id];
           if (attachments) {
             delete allAttachments[payload.id];
-            for (const [name, [contentType, content]] of Object.entries(
-              attachments
-            )) {
+            for (const [name, attachment] of Object.entries(attachments)) {
+              let contentType: string;
+              let content: AttachmentData;
+
+              if (Array.isArray(attachment)) {
+                [contentType, content] = attachment;
+              } else {
+                contentType = attachment.mimeType;
+                content = attachment.data;
+              }
+
               // Validate that the attachment name doesn't contain a '.'
               if (name.includes(".")) {
                 console.warn(
