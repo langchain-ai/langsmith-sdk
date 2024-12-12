@@ -1,7 +1,6 @@
 import os
 os.environ["LANGCHAIN_PROJECT"] = "llm_messages_test_py"
 os.environ["LANGSMITH_USE_PYO3_CLIENT"] = "true"
-os.environ["LANGSMITH_ENDPOINT"] = "http://localhost:1984"
 
 import openai
 from langsmith import traceable
