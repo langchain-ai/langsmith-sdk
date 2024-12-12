@@ -41,6 +41,8 @@ import {
   UpdateExamplesResponse,
   RawExample,
   AttachmentInfo,
+  AttachmentDescription,
+  AttachmentData,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -1128,9 +1130,17 @@ export class Client implements LangSmithTracingClientInterface {
           const attachments = allAttachments[payload.id];
           if (attachments) {
             delete allAttachments[payload.id];
-            for (const [name, [contentType, content]] of Object.entries(
-              attachments
-            )) {
+            for (const [name, attachment] of Object.entries(attachments)) {
+              let contentType: string;
+              let content: AttachmentData;
+
+              if (Array.isArray(attachment)) {
+                [contentType, content] = attachment;
+              } else {
+                contentType = attachment.mimeType;
+                content = attachment.data;
+              }
+
               // Validate that the attachment name doesn't contain a '.'
               if (name.includes(".")) {
                 console.warn(
@@ -3947,9 +3957,16 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add attachments if present
       if (example.attachments) {
-        for (const [name, [mimeType, data]] of Object.entries(
-          example.attachments
-        )) {
+        for (const [name, attachment] of Object.entries(example.attachments)) {
+          let mimeType: string;
+          let data: AttachmentData;
+
+          if (Array.isArray(attachment)) {
+            [mimeType, data] = attachment;
+          } else {
+            mimeType = attachment.mimeType;
+            data = attachment.data;
+          }
           const attachmentBlob = new Blob([data], {
             type: `${mimeType}; length=${data.byteLength}`,
           });
@@ -4038,9 +4055,16 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add attachments if present
       if (example.attachments) {
-        for (const [name, [mimeType, data]] of Object.entries(
-          example.attachments
-        )) {
+        for (const [name, attachment] of Object.entries(example.attachments)) {
+          let mimeType: string;
+          let data: AttachmentData;
+
+          if (Array.isArray(attachment)) {
+            [mimeType, data] = attachment;
+          } else {
+            mimeType = attachment.mimeType;
+            data = attachment.data;
+          }
           const attachmentBlob = new Blob([data], {
             type: `${mimeType}; length=${data.byteLength}`,
           });
