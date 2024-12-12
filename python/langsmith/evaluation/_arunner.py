@@ -844,6 +844,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         f" run {run.id}: {repr(e)}",
                         exc_info=True,
                     )
+                if example.attachments is not None:
+                    for attachment in example.attachments:
+                        reader = example.attachments[attachment]["reader"]
+                        reader.seek(0)
             return ExperimentResultRow(
                 run=run,
                 example=example,
