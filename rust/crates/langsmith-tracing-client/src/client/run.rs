@@ -135,6 +135,6 @@ pub(crate) enum QueuedRun {
     Update(RunUpdateExtended),
     #[expect(dead_code)]
     RunBytes(RunEventBytes),
-    Drain,
+    Drain, // Like `Shutdown`, but explicitly sends a message confirming draining is complete.
     Shutdown,
 }
