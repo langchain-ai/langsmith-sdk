@@ -60,3 +60,5 @@ def run_pipeline():
 if __name__ == "__main__":
     print("running pipeline")
     run_pipeline()
+    # import time
+    # time.sleep(30)

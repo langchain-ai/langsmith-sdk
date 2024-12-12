@@ -1,7 +1,8 @@
+use std::collections::HashMap;
+use std::io::Read as _;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::io::Read as _;
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::blocking::multipart::{Form, Part};
@@ -67,7 +68,10 @@ impl RunProcessor {
                     _ => {
                         buffer.push(queued_run);
                         if buffer.len() >= batch_size {
-                            eprintln!("reached buffer size cap ({} >= {batch_size}), sending", buffer.len());
+                            eprintln!(
+                                "reached buffer size cap ({} >= {batch_size}), sending",
+                                buffer.len()
+                            );
                             self.send_and_clear_buffer(&mut buffer)?;
                             last_send_time = Instant::now();
                         }
@@ -101,12 +105,70 @@ impl RunProcessor {
         Ok(())
     }
 
+    // If we have a `QueuedRun::Create` and `QueuedRun::Update` for the same run ID in the batch,
+    // combine the update data into the create so we can send just one operation instead of two.
+    fn combine_batch_operations(batch: Vec<QueuedRun>) -> Vec<QueuedRun> {
+        let mut output = Vec::with_capacity(batch.len());
+        let mut id_to_index = HashMap::with_capacity(batch.len());
+
+        for queued_run in batch {
+            match queued_run {
+                QueuedRun::Create(ref run_create_extended) => {
+                    // Record the `Create` operation's ID and index,
+                    // in case we need to modify it later.
+                    let RunCreateExtended { run_create, .. } = run_create_extended;
+                    let run_id = run_create.common.id.clone();
+                    let index = output.len();
+                    id_to_index.insert(run_id, index);
+                    output.push(queued_run);
+                }
+                QueuedRun::Update(run_update_extended) => {
+                    let run_id = run_update_extended.run_update.common.id.as_str();
+                    if let Some(create_index) = id_to_index.get(run_id) {
+                        // This `run_id` matches a `Create` in this batch.
+                        // Merge the `Update` data into the `Create` and
+                        // drop the separate `Update` operation from the batch.
+                        let RunUpdateExtended { run_update, io, attachments } = run_update_extended;
+                        let QueuedRun::Create(matching_create) = &mut output[*create_index] else {
+                            panic!("index {create_index} did not point to a Create operation in {output:?}");
+                        };
+                        debug_assert_eq!(
+                            run_update.common.id, matching_create.run_create.common.id,
+                            "Create operation at index {create_index} did not have expected ID {}: {matching_create:?}",
+                            run_update.common.id,
+                        );
+
+                        matching_create.run_create.common.merge(run_update.common);
+                        matching_create.run_create.end_time = Some(run_update.end_time);
+                        matching_create.io.merge(io);
+                        if let Some(mut _existing_attachments) =
+                            matching_create.attachments.as_mut()
+                        {
+                            unimplemented!("figure out how to merge attachments -- in Python they are a dict but here they are a Vec");
+                        } else {
+                            matching_create.attachments = attachments;
+                        }
+                    } else {
+                        // No matching `Create` operations for this `Update`, add it as-is.
+                        output.push(QueuedRun::Update(run_update_extended));
+                    }
+                }
+                // Allow other operations to pass through unchanged.
+                _ => output.push(queued_run),
+            }
+        }
+
+        output
+    }
+
     #[expect(unused_variables)]
     fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
         //println!("Handling a batch of {} runs", batch.len());
         let start_send_batch = tokio::time::Instant::now();
         let mut json_data = Vec::new();
         let mut attachment_parts = Vec::new();
+
+        let batch = Self::combine_batch_operations(batch);
 
         let start_iter = Instant::now();
         for queued_run in batch {
@@ -217,16 +279,20 @@ impl RunProcessor {
         dbg!(buf);
 
         // send the multipart POST request
+        eprintln!("preparing to send!");
         let start_send_batch = Instant::now();
         let request = dbg!(self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
             .multipart(form)
             .headers(self.config.headers.as_ref().cloned().unwrap_or_default()));
-        let response = dbg!(request.send())?;
+        eprintln!("request ready -- sending!");
+        let result = dbg!(request.send());
+        let response = result?;
+        eprintln!("request sent!");
         // println!("Sending batch took {:?}", start_send_batch.elapsed());
 
-        if response.status().is_success() {
+        if dbg!(response.status()).is_success() {
             Ok(())
         } else {
             eprintln!("tracing error: {response:?}");
