@@ -261,7 +261,7 @@ def tracing_control_thread_func_compress_parallel(
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 65_536)
     assert size_limit_bytes is not None
 
-    num_workers = min(4, os.cpu_count())
+    num_workers = min(4, os.cpu_count() or 1)
     request_queue: Queue = Queue(maxsize=num_workers * 2)
     workers = []
 
