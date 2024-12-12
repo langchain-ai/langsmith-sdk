@@ -2,27 +2,43 @@ import os
 os.environ["LANGCHAIN_PROJECT"] = "llm_messages_test_py"
 os.environ["LANGSMITH_USE_PYO3_CLIENT"] = "true"
 
-import openai
 from langsmith import traceable
-from langsmith.wrappers import wrap_openai
 
-client = wrap_openai(openai.Client())
+@traceable
+def format_prompt(subject):
+  return [
+      {
+          "role": "system",
+          "content": "You are a helpful assistant.",
+      },
+      {
+          "role": "user",
+          "content": f"What's a good name for a store that sells {subject}?"
+      }
+  ]
 
-@traceable(run_type="tool", name="Retrieve Context")
-def my_tool(question: str) -> str:
-    return "During this morning's meeting, we solved all world conflict."
+@traceable(run_type="llm")
+def invoke_llm(messages):
+  return {
+      "choices": [
+          {
+              "message": {
+                  "role": "assistant",
+                  "content": "Sure, how about 'Rainbow Socks'?"
+              }
+          }
+      ]
+}
 
-@traceable(name="Chat Pipeline")
-def chat_pipeline(question: str):
-    context = my_tool(question)
-    messages = [
-        { "role": "system", "content": "You are a helpful assistant. Please respond to the user's request only based on the given context." },
-        { "role": "user", "content": f"Question: {question}\nContext: {context}"}
-    ]
-    chat_completion = client.chat.completions.create(
-        model="gpt-4o-mini", messages=messages
-    )
-    return chat_completion.choices[0].message.content
+@traceable
+def parse_output(response):
+  return response["choices"][0]["message"]["content"]
+
+@traceable
+def run_pipeline():
+  messages = format_prompt("colorful socks")
+  response = invoke_llm(messages)
+  return parse_output(response)
 
 if __name__ == "__main__":
-    chat_pipeline("Can you summarize this morning's meetings?")
+    run_pipeline()
