@@ -49,7 +49,7 @@ def benchmark_run_creation(num_runs: int, json_size: int, samples: int = 1) -> D
             client.create_run(run)
 
         # wait for client queues to be empty
-        client.drain()
+        del client
         elapsed = time.perf_counter() - start
 
         print(f"runs complete: {elapsed:.3f}s")
