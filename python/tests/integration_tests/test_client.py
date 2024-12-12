@@ -1621,7 +1621,20 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         assert image_data.read() == b"fake image data for testing"
         return {"answer": "test image"}
 
-    async def evaluator(
+    async def evaluator_1(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    async def evaluator_2(
         outputs: dict, reference_outputs: dict, attachments: dict
     ) -> Dict[str, Any]:
         assert "image" in attachments
@@ -1635,12 +1648,17 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         }
 
     results = await langchain_client.aevaluate(
-        target, data=dataset_name, evaluators=[evaluator], num_repetitions=2
+        target,
+        data=dataset_name,
+        evaluators=[evaluator_1, evaluator_2],
+        num_repetitions=2,
+        max_concurrency=3,
     )
 
     assert len(results) == 2
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
+        assert result["evaluation_results"]["results"][1].score == 1.0
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
