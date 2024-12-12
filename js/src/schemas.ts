@@ -68,7 +68,15 @@ export interface AttachmentInfo {
 }
 
 export type AttachmentData = Uint8Array | ArrayBuffer;
-export type Attachments = Record<string, [string, AttachmentData]>;
+
+export type AttachmentDescription = {
+  mimeType: string;
+  data: AttachmentData;
+};
+export type Attachments = Record<
+  string,
+  [string, AttachmentData] | AttachmentDescription
+>;
 
 /**
  * A run can represent either a trace (root run)
