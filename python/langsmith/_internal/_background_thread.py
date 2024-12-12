@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import io
 import logging
+import os
 import sys
 import threading
 import time
@@ -17,7 +18,7 @@ from typing import (
 )
 
 import zstandard as zstd
-import os
+
 from langsmith import schemas as ls_schemas
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
@@ -111,7 +112,9 @@ def _tracing_thread_drain_compressed_buffer(
         filled_buffer = client.compressed_runs_buffer
 
         client.compressed_runs_buffer = io.BytesIO()
-        client.compressor_writer = zstd.ZstdCompressor(level=3, threads=-1).stream_writer(
+        client.compressor_writer = zstd.ZstdCompressor(
+            level=3, threads=-1
+        ).stream_writer(
             client.compressed_runs_buffer, closefd=False
         )
         client._run_count = 0
@@ -232,7 +235,6 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
 
 def _worker_thread_func(client: Client, request_queue: Queue) -> None:
-    """Worker thread function that processes requests from the queue"""
     while True:
         try:
             data_stream = request_queue.get()
@@ -247,7 +249,8 @@ def _worker_thread_func(client: Client, request_queue: Queue) -> None:
         finally:
             request_queue.task_done()
 
-def tracing_control_thread_func_compress_parallel(client_ref: weakref.ref[Client]) -> None:
+def tracing_control_thread_func_compress_parallel(client_ref: weakref.ref[Client]
+                                                  ) -> None:
     client = client_ref()
     if client is None:
         return
