@@ -66,6 +66,7 @@ impl RunProcessor {
                     _ => {
                         buffer.push(queued_run);
                         if buffer.len() >= batch_size {
+                            eprintln!("reached buffer size cap ({} >= {batch_size}), sending", buffer.len());
                             self.send_and_clear_buffer(&mut buffer)?;
                             last_send_time = Instant::now();
                         }
@@ -73,12 +74,14 @@ impl RunProcessor {
                 },
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if !buffer.is_empty() && last_send_time.elapsed() >= batch_timeout {
+                        eprintln!("reached timeout with {} buffered items, sending", buffer.len());
                         self.send_and_clear_buffer(&mut buffer)?;
                         last_send_time = Instant::now();
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     if !buffer.is_empty() {
+                        eprintln!("disconnected with {} buffered items, sending", buffer.len());
                         self.send_and_clear_buffer(&mut buffer)?;
                     }
                     break;

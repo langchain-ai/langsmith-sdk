@@ -551,7 +551,7 @@ class Client:
             if langsmith_pyo3:
                 # TODO: tweak these constants as needed
                 queue_capacity = 1_000_000
-                batch_size = 100
+                batch_size = 1
                 batch_timeout_millis = 1000
                 worker_threads = 1
 
@@ -1287,10 +1287,10 @@ class Client:
             run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            # if self._pyo3_client is not None:
-            #     print("RUN_CREATE", run_create)
-            #     self._pyo3_client.create_run(run_create)
-            if self.tracing_queue is not None:
+            if self._pyo3_client is not None:
+                print("RUN_CREATE", run_create)
+                self._pyo3_client.create_run(run_create)
+            elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 self.tracing_queue.put(
                     TracingQueueItem(run_create["dotted_order"], serialized_op)
@@ -1756,9 +1756,9 @@ class Client:
 
         print("UPDATE_RUN", data)
 
-        # if self._pyo3_client is not None:
-        #     self._pyo3_client.update_run(data)
-        if use_multipart and self.tracing_queue is not None:
+        if self._pyo3_client is not None:
+            self._pyo3_client.update_run(data)
+        elif use_multipart and self.tracing_queue is not None:
             # not collecting attachments currently, use empty dict
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             self.tracing_queue.put(
