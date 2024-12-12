@@ -552,6 +552,7 @@ class Client:
 
             if langsmith_pyo3:
                 # TODO: tweak these constants as needed
+                print("using pyo3 client")
                 queue_capacity = 1_000_000
                 batch_size = 100
                 batch_timeout_millis = 1000
@@ -572,6 +573,9 @@ class Client:
                         "when PyO3 client was requested, falling back to Python impl: %s",
                         repr(e),
                     )
+
+        if self._pyo3_client is None:
+            print("NOT using pyo3 client")
 
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
@@ -1273,6 +1277,7 @@ class Client:
             "inputs": inputs,
             "run_type": run_type,
         }
+        print("RUN_CREATE called", run_create)
         if not self._filter_for_sampling([run_create]):
             return
         if revision_id is not None:
@@ -1288,6 +1293,7 @@ class Client:
             run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
+            print("RUN_CREATE batch", run_create)
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif self.tracing_queue is not None:
@@ -1751,6 +1757,8 @@ class Client:
             data["events"] = events
         if data["extra"]:
             self._insert_runtime_env([data])
+
+        print("UPDATE_RUN", data)
 
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
