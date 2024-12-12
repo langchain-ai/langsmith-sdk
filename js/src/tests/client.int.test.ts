@@ -1278,7 +1278,10 @@ test("upload examples multipart", async () => {
     inputs: { text: "hello world" },
     // check that passing no outputs works fine
     attachments: {
-      test_file: ["image/png", fs.readFileSync(pathname)],
+      test_file: {
+        mimeType: "image/png",
+        data: fs.readFileSync(pathname),
+      },
     },
   };
 
