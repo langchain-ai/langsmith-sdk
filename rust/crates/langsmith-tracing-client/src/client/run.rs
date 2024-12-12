@@ -24,6 +24,18 @@ pub struct RunIO {
     pub outputs: Option<Vec<u8>>,
 }
 
+impl RunIO {
+    #[inline]
+    pub(crate) fn merge(&mut self, other: RunIO) {
+        if other.inputs.is_some() {
+            self.inputs = other.inputs;
+        }
+        if other.outputs.is_some() {
+            self.outputs = other.outputs;
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RunCommon {
     pub id: String,
@@ -37,6 +49,36 @@ pub struct RunCommon {
     pub tags: Option<Value>,
     pub session_id: Option<String>,
     pub session_name: Option<String>,
+}
+
+impl RunCommon {
+    #[inline]
+    pub(crate) fn merge(&mut self, other: RunCommon) {
+        if other.parent_run_id.is_some() {
+            self.parent_run_id = other.parent_run_id;
+        }
+        if other.extra.is_some() {
+            self.extra = other.extra;
+        }
+        if other.error.is_some() {
+            self.error = other.error;
+        }
+        if other.serialized.is_some() {
+            self.serialized = other.serialized;
+        }
+        if other.events.is_some() {
+            self.events = other.events;
+        }
+        if other.tags.is_some() {
+            self.tags = other.tags;
+        }
+        if other.session_id.is_some() {
+            self.session_id = other.session_id;
+        }
+        if other.session_name.is_some() {
+            self.session_name = other.session_name;
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
