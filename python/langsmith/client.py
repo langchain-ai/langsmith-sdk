@@ -1179,7 +1179,7 @@ class Client:
             ):
                 # Drop completely
                 run_create.pop("serialized", None)
-            else:
+            elif run_create["serialized"] is not None:
                 # Drop graph
                 run_create["serialized"].pop("graph", None)
 
@@ -1999,7 +1999,6 @@ class Client:
             "prompt_tokens",
             "reference_example_id",
             "run_type",
-            "serialized",
             "session_id",
             "start_time",
             "status",
