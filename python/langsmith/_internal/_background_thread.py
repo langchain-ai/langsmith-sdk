@@ -106,7 +106,16 @@ def _tracing_thread_drain_compressed_buffer(
     with client._buffer_lock:
         current_size = client.compressed_runs_buffer.tell()
 
-        if not (client._run_count >= size_limit or current_size >= size_limit_bytes):
+        if size_limit is not None and size_limit <= 0:
+            raise ValueError(f"size_limit must be positive; got {size_limit}")
+        if size_limit_bytes is not None and size_limit_bytes < 0:
+            raise ValueError(
+                f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
+            )
+
+        if (size_limit_bytes is None or current_size < size_limit_bytes) and (
+            size_limit is None or len(client._run_count) < size_limit
+        ):
             return None
 
         # Write final boundary and close compression stream
