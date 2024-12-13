@@ -1999,6 +1999,7 @@ class Client:
             "prompt_tokens",
             "reference_example_id",
             "run_type",
+            "serialized",
             "session_id",
             "start_time",
             "status",
