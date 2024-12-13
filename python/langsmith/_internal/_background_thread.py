@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import concurrent.futures
 import functools
 import io
 import logging
-import os
 import sys
 import threading
 import time
 import weakref
 from multiprocessing import cpu_count
-import concurrent.futures
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
@@ -38,7 +37,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-HTTP_REQUEST_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=cpu_count())
+HTTP_REQUEST_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=cpu_count()
+)
+
 
 @functools.total_ordering
 class TracingQueueItem:
@@ -261,10 +263,12 @@ def tracing_control_thread_func_compress_parallel(
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
-            
+
             # Count active threads
             thread_pool = HTTP_REQUEST_THREAD_POOL._threads
-            active_count = sum(1 for thread in thread_pool if thread is not None and thread.is_alive())
+            active_count = sum(
+                1 for thread in thread_pool if thread is not None and thread.is_alive()
+            )
 
             return sys.getrefcount(client) > num_known_refs + active_count
         else:
@@ -305,7 +309,6 @@ def tracing_control_thread_func_compress_parallel(
             except RuntimeError:
                 client._send_compressed_multipart_req(final_data_stream)
 
-        
     except Exception:
         logger.error("Error in final cleanup", exc_info=True)
 

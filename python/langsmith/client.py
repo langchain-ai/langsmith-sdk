@@ -1824,8 +1824,7 @@ class Client:
         if attachments:
             data["attachments"] = attachments
         use_multipart = (
-            (self.tracing_queue is not None
-            or self.compressed_runs_buffer is not None)
+            (self.tracing_queue is not None or self.compressed_runs_buffer is not None)
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
@@ -1887,16 +1886,16 @@ class Client:
                 },
             )
 
-
     def flush_compressed_runs(self, attempts: int = 3) -> None:
-        """
-        Forcefully flush the currently buffered compressed runs.
-        """
+        """Force flush the currently buffered compressed runs."""
         if not self.compress_traces or self.compressed_runs_buffer is None:
             return
 
         # Attempt to drain and send any remaining data
-        from langsmith._internal._background_thread import _tracing_thread_drain_compressed_buffer, HTTP_REQUEST_THREAD_POOL
+        from langsmith._internal._background_thread import (
+            HTTP_REQUEST_THREAD_POOL,
+            _tracing_thread_drain_compressed_buffer,
+        )
 
         final_data_stream = _tracing_thread_drain_compressed_buffer(
             self, size_limit=1, size_limit_bytes=1
@@ -1909,7 +1908,9 @@ class Client:
         future = None
         try:
             future = HTTP_REQUEST_THREAD_POOL.submit(
-                self._send_compressed_multipart_req, final_data_stream, attempts=attempts
+                self._send_compressed_multipart_req,
+                final_data_stream,
+                attempts=attempts,
             )
         except RuntimeError:
             # In case the ThreadPoolExecutor is already shutdown
@@ -1920,9 +1921,7 @@ class Client:
             cf.wait([future])
 
     def flush(self) -> None:
-        """
-        A convenience method to flush either queue or compressed buffer, depending on mode.
-        """
+        """Flush either queue or compressed buffer, depending on mode."""
         if self.compress_traces and self.compressed_runs_buffer is not None:
             self.flush_compressed_runs()
         elif self.tracing_queue is not None:
