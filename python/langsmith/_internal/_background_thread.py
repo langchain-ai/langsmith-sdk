@@ -302,9 +302,11 @@ def tracing_control_thread_func_compress_parallel(
         if final_data_stream is not None:
             try:
                 concurrent.futures.wait(
-                    HTTP_REQUEST_THREAD_POOL.submit(
-                        client._send_compressed_multipart_req, final_data_stream
-                    )
+                    [
+                        HTTP_REQUEST_THREAD_POOL.submit(
+                            client._send_compressed_multipart_req, final_data_stream
+                        )
+                    ]
                 )
             except RuntimeError:
                 client._send_compressed_multipart_req(final_data_stream)
