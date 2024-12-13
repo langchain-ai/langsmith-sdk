@@ -99,7 +99,7 @@ def _tracing_thread_drain_queue(
 
 
 def _tracing_thread_drain_compressed_buffer(
-    client: Client, size_limit: int = 100, size_limit_bytes: int = 20_971_520
+    client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
 ) -> Optional[io.BytesIO]:
     assert client.compressed_runs_buffer is not None
     assert client.compressor_writer is not None
@@ -114,7 +114,7 @@ def _tracing_thread_drain_compressed_buffer(
             )
 
         if (size_limit_bytes is None or current_size < size_limit_bytes) and (
-            size_limit is None or len(client._run_count) < size_limit
+            size_limit is None or client._run_count < size_limit
         ):
             return None
 
@@ -256,7 +256,6 @@ def tracing_control_thread_func_compress_parallel(
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
-    assert size_limit_bytes is not None
     num_known_refs = 3
 
     def keep_thread_active() -> bool:
