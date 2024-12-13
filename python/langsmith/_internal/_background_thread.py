@@ -6,7 +6,6 @@ import io
 import logging
 import sys
 import threading
-import time
 import weakref
 from multiprocessing import cpu_count
 from queue import Empty, Queue
@@ -276,23 +275,25 @@ def tracing_control_thread_func_compress_parallel(
             # for now, keep thread alive
             return True
 
-    while keep_thread_active():
-        try:
-            data_stream = _tracing_thread_drain_compressed_buffer(
-                client, size_limit, size_limit_bytes
-            )
-            if data_stream is not None:
-                try:
-                    HTTP_REQUEST_THREAD_POOL.submit(
-                        client._send_compressed_multipart_req, data_stream
-                    )
-                except RuntimeError:
-                    client._send_compressed_multipart_req(data_stream)
-            else:
-                time.sleep(0.05)
-        except Exception:
-            logger.error("Error in tracing compression thread", exc_info=True)
-            time.sleep(0.1)  # Wait before retrying on error
+    while True:
+        triggered = client._data_available_event.wait(timeout=0.05)
+        if not keep_thread_active():
+            break
+        if not triggered:
+            continue
+        client._data_available_event.clear()
+
+        data_stream = _tracing_thread_drain_compressed_buffer(
+            client, size_limit, size_limit_bytes
+        )
+
+        if data_stream is not None:
+            try:
+                HTTP_REQUEST_THREAD_POOL.submit(
+                    client._send_compressed_multipart_req, data_stream
+                )
+            except RuntimeError:
+                client._send_compressed_multipart_req(data_stream)
 
     # Drain the buffer on exit
     try:

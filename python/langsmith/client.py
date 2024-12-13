@@ -402,6 +402,7 @@ class Client:
         "_run_count",
         "_buffer_lock",
         "compressed_runs_buffer",
+        "_data_available_event",
     ]
 
     def __init__(
@@ -511,6 +512,7 @@ class Client:
                 level=3, threads=-1
             ).stream_writer(self.compressed_runs_buffer, closefd=False)
             self._buffer_lock: threading.Lock = threading.Lock()
+            self._data_available_event = threading.Event()
             self._run_count: int = 0
         else:
             self.compressed_runs_buffer = None
@@ -1334,6 +1336,7 @@ class Client:
                         multipart_form, self.compressor_writer, self.boundary
                     )
                     self._run_count += 1
+                    self._data_available_event.set()
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 self.tracing_queue.put(
@@ -1863,6 +1866,7 @@ class Client:
                         multipart_form, self.compressor_writer, self.boundary
                     )
                     self._run_count += 1
+                    self._data_available_event.set()
             elif self.tracing_queue is not None:
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)
