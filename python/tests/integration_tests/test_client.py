@@ -941,9 +941,6 @@ def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
     _session = "__test_multipart_ingest_create_with_attachments"
-    langchain_client = Client(
-        api_key="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"
-    )
     trace_a_id = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S%fZ"
