@@ -294,7 +294,7 @@ async def aevaluate(
             blocking=blocking,
             **kwargs,
         )
-    elif isinstance(target, tuple):
+    elif isinstance(target, (list, tuple)):
         msg = (
             "Running a comparison of two existing experiments asynchronously is not "
             "currently supported. Please use the `evaluate()` method instead and make "
