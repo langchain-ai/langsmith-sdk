@@ -1179,7 +1179,7 @@ class Client:
             ):
                 # Drop completely
                 run_create.pop("serialized", None)
-            else:
+            elif run_create.get("serialized"):
                 # Drop graph
                 run_create["serialized"].pop("graph", None)
 
