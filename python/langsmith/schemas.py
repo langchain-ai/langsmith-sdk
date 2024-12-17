@@ -131,7 +131,7 @@ class AttachmentInfo(TypedDict):
 
     presigned_url: str
     reader: BinaryIOLike
-    # TODO: add mime type
+    mime_type: str
 
 
 class Example(ExampleBase):
