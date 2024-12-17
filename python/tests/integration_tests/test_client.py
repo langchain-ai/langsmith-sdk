@@ -941,7 +941,9 @@ def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
     _session = "__test_multipart_ingest_create_with_attachments"
-
+    langchain_client = Client(
+        api_key="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"
+    )
     trace_a_id = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S%fZ"
@@ -971,7 +973,7 @@ def test_multipart_ingest_create_with_attachments(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
         assert not caplog.records
-        time.sleep(3)
+        time.sleep(5)  # Need this so the run persists
         created_run = langchain_client.read_run(run_id=str(trace_a_id))
         assert created_run.attachments
         assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
