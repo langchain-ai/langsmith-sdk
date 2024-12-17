@@ -202,7 +202,7 @@ html_theme_options = {
     #     # Use :html_theme.sidebar_secondary.remove: for file-wide removal
     #     "secondary_sidebar_items": {"**": ["page-toc", "sourcelink"]},
     #     "show_version_warning_banner": True,
-    #     "announcement": None,
+    "announcement": "This is a legacy site. Please use the <a href='https://docs.smith.langchain.com/reference/python'>latest API reference</a> instead.",
     "icon_links": [
         {
             # Label for this link
