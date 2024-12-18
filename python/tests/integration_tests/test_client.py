@@ -1482,21 +1482,27 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
 async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_aevaluate_attachments" + uuid4().hex[:4]
+    langchain_client = Client(
+        api_key="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"
+    )
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
-        inputs={"question": "What is shown in the image?"},
-        outputs={"answer": "test image"},
-        attachments={
-            "image": ("image/png", b"fake image data for testing"),
-        },
-    )
+    examples = [
+        ExampleUploadWithAttachments(
+            inputs={"question": "What is shown in the image?"},
+            outputs={"answer": "test image"},
+            attachments={
+                "image": ("image/png", b"fake image data for testing"),
+            },
+        )
+        for i in range(10)
+    ]
 
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
@@ -1542,7 +1548,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         max_concurrency=3,
     )
 
-    assert len(results) == 2
+    assert len(results) == 20
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
