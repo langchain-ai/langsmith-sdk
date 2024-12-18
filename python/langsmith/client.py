@@ -3481,6 +3481,7 @@ class Client:
             | List[ls_schemas.ExampleUpdateWithAttachments],
         ],
         include_dataset_id: bool = False,
+        dangerously_allow_filesystem: Optional[bool] = False,
     ) -> Tuple[Any, bytes]:
         parts: List[MultipartPart] = []
         if include_dataset_id:
@@ -3566,19 +3567,24 @@ class Client:
                 for name, attachment in example.attachments.items():
                     if isinstance(attachment, tuple):
                         if isinstance(attachment[1], Path):
-                            mime_type, file_path = attachment
-                            file_size = os.path.getsize(file_path)
-                            parts.append(
-                                (
-                                    f"{example_id}.attachment.{name}",
+                            if dangerously_allow_filesystem == True:
+                                mime_type, file_path = attachment
+                                file_size = os.path.getsize(file_path)
+                                parts.append(
                                     (
-                                        None,
-                                        open(file_path, "rb"),  # type: ignore[arg-type]
-                                        f"{mime_type}; length={file_size}",
-                                        {},
-                                    ),
+                                        f"{example_id}.attachment.{name}",
+                                        (
+                                            None,
+                                            open(file_path, "rb"),  # type: ignore[arg-type]
+                                            f"{mime_type}; length={file_size}",
+                                            {},
+                                        ),
+                                    )
                                 )
-                            )
+                            else:
+                                raise ValueError(
+                                    "dangerously_allow_filesystem must be True to upload files from the filesystem"
+                                )
                         else:
                             mime_type, data = attachment
                             parts.append(
@@ -3635,6 +3641,7 @@ class Client:
         *,
         dataset_id: ID_TYPE,
         updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+        dangerously_allow_filesystem: Optional[bool] = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3646,7 +3653,7 @@ class Client:
         if updates is None:
             updates = []
 
-        encoder, data = self._prepare_multipart_data(updates, include_dataset_id=False)
+        encoder, data = self._prepare_multipart_data(updates, include_dataset_id=False, dangerously_allow_filesystem=dangerously_allow_filesystem)
 
         response = self.request_with_retries(
             "PATCH",
@@ -3667,6 +3674,7 @@ class Client:
         *,
         dataset_id: ID_TYPE,
         uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
+        dangerously_allow_filesystem: Optional[bool] = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3677,7 +3685,7 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data = self._prepare_multipart_data(uploads, include_dataset_id=False)
+        encoder, data = self._prepare_multipart_data(uploads, include_dataset_id=False, dangerously_allow_filesystem=dangerously_allow_filesystem)
 
         response = self.request_with_retries(
             "POST",
@@ -3697,6 +3705,7 @@ class Client:
         self,
         *,
         upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
+        dangerously_allow_filesystem: Optional[bool] = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
@@ -3713,7 +3722,7 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data = self._prepare_multipart_data(upserts, include_dataset_id=True)
+        encoder, data = self._prepare_multipart_data(upserts, include_dataset_id=True, dangerously_allow_filesystem=dangerously_allow_filesystem)
 
         response = self.request_with_retries(
             "POST",

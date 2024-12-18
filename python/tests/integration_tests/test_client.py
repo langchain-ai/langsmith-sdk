@@ -1961,7 +1961,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     )
 
     created_examples = langchain_client.upload_examples_multipart(
-        dataset_id=dataset.id, uploads=[example]
+        dataset_id=dataset.id, uploads=[example], dangerously_allow_filesystem=True
     )
     assert created_examples["count"] == 1
 
@@ -1988,7 +1988,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     )
 
     langchain_client.update_examples_multipart(
-        dataset_id=dataset.id, updates=[example_update]
+        dataset_id=dataset.id, updates=[example_update], dangerously_allow_filesystem=True
     )
 
     retrieved = langchain_client.read_example(example_id)
