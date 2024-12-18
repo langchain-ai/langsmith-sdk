@@ -659,14 +659,15 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         max_concurrency: Optional[int] = None,
     ) -> _AsyncExperimentManager:
         """Run predictions and evaluations in a single pipeline.
-        
+
         This allows evaluators to process results as soon as they're available from
         the target function, rather than waiting for all predictions to complete first.
         """
         evaluators = _resolve_evaluators(evaluators)
-        
-        if not hasattr(self, '_evaluator_executor'):
+
+        if not hasattr(self, "_evaluator_executor"):
             self._evaluator_executor = cf.ThreadPoolExecutor(max_workers=4)
+
         async def process_examples():
             async for pred in self._apredict(
                 target,
@@ -676,7 +677,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 example, run = pred["example"], pred["run"]
                 result = self._arun_evaluators(
                     evaluators,
-                    {"run": run, "example": example, "evaluation_results": {"results": []}},
+                    {
+                        "run": run,
+                        "example": example,
+                        "evaluation_results": {"results": []},
+                    },
                     executor=self._evaluator_executor,
                 )
                 yield result
@@ -688,7 +693,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         )
 
         r1, r2, r3 = aitertools.atee(experiment_results, 3, lock=asyncio.Lock())
-        
+
         return _AsyncExperimentManager(
             (result["example"] async for result in r1),
             experiment=self._experiment,
@@ -856,13 +861,16 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             example = current_results["example"]
             eval_results = current_results["evaluation_results"]
             lock = asyncio.Lock()
+
             async def _run_single_evaluator(evaluator):
                 try:
                     evaluator_response = await evaluator.aevaluate_run(
                         run=run,
                         example=example,
                     )
-                    selected_results = self.client._select_eval_results(evaluator_response)
+                    selected_results = self.client._select_eval_results(
+                        evaluator_response
+                    )
                     async with lock:
                         eval_results["results"].extend(selected_results)
 
@@ -885,7 +893,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                                 for key in feedback_keys
                             ]
                         )
-                        selected_results = self.client._select_eval_results(error_response)
+                        selected_results = self.client._select_eval_results(
+                            error_response
+                        )
                         async with lock:
                             eval_results["results"].extend(selected_results)
                         if self._upload_results:
@@ -900,8 +910,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         f" run {run.id}: {repr(e)}",
                         exc_info=True,
                     )
-            
-            await asyncio.gather(*[_run_single_evaluator(evaluator) for evaluator in evaluators])
+
+            await asyncio.gather(
+                *[_run_single_evaluator(evaluator) for evaluator in evaluators]
+            )
             return ExperimentResultRow(
                 run=run,
                 example=example,
@@ -1118,10 +1130,6 @@ async def _aforward(
                     client=client,
                 ),
             )
-            if include_attachments and example.attachments is not None:
-                for attachment in example.attachments:
-                    reader = example.attachments[attachment]["reader"]
-                    reader.seek(0)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1
