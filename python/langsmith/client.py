@@ -58,6 +58,7 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import requests
+import zstandard as zstd
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
@@ -77,6 +78,9 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
+from langsmith._internal._background_thread import (
+    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
+)
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -92,6 +96,7 @@ from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
     combine_serialized_queue_operations,
+    compress_multipart_parts_and_context,
     serialize_feedback_dict,
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
@@ -390,6 +395,15 @@ class Client:
         "_settings",
         "_manual_cleanup",
         "_pyo3_client",
+        "compress_traces",
+        "boundary",
+        "compressor",
+        "compressor_writer",
+        "_run_count",
+        "_buffer_lock",
+        "compressed_runs_buffer",
+        "_data_available_event",
+        "_futures",
     ]
 
     def __init__(
@@ -491,6 +505,20 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
+        self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
+        if self.compress_traces:
+            self._futures: set[cf.Future] = set()
+            self.boundary = BOUNDARY
+            self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
+            self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(
+                level=3, threads=-1
+            ).stream_writer(self.compressed_runs_buffer, closefd=False)
+            self._buffer_lock: threading.Lock = threading.Lock()
+            self._data_available_event = threading.Event()
+            self._run_count: int = 0
+        else:
+            self.compressed_runs_buffer = None
+
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -499,8 +527,16 @@ class Client:
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         # Initialize auto batching
-        if auto_batch_tracing:
-            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
+        if auto_batch_tracing and self.compress_traces:
+            self.tracing_queue: Optional[PriorityQueue] = None
+            threading.Thread(
+                target=_tracing_control_thread_func_compress_parallel,
+                # arg must be a weakref to self to avoid the Thread object
+                # preventing garbage collection of the Client object
+                args=(weakref.ref(self),),
+            ).start()
+        elif auto_batch_tracing:
+            self.tracing_queue = PriorityQueue()
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -1290,6 +1326,19 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
+            if self.compressed_runs_buffer is not None:
+                serialized_op = serialize_run_dict("post", run_create)
+                multipart_form = (
+                    serialized_run_operation_to_multipart_parts_and_context(
+                        serialized_op
+                    )
+                )
+                with self._buffer_lock:
+                    compress_multipart_parts_and_context(
+                        multipart_form, self.compressor_writer, self.boundary
+                    )
+                    self._run_count += 1
+                    self._data_available_event.set()
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 self.tracing_queue.put(
@@ -1671,6 +1720,58 @@ class Client:
                     # do not retry by default
                     return
 
+    def _send_compressed_multipart_req(self, data_stream, *, attempts: int = 3):
+        """Send a zstd-compressed multipart form data stream to the backend."""
+        _context: str = ""
+
+        for api_url, api_key in self._write_api_urls.items():
+            for idx in range(1, attempts + 1):
+                try:
+                    headers = {
+                        **self._headers,
+                        "X-API-KEY": api_key,
+                        "Content-Type": f"multipart/form-data; boundary={self.boundary}",
+                        "Content-Encoding": "zstd",
+                    }
+
+                    self.request_with_retries(
+                        "POST",
+                        f"{api_url}/runs/multipart",
+                        request_kwargs={
+                            "data": data_stream,
+                            "headers": headers,
+                        },
+                        stop_after_attempt=1,
+                        _context=_context,
+                    )
+                    break
+                except ls_utils.LangSmithConflictError:
+                    break
+                except (
+                    ls_utils.LangSmithConnectionError,
+                    ls_utils.LangSmithRequestTimeout,
+                    ls_utils.LangSmithAPIError,
+                ) as exc:
+                    if idx == attempts:
+                        logger.warning(
+                            f"Failed to send compressed multipart ingest: {exc}"
+                        )
+                    else:
+                        continue
+                except Exception as e:
+                    try:
+                        exc_desc_lines = traceback.format_exception_only(type(e), e)
+                        exc_desc = "".join(exc_desc_lines).rstrip()
+                        logger.warning(
+                            f"Failed to send compressed multipart ingest: {exc_desc}"
+                        )
+                    except Exception:
+                        logger.warning(
+                            f"Failed to send compressed multipart ingest: {repr(e)}"
+                        )
+                    # Do not retry by default after unknown exceptions
+                    return
+
     def update_run(
         self,
         run_id: ID_TYPE,
@@ -1728,7 +1829,7 @@ class Client:
         if attachments:
             data["attachments"] = attachments
         use_multipart = (
-            self.tracing_queue is not None
+            (self.tracing_queue is not None or self.compressed_runs_buffer is not None)
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
@@ -1754,12 +1855,24 @@ class Client:
 
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
-        elif use_multipart and self.tracing_queue is not None:
-            # not collecting attachments currently, use empty dict
+        elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
-            self.tracing_queue.put(
-                TracingQueueItem(data["dotted_order"], serialized_op)
-            )
+            if self.compressed_runs_buffer is not None:
+                multipart_form = (
+                    serialized_run_operation_to_multipart_parts_and_context(
+                        serialized_op
+                    )
+                )
+                with self._buffer_lock:
+                    compress_multipart_parts_and_context(
+                        multipart_form, self.compressor_writer, self.boundary
+                    )
+                    self._run_count += 1
+                    self._data_available_event.set()
+            elif self.tracing_queue is not None:
+                self.tracing_queue.put(
+                    TracingQueueItem(data["dotted_order"], serialized_op)
+                )
         else:
             self._update_run(data)
 
@@ -1778,6 +1891,50 @@ class Client:
                     "headers": headers,
                 },
             )
+
+    def flush_compressed_runs(self, attempts: int = 3) -> None:
+        """Force flush the currently buffered compressed runs."""
+        if not self.compress_traces or self.compressed_runs_buffer is None:
+            return
+
+        # Attempt to drain and send any remaining data
+        from langsmith._internal._background_thread import (
+            HTTP_REQUEST_THREAD_POOL,
+            _tracing_thread_drain_compressed_buffer,
+        )
+
+        final_data_stream = _tracing_thread_drain_compressed_buffer(
+            self, size_limit=1, size_limit_bytes=1
+        )
+
+        if final_data_stream is None:
+            return
+
+        # We have data to send
+        future = None
+        try:
+            future = HTTP_REQUEST_THREAD_POOL.submit(
+                self._send_compressed_multipart_req,
+                final_data_stream,
+                attempts=attempts,
+            )
+            self._futures.add(future)
+        except RuntimeError:
+            # In case the ThreadPoolExecutor is already shutdown
+            self._send_compressed_multipart_req(final_data_stream, attempts=attempts)
+
+        # If we got a future, wait for it to complete
+        if self._futures:
+            done, _ = cf.wait(self._futures, return_when=cf.ALL_COMPLETED)
+            # Remove completed futures
+            self._futures.difference_update(done)
+
+    def flush(self) -> None:
+        """Flush either queue or compressed buffer, depending on mode."""
+        if self.compress_traces and self.compressed_runs_buffer is not None:
+            self.flush_compressed_runs()
+        elif self.tracing_queue is not None:
+            self.tracing_queue.join()
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
