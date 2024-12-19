@@ -5,6 +5,8 @@ import logging
 import uuid
 from typing import Literal, Optional, Union, cast
 
+import zstandard as zstd
+
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
@@ -271,3 +273,33 @@ def serialized_run_operation_to_multipart_parts_and_context(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",
     )
+
+def compress_multipart_parts_and_context(
+    parts_and_context: MultipartPartsAndContext,
+    compressor_writer: zstd.ZstdCompressionWriter,
+    boundary: str,
+) -> None:
+    for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
+        header_parts = [
+            f"--{boundary}\r\n",
+            f'Content-Disposition: form-data; name="{part_name}"'
+        ]
+
+        if filename:
+            header_parts.append(f'; filename="{filename}"')
+
+        header_parts.extend([
+            f"\r\nContent-Type: {content_type}\r\n",
+            *[f"{k}: {v}\r\n" for k, v in headers.items()],
+            "\r\n"
+        ])
+
+        compressor_writer.write("".join(header_parts).encode())
+
+        if isinstance(data, (bytes, bytearray)):
+            compressor_writer.write(data)
+        else:
+            compressor_writer.write(str(data).encode())
+
+        # Write part terminator
+        compressor_writer.write(b"\r\n")
