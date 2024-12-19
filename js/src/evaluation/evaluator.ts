@@ -90,7 +90,7 @@ export interface RunEvaluator {
   ): Promise<EvaluationResult | EvaluationResults>;
 }
 
-export type RunEvaluatorLike =
+export type _LegacyRunEvaluatorLike =
   | ((
       run: Run,
       example?: Example
@@ -100,19 +100,21 @@ export type RunEvaluatorLike =
       run: Run,
       example: Example
     ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((run: Run, example: Example) => EvaluationResult | EvaluationResults)
+  | ((run: Run, example: Example) => EvaluationResult | EvaluationResults);
+
+export type RunEvaluatorLike =
   | ((args: {
       run: Run;
       example: Example;
-      inputs: Record<string, any>;
-      outputs: Record<string, any>;
+      inputs?: Record<string, any>;
+      outputs?: Record<string, any>;
       referenceOutputs?: Record<string, any>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
       run: Run;
       example: Example;
-      inputs: Record<string, any>;
-      outputs: Record<string, any>;
+      inputs?: Record<string, any>;
+      outputs?: Record<string, any>;
       referenceOutputs?: Record<string, any>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
@@ -253,6 +255,8 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
   }
 }
 
-export function runEvaluator(func: RunEvaluatorLike): RunEvaluator {
+export function runEvaluator(
+  func: RunEvaluatorLike | _LegacyRunEvaluatorLike
+): RunEvaluator {
   return new DynamicRunEvaluator(func);
 }
