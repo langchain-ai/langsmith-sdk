@@ -3953,6 +3953,42 @@ class Client:
 
         Yields:
             Example: The examples.
+
+        Examples:
+
+            List all examples for a dataset:
+
+            .. code-block:: python
+                from langsmith import Client
+                client = Client()
+                
+                # By Dataset ID
+                examples = client.list_examples(dataset_id="c9ace0d8-a82c-4b6c-13d2-83401d68e9ab")
+                # By Dataset Name
+                examples = client.list_examples(dataset_name="My Test Dataset")
+
+            List examples by id
+
+            .. code-block:: python
+                example_ids = [
+                '734fc6a0-c187-4266-9721-90b7a025751a',
+                'd6b4c1b9-6160-4d63-9b61-b034c585074f',
+                '4d31df4e-f9c3-4a6e-8b6c-65701c2fed13',
+                ]
+                examples = client.list_examples(example_ids=example_ids)
+
+            List examples by metadata
+
+            .. code-block:: python
+                examples = client.list_examples(dataset_name=dataset_name, metadata={"foo": "bar"})
+            
+            List examples by structured filter
+
+            .. code-block:: python
+                examples = client.list_examples(
+                    dataset_name=dataset_name,
+                    filter='and(not(has(metadata, \'{"foo": "bar"}\')), exists(metadata, "tenant_id"))'
+                )
         """
         params: Dict[str, Any] = {
             **kwargs,
