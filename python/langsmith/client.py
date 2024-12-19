@@ -403,6 +403,7 @@ class Client:
         "_buffer_lock",
         "compressed_runs_buffer",
         "_data_available_event",
+        "_futures",
     ]
 
     def __init__(
@@ -506,6 +507,7 @@ class Client:
         self.session = session_
         self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
         if self.compress_traces:
+            self._futures: set[cf.Future] = set()
             self.boundary = BOUNDARY
             self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
             self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(
@@ -1916,13 +1918,16 @@ class Client:
                 final_data_stream,
                 attempts=attempts,
             )
+            self._futures.add(future)
         except RuntimeError:
             # In case the ThreadPoolExecutor is already shutdown
             self._send_compressed_multipart_req(final_data_stream, attempts=attempts)
 
         # If we got a future, wait for it to complete
-        if future is not None:
-            cf.wait([future])
+        if self._futures:
+            done, _ = cf.wait(self._futures, return_when=cf.ALL_COMPLETED)
+            # Remove completed futures
+            self._futures.difference_update(done)
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
