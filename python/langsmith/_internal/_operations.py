@@ -274,26 +274,27 @@ def serialized_run_operation_to_multipart_parts_and_context(
         f"trace={op.trace_id},id={op.id}",
     )
 
-
 def compress_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
     compressor_writer: zstd.ZstdCompressionWriter,
     boundary: str,
 ) -> None:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
-        part_header = f"--{boundary}\r\n"
-        part_header += f'Content-Disposition: form-data; name="{part_name}"'
+        header_parts = [
+            f"--{boundary}\r\n",
+            f'Content-Disposition: form-data; name="{part_name}"'
+        ]
 
         if filename:
-            part_header += f'; filename="{filename}"'
+            header_parts.append(f'; filename="{filename}"')
 
-        part_header += f"\r\nContent-Type: {content_type}\r\n"
+        header_parts.extend([
+            f"\r\nContent-Type: {content_type}\r\n",
+            *[f"{k}: {v}\r\n" for k, v in headers.items()],
+            "\r\n"
+        ])
 
-        for header_name, header_value in headers.items():
-            part_header += f"{header_name}: {header_value}\r\n"
-
-        part_header += "\r\n"
-        compressor_writer.write(part_header.encode())
+        compressor_writer.write("".join(header_parts).encode())
 
         if isinstance(data, (bytes, bytearray)):
             compressor_writer.write(data)
