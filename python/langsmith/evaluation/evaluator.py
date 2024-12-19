@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import io
 import uuid
 from abc import abstractmethod
 from typing import (
@@ -666,7 +667,15 @@ def _normalize_evaluator_func(
                     "example": example,
                     "inputs": example.inputs if example else {},
                     "outputs": run.outputs or {},
-                    "attachments": example.attachments or {} if example else {},
+                    "attachments": {
+                        name: {
+                            "presigned_url": value["presigned_url"],
+                            "reader": io.BytesIO(value["reader"].getvalue()),
+                        }
+                        for name, value in (example.attachments or {}).items()
+                    }
+                    if example
+                    else {},
                     "reference_outputs": example.outputs or {} if example else {},
                 }
                 args = (arg_map[arg] for arg in positional_args)

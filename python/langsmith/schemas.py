@@ -76,12 +76,12 @@ class BinaryIOLike(Protocol):
         """Read function."""
         ...
 
-    def write(self, b: bytes) -> int:
-        """Write function."""
-        ...
-
     def seek(self, offset: int, whence: int = 0) -> int:
         """Seek function."""
+        ...
+
+    def getvalue(self) -> bytes:
+        """Get value function."""
         ...
 
 

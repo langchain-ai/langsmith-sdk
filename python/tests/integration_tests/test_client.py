@@ -1488,15 +1488,18 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
-        inputs={"question": "What is shown in the image?"},
-        outputs={"answer": "test image"},
-        attachments={
-            "image": ("image/png", b"fake image data for testing"),
-        },
-    )
+    examples = [
+        ExampleUploadWithAttachments(
+            inputs={"question": "What is shown in the image?"},
+            outputs={"answer": "test image"},
+            attachments={
+                "image": ("image/png", b"fake image data for testing"),
+            },
+        )
+        for i in range(10)
+    ]
 
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
@@ -1542,7 +1545,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         max_concurrency=3,
     )
 
-    assert len(results) == 2
+    assert len(results) == 20
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
