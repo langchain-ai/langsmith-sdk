@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("langsmith.client")
 
 HTTP_REQUEST_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(
-    max_workers=cpu_count()*3
+    max_workers=cpu_count() * 3
 )
 
 
@@ -119,7 +119,7 @@ def _tracing_thread_drain_compressed_buffer(
             return None
 
         # Write final boundary and close compression stream
-        client.compressor_writer.write(f"--{client.boundary}--\r\n".encode())
+        client.compressor_writer.write(f"--{client._boundary}--\r\n".encode())
         client.compressor_writer.close()
 
         filled_buffer = client.compressed_runs_buffer

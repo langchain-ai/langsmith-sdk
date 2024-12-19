@@ -396,8 +396,7 @@ class Client:
         "_manual_cleanup",
         "_pyo3_client",
         "compress_traces",
-        "boundary",
-        "compressor",
+        "_boundary",
         "compressor_writer",
         "_run_count",
         "_buffer_lock",
@@ -508,7 +507,7 @@ class Client:
         self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
         if self.compress_traces:
             self._futures: set[cf.Future] = set()
-            self.boundary = BOUNDARY
+            self._boundary = BOUNDARY
             self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
             self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(
                 level=3, threads=-1
@@ -1335,7 +1334,7 @@ class Client:
                 )
                 with self._buffer_lock:
                     compress_multipart_parts_and_context(
-                        multipart_form, self.compressor_writer, self.boundary
+                        multipart_form, self.compressor_writer, self._boundary
                     )
                     self._run_count += 1
                     self._data_available_event.set()
@@ -1730,7 +1729,7 @@ class Client:
                     headers = {
                         **self._headers,
                         "X-API-KEY": api_key,
-                        "Content-Type": f"multipart/form-data; boundary={self.boundary}",
+                        "Content-Type": f"multipart/form-data; boundary={self._boundary}",
                         "Content-Encoding": "zstd",
                     }
 
@@ -1865,7 +1864,7 @@ class Client:
                 )
                 with self._buffer_lock:
                     compress_multipart_parts_and_context(
-                        multipart_form, self.compressor_writer, self.boundary
+                        multipart_form, self.compressor_writer, self._boundary
                     )
                     self._run_count += 1
                     self._data_available_event.set()
