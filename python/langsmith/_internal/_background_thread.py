@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("langsmith.client")
 
 HTTP_REQUEST_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(
-    max_workers=cpu_count()
+    max_workers=cpu_count()*3
 )
 
 
