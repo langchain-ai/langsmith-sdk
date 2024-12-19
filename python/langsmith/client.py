@@ -1906,25 +1906,25 @@ class Client:
             self, size_limit=1, size_limit_bytes=1
         )
 
-        if final_data_stream is None:
-            return
-
-        # We have data to send
-        future = None
-        try:
-            future = HTTP_REQUEST_THREAD_POOL.submit(
-                self._send_compressed_multipart_req,
-                final_data_stream,
-                attempts=attempts,
-            )
-            self._futures.add(future)
-        except RuntimeError:
-            # In case the ThreadPoolExecutor is already shutdown
-            self._send_compressed_multipart_req(final_data_stream, attempts=attempts)
+        if final_data_stream is not None:
+            # We have data to send
+            future = None
+            try:
+                future = HTTP_REQUEST_THREAD_POOL.submit(
+                    self._send_compressed_multipart_req,
+                    final_data_stream,
+                    attempts=attempts,
+                )
+                self._futures.add(future)
+            except RuntimeError:
+                # In case the ThreadPoolExecutor is already shutdown
+                self._send_compressed_multipart_req(
+                    final_data_stream, attempts=attempts
+                )
 
         # If we got a future, wait for it to complete
         if self._futures:
-            done, _ = cf.wait(self._futures, return_when=cf.ALL_COMPLETED)
+            done, _ = cf.wait(self._futures)
             # Remove completed futures
             self._futures.difference_update(done)
 

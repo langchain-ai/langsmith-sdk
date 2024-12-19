@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import concurrent.futures
+import concurrent.futures as cf
 import functools
 import io
 import logging
@@ -36,9 +36,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-HTTP_REQUEST_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(
-    max_workers=cpu_count() * 3
-)
+HTTP_REQUEST_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
 
 
 @functools.total_ordering
@@ -311,7 +309,7 @@ def tracing_control_thread_func_compress_parallel(
         )  # Force final drain
         if final_data_stream is not None:
             try:
-                concurrent.futures.wait(
+                cf.wait(
                     [
                         HTTP_REQUEST_THREAD_POOL.submit(
                             client._send_compressed_multipart_req, final_data_stream
